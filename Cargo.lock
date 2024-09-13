@@ -538,6 +538,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blink-alloc"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e669f146bb8b2327006ed94c69cf78c8ec81c100192564654230a40b4f091d82"
+dependencies = [
+ "allocator-api2",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1360,6 +1369,12 @@ dependencies = [
  "serde 1.0.210",
  "serde_json",
 ]
+
+[[package]]
+name = "downcast-rs"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
 name = "ecdsa"
@@ -3417,6 +3432,44 @@ dependencies = [
  "serde 1.0.210",
  "serde_repr",
  "smallvec",
+]
+
+[[package]]
+name = "midenc-hir2"
+version = "0.0.6"
+dependencies = [
+ "anyhow",
+ "blink-alloc",
+ "cranelift-entity",
+ "derive_more",
+ "downcast-rs",
+ "either",
+ "indexmap 2.2.6",
+ "intrusive-collections",
+ "inventory",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "miden-assembly",
+ "miden-core",
+ "miden-thiserror",
+ "midenc-hir-macros",
+ "midenc-hir-symbol",
+ "midenc-hir-type",
+ "midenc-session",
+ "num-bigint",
+ "num-traits 0.2.19",
+ "paste",
+ "petgraph",
+ "pretty_assertions",
+ "rustc-demangle",
+ "rustc-hash 1.1.0",
+ "serde 1.0.208",
+ "serde_bytes",
+ "serde_repr",
+ "smallvec",
+ "typed-arena",
+ "unicode-width",
 ]
 
 [[package]]

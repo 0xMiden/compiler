@@ -4,6 +4,7 @@ members = [
     "codegen/*",
     "frontend-wasm",
     "hir",
+    "hir2",
     "hir-analysis",
     "hir-macros",
     "hir-symbol",

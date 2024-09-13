@@ -1,0 +1,63 @@
+[package]
+name = "midenc-hir2"
+description = "High-level Intermediate Representation for Miden Assembly"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["rustc-demangle/std"]
+serde = [
+    "dep:serde",
+    "dep:serde_repr",
+    "dep:serde_bytes",
+    "midenc-hir-symbol/serde",
+]
+
+[build-dependencies]
+lalrpop = { version = "0.20", default-features = false }
+
+[dependencies]
+anyhow.workspace = true
+blink-alloc = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "nightly",
+] }
+either.workspace = true
+cranelift-entity.workspace = true
+downcast-rs = { version = "1.2", default-features = false }
+intrusive-collections.workspace = true
+inventory.workspace = true
+lalrpop-util = "0.20"
+log.workspace = true
+miden-core.workspace = true
+miden-assembly.workspace = true
+midenc-hir-symbol.workspace = true
+midenc-hir-type.workspace = true
+midenc-hir-macros.workspace = true
+midenc-session.workspace = true
+num-bigint = "0.4"
+num-traits = "0.2"
+petgraph.workspace = true
+paste.workspace = true
+rustc-hash.workspace = true
+rustc-demangle = "0.1.19"
+serde = { workspace = true, optional = true }
+serde_repr = { workspace = true, optional = true }
+serde_bytes = { workspace = true, optional = true }
+smallvec.workspace = true
+thiserror.workspace = true
+typed-arena = "2.0"
+unicode-width = { version = "0.1", features = ["no_std"] }
+derive_more.workspace = true
+indexmap.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1.0"

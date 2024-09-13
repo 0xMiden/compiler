@@ -1,5 +1,6 @@
 extern crate proc_macro;
 
+//mod op;
 mod spanned;
 
 use inflector::cases::kebabcase::to_kebab_case;
@@ -24,6 +25,28 @@ pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         Err(err) => err.into_compile_error().into(),
     }
 }
+
+/// #[derive(Op)]
+/// #[op(name = "select", interfaces(BranchOpInterface))]
+/// pub struct Select {
+///     #[operation]
+///     op: Operation,
+///     #[operand]
+///     selector: OpOperand,
+///
+/// }
+/*
+#[proc_macro_derive(Op, attributes(op, operation, operand, result, successor, region, interfaces))]
+pub fn derive_op(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    let op = match op::Op::from_derive_input(derive) {
+        Ok(op) => op,
+        Err(err) => err.to_compile_error().into(),
+    };
+    quote!(#op).into()
+}
+ */
 
 #[proc_macro_derive(PassInfo)]
 pub fn derive_pass_info(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
