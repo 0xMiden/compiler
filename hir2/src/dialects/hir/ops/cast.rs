@@ -1,10 +1,5 @@
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
-// TODO(pauls): Implement support in `derive!` for expressing:
-//
-// * Doc comments
-// * Type constraints
-// * Additional verification rules
 /*
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CastKind {

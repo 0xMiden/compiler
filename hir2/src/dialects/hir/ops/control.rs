@@ -13,9 +13,6 @@ derive! {
 
 // TODO(pauls): RetImm
 
-// TODO(pauls): Implement support for:
-//
-// * `#[successor]` to represent a single `Successor` of this op
 derive! {
     pub struct Br : Op implements Terminator {
         #[dialect]
@@ -38,11 +35,6 @@ derive! {
     }
 }
 
-// TODO(pauls): Implement support for:
-//
-// * `SuccessorInterface` for custom types which represent a `Successor`
-// * `#[successors]` to represent variadic successors of an op
-// * `#[successors(interface)]` to indicate that the successor info should be obtained from this field via `SuccessorInterface`
 derive! {
     pub struct Switch : Op implements Terminator {
         #[dialect]
@@ -63,9 +55,6 @@ pub struct SwitchCase {
     pub successor: Successor,
 }
 
-// TODO(pauls): Implement:
-//
-// * `region` attribute
 derive! {
     pub struct If : Op implements SingleBlock, NoRegionArguments {
         #[dialect]

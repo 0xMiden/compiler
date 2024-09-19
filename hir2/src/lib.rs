@@ -17,10 +17,10 @@ extern crate alloc;
 extern crate std;
 
 mod attributes;
-mod core;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
 pub mod formatter;
+mod ir;
 
-pub use self::{attributes::*, core::*};
+pub use self::{attributes::*, ir::*};

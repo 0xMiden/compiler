@@ -1,6 +1,16 @@
 use crate::Operation;
 
 /// This macro is used to generate the boilerplate for [Op] implementations.
+///
+/// TODO(pauls):
+///
+/// * Implement `#[region]` support
+/// * Implement `#[successor]` support
+/// * Implement `#[successors]` support for variadic successors
+/// * Implement `#[successors(interface)]` to access successors through `SuccessorInterface`
+/// * Support doc comments
+/// * Implement type constraints/inference
+/// * Implement `verify` blocks for custom verification rules
 #[macro_export]
 macro_rules! derive {
     (
