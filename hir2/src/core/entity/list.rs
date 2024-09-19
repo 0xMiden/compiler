@@ -1,10 +1,16 @@
-use core::fmt;
+use core::{fmt, mem::MaybeUninit, ptr::NonNull};
 
-use super::{EntityAdapter, EntityRef, TrackedEntityHandle};
+use super::{EntityMut, EntityRef, RawEntityMetadata, RawEntityRef, UnsafeIntrusiveEntityRef};
 
-#[derive(Default)]
 pub struct EntityList<T> {
     list: intrusive_collections::linked_list::LinkedList<EntityAdapter<T>>,
+}
+impl<T> Default for EntityList<T> {
+    fn default() -> Self {
+        Self {
+            list: Default::default(),
+        }
+    }
 }
 impl<T> EntityList<T> {
     /// Construct a new, empty [EntityList]
@@ -30,27 +36,41 @@ impl<T> EntityList<T> {
     }
 
     /// Prepend `entity` to this list
-    pub fn push_front(&mut self, entity: TrackedEntityHandle<T>) {
+    pub fn push_front(&mut self, entity: UnsafeIntrusiveEntityRef<T>) {
         self.list.push_front(entity);
     }
 
     /// Append `entity` to this list
-    pub fn push_back(&mut self, entity: TrackedEntityHandle<T>) {
+    pub fn push_back(&mut self, entity: UnsafeIntrusiveEntityRef<T>) {
         self.list.push_back(entity);
     }
 
     /// Remove the entity at the front of the list, returning its [TrackedEntityHandle]
     ///
     /// Returns `None` if the list is empty.
-    pub fn pop_front(&mut self) -> Option<TrackedEntityHandle<T>> {
+    pub fn pop_front(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         self.list.pop_back()
     }
 
     /// Remove the entity at the back of the list, returning its [TrackedEntityHandle]
     ///
     /// Returns `None` if the list is empty.
-    pub fn pop_back(&mut self) -> Option<TrackedEntityHandle<T>> {
+    pub fn pop_back(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         self.list.pop_back()
+    }
+
+    #[doc(hidden)]
+    pub fn cursor(&self) -> EntityCursor<'_, T> {
+        EntityCursor {
+            cursor: self.list.cursor(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn cursor_mut(&mut self) -> EntityCursorMut<'_, T> {
+        EntityCursorMut {
+            cursor: self.list.cursor_mut(),
+        }
     }
 
     /// Get an [EntityCursor] pointing to the first entity in the list, or the null object if
@@ -63,7 +83,7 @@ impl<T> EntityList<T> {
 
     /// Get an [EntityCursorMut] pointing to the first entity in the list, or the null object if
     /// the list is empty
-    pub fn front_mut(&self) -> EntityCursorMut<'_, T> {
+    pub fn front_mut(&mut self) -> EntityCursorMut<'_, T> {
         EntityCursorMut {
             cursor: self.list.front_mut(),
         }
@@ -79,7 +99,7 @@ impl<T> EntityList<T> {
 
     /// Get an [EntityCursorMut] pointing to the last entity in the list, or the null object if
     /// the list is empty
-    pub fn back_mut(&self) -> EntityCursorMut<'_, T> {
+    pub fn back_mut(&mut self) -> EntityCursorMut<'_, T> {
         EntityCursorMut {
             cursor: self.list.back_mut(),
         }
@@ -91,7 +111,7 @@ impl<T> EntityList<T> {
     /// bound to the list itself, not the iterator.
     pub fn iter(&self) -> EntityIter<'_, T> {
         EntityIter {
-            cursor: self.list.cursor(),
+            cursor: self.cursor(),
             started: false,
         }
     }
@@ -122,6 +142,41 @@ impl<T> EntityList<T> {
             list: self.list.take(),
         }
     }
+
+    /// Get a cursor to the item pointed to by `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// This function may only be called when it is known that `ptr` refers to an entity which is
+    /// linked into this list. This operation will panic if the entity is not linked into any list,
+    /// and may result in undefined behavior if the operation is linked into a different list.
+    pub unsafe fn cursor_from_ptr(&self, ptr: UnsafeIntrusiveEntityRef<T>) -> EntityCursor<'_, T> {
+        unsafe {
+            let raw = UnsafeIntrusiveEntityRef::into_inner(ptr).as_ptr();
+            EntityCursor {
+                cursor: self.list.cursor_from_ptr(raw),
+            }
+        }
+    }
+
+    /// Get a mutable cursor to the item pointed to by `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// This function may only be called when it is known that `ptr` refers to an entity which is
+    /// linked into this list. This operation will panic if the entity is not linked into any list,
+    /// and may result in undefined behavior if the operation is linked into a different list.
+    pub unsafe fn cursor_mut_from_ptr(
+        &mut self,
+        ptr: UnsafeIntrusiveEntityRef<T>,
+    ) -> EntityCursorMut<'_, T> {
+        let raw = UnsafeIntrusiveEntityRef::into_inner(ptr).as_ptr();
+        unsafe {
+            EntityCursorMut {
+                cursor: self.list.cursor_mut_from_ptr(raw),
+            }
+        }
+    }
 }
 
 impl<T: fmt::Debug> fmt::Debug for EntityList<T> {
@@ -134,10 +189,10 @@ impl<T: fmt::Debug> fmt::Debug for EntityList<T> {
     }
 }
 
-impl<T> FromIterator<TrackedEntityHandle<T>> for EntityList<T> {
-    fn from_iter<T>(iter: T) -> Self
+impl<T> FromIterator<UnsafeIntrusiveEntityRef<T>> for EntityList<T> {
+    fn from_iter<I>(iter: I) -> Self
     where
-        T: IntoIterator<Item = TrackedEntityHandle<T>>,
+        I: IntoIterator<Item = UnsafeIntrusiveEntityRef<T>>,
     {
         let mut list = EntityList::<T>::default();
         for handle in iter {
@@ -148,8 +203,8 @@ impl<T> FromIterator<TrackedEntityHandle<T>> for EntityList<T> {
 }
 
 impl<T> IntoIterator for EntityList<T> {
-    type IntoIter = intrusive_collections::linked_list::IntoIter<EntityAdapter>;
-    type Item = TrackedEntityHandle<T>;
+    type IntoIter = intrusive_collections::linked_list::IntoIter<EntityAdapter<T>>;
+    type Item = UnsafeIntrusiveEntityRef<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.list.into_iter()
@@ -183,17 +238,14 @@ impl<'a, T> EntityCursor<'a, T> {
     /// NOTE: This returns an [EntityRef] whose lifetime is bound to the underlying [EntityList],
     /// _not_ the [EntityCursor], since the cursor cannot mutate the list.
     pub fn get(&self) -> Option<EntityRef<'a, T>> {
-        match self.cursor.get() {
-            Some(obj) => Some(obj.borrow()),
-            None => None,
-        }
+        self.cursor.get().map(|obj| obj.entity.borrow())
     }
 
     /// Get the [TrackedEntityHandle] corresponding to the entity under the cursor.
     ///
     /// Returns `None` if the cursor is pointing to the null object.
     #[inline]
-    pub fn as_pointer(&self) -> Option<TrackedEntityHandle<T>> {
+    pub fn as_pointer(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         self.cursor.clone_pointer()
     }
 
@@ -261,10 +313,7 @@ impl<'a, T> EntityCursorMut<'a, T> {
     /// is frozen while the entity is being borrowed. This ensures that only one reference at a
     /// time is being handed out by this cursor.
     pub fn get(&self) -> Option<EntityRef<'_, T>> {
-        match self.cursor.get() {
-            Some(obj) => Some(obj.borrow()),
-            None => None,
-        }
+        self.cursor.get().map(|obj| obj.entity.borrow())
     }
 
     /// Get a mutable reference to the entity under the cursor.
@@ -276,10 +325,7 @@ impl<'a, T> EntityCursorMut<'a, T> {
     /// from being accessed in any way until the mutable reference is dropped. This makes it
     /// impossible to try and alias the underlying entity using the cursor.
     pub fn get_mut(&mut self) -> Option<EntityMut<'_, T>> {
-        match self.cursor.get() {
-            Some(obj) => Some(obj.borrow_mut()),
-            None => None,
-        }
+        self.cursor.get().map(|obj| obj.entity.borrow_mut())
     }
 
     /// Returns a read-only cursor pointing to the current element.
@@ -297,8 +343,8 @@ impl<'a, T> EntityCursorMut<'a, T> {
     ///
     /// Returns `None` if the cursor is pointing to the null object.
     #[inline]
-    pub fn as_pointer(&self) -> Option<TrackedEntityHandle<T>> {
-        self.cursor.clone_pointer()
+    pub fn as_pointer(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
+        self.cursor.as_cursor().clone_pointer()
     }
 
     /// Moves the cursor to the next element of the [EntityList].
@@ -353,7 +399,7 @@ impl<'a, T> EntityCursorMut<'a, T> {
     /// If the cursor is currently pointing to the null object then nothing is removed and `None` is
     /// returned.
     #[inline]
-    pub fn remove(&mut self) -> Option<TrackedEntityHandle<T>> {
+    pub fn remove(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         self.cursor.remove()
     }
 
@@ -370,8 +416,8 @@ impl<'a, T> EntityCursorMut<'a, T> {
     #[inline]
     pub fn replace_with(
         &mut self,
-        value: TrackedEntityHandle<T>,
-    ) -> Result<TrackedEntityHandle<T>, TrackedEntityHandle<T>> {
+        value: UnsafeIntrusiveEntityRef<T>,
+    ) -> Result<UnsafeIntrusiveEntityRef<T>, UnsafeIntrusiveEntityRef<T>> {
         self.cursor.replace_with(value)
     }
 
@@ -384,7 +430,7 @@ impl<'a, T> EntityCursorMut<'a, T> {
     ///
     /// Panics if the entity is already linked to a different [EntityList]
     #[inline]
-    pub fn insert_after(&mut self, value: TrackedEntityHandle<T>) {
+    pub fn insert_after(&mut self, value: UnsafeIntrusiveEntityRef<T>) {
         self.cursor.insert_after(value)
     }
 
@@ -397,7 +443,7 @@ impl<'a, T> EntityCursorMut<'a, T> {
     ///
     /// Panics if the entity is already linked to a different [EntityList]
     #[inline]
-    pub fn insert_before(&mut self, value: TrackedEntityHandle<T>) {
+    pub fn insert_before(&mut self, value: UnsafeIntrusiveEntityRef<T>) {
         self.cursor.insert_before(value)
     }
 
@@ -472,37 +518,6 @@ impl<'a, T> EntityCursorMut<'a, T> {
         let list = self.cursor.split_before();
         EntityList { list }
     }
-
-    /// Consumes this cursor, and returns a reference to the entity that the cursor is currently
-    /// pointing to.
-    ///
-    /// Unlike [get], the returned reference’s lifetime is tied to [EntityList]’s lifetime.
-    ///
-    /// This returns `None` if the cursor is currently pointing to the null object.
-    ///
-    /// NOTE: This function will panic if there are any outstanding mutable borrows of the
-    /// underlying entity.
-    pub fn into_ref(self) -> Option<EntityRef<'a, T>> {
-        match self.cursor.get() {
-            Some(obj) => Some(obj.borrow()),
-            None => None,
-        }
-    }
-
-    /// Consumes this cursor, and returns a mutable reference to the entity that the cursor is
-    /// currently pointing to.
-    ///
-    /// Unlike [get_mut], the returned reference’s lifetime is tied to the [EntityList]’s lifetime.
-    ///
-    /// This returns `None` if the cursor is currently pointing to the null object.
-    ///
-    /// NOTE: This function will panic if there are any outstanding borrows of the underlying entity
-    pub fn into_mut(self) -> Option<EntityMut<'a, T>> {
-        match self.cursor.get() {
-            Some(obj) => Some(obj.borrow_mut()),
-            None => None,
-        }
-    }
 }
 
 pub struct EntityIter<'a, T> {
@@ -536,5 +551,163 @@ impl<'a, T> DoubleEndedIterator for EntityIter<'a, T> {
         let item = self.cursor.get()?;
         self.cursor.move_prev();
         Some(item)
+    }
+}
+
+type IntrusiveLink = intrusive_collections::LinkedListLink;
+
+impl<T: 'static> RawEntityRef<T, IntrusiveLink> {
+    /// Create a new [UnsafeIntrusiveEntityRef] by allocating `value` in `arena`
+    ///
+    /// # SAFETY
+    ///
+    /// This function has the same requirements around safety as [RawEntityRef::new].
+    pub fn new(value: T, arena: &blink_alloc::Blink) -> Self {
+        RawEntityRef::new_with_metadata(value, IntrusiveLink::new(), arena)
+    }
+
+    pub fn new_uninit(arena: &blink_alloc::Blink) -> RawEntityRef<MaybeUninit<T>, IntrusiveLink> {
+        RawEntityRef::new_uninit_with_metadata(IntrusiveLink::new(), arena)
+    }
+}
+impl<T> RawEntityRef<T, IntrusiveLink> {
+    /// Returns true if this entity is linked into an intrusive list
+    pub fn is_linked(&self) -> bool {
+        unsafe {
+            let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
+            let current = self.inner.byte_add(offset).cast::<IntrusiveLink>();
+            current.as_ref().is_linked()
+        }
+    }
+
+    /// Get the previous entity in the list of `T` containing the current entity
+    ///
+    /// For example, in a list of `Operation` in a `Block`, this would return the handle of the
+    /// previous operation in the block, or `None` if there are no other ops before this one.
+    pub fn prev(&self) -> Option<Self> {
+        use intrusive_collections::linked_list::{LinkOps, LinkedListOps};
+        unsafe {
+            let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
+            let current = self.inner.byte_add(offset).cast();
+            LinkOps.prev(current).map(|link_ptr| Self::from_link_ptr(link_ptr))
+        }
+    }
+
+    /// Get the next entity in the list of `T` containing the current entity
+    ///
+    /// For example, in a list of `Operation` in a `Block`, this would return the handle of the
+    /// next operation in the block, or `None` if there are no other ops after this one.
+    pub fn next(&self) -> Option<Self> {
+        use intrusive_collections::linked_list::{LinkOps, LinkedListOps};
+        unsafe {
+            let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
+            let current = self.inner.byte_add(offset).cast();
+            LinkOps.next(current).map(|link_ptr| Self::from_link_ptr(link_ptr))
+        }
+    }
+
+    #[inline]
+    unsafe fn from_link_ptr(link: NonNull<IntrusiveLink>) -> Self {
+        let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
+        let ptr = link.byte_sub(offset).cast::<RawEntityMetadata<T, IntrusiveLink>>();
+        Self { inner: ptr }
+    }
+}
+
+#[doc(hidden)]
+pub struct DefaultPointerOps<T: ?Sized>(core::marker::PhantomData<T>);
+impl<T: ?Sized> Copy for DefaultPointerOps<T> {}
+impl<T: ?Sized> Clone for DefaultPointerOps<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T: ?Sized> Default for DefaultPointerOps<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl<T: ?Sized> DefaultPointerOps<T> {
+    const fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+unsafe impl<T> intrusive_collections::PointerOps
+    for DefaultPointerOps<UnsafeIntrusiveEntityRef<T>>
+{
+    type Pointer = UnsafeIntrusiveEntityRef<T>;
+    type Value = RawEntityMetadata<T, IntrusiveLink>;
+
+    #[inline]
+    unsafe fn from_raw(&self, value: *const Self::Value) -> Self::Pointer {
+        debug_assert!(!value.is_null() && value.is_aligned());
+        UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut())
+    }
+
+    #[inline]
+    fn into_raw(&self, ptr: Self::Pointer) -> *const Self::Value {
+        UnsafeIntrusiveEntityRef::into_inner(ptr).as_ptr().cast_const()
+    }
+}
+
+/// An adapter for storing any `Entity` impl in a [intrusive_collections::LinkedList]
+pub struct EntityAdapter<T> {
+    link_ops: intrusive_collections::linked_list::LinkOps,
+    ptr_ops: DefaultPointerOps<UnsafeIntrusiveEntityRef<T>>,
+    marker: core::marker::PhantomData<T>,
+}
+impl<T> Copy for EntityAdapter<T> {}
+impl<T> Clone for EntityAdapter<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Default for EntityAdapter<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl<T> EntityAdapter<T> {
+    pub const fn new() -> Self {
+        Self {
+            link_ops: intrusive_collections::linked_list::LinkOps,
+            ptr_ops: DefaultPointerOps::new(),
+            marker: core::marker::PhantomData,
+        }
+    }
+}
+
+unsafe impl<T> intrusive_collections::Adapter for EntityAdapter<T> {
+    type LinkOps = intrusive_collections::linked_list::LinkOps;
+    type PointerOps = DefaultPointerOps<UnsafeIntrusiveEntityRef<T>>;
+
+    unsafe fn get_value(
+        &self,
+        link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
+    ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
+        let raw_entity_ref = UnsafeIntrusiveEntityRef::<T>::from_link_ptr(link);
+        raw_entity_ref.inner.as_ptr().cast_const()
+    }
+
+    unsafe fn get_link(
+        &self,
+        value: *const <Self::PointerOps as intrusive_collections::PointerOps>::Value,
+    ) -> <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr {
+        let raw_entity_ref = UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut());
+        let offset = RawEntityMetadata::<T, IntrusiveLink>::metadata_offset();
+        raw_entity_ref.inner.byte_add(offset).cast()
+    }
+
+    fn link_ops(&self) -> &Self::LinkOps {
+        &self.link_ops
+    }
+
+    fn link_ops_mut(&mut self) -> &mut Self::LinkOps {
+        &mut self.link_ops
+    }
+
+    fn pointer_ops(&self) -> &Self::PointerOps {
+        &self.ptr_ops
     }
 }

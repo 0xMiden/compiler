@@ -1,43 +1,49 @@
-use std::{
-    any::{Any, TypeId},
-    collections::BTreeMap,
-};
+use alloc::collections::BTreeMap;
 
-use super::{Function, FunctionIdent, Symbol, SymbolTable};
-use crate::UnsafeRef;
+use super::{EntityList, Function, Ident, Symbol, SymbolTable, UnsafeIntrusiveEntityRef};
 
 pub struct Module {
-    name: midenc_hir_symbol::Symbol,
-    functions: BTreeMap<midenc_hir_symbol::Symbol, UnsafeRef<Function>>,
+    name: Ident,
+    functions: EntityList<Function>,
+    registry: BTreeMap<Ident, UnsafeIntrusiveEntityRef<Function>>,
+}
+impl Module {
+    pub const fn name(&self) -> Ident {
+        self.name
+    }
+
+    pub fn functions(&self) -> &EntityList<Function> {
+        &self.functions
+    }
+
+    pub fn functions_mut(&mut self) -> &mut EntityList<Function> {
+        &mut self.functions
+    }
 }
 impl SymbolTable for Module {
-    type Key = midenc_hir_symbol::Symbol;
+    type Entry = UnsafeIntrusiveEntityRef<Function>;
+    type Key = Ident;
 
-    fn get<T>(&self, id: &Self::Key) -> Option<UnsafeRef<T>>
-    where
-        T: Symbol<Id = Self::Key>,
-    {
-        if TypeId::of::<T>() == TypeId::of::<Function>() {
-            self.functions.get(id).copied().map(|unsafe_ref| {
-                let ptr = unsafe_ref.into_raw();
-                UnsafeRef::new(ptr.cast())
-            })
+    fn get(&self, id: &Self::Key) -> Option<Self::Entry> {
+        self.registry.get(id).cloned()
+    }
+
+    fn insert(&mut self, entry: Self::Entry) -> bool {
+        let id = entry.borrow().id();
+        if self.registry.contains_key(&id) {
+            return false;
+        }
+        self.registry.insert(id, entry.clone());
+        self.functions.push_back(entry);
+        true
+    }
+
+    fn remove(&mut self, id: &Self::Key) -> Option<Self::Entry> {
+        if let Some(ptr) = self.registry.remove(id) {
+            let mut cursor = unsafe { self.functions.cursor_mut_from_ptr(ptr) };
+            cursor.remove()
         } else {
             None
         }
-    }
-
-    fn insert<T>(&self, entry: UnsafeRef<T>) -> bool
-    where
-        T: Symbol<Id = Self::Key>,
-    {
-        todo!()
-    }
-
-    fn remove<T>(&self, id: &Self::Key) -> Option<UnsafeRef<T>>
-    where
-        T: Symbol<Id = Self::Key>,
-    {
-        todo!()
     }
 }

@@ -1,28 +1,58 @@
 use core::{
-    any::{Any, TypeId},
-    mem,
-    ptr::{NonNull, Pointee},
+    fmt,
+    marker::Unsize,
+    ptr::{DynMetadata, Pointee},
 };
 
-use cranelift_entity::{packed_option::ReservedValue, EntityRef};
-use downcast_rs::{impl_downcast, Downcast};
-use intrusive_collections::{
-    container_of, intrusive_adapter,
-    linked_list::{LinkOps, LinkedListOps},
-    LinkedListLink, UnsafeRef,
-};
 use smallvec::SmallVec;
 
 use super::*;
 
+pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
 pub type OpCursor<'a> = EntityCursor<'a, Operation>;
 pub type OpCursorMut<'a> = EntityCursorMut<'a, Operation>;
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OperationName {
+    pub dialect: DialectName,
+    pub name: interner::Symbol,
+}
+impl OperationName {
+    pub fn new<S>(dialect: DialectName, name: S) -> Self
+    where
+        S: Into<interner::Symbol>,
+    {
+        Self {
+            dialect,
+            name: name.into(),
+        }
+    }
+}
+impl fmt::Debug for OperationName {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+impl fmt::Display for OperationName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", &self.dialect, &self.name)
+    }
+}
+
 /// An [OpSuccessor] is a BlockOperand + OpOperands for that block, attached to an Operation
-struct OpSuccessor {
-    block: TrackedEntityHandle<BlockOperand>,
-    args: SmallVec<[TrackedEntityHandle<OpOperand>; 1]>,
+pub struct OpSuccessor {
+    pub block: BlockOperandRef,
+    pub args: SmallVec<[OpOperand; 1]>,
+}
+impl fmt::Debug for OpSuccessor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpSuccessor")
+            .field("block", &self.block.borrow().block_id())
+            .field("args", &self.args)
+            .finish()
+    }
 }
 
 // TODO: We need a safe way to construct arbitrary Ops imperatively:
@@ -40,13 +70,24 @@ struct OpSuccessor {
 // * Generated methods can compute offsets, but how do we generate the specialized builders?
 pub struct OperationBuilder<'a, T> {
     context: &'a Context,
-    op: Operation,
+    op: UnsafeIntrusiveEntityRef<T>,
     _marker: core::marker::PhantomData<T>,
 }
-impl<T: Op> OperationBuilder<T> {
-    pub fn new(context: &'a Context) -> Self {
-        let op = Operation::uninit::<T>();
-        let handle = context.alloc_uninit_tracked(op);
+impl<'a, T: Op> OperationBuilder<'a, T> {
+    pub fn new(context: &'a Context, op: T) -> Self {
+        let mut op = context.alloc_tracked(op);
+
+        // SAFETY: Setting the data pointer of the multi-trait vtable must ensure
+        // that it points to the concrete type of the allocation, which we can guarantee here,
+        // having just allocated it. Until the data pointer is set, casts using the vtable are
+        // undefined behavior, so by never allowing the uninitialized vtable to be accessed,
+        // we can ensure the multi-trait impl is safe
+        unsafe {
+            let data_ptr = UnsafeIntrusiveEntityRef::as_ptr(&op);
+            let mut op_mut = op.borrow_mut();
+            op_mut.as_operation_mut().vtable.set_data_ptr(data_ptr.cast_mut());
+        }
+
         Self {
             context,
             op,
@@ -54,8 +95,77 @@ impl<T: Op> OperationBuilder<T> {
         }
     }
 
-    pub fn build(self) -> TrackedEntityHandle<T> {
-        todo!()
+    /// Register this op as an implementation of `Trait`.
+    ///
+    /// This is enforced statically by the type system, as well as dynamically via verification.
+    ///
+    /// This must be called for any trait that you wish to be able to cast the type-erased
+    /// [Operation] to later, or if you wish to get a `dyn Trait` reference from a `dyn Op`
+    /// reference.
+    ///
+    /// If `Trait` has a verifier implementation, it will be automatically applied when calling
+    /// [Operation::verify].
+    pub fn implement<Trait>(&mut self)
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+        T: Unsize<Trait> + verifier::Verifier<Trait> + 'static,
+    {
+        let mut op = self.op.borrow_mut();
+        let operation = op.as_operation_mut();
+        operation.vtable.register_trait::<T, Trait>();
+    }
+
+    /// Set attribute `name` on this op to `value`
+    pub fn with_attr<A>(&mut self, name: &'static str, value: A)
+    where
+        A: AttributeValue,
+    {
+        let mut op = self.op.borrow_mut();
+        op.as_operation_mut().attrs.insert(interner::Symbol::intern(name), Some(value));
+    }
+
+    /// Set the operands given to this op
+    pub fn with_operands<I>(&mut self, operands: I)
+    where
+        I: IntoIterator<Item = ValueRef>,
+    {
+        let mut op = self.op.borrow_mut();
+        // TODO: Verify the safety of this conversion
+        let owner = unsafe {
+            let ptr = op.as_operation() as *const Operation;
+            UnsafeIntrusiveEntityRef::from_raw(ptr)
+        };
+        let operands = operands.into_iter().enumerate().map(|(index, value)| {
+            self.context
+                .alloc_tracked(value::OpOperandImpl::new(value, owner.clone(), index as u8))
+        });
+        let op_mut = op.as_operation_mut();
+        op_mut.operands.clear();
+        op_mut.operands.extend(operands);
+    }
+
+    /// Allocate `n` results for this op, of unknown type, to be filled in later
+    pub fn with_results(&mut self, n: usize) {
+        let mut op = self.op.borrow_mut();
+        let owner = unsafe {
+            let ptr = op.as_operation() as *const Operation;
+            UnsafeIntrusiveEntityRef::from_raw(ptr)
+        };
+        let results =
+            (0..n).map(|idx| self.context.make_result(Type::Unknown, owner.clone(), idx as u8));
+        let op_mut = op.as_operation_mut();
+        op_mut.results.clear();
+        op_mut.results.extend(results);
+    }
+
+    /// Consume this builder, verify the op, and return a handle to it, or an error if validation
+    /// failed.
+    pub fn build(self) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
+        {
+            let op = self.op.borrow();
+            op.as_operation().verify(self.context)?;
+        }
+        Ok(self.op)
     }
 }
 
@@ -73,21 +183,32 @@ pub struct Operation {
     /// The containing block of this operation
     ///
     /// Is set to `None` if this operation is detached
-    pub block: Option<EntityHandle<Block>>,
+    pub block: Option<BlockRef>,
     /// The set of operands for this operation
     ///
     /// NOTE: If the op supports immediate operands, the storage for the immediates is handled
     /// by the op, rather than here. Additionally, the semantics of the immediate operands are
     /// determined by the op, e.g. whether the immediate operands are always applied first, or
     /// what they are used for.
-    pub operands: SmallVec<[TrackedEntityHandle<OpOperand>; 1]>,
+    pub operands: SmallVec<[OpOperand; 1]>,
     /// The set of values produced by this operation.
-    pub results: SmallVec<[Value; 1]>,
+    pub results: SmallVec<[OpResultRef; 1]>,
     /// If this operation represents control flow, this field stores the set of successors,
     /// and successor operands.
     pub successors: SmallVec<[OpSuccessor; 1]>,
     /// The set of regions belonging to this operation, if any
     pub regions: RegionList,
+}
+impl fmt::Debug for Operation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Operation")
+            .field("attrs", &self.attrs)
+            .field("block", &self.block.as_ref().map(|b| b.borrow().id()))
+            .field("operands", &self.operands)
+            .field("results", &self.results)
+            .field("successors", &self.successors)
+            .finish_non_exhaustive()
+    }
 }
 impl AsRef<dyn Op> for Operation {
     fn as_ref(&self) -> &dyn Op {
@@ -100,8 +221,8 @@ impl AsMut<dyn Op> for Operation {
     }
 }
 impl Operation {
-    fn uninit<T: Op>() -> Self {
-        use crate::traits::MultiTraitVtable;
+    pub fn uninit<T: Op>() -> Self {
+        use super::traits::MultiTraitVtable;
 
         let mut vtable = MultiTraitVtable::new::<T>();
         vtable.register_trait::<T, dyn Op>();
@@ -119,6 +240,14 @@ impl Operation {
     }
 }
 
+/// Verification
+impl Operation {
+    pub fn verify(&self, context: &Context) -> Result<(), Report> {
+        let dyn_op: &dyn Op = self.as_ref();
+        dyn_op.verify(context)
+    }
+}
+
 /// Traits/Casts
 impl Operation {
     /// Returns true if the concrete type of this operation is `T`
@@ -131,7 +260,7 @@ impl Operation {
     #[inline]
     pub fn implements<Trait>(&self) -> bool
     where
-        Trait: ?Sized + Pointee<Metadata = *const ()> + 'static,
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
         self.vtable.implements::<Trait>()
     }
@@ -145,37 +274,57 @@ impl Operation {
     pub fn downcast_mut<T: Op>(&mut self) -> Option<&mut T> {
         self.vtable.downcast_mut::<T>()
     }
+
+    /// Attempt to cast this operation reference to an implementation of `Trait`
+    pub fn as_trait<Trait>(&self) -> Option<&Trait>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        self.vtable.downcast_trait()
+    }
+
+    /// Attempt to cast this operation reference to an implementation of `Trait`
+    pub fn as_trait_mut<Trait>(&mut self) -> Option<&mut Trait>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        self.vtable.downcast_trait_mut()
+    }
 }
 
 /// Attributes
 impl Operation {
     /// Return the value associated with attribute `name` for this function
-    pub fn get_attribute<Q>(&self, name: &Q) -> Option<&AttributeValue>
+    pub fn get_attribute<Q>(&self, name: &Q) -> Option<&dyn AttributeValue>
     where
-        Symbol: std::borrow::Borrow<Q>,
+        interner::Symbol: std::borrow::Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.attrs.get(name)
+        self.attrs.get_any(name)
     }
 
     /// Return true if this function has an attributed named `name`
     pub fn has_attribute<Q>(&self, name: &Q) -> bool
     where
-        Symbol: std::borrow::Borrow<Q>,
+        interner::Symbol: std::borrow::Borrow<Q>,
         Q: Ord + ?Sized,
     {
         self.attrs.has(name)
     }
 
     /// Set the attribute `name` with `value` for this function.
-    pub fn set_attribute(&mut self, name: impl Into<Symbol>, value: impl Into<AttributeValue>) {
+    pub fn set_attribute(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+        value: Option<impl AttributeValue>,
+    ) {
         self.attrs.insert(name, value);
     }
 
     /// Remove any attribute with the given name from this function
     pub fn remove_attribute<Q>(&mut self, name: &Q)
     where
-        Symbol: std::borrow::Borrow<Q>,
+        interner::Symbol: std::borrow::Borrow<Q>,
         Q: Ord + ?Sized,
     {
         self.attrs.remove(name);
@@ -184,153 +333,101 @@ impl Operation {
 
 /// Navigation
 impl Operation {
-    pub fn prev(&self) -> Option<OpId> {
-        unsafe {
-            let current = core::ptr::NonNull::new_unchecked(&self.link);
-            LinkOps.prev(current).map(Self::link_to_key)
-        }
+    /// Returns a handle to the containing [Block] of this operation, if it is attached to one
+    pub fn parent(&self) -> Option<BlockRef> {
+        self.block.clone()
     }
 
-    pub fn next(&self) -> Option<OpId> {
-        unsafe {
-            let current = core::ptr::NonNull::new_unchecked(&self.link);
-            LinkOps.next(current).map(Self::link_to_key)
+    /// Returns a handle to the containing [Region] of this operation, if it is attached to one
+    pub fn parent_region(&self) -> Option<RegionRef> {
+        self.block.as_ref().and_then(|block| block.borrow().parent())
+    }
+
+    /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
+    /// to one
+    pub fn parent_op(&self) -> Option<OperationRef> {
+        self.block.as_ref().and_then(|block| block.borrow().parent_op())
+    }
+
+    /// Returns a handle to the nearest containing [Operation] of type `T` for this operation, if it
+    /// is attached to one
+    pub fn nearest_parent_op<T: Op>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
+        let mut parent = self.parent_op();
+        while let Some(op) = parent.take() {
+            let entity_ref = op.borrow();
+            parent = entity_ref.parent_op();
+            if let Some(t_ref) = entity_ref.downcast_ref::<T>() {
+                return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(t_ref) });
+            }
         }
+        None
+    }
+}
+
+/// Regions
+impl Operation {
+    #[inline]
+    pub fn has_regions(&self) -> bool {
+        !self.regions.is_empty()
     }
 
     #[inline]
-    unsafe fn link_to_key(link: NonNull<LinkedListLink>) -> OpId {
-        let link = link.as_ref();
-        let operation = container_of!(link, Operation, link);
-        let key_offset = mem::offset_of!(Operation, key);
-        let prev_key = operation.byte_add(key_offset as isize) as *const OpId;
-        *prev_key
+    pub fn num_regions(&self) -> usize {
+        self.regions.len()
+    }
+
+    #[inline(always)]
+    pub fn regions(&self) -> &RegionList {
+        &self.regions
+    }
+
+    #[inline(always)]
+    pub fn regions_mut(&mut self) -> &mut RegionList {
+        &mut self.regions
     }
 }
 
 /// Operands
 impl Operation {
-    pub fn replaces_uses_of_with(&mut self, from: Value, to: Value) {
-        if from == to {
+    #[inline]
+    pub fn has_operands(&self) -> bool {
+        !self.operands.is_empty()
+    }
+
+    #[inline]
+    pub fn num_operands(&self) -> usize {
+        self.operands.len()
+    }
+
+    #[inline]
+    pub fn operands(&self) -> &[OpOperand] {
+        self.operands.as_slice()
+    }
+
+    pub fn replaces_uses_of_with(&mut self, mut from: ValueRef, mut to: ValueRef) {
+        if ValueRef::ptr_eq(&from, &to) {
             return;
         }
 
-        for operand in self.operands.iter_mut() {
-            if operand == &from {
-                *operand = to;
+        let from_id = from.borrow().id();
+        if from_id == to.borrow().id() {
+            return;
+        }
+
+        for mut operand in self.operands.iter().cloned() {
+            if operand.borrow().value.borrow().id() == from_id {
+                debug_assert!(operand.is_linked());
+                // Remove the operand from `from`
+                {
+                    let mut from_mut = from.borrow_mut();
+                    let from_uses = from_mut.uses_mut();
+                    let mut cursor = unsafe { from_uses.cursor_mut_from_ptr(operand.clone()) };
+                    cursor.remove();
+                }
+                // Add the operand to `to`
+                operand.borrow_mut().value = to.clone();
+                to.borrow_mut().insert_use(operand);
             }
         }
-    }
-}
-
-pub trait Op: Downcast {
-    type Id: Copy + PartialEq + Eq + PartialOrd + Ord;
-
-    fn id(&self) -> Self::Id;
-    fn name(&self) -> &'static str;
-    fn parent(&self) -> Option<OpId> {
-        let parent = self.as_operation().parent;
-        if parent.is_reserved_value() {
-            None
-        } else {
-            Some(parent)
-        }
-    }
-    fn prev(&self) -> Option<OpId> {
-        self.as_operation().prev()
-    }
-    fn next(&self) -> Option<OpId> {
-        self.as_operation().next()
-    }
-    fn parent_block(&self) -> Option<Block> {
-        let block = self.as_operation().block;
-        if block.is_reserved_value() {
-            None
-        } else {
-            Some(block)
-        }
-    }
-    fn regions(&self) -> &[RegionId] {
-        self.as_operation().regions.as_slice()
-    }
-    fn operands(&self) -> &ValueList {
-        &self.as_operation().operands
-    }
-    fn results(&self) -> &ValueList {
-        &self.as_operation().results
-    }
-    fn successors(&self) -> &[Successor] {
-        self.as_operation().successors.as_slice()
-    }
-    fn as_operation(&self) -> &Operation;
-    fn as_operation_mut(&mut self) -> &mut Operation;
-}
-
-impl_downcast!(Op assoc Id where Id: Copy + PartialEq + Eq + PartialOrd + Ord);
-
-impl miden_assembly::Spanned for dyn Op {
-    fn span(&self) -> SourceSpan {
-        self.as_operation().span
-    }
-}
-
-pub trait OpExt {
-    /// Return the value associated with attribute `name` for this function
-    fn get_attribute<Q>(&self, name: &Q) -> Option<&AttributeValue>
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
-
-    /// Return true if this function has an attributed named `name`
-    fn has_attribute<Q>(&self, name: &Q) -> bool
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
-
-    /// Set the attribute `name` with `value` for this function.
-    fn set_attribute(&mut self, name: impl Into<Symbol>, value: impl Into<AttributeValue>);
-
-    /// Remove any attribute with the given name from this function
-    fn remove_attribute<Q>(&mut self, name: &Q)
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
-}
-
-impl<T: Op> OpExt for T {
-    /// Return the value associated with attribute `name` for this function
-    #[inline]
-    fn get_attribute<Q>(&self, name: &Q) -> Option<&AttributeValue>
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.as_operation().get_attribute(name)
-    }
-
-    /// Return true if this function has an attributed named `name`
-    #[inline]
-    fn has_attribute<Q>(&self, name: &Q) -> bool
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.as_operation().has_attribute(name)
-    }
-
-    /// Set the attribute `name` with `value` for this function.
-    #[inline]
-    fn set_attribute(&mut self, name: impl Into<Symbol>, value: impl Into<AttributeValue>) {
-        self.as_operation_mut().insert(name, value);
-    }
-
-    /// Remove any attribute with the given name from this function
-    #[inline]
-    fn remove_attribute<Q>(&mut self, name: &Q)
-    where
-        Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.as_operation_mut().remove(name);
     }
 }

@@ -20,6 +20,7 @@ serde = [
     "dep:serde_bytes",
     "midenc-hir-symbol/serde",
 ]
+debug_refcell = []
 
 [build-dependencies]
 lalrpop = { version = "0.20", default-features = false }
@@ -33,6 +34,7 @@ blink-alloc = { version = "0.3", default-features = false, features = [
 either.workspace = true
 cranelift-entity.workspace = true
 downcast-rs = { version = "1.2", default-features = false }
+hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
 lalrpop-util = "0.20"

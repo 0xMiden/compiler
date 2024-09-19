@@ -1,24 +1,26 @@
 mod list;
 
+use alloc::alloc::{AllocError, Layout};
 use core::{
+    any::Any,
     cell::{Cell, UnsafeCell},
     fmt,
+    hash::Hash,
     mem::MaybeUninit,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
 pub use self::list::{EntityCursor, EntityCursorMut, EntityIter, EntityList};
 
-pub trait Entity {
+pub trait Entity: Any {
     type Id: EntityId;
 
-    fn id(&self) -> Self::Key;
-    unsafe fn set_id(&self, id: Self::Key);
+    fn id(&self) -> Self::Id;
 }
 
 pub trait EntityId: Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Hash {
     fn as_usize(&self) -> usize;
-    unsafe fn from_usize(raw: usize) -> Self;
 }
 
 /// An error raised when an aliasing violation is detected in the use of [EntityHandle]
@@ -74,28 +76,48 @@ impl fmt::Display for AliasingViolationError {
     }
 }
 
-/// An [EntityHandle] is a smart-pointer type for IR entities allocated in a [Context].
+pub type UnsafeEntityRef<T> = RawEntityRef<T, ()>;
+
+pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, intrusive_collections::LinkedListLink>;
+
+/// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [Context].
+///
+/// Along with the type of entity referenced, it can be instantiated with extra metadata of any
+/// type. For example, [UnsafeIntrusiveEntityRef] stores an intrusive link in the entity metadata,
+/// so that the entity can be added to an intrusive linked list without the entity needing to
+/// know about the link - and without violating aliasing rules when navigating the list.
 ///
 /// Unlike regular references, no reference to the underlying `T` is constructed until one is
 /// needed, at which point the borrow (whether mutable or immutable) is dynamically checked to
 /// ensure that it is valid according to Rust's aliasing rules.
 ///
-/// As a result, an [EntityHandle] is not considered an alias, and it is possible to acquire a
+/// As a result, a [RawEntityRef] is not considered an alias, and it is possible to acquire a
 /// mutable reference to the underlying data even while other copies of the handle exist. Any
 /// attempt to construct invalid aliases (immutable reference while a mutable reference exists, or
 /// vice versa), will result in a runtime panic.
 ///
 /// This is a tradeoff, as we do not get compile-time guarantees that such panics will not occur,
 /// but in exchange we get a much more flexible and powerful IR structure.
-pub struct EntityHandle<T> {
-    inner: NonNull<EntityObj<T>>,
+///
+/// # SAFETY
+///
+/// Unlike most smart-pointer types, e.g. `Rc`, [RAwEntityRef] does not provide any protection
+/// against the underlying allocation being deallocated (i.e. the arena it points into is dropped).
+/// This is by design, as the type is meant to be stored in objects inside the arena, and
+/// _not_ dropped when the arena is dropped. This requires care when using it however, to ensure
+/// that no [RawEntityRef] lives longer than the arena that allocated it.
+///
+/// For a safe entity reference, see [EntityRef], which binds a [RawEntityRef] to the lifetime
+/// of the arena.
+pub struct RawEntityRef<T: ?Sized, Metadata = ()> {
+    inner: NonNull<RawEntityMetadata<T, Metadata>>,
 }
-impl<T> Clone for EntityHandle<T> {
+impl<T: ?Sized, Metadata> Clone for RawEntityRef<T, Metadata> {
     fn clone(&self) -> Self {
         Self { inner: self.inner }
     }
 }
-impl<T> EntityHandle<T> {
+impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Create a new [EntityHandle] from a raw pointer to the underlying [EntityObj].
     ///
     /// # SAFETY
@@ -111,35 +133,97 @@ impl<T> EntityHandle<T> {
     ///
     /// You should generally not be using this API, as it is meant solely for constructing an
     /// [EntityHandle] immediately after allocating the underlying [EntityObj].
-    pub(crate) unsafe fn new(ptr: NonNull<EntityObj<T>>) -> Self {
+    #[inline]
+    unsafe fn from_inner(inner: NonNull<RawEntityMetadata<T, Metadata>>) -> Self {
         Self { inner }
     }
 
-    /// Get a dynamically-checked immutable reference to the underlying `T`
-    pub fn get(&self) -> EntityRef<'_, T> {
+    #[inline]
+    unsafe fn from_ptr(ptr: *mut RawEntityMetadata<T, Metadata>) -> Self {
+        debug_assert!(!ptr.is_null());
+        Self::from_inner(NonNull::new_unchecked(ptr))
+    }
+
+    #[inline]
+    fn into_inner(this: Self) -> NonNull<RawEntityMetadata<T, Metadata>> {
+        this.inner
+    }
+}
+
+impl<T: 'static, Metadata: 'static> RawEntityRef<T, Metadata> {
+    /// Create a new [RawEntityRef] by allocating `value` with `metadata` in the given arena
+    /// allocator.
+    ///
+    /// # SAFETY
+    ///
+    /// The resulting [RawEntityRef] must not outlive the arena. This is not enforced statically,
+    /// it is up to the caller to uphold the invariants of this type.
+    pub fn new_with_metadata(value: T, metadata: Metadata, arena: &blink_alloc::Blink) -> Self {
         unsafe {
-            let obj = self.inner.as_ref();
-            obj.borrow()
+            Self::from_inner(NonNull::new_unchecked(
+                arena.put(RawEntityMetadata::new(value, metadata)),
+            ))
         }
     }
 
-    /// Get a dynamically-checked mutable reference to the underlying `T`
-    pub fn get_mut(&mut self) -> EntityMut<'_, T> {
+    /// Create a [RawEntityRef] for an entity which may not be fully initialized, using the provided
+    /// arena.
+    ///
+    /// # SAFETY
+    ///
+    /// The safety rules are much the same as [RawEntityRef::new], with the main difference
+    /// being that the `T` does not have to be initialized yet. No references to the `T` will
+    /// be created directly until [RawEntityRef::assume_init] is called.
+    pub fn new_uninit_with_metadata(
+        metadata: Metadata,
+        arena: &blink_alloc::Blink,
+    ) -> RawEntityRef<MaybeUninit<T>, Metadata> {
         unsafe {
-            let obj = self.inner.as_ref();
-            obj.borrow_mut()
+            RawEntityRef::from_ptr(RawEntityRef::allocate_for_layout(
+                metadata,
+                Layout::new::<T>(),
+                |layout| arena.allocator().allocate(layout),
+                <*mut u8>::cast,
+            ))
         }
     }
+}
 
+impl<T: 'static> RawEntityRef<T, ()> {
+    pub fn new(value: T, arena: &blink_alloc::Blink) -> Self {
+        RawEntityRef::new_with_metadata(value, (), arena)
+    }
+
+    pub fn new_uninit(arena: &blink_alloc::Blink) -> RawEntityRef<MaybeUninit<T>, ()> {
+        RawEntityRef::new_uninit_with_metadata((), arena)
+    }
+}
+
+impl<T, Metadata> RawEntityRef<MaybeUninit<T>, Metadata> {
+    /// Converts to `RawEntityRef<T>`.
+    ///
+    /// # Safety
+    ///
+    /// Just like with [MaybeUninit::assume_init], it is up to the caller to guarantee that the
+    /// value really is in an initialized state. Calling this when the content is not yet fully
+    /// initialized causes immediate undefined behavior.
+    #[inline]
+    pub unsafe fn assume_init(self) -> RawEntityRef<T> {
+        let ptr = Self::into_inner(self);
+        unsafe { RawEntityRef::from_inner(ptr.cast()) }
+    }
+}
+
+impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Convert this handle into a raw pointer to the underlying entity.
     ///
     /// This should only be used in situations where the returned pointer will not be used to
-    /// actually access the underlying entity. Use [get] or [get_mut] for that. [EntityHandle]
+    /// actually access the underlying entity. Use [get] or [get_mut] for that. [RawEntityRef]
     /// ensures that Rust's aliasing rules are not violated when using it, but if you use the
     /// returned pointer to do so, no such guarantee is provided, and undefined behavior can
     /// result.
     ///
-    /// # SAFETY
+    /// # Safety
     ///
     /// The returned pointer _must_ not be used to create a reference to the underlying entity
     /// unless you can guarantee that such a reference does not violate Rust's aliasing rules.
@@ -147,183 +231,158 @@ impl<T> EntityHandle<T> {
     /// Do not use the pointer to create a mutable reference if other references exist, and do
     /// not use the pointer to create an immutable reference if a mutable reference exists or
     /// might be created while the immutable reference lives.
-    pub fn into_raw(self) -> NonNull<T> {
-        unsafe { NonNull::new_unchecked(self.inner.as_ref().as_ptr()) }
-    }
-}
-
-impl<T> EntityHandle<MaybeUninit<T>> {
-    /// Create an [EntityHandle] for an entity which may not be fully initialized.
-    ///
-    /// # SAFETY
-    ///
-    /// The safety rules are much the same as [EntityHandle::new], with the main difference
-    /// being that the `T` does not have to be initialized yet. No references to the `T` will
-    /// be created directly until [EntityHandle::assume_init] is called.
-    pub(crate) unsafe fn new_uninit(ptr: NonNull<EntityObj<MaybeUninit<T>>>) -> Self {
-        Self { inner: ptr }
+    pub fn into_raw(this: Self) -> *const T {
+        Self::as_ptr(&this)
     }
 
-    /// Converts to `EntityHandle<T>`.
-    ///
-    /// Just like with [MaybeUninit::assume_init], it is up to the caller to guarantee that the
-    /// value really is in an initialized state. Calling this when the content is not yet fully
-    /// initialized causes immediate undefined behavior.
-    pub unsafe fn assume_init(self) -> EntityHandle<T> {
-        EntityHandle {
-            inner: self.inner.cast(),
-        }
-    }
-}
+    pub fn as_ptr(this: &Self) -> *const T {
+        let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(this.inner);
 
-/// A [TrackedEntityHandle] is like [EntityHandle], except it provides built-in support for
-/// adding the entity to an [intrusive_collections::LinkedList] that doesn't require constructing
-/// a reference to the entity itself, and thus potentially causing an aliasing violation. Instead,
-/// the link is stored as part of the underlying allocation, but separate from the entity.
-pub struct TrackedEntityHandle<T> {
-    inner: NonNull<TrackedEntityObj<T>>,
-}
-impl<T> Clone for TrackedEntityHandle<T> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner }
+        // SAFETY: This cannot go through Deref::deref or RawEntityRef::inner because this
+        // is required to retain raw/mut provenance such that e.g. `get_mut` can write through
+        // the pointer after the RawEntityRef is recovered through `from_raw`
+        let ptr = unsafe { core::ptr::addr_of_mut!((*ptr).entity.cell) };
+        UnsafeCell::raw_get(ptr).cast_const()
     }
-}
-impl<T> TrackedEntityHandle<T> {
-    /// Create a new [TrackedEntityHandle] from a raw pointer to the underlying [TrackedEntityObj].
+
+    /// Convert a pointer returned by [RawEntityRef::into_raw] back into a [RawEntityRef].
     ///
-    /// # SAFETY
+    /// # Safety
     ///
-    /// This function has the same requirements around safety as [EntityHandle::new].
-    pub(crate) unsafe fn new(ptr: NonNull<TrackedEntityObj<T>>) -> Self {
-        Self { inner }
+    /// * It is _only_ valid to call this method on a pointer returned by [RawEntityRef::into_raw].
+    /// * The pointer must be a valid pointer for `T`
+    pub unsafe fn from_raw(ptr: *const T) -> Self {
+        let offset = unsafe { RawEntityMetadata::<T, Metadata>::data_offset(ptr) };
+
+        // Reverse the offset to find the original EntityObj
+        let entity_ptr = unsafe { ptr.byte_sub(offset) as *mut RawEntityMetadata<T, Metadata> };
+
+        unsafe { Self::from_ptr(entity_ptr) }
     }
 
     /// Get a dynamically-checked immutable reference to the underlying `T`
-    pub fn get(&self) -> EntityRef<'_, T> {
-        unsafe {
-            let obj = self.inner.as_ref();
-            obj.entity.borrow()
-        }
+    pub fn borrow(&self) -> EntityRef<'_, T> {
+        let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
     }
 
     /// Get a dynamically-checked mutable reference to the underlying `T`
-    pub fn get_mut(&mut self) -> EntityMut<'_, T> {
+    pub fn borrow_mut(&mut self) -> EntityMut<'_, T> {
+        let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() }
+    }
+
+    /// Try to get a dynamically-checked mutable reference to the underlying `T`
+    ///
+    /// Returns `None` if the entity is already borrowed
+    pub fn try_borrow_mut(&mut self) -> Option<EntityMut<'_, T>> {
+        let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }
+    }
+
+    pub fn ptr_eq(this: &Self, other: &Self) -> bool {
+        core::ptr::addr_eq(this.inner.as_ptr(), other.inner.as_ptr())
+    }
+
+    unsafe fn allocate_for_layout<F, F2>(
+        metadata: Metadata,
+        value_layout: Layout,
+        allocate: F,
+        mem_to_metadata: F2,
+    ) -> *mut RawEntityMetadata<T, Metadata>
+    where
+        F: FnOnce(Layout) -> Result<NonNull<[u8]>, AllocError>,
+        F2: FnOnce(*mut u8) -> *mut RawEntityMetadata<T, Metadata>,
+    {
+        use alloc::alloc::handle_alloc_error;
+
+        let layout = raw_entity_metadata_layout_for_value_layout::<Metadata>(value_layout);
         unsafe {
-            let obj = self.inner.as_ref();
-            obj.entity.borrow_mut()
+            RawEntityRef::try_allocate_for_layout(metadata, value_layout, allocate, mem_to_metadata)
+                .unwrap_or_else(|_| handle_alloc_error(layout))
         }
     }
 
-    /// Convert this handle into a raw pointer to the underlying entity.
-    ///
-    /// This should only be used in situations where the returned pointer will not be used to
-    /// actually access the underlying entity. Use [get] or [get_mut] for that. [EntityHandle]
-    /// ensures that Rust's aliasing rules are not violated when using it, but if you use the
-    /// returned pointer to do so, no such guarantee is provided, and undefined behavior can
-    /// result.
-    ///
-    /// # SAFETY
-    ///
-    /// The returned pointer _must_ not be used to create a reference to the underlying entity
-    /// unless you can guarantee that such a reference does not violate Rust's aliasing rules.
-    ///
-    /// Do not use the pointer to create a mutable reference if other references exist, and do
-    /// not use the pointer to create an immutable reference if a mutable reference exists or
-    /// might be created while the immutable reference lives.
-    pub fn into_raw(self) -> NonNull<T> {
-        unsafe { NonNull::new_unchecked(self.inner.as_ref().entity.as_ptr()) }
+    #[inline]
+    unsafe fn try_allocate_for_layout<F, F2>(
+        metadata: Metadata,
+        value_layout: Layout,
+        allocate: F,
+        mem_to_metadata: F2,
+    ) -> Result<*mut RawEntityMetadata<T, Metadata>, AllocError>
+    where
+        F: FnOnce(Layout) -> Result<NonNull<[u8]>, AllocError>,
+        F2: FnOnce(*mut u8) -> *mut RawEntityMetadata<T, Metadata>,
+    {
+        let layout = raw_entity_metadata_layout_for_value_layout::<Metadata>(value_layout);
+        let ptr = allocate(layout)?;
+        let inner = mem_to_metadata(ptr.as_non_null_ptr().as_ptr());
+        unsafe {
+            debug_assert_eq!(Layout::for_value_raw(inner), layout);
+
+            core::ptr::addr_of_mut!((*inner).metadata).write(metadata);
+            core::ptr::addr_of_mut!((*inner).entity.borrow).write(Cell::new(BorrowFlag::UNUSED));
+            #[cfg(debug_assertions)]
+            core::ptr::addr_of_mut!((*inner).entity.borrowed_at).write(Cell::new(None));
+        }
+
+        Ok(inner)
     }
 }
 
-impl<T> TrackedEntityHandle<MaybeUninit<T>> {
-    /// Create a [TrackedEntityHandle] for an entity which may not be fully initialized.
-    ///
-    /// # SAFETY
-    ///
-    /// The safety rules are much the same as [TrackedEntityHandle::new], with the main difference
-    /// being that the `T` does not have to be initialized yet. No references to the `T` will
-    /// be created directly until [TrackedEntityHandle::assume_init] is called.
-    pub(crate) unsafe fn new_uninit(ptr: NonNull<TrackedEntityObj<MaybeUninit<T>>>) -> Self {
-        Self { inner: ptr }
+impl<Metadata> RawEntityRef<dyn Any, Metadata> {
+    /// Returns true if the underlying value is a `T`
+    #[inline]
+    pub fn is<T: Any>(self) -> bool {
+        self.borrow().is::<T>()
     }
 
-    /// Converts to `TrackedEntityHandle<T>`.
+    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
     ///
-    /// Just like with [MaybeUninit::assume_init], it is up to the caller to guarantee that the
-    /// value really is in an initialized state. Calling this when the content is not yet fully
-    /// initialized causes immediate undefined behavior.
-    pub unsafe fn assume_init(self) -> TrackedEntityHandle<T> {
-        TrackedEntityHandle {
-            inner: self.inner.cast(),
+    /// If the cast is not valid for this reference, `Err` is returned containing the original value.
+    #[inline]
+    pub fn downcast<T: Any>(self) -> Result<RawEntityRef<T, Metadata>, Self> {
+        if self.borrow().is::<T>() {
+            unsafe { Ok(Self::downcast_unchecked(self)) }
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Casts this reference to the concrete type `T` without checking that the cast is valid.
+    ///
+    /// # Safety
+    ///
+    /// The referenced value must be of type `T`. Calling this method with the incorrect type is
+    /// _undefined behavior_.
+    #[inline]
+    pub unsafe fn downcast_unchecked<T: Any>(self) -> RawEntityRef<T, Metadata> {
+        unsafe {
+            let ptr = RawEntityRef::into_inner(self);
+            RawEntityRef::from_inner(ptr.cast())
         }
     }
 }
 
-unsafe impl<T> intrusive_collections::PointerOps for TrackedEntityHandle<T> {
-    type Pointer = TrackedEntityHandle<T>;
-    type Value = EntityObj<T>;
+impl<T, U, Metadata> core::ops::CoerceUnsized<RawEntityRef<U, Metadata>>
+    for RawEntityRef<T, Metadata>
+where
+    T: ?Sized + core::marker::Unsize<U>,
+    U: ?Sized,
+{
+}
 
-    unsafe fn from_raw(&self, value: *const Self::Value) -> Self::Pointer {
-        assert!(!value.is_null());
-        let offset = core::mem::offset_of!(TrackedEntityObj<T>, entity);
-        let ptr = value.cast_mut().byte_sub(offset).cast::<TrackedEntityObj<T>>();
-        debug_assert!(ptr.is_aligned());
-        TrackedEntityHandle::new(NonNull::new_unchecked(ptr))
-    }
-
-    fn into_raw(&self, ptr: Self::Pointer) -> *const Self::Value {
-        let ptr = ptr.into_raw().as_ptr().cast_const();
-        let offset = core::mem::offset_of!(EntityObj<T>, cell);
-        unsafe { ptr.byte_sub(offset).cast() }
+impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Pointer::fmt(&Self::as_ptr(self), f)
     }
 }
 
-/// An adapter for storing any `Entity` impl in a [intrusive_collections::LinkedList]
-#[derive(Default, Copy, Clone)]
-pub struct EntityAdapter<T>(core::marker::PhantomData<T>);
-impl<T> EntityAdapter<T> {
-    pub const fn new() -> Self {
-        Self(core::marker::PhantomData)
-    }
-}
-
-unsafe impl<T> intrusive_collections::Adapter for EntityAdapter<T> {
-    type LinkOps = intrusive_collections::linked_list::LinkOps;
-    type PointerOps = intrusive_collections::DefaultPointerOps<TrackedEntityHandle<T>>;
-
-    unsafe fn get_value(
-        &self,
-        link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
-    ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
-        let offset = core::mem::offset_of!(TrackedEntityObj<T>, link);
-        let ptr = link.as_ptr().cast_const().byte_sub(offset);
-        let offset = core::mem::offset_of!(TrackedEntityObj<T>, entity);
-        ptr.byte_add(offset)
-    }
-
-    unsafe fn get_link(
-        &self,
-        value: *const <Self::PointerOps as intrusive_collections::PointerOps>::Value,
-    ) -> <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr {
-        let offset = core::mem::offset_of!(TrackedEntityObj<T>, entity);
-        let ptr = value.byte_sub(offset);
-        let offset = core::mem::offset_of!(TrackedEntityObj<T>, link);
-        let ptr = ptr.byte_add(offset);
-        NonNull::new_unchecked(ptr.cast_mut())
-    }
-
-    fn link_ops(&self) -> &Self::LinkOps {
-        &intrusive_collections::linked_list::LinkOps
-    }
-
-    fn link_ops_mut(&mut self) -> &mut Self::LinkOps {
-        &mut intrusive_collections::linked_list::LinkOps
-    }
-
-    fn pointer_ops(&self) -> &Self::PointerOps {
-        const OPS: intrusive_collections::DefaultPointerOps<TrackedEntityHandle<T>>;
-
-        &OPS
+impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.borrow(), f)
     }
 }
 
@@ -341,15 +400,6 @@ impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
     }
 }
 impl<'b, T: ?Sized> EntityRef<'b, T> {
-    #[must_use]
-    #[inline]
-    pub fn clone(orig: &Self) -> Self {
-        Self {
-            value: orig.value,
-            borrow: orig.borrow.clone(),
-        }
-    }
-
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> EntityRef<'b, U>
     where
@@ -369,17 +419,118 @@ where
 {
 }
 
+impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityRef<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
+impl<T: ?Sized + Eq> Eq for EntityRef<'_, T> {}
+impl<T: ?Sized + PartialEq> PartialEq for EntityRef<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+impl<T: ?Sized + PartialOrd> PartialOrd for EntityRef<'_, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        (**self).partial_cmp(&**other)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        **self >= **other
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        **self > **other
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        **self <= **other
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        **self < **other
+    }
+}
+impl<T: ?Sized + Ord> Ord for EntityRef<'_, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+impl<T: ?Sized + Hash> Hash for EntityRef<'_, T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        (**self).hash(state);
+    }
+}
 
 /// A guard that provides exclusive access to an IR entity
-pub struct EntityMut<'a, T> {
+pub struct EntityMut<'b, T: ?Sized> {
+    /// The raw pointer to the underlying data
+    ///
+    /// This is a pointer rather than a `&'b mut T` to avoid `noalias` violations, because a
+    /// `EntityMut` argument doesn't hold exclusivity for its whole scope, only until it drops.
     value: NonNull<T>,
+    /// This value provides the drop glue for tracking that the underlying allocation is
+    /// mutably borrowed, but it is otherwise not read.
+    #[allow(unused)]
     borrow: BorrowRefMut<'b>,
+    /// `NonNull` is covariant over `T`, so we need to reintroduce invariance via phantom data
     _marker: core::marker::PhantomData<&'b mut T>,
+}
+impl<'b, T: ?Sized> EntityMut<'b, T> {
+    /// Splits an `EntityMut` into multiple `EntityMut`s for different components of the borrowed
+    /// data.
+    ///
+    /// The underlying entity will remain mutably borrowed until both returned `EntityMut`s go out
+    /// of scope.
+    ///
+    /// The entity is already mutably borrowed, so this cannot fail.
+    ///
+    /// This is an associated function that needs to be used as `EntityMut::map_split(...)`, so as
+    /// to avoid conflicting with any method of the same name accessible via the `Deref` impl.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use crate::*;
+    /// use blink_alloc::Blink;
+    ///
+    /// let alloc = Blink::default();
+    /// let entity = UnsafeEntityRef::new([1, 2, 3, 4], &alloc);
+    /// let borrow = entity.get_mut();
+    /// let (mut begin, mut end) = EntityMut::map_split(borrow, |slice| slice.split_at_mut(2));
+    /// assert_eq!(*begin, [1, 2]);
+    /// assert_eq!(*end, [3, 4]);
+    /// begin.copy_from_slice(&[4, 3]);
+    /// end.copy_from_slice(&[2, 1]);
+    /// ```
+    #[inline]
+    pub fn map_split<U: ?Sized, V: ?Sized, F>(
+        mut orig: Self,
+        f: F,
+    ) -> (EntityMut<'b, U>, EntityMut<'b, V>)
+    where
+        F: FnOnce(&mut T) -> (&mut U, &mut V),
+    {
+        let borrow = orig.borrow.clone();
+        let (a, b) = f(&mut *orig);
+        (
+            EntityMut {
+                value: NonNull::from(a),
+                borrow,
+                _marker: core::marker::PhantomData,
+            },
+            EntityMut {
+                value: NonNull::from(b),
+                borrow: orig.borrow,
+                _marker: core::marker::PhantomData,
+            },
+        )
+    }
 }
 impl<T: ?Sized> Deref for EntityMut<'_, T> {
     type Target = T;
@@ -405,41 +556,133 @@ where
 {
 }
 
+impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityMut<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
+impl<T: ?Sized + Eq> Eq for EntityMut<'_, T> {}
+impl<T: ?Sized + PartialEq> PartialEq for EntityMut<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+impl<T: ?Sized + PartialOrd> PartialOrd for EntityMut<'_, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        (**self).partial_cmp(&**other)
+    }
 
-/// An [EntityObj] is a wrapper around IR objects that are allocated in a [Context].
-///
-/// It ensures that any [EntityHandle] which references the underlying entity, adheres to Rust's
-/// aliasing rules.
-pub struct EntityObj<T> {
+    fn ge(&self, other: &Self) -> bool {
+        **self >= **other
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        **self > **other
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        **self <= **other
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        **self < **other
+    }
+}
+impl<T: ?Sized + Ord> Ord for EntityMut<'_, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+impl<T: ?Sized + Hash> Hash for EntityMut<'_, T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        (**self).hash(state);
+    }
+}
+
+// This type wraps the entity data with extra metadata we want to associate with the entity, but
+// separately from it, so that pointers to the metadata do not cause aliasing violations if the
+// entity itself is borrowed.
+//
+// The kind of metadata stored here is unconstrained, but in practice should be limited to things
+// that you _need_ to be able to access from a `RawEntityRef`, without aliasing the entity. For now
+// the main reason we use this is for the intrusive link used to store entities in an intrusive
+// linked list. We don't want traversing the intrusive list to require borrowing the entity, only
+// the link, unless we explicitly want to borrow the entity, thus we use the metadata field here
+// to hold the link.
+//
+// This has to be `pub` for implementing the traits required for the intrusive collections
+// integration, but its internals are hidden outside this module, and we hide it from the generated
+// docs as well.
+#[repr(C)]
+#[doc(hidden)]
+pub struct RawEntityMetadata<T: ?Sized, Metadata> {
+    metadata: Metadata,
+    entity: RawEntity<T>,
+}
+impl<T, Metadata> RawEntityMetadata<T, Metadata> {
+    pub(crate) fn new(value: T, metadata: Metadata) -> Self {
+        Self {
+            metadata,
+            entity: RawEntity::new(value),
+        }
+    }
+}
+impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
+    #[inline]
+    const fn metadata_offset() -> usize {
+        core::mem::offset_of!(RawEntityMetadata<(), Metadata>, metadata)
+    }
+
+    /// Get the offset within a `RawEntityMetadata` for the payload behind a pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must point to (and have valid metadata for) a previously valid instance of T, but
+    /// the T is allowed to be dropped.
+    unsafe fn data_offset(ptr: *const T) -> usize {
+        use core::mem::align_of_val_raw;
+
+        // Align the unsized value to the end of the RawEntityMetadata.
+        // Because RawEntityMetadata/RawEntity is repr(C), it will always be the last field in memory.
+        //
+        // SAFETY: since the only unsized types possible are slices, trait objects, and extern types,
+        // the input safety requirement is currently enough to satisfy the requirements of
+        // align_of_val_raw; but this is an implementation detail of the language that is unstable
+        unsafe { RawEntityMetadata::<(), Metadata>::data_offset_align(align_of_val_raw(ptr)) }
+    }
+
+    #[inline]
+    fn data_offset_align(align: usize) -> usize {
+        let layout = Layout::new::<RawEntityMetadata<(), Metadata>>();
+        layout.size() + layout.padding_needed_for(align)
+    }
+}
+
+fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layout {
+    Layout::new::<RawEntityMetadata<(), Metadata>>()
+        .extend(layout)
+        .unwrap()
+        .0
+        .pad_to_align()
+}
+
+/// A [RawEntity] wraps an entity to be allocated in a [Context], and provides dynamic borrow-
+/// checking functionality for [UnsafeEntityRef], thereby protecting the entity by ensuring that
+/// all accesses adhere to Rust's aliasing rules.
+#[repr(C)]
+struct RawEntity<T: ?Sized> {
     borrow: Cell<BorrowFlag>,
     #[cfg(debug_assertions)]
     borrowed_at: Cell<Option<&'static core::panic::Location<'static>>>,
     cell: UnsafeCell<T>,
 }
 
-/// A [TrackedEntityObj] is a wrapper around IR entities that are linked in to an
-/// [intrusive_collections::LinkedList] for tracking of that entity. This permits the linked list
-/// to be visited/mutated without borrowing the entities themselves, and thus risk violation of
-/// the aliasing rules.
-pub struct TrackedEntityObj<T> {
-    link: intrusive_collections::linked_list::LinkedListLink,
-    entity: EntityObj<T>,
-}
-impl<T> TrackedEntityObj<T> {
-    pub fn new(value: T) -> Self {
-        Self {
-            link: Default::default(),
-            entity: EntityObj::new(value),
-        }
-    }
-}
-
-impl<T> EntityObj<T> {
+impl<T> RawEntity<T> {
     pub fn new(value: T) -> Self {
         Self {
             borrow: Cell::new(BorrowFlag::UNUSED),
@@ -448,7 +691,9 @@ impl<T> EntityObj<T> {
             cell: UnsafeCell::new(value),
         }
     }
+}
 
+impl<T: ?Sized> RawEntity<T> {
     #[track_caller]
     #[inline]
     pub fn borrow(&self) -> EntityRef<'_, T> {
@@ -466,14 +711,14 @@ impl<T> EntityObj<T> {
                 #[cfg(debug_assertions)]
                 {
                     // `borrowed_at` is always the *first* active borrow
-                    if b.borrow.get() == 1 {
+                    if b.borrow.get() == BorrowFlag(1) {
                         self.borrowed_at.set(Some(core::panic::Location::caller()));
                     }
                 }
 
                 // SAFETY: `BorrowRef` ensures that there is only immutable access to the value
                 // while borrowed.
-                let value = unsafe { NonNull::new_unchecked(self.value.get()) };
+                let value = unsafe { NonNull::new_unchecked(self.cell.get()) };
                 Ok(EntityRef { value, borrow: b })
             }
             None => Err(AliasingViolationError {
@@ -504,11 +749,11 @@ impl<T> EntityObj<T> {
                 }
 
                 // SAFETY: `BorrowRefMut` guarantees unique access.
-                let value = unsafe { NonNull::new_unchecked(self.value.get()) };
+                let value = unsafe { NonNull::new_unchecked(self.cell.get()) };
                 Ok(EntityMut {
                     value,
                     borrow: b,
-                    _marker: PhantomData,
+                    _marker: core::marker::PhantomData,
                 })
             }
             None => Err(AliasingViolationError {
@@ -519,16 +764,6 @@ impl<T> EntityObj<T> {
                 kind: AliasingViolationKind::Mutable,
             }),
         }
-    }
-
-    #[inline]
-    pub fn as_ptr(&self) -> *mut T {
-        self.cell.get()
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.cell.get_mut()
     }
 }
 

@@ -1,7 +1,5 @@
 use core::any::Any;
 
-use crate::UnsafeRef;
-
 /// A [SymbolTable] is an IR entity which contains other IR entities, called _symbols_, each of
 /// which has a name, aka symbol, that uniquely identifies it amongst all other entities in the
 /// same [SymbolTable].
@@ -14,31 +12,19 @@ use crate::UnsafeRef;
 pub trait SymbolTable {
     /// The unique key type associated with entries in this symbol table
     type Key;
-
-    /// Check if `id` is associated with an entry of type `T` in this table
-    fn has_symbol_of_type<T>(&self, id: &Self::Key) -> bool
-    where
-        T: Symbol<Id = Self::Key>,
-    {
-        self.get::<T>(id)
-    }
+    /// The value type of an entry in the symbol table
+    type Entry;
 
     /// Get the entry for `id` in this table
-    fn get<T>(&self, id: &Self::Key) -> Option<UnsafeRef<T>>
-    where
-        T: Symbol<Id = Self::Key>;
+    fn get(&self, id: &Self::Key) -> Option<Self::Entry>;
 
     /// Insert `entry` in the symbol table.
     ///
     /// Returns `true` if successful, or `false` if an entry already exists
-    fn insert<T>(&self, entry: UnsafeRef<T>) -> bool
-    where
-        T: Symbol<Id = Self::Key>;
+    fn insert(&mut self, entry: Self::Entry) -> bool;
 
     /// Remove the symbol `id`, and return the entry if one was present.
-    fn remove<T>(&self, id: &Self::Key) -> Option<UnsafeRef<T>>
-    where
-        T: Symbol<Id = Self::Key>;
+    fn remove(&mut self, id: &Self::Key) -> Option<Self::Entry>;
 }
 
 /// A [Symbol] is an IR entity with an associated _symbol_, or name, which is expected to be unique
