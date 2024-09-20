@@ -53,6 +53,7 @@ clap = { version = "4.1", default-features = false, features = [
 ] }
 cranelift-entity = "0.108"
 cranelift-bforest = "0.108"
+compact_str = { version = "0.8", default-features = false }
 env_logger = "0.11"
 either = { version = "1.10", default-features = false }
 expect-test = "1.4.1"

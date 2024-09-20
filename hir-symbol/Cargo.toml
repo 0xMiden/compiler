@@ -12,10 +12,15 @@ readme.workspace = true
 edition.workspace = true
 
 [features]
-default = []
+default = ["std"]
+std = ["dep:parking_lot"]
 serde = ["dep:serde"]
+compact_str = ["dep:compact_str"]
 
 [dependencies]
+compact_str = { workspace = true, optional = true }
+lock_api = "0.4"
+parking_lot = { version = "0.12", optional = true }
 serde = { workspace = true, optional = true }
 
 [build-dependencies]

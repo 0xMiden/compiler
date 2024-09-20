@@ -1,26 +1,29 @@
-use core::{fmt, mem, ops::Deref, str};
-use std::{
-    collections::BTreeMap,
-    sync::{OnceLock, RwLock},
-};
+#![no_std]
 
-static SYMBOL_TABLE: OnceLock<SymbolTable> = OnceLock::new();
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+
+mod sync;
+
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{fmt, mem, ops::Deref, str};
 
 pub mod symbols {
     include!(env!("SYMBOLS_RS"));
 }
 
+static SYMBOL_TABLE: sync::LazyLock<SymbolTable> = sync::LazyLock::new(SymbolTable::default);
+
+#[derive(Default)]
 struct SymbolTable {
-    interner: RwLock<Interner>,
+    interner: sync::RwLock<Interner>,
 }
-impl SymbolTable {
-    pub fn new() -> Self {
-        Self {
-            interner: RwLock::new(Interner::new()),
-        }
-    }
-}
-unsafe impl Sync for SymbolTable {}
 
 /// A symbol is an interned string.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -68,8 +71,8 @@ impl Symbol {
     }
 
     /// Maps a string to its interned representation.
-    pub fn intern<S: Into<String>>(string: S) -> Self {
-        let string = string.into();
+    pub fn intern(string: impl ToString) -> Self {
+        let string = string.to_string();
         with_interner(|interner| interner.intern(string))
     }
 
@@ -122,6 +125,36 @@ impl<T: Deref<Target = str>> PartialEq<T> for Symbol {
         self.as_str() == other.deref()
     }
 }
+impl From<&'static str> for Symbol {
+    fn from(s: &'static str) -> Self {
+        with_interner(|interner| interner.insert(s))
+    }
+}
+impl From<String> for Symbol {
+    fn from(s: String) -> Self {
+        Self::intern(s)
+    }
+}
+impl From<Box<str>> for Symbol {
+    fn from(s: Box<str>) -> Self {
+        Self::intern(s)
+    }
+}
+impl From<alloc::borrow::Cow<'static, str>> for Symbol {
+    fn from(s: alloc::borrow::Cow<'static, str>) -> Self {
+        use alloc::borrow::Cow;
+        match s {
+            Cow::Borrowed(s) => s.into(),
+            Cow::Owned(s) => Self::intern(s),
+        }
+    }
+}
+#[cfg(feature = "compact_str")]
+impl From<compact_str::CompactString> for Symbol {
+    fn from(s: compact_str::CompactString) -> Self {
+        Self::intern(s.into_string())
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SymbolIndex(u32);
@@ -159,22 +192,26 @@ impl From<SymbolIndex> for usize {
     }
 }
 
-#[derive(Default)]
 struct Interner {
     pub names: BTreeMap<&'static str, Symbol>,
     pub strings: Vec<&'static str>,
 }
 
-impl Interner {
-    pub fn new() -> Self {
-        let mut this = Interner::default();
+impl Default for Interner {
+    fn default() -> Self {
+        let mut this = Self {
+            names: BTreeMap::default(),
+            strings: Vec::with_capacity(symbols::__SYMBOLS.len()),
+        };
         for (sym, s) in symbols::__SYMBOLS {
             this.names.insert(s, *sym);
             this.strings.push(s);
         }
         this
     }
+}
 
+impl Interner {
     pub fn intern(&mut self, string: String) -> Symbol {
         if let Some(&name) = self.names.get(string.as_str()) {
             return name;
@@ -189,7 +226,17 @@ impl Interner {
         name
     }
 
-    pub fn get(&self, symbol: Symbol) -> &str {
+    pub fn insert(&mut self, s: &'static str) -> Symbol {
+        if let Some(&name) = self.names.get(s) {
+            return name;
+        }
+        let name = Symbol::new(self.strings.len() as u32);
+        self.strings.push(s);
+        self.names.insert(s, name);
+        name
+    }
+
+    pub fn get(&self, symbol: Symbol) -> &'static str {
         self.strings[symbol.0.as_usize()]
     }
 }
@@ -197,14 +244,12 @@ impl Interner {
 // If an interner exists, return it. Otherwise, prepare a fresh one.
 #[inline]
 fn with_interner<T, F: FnOnce(&mut Interner) -> T>(f: F) -> T {
-    let table = SYMBOL_TABLE.get_or_init(SymbolTable::new);
-    let mut r = table.interner.write().unwrap();
-    f(&mut r)
+    let mut table = SYMBOL_TABLE.interner.write();
+    f(&mut table)
 }
 
 #[inline]
 fn with_read_only_interner<T, F: FnOnce(&Interner) -> T>(f: F) -> T {
-    let table = SYMBOL_TABLE.get_or_init(SymbolTable::new);
-    let r = table.interner.read().unwrap();
-    f(&r)
+    let table = SYMBOL_TABLE.interner.read();
+    f(&table)
 }

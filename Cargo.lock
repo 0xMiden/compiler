@@ -3405,6 +3405,9 @@ name = "midenc-hir-symbol"
 version = "0.0.7"
 dependencies = [
  "Inflector",
+ "compact_str",
+ "lock_api",
+ "parking_lot",
  "rustc-hash 1.1.0",
  "serde 1.0.210",
  "toml 0.8.19",
