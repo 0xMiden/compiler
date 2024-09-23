@@ -217,6 +217,11 @@ impl Type {
         matches!(self, Self::Array(_, _))
     }
 
+    #[inline]
+    pub fn is_list(&self) -> bool {
+        matches!(self, Self::List(_))
+    }
+
     /// Returns true if `self` and `other` are compatible operand types for a binary operator, e.g.
     /// `add`
     ///

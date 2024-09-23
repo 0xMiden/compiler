@@ -1371,12 +1371,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "downcast-rs"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
-
-[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3443,9 +3437,9 @@ version = "0.0.6"
 dependencies = [
  "anyhow",
  "blink-alloc",
+ "compact_str",
  "cranelift-entity",
  "derive_more",
- "downcast-rs",
  "either",
  "hashbrown 0.14.5",
  "indexmap 2.5.0",

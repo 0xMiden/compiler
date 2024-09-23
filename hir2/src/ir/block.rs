@@ -2,12 +2,16 @@ use core::fmt;
 
 use super::*;
 
+/// A pointer to a [Block]
 pub type BlockRef = UnsafeIntrusiveEntityRef<Block>;
 /// An intrusive, doubly-linked list of [Block]
 pub type BlockList = EntityList<Block>;
+/// A cursor into a [BlockList]
 pub type BlockCursor<'a> = EntityCursor<'a, Block>;
+/// A mutable cursor into a [BlockList]
 pub type BlockCursorMut<'a> = EntityCursorMut<'a, Block>;
 
+/// The unique identifier for a [Block]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct BlockId(u32);
@@ -37,6 +41,21 @@ impl fmt::Display for BlockId {
     }
 }
 
+/// Represents a basic block in the IR.
+///
+/// Basic blocks are used in SSA regions to provide the structure of the control-flow graph.
+/// Operations within a basic block appear in the order they will be executed.
+///
+/// A block must have a [traits::Terminator], an operation which transfers control to another block
+/// in the same region, or out of the containing operation (e.g. returning from a function).
+///
+/// Blocks have _predecessors_ and _successors_, representing the inbound and outbound edges
+/// (respectively) formed by operations that transfer control between blocks. A block can have
+/// zero or more predecessors and/or successors. A well-formed region will generally only have a
+/// single block (the entry block) with no predecessors (i.e. no unreachable blocks), and no blocks
+/// with both multiple predecessors _and_ multiple successors (i.e. no critical edges). It is valid
+/// to have both unreachable blocks and critical edges in the IR, but they must be removed during
+/// the course of compilation.
 pub struct Block {
     /// The unique id of this block
     id: BlockId,
@@ -73,10 +92,6 @@ impl Entity for Block {
 impl Usable for Block {
     type Use = BlockOperand;
 
-    fn is_used(&self) -> bool {
-        !self.uses.is_empty()
-    }
-
     #[inline(always)]
     fn uses(&self) -> &BlockOperandList {
         &self.uses
@@ -85,22 +100,6 @@ impl Usable for Block {
     #[inline(always)]
     fn uses_mut(&mut self) -> &mut BlockOperandList {
         &mut self.uses
-    }
-
-    fn iter_uses(&self) -> BlockOperandIter<'_> {
-        self.uses.iter()
-    }
-
-    fn first_use(&self) -> BlockOperandCursor<'_> {
-        self.uses.front()
-    }
-
-    fn first_use_mut(&mut self) -> BlockOperandCursorMut<'_> {
-        self.uses.front_mut()
-    }
-
-    fn insert_use(&mut self, user: BlockOperandRef) {
-        self.uses.push_back(user);
     }
 }
 impl Block {
@@ -177,7 +176,9 @@ impl Block {
 pub type BlockOperandRef = UnsafeIntrusiveEntityRef<BlockOperand>;
 /// An intrusive, doubly-linked list of [BlockOperand]
 pub type BlockOperandList = EntityList<BlockOperand>;
+#[allow(unused)]
 pub type BlockOperandCursor<'a> = EntityCursor<'a, BlockOperand>;
+#[allow(unused)]
 pub type BlockOperandCursorMut<'a> = EntityCursorMut<'a, BlockOperand>;
 pub type BlockOperandIter<'a> = EntityIter<'a, BlockOperand>;
 

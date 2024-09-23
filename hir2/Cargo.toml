@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["rustc-demangle/std"]
+std = ["rustc-demangle/std", "compact_str/std"]
 serde = [
     "dep:serde",
     "dep:serde_repr",
@@ -33,7 +33,7 @@ blink-alloc = { version = "0.3", default-features = false, features = [
 ] }
 either.workspace = true
 cranelift-entity.workspace = true
-downcast-rs = { version = "1.2", default-features = false }
+compact_str.workspace = true
 hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true

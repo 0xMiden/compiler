@@ -1,25 +1,128 @@
 use core::fmt;
 
 use super::*;
-use crate::{formatter, CallConv, Linkage};
+use crate::{
+    derive,
+    dialects::hir::HirDialect,
+    formatter,
+    traits::{CallableOpInterface, SingleRegion},
+    CallConv, Symbol, SymbolName, SymbolUse, SymbolUseIter, SymbolUseList, Visibility,
+};
 
-#[derive(Spanned)]
-pub struct Function {
-    #[span]
-    op: Operation,
-    id: FunctionIdent,
-    signature: Signature,
+trait UsableSymbol = Usable<Use = SymbolUse>;
+
+derive! {
+    pub struct Function: Op {
+        #[dialect]
+        dialect: HirDialect,
+        #[region]
+        body: RegionRef,
+        #[attr]
+        name: Ident,
+        #[attr]
+        signature: Signature,
+        /// The uses of this function as a symbol
+        uses: SymbolUseList,
+    }
+
+    derives SingleRegion;
+    implements UsableSymbol, Symbol, CallableOpInterface;
 }
-impl Symbol for Function {
-    type Id = Ident;
 
-    fn id(&self) -> Self::Id {
-        self.id.function
+impl Usable for Function {
+    type Use = SymbolUse;
+
+    #[inline(always)]
+    fn uses(&self) -> &EntityList<Self::Use> {
+        &self.uses
+    }
+
+    #[inline(always)]
+    fn uses_mut(&mut self) -> &mut EntityList<Self::Use> {
+        &mut self.uses
     }
 }
-impl Function {
-    pub fn signature(&self) -> &Signature {
-        &self.signature
+
+impl Symbol for Function {
+    #[inline(always)]
+    fn as_operation(&self) -> &Operation {
+        &self.op
+    }
+
+    #[inline(always)]
+    fn as_operation_mut(&mut self) -> &mut Operation {
+        &mut self.op
+    }
+
+    fn name(&self) -> SymbolName {
+        Self::name(self).as_symbol()
+    }
+
+    /// Set the name of this symbol
+    fn set_name(&mut self, name: SymbolName) {
+        let mut id = *self.name();
+        id.name = name;
+        Function::set_name(self, id)
+    }
+
+    /// Get the visibility of this symbol
+    fn visibility(&self) -> Visibility {
+        self.signature().visibility
+    }
+
+    /// Returns true if this symbol has private visibility
+    #[inline]
+    fn is_private(&self) -> bool {
+        self.signature().is_private()
+    }
+
+    /// Returns true if this symbol has public visibility
+    #[inline]
+    fn is_public(&self) -> bool {
+        self.signature().is_public()
+    }
+
+    /// Sets the visibility of this symbol
+    fn set_visibility(&mut self, visibility: Visibility) {
+        self.signature_mut().visibility = visibility;
+    }
+
+    /// Get all of the uses of this symbol that are nested within `from`
+    fn symbol_uses(&self, from: OperationRef) -> SymbolUseIter {
+        todo!()
+    }
+
+    /// Return true if there are no uses of this symbol nested within `from`
+    fn symbol_uses_known_empty(&self, from: OperationRef) -> SymbolUseIter {
+        todo!()
+    }
+
+    /// Attempt to replace all uses of this symbol nested within `from`, with the provided replacement
+    fn replace_all_uses(&self, replacement: SymbolRef, from: OperationRef) -> Result<(), Report> {
+        todo!()
+    }
+
+    /// Returns true if this operation is a declaration, rather than a definition, of a symbol
+    ///
+    /// The default implementation assumes that all operations are definitions
+    #[inline]
+    fn is_declaration(&self) -> bool {
+        self.body().is_empty()
+    }
+}
+
+impl CallableOpInterface for Function {
+    fn get_callable_region(&self) -> Option<RegionRef> {
+        if self.is_declaration() {
+            None
+        } else {
+            self.regions().front().as_pointer()
+        }
+    }
+
+    #[inline]
+    fn signature(&self) -> &Signature {
+        Function::signature(self)
     }
 }
 
@@ -125,6 +228,20 @@ impl formatter::PrettyPrint for AbiParam {
     }
 }
 
+impl fmt::Display for AbiParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut builder = f.debug_map();
+        builder.entry(&"ty", &format_args!("{}", &self.ty));
+        if !matches!(self.purpose, ArgumentPurpose::Default) {
+            builder.entry(&"purpose", &format_args!("{}", &self.purpose));
+        }
+        if !matches!(self.extension, ArgumentExtension::None) {
+            builder.entry(&"extension", &format_args!("{}", &self.extension));
+        }
+        builder.finish()
+    }
+}
+
 /// A [Signature] represents the type, ABI, and linkage of a function.
 ///
 /// A function signature provides us with all of the necessary detail to correctly
@@ -139,9 +256,37 @@ pub struct Signature {
     pub results: Vec<AbiParam>,
     /// The calling convention that applies to this function
     pub cc: CallConv,
-    /// The linkage that should be used for this function
-    pub linkage: Linkage,
+    /// The linkage/visibility that should be used for this function
+    pub visibility: Visibility,
 }
+
+crate::define_attr_type!(Signature);
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .key(&"params")
+            .value_with(|f| {
+                let mut builder = f.debug_list();
+                for param in self.params.iter() {
+                    builder.entry(&format_args!("{param}"));
+                }
+                builder.finish()
+            })
+            .key(&"results")
+            .value_with(|f| {
+                let mut builder = f.debug_list();
+                for param in self.params.iter() {
+                    builder.entry(&format_args!("{param}"));
+                }
+                builder.finish()
+            })
+            .entry(&"cc", &format_args!("{}", &self.cc))
+            .entry(&"visibility", &format_args!("{}", &self.visibility))
+            .finish()
+    }
+}
+
 impl Signature {
     /// Create a new signature with the given parameter and result types,
     /// for a public function using the `SystemV` calling convention
@@ -153,18 +298,18 @@ impl Signature {
             params: params.into_iter().collect(),
             results: results.into_iter().collect(),
             cc: CallConv::SystemV,
-            linkage: Linkage::External,
+            visibility: Visibility::Public,
         }
     }
 
     /// Returns true if this function is externally visible
     pub fn is_public(&self) -> bool {
-        matches!(self.linkage, Linkage::External)
+        matches!(self.visibility, Visibility::Public)
     }
 
     /// Returns true if this function is only visible within it's containing module
     pub fn is_private(&self) -> bool {
-        matches!(self.linkage, Linkage::Internal)
+        matches!(self.visibility, Visibility::Public)
     }
 
     /// Returns true if this function is a kernel function
@@ -202,7 +347,7 @@ impl Signature {
 impl Eq for Signature {}
 impl PartialEq for Signature {
     fn eq(&self, other: &Self) -> bool {
-        self.linkage == other.linkage
+        self.visibility == other.visibility
             && self.cc == other.cc
             && self.params.len() == other.params.len()
             && self.results.len() == other.results.len()

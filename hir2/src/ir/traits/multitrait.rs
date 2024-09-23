@@ -82,6 +82,12 @@ impl MultiTraitVtable {
         }
     }
 
+    #[allow(unused)]
+    #[inline]
+    pub const fn data_ptr(&self) -> *mut () {
+        self.data
+    }
+
     pub(crate) unsafe fn set_data_ptr<T: Any + 'static>(&mut self, ptr: *mut T) {
         assert!(!ptr.is_null());
         assert!(ptr.is_aligned());

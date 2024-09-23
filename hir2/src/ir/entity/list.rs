@@ -249,6 +249,12 @@ impl<'a, T> EntityCursor<'a, T> {
         self.cursor.clone_pointer()
     }
 
+    /// Consume the cursor and convert it into a borrow of the current entity, or `None` if null.
+    #[inline]
+    pub fn into_borrow(self) -> Option<EntityRef<'a, T>> {
+        self.cursor.get().map(|item| item.borrow())
+    }
+
     /// Moves the cursor to the next element of the [EntityList].
     ///
     /// If the cursor is pointing to the null object then this will move it to the front of the
@@ -345,6 +351,18 @@ impl<'a, T> EntityCursorMut<'a, T> {
     #[inline]
     pub fn as_pointer(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         self.cursor.as_cursor().clone_pointer()
+    }
+
+    /// Consume the cursor and convert it into a borrow of the current entity, or `None` if null.
+    #[inline]
+    pub fn into_borrow(self) -> Option<EntityRef<'a, T>> {
+        self.cursor.into_ref().map(|item| item.borrow())
+    }
+
+    /// Consume the cursor and convert it into a mutable borrow of the current entity, or `None` if null.
+    #[inline]
+    pub fn into_borrow_mut(self) -> Option<EntityMut<'a, T>> {
+        self.cursor.into_ref().map(|item| item.borrow_mut())
     }
 
     /// Moves the cursor to the next element of the [EntityList].

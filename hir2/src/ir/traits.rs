@@ -1,8 +1,11 @@
+mod callable;
 mod multitrait;
+mod types;
 
 use midenc_session::diagnostics::Severity;
 
 pub(crate) use self::multitrait::MultiTraitVtable;
+pub use self::{callable::*, types::*};
 use crate::{derive, Context, Operation, Report, Spanned};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
@@ -80,61 +83,6 @@ derive! {
 }
 
 derive! {
-    /// Op expects all operands to be of the same type
-    pub trait SameTypeOperands {}
-
-    verify {
-        fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            if let Some((first_operand, operands)) = op.operands().split_first() {
-                let (expected_ty, set_by) = {
-                    let operand = first_operand.borrow();
-                    let value = operand.value();
-                    (value.ty().clone(), value.span())
-                };
-                for operand in operands {
-                    let operand = operand.borrow();
-                    let value = operand.value();
-                    let value_ty = value.ty();
-                    if value_ty != &expected_ty {
-                        return Err(context
-                            .session
-                            .diagnostics
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(
-                                op.span(),
-                                "this operation expects all operands to be of the same type"
-                            )
-                            .with_secondary_label(
-                                set_by,
-                                "inferred the expected type from this value"
-                            )
-                            .with_secondary_label(
-                                value.span(),
-                                "which differs from this value"
-                            )
-                            .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
-                            .into_report()
-                        );
-                    }
-                }
-            }
-
-            Ok(())
-        }
-    }
-}
-
-derive! {
-    /// Op expects all operands and results to be of the same type
-    ///
-    /// TODO(pauls): Implement verification for this. Ideally we could require `SameTypeOperands`
-    /// as a super trait, check the operands using its implementation, and then check the results
-    /// separately
-    pub trait SameOperandsAndResultType {}
-}
-
-derive! {
     /// Op's regions have no arguments
     pub trait NoRegionArguments {}
 
@@ -180,6 +128,31 @@ derive! {
                         )
                         .into_report());
                 }
+            }
+
+            Ok(())
+        }
+    }
+}
+
+derive! {
+    /// Op has a single region
+    pub trait SingleRegion {}
+
+    verify {
+        fn has_exactly_one_region(op: &Operation, context: &Context) -> Result<(), Report> {
+            let num_regions = op.num_regions();
+            if num_regions != 1 {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operation")
+                    .with_primary_label(
+                        op.span(),
+                        format!("this operation requires exactly one region, but got {num_regions}")
+                    )
+                    .into_report());
             }
 
             Ok(())

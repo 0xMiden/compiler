@@ -4,13 +4,19 @@ use crate::Operation;
 ///
 /// TODO(pauls):
 ///
-/// * Implement `#[region]` support
-/// * Implement `#[successor]` support
-/// * Implement `#[successors]` support for variadic successors
-/// * Implement `#[successors(interface)]` to access successors through `SuccessorInterface`
 /// * Support doc comments
 /// * Implement type constraints/inference
 /// * Implement `verify` blocks for custom verification rules
+/// * FIX: Currently #[operands] simply adds boilerplate for creating an operation with those
+///   operands, but it does not create methods to access them, and simply adds them in with the
+///   other operands. We should figure out how to store operands in such a way that multiple operand
+///   groups can be maintained even when adding/removing operands later.
+/// * FIX: Currently #[successors] adds a field to the struct to store whatever custom type is used
+///   to represent the successors, but these successors are not reachable from the Operation backing
+///   the op, and as a result, any successor operations acting from the Operation and not the Op may
+///   cause the two to converge. Like the #[operands] issue above, we need to store the actual
+///   successor in the Operation, and provide some way to map between the two, OR change how we
+///   represent successors to allow storing arbitrary successor-like types in the Operation
 #[macro_export]
 macro_rules! derive {
     (
@@ -78,32 +84,8 @@ macro_rules! derive {
             )*
         }
 
-        $($t:tt)*
-    ) => {
-        $crate::__derive_op!(
-            $(#[$outer])*
-            #[derive($crate::Spanned)]
-            $vis struct $Op {
-                $(
-                    $(#[$inner $($args)*])*
-                    $Field: $FieldTy
-                ),*
-            }
-        );
-
-        $($t)*
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis struct $Op:ident : Op implements $OpTrait:ident {
-            $(
-                $(#[$inner:ident $($args:tt)*])*
-                $Field:ident: $FieldTy:ty,
-            )*
-        }
-
-        $($t:tt)*
+        $(derives $DerivedOpTrait:ident $(, $MoreDerivedTraits:ident)*;)*
+        $(implements $ImplementedOpTrait:ident $(, $MoreImplementedTraits:ident)*;)*
     ) => {
         $crate::__derive_op!(
             $(#[$outer])*
@@ -114,37 +96,19 @@ macro_rules! derive {
                 )*
             }
 
-            implement $OpTrait;
-        );
-
-        $($t)*
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis struct $Op:ident : Op implements $OpTrait1:ident $(, $OpTraitRest:ident)* {
             $(
-                $(#[$inner:ident $($args:tt)*])*
-                $Field:ident: $FieldTy:ty,
-            )*
-        }
-
-        $($t:tt)*
-    ) => {
-        $crate::__derive_op!(
-            $(#[$outer])*
-            $vis struct $Op {
+                derives $DerivedOpTrait
                 $(
-                    $(#[$inner $($args)*])*
-                    $Field: $FieldTy,
+                    derives $MoreDerivedTraits
                 )*
-            }
-
-            implement $OpTrait1
-            $(, implement $OpTraitRest)*;
+            )*
+            $(
+                implements $ImplementedOpTrait
+                $(
+                    implements $MoreImplementedTraits
+                )*
+            )*
         );
-
-        $($t)*
     };
 }
 
@@ -229,9 +193,10 @@ macro_rules! __derive_op {
             )*
         }
 
-        $(implement $OpTrait:ident),*;
+        $(derives $DerivedOpTrait:ident)*
+        $(implements $ImplementedOpTrait:ident)*
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -239,15 +204,25 @@ macro_rules! __derive_op {
                 $(
                     {
                         unprocessed: [$(#[$inner $($args)*])*],
+                        ignore: [],
                         field: $Field,
                         field_type: $FieldTy,
                     }
                 )*
             ],
             processed: {
+                fields: [],
                 dialect: [],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [],
+                regions_count: [0usize],
+                regions: [],
+                successor_groups_count: [0usize],
+                successor_groups: [],
+                successors_count: [0usize],
+                successors: [],
+                operand_groups_count: [0usize],
+                operand_groups: [],
                 operands_count: [0usize],
                 operands: [],
                 results_count: [0usize],
@@ -255,7 +230,11 @@ macro_rules! __derive_op {
             }
         }
     };
+}
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __derive_op_processor {
     // Handle duplicate `dialect` attr
     (
         $(#[$outer:meta])*
@@ -267,15 +246,25 @@ macro_rules! __derive_op {
                     #[dialect]
                     $($attrs_rest:tt)*
                 ],
+                ignore: [$($IgnoredReason:tt)*],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$(dialect_processed:tt)+],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
@@ -296,22 +285,32 @@ macro_rules! __derive_op {
                     #[dialect]
                     $($attrs_rest:tt)*
                 ],
+                ignore: [$($IgnoredReason:tt)*],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
             results: [$($results_processed:tt)*],
         }
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -320,15 +319,241 @@ macro_rules! __derive_op {
                     unprocessed: [
                         $($attrs_rest)*
                     ],
+                    ignore: [dialect $($IgnoredReason)*],
                     field: $Field,
                     field_type: $FieldTy,
                 }
                 $($fields_rest)*
             ],
             processed: {
+                fields: [$($extra_fields_processed)*],
                 dialect: [dialect $FieldTy],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle `region` attr
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [
+                    #[region $($args:tt)*]
+                    $($attrs_rest:tt)*
+                ],
+                ignore: [$($IgnoredReason:tt)*],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                {
+                    unprocessed: [
+                        $($attrs_rest)*
+                    ],
+                    ignore: [region $($IgnoredReason)*],
+                    field: $Field,
+                    field_type: $FieldTy,
+                }
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [1usize + $regions_count],
+                regions: [region $Field at $regions_count $($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle `successor` attr
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [
+                    #[successor $($args:tt)*]
+                    $($attrs_rest:tt)*
+                ],
+                ignore: [$($IgnoredReason:tt)*],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                {
+                    unprocessed: [
+                        $($attrs_rest)*
+                    ],
+                    ignore: [successor $($IgnoredReason)*],
+                    field: $Field,
+                    field_type: $FieldTy,
+                }
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [1usize + $succ_count],
+                successors: [successor $Field at $succ_count $($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle `successors` attr
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [
+                    #[successors $($args:tt)*]
+                    $($attrs_rest:tt)*
+                ],
+                ignore: [$($IgnoredReason:tt)*],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                {
+                    unprocessed: [
+                        $($attrs_rest)*
+                    ],
+                    ignore: [successors $($IgnoredReason)*],
+                    field: $Field,
+                    field_type: $FieldTy,
+                }
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [1usize + $succ_groups_count],
+                successor_groups: [successors $Field : $FieldTy $($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
                 operands_count: [$operands_count],
                 operands: [$($operands_processed)*],
                 results_count: [$results_count],
@@ -348,22 +573,32 @@ macro_rules! __derive_op {
                     #[operand $($args:tt)*]
                     $($attrs_rest:tt)*
                 ],
+                ignore: [$($IgnoredReason:tt)*],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$($dialect_processed:tt)*],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
             results: [$($results_processed:tt)*],
         }
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -372,17 +607,99 @@ macro_rules! __derive_op {
                     unprocessed: [
                         $($attrs_rest)*
                     ],
+                    ignore: [operand $($IgnoredReason)*],
                     field: $Field,
                     field_type: $FieldTy,
                 }
                 $($fields_rest)*
             ],
             processed: {
+                fields: [$($extra_fields_processed)*],
                 dialect: [$($dialect_processed)*],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
                 operands_count: [1usize + $operands_count],
                 operands: [operand $Field at $operands_count $($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle `operands` attr
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [
+                    #[operands $($args:tt)*]
+                    $($attrs_rest:tt)*
+                ],
+                ignore: [$($IgnoredReason:tt)*],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                {
+                    unprocessed: [
+                        $($attrs_rest)*
+                    ],
+                    ignore: [operands $($IgnoredReason)*],
+                    field: $Field,
+                    field_type: $FieldTy,
+                }
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [1usize + $operand_groups_count],
+                operand_groups: [operands $Field at $operand_groups_count $($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
                 results_count: [$results_count],
                 results: [$($results_processed)*],
             }
@@ -400,22 +717,32 @@ macro_rules! __derive_op {
                     #[result $($args:tt)*]
                     $($attrs_rest:tt)*
                 ],
+                ignore: [$($IgnoredReason:tt)*],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$($dialect_processed:tt)*],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
             results: [$($results_processed:tt)*],
         }
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -424,15 +751,25 @@ macro_rules! __derive_op {
                     unprocessed: [
                         $($attrs_rest)*
                     ],
+                    ignore: [result $($IgnoredReason)*],
                     field: $Field,
                     field_type: $FieldTy,
                 }
                 $($fields_rest)*
             ],
             processed: {
+                fields: [$($extra_fields_processed)*],
                 dialect: [$($dialect_processed)*],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
                 operands_count: [$operands_count],
                 operands: [$($operands_processed)*],
                 results_count: [1usize + $results_count],
@@ -452,22 +789,32 @@ macro_rules! __derive_op {
                     #[attr $($args:tt)*]
                     $($attrs_rest:tt)*
                 ],
+                ignore: [$($IgnoredReason:tt)*],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$($dialect_processed:tt)*],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
             results: [$($results_processed:tt)*],
         }
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -476,15 +823,25 @@ macro_rules! __derive_op {
                     unprocessed: [
                         $($attrs_rest)*
                     ],
+                    ignore: [attr $($IgnoredReason)*],
                     field: $Field,
                     field_type: $FieldTy,
                 }
                 $($fields_rest)*
             ],
             processed: {
+                fields: [$($extra_fields_processed)*],
                 dialect: [$($dialect_processed)*],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [attr $Field: $FieldTy $($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
                 operands_count: [$operands_count],
                 operands: [$($operands_processed)*],
                 results_count: [$results_count],
@@ -493,7 +850,79 @@ macro_rules! __derive_op {
         }
     };
 
-    // Handle end of unprocessed attributes
+    // Handle `doc` attr
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [
+                    #[doc $($args:tt)*]
+                    $($attrs_rest:tt)*
+                ],
+                ignore: [$($IgnoredReason:tt)*],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                {
+                    unprocessed: [
+                        $($attrs_rest)*
+                    ],
+                    ignore: [$($IgnoredReason)*],
+                    field: $Field,
+                    field_type: $FieldTy,
+                }
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle end of unprocessed attributes (ignore=false)
     (
         $(#[$outer:meta])*
         $vis:vis struct $Op:ident;
@@ -501,22 +930,32 @@ macro_rules! __derive_op {
         unprocessed: [
             {
                 unprocessed: [],
+                ignore: [],
                 field: $Field:ident,
                 field_type: $FieldTy:ty,
             }
             $($fields_rest:tt)*
         ],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$($dialect_processed:tt)*],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
             results: [$($results_processed:tt)*],
         }
     ) => {
-        $crate::__derive_op! {
+        $crate::__derive_op_processor! {
             $(#[$outer])*
             $vis struct $Op;
 
@@ -524,9 +963,79 @@ macro_rules! __derive_op {
                 $($fields_rest)*
             ],
             processed: {
+                fields: [field $Field: $FieldTy $($extra_fields_processed)*],
                 dialect: [$($dialect_processed)*],
-                traits: [$(implement $OpTrait),*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
                 attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
+                operands_count: [$operands_count],
+                operands: [$($operands_processed)*],
+                results_count: [$results_count],
+                results: [$($results_processed)*],
+            }
+        }
+    };
+
+    // Handle end of unprocessed attributes (ignore=true)
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $Op:ident;
+
+        unprocessed: [
+            {
+                unprocessed: [],
+                ignore: [$($IgnoredReason:tt)+],
+                field: $Field:ident,
+                field_type: $FieldTy:ty,
+            }
+            $($fields_rest:tt)*
+        ],
+        processed: {
+            fields: [$($extra_fields_processed:tt)*],
+            dialect: [$($dialect_processed:tt)*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
+            attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
+            operands_count: [$operands_count:expr],
+            operands: [$($operands_processed:tt)*],
+            results_count: [$results_count:expr],
+            results: [$($results_processed:tt)*],
+        }
+    ) => {
+        $crate::__derive_op_processor! {
+            $(#[$outer])*
+            $vis struct $Op;
+
+            unprocessed: [
+                $($fields_rest)*
+            ],
+            processed: {
+                fields: [$($extra_fields_processed)*],
+                dialect: [$($dialect_processed)*],
+                traits: [$(derives $DerivedOpTrait),* $(implements $ImplementedOpTrait),*],
+                attrs: [$($attrs_processed)*],
+                regions_count: [$regions_count],
+                regions: [$($regions_processed)*],
+                successor_groups_count: [$succ_groups_count],
+                successor_groups: [$($succ_groups_processed)*],
+                successors_count: [$succ_count],
+                successors: [$($succ_processed)*],
+                operand_groups_count: [$operand_groups_count],
+                operand_groups: [$($operand_groups_processed)*],
                 operands_count: [$operands_count],
                 operands: [$($operands_processed)*],
                 results_count: [$results_count],
@@ -542,9 +1051,18 @@ macro_rules! __derive_op {
 
         unprocessed: [],
         processed: {
+            fields: [$($extra_fields_processed:tt)*],
             dialect: [$($dialect_processed:tt)*],
-            traits: [$(implement $OpTrait:ident),*],
+            traits: [$(derives $DerivedOpTrait:ident),* $(implements $ImplementedOpTrait:ident),*],
             attrs: [$($attrs_processed:tt)*],
+            regions_count: [$regions_count:expr],
+            regions: [$($regions_processed:tt)*],
+            successor_groups_count: [$succ_groups_count:expr],
+            successor_groups: [$($succ_groups_processed:tt)*],
+            successors_count: [$succ_count:expr],
+            successors: [$($succ_processed:tt)*],
+            operand_groups_count: [$operand_groups_count:expr],
+            operand_groups: [$($operand_groups_processed:tt)*],
             operands_count: [$operands_count:expr],
             operands: [$($operands_processed:tt)*],
             results_count: [$results_count:expr],
@@ -556,8 +1074,15 @@ macro_rules! __derive_op {
             $vis struct $Op;
 
             $($dialect_processed)*;
-            $(implement $OpTrait),*;
+            $($extra_fields_processed)*;
+            $(derives $DerivedOpTrait)*;
+            $(implements $ImplementedOpTrait)*;
             $($attrs_processed)*;
+            regions $regions_count;
+            $($regions_processed)*;
+            $($succ_groups_processed)*;
+            $($succ_processed)*;
+            $($operand_groups_processed)*;
             $($operands_processed)*;
             $($results_processed)*;
         );
@@ -572,25 +1097,48 @@ macro_rules! __derive_op_impl {
         $vis:vis struct $Op:ident;
 
         dialect $Dialect:ty;
-        $(implement $OpTrait:ident),*;
+        $(field $Field:ident: $FieldTy:ty)*;
+        $(derives $DerivedOpTrait:ident)*;
+        $(implements $ImplementedOpTrait:ident)*;
         $(attr $AttrField:ident: $AttrTy:ty)*;
+        regions $NumRegions:expr;
+        $(region $RegionField:ident at $RegionIdx:expr)*;
+        $(successors $SuccGroupField:ident: $SuccGroupTy:ty)*;
+        $(successor $SuccField:ident at $SuccIdx:expr)*;
+        $(operands $OperandGroupField:ident at $OperandGroupIdx:expr)*;
         $(operand $Operand:ident at $OperandIdx:expr)*;
         $(result $Result:ident at $ResultIdx:expr)*;
 
     ) => {
         $(#[$outer])*
-        #[derive(Spanned)]
         $vis struct $Op {
-            #[span]
             op: $crate::Operation,
+            $(
+                $Field: $FieldTy,
+            )*
+            $(
+                $SuccGroupField: $SuccGroupTy,
+            )*
+        }
+        impl ::midenc_session::diagnostics::Spanned for $Op {
+            fn span(&self) -> ::midenc_session::diagnostics::SourceSpan {
+                self.op.span()
+            }
         }
 
         #[allow(unused)]
         impl $Op {
             /// Get a new, uninitialized instance of this op
-            pub fn uninit() -> Self {
+            pub fn uninit($($Field: $FieldTy),*) -> Self {
+                let mut op = $crate::Operation::uninit::<Self>();
                 Self {
-                    op: $crate::Operation::uninit::<Self>(),
+                    op,
+                    $(
+                        $Field,
+                    )*
+                    $(
+                        $SuccGroupField: Default::default(),
+                    )*
                 }
             }
 
@@ -600,17 +1148,50 @@ macro_rules! __derive_op_impl {
                     , $Operand: $crate::ValueRef
                 )*
                 $(
+                    , $OperandGroupField: impl IntoIterator<Item = $crate::ValueRef>
+                )*
+                $(
+                    , $Field: $FieldTy
+                )*
+                $(
                     , $AttrField: $AttrTy
                 )*
-            ) -> Result<$crate::UnsafeIntrusiveEntityRef<$Op>, $crate::Report> {
-                let mut builder = $crate::OperationBuilder::<Self>::new(context, Self::uninit());
                 $(
-                    builder.implement::<dyn $OpTrait>();
+                    , $SuccGroupField: $SuccGroupTy
+                )*
+                $(
+                    , $SuccField: $crate::OpSuccessor
+                )*
+            ) -> Result<$crate::UnsafeIntrusiveEntityRef<$Op>, $crate::Report> {
+                let mut this = Self::uninit($($Field),*);
+                $(
+                    this.$SuccGroupField = $SuccGroupField.clone();
+                )*
+
+                let mut builder = $crate::OperationBuilder::<Self>::new(context, this);
+                $(
+                    builder.implement::<dyn $DerivedOpTrait>();
+                )*
+                $(
+                    builder.implement::<dyn $ImplementedOpTrait>();
                 )*
                 $(
                     builder.with_attr(stringify!($AttrField), $AttrField);
                 )*
                 builder.with_operands([$($Operand),*]);
+                $(
+                    builder.with_operands_in_group($OperandGroupIdx, $OperandGroupField);
+                )*
+                $(
+                    #[doc = stringify!($RegionField)]
+                    builder.create_region();
+                )*
+                $(
+                    builder.with_successors($SuccGroupField);
+                )*
+                $(
+                    builder.with_successor($SuccField);
+                )*
                 let num_results = const {
                     let results: &[usize] = &[$($ResultIdx),*];
                     results.len()
@@ -620,22 +1201,117 @@ macro_rules! __derive_op_impl {
             }
 
             $(
-                fn $AttrField(&self) -> $AttrTy {
+                #[inline]
+                fn $Field(&self) -> &$FieldTy {
+                    &self.$Field
+                }
+
+                paste::paste! {
+                    #[inline]
+                    fn [<$Field _mut>](&mut self) -> &mut $FieldTy {
+                        &mut self.$Field
+                    }
+
+                    #[doc = concat!("Set the value of ", stringify!($Field))]
+                    #[inline]
+                    fn [<set_ $Field>](&mut self, $Field: $FieldTy) {
+                        self.$Field = $Field;
+                    }
+                }
+            )*
+
+            $(
+                fn $AttrField(&self) -> &$AttrTy {
                     let sym = stringify!($AttrField);
-                    let value = self.op.get_attribute(&::midenc_hir_symbol::Symbol::intern(sym)).unwrap();
-                    value.downcast_ref::<$AttrTy>().unwrap().clone()
+                    self.op.get_typed_attribute::<$AttrTy, _>(&::midenc_hir_symbol::Symbol::intern(sym)).unwrap()
+                }
+
+                paste::paste! {
+                    fn [<$AttrField _mut>](&mut self) -> &mut $AttrTy {
+                        let sym = stringify!($AttrField);
+                        self.op.get_typed_attribute_mut::<$AttrTy, _>(&::midenc_hir_symbol::Symbol::intern(sym)).unwrap()
+                    }
+
+                    fn [<set_ $AttrField>](&mut self, value: $AttrTy) {
+                        let sym = stringify!($AttrField);
+                        self.op.set_attribute(::midenc_hir_symbol::Symbol::intern(sym), Some(value));
+                    }
                 }
             )*
 
             $(
-                fn $Operand(&self) -> $crate::OpOperand {
-                    self.operands()[$OperandIdx].clone()
+                fn $RegionField(&self) -> $crate::EntityRef<'_, $crate::Region> {
+                    self.op.region($RegionIdx)
+                }
+
+                paste::paste! {
+                    fn [<$RegionField _mut>](&mut self) -> $crate::EntityMut<'_, $crate::Region> {
+                        self.op.region_mut($RegionIdx)
+                    }
                 }
             )*
 
             $(
-                fn $Result(&self) -> $crate::ValueRef {
-                    self.results()[$ResultIdx].clone()
+                #[inline]
+                fn $SuccGroupField(&self) -> &$SuccGroupTy {
+                    &self.$SuccGroupField
+                }
+
+                paste::paste! {
+                    #[inline]
+                    fn [<$SuccGroupField _mut>](&mut self) -> &mut $SuccGroupTy {
+                        &mut self.$SuccGroupField
+                    }
+                }
+            )*
+
+            $(
+                #[inline]
+                fn $SuccField(&self) -> &$crate::OpSuccessor {
+                    &self.successors()[$SuccIdx]
+                }
+
+                paste::paste! {
+                    #[inline]
+                    fn [<$SuccField _mut>](&mut self) -> &mut $crate::OpSuccessor {
+                        &mut self.successors_mut()[$SuccIdx]
+                    }
+                }
+            )*
+
+            $(
+                fn $Operand(&self) -> $crate::EntityRef<'_, $crate::OpOperandImpl> {
+                    self.op.operands()[$OperandIdx].borrow()
+                }
+
+                paste::paste! {
+                    fn [<$Operand _mut>](&mut self) -> $crate::EntityMut<'_, $crate::OpOperandImpl> {
+                        self.op.operands_mut()[$OperandIdx].borrow_mut()
+                    }
+                }
+            )*
+
+            $(
+                fn $OperandGroupField(&self) -> $crate::OpOperandRange<'_> {
+                    self.op.operands().group($OperandGroupIdx)
+                }
+
+                paste::paste! {
+                    fn [<$OperandGroupField _mut>](&mut self) -> $crate::OpOperandRangeMut<'_> {
+                        self.op.operands_mut().group_mut($OperandGroupIdx)
+                    }
+                }
+            )*
+
+            $(
+                fn $Result(&self) -> $crate::EntityRef<'_, dyn $crate::Value> {
+                    self.results()[$ResultIdx].borrow()
+                }
+
+                paste::paste! {
+                    fn [<$Result _mut>](&mut self) -> $crate::EntityMut<'_, dyn $crate::Value> {
+                        self.op.results_mut()[$ResultIdx].borrow_mut()
+                    }
                 }
             )*
         }
@@ -654,14 +1330,12 @@ macro_rules! __derive_op_impl {
             }
         }
 
-        __derive_op_name!($Op);
+        $crate::__derive_op_name!($Op, $Dialect);
 
         impl $crate::Op for $Op {
             fn name(&self) -> $crate::OperationName {
-                const DIALECT: $Dialect = <$Dialect as $crate::Dialect>::INIT;
-                let dialect = <$Dialect as $crate::Dialect>::name(&DIALECT);
                 paste::paste! {
-                    $crate::OperationName::new(dialect, *[<__ $Op _NAME>])
+                    *[<__ $Op _NAME>]
                 }
             }
 
@@ -676,17 +1350,19 @@ macro_rules! __derive_op_impl {
             }
         }
 
-        __derive_op_traits!($Op, $($OpTrait),*);
+        $crate::__derive_op_traits!($Op $(, derive $DerivedOpTrait)* $(, implement $ImplementedOpTrait)*);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __derive_op_name {
-    ($Op:ident) => {
+    ($Op:ident, $Dialect:ty) => {
         paste::paste! {
             #[allow(non_upper_case_globals)]
-            static [<__ $Op _NAME>]: ::std::sync::LazyLock<::midenc_hir_symbol::Symbol> = ::std::sync::LazyLock::new(|| {
+            static [<__ $Op _NAME>]: ::std::sync::LazyLock<$crate::OperationName> = ::std::sync::LazyLock::new(|| {
+                const DIALECT: $Dialect = <$Dialect as $crate::Dialect>::INIT;
+
                 // CondBrOp => CondBr => cond_br
                 //                Add => add
                 let type_name = stringify!($Op);
@@ -709,7 +1385,9 @@ macro_rules! __derive_op_name {
                         buf.push(c);
                     }
                 }
-                ::midenc_hir_symbol::Symbol::intern(buf)
+                let name = ::midenc_hir_symbol::Symbol::intern(buf);
+                let dialect = <$Dialect as $crate::Dialect>::name(&DIALECT);
+                $crate::OperationName::new(dialect, name)
             });
         }
     }
@@ -728,27 +1406,35 @@ macro_rules! __derive_op_traits {
         }
     };
 
-    ($T:ty, $($Trait:ident),+) => {
+    ($T:ty $(, derive $DeriveTrait:ident)* $(, implement $ImplementTrait:ident)*) => {
         $(
-            impl $Trait for $T {}
+            impl $DeriveTrait for $T {}
         )*
 
         impl $crate::OpVerifier for $T {
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
                 #[allow(unused_parens)]
-                type OpVerifierImpl<'a> = $crate::derive::DeriveVerifier<'a, $T, ($(&'a dyn $Trait),*)>;
+                type OpVerifierImpl<'a> = $crate::derive::DeriveVerifier<'a, $T, ($(&'a dyn $DeriveTrait,)* $(&'a dyn $ImplementTrait),*)>;
                 #[allow(unused_parens)]
-                impl<'a> $crate::OpVerifier for $crate::derive::DeriveVerifier<'a, $T, ($(&'a dyn $Trait),*)>
+                impl<'a> $crate::OpVerifier for $crate::derive::DeriveVerifier<'a, $T, ($(&'a dyn $DeriveTrait,)* $(&'a dyn $ImplementTrait),*)>
                 where
                     $(
-                        $T: $crate::verifier::Verifier<dyn $Trait>
-                    ),*
+                        $T: $crate::verifier::Verifier<dyn $DeriveTrait>,
+                    )*
+                    $(
+                        $T: $crate::verifier::Verifier<dyn $ImplementTrait>,
+                    )*
                 {
                     fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
                         let op = self.downcast_ref::<$T>().unwrap();
                         $(
-                            if const { !<$T as $crate::verifier::Verifier<dyn $Trait>>::VACUOUS } {
-                                <$T as $crate::verifier::Verifier<dyn $Trait>>::maybe_verify(op, context)?;
+                            if const { !<$T as $crate::verifier::Verifier<dyn $DeriveTrait>>::VACUOUS } {
+                                <$T as $crate::verifier::Verifier<dyn $DeriveTrait>>::maybe_verify(op, context)?;
+                            }
+                        )*
+                        $(
+                            if const { !<$T as $crate::verifier::Verifier<dyn $ImplementTrait>>::VACUOUS } {
+                                <$T as $crate::verifier::Verifier<dyn $ImplementTrait>>::maybe_verify(op, context)?;
                             }
                         )*
 
@@ -756,8 +1442,7 @@ macro_rules! __derive_op_traits {
                     }
                 }
 
-                let op = self.as_operation();
-                let verifier = OpVerifierImpl::new(op);
+                let verifier = OpVerifierImpl::new(&self.op);
                 verifier.verify(context)
             }
         }
@@ -802,7 +1487,7 @@ mod tests {
 
     use crate::{
         define_attr_type, dialects::hir::HirDialect, traits::*, Context, Op, Operation, Report,
-        SourceSpan, Spanned,
+        Spanned,
     };
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -822,7 +1507,7 @@ mod tests {
 
     derive! {
         /// An example op implementation to make sure all of the type machinery works
-        struct AddOp : Op implements SingleBlock, SameTypeOperands, ArithmeticOp {
+        struct AddOp : Op {
             #[dialect]
             dialect: HirDialect,
             #[attr]
@@ -832,7 +1517,12 @@ mod tests {
             #[operand]
             rhs: OpOperand,
         }
+
+        derives SingleBlock, SameTypeOperands;
+        implements ArithmeticOp;
     }
+
+    impl ArithmeticOp for AddOp {}
 
     derive! {
         /// A marker trait for arithmetic ops

@@ -2,6 +2,7 @@ use core::fmt;
 
 use super::*;
 
+/// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ValueId(u32);
@@ -31,11 +32,20 @@ impl fmt::Display for ValueId {
     }
 }
 
+/// Represents an SSA value in the IR.
+///
+/// The data underlying a [Value] represents a _definition_, and thus implements [Usable]. The users
+/// of a [Value] are operands (see [OpOperandImpl]). Operands are associated with an operation. Thus
+/// the graph formed of the edges between values and operations via operands forms the data-flow
+/// graph of the program.
 pub trait Value: Entity<Id = ValueId> + Spanned + Usable<Use = OpOperandImpl> + fmt::Debug {
+    /// Get the type of this value
     fn ty(&self) -> &Type;
+    /// Set the type of this value
     fn set_type(&mut self, ty: Type);
 }
 
+/// Generates the boilerplate for a concrete [Value] type.
 macro_rules! value_impl {
     (
         $(#[$outer:meta])*
@@ -104,11 +114,6 @@ macro_rules! value_impl {
         impl Usable for $ValueKind {
             type Use = OpOperandImpl;
 
-            #[inline]
-            fn is_used(&self) -> bool {
-                !self.uses.is_empty()
-            }
-
             #[inline(always)]
             fn uses(&self) -> &OpOperandList {
                 &self.uses
@@ -117,25 +122,6 @@ macro_rules! value_impl {
             #[inline(always)]
             fn uses_mut(&mut self) -> &mut OpOperandList {
                 &mut self.uses
-            }
-
-            #[inline]
-            fn iter_uses(&self) -> OpOperandIter<'_> {
-                self.uses.iter()
-            }
-
-            #[inline]
-            fn first_use(&self) -> OpOperandCursor<'_> {
-                self.uses.front()
-            }
-
-            #[inline]
-            fn first_use_mut(&mut self) -> OpOperandCursorMut<'_> {
-                self.uses.front_mut()
-            }
-
-            fn insert_use(&mut self, user: OpOperand) {
-                self.uses.push_back(user);
             }
         }
 
@@ -159,8 +145,11 @@ macro_rules! value_impl {
     }
 }
 
+/// A pointer to a [Value]
 pub type ValueRef = UnsafeEntityRef<dyn Value>;
+/// A pointer to a [BlockArgument]
 pub type BlockArgumentRef = UnsafeEntityRef<BlockArgument>;
+/// A pointer to a [OpResult]
 pub type OpResultRef = UnsafeEntityRef<OpResult>;
 
 value_impl!(
@@ -180,74 +169,25 @@ value_impl!(
 );
 
 impl BlockArgument {
+    /// Get the [Block] to which this [BlockArgument] belongs
     pub fn owner(&self) -> BlockRef {
         self.owner.clone()
     }
 
+    /// Get the index of this argument in the argument list of the owning [Block]
     pub fn index(&self) -> usize {
         self.index as usize
     }
 }
 
 impl OpResult {
+    /// Get the [Operation] to which this [OpResult] belongs
     pub fn owner(&self) -> OperationRef {
         self.owner.clone()
     }
 
+    /// Get the index of this result in the result list of the owning [Operation]
     pub fn index(&self) -> usize {
         self.index as usize
     }
-}
-
-pub type OpOperand = UnsafeIntrusiveEntityRef<OpOperandImpl>;
-pub type OpOperandList = EntityList<OpOperandImpl>;
-pub type OpOperandIter<'a> = EntityIter<'a, OpOperandImpl>;
-pub type OpOperandCursor<'a> = EntityCursor<'a, OpOperandImpl>;
-pub type OpOperandCursorMut<'a> = EntityCursorMut<'a, OpOperandImpl>;
-
-/// An [OpOperand] represents a use of a [Value] by an [Operation]
-pub struct OpOperandImpl {
-    /// The operand value
-    pub value: ValueRef,
-    /// The owner of this operand, i.e. the operation it is an operand of
-    pub owner: OperationRef,
-    /// The index of this operand in the operand list of an operation
-    pub index: u8,
-}
-impl OpOperandImpl {
-    #[inline]
-    pub fn new(value: ValueRef, owner: OperationRef, index: u8) -> Self {
-        Self {
-            value,
-            owner,
-            index,
-        }
-    }
-
-    pub fn value(&self) -> EntityRef<'_, dyn Value> {
-        self.value.borrow()
-    }
-}
-impl fmt::Debug for OpOperandImpl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[derive(Debug)]
-        #[allow(unused)]
-        struct ValueInfo<'a> {
-            id: ValueId,
-            ty: &'a Type,
-        }
-
-        let value = self.value.borrow();
-        let id = value.id();
-        let ty = value.ty();
-        f.debug_struct("OpOperand")
-            .field("index", &self.index)
-            .field("value", &ValueInfo { id, ty })
-            .finish_non_exhaustive()
-    }
-}
-
-pub enum OpOperandValue {
-    Value(ValueRef),
-    Immediate(Immediate),
 }

@@ -1,7 +1,7 @@
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
 derive! {
-    pub struct Store : Op implements HasSideEffects, MemoryWrite {
+    pub struct Store : Op {
         #[dialect]
         dialect: HirDialect,
         #[operand]
@@ -9,17 +9,21 @@ derive! {
         #[operand]
         value: OpOperand,
     }
+
+    derives HasSideEffects, MemoryWrite;
 }
 
 // TODO(pauls): StoreLocal
 
 derive! {
-    pub struct Load : Op implements HasSideEffects, MemoryRead {
+    pub struct Load : Op {
         #[dialect]
         dialect: HirDialect,
         #[operand]
         addr: OpOperand,
     }
+
+    derives HasSideEffects, MemoryRead;
 }
 
 // TODO(pauls): LoadLocal

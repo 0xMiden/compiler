@@ -25,19 +25,33 @@ pub trait Usable {
     /// The type associated with each unique use, e.g. `OpOperand`
     type Use;
 
-    /// Returns true if this definition is used
-    fn is_used(&self) -> bool;
     /// Get a list of uses of this definition
     fn uses(&self) -> &EntityList<Self::Use>;
     /// Get a mutable list of uses of this definition
     fn uses_mut(&mut self) -> &mut EntityList<Self::Use>;
+
+    /// Returns true if this definition is used
+    #[inline]
+    fn is_used(&self) -> bool {
+        !self.uses().is_empty()
+    }
     /// Get an iterator over the uses of this definition
-    fn iter_uses(&self) -> EntityIter<'_, Self::Use>;
+    #[inline]
+    fn iter_uses(&self) -> EntityIter<'_, Self::Use> {
+        self.uses().iter()
+    }
     /// Get a cursor positioned on the first use of this definition, or the null cursor if unused.
-    fn first_use(&self) -> EntityCursor<'_, Self::Use>;
+    fn first_use(&self) -> EntityCursor<'_, Self::Use> {
+        self.uses().front()
+    }
     /// Get a mutable cursor positioned on the first use of this definition, or the null cursor if
     /// unused.
-    fn first_use_mut(&mut self) -> EntityCursorMut<'_, Self::Use>;
+    #[inline]
+    fn first_use_mut(&mut self) -> EntityCursorMut<'_, Self::Use> {
+        self.uses_mut().front_mut()
+    }
     /// Add `user` to the set of uses of this definition
-    fn insert_use(&mut self, user: UnsafeIntrusiveEntityRef<Self::Use>);
+    fn insert_use(&mut self, user: UnsafeIntrusiveEntityRef<Self::Use>) {
+        self.uses_mut().push_back(user);
+    }
 }

@@ -34,8 +34,8 @@ pub trait OpVerifier {
 ///
 /// The way this works is as follows:
 ///
-/// * We `impl<T> Verify<dyn Trait> for T where T: Op` for every trait `Trait` with validation rules
-/// * A blanket impl of [HasVerifier] exists for all `T: Verify<Trait>`. This is a market trait used
+/// * We `impl<T> Verify<dyn Trait> for T where T: Op` for every trait `Trait` with validation rules.
+/// * A blanket impl of [HasVerifier] exists for all `T: Verify<Trait>`. This is a marker trait used
 ///   in conjunction with specialization. See the trait docs for more details on its purpose.
 /// * The [Verifier] trait provides a default vacuous impl for all `Trait` and `T` pairs. However,
 ///   we also provided a specialized [Verifier] impl for all `T: Verify<Trait>` using the
@@ -94,8 +94,9 @@ pub trait Verify<Trait: ?Sized> {
 unsafe trait HasVerifier<Trait: ?Sized>: Verify<Trait> {}
 
 // While at first glance, it appears we would be using this to specialize on the fact that a type
-// _has_ a verifier, we're actually using this to specialize on the _absence_ of a verifier. See
-// `Verifier` for more information.
+// _has_ a verifier, which is strictly-speaking true, the actual goal we're aiming to acheive is
+// to be able to identify the _absence_ of a verifier, so that we can eliminate the boilerplate for
+// verifying that trait. See `Verifier` for more information.
 unsafe impl<T, Trait: ?Sized> HasVerifier<Trait> for T where T: Verify<Trait> {}
 
 /// The `Verifier` trait is used to derive a verifier for a given trait and concrete type.
@@ -107,8 +108,10 @@ unsafe impl<T, Trait: ?Sized> HasVerifier<Trait> for T where T: Verify<Trait> {}
 /// for types which implement `Verify<Trait>`.
 ///
 /// We go a step further and actually set things up so that `rustc` can eliminate all of the dead
-/// code when verification is vacuous. See the `trait_verifier` function for details on how that
-/// is used in practice.
+/// code when verification is vacuous. This is done by using const eval in the hidden type generated
+/// for an [Op] impls [OpVerifier] implementation, which will wrap verification in a const-evaluated
+/// check of the `VACUOUS` associated const. It can also be used directly, but the general idea
+/// behind all of this is that we don't need to directly touch any of this, it's all generated.
 ///
 /// NOTE: Because this trait provides a default blanket impl for all `T`, you should avoid bringing
 /// it into scope unless absolutely needed. It is virtually always preferred to explicitly invoke

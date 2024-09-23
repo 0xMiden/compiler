@@ -13,12 +13,16 @@ use core::{
 
 pub use self::list::{EntityCursor, EntityCursorMut, EntityIter, EntityList};
 
+/// A trait implemented by an IR entity that has a unique identifier
+///
+/// Currently, this is used only for [Value]s and [Block]s.
 pub trait Entity: Any {
     type Id: EntityId;
 
     fn id(&self) -> Self::Id;
 }
 
+/// A trait that must be implemented by the unique identifier for an [Entity]
 pub trait EntityId: Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Hash {
     fn as_usize(&self) -> usize;
 }
@@ -76,8 +80,10 @@ impl fmt::Display for AliasingViolationError {
     }
 }
 
+/// A raw pointer to an IR entity that has no associated metadata
 pub type UnsafeEntityRef<T> = RawEntityRef<T, ()>;
 
+/// A raw pointer to an IR entity that has an intrusive linked-list link as its metadata
 pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, intrusive_collections::LinkedListLink>;
 
 /// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [Context].
@@ -386,6 +392,18 @@ impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> 
     }
 }
 
+impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
+impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
+    fn eq(&self, other: &Self) -> bool {
+        Self::ptr_eq(self, other)
+    }
+}
+impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
+    }
+}
+
 /// A guard that ensures a reference to an IR entity cannot be mutably aliased
 pub struct EntityRef<'b, T: ?Sized + 'b> {
     value: NonNull<T>,
@@ -633,6 +651,16 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
     }
 }
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
+    pub(self) fn borrow(&self) -> EntityRef<'_, T> {
+        let ptr = self as *const Self;
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
+    }
+
+    pub(self) fn borrow_mut(&self) -> EntityMut<'_, T> {
+        let ptr = (self as *const Self).cast_mut();
+        unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() }
+    }
+
     #[inline]
     const fn metadata_offset() -> usize {
         core::mem::offset_of!(RawEntityMetadata<(), Metadata>, metadata)

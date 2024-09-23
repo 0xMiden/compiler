@@ -1,7 +1,7 @@
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
 derive! {
-    pub struct MemGrow : Op implements HasSideEffects, MemoryRead, MemoryWrite {
+    pub struct MemGrow : Op {
         #[dialect]
         dialect: HirDialect,
         #[operand]
@@ -9,19 +9,23 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives HasSideEffects, MemoryRead, MemoryWrite;
 }
 
 derive! {
-    pub struct MemSize : Op implements HasSideEffects, MemoryRead {
+    pub struct MemSize : Op {
         #[dialect]
         dialect: HirDialect,
         #[result]
         result: OpResult,
     }
+
+    derives HasSideEffects, MemoryRead;
 }
 
 derive! {
-    pub struct MemSet : Op implements HasSideEffects, MemoryWrite {
+    pub struct MemSet : Op {
         #[dialect]
         dialect: HirDialect,
         #[operand]
@@ -33,10 +37,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives HasSideEffects, MemoryWrite;
 }
 
 derive! {
-    pub struct MemCpy : Op implements HasSideEffects, MemoryRead, MemoryWrite {
+    pub struct MemCpy : Op {
         #[dialect]
         dialect: HirDialect,
         #[operand]
@@ -48,4 +54,6 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives HasSideEffects, MemoryRead, MemoryWrite;
 }

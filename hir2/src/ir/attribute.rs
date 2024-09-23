@@ -124,6 +124,19 @@ impl AttributeSet {
         }
     }
 
+    /// Get the [AttributeValue] associated with the named [Attribute]
+    pub fn get_any_mut<Q>(&mut self, key: &Q) -> Option<&mut dyn AttributeValue>
+    where
+        Symbol: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let key = key.borrow();
+        match self.0.binary_search_by(|attr| key.cmp(attr.name.borrow())) {
+            Ok(index) => self.0[index].value.as_deref_mut(),
+            Err(_) => None,
+        }
+    }
+
     /// Get the value associated with the named [Attribute] as a value of type `V`, or `None`.
     pub fn get<V, Q>(&self, key: &Q) -> Option<&V>
     where
@@ -132,6 +145,16 @@ impl AttributeSet {
         V: AttributeValue,
     {
         self.get_any(key).and_then(|v| v.downcast_ref::<V>())
+    }
+
+    /// Get the value associated with the named [Attribute] as a value of type `V`, or `None`.
+    pub fn get_mut<V, Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        Symbol: Borrow<Q>,
+        Q: Ord + ?Sized,
+        V: AttributeValue,
+    {
+        self.get_any_mut(key).and_then(|v| v.downcast_mut::<V>())
     }
 
     /// Iterate over each [Attribute] in this set

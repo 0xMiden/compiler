@@ -1,11 +1,14 @@
+mod builder;
+mod name;
+
 use core::{
     fmt,
-    marker::Unsize,
     ptr::{DynMetadata, Pointee},
 };
 
 use smallvec::SmallVec;
 
+pub use self::{builder::OperationBuilder, name::OperationName};
 use super::*;
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
@@ -13,162 +16,55 @@ pub type OpList = EntityList<Operation>;
 pub type OpCursor<'a> = EntityCursor<'a, Operation>;
 pub type OpCursorMut<'a> = EntityCursorMut<'a, Operation>;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct OperationName {
-    pub dialect: DialectName,
-    pub name: interner::Symbol,
-}
-impl OperationName {
-    pub fn new<S>(dialect: DialectName, name: S) -> Self
-    where
-        S: Into<interner::Symbol>,
-    {
-        Self {
-            dialect,
-            name: name.into(),
-        }
-    }
-}
-impl fmt::Debug for OperationName {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-impl fmt::Display for OperationName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", &self.dialect, &self.name)
-    }
-}
-
-/// An [OpSuccessor] is a BlockOperand + OpOperands for that block, attached to an Operation
-pub struct OpSuccessor {
-    pub block: BlockOperandRef,
-    pub args: SmallVec<[OpOperand; 1]>,
-}
-impl fmt::Debug for OpSuccessor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OpSuccessor")
-            .field("block", &self.block.borrow().block_id())
-            .field("args", &self.args)
-            .finish()
-    }
-}
-
-// TODO: We need a safe way to construct arbitrary Ops imperatively:
-//
-// * Allocate an uninit instance of T
-// * Initialize the Operartion field of T with the empty Operation data
-// * Use the primary builder methods to mutate Operation fields
-// * Use generated methods on Op-specific builders to mutate Op fields
-// * At the end, convert uninit T to init T, return handle to caller
-//
-// Problems:
-//
-// * How do we default-initialize an instance of T for this purpose
-// * If we use MaybeUninit, how do we compute field offsets for the Operation field
-// * Generated methods can compute offsets, but how do we generate the specialized builders?
-pub struct OperationBuilder<'a, T> {
-    context: &'a Context,
-    op: UnsafeIntrusiveEntityRef<T>,
-    _marker: core::marker::PhantomData<T>,
-}
-impl<'a, T: Op> OperationBuilder<'a, T> {
-    pub fn new(context: &'a Context, op: T) -> Self {
-        let mut op = context.alloc_tracked(op);
-
-        // SAFETY: Setting the data pointer of the multi-trait vtable must ensure
-        // that it points to the concrete type of the allocation, which we can guarantee here,
-        // having just allocated it. Until the data pointer is set, casts using the vtable are
-        // undefined behavior, so by never allowing the uninitialized vtable to be accessed,
-        // we can ensure the multi-trait impl is safe
-        unsafe {
-            let data_ptr = UnsafeIntrusiveEntityRef::as_ptr(&op);
-            let mut op_mut = op.borrow_mut();
-            op_mut.as_operation_mut().vtable.set_data_ptr(data_ptr.cast_mut());
-        }
-
-        Self {
-            context,
-            op,
-            _marker: core::marker::PhantomData,
-        }
-    }
-
-    /// Register this op as an implementation of `Trait`.
-    ///
-    /// This is enforced statically by the type system, as well as dynamically via verification.
-    ///
-    /// This must be called for any trait that you wish to be able to cast the type-erased
-    /// [Operation] to later, or if you wish to get a `dyn Trait` reference from a `dyn Op`
-    /// reference.
-    ///
-    /// If `Trait` has a verifier implementation, it will be automatically applied when calling
-    /// [Operation::verify].
-    pub fn implement<Trait>(&mut self)
-    where
-        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
-        T: Unsize<Trait> + verifier::Verifier<Trait> + 'static,
-    {
-        let mut op = self.op.borrow_mut();
-        let operation = op.as_operation_mut();
-        operation.vtable.register_trait::<T, Trait>();
-    }
-
-    /// Set attribute `name` on this op to `value`
-    pub fn with_attr<A>(&mut self, name: &'static str, value: A)
-    where
-        A: AttributeValue,
-    {
-        let mut op = self.op.borrow_mut();
-        op.as_operation_mut().attrs.insert(interner::Symbol::intern(name), Some(value));
-    }
-
-    /// Set the operands given to this op
-    pub fn with_operands<I>(&mut self, operands: I)
-    where
-        I: IntoIterator<Item = ValueRef>,
-    {
-        let mut op = self.op.borrow_mut();
-        // TODO: Verify the safety of this conversion
-        let owner = unsafe {
-            let ptr = op.as_operation() as *const Operation;
-            UnsafeIntrusiveEntityRef::from_raw(ptr)
-        };
-        let operands = operands.into_iter().enumerate().map(|(index, value)| {
-            self.context
-                .alloc_tracked(value::OpOperandImpl::new(value, owner.clone(), index as u8))
-        });
-        let op_mut = op.as_operation_mut();
-        op_mut.operands.clear();
-        op_mut.operands.extend(operands);
-    }
-
-    /// Allocate `n` results for this op, of unknown type, to be filled in later
-    pub fn with_results(&mut self, n: usize) {
-        let mut op = self.op.borrow_mut();
-        let owner = unsafe {
-            let ptr = op.as_operation() as *const Operation;
-            UnsafeIntrusiveEntityRef::from_raw(ptr)
-        };
-        let results =
-            (0..n).map(|idx| self.context.make_result(Type::Unknown, owner.clone(), idx as u8));
-        let op_mut = op.as_operation_mut();
-        op_mut.results.clear();
-        op_mut.results.extend(results);
-    }
-
-    /// Consume this builder, verify the op, and return a handle to it, or an error if validation
-    /// failed.
-    pub fn build(self) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
-        {
-            let op = self.op.borrow();
-            op.as_operation().verify(self.context)?;
-        }
-        Ok(self.op)
-    }
-}
-
+/// The [Operation] struct provides the common foundation for all [Op] implementations.
+///
+/// It provides:
+///
+/// * Support for casting between the concrete operation type `T`, `dyn Op`, the underlying
+///   `Operation`, and any of the operation traits that the op implements. Not only can the casts
+///   be performed, but an [Operation] can be queried to see if it implements a specific trait at
+///   runtime to conditionally perform some behavior. This makes working with operations in the IR
+///   very flexible and allows for adding or modifying operations without needing to change most of
+///   the compiler, which predominately works on operation traits rather than concrete ops.
+/// * Storage for all IR entities attached to an operation, e.g. operands, results, nested regions,
+///   attributes, etc.
+/// * Navigation of the IR graph; navigate up to the containing block/region/op, down to nested
+///   regions/blocks/ops, or next/previous sibling operations in the same block. Additionally, you
+///   can navigate directly to the definitions of operands used, to users of results produced, and
+///   to successor blocks.
+/// * Many utility functions related to working with operations, many of which are also accessible
+///   via the [Op] trait, so that working with an [Op] or an [Operation] are largely
+///   indistinguishable.
+///
+/// All [Op] implementations can be cast to the underlying [Operation], but most of the
+/// fucntionality is re-exported via default implementations of methods on the [Op] trait. The main
+/// benefit is avoiding any potential overhead of casting when going through the trait, rather than
+/// calling the underlying [Operation] method directly.
+///
+/// # Safety
+///
+/// [Operation] is implemented as part of a larger structure that relies on assumptions which depend
+/// on IR entities being allocated via [Context], i.e. the arena. Those allocations produce an
+/// [UnsafeIntrusiveEntityRef] or [UnsafeEntityRef], which allocate the pointee type inside a struct
+/// that provides metadata about the pointee that can be accessed without aliasing the pointee
+/// itself - in particular, links for intrusive collections. This is important, because while these
+/// pointer types are a bit like raw pointers in that they lack any lifetime information, and are
+/// thus unsafe to dereference in general, they _do_ ensure that the pointee can be safely reified
+/// as a reference without violating Rust's borrow checking rules, i.e. they are dynamically borrow-
+/// checked.
+///
+/// The reason why we are able to generally treat these "unsafe" references as safe, is because we
+/// require that all IR entities be allocated via [Context]. This makes it essential to keep the
+/// context around in order to work with the IR, and effectively guarantees that no [RawEntityRef]
+/// will be dereferenced after the context is dropped. This is not a guarantee provided by the
+/// compiler however, but one that is imposed in practice, as attempting to work with the IR in
+/// any capacity without a [Context] is almost impossible. We must ensure however, that we work
+/// within this set of rules to uphold the safety guarantees.
+///
+/// This "fragility" is a tradeoff - we get the performance characteristics of an arena-allocated
+/// IR, with the flexibility and power of using pointers rather than indexes as handles, while also
+/// maintaining the safety guarantees of Rust's borrowing system. The downside is that we can't just
+/// allocate IR entities wherever we want and use them the same way.
 #[derive(Spanned)]
 pub struct Operation {
     /// In order to support upcasting from [Operation] to its concrete [Op] type, as well as
@@ -190,7 +86,7 @@ pub struct Operation {
     /// by the op, rather than here. Additionally, the semantics of the immediate operands are
     /// determined by the op, e.g. whether the immediate operands are always applied first, or
     /// what they are used for.
-    pub operands: SmallVec<[OpOperand; 1]>,
+    pub operands: OpOperandStorage,
     /// The set of values produced by this operation.
     pub results: SmallVec<[OpResultRef; 1]>,
     /// If this operation represents control flow, this field stores the set of successors,
@@ -202,6 +98,7 @@ pub struct Operation {
 impl fmt::Debug for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Operation")
+            .field_with("name", |f| write!(f, "{}", &self.name()))
             .field("attrs", &self.attrs)
             .field("block", &self.block.as_ref().map(|b| b.borrow().id()))
             .field("operands", &self.operands)
@@ -220,6 +117,8 @@ impl AsMut<dyn Op> for Operation {
         self.vtable.downcast_trait_mut().unwrap()
     }
 }
+
+/// Construction
 impl Operation {
     pub fn uninit<T: Op>() -> Self {
         use super::traits::MultiTraitVtable;
@@ -240,6 +139,13 @@ impl Operation {
     }
 }
 
+/// Metadata
+impl Operation {
+    pub fn name(&self) -> OperationName {
+        AsRef::<dyn Op>::as_ref(self).name()
+    }
+}
+
 /// Verification
 impl Operation {
     pub fn verify(&self, context: &Context) -> Result<(), Report> {
@@ -250,6 +156,13 @@ impl Operation {
 
 /// Traits/Casts
 impl Operation {
+    #[inline(always)]
+    pub fn as_operation_ref(&self) -> OperationRef {
+        // SAFETY: This is safe under the assumption that we always allocate Operations using the
+        // arena, i.e. it is a child of a RawEntityMetadata structure.
+        unsafe { OperationRef::from_raw(self) }
+    }
+
     /// Returns true if the concrete type of this operation is `T`
     #[inline]
     pub fn is<T: Op>(&self) -> bool {
@@ -297,10 +210,41 @@ impl Operation {
     /// Return the value associated with attribute `name` for this function
     pub fn get_attribute<Q>(&self, name: &Q) -> Option<&dyn AttributeValue>
     where
-        interner::Symbol: std::borrow::Borrow<Q>,
+        interner::Symbol: core::borrow::Borrow<Q>,
         Q: Ord + ?Sized,
     {
         self.attrs.get_any(name)
+    }
+
+    /// Return the value associated with attribute `name` for this function
+    pub fn get_attribute_mut<Q>(&mut self, name: &Q) -> Option<&mut dyn AttributeValue>
+    where
+        interner::Symbol: core::borrow::Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        self.attrs.get_any_mut(name)
+    }
+
+    /// Return the value associated with attribute `name` for this function, as its concrete type
+    /// `T`, _if_ the attribute by that name, is of that type.
+    pub fn get_typed_attribute<T, Q>(&self, name: &Q) -> Option<&T>
+    where
+        T: AttributeValue,
+        interner::Symbol: core::borrow::Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        self.attrs.get(name)
+    }
+
+    /// Return the value associated with attribute `name` for this function, as its concrete type
+    /// `T`, _if_ the attribute by that name, is of that type.
+    pub fn get_typed_attribute_mut<T, Q>(&mut self, name: &Q) -> Option<&mut T>
+    where
+        T: AttributeValue,
+        interner::Symbol: core::borrow::Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        self.attrs.get_mut(name)
     }
 
     /// Return true if this function has an attributed named `name`
@@ -385,6 +329,55 @@ impl Operation {
     pub fn regions_mut(&mut self) -> &mut RegionList {
         &mut self.regions
     }
+
+    pub fn region(&self, index: usize) -> EntityRef<'_, Region> {
+        let mut cursor = self.regions.front();
+        let mut count = 0;
+        while !cursor.is_null() {
+            if index == count {
+                return cursor.into_borrow().unwrap();
+            }
+            cursor.move_next();
+            count += 1;
+        }
+        panic!("invalid region index {index}: out of bounds");
+    }
+
+    pub fn region_mut(&mut self, index: usize) -> EntityMut<'_, Region> {
+        let mut cursor = self.regions.front_mut();
+        let mut count = 0;
+        while !cursor.is_null() {
+            if index == count {
+                return cursor.into_borrow_mut().unwrap();
+            }
+            cursor.move_next();
+            count += 1;
+        }
+        panic!("invalid region index {index}: out of bounds");
+    }
+}
+
+/// Successors
+impl Operation {
+    #[inline]
+    pub fn has_successors(&self) -> bool {
+        !self.successors.is_empty()
+    }
+
+    #[inline]
+    pub fn num_successors(&self) -> usize {
+        self.successors.len()
+    }
+
+    #[inline(always)]
+    pub fn successors(&self) -> &[OpSuccessor] {
+        &self.successors
+    }
+
+    #[inline(always)]
+    pub fn successors_mut(&mut self) -> &mut [OpSuccessor] {
+        &mut self.successors
+    }
 }
 
 /// Operands
@@ -400,8 +393,13 @@ impl Operation {
     }
 
     #[inline]
-    pub fn operands(&self) -> &[OpOperand] {
-        self.operands.as_slice()
+    pub fn operands(&self) -> &OpOperandStorage {
+        &self.operands
+    }
+
+    #[inline]
+    pub fn operands_mut(&mut self) -> &mut OpOperandStorage {
+        &mut self.operands
     }
 
     pub fn replaces_uses_of_with(&mut self, mut from: ValueRef, mut to: ValueRef) {
@@ -429,5 +427,28 @@ impl Operation {
                 to.borrow_mut().insert_use(operand);
             }
         }
+    }
+}
+
+/// Results
+impl Operation {
+    #[inline]
+    pub fn has_results(&self) -> bool {
+        !self.results.is_empty()
+    }
+
+    #[inline]
+    pub fn num_results(&self) -> usize {
+        self.results.len()
+    }
+
+    #[inline]
+    pub fn results(&self) -> &[OpResultRef] {
+        self.results.as_slice()
+    }
+
+    #[inline]
+    pub fn results_mut(&mut self) -> &mut [OpResultRef] {
+        self.results.as_mut_slice()
     }
 }

@@ -1,8 +1,8 @@
-use downcast_rs::{impl_downcast, Downcast};
+use core::any::Any;
 
 use super::*;
 
-pub trait Op: Downcast + OpVerifier {
+pub trait Op: Any + OpVerifier {
     /// The name of this operation's opcode
     ///
     /// The opcode must be distinct from all other opcodes in the same dialect
@@ -20,20 +20,42 @@ pub trait Op: Downcast + OpVerifier {
         self.as_operation().parent_op()
     }
     fn regions(&self) -> &RegionList {
-        &self.as_operation().regions
+        self.as_operation().regions()
     }
-    fn operands(&self) -> &[OpOperand] {
-        self.as_operation().operands.as_slice()
+    fn regions_mut(&mut self) -> &mut RegionList {
+        self.as_operation_mut().regions_mut()
+    }
+    fn region(&self, index: usize) -> EntityRef<'_, Region> {
+        self.as_operation().region(index)
+    }
+    fn region_mut(&mut self, index: usize) -> EntityMut<'_, Region> {
+        self.as_operation_mut().region_mut(index)
+    }
+    fn has_operands(&self) -> bool {
+        self.as_operation().has_operands()
+    }
+    fn num_operands(&self) -> usize {
+        self.as_operation().num_operands()
+    }
+    fn operands(&self) -> &OpOperandStorage {
+        self.as_operation().operands()
+    }
+    fn operands_mut(&mut self) -> &mut OpOperandStorage {
+        self.as_operation_mut().operands_mut()
     }
     fn results(&self) -> &[OpResultRef] {
-        self.as_operation().results.as_slice()
+        self.as_operation().results()
+    }
+    fn results_mut(&mut self) -> &mut [OpResultRef] {
+        self.as_operation_mut().results_mut()
     }
     fn successors(&self) -> &[OpSuccessor] {
-        self.as_operation().successors.as_slice()
+        self.as_operation().successors()
+    }
+    fn successors_mut(&mut self) -> &mut [OpSuccessor] {
+        self.as_operation_mut().successors_mut()
     }
 }
-
-impl_downcast!(Op);
 
 impl Spanned for dyn Op {
     fn span(&self) -> SourceSpan {

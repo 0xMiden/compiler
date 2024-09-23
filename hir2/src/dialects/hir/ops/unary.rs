@@ -3,7 +3,7 @@ use crate::{dialects::hir::HirDialect, traits::*, *};
 macro_rules! derive_unary_op {
     ($Op:ident) => {
         derive! {
-            pub struct $Op: Op implements UnaryOp {
+            pub struct $Op: Op {
                 #[dialect]
                 dialect: HirDialect,
                 #[operand]
@@ -11,12 +11,14 @@ macro_rules! derive_unary_op {
                 #[result]
                 result: OpResultRef,
             }
+
+            derives UnaryOp;
         }
     };
 
-    ($Op:ident implements $OpTrait:ident $(, $OpTraitRest:ident)*) => {
+    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
         derive! {
-            pub struct $Op: Op implements UnaryOp, $OpTrait $(, $OpTraitRest)* {
+            pub struct $Op: Op {
                 #[dialect]
                 dialect: HirDialect,
                 #[operand]
@@ -24,35 +26,37 @@ macro_rules! derive_unary_op {
                 #[result]
                 result: OpResultRef,
             }
+
+            derives UnaryOp, $OpTrait $(, $OpTraitRest)*;
         }
     };
 }
 
 macro_rules! derive_unary_logical_op {
     ($Op:ident) => {
-        derive_unary_op!($Op implements SameOperandsAndResultType);
+        derive_unary_op!($Op derives SameOperandsAndResultType);
     };
 
     ($Op:ident implements $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_unary_op!($Op implements SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
+        derive_unary_op!($Op derives SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
     };
 }
 
 macro_rules! derive_unary_bitwise_op {
     ($Op:ident) => {
-        derive_unary_op!($Op implements SameOperandsAndResultType);
+        derive_unary_op!($Op derives SameOperandsAndResultType);
     };
 
     ($Op:ident implements $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_unary_op!($Op implements SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
+        derive_unary_op!($Op derives SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
     };
 }
 
-derive_unary_op!(Neg implements SameOperandsAndResultType);
-derive_unary_op!(Inv implements SameOperandsAndResultType);
-derive_unary_op!(Incr implements SameOperandsAndResultType);
-derive_unary_op!(Ilog2 implements SameOperandsAndResultType);
-derive_unary_op!(Pow2 implements SameOperandsAndResultType);
+derive_unary_op!(Neg derives SameOperandsAndResultType);
+derive_unary_op!(Inv derives SameOperandsAndResultType);
+derive_unary_op!(Incr derives SameOperandsAndResultType);
+derive_unary_op!(Ilog2 derives SameOperandsAndResultType);
+derive_unary_op!(Pow2 derives SameOperandsAndResultType);
 
 derive_unary_logical_op!(Not);
 derive_unary_logical_op!(IsOdd);

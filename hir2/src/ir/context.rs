@@ -6,6 +6,18 @@ use midenc_session::Session;
 
 use super::*;
 
+/// Represents the shared state of the IR, used during a compilation session.
+///
+/// The primary purpose(s) of the context are:
+///
+/// * Provide storage/memory for all allocated IR entities for the lifetime of the session.
+/// * Provide unique value and block identifiers for printing the IR
+/// * Provide a uniqued constant pool
+/// * Provide configuration used during compilation
+///
+/// # Safety
+///
+/// The [Context] _must_ live as long as any reference to an IR entity may be dereferenced.
 pub struct Context {
     pub session: Rc<Session>,
     allocator: Rc<Blink>,
@@ -30,6 +42,7 @@ impl Default for Context {
 }
 
 impl Context {
+    /// Create a new [Context] for the given [Session]
     pub fn new(session: Rc<Session>) -> Self {
         let allocator = Rc::new(Blink::new());
         Self {

@@ -11,7 +11,10 @@ use super::{
     interner::{symbols, Symbol},
     SourceSpan, Spanned,
 };
-use crate::formatter::{self, PrettyPrint};
+use crate::{
+    define_attr_type,
+    formatter::{self, PrettyPrint},
+};
 
 /// Represents a globally-unique module/function name pair, with corresponding source spans.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Spanned)]
@@ -21,6 +24,7 @@ pub struct FunctionIdent {
     #[span]
     pub function: Ident,
 }
+define_attr_type!(FunctionIdent);
 impl FunctionIdent {
     pub fn display(&self) -> impl fmt::Display + '_ {
         use crate::formatter::*;
@@ -91,6 +95,7 @@ pub struct Ident {
     #[span]
     pub span: SourceSpan,
 }
+define_attr_type!(Ident);
 impl Default for Ident {
     fn default() -> Self {
         Self {

@@ -30,7 +30,7 @@ pub enum CastKind {
  */
 
 derive! {
-    pub struct PtrToInt : Op implements UnaryOp {
+    pub struct PtrToInt : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -40,10 +40,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct IntToPtr : Op implements UnaryOp {
+    pub struct IntToPtr : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -53,10 +55,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct Cast : Op implements UnaryOp {
+    pub struct Cast : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -66,10 +70,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct Bitcast : Op implements UnaryOp {
+    pub struct Bitcast : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -79,10 +85,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct Trunc : Op implements UnaryOp {
+    pub struct Trunc : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -92,10 +100,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct Zext : Op implements UnaryOp {
+    pub struct Zext : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -105,10 +115,12 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }
 
 derive! {
-    pub struct Sext : Op implements UnaryOp {
+    pub struct Sext : Op {
         #[dialect]
         dialect: HirDialect,
         #[attr]
@@ -118,4 +130,6 @@ derive! {
         #[result]
         result: OpResult,
     }
+
+    derives UnaryOp;
 }

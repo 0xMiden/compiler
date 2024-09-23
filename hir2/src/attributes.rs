@@ -1,5 +1,5 @@
 mod call_conv;
-mod linkage;
 mod overflow;
+mod visibility;
 
-pub use self::{call_conv::CallConv, linkage::Linkage, overflow::Overflow};
+pub use self::{call_conv::CallConv, overflow::Overflow, visibility::Visibility};

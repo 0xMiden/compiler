@@ -7,17 +7,21 @@ mod entity;
 mod function;
 mod ident;
 mod immediates;
+mod insert;
 mod interface;
 mod module;
 mod op;
+mod operands;
 mod operation;
 mod region;
-mod symbol_table;
+mod successor;
+pub(crate) mod symbol_table;
 pub mod traits;
 mod types;
 mod usable;
 mod value;
 pub(crate) mod verifier;
+mod visit;
 
 pub use midenc_hir_symbol as interner;
 pub use midenc_session::diagnostics::{Report, SourceSpan, Spanned};
@@ -37,18 +41,25 @@ pub use self::{
     function::{AbiParam, ArgumentExtension, ArgumentPurpose, Function, Signature},
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
+    insert::{Insert, InsertionPoint, ProgramPoint},
     module::Module,
     op::{Op, OpExt},
+    operands::{
+        OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,
+        OpOperandStorage,
+    },
     operation::{
-        OpCursor, OpCursorMut, OpList, OpSuccessor, Operation, OperationBuilder, OperationName,
-        OperationRef,
+        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
     },
     region::{Region, RegionCursor, RegionCursorMut, RegionList, RegionRef},
-    symbol_table::{Symbol, SymbolTable},
+    successor::OpSuccessor,
+    symbol_table::{
+        Symbol, SymbolName, SymbolNameAttr, SymbolNameComponent, SymbolRef, SymbolTable, SymbolUse,
+        SymbolUseCursor, SymbolUseCursorMut, SymbolUseIter, SymbolUseList, SymbolUseRef,
+    },
     types::*,
     usable::Usable,
-    value::{
-        BlockArgument, BlockArgumentRef, OpOperand, OpResult, OpResultRef, Value, ValueId, ValueRef,
-    },
+    value::{BlockArgument, BlockArgumentRef, OpResult, OpResultRef, Value, ValueId, ValueRef},
     verifier::{OpVerifier, Verify},
+    visit::{OpVisitor, OperationVisitor, Searcher, SymbolVisitor, Visitor},
 };

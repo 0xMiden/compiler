@@ -1,5 +1,8 @@
 use core::ops::Deref;
 
+/// A [Dialect] represents a collection of IR entities that are used in conjunction with one
+/// another. Multiple dialects can co-exist _or_ be mutually exclusive. Converting between dialects
+/// is the job of the conversion infrastructure, using a process called _legalization_.
 pub trait Dialect {
     const INIT: Self;
 
