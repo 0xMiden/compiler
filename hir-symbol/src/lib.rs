@@ -4,7 +4,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod sync;
+pub mod sync;
 
 use alloc::{
     boxed::Box,
