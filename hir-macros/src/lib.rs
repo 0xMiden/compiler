@@ -1,10 +1,10 @@
 extern crate proc_macro;
 
-//mod op;
+mod operation;
 mod spanned;
 
 use inflector::cases::kebabcase::to_kebab_case;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Error, Ident, Token};
 
 #[proc_macro_derive(Spanned, attributes(span))]
@@ -26,27 +26,70 @@ pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     }
 }
 
-/// #[derive(Op)]
-/// #[op(name = "select", interfaces(BranchOpInterface))]
-/// pub struct Select {
-///     #[operation]
-///     op: Operation,
+/// #[operation(
+///     dialect = HirDialect,
+///     traits(Terminator),
+///     implements(BranchOpInterface),
+/// )]
+/// pub struct Switch {
 ///     #[operand]
-///     selector: OpOperand,
-///
+///     selector: UInt32,
+///     #[successors(keyed)]
+///     cases: SwitchArm,
+///     #[successor]
+///     fallback: Successor,
 /// }
-/*
-#[proc_macro_derive(Op, attributes(op, operation, operand, result, successor, region, interfaces))]
-pub fn derive_op(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    // Parse into syntax tree
-    let derive = parse_macro_input!(input as DeriveInput);
-    let op = match op::Op::from_derive_input(derive) {
-        Ok(op) => op,
-        Err(err) => err.to_compile_error().into(),
+///
+/// pub struct Call {
+///     #[attr]
+///     callee: Symbol,
+///     #[operands]
+///     arguments: Vec<AnyType>,
+///     #[results]
+///     results: Vec<AnyType>,
+/// }
+///
+/// #[operation]
+/// pub struct If {
+///     #[operand]
+///     condition: Bool,
+///     #[region]
+///     then_region: RegionRef,
+///     #[region]
+///     else_region: RegionRef,
+/// }
+#[proc_macro_attribute]
+pub fn operation(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let attr = proc_macro2::TokenStream::from(attr);
+    let mut input = syn::parse_macro_input!(item as syn::ItemStruct);
+    let span = input.span();
+
+    // Reconstruct the input so we can treat this like a derive macro
+    //
+    // We can't _actually_ use derive, because we need to modify the item itself.
+    input.attrs.push(syn::Attribute {
+        pound_token: syn::token::Pound(span),
+        style: syn::AttrStyle::Outer,
+        bracket_token: syn::token::Bracket(span),
+        meta: syn::Meta::List(syn::MetaList {
+            path: syn::parse_str("operation").unwrap(),
+            delimiter: syn::MacroDelimiter::Paren(syn::token::Paren(span)),
+            tokens: attr,
+        }),
+    });
+
+    let input = syn::parse_quote! {
+        #input
     };
-    quote!(#op).into()
+
+    match operation::derive_operation(input) {
+        Ok(token_stream) => proc_macro::TokenStream::from(token_stream),
+        Err(err) => err.write_errors().into(),
+    }
 }
- */
 
 #[proc_macro_derive(PassInfo)]
 pub fn derive_pass_info(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -59,7 +102,7 @@ pub fn derive_pass_info(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
     let pass_name = to_kebab_case(&name);
     let pass_name_lit = syn::Lit::Str(syn::LitStr::new(&pass_name, id.span()));
 
-    let doc_ident = syn::Ident::new("doc", derive_span);
+    let doc_ident = format_ident!("doc", span = derive_span);
     let docs = derive_input
         .attrs
         .iter()
