@@ -1,5 +1,7 @@
 use core::{fmt, str::FromStr};
 
+use crate::define_attr_type;
+
 /// The types of visibility that a [Symbol] may have
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Visibility {
@@ -21,16 +23,43 @@ pub enum Visibility {
     /// graph, thus retaining the ability to observe all uses, and optimize based on that
     /// information.
     ///
-    /// Nested visibility implies that we know all uses of the symbol, but that there may be uses
+    /// Internal visibility implies that we know all uses of the symbol, but that there may be uses
     /// in other symbol tables in addition to the current one.
-    Nested,
+    Internal,
+}
+define_attr_type!(Visibility);
+impl Visibility {
+    #[inline]
+    pub fn is_public(&self) -> bool {
+        matches!(self, Self::Public)
+    }
+
+    #[inline]
+    pub fn is_private(&self) -> bool {
+        matches!(self, Self::Private)
+    }
+
+    #[inline]
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Self::Internal)
+    }
+}
+impl crate::formatter::PrettyPrint for Visibility {
+    fn render(&self) -> crate::formatter::Document {
+        use crate::formatter::*;
+        match self {
+            Self::Public => const_text("public"),
+            Self::Private => const_text("private"),
+            Self::Internal => const_text("internal"),
+        }
+    }
 }
 impl fmt::Display for Visibility {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Public => f.write_str("public"),
             Self::Private => f.write_str("private"),
-            Self::Nested => f.write_str("nested"),
+            Self::Internal => f.write_str("internal"),
         }
     }
 }
@@ -41,7 +70,7 @@ impl FromStr for Visibility {
         match s {
             "public" => Ok(Self::Public),
             "private" => Ok(Self::Private),
-            "nested" => Ok(Self::Nested),
+            "internal" => Ok(Self::Internal),
             _ => Err(()),
         }
     }

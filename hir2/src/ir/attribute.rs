@@ -200,14 +200,14 @@ impl Attribute {
 }
 impl fmt::Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.value.as_deref() {
+        match self.value.as_deref().map(|v| v.render()) {
             None => write!(f, "#[{}]", self.name.as_str()),
             Some(value) => write!(f, "#[{}({value})]", &self.name),
         }
     }
 }
 
-pub trait AttributeValue: Any + fmt::Debug + fmt::Display + 'static {
+pub trait AttributeValue: Any + fmt::Debug + crate::formatter::PrettyPrint + 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -223,6 +223,202 @@ impl dyn AttributeValue {
 
     pub fn downcast_mut<T: AttributeValue>(&mut self) -> Option<&mut T> {
         self.as_any_mut().downcast_mut::<T>()
+    }
+}
+
+pub struct SetAttr<K> {
+    values: Vec<K>,
+}
+impl<K> Default for SetAttr<K> {
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+        }
+    }
+}
+impl<K> SetAttr<K>
+where
+    K: Ord + Clone,
+{
+    pub fn insert(&mut self, key: K) -> bool {
+        match self.values.binary_search_by(|k| key.cmp(k)) {
+            Ok(index) => {
+                self.values[index] = key;
+                false
+            }
+            Err(index) => {
+                self.values.insert(index, key);
+                true
+            }
+        }
+    }
+
+    pub fn contains(&self, key: &K) -> bool {
+        self.values.binary_search_by(|k| key.cmp(k)).is_ok()
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, K> {
+        self.values.iter()
+    }
+
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<K>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Ord,
+    {
+        match self.values.binary_search_by(|k| key.cmp(k.borrow())) {
+            Ok(index) => Some(self.values.remove(index)),
+            Err(_) => None,
+        }
+    }
+}
+impl<K> Eq for SetAttr<K> where K: Eq {}
+impl<K> PartialEq for SetAttr<K>
+where
+    K: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+impl<K> fmt::Debug for SetAttr<K>
+where
+    K: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.values.iter()).finish()
+    }
+}
+impl<K> crate::formatter::PrettyPrint for SetAttr<K>
+where
+    K: crate::formatter::PrettyPrint,
+{
+    fn render(&self) -> crate::formatter::Document {
+        todo!()
+    }
+}
+impl<K> AttributeValue for SetAttr<K>
+where
+    K: fmt::Debug + crate::formatter::PrettyPrint + 'static,
+{
+    #[inline(always)]
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    #[inline(always)]
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self as &mut dyn Any
+    }
+}
+
+#[derive(Clone)]
+pub struct DictAttr<K, V> {
+    values: Vec<(K, V)>,
+}
+impl<K, V> Default for DictAttr<K, V> {
+    fn default() -> Self {
+        Self { values: vec![] }
+    }
+}
+impl<K, V> DictAttr<K, V>
+where
+    K: Ord,
+    V: Clone,
+{
+    pub fn insert(&mut self, key: K, value: V) {
+        match self.values.binary_search_by(|(k, _)| key.cmp(k)) {
+            Ok(index) => {
+                self.values[index].1 = value;
+            }
+            Err(index) => {
+                self.values.insert(index, (key, value));
+            }
+        }
+    }
+
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Ord,
+    {
+        self.values.binary_search_by(|(k, _)| key.cmp(k.borrow())).is_ok()
+    }
+
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Ord,
+    {
+        match self.values.binary_search_by(|(k, _)| key.cmp(k.borrow())) {
+            Ok(index) => Some(&self.values[index].1),
+            Err(_) => None,
+        }
+    }
+
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Ord,
+    {
+        match self.values.binary_search_by(|(k, _)| key.cmp(k.borrow())) {
+            Ok(index) => Some(self.values.remove(index).1),
+            Err(_) => None,
+        }
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, (K, V)> {
+        self.values.iter()
+    }
+}
+impl<K, V> Eq for DictAttr<K, V>
+where
+    K: Eq,
+    V: Eq,
+{
+}
+impl<K, V> PartialEq for DictAttr<K, V>
+where
+    K: PartialEq,
+    V: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+impl<K, V> fmt::Debug for DictAttr<K, V>
+where
+    K: fmt::Debug,
+    V: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.values.iter().map(|entry| (&entry.0, &entry.1)))
+            .finish()
+    }
+}
+impl<K, V> crate::formatter::PrettyPrint for DictAttr<K, V>
+where
+    K: crate::formatter::PrettyPrint,
+    V: crate::formatter::PrettyPrint,
+{
+    fn render(&self) -> crate::formatter::Document {
+        todo!()
+    }
+}
+impl<K, V> AttributeValue for DictAttr<K, V>
+where
+    K: fmt::Debug + crate::formatter::PrettyPrint + 'static,
+    V: fmt::Debug + crate::formatter::PrettyPrint + 'static,
+{
+    #[inline(always)]
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    #[inline(always)]
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self as &mut dyn Any
     }
 }
 
@@ -244,6 +440,16 @@ macro_rules! define_attr_type {
 }
 
 define_attr_type!(bool);
+define_attr_type!(u8);
+define_attr_type!(i8);
+define_attr_type!(u16);
+define_attr_type!(i16);
+define_attr_type!(u32);
+define_attr_type!(core::num::NonZeroU32);
+define_attr_type!(i32);
+define_attr_type!(u64);
+define_attr_type!(i64);
+define_attr_type!(usize);
 define_attr_type!(isize);
 define_attr_type!(Symbol);
 define_attr_type!(super::Immediate);

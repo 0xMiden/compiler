@@ -56,5 +56,11 @@ impl fmt::Display for Overflow {
         }
     }
 }
+impl crate::formatter::PrettyPrint for Overflow {
+    fn render(&self) -> crate::formatter::Document {
+        use crate::formatter::*;
+        display(self)
+    }
+}
 
 define_attr_type!(Overflow);

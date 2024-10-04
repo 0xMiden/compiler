@@ -5,7 +5,7 @@ use core::{
 
 pub use miden_core::{Felt, FieldElement, StarkField};
 
-use super::Type;
+use crate::{formatter::PrettyPrint, Type};
 
 #[derive(Debug, Copy, Clone)]
 pub enum Immediate {
@@ -295,6 +295,12 @@ impl fmt::Display for Immediate {
             Self::F64(n) => write!(f, "{}", n),
             Self::Felt(i) => write!(f, "{}", i),
         }
+    }
+}
+impl PrettyPrint for Immediate {
+    fn render(&self) -> crate::formatter::Document {
+        use crate::formatter::*;
+        display(self)
     }
 }
 impl Hash for Immediate {
