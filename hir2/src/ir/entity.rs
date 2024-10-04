@@ -1,4 +1,6 @@
+mod group;
 mod list;
+mod storage;
 
 use alloc::alloc::{AllocError, Layout};
 use core::{
@@ -11,7 +13,12 @@ use core::{
     ptr::NonNull,
 };
 
-pub use self::list::{EntityCursor, EntityCursorMut, EntityIter, EntityList};
+pub use self::{
+    group::EntityGroup,
+    list::{EntityCursor, EntityCursorMut, EntityIter, EntityList},
+    storage::{EntityRange, EntityRangeMut, EntityStorage},
+};
+use crate::any::*;
 
 /// A trait implemented by an IR entity that has a unique identifier
 ///
@@ -20,6 +27,24 @@ pub trait Entity: Any {
     type Id: EntityId;
 
     fn id(&self) -> Self::Id;
+}
+
+/// A trait implemented by an IR entity that can be stored in [EntityStorage].
+pub trait StorableEntity {
+    /// Get the absolute index of this entity in its container.
+    fn index(&self) -> usize;
+    /// Set the absolute index of this entity in its container.
+    ///
+    /// # Safety
+    ///
+    /// This is intended to be called only by the [EntityStorage] implementation, as it is
+    /// responsible for maintaining indices of all items it is storing. However, entities commonly
+    /// want to know their own index in storage, so this trait allows them to conceptually own the
+    /// index, but delegate maintenance to [EntityStorage].
+    unsafe fn set_index(&mut self, index: usize);
+    /// Called when this entity is removed from [EntityStorage]
+    #[inline(always)]
+    fn unlink(&mut self) {}
 }
 
 /// A trait that must be implemented by the unique identifier for an [Entity]
@@ -214,7 +239,7 @@ impl<T, Metadata> RawEntityRef<MaybeUninit<T>, Metadata> {
     /// value really is in an initialized state. Calling this when the content is not yet fully
     /// initialized causes immediate undefined behavior.
     #[inline]
-    pub unsafe fn assume_init(self) -> RawEntityRef<T> {
+    pub unsafe fn assume_init(self) -> RawEntityRef<T, Metadata> {
         let ptr = Self::into_inner(self);
         unsafe { RawEntityRef::from_inner(ptr.cast()) }
     }
@@ -267,13 +292,15 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     }
 
     /// Get a dynamically-checked immutable reference to the underlying `T`
-    pub fn borrow(&self) -> EntityRef<'_, T> {
+    #[track_caller]
+    pub fn borrow<'a, 'b: 'a>(&'a self) -> EntityRef<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
         unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
     }
 
     /// Get a dynamically-checked mutable reference to the underlying `T`
-    pub fn borrow_mut(&mut self) -> EntityMut<'_, T> {
+    #[track_caller]
+    pub fn borrow_mut<'a, 'b: 'a>(&'a mut self) -> EntityMut<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
         unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() }
     }
@@ -281,7 +308,7 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Try to get a dynamically-checked mutable reference to the underlying `T`
     ///
     /// Returns `None` if the entity is already borrowed
-    pub fn try_borrow_mut(&mut self) -> Option<EntityMut<'_, T>> {
+    pub fn try_borrow_mut<'a, 'b: 'a>(&'a mut self) -> Option<EntityMut<'b, T>> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
         unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }
     }
@@ -336,37 +363,129 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     }
 }
 
-impl<Metadata> RawEntityRef<dyn Any, Metadata> {
-    /// Returns true if the underlying value is a `T`
+impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
+    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
+    ///
+    /// If the cast is not valid for this reference, `Err` is returned containing the original value.
     #[inline]
-    pub fn is<T: Any>(self) -> bool {
-        self.borrow().is::<T>()
+    pub fn try_downcast<To, Obj>(
+        self,
+    ) -> Result<RawEntityRef<To, Metadata>, RawEntityRef<Obj, Metadata>>
+    where
+        To: DowncastFromRef<From> + 'static,
+        From: Is<Obj> + AsAny + 'static,
+        Obj: ?Sized,
+    {
+        RawEntityRef::<To, Metadata>::try_downcast_from(self)
     }
 
     /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
     ///
     /// If the cast is not valid for this reference, `Err` is returned containing the original value.
     #[inline]
-    pub fn downcast<T: Any>(self) -> Result<RawEntityRef<T, Metadata>, Self> {
-        if self.borrow().is::<T>() {
-            unsafe { Ok(Self::downcast_unchecked(self)) }
+    pub fn try_downcast_ref<To, Obj>(&self) -> Option<RawEntityRef<To, Metadata>>
+    where
+        To: DowncastFromRef<From> + 'static,
+        From: Is<Obj> + AsAny + 'static,
+        Obj: ?Sized,
+    {
+        RawEntityRef::<To, Metadata>::try_downcast_from_ref(self)
+    }
+
+    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
+    ///
+    /// Panics if the cast is not valid for this reference.
+    #[inline]
+    #[track_caller]
+    pub fn downcast<To, Obj>(self) -> RawEntityRef<To, Metadata>
+    where
+        To: DowncastFromRef<From> + 'static,
+        From: Is<Obj> + AsAny + 'static,
+        Obj: ?Sized,
+    {
+        RawEntityRef::<To, Metadata>::downcast_from(self)
+    }
+
+    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
+    ///
+    /// Panics if the cast is not valid for this reference.
+    #[inline]
+    #[track_caller]
+    pub fn downcast_ref<To, Obj>(&self) -> RawEntityRef<To, Metadata>
+    where
+        To: DowncastFromRef<From> + 'static,
+        From: Is<Obj> + AsAny + 'static,
+        Obj: ?Sized,
+    {
+        RawEntityRef::<To, Metadata>::downcast_from_ref(self)
+    }
+}
+
+impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
+    pub fn try_downcast_from<From, Obj>(
+        from: RawEntityRef<From, Metadata>,
+    ) -> Result<Self, RawEntityRef<Obj, Metadata>>
+    where
+        From: ?Sized + Is<Obj> + AsAny + 'static,
+        To: DowncastFromRef<From> + 'static,
+        Obj: ?Sized,
+    {
+        let borrow = from.borrow();
+        if let Some(to) = borrow.as_any().downcast_ref() {
+            Ok(unsafe { RawEntityRef::from_raw(to) })
         } else {
-            Err(self)
+            Err(from)
         }
     }
 
-    /// Casts this reference to the concrete type `T` without checking that the cast is valid.
-    ///
-    /// # Safety
-    ///
-    /// The referenced value must be of type `T`. Calling this method with the incorrect type is
-    /// _undefined behavior_.
-    #[inline]
-    pub unsafe fn downcast_unchecked<T: Any>(self) -> RawEntityRef<T, Metadata> {
-        unsafe {
-            let ptr = RawEntityRef::into_inner(self);
-            RawEntityRef::from_inner(ptr.cast())
+    pub fn try_downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Option<Self>
+    where
+        From: ?Sized + Is<Obj> + AsAny + 'static,
+        To: DowncastFromRef<From> + 'static,
+        Obj: ?Sized,
+    {
+        let borrow = from.borrow();
+        if let Some(to) = borrow.as_any().downcast_ref() {
+            Some(unsafe { RawEntityRef::from_raw(to) })
+        } else {
+            None
         }
+    }
+
+    #[track_caller]
+    pub fn downcast_from<From, Obj>(from: RawEntityRef<From, Metadata>) -> Self
+    where
+        From: ?Sized + Is<Obj> + AsAny + 'static,
+        To: DowncastFromRef<From> + 'static,
+        Obj: ?Sized,
+    {
+        let borrow = from.borrow();
+        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
+    }
+
+    #[track_caller]
+    pub fn downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Self
+    where
+        From: ?Sized + Is<Obj> + AsAny + 'static,
+        To: DowncastFromRef<From> + 'static,
+        Obj: ?Sized,
+    {
+        let borrow = from.borrow();
+        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
+    }
+}
+
+impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
+    /// Casts this reference to the an unsized type `Trait`, if `From` implements `Trait`
+    ///
+    /// If the cast is not valid for this reference, `Err` is returned containing the original value.
+    #[inline]
+    pub fn upcast<To>(self) -> RawEntityRef<To, Metadata>
+    where
+        To: ?Sized,
+        From: core::marker::Unsize<To> + AsAny + 'static,
+    {
+        unsafe { RawEntityRef::<To, Metadata>::from_inner(self.inner) }
     }
 }
 
@@ -377,7 +496,17 @@ where
     U: ?Sized,
 {
 }
-
+impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
+impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
+    fn eq(&self, other: &Self) -> bool {
+        Self::ptr_eq(self, other)
+    }
+}
+impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
+    }
+}
 impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -391,16 +520,30 @@ impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> 
         fmt::Debug::fmt(&self.borrow(), f)
     }
 }
-
-impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
-impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
-    fn eq(&self, other: &Self) -> bool {
-        Self::ptr_eq(self, other)
+impl<T: ?Sized + crate::formatter::PrettyPrint, Metadata> crate::formatter::PrettyPrint
+    for RawEntityRef<T, Metadata>
+{
+    #[inline]
+    fn render(&self) -> crate::formatter::Document {
+        self.borrow().render()
     }
 }
-impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+impl<T: ?Sized + StorableEntity, Metadata> StorableEntity for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn index(&self) -> usize {
+        self.borrow().index()
+    }
+
+    #[inline]
+    unsafe fn set_index(&mut self, index: usize) {
+        unsafe {
+            self.borrow_mut().set_index(index);
+        }
+    }
+
+    #[inline]
+    fn unlink(&mut self) {
+        self.borrow_mut().unlink()
     }
 }
 
@@ -445,6 +588,12 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityRef<'_, T> {
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
+    }
+}
+impl<T: ?Sized + crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityRef<'_, T> {
+    #[inline]
+    fn render(&self) -> crate::formatter::Document {
+        (**self).render()
     }
 }
 impl<T: ?Sized + Eq> Eq for EntityRef<'_, T> {}
@@ -514,12 +663,12 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use crate::*;
+    /// use midenc_hir2::*;
     /// use blink_alloc::Blink;
     ///
     /// let alloc = Blink::default();
-    /// let entity = UnsafeEntityRef::new([1, 2, 3, 4], &alloc);
-    /// let borrow = entity.get_mut();
+    /// let mut entity = UnsafeEntityRef::new([1, 2, 3, 4], &alloc);
+    /// let borrow = entity.borrow_mut();
     /// let (mut begin, mut end) = EntityMut::map_split(borrow, |slice| slice.split_at_mut(2));
     /// assert_eq!(*begin, [1, 2]);
     /// assert_eq!(*end, [3, 4]);
@@ -582,6 +731,12 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityMut<'_, T> {
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
+    }
+}
+impl<T: ?Sized + crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityMut<'_, T> {
+    #[inline]
+    fn render(&self) -> crate::formatter::Document {
+        (**self).render()
     }
 }
 impl<T: ?Sized + Eq> Eq for EntityMut<'_, T> {}

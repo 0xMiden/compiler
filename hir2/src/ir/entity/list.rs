@@ -572,7 +572,7 @@ impl<'a, T> DoubleEndedIterator for EntityIter<'a, T> {
     }
 }
 
-type IntrusiveLink = intrusive_collections::LinkedListLink;
+pub type IntrusiveLink = intrusive_collections::LinkedListLink;
 
 impl<T: 'static> RawEntityRef<T, IntrusiveLink> {
     /// Create a new [UnsafeIntrusiveEntityRef] by allocating `value` in `arena`
