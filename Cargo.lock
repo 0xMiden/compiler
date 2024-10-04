@@ -3402,6 +3402,7 @@ dependencies = [
  "Inflector",
  "compact_str",
  "lock_api",
+ "miden-formatting",
  "parking_lot",
  "rustc-hash 1.1.0",
  "serde 1.0.210",
@@ -3427,6 +3428,7 @@ dependencies = [
 name = "midenc-hir-type"
 version = "0.0.7"
 dependencies = [
+ "miden-formatting",
  "serde 1.0.210",
  "serde_repr",
  "smallvec",

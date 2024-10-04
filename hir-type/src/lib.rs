@@ -7,6 +7,8 @@ mod layout;
 use alloc::{boxed::Box, vec::Vec};
 use core::{fmt, num::NonZeroU16, str::FromStr};
 
+use miden_formatting::prettier::PrettyPrint;
+
 pub use self::layout::Alignable;
 
 /// Represents the type of a value
@@ -331,6 +333,13 @@ impl fmt::Display for Type {
             Self::Array(element_ty, arity) => write!(f, "(array {element_ty} {arity})"),
             Self::List(ty) => write!(f, "(list {ty})"),
         }
+    }
+}
+impl PrettyPrint for Type {
+    fn render(&self) -> miden_formatting::prettier::Document {
+        use miden_formatting::prettier::*;
+
+        display(self)
     }
 }
 

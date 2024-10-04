@@ -14,6 +14,8 @@ use alloc::{
 };
 use core::{fmt, mem, ops::Deref, str};
 
+use miden_formatting::prettier::PrettyPrint;
+
 pub mod symbols {
     include!(env!("SYMBOLS_RS"));
 }
@@ -108,6 +110,12 @@ impl fmt::Debug for Symbol {
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.as_str(), f)
+    }
+}
+impl PrettyPrint for Symbol {
+    fn render(&self) -> miden_formatting::prettier::Document {
+        use miden_formatting::prettier::*;
+        const_text(self.as_str())
     }
 }
 impl PartialOrd for Symbol {

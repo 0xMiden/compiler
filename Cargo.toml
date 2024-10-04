@@ -88,6 +88,7 @@ derive_more = "0.99"
 indexmap = "2.2"
 # miden-assembly = { version = "0.10.3" }
 # miden-core = { version = "0.10.3" }
+miden-formatting = { version = "0.1", default-features = false }
 miden-parsing = "0.1"
 # miden-processor = { version = "0.10.3" }
 # miden-stdlib = { version = "0.10.3", features = ["with-debug-info"] }

@@ -16,6 +16,7 @@ default = ["serde"]
 serde = ["dep:serde", "dep:serde_repr"]
 
 [dependencies]
+miden-formatting.workspace = true
 smallvec.workspace = true
 serde = { workspace = true, optional = true }
 serde_repr = { workspace = true, optional = true }
