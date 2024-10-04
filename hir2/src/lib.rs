@@ -22,6 +22,7 @@ pub use compact_str::{
     CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
 };
 
+mod any;
 mod attributes;
 pub mod demangle;
 pub mod derive;
