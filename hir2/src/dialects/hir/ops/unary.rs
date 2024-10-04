@@ -1,69 +1,157 @@
-use crate::{dialects::hir::HirDialect, traits::*, *};
+use crate::{derive::operation, dialects::hir::HirDialect, traits::*, *};
 
-macro_rules! derive_unary_op {
-    ($Op:ident) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                operand: OpOperandRef,
-                #[result]
-                result: OpResultRef,
-            }
-
-            derives UnaryOp;
-        }
-    };
-
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                operand: OpOperandRef,
-                #[result]
-                result: OpResultRef,
-            }
-
-            derives UnaryOp, $OpTrait $(, $OpTraitRest)*;
-        }
-    };
+/// Increment
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Incr {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: AnyInteger,
 }
 
-macro_rules! derive_unary_logical_op {
-    ($Op:ident) => {
-        derive_unary_op!($Op derives SameOperandsAndResultType);
-    };
-
-    ($Op:ident implements $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_unary_op!($Op derives SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
-    };
+/// Negation
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Neg {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: AnyInteger,
 }
 
-macro_rules! derive_unary_bitwise_op {
-    ($Op:ident) => {
-        derive_unary_op!($Op derives SameOperandsAndResultType);
-    };
-
-    ($Op:ident implements $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_unary_op!($Op derives SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
-    };
+/// Modular inverse
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Inv {
+    #[operand]
+    operand: IntFelt,
+    #[result]
+    result: IntFelt,
 }
 
-derive_unary_op!(Neg derives SameOperandsAndResultType);
-derive_unary_op!(Inv derives SameOperandsAndResultType);
-derive_unary_op!(Incr derives SameOperandsAndResultType);
-derive_unary_op!(Ilog2 derives SameOperandsAndResultType);
-derive_unary_op!(Pow2 derives SameOperandsAndResultType);
+/// log2(operand)
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Ilog2 {
+    #[operand]
+    operand: IntFelt,
+    #[result]
+    result: IntFelt,
+}
 
-derive_unary_logical_op!(Not);
-derive_unary_logical_op!(IsOdd);
+/// pow2(operand)
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Pow2 {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
 
-derive_unary_bitwise_op!(Bnot);
-derive_unary_bitwise_op!(Popcnt);
-derive_unary_bitwise_op!(Clz);
-derive_unary_bitwise_op!(Ctz);
-derive_unary_bitwise_op!(Clo);
-derive_unary_bitwise_op!(Cto);
+/// Logical NOT
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Not {
+    #[operand]
+    operand: Bool,
+    #[result]
+    result: Bool,
+}
+
+/// Bitwise NOT
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp, SameOperandsAndResultType)
+    )]
+pub struct Bnot {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// is_odd(operand)
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct IsOdd {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Count of non-zero bits (population count)
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct Popcnt {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: UInt32,
+}
+
+/// Count Leading Zeros
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct Clz {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: UInt32,
+}
+
+/// Count Trailing Zeros
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct Ctz {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: UInt32,
+}
+
+/// Count Leading Ones
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct Clo {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: UInt32,
+}
+
+/// Count Trailing Ones
+#[operation (
+        dialect = HirDialect,
+        traits(UnaryOp)
+    )]
+pub struct Cto {
+    #[operand]
+    operand: AnyInteger,
+    #[result]
+    result: UInt32,
+}

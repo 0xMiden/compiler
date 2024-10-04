@@ -10,6 +10,13 @@
 #![feature(debug_closure_helpers)]
 #![feature(trait_alias)]
 #![feature(is_none_or)]
+#![feature(try_trait_v2)]
+#![feature(try_trait_v2_residual)]
+#![feature(tuple_trait)]
+#![feature(fn_traits)]
+#![feature(unboxed_closures)]
+#![feature(const_type_id)]
+#![feature(exact_size_is_empty)]
 #![allow(incomplete_features)]
 #![allow(internal_features)]
 
@@ -17,6 +24,8 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+extern crate self as midenc_hir2;
 
 pub use compact_str::{
     CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
@@ -29,19 +38,23 @@ pub mod derive;
 pub mod dialects;
 pub mod formatter;
 mod ir;
+mod patterns;
 
-pub use self::{attributes::*, ir::*};
+pub use self::{any::AsAny, attributes::*, ir::*, patterns::*};
 
 // TODO(pauls): The following is a rough list of what needs to be implemented for the IR
 // refactoring to be complete and usable in place of the old IR (some are optional):
 //
 // * constants and constant-like ops
 // * global variables and global ops
+// * Need to implement InferTypeOpInterface for all applicable ops
 // * Builders (i.e. component builder, interface builder, module builder, function builder, last is most important)
-//   NOTE: The underlying builder infra is basically done, so layering on the high-level builders is pretty simple
+//   NOTE: The underlying builder infra is done, so layering on the high-level builders is pretty simple
 // * canonicalization (optional)
-// * visitors (partially complete, need CFG and DFG walkers as well though, largely variations on the existing infra)
-// * pattern matching/rewrites (needed for legalization/conversion)
+// * pattern matching/rewrites (needed for legalization/conversion, mostly complete, see below)
+//   - Need to provide implementations of stubbed out rewriter methods
+//   - Need to implement the GreedyRewritePatternDriver
+//   - Need to implement matchers
 // * dataflow analysis framework (required to replace old analyses)
 // * linking/global symbol resolution (required to replace old linker, partially implemented via symbols/symbol tables already)
 // * legalization/dialect conversion (required to convert between unstructured and structured control flow dialects at minimum)

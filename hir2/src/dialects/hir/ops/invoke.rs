@@ -1,32 +1,34 @@
+use midenc_hir_macros::operation;
+
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
 // TODO(pauls): Implement support for:
 //
 // * Inferring op constraints from callee signature
-derive! {
-    pub struct Exec : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        callee: SymbolNameAttr,
-        #[operands]
-        arguments: Vec<OpOperand>,
-    }
-
-    implements CallOpInterface;
+#[operation(
+    dialect = HirDialect,
+    implements(CallOpInterface)
+)]
+pub struct Exec {
+    #[symbol(callable)]
+    callee: SymbolNameAttr,
+    #[operands]
+    arguments: AnyType,
 }
 
-derive! {
-    pub struct ExecIndirect : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        signature: Signature,
-        #[operand]
-        callee: OpOperand,
-    }
+/*
+#[operation(
+    dialect = HirDialect,
+    implements(CallOpInterface)
+)]
+pub struct ExecIndirect {
+    #[attr]
+    signature: Signature,
+    /// TODO(pauls): Change this to FunctionType
+    #[operand]
+    callee: AnyType,
 }
-
+ */
 impl CallOpInterface for Exec {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {

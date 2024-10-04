@@ -2,31 +2,58 @@ use core::fmt;
 
 use super::*;
 use crate::{
-    derive,
+    derive::operation,
     dialects::hir::HirDialect,
     formatter,
-    traits::{CallableOpInterface, SingleRegion},
-    CallConv, Symbol, SymbolName, SymbolUse, SymbolUseIter, SymbolUseList, Visibility,
+    traits::{
+        CallableOpInterface, IsolatedFromAbove, RegionKind, RegionKindInterface, SingleRegion,
+    },
+    CallConv, Symbol, SymbolName, SymbolUse, SymbolUseList, SymbolUsesIter, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
 
-derive! {
-    pub struct Function: Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[region]
-        body: RegionRef,
-        #[attr]
-        name: Ident,
-        #[attr]
-        signature: Signature,
-        /// The uses of this function as a symbol
-        uses: SymbolUseList,
+#[operation(
+    dialect = HirDialect,
+    traits(SingleRegion, IsolatedFromAbove),
+    implements(
+        UsableSymbol,
+        Symbol,
+        CallableOpInterface,
+        RegionKindInterface
+    )
+)]
+pub struct Function {
+    #[region]
+    body: RegionRef,
+    #[attr]
+    name: Ident,
+    #[attr]
+    signature: Signature,
+    /// The uses of this function as a symbol
+    uses: SymbolUseList,
+}
+
+impl Function {
+    #[inline]
+    pub fn entry_block(&self) -> BlockRef {
+        unsafe { BlockRef::from_raw(&*self.body().entry()) }
     }
 
-    derives SingleRegion;
-    implements UsableSymbol, Symbol, CallableOpInterface;
+    pub fn last_block(&self) -> BlockRef {
+        self.body()
+            .body()
+            .back()
+            .as_pointer()
+            .expect("cannot access blocks of a function declaration")
+    }
+}
+
+impl RegionKindInterface for Function {
+    #[inline(always)]
+    fn kind(&self) -> RegionKind {
+        RegionKind::SSA
+    }
 }
 
 impl Usable for Function {
@@ -45,12 +72,12 @@ impl Usable for Function {
 
 impl Symbol for Function {
     #[inline(always)]
-    fn as_operation(&self) -> &Operation {
+    fn as_symbol_operation(&self) -> &Operation {
         &self.op
     }
 
     #[inline(always)]
-    fn as_operation_mut(&mut self) -> &mut Operation {
+    fn as_symbol_operation_mut(&mut self) -> &mut Operation {
         &mut self.op
     }
 
@@ -58,48 +85,56 @@ impl Symbol for Function {
         Self::name(self).as_symbol()
     }
 
-    /// Set the name of this symbol
     fn set_name(&mut self, name: SymbolName) {
-        let mut id = *self.name();
+        let id = self.name_mut();
         id.name = name;
-        Function::set_name(self, id)
     }
 
-    /// Get the visibility of this symbol
     fn visibility(&self) -> Visibility {
         self.signature().visibility
     }
 
-    /// Returns true if this symbol has private visibility
-    #[inline]
-    fn is_private(&self) -> bool {
-        self.signature().is_private()
-    }
-
-    /// Returns true if this symbol has public visibility
-    #[inline]
-    fn is_public(&self) -> bool {
-        self.signature().is_public()
-    }
-
-    /// Sets the visibility of this symbol
     fn set_visibility(&mut self, visibility: Visibility) {
         self.signature_mut().visibility = visibility;
     }
 
-    /// Get all of the uses of this symbol that are nested within `from`
-    fn symbol_uses(&self, from: OperationRef) -> SymbolUseIter {
-        todo!()
+    fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter {
+        SymbolUsesIter::from_iter(self.uses.iter().filter_map(|user| {
+            if OperationRef::ptr_eq(&from, &user.owner)
+                || from.borrow().is_proper_ancestor_of(user.owner.clone())
+            {
+                Some(unsafe { SymbolUseRef::from_raw(&*user) })
+            } else {
+                None
+            }
+        }))
     }
 
-    /// Return true if there are no uses of this symbol nested within `from`
-    fn symbol_uses_known_empty(&self, from: OperationRef) -> SymbolUseIter {
-        todo!()
-    }
+    fn replace_all_uses(
+        &mut self,
+        replacement: SymbolRef,
+        from: OperationRef,
+    ) -> Result<(), Report> {
+        for symbol_use in self.symbol_uses(from) {
+            let (mut owner, attr_name) = {
+                let user = symbol_use.borrow();
+                (user.owner.clone(), user.symbol)
+            };
+            let mut owner = owner.borrow_mut();
+            // Unlink previously used symbol
+            {
+                let current_symbol = owner
+                    .get_typed_attribute_mut::<SymbolNameAttr, _>(&attr_name)
+                    .expect("stale symbol user");
+                unsafe {
+                    self.uses.cursor_mut_from_ptr(current_symbol.user.clone()).remove();
+                }
+            }
+            // Link replacement symbol
+            owner.set_symbol_attribute(attr_name, replacement.clone());
+        }
 
-    /// Attempt to replace all uses of this symbol nested within `from`, with the provided replacement
-    fn replace_all_uses(&self, replacement: SymbolRef, from: OperationRef) -> Result<(), Report> {
-        todo!()
+        Ok(())
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol

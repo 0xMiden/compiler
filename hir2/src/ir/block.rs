@@ -138,6 +138,59 @@ impl Block {
         self.arguments[index].clone()
     }
 
+    /// Insert this block after `after` in its containing region.
+    ///
+    /// Panics if this block is already attached to a region, or if `after` is not attached.
+    pub fn insert_after(&mut self, after: BlockRef) {
+        assert!(
+            self.region.is_none(),
+            "cannot insert block that is already attached to another region"
+        );
+        let mut region =
+            after.borrow().parent().expect("'after' block is not attached to a region");
+        {
+            let mut region = region.borrow_mut();
+            let region_body = region.body_mut();
+            let mut cursor = unsafe { region_body.cursor_mut_from_ptr(after) };
+            cursor.insert_after(unsafe { BlockRef::from_raw(self) });
+        }
+        self.region = Some(region);
+    }
+
+    /// Insert this block before `before` in its containing region.
+    ///
+    /// Panics if this block is already attached to a region, or if `before` is not attached.
+    pub fn insert_before(&mut self, before: BlockRef) {
+        assert!(
+            self.region.is_none(),
+            "cannot insert block that is already attached to another region"
+        );
+        let mut region =
+            before.borrow().parent().expect("'before' block is not attached to a region");
+        {
+            let mut region = region.borrow_mut();
+            let region_body = region.body_mut();
+            let mut cursor = unsafe { region_body.cursor_mut_from_ptr(before) };
+            cursor.insert_before(unsafe { BlockRef::from_raw(self) });
+        }
+        self.region = Some(region);
+    }
+
+    /// Insert this block at the end of `region`.
+    ///
+    /// Panics if this block is already attached to a region.
+    pub fn insert_at_end(&mut self, mut region: RegionRef) {
+        assert!(
+            self.region.is_none(),
+            "cannot insert block that is already attached to another region"
+        );
+        {
+            let mut region = region.borrow_mut();
+            region.body_mut().push_back(unsafe { BlockRef::from_raw(self) });
+        }
+        self.region = Some(region);
+    }
+
     /// Get a handle to the containing [Region] of this block, if it is attached to one
     pub fn parent(&self) -> Option<RegionRef> {
         self.region.clone()
@@ -170,6 +223,10 @@ impl Block {
     #[inline(always)]
     pub fn predecessors(&self) -> BlockOperandIter<'_> {
         self.iter_uses()
+    }
+
+    pub fn drop_all_defined_value_uses(&mut self) {
+        todo!()
     }
 }
 
@@ -212,5 +269,26 @@ impl fmt::Debug for BlockOperand {
             .field_with("owner", |f| write!(f, "{:p}", &self.owner))
             .field("index", &self.index)
             .finish()
+    }
+}
+impl StorableEntity for BlockOperand {
+    #[inline(always)]
+    fn index(&self) -> usize {
+        self.index as usize
+    }
+
+    unsafe fn set_index(&mut self, index: usize) {
+        self.index = index.try_into().expect("too many successors");
+    }
+
+    /// Remove this use of `block`
+    fn unlink(&mut self) {
+        let owner = unsafe { BlockOperandRef::from_raw(self) };
+        let mut block = self.block.borrow_mut();
+        let uses = block.uses_mut();
+        unsafe {
+            let mut cursor = uses.cursor_mut_from_ptr(owner);
+            cursor.remove();
+        }
     }
 }

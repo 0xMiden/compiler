@@ -67,4 +67,8 @@ impl Region {
     pub fn body_mut(&mut self) -> &mut BlockList {
         &mut self.body
     }
+
+    pub fn drop_all_references(&mut self) {
+        todo!()
+    }
 }

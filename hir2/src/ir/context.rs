@@ -1,5 +1,8 @@
-use alloc::rc::Rc;
-use core::{cell::Cell, mem::MaybeUninit};
+use alloc::{collections::BTreeMap, rc::Rc};
+use core::{
+    cell::{Cell, RefCell},
+    mem::MaybeUninit,
+};
 
 use blink_alloc::Blink;
 use midenc_session::Session;
@@ -21,6 +24,7 @@ use super::*;
 pub struct Context {
     pub session: Rc<Session>,
     allocator: Rc<Blink>,
+    registered_dialects: RefCell<BTreeMap<DialectName, Rc<dyn Dialect>>>,
     next_block_id: Cell<u32>,
     next_value_id: Cell<u32>,
     //pub constants: ConstantPool,
@@ -48,10 +52,37 @@ impl Context {
         Self {
             session,
             allocator,
+            registered_dialects: Default::default(),
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
             //constants: Default::default(),
         }
+    }
+
+    pub fn registered_dialects(
+        &self,
+    ) -> core::cell::Ref<'_, BTreeMap<DialectName, Rc<dyn Dialect>>> {
+        self.registered_dialects.borrow()
+    }
+
+    pub fn get_or_register_dialect<T: DialectRegistration>(&self) -> Rc<dyn Dialect> {
+        use alloc::collections::btree_map::Entry;
+
+        let mut registered_dialects = self.registered_dialects.borrow_mut();
+        let dialect_name = DialectName::new(T::NAMESPACE);
+        match registered_dialects.entry(dialect_name) {
+            Entry::Occupied(entry) => Rc::clone(entry.get()),
+            Entry::Vacant(entry) => {
+                let dialect = Rc::new(T::init()) as Rc<dyn Dialect>;
+                entry.insert(Rc::clone(&dialect));
+                dialect
+            }
+        }
+    }
+
+    /// Get a new [OpBuilder] for this context
+    pub fn builder(self: Rc<Self>) -> OpBuilder {
+        OpBuilder::new(Rc::clone(&self))
     }
 
     /// Create a new, detached and empty [Block] with no parameters
@@ -71,6 +102,7 @@ impl Context {
         let args = tys.into_iter().enumerate().map(|(index, ty)| {
             let id = self.alloc_value_id();
             let arg = BlockArgument::new(
+                SourceSpan::default(),
                 id,
                 ty,
                 owner.clone(),
@@ -82,13 +114,71 @@ impl Context {
         block
     }
 
+    /// Append a new [BlockArgument] to `block`, with the given type and source location
+    ///
+    /// Returns the block argument as a `dyn Value` reference
+    pub fn append_block_argument(
+        &self,
+        mut block: BlockRef,
+        ty: Type,
+        span: SourceSpan,
+    ) -> ValueRef {
+        let next_index = block.borrow().num_arguments();
+        let id = self.alloc_value_id();
+        let arg = BlockArgument::new(
+            span,
+            id,
+            ty,
+            block.clone(),
+            next_index.try_into().expect("too many block arguments"),
+        );
+        let arg = self.alloc(arg);
+        block.borrow_mut().arguments_mut().push(arg.clone());
+        arg.upcast()
+    }
+
+    /// Create a new [OpOperand] with the given value, owner, and index.
+    ///
+    /// NOTE: This inserts the operand as a user of `value`, but does _not_ add the operand to
+    /// `owner`'s operand storage, the caller is expected to do that. This makes this function a
+    /// more useful primitive.
+    pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u8) -> OpOperand {
+        let op_operand = self.alloc_tracked(OpOperandImpl::new(value.clone(), owner, index));
+        let mut value = value.borrow_mut();
+        value.insert_use(op_operand.clone());
+        op_operand
+    }
+
+    /// Create a new [BlockOperand] with the given block, owner, and index.
+    ///
+    /// NOTE: This inserts the block operand as a user of `block`, but does _not_ add the block
+    /// operand to `owner`'s successor storage, the caller is expected to do that. This makes this
+    /// function a more useful primitive.
+    pub fn make_block_operand(
+        &self,
+        mut block: BlockRef,
+        owner: OperationRef,
+        index: u8,
+    ) -> BlockOperandRef {
+        let block_operand = self.alloc_tracked(BlockOperand::new(block.clone(), owner, index));
+        let mut block = block.borrow_mut();
+        block.insert_use(block_operand.clone());
+        block_operand
+    }
+
     /// Create a new [OpResult] with the given type, owner, and index
     ///
     /// NOTE: This does not attach the result to the operation, it is expected that the caller will
     /// do so.
-    pub fn make_result(&self, ty: Type, owner: OperationRef, index: u8) -> OpResultRef {
+    pub fn make_result(
+        &self,
+        span: SourceSpan,
+        ty: Type,
+        owner: OperationRef,
+        index: u8,
+    ) -> OpResultRef {
         let id = self.alloc_value_id();
-        self.alloc(OpResult::new(id, ty, owner, index))
+        self.alloc(OpResult::new(span, id, ty, owner, index))
     }
 
     /// Allocate a new uninitialized entity of type `T`

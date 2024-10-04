@@ -1,6 +1,6 @@
 use crate::{
-    EntityRef, OpOperandRange, OpOperandRangeMut, RegionRef, Signature, SymbolNameAttr, SymbolRef,
-    Value, ValueRef,
+    EntityRef, OpOperandRange, OpOperandRangeMut, RegionRef, Signature, Symbol, SymbolNameAttr,
+    SymbolRef, UnsafeIntrusiveEntityRef, Value, ValueRef,
 };
 
 /// A call-like operation is one that transfers control from one function to another.
@@ -47,6 +47,24 @@ pub trait CallableOpInterface {
     fn signature(&self) -> &Signature;
 }
 
+#[doc(hidden)]
+pub trait AsCallableSymbolRef {
+    fn as_callable_symbol_ref(&self) -> SymbolRef;
+}
+impl<T: Symbol + CallableOpInterface> AsCallableSymbolRef for T {
+    #[inline(always)]
+    fn as_callable_symbol_ref(&self) -> SymbolRef {
+        unsafe { SymbolRef::from_raw(self as &dyn Symbol) }
+    }
+}
+impl<T: Symbol + CallableOpInterface> AsCallableSymbolRef for UnsafeIntrusiveEntityRef<T> {
+    #[inline(always)]
+    fn as_callable_symbol_ref(&self) -> SymbolRef {
+        let t_ptr = Self::as_ptr(self);
+        unsafe { SymbolRef::from_raw(t_ptr as *const dyn Symbol) }
+    }
+}
+
 /// A [Callable] represents a symbol or a value which can be used as a valid _callee_ for a
 /// [CallOpInterface] implementation.
 ///
@@ -60,7 +78,7 @@ pub enum Callable {
 }
 impl From<&SymbolNameAttr> for Callable {
     fn from(value: &SymbolNameAttr) -> Self {
-        Self::Symbol(*value)
+        Self::Symbol(value.clone())
     }
 }
 impl From<SymbolNameAttr> for Callable {

@@ -1,12 +1,48 @@
-use core::ops::Deref;
+use alloc::rc::Rc;
+use core::{borrow::Borrow, ops::Deref};
+
+use crate::{AsAny, OperationName};
 
 /// A [Dialect] represents a collection of IR entities that are used in conjunction with one
 /// another. Multiple dialects can co-exist _or_ be mutually exclusive. Converting between dialects
 /// is the job of the conversion infrastructure, using a process called _legalization_.
 pub trait Dialect {
-    const INIT: Self;
-
+    /// Get the name(space) of this dialect
     fn name(&self) -> DialectName;
+    /// Get the set of registered operations associated with this dialect
+    fn registered_ops(&self) -> Rc<[OperationName]>;
+    /// Get the registered [OperationName] for an op `opcode`, or register it with `register`.
+    ///
+    /// Registering an operation with the dialect allows various parts of the IR to introspect the
+    /// set of operations which belong to a given dialect namespace.
+    fn get_or_register_op(
+        &self,
+        opcode: ::midenc_hir_symbol::Symbol,
+        register: fn(DialectName, ::midenc_hir_symbol::Symbol) -> OperationName,
+    ) -> OperationName;
+}
+
+/// A [DialectRegistration] must be implemented for any implementation of [Dialect], to allow the
+/// dialect to be registered with a [crate::Context] and instantiated on demand when building ops
+/// in the IR.
+///
+/// This is not part of the [Dialect] trait itself, as that trait must be object safe, and this
+/// trait is _not_ object safe.
+pub trait DialectRegistration: AsAny + Dialect {
+    /// The namespace of the dialect to register
+    ///
+    /// A dialect namespace serves both as a way to namespace the operations of that dialect, as
+    /// well as a way to uniquely name/identify the dialect itself. Thus, no two dialects can have
+    /// the same namespace at the same time.
+    const NAMESPACE: &'static str;
+
+    /// Initialize an instance of this dialect to be stored (uniqued) in the current
+    /// [crate::Context].
+    ///
+    /// A dialect will only ever be initialized once per context. A dialect must use interior
+    /// mutability to satisfy the requirements of the [Dialect] trait, and to allow the context to
+    /// store the returned instance in a reference-counted smart pointer.
+    fn init() -> Self;
 }
 
 /// A strongly-typed symbol representing the name of a [Dialect].
@@ -24,6 +60,10 @@ impl DialectName {
 
     pub const fn from_symbol(name: ::midenc_hir_symbol::Symbol) -> Self {
         Self(name)
+    }
+
+    pub const fn as_symbol(&self) -> ::midenc_hir_symbol::Symbol {
+        self.0
     }
 }
 impl core::fmt::Debug for DialectName {
@@ -60,5 +100,17 @@ impl AsRef<::midenc_hir_symbol::Symbol> for DialectName {
     #[inline(always)]
     fn as_ref(&self) -> &::midenc_hir_symbol::Symbol {
         &self.0
+    }
+}
+impl Borrow<::midenc_hir_symbol::Symbol> for DialectName {
+    #[inline(always)]
+    fn borrow(&self) -> &::midenc_hir_symbol::Symbol {
+        &self.0
+    }
+}
+impl Borrow<str> for DialectName {
+    #[inline(always)]
+    fn borrow(&self) -> &str {
+        self.0.as_str()
     }
 }

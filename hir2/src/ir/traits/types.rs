@@ -2,14 +2,19 @@ use core::fmt;
 
 use midenc_session::diagnostics::Severity;
 
-use crate::{derive, Context, Operation, Report, Spanned};
+use crate::{derive, Context, Op, Operation, Report, Spanned, Type};
 
 /// OpInterface to compute the return type(s) of an operation.
-pub trait InferTypeOpInterface {
+pub trait InferTypeOpInterface: Op {
     /// Run type inference for this op's results, using the current state, and apply any changes.
     ///
     /// Returns an error if unable to infer types, or if some type constraint is violated.
-    fn infer_types(&mut self) -> Result<(), Report>;
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report>;
+
+    /// Return whether the set sets of types are compatible
+    fn are_compatible_return_types(&self, lhs: &[Type], rhs: &[Type]) -> bool {
+        lhs == rhs
+    }
 }
 
 derive! {
@@ -115,14 +120,6 @@ impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
 pub trait TypeConstraint: 'static {
     fn description() -> impl fmt::Display;
     fn matches(ty: &crate::Type) -> bool;
-    fn check(ty: &crate::Type) -> Result<(), Report> {
-        if Self::matches(ty) {
-            Ok(())
-        } else {
-            let expected = Self::description();
-            Err(Report::msg(format!("expected {expected}, got '{ty}'")))
-        }
-    }
 }
 
 /// A type that can be constructed as a [crate::Type]
@@ -162,6 +159,22 @@ macro_rules! type_constraint {
             }
         }
     };
+
+    ($Constraint:ident, $description:literal, |$matcher_input:ident| $matcher:expr) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+        pub struct $Constraint;
+        impl TypeConstraint for $Constraint {
+            #[inline(always)]
+            fn description() -> impl core::fmt::Display {
+                $description
+            }
+
+            #[inline(always)]
+            fn matches($matcher_input: &$crate::Type) -> bool {
+                $matcher
+            }
+        }
+    };
 }
 
 type_constraint!(AnyType, "any type", true);
@@ -172,6 +185,8 @@ type_constraint!(AnyArray, "any array type", crate::Type::is_array);
 type_constraint!(AnyStruct, "any struct type", crate::Type::is_struct);
 type_constraint!(AnyPointer, "a pointer type", crate::Type::is_pointer);
 type_constraint!(AnyInteger, "an integral type", crate::Type::is_integer);
+type_constraint!(AnyPointerOrInteger, "an integral or pointer type", |ty| ty.is_pointer()
+    || ty.is_integer());
 type_constraint!(AnySignedInteger, "a signed integral type", crate::Type::is_signed_integer);
 type_constraint!(
     AnyUnsignedInteger,
@@ -179,6 +194,9 @@ type_constraint!(
     crate::Type::is_unsigned_integer
 );
 type_constraint!(IntFelt, "a field element", crate::Type::is_felt);
+
+/// A boolean
+pub type Bool = SizedInt<1>;
 
 /// A signless 8-bit integer
 pub type Int8 = SizedInt<8>;
@@ -211,6 +229,11 @@ pub type UInt64 = And<AnyUnsignedInteger, SizedInt<64>>;
 impl BuildableTypeConstraint for IntFelt {
     fn build() -> crate::Type {
         crate::Type::Felt
+    }
+}
+impl BuildableTypeConstraint for Bool {
+    fn build() -> crate::Type {
+        crate::Type::I1
     }
 }
 impl BuildableTypeConstraint for UInt8 {

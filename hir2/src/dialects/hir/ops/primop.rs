@@ -1,59 +1,49 @@
+use midenc_hir_macros::operation;
+
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
-derive! {
-    pub struct MemGrow : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[operand]
-        pages: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives HasSideEffects, MemoryRead, MemoryWrite;
+#[operation(
+    dialect = HirDialect,
+    traits(HasSideEffects, MemoryRead, MemoryWrite, SameOperandsAndResultType)
+)]
+pub struct MemGrow {
+    #[operand]
+    pages: UInt32,
+    #[result]
+    result: UInt32,
 }
 
-derive! {
-    pub struct MemSize : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[result]
-        result: OpResult,
-    }
-
-    derives HasSideEffects, MemoryRead;
+#[operation(
+    dialect = HirDialect,
+    traits(HasSideEffects, MemoryRead)
+)]
+pub struct MemSize {
+    #[result]
+    result: UInt32,
 }
 
-derive! {
-    pub struct MemSet : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[operand]
-        addr: OpOperand,
-        #[operand]
-        count: OpOperand,
-        #[operand]
-        value: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives HasSideEffects, MemoryWrite;
+#[operation(
+    dialect = HirDialect,
+    traits(HasSideEffects, MemoryWrite)
+)]
+pub struct MemSet {
+    #[operand]
+    addr: AnyPointer,
+    #[operand]
+    count: UInt32,
+    #[operand]
+    value: AnyType,
 }
 
-derive! {
-    pub struct MemCpy : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[operand]
-        source: OpOperand,
-        #[operand]
-        destination: OpOperand,
-        #[operand]
-        count: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives HasSideEffects, MemoryRead, MemoryWrite;
+#[operation(
+    dialect = HirDialect,
+    traits(HasSideEffects, MemoryRead, MemoryWrite)
+)]
+pub struct MemCpy {
+    #[operand]
+    source: AnyPointer,
+    #[operand]
+    destination: AnyPointer,
+    #[operand]
+    count: UInt32,
 }

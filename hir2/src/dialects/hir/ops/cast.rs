@@ -1,3 +1,5 @@
+use midenc_hir_macros::operation;
+
 use crate::{dialects::hir::HirDialect, traits::*, *};
 
 /*
@@ -29,107 +31,93 @@ pub enum CastKind {
 }
  */
 
-derive! {
-    pub struct PtrToInt : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+     dialect = HirDialect,
+     traits(UnaryOp)
+ )]
+pub struct PtrToInt {
+    #[operand]
+    operand: AnyPointer,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyInteger,
 }
 
-derive! {
-    pub struct IntToPtr : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct IntToPtr {
+    #[operand]
+    operand: AnyInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyPointer,
 }
 
-derive! {
-    pub struct Cast : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct Cast {
+    #[operand]
+    operand: AnyInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyInteger,
 }
 
-derive! {
-    pub struct Bitcast : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct Bitcast {
+    #[operand]
+    operand: AnyPointerOrInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyPointerOrInteger,
 }
 
-derive! {
-    pub struct Trunc : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct Trunc {
+    #[operand]
+    operand: AnyInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyInteger,
 }
 
-derive! {
-    pub struct Zext : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct Zext {
+    #[operand]
+    operand: AnyUnsignedInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyUnsignedInteger,
 }
 
-derive! {
-    pub struct Sext : Op {
-        #[dialect]
-        dialect: HirDialect,
-        #[attr]
-        ty: Type,
-        #[operand]
-        operand: OpOperand,
-        #[result]
-        result: OpResult,
-    }
-
-    derives UnaryOp;
+#[operation(
+    dialect = HirDialect,
+    traits(UnaryOp)
+)]
+pub struct Sext {
+    #[operand]
+    operand: AnySignedInteger,
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnySignedInteger,
 }

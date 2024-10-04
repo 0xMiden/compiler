@@ -1,10 +1,10 @@
 mod callable;
-mod multitrait;
+mod info;
 mod types;
 
 use midenc_session::diagnostics::Severity;
 
-pub(crate) use self::multitrait::MultiTraitVtable;
+pub(crate) use self::info::TraitInfo;
 pub use self::{callable::*, types::*};
 use crate::{derive, Context, Operation, Report, Spanned};
 
@@ -29,6 +29,9 @@ pub trait ReturnLike {}
 /// Op is a terminator (i.e. it can be used to terminate a block)
 pub trait Terminator {}
 
+/// Op's regions do not require blocks to end with a [Terminator]
+pub trait NoTerminator {}
+
 /// Marker trait for idemptoent ops, i.e. `op op X == op X (unary) / X op X == X (binary)`
 pub trait Idempotent {}
 
@@ -37,6 +40,51 @@ pub trait Involution {}
 
 /// Marker trait for ops which are not permitted to access values defined above them
 pub trait IsolatedFromAbove {}
+
+/// Marker trait for ops which have only regions of [`RegionKind::Graph`]
+pub trait HasOnlyGraphRegion {}
+
+/// Op's regions are all single-block graph regions, that not require a terminator
+///
+/// This trait _cannot_ be derived via `derive!`
+pub trait GraphRegionNoTerminator:
+    NoTerminator + SingleBlock + RegionKindInterface + HasOnlyGraphRegion
+{
+}
+
+/// Represents the types of regions that can be represented in the IR
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RegionKind {
+    /// A graph region is one without control-flow semantics, i.e. dataflow between operations is
+    /// the only thing that dictates order, and operations can be conceptually executed in parallel
+    /// if the runtime supports it.
+    ///
+    /// As there is no control-flow in these regions, graph regions may only contain a single block.
+    Graph,
+    /// An SSA region is one where the strict control-flow semantics and properties of SSA (static
+    /// single assignment) form must be upheld.
+    ///
+    /// SSA regions must adhere to:
+    ///
+    /// * Values can only be defined once
+    /// * Definitions must dominate uses
+    /// * Ordering of operations in a block corresponds to execution order, i.e. operations earlier
+    ///   in a block dominate those later in the block.
+    /// * Blocks must end with a terminator.
+    #[default]
+    SSA,
+}
+
+/// An op interface that indicates what types of regions it holds
+pub trait RegionKindInterface {
+    /// Get the [RegionKind] for this operation
+    fn kind(&self) -> RegionKind;
+    /// Returns true if the kind of this operation's regions requires SSA dominance
+    #[inline]
+    fn has_ssa_dominance(&self) -> bool {
+        matches!(self.kind(), RegionKind::SSA)
+    }
+}
 
 derive! {
     /// Marker trait for unary ops, i.e. those which take a single operand

@@ -1,8 +1,21 @@
-use core::any::Any;
-
 use super::*;
+use crate::any::AsAny;
 
-pub trait Op: Any + OpVerifier {
+pub trait OpRegistration: Op {
+    fn name() -> ::midenc_hir_symbol::Symbol;
+}
+
+pub trait BuildableOp<Args: core::marker::Tuple>: Op {
+    type Builder<'a, T>: FnOnce<Args, Output = Result<UnsafeIntrusiveEntityRef<Self>, crate::Report>>
+        + 'a
+    where
+        T: ?Sized + Builder + 'a;
+    fn builder<'b, B>(builder: &'b mut B, span: SourceSpan) -> Self::Builder<'b, B>
+    where
+        B: ?Sized + Builder + 'b;
+}
+
+pub trait Op: AsAny + OpVerifier {
     /// The name of this operation's opcode
     ///
     /// The opcode must be distinct from all other opcodes in the same dialect
@@ -10,6 +23,9 @@ pub trait Op: Any + OpVerifier {
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
 
+    fn set_span(&mut self, span: SourceSpan) {
+        self.as_operation_mut().set_span(span);
+    }
     fn parent(&self) -> Option<BlockRef> {
         self.as_operation().parent()
     }
@@ -31,6 +47,12 @@ pub trait Op: Any + OpVerifier {
     fn region_mut(&mut self, index: usize) -> EntityMut<'_, Region> {
         self.as_operation_mut().region_mut(index)
     }
+    fn has_successors(&self) -> bool {
+        self.as_operation().has_successors()
+    }
+    fn num_successors(&self) -> usize {
+        self.as_operation().num_successors()
+    }
     fn has_operands(&self) -> bool {
         self.as_operation().has_operands()
     }
@@ -43,16 +65,16 @@ pub trait Op: Any + OpVerifier {
     fn operands_mut(&mut self) -> &mut OpOperandStorage {
         self.as_operation_mut().operands_mut()
     }
-    fn results(&self) -> &[OpResultRef] {
+    fn results(&self) -> &OpResultStorage {
         self.as_operation().results()
     }
-    fn results_mut(&mut self) -> &mut [OpResultRef] {
+    fn results_mut(&mut self) -> &mut OpResultStorage {
         self.as_operation_mut().results_mut()
     }
-    fn successors(&self) -> &[OpSuccessor] {
+    fn successors(&self) -> &OpSuccessorStorage {
         self.as_operation().successors()
     }
-    fn successors_mut(&mut self) -> &mut [OpSuccessor] {
+    fn successors_mut(&mut self) -> &mut OpSuccessorStorage {
         self.as_operation_mut().successors_mut()
     }
 }

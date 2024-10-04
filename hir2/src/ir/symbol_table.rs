@@ -1,16 +1,52 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
+use midenc_session::diagnostics::{miette, Diagnostic};
+
 use crate::{
-    define_attr_type, interner, InsertionPoint, Op, Operation, OperationRef, Report, Searcher,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    define_attr_type, interner, InsertionPoint, Op, Operation, OperationRef, Report,
+    UnsafeIntrusiveEntityRef, Usable, Visibility, Walkable,
 };
 
 /// Represents the name of a [Symbol] in its local [SymbolTable]
 pub type SymbolName = interner::Symbol;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, thiserror::Error, Diagnostic)]
+pub enum InvalidSymbolRefError {
+    #[error("invalid symbol reference: no symbol table available")]
+    NoSymbolTable {
+        #[label("cannot resolve this symbol")]
+        symbol: crate::SourceSpan,
+        #[label(
+            "because this operation has no parent symbol table with which to resolve the reference"
+        )]
+        user: crate::SourceSpan,
+    },
+    #[error("invalid symbol reference: undefined symbol")]
+    UnknownSymbol {
+        #[label("failed to resolve this symbol")]
+        symbol: crate::SourceSpan,
+        #[label("in the nearest symbol table from this operation")]
+        user: crate::SourceSpan,
+    },
+    #[error("invalid symbol reference: undefined component '{component}' of symbol")]
+    UnknownSymbolComponent {
+        #[label("failed to resolve this symbol")]
+        symbol: crate::SourceSpan,
+        #[label("from the root symbol table of this operation")]
+        user: crate::SourceSpan,
+        component: &'static str,
+    },
+    #[error("invalid symbol reference: expected callable")]
+    NotCallable {
+        #[label("expected this symbol to implement the CallableOpInterface")]
+        symbol: crate::SourceSpan,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct SymbolNameAttr {
+    pub user: SymbolUseRef,
     /// The path through the abstract symbol space to the containing symbol table
     ///
     /// It is assumed that all symbol tables are also symbols themselves, and thus the path to
@@ -51,7 +87,7 @@ impl SymbolNameAttr {
         self.path != interner::symbols::Empty
     }
 
-    pub fn components(&self) -> impl Iterator<Item = SymbolNameComponent> {
+    pub fn components(&self) -> SymbolNameComponents {
         SymbolNameComponents::new(self.path, self.name)
     }
 }
@@ -62,6 +98,12 @@ impl fmt::Display for SymbolNameAttr {
         } else {
             f.write_str(self.name.as_str())
         }
+    }
+}
+impl crate::formatter::PrettyPrint for SymbolNameAttr {
+    fn render(&self) -> crate::formatter::Document {
+        use crate::formatter::*;
+        display(self)
     }
 }
 impl Eq for SymbolNameAttr {}
@@ -92,7 +134,7 @@ pub enum SymbolNameComponent {
     Leaf(SymbolName),
 }
 
-struct SymbolNameComponents {
+pub struct SymbolNameComponents {
     parts: VecDeque<&'static str>,
     name: SymbolName,
     done: bool,
@@ -135,6 +177,25 @@ impl SymbolNameComponents {
             done: false,
         }
     }
+
+    /// Convert this iterator into a symbol name representing the path prefix of a [Symbol].
+    ///
+    /// If `absolute` is set to true, then the resulting path will be prefixed with `::`
+    pub fn into_path(self, absolute: bool) -> SymbolName {
+        if self.parts.is_empty() {
+            return ::midenc_hir_symbol::symbols::Empty;
+        }
+
+        let mut buf =
+            String::with_capacity(2usize + self.parts.iter().map(|p| p.len()).sum::<usize>());
+        if absolute {
+            buf.push_str("::");
+        }
+        for part in self.parts {
+            buf.push_str(part);
+        }
+        SymbolName::intern(buf)
+    }
 }
 impl core::iter::FusedIterator for SymbolNameComponents {}
 impl Iterator for SymbolNameComponents {
@@ -155,6 +216,32 @@ impl Iterator for SymbolNameComponents {
     }
 }
 
+/// A trait which allows multiple types to be coerced into a [SymbolRef].
+///
+/// This is primarily intended for use in operation builders.
+pub trait AsSymbolRef {
+    fn as_symbol_ref(&self) -> SymbolRef;
+}
+impl<T: Symbol> AsSymbolRef for &T {
+    #[inline]
+    fn as_symbol_ref(&self) -> SymbolRef {
+        unsafe { SymbolRef::from_raw(*self as &dyn Symbol) }
+    }
+}
+impl<T: Symbol> AsSymbolRef for UnsafeIntrusiveEntityRef<T> {
+    #[inline]
+    fn as_symbol_ref(&self) -> SymbolRef {
+        let t_ptr = Self::as_ptr(self);
+        unsafe { SymbolRef::from_raw(t_ptr as *const dyn Symbol) }
+    }
+}
+impl AsSymbolRef for SymbolRef {
+    #[inline(always)]
+    fn as_symbol_ref(&self) -> SymbolRef {
+        Self::clone(self)
+    }
+}
+
 /// A [SymbolTable] is an IR entity which contains other IR entities, called _symbols_, each of
 /// which has a name, aka symbol, that uniquely identifies it amongst all other entities in the
 /// same [SymbolTable].
@@ -166,10 +253,10 @@ impl Iterator for SymbolNameComponents {
 /// type matches the `Key` type of the [SymbolTable], can be stored in that table.
 pub trait SymbolTable {
     /// Get a reference to the underlying [Operation]
-    fn as_operation(&self) -> &Operation;
+    fn as_symbol_table_operation(&self) -> &Operation;
 
     /// Get a mutable reference to the underlying [Operation]
-    fn as_operation_mut(&mut self) -> &mut Operation;
+    fn as_symbol_table_operation_mut(&mut self) -> &mut Operation;
 
     /// Get the entry for `name` in this table
     fn get(&self, name: SymbolName) -> Option<SymbolRef>;
@@ -204,7 +291,7 @@ impl dyn SymbolTable {
     pub fn find<T: Op + Symbol>(&self, name: SymbolName) -> Option<UnsafeIntrusiveEntityRef<T>> {
         let op = self.get(name)?;
         let op = op.borrow();
-        let op = op.as_operation().downcast_ref::<T>()?;
+        let op = op.as_symbol_operation().downcast_ref::<T>()?;
         Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(op) })
     }
 }
@@ -216,38 +303,67 @@ impl dyn SymbolTable {
 /// otherwise it would not be possible to unambiguously refer to a function by name. Likewise
 /// with modules in a program, etc.
 pub trait Symbol: Usable<Use = SymbolUse> + 'static {
-    fn as_operation(&self) -> &Operation;
-    fn as_operation_mut(&mut self) -> &mut Operation;
+    fn as_symbol_operation(&self) -> &Operation;
+    fn as_symbol_operation_mut(&mut self) -> &mut Operation;
     /// Get the name of this symbol
     fn name(&self) -> SymbolName;
+    /// Get an iterator over the components of the fully-qualified path of this symbol.
+    fn components(&self) -> SymbolNameComponents {
+        let mut parts = VecDeque::default();
+        if let Some(symbol_table) = self.root_symbol_table() {
+            let symbol_table = symbol_table.borrow();
+            symbol_table.walk_symbol_tables(true, |symbol_table, _| {
+                if let Some(sym) = symbol_table.as_symbol_table_operation().as_symbol() {
+                    parts.push_back(sym.name().as_str());
+                }
+            });
+        }
+        SymbolNameComponents {
+            parts,
+            name: self.name(),
+            done: false,
+        }
+    }
     /// Set the name of this symbol
     fn set_name(&mut self, name: SymbolName);
     /// Get the visibility of this symbol
     fn visibility(&self) -> Visibility;
     /// Returns true if this symbol has private visibility
-    fn is_private(&self) -> bool;
+    #[inline]
+    fn is_private(&self) -> bool {
+        self.visibility().is_private()
+    }
     /// Returns true if this symbol has public visibility
-    fn is_public(&self) -> bool;
+    #[inline]
+    fn is_public(&self) -> bool {
+        self.visibility().is_public()
+    }
     /// Sets the visibility of this symbol
     fn set_visibility(&mut self, visibility: Visibility);
     /// Sets the visibility of this symbol to private
     fn set_private(&mut self) {
         self.set_visibility(Visibility::Private);
     }
-    /// Sets the visibility of this symbol to nested
-    fn set_nested(&mut self) {
-        self.set_visibility(Visibility::Nested);
+    /// Sets the visibility of this symbol to internal
+    fn set_internal(&mut self) {
+        self.set_visibility(Visibility::Internal);
     }
     /// Sets the visibility of this symbol to public
     fn set_public(&mut self) {
         self.set_visibility(Visibility::Public);
     }
     /// Get all of the uses of this symbol that are nested within `from`
-    fn symbol_uses(&self, from: OperationRef) -> SymbolUseIter;
+    fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter;
     /// Return true if there are no uses of this symbol nested within `from`
-    fn symbol_uses_known_empty(&self, from: OperationRef) -> SymbolUseIter;
+    fn symbol_uses_known_empty(&self, from: OperationRef) -> bool {
+        self.symbol_uses(from).is_empty()
+    }
     /// Attempt to replace all uses of this symbol nested within `from`, with the provided replacement
-    fn replace_all_uses(&self, replacement: SymbolRef, from: OperationRef) -> Result<(), Report>;
+    fn replace_all_uses(
+        &mut self,
+        replacement: SymbolRef,
+        from: OperationRef,
+    ) -> Result<(), Report>;
     /// Returns true if this operation can be discarded if it has no remaining symbol uses
     ///
     /// By default, if the visibility is non-public, a symbol is considered discardable
@@ -260,21 +376,29 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     fn is_declaration(&self) -> bool {
         false
     }
+    /// Return the root symbol table in which this symbol is contained, if one exists.
+    ///
+    /// The root symbol table does not necessarily know about this symbol, rather the symbol table
+    /// which "owns" this symbol may itself be a symbol that belongs to another symbol table. This
+    /// function traces this chain as far as it goes, and returns the highest ancestor in the tree.
+    fn root_symbol_table(&self) -> Option<OperationRef> {
+        self.as_symbol_operation().root_symbol_table()
+    }
 }
 
 impl dyn Symbol {
     pub fn is<T: Op + Symbol>(&self) -> bool {
-        let op = self.as_operation();
+        let op = self.as_symbol_operation();
         op.is::<T>()
     }
 
     pub fn downcast_ref<T: Op + Symbol>(&self) -> Option<&T> {
-        let op = self.as_operation();
+        let op = self.as_symbol_operation();
         op.downcast_ref::<T>()
     }
 
     pub fn downcast_mut<T: Op + Symbol>(&mut self) -> Option<&mut T> {
-        let op = self.as_operation_mut();
+        let op = self.as_symbol_operation_mut();
         op.downcast_mut::<T>()
     }
 
@@ -283,7 +407,7 @@ impl dyn Symbol {
     /// NOTE: This relies on the assumption that all ops are allocated via the arena, and that all
     /// [Symbol] implementations are ops.
     pub fn as_operation_ref(&self) -> OperationRef {
-        unsafe { OperationRef::from_raw(self.as_operation()) }
+        self.as_symbol_operation().as_operation_ref()
     }
 }
 
@@ -298,6 +422,27 @@ impl Operation {
     #[inline]
     pub fn as_symbol(&self) -> Option<&dyn Symbol> {
         self.as_trait::<dyn Symbol>()
+    }
+
+    /// Get this operation as a [SymbolTable], if this operation implements the trait.
+    #[inline]
+    pub fn as_symbol_table(&self) -> Option<&dyn SymbolTable> {
+        self.as_trait::<dyn SymbolTable>()
+    }
+
+    /// Return the root symbol table in which this symbol is contained, if one exists.
+    ///
+    /// The root symbol table does not necessarily know about this symbol, rather the symbol table
+    /// which "owns" this symbol may itself be a symbol that belongs to another symbol table. This
+    /// function traces this chain as far as it goes, and returns the highest ancestor in the tree.
+    pub fn root_symbol_table(&self) -> Option<OperationRef> {
+        let mut parent = self.nearest_symbol_table();
+        let mut found = None;
+        while let Some(nearest_symbol_table) = parent.take() {
+            found = Some(nearest_symbol_table.clone());
+            parent = nearest_symbol_table.borrow().nearest_symbol_table();
+        }
+        found
     }
 
     /// Returns the nearest [SymbolTable] from this operation.
@@ -339,19 +484,14 @@ impl Operation {
     /// IR are visible to the caller.
     pub fn walk_symbol_tables<F>(&self, all_symbol_uses_visible: bool, mut callback: F)
     where
-        F: FnMut(&dyn Symbol, bool),
+        F: FnMut(&dyn SymbolTable, bool),
     {
-        use core::ops::ControlFlow;
-
-        let visitor = move |op: &dyn Symbol| {
-            callback(op, all_symbol_uses_visible);
-            ControlFlow::<()>::Continue(())
-        };
-
-        let op = self.as_operation_ref();
-        let mut searcher = Searcher::new(op, visitor);
-
-        searcher.visit();
+        self.prewalk(|op: OperationRef| {
+            let op = op.borrow();
+            if let Some(sym) = op.as_symbol_table() {
+                callback(sym, all_symbol_uses_visible);
+            }
+        });
     }
 }
 
@@ -384,7 +524,7 @@ fn verify_symbol(symbol: &dyn Symbol, context: &super::Context) -> Result<(), Re
     use midenc_session::diagnostics::{Severity, Spanned};
 
     // Symbols must either have no parent, or be an immediate child of a SymbolTable
-    let op = symbol.as_operation();
+    let op = symbol.as_symbol_operation();
     let parent = op.parent_op();
     if !parent.is_none_or(|parent| parent.borrow().implements::<dyn SymbolTable>()) {
         return Err(context
@@ -405,23 +545,57 @@ pub type SymbolUseIter<'a> = crate::EntityIter<'a, SymbolUse>;
 pub type SymbolUseCursor<'a> = crate::EntityCursor<'a, SymbolUse>;
 pub type SymbolUseCursorMut<'a> = crate::EntityCursorMut<'a, SymbolUse>;
 
+pub struct SymbolUsesIter {
+    items: VecDeque<SymbolUseRef>,
+}
+impl ExactSizeIterator for SymbolUsesIter {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+impl From<VecDeque<SymbolUseRef>> for SymbolUsesIter {
+    fn from(items: VecDeque<SymbolUseRef>) -> Self {
+        Self { items }
+    }
+}
+impl FromIterator<SymbolUseRef> for SymbolUsesIter {
+    fn from_iter<T: IntoIterator<Item = SymbolUseRef>>(iter: T) -> Self {
+        Self {
+            items: iter.into_iter().collect(),
+        }
+    }
+}
+impl core::iter::FusedIterator for SymbolUsesIter {}
+impl Iterator for SymbolUsesIter {
+    type Item = SymbolUseRef;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.items.pop_front()
+    }
+}
+
 /// An [OpOperand] represents a use of a [Value] by an [Operation]
 pub struct SymbolUse {
     /// The user of the symbol
     pub owner: OperationRef,
-    /// The symbol used
-    pub symbol: SymbolNameAttr,
+    /// The symbol attribute of the op that stores the symbol
+    pub symbol: crate::interner::Symbol,
 }
 impl SymbolUse {
     #[inline]
-    pub fn new(owner: OperationRef, symbol: SymbolNameAttr) -> Self {
+    pub fn new(owner: OperationRef, symbol: crate::interner::Symbol) -> Self {
         Self { owner, symbol }
     }
 }
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = self.owner.borrow();
+        let value = op.get_typed_attribute::<SymbolName, _>(&self.symbol);
         f.debug_struct("SymbolUse")
-            .field("symbol", &self.symbol)
+            .field("attr", &self.symbol)
+            .field("symbol", &value)
             .finish_non_exhaustive()
     }
 }

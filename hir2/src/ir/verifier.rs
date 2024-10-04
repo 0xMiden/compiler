@@ -132,17 +132,63 @@ pub trait Verifier<Trait: ?Sized> {
     /// in verifier selection, so that the resulting implementation is specialized and able to
     /// have more optimizations applied as a result.
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use midenc_hir2::{Context, Report, Verify, verifier::Verifier};
+    ///
+    /// /// This trait is a marker for a type that should never validate, i.e. verifying it always
+    /// /// returns an error.
+    /// trait Nope {}
+    /// impl<T: Nope> Verify<dyn Nope> for Any<T> {
+    ///     fn verify(&self, context: &Context) -> Result<(), Report> {
+    ///         Err(Report::msg("nope"))
+    ///     }
+    /// }
+    ///
+    /// /// We can't impl the `Verify` trait for all T outside of `midenc_hir2`, so we newtype all T
+    /// /// to do so, in effect, we can mimic the effect of implementing for all T using this type.
+    /// struct Any<T>(core::marker::PhantomData<T>);
+    /// impl<T> Any<T> {
+    ///     fn new() -> Self {
+    ///         Self(core::marker::PhantomData)
+    ///     }
+    /// }
+    ///
+    /// /// This struct implements `Nope`, so it has an explicit verifier, which always fails
+    /// struct AlwaysRejected;
+    /// impl Nope for AlwaysRejected {}
+    ///
+    /// /// This struct doesn't implement `Nope`, so it gets a vacuous verifier, which always
+    /// /// succeeds.
+    /// struct AlwaysAccepted;
+    ///
+    /// /// Our vacuous verifier impl
     /// #[inline(always)]
-    /// fn noop(&T, &Context) -> Result<(), Report> { Ok(()) }
-    /// let verify_fn = const {
-    ///     if <T as Verifier<Trait>>::VACUOUS {
+    /// fn noop<T>(_: &Any<T>, _: &Context) -> Result<(), Report> { Ok(()) }
+    ///
+    /// /// This block uses const-eval to select the verifier for Any<AlwaysAccepted> statically
+    /// let always_accepted = const {
+    ///     if <Any<AlwaysAccepted> as Verifier<dyn Nope>>::VACUOUS {
     ///        noop
     ///     } else {
-    ///        <T as Verifier<Trait>>::maybe_verify
+    ///        <Any<AlwaysAccepted> as Verifier<dyn Nope>>::maybe_verify
     ///     }
     /// };
-    /// verify_fn(op, context)
+    ///
+    /// /// This block uses const-eval to select the verifier for Any<AlwaysRejected> statically
+    /// let always_rejected = const {
+    ///     if <Any<AlwaysRejected> as Verifier<dyn Nope>>::VACUOUS {
+    ///        noop
+    ///     } else {
+    ///        <Any<AlwaysRejected> as Verifier<dyn Nope>>::maybe_verify
+    ///     }
+    /// };
+    ///
+    /// /// Verify that we got the correct impls. We can't verify that all of the abstraction was
+    /// /// eliminated, but from reviewing the assembly output, it appears that this is precisely
+    /// /// what happens.
+    /// let context = Context::default();
+    /// assert!(always_accepted(&Any::new(), &context).is_ok());
+    /// assert!(always_rejected(&Any::new(), &context).is_err());
     /// ```
     const VACUOUS: bool;
 

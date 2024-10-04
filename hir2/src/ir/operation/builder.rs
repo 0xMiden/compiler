@@ -1,81 +1,77 @@
-use core::{
-    marker::Unsize,
-    ptr::{DynMetadata, Pointee},
-};
-
-use super::{Operation, OperationRef};
 use crate::{
-    verifier, AttributeValue, Context, Op, OpOperandImpl, OpSuccessor, Region, Report, Type,
-    UnsafeIntrusiveEntityRef, ValueRef,
+    traits::{AsCallableSymbolRef, Terminator},
+    AsSymbolRef, AttributeValue, BlockRef, Builder, KeyedSuccessor, Op, OpBuilder, OperationRef,
+    Region, Report, Spanned, SuccessorInfo, Type, UnsafeIntrusiveEntityRef, ValueRef,
 };
 
-// TODO: We need a safe way to construct arbitrary Ops imperatively:
-//
-// * Allocate an uninit instance of T
-// * Initialize the Operartion field of T with the empty Operation data
-// * Use the primary builder methods to mutate Operation fields
-// * Use generated methods on Op-specific builders to mutate Op fields
-// * At the end, convert uninit T to init T, return handle to caller
-//
-// Problems:
-//
-// * How do we default-initialize an instance of T for this purpose
-// * If we use MaybeUninit, how do we compute field offsets for the Operation field
-// * Generated methods can compute offsets, but how do we generate the specialized builders?
-pub struct OperationBuilder<'a, T> {
-    context: &'a Context,
-    op: UnsafeIntrusiveEntityRef<T>,
+/// The [OperationBuilder] is a primitive for imperatively constructing an [Operation].
+///
+/// Currently, this is primarily used by our `#[operation]` macro infrastructure, to finalize
+/// construction of the underlying [Operation] of an [Op] implementation, after both have been
+/// allocated and initialized with only basic metadata. This builder is then used to add all of
+/// the data under the op, e.g. operands, results, attributes, etc. Once complete, verification is
+/// run on the constructed op.
+///
+/// Using this directly is possible, see [OperationBuilder::new] for details. You may also find it
+/// useful to examine the expansion of the `#[operation]` macro for existing ops to understand what goes
+/// on behind the scenes for most ops.
+pub struct OperationBuilder<'a, T, B: ?Sized = OpBuilder> {
+    builder: &'a mut B,
+    op: OperationRef,
     _marker: core::marker::PhantomData<T>,
 }
-impl<'a, T: Op> OperationBuilder<'a, T> {
-    pub fn new(context: &'a Context, op: T) -> Self {
-        let mut op = context.alloc_tracked(op);
-
-        // SAFETY: Setting the data pointer of the multi-trait vtable must ensure
-        // that it points to the concrete type of the allocation, which we can guarantee here,
-        // having just allocated it. Until the data pointer is set, casts using the vtable are
-        // undefined behavior, so by never allowing the uninitialized vtable to be accessed,
-        // we can ensure the multi-trait impl is safe
-        unsafe {
-            let data_ptr = UnsafeIntrusiveEntityRef::as_ptr(&op);
-            let mut op_mut = op.borrow_mut();
-            op_mut.as_operation_mut().vtable.set_data_ptr(data_ptr.cast_mut());
-        }
-
+impl<'a, T, B> OperationBuilder<'a, T, B>
+where
+    T: Op,
+    B: ?Sized + Builder,
+{
+    /// Create a new [OperationBuilder] for `op` using the provided [Builder].
+    ///
+    /// The [Operation] underlying `op` must have been initialized correctly:
+    ///
+    /// * Allocated via the same context as `builder`
+    /// * Initialized via [crate::Operation::uninit]
+    /// * All op traits implemented by `T` must have been registered with its [OperationName]
+    /// * All fields of `T` must have been initialized to actual or default values. This builder
+    ///   will invoke verification at the end, and if `T` is not correctly initialized, it will
+    ///   result in undefined behavior.
+    pub fn new(builder: &'a mut B, op: UnsafeIntrusiveEntityRef<T>) -> Self {
+        let op = unsafe { UnsafeIntrusiveEntityRef::from_raw(op.borrow().as_operation()) };
         Self {
-            context,
+            builder,
             op,
             _marker: core::marker::PhantomData,
         }
     }
 
-    /// Register this op as an implementation of `Trait`.
-    ///
-    /// This is enforced statically by the type system, as well as dynamically via verification.
-    ///
-    /// This must be called for any trait that you wish to be able to cast the type-erased
-    /// [Operation] to later, or if you wish to get a `dyn Trait` reference from a `dyn Op`
-    /// reference.
-    ///
-    /// If `Trait` has a verifier implementation, it will be automatically applied when calling
-    /// [Operation::verify].
-    pub fn implement<Trait>(&mut self)
-    where
-        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
-        T: Unsize<Trait> + verifier::Verifier<Trait> + 'static,
-    {
-        let mut op = self.op.borrow_mut();
-        let operation = op.as_operation_mut();
-        operation.vtable.register_trait::<T, Trait>();
-    }
-
     /// Set attribute `name` on this op to `value`
+    #[inline]
     pub fn with_attr<A>(&mut self, name: &'static str, value: A)
     where
         A: AttributeValue,
     {
-        let mut op = self.op.borrow_mut();
-        op.as_operation_mut().attrs.insert(name, Some(value));
+        self.op.borrow_mut().set_attribute(name, Some(value));
+    }
+
+    /// Set symbol `attr_name` on this op to `symbol`.
+    ///
+    /// Symbol references are stored as attributes, and have similar semantics to operands, i.e.
+    /// they require tracking uses.
+    #[inline]
+    pub fn with_symbol(&mut self, attr_name: &'static str, symbol: impl AsSymbolRef) {
+        self.op.borrow_mut().set_symbol_attribute(attr_name, symbol);
+    }
+
+    /// Like [with_symbol], but further constrains the range of valid input symbols to those which
+    /// are valid [CallableOpInterface] implementations.
+    #[inline]
+    pub fn with_callable_symbol(
+        &mut self,
+        attr_name: &'static str,
+        callable: impl AsCallableSymbolRef,
+    ) {
+        let callable = callable.as_callable_symbol_ref();
+        self.op.borrow_mut().set_symbol_attribute(attr_name, callable);
     }
 
     /// Add a new [Region] to this operation.
@@ -86,83 +82,165 @@ impl<'a, T: Op> OperationBuilder<'a, T> {
     pub fn create_region(&mut self) {
         let mut region = Region::default();
         unsafe {
-            region.set_owner(Some(self.as_operation_ref()));
+            region.set_owner(Some(self.op.clone()));
         }
-        let region = self.context.alloc_tracked(region);
+        let region = self.builder.context().alloc_tracked(region);
         let mut op = self.op.borrow_mut();
-        op.as_operation_mut().regions.push_back(region);
+        op.regions.push_back(region);
     }
 
-    pub fn with_successor(&mut self, succ: OpSuccessor) {
-        todo!()
+    pub fn with_successor(
+        &mut self,
+        dest: BlockRef,
+        arguments: impl IntoIterator<Item = ValueRef>,
+    ) {
+        let owner = self.op.clone();
+        // Insert operand group for this successor
+        let mut op = self.op.borrow_mut();
+        let operand_group =
+            op.operands.push_group(arguments.into_iter().enumerate().map(|(index, arg)| {
+                self.builder.context().make_operand(arg, owner.clone(), index as u8)
+            }));
+        // Record SuccessorInfo for this successor in the op
+        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let successor = self.builder.context().make_block_operand(dest.clone(), owner, succ_index);
+        op.successors.push_group([SuccessorInfo {
+            block: successor,
+            key: None,
+            operand_group: operand_group.try_into().expect("too many operand groups"),
+        }]);
     }
 
-    pub fn with_successors<I, S>(&mut self, succs: I)
+    pub fn with_successors<I>(&mut self, succs: I)
     where
-        S: Into<OpSuccessor>,
+        I: IntoIterator<Item = (BlockRef, Vec<ValueRef>)>,
+    {
+        let owner = self.op.clone();
+        let mut op = self.op.borrow_mut();
+        let mut group = vec![];
+        for (i, (block, args)) in succs.into_iter().enumerate() {
+            let block = self.builder.context().make_block_operand(block, owner.clone(), i as u8);
+            let operands = args
+                .into_iter()
+                .map(|value_ref| self.builder.context().make_operand(value_ref, owner.clone(), 0));
+            let operand_group = op.operands.push_group(operands);
+            group.push(SuccessorInfo {
+                block,
+                key: None,
+                operand_group: operand_group.try_into().expect("too many operand groups"),
+            });
+        }
+        op.successors.push_group(group);
+    }
+
+    pub fn with_keyed_successors<I, S>(&mut self, succs: I)
+    where
+        S: KeyedSuccessor,
         I: IntoIterator<Item = S>,
     {
-        todo!()
+        let owner = self.op.clone();
+        let mut op = self.op.borrow_mut();
+        let mut group = vec![];
+        for (i, successor) in succs.into_iter().enumerate() {
+            let (key, block, args) = successor.into_parts();
+            let block = self.builder.context().make_block_operand(block, owner.clone(), i as u8);
+            let operands = args
+                .into_iter()
+                .map(|value_ref| self.builder.context().make_operand(value_ref, owner.clone(), 0));
+            let operand_group = op.operands.push_group(operands);
+            let key = Box::new(key);
+            let key = unsafe { core::ptr::NonNull::new_unchecked(Box::into_raw(key)) };
+            group.push(SuccessorInfo {
+                block,
+                key: Some(key.cast()),
+                operand_group: operand_group.try_into().expect("too many operand groups"),
+            });
+        }
+        op.successors.push_group(group);
     }
 
-    /// Set the operands given to this op
+    /// Append operands to the set of operands given to this op so far.
     pub fn with_operands<I>(&mut self, operands: I)
     where
         I: IntoIterator<Item = ValueRef>,
     {
-        // TODO: Verify the safety of this conversion
-        let owner = self.as_operation_ref();
-        let mut op = self.op.borrow_mut();
+        let owner = self.op.clone();
         let operands = operands.into_iter().enumerate().map(|(index, value)| {
-            self.context
-                .alloc_tracked(OpOperandImpl::new(value, owner.clone(), index as u8))
+            self.builder.context().make_operand(value, owner.clone(), index as u8)
         });
-        let op_mut = op.as_operation_mut();
-        op_mut.operands.clear();
-        op_mut.operands.extend(operands);
+        let mut op = self.op.borrow_mut();
+        op.operands.extend(operands);
     }
 
+    /// Append operands to the set of operands in operand group `group`
     pub fn with_operands_in_group<I>(&mut self, group: usize, operands: I)
     where
         I: IntoIterator<Item = ValueRef>,
     {
-        let owner = self.as_operation_ref();
-        let mut op = self.op.borrow_mut();
+        let owner = self.op.clone();
         let operands = operands.into_iter().enumerate().map(|(index, value)| {
-            self.context
-                .alloc_tracked(OpOperandImpl::new(value, owner.clone(), index as u8))
+            self.builder.context().make_operand(value, owner.clone(), index as u8)
         });
-        let op_operands = op.operands_mut();
-        op_operands.push_operands_to_group(group, operands);
+        let mut op = self.op.borrow_mut();
+        op.operands.extend_group(group, operands);
     }
 
     /// Allocate `n` results for this op, of unknown type, to be filled in later
     pub fn with_results(&mut self, n: usize) {
-        let owner = self.as_operation_ref();
+        let span = self.op.borrow().span;
+        let owner = self.op.clone();
+        let results = (0..n).map(|idx| {
+            self.builder
+                .context()
+                .make_result(span, Type::Unknown, owner.clone(), idx as u8)
+        });
         let mut op = self.op.borrow_mut();
-        let results =
-            (0..n).map(|idx| self.context.make_result(Type::Unknown, owner.clone(), idx as u8));
-        let op_mut = op.as_operation_mut();
-        op_mut.results.clear();
-        op_mut.results.extend(results);
+        op.results.clear();
+        op.results.extend(results);
     }
 
     /// Consume this builder, verify the op, and return a handle to it, or an error if validation
     /// failed.
-    pub fn build(self) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
-        {
-            let op = self.op.borrow();
-            op.as_operation().verify(self.context)?;
-        }
-        Ok(self.op)
-    }
+    pub fn build(mut self) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
+        let op = {
+            let mut op = self.op.borrow_mut();
 
-    #[inline]
-    fn as_operation_ref(&self) -> OperationRef {
-        let op = self.op.borrow();
-        unsafe {
-            let ptr = op.as_operation() as *const Operation;
-            OperationRef::from_raw(ptr)
+            // Infer result types and apply any associated validation
+            if let Some(interface) = op.as_trait_mut::<dyn crate::traits::InferTypeOpInterface>() {
+                interface.infer_return_types(self.builder.context())?;
+            }
+
+            // Verify things that would require negative trait impls
+            if !op.implements::<dyn Terminator>() && op.has_successors() {
+                return Err(self
+                    .builder
+                    .context()
+                    .session
+                    .diagnostics
+                    .diagnostic(miden_assembly::diagnostics::Severity::Error)
+                    .with_message("invalid operation")
+                    .with_primary_label(
+                        op.span(),
+                        "this operation has successors, but does not implement the 'Terminator' \
+                         trait",
+                    )
+                    .with_help("operations with successors must implement the 'Terminator' trait")
+                    .into_report());
+            }
+
+            unsafe { UnsafeIntrusiveEntityRef::from_raw(op.container().cast()) }
+        };
+
+        // Run op-specific verification
+        {
+            let op: super::EntityRef<T> = op.borrow();
+            //let op = op.borrow();
+            op.verify(self.builder.context())?;
         }
+
+        // Insert op at current insertion point
+        self.builder.insert(self.op);
+
+        Ok(op)
     }
 }

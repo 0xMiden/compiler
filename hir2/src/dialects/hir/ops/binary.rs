@@ -1,137 +1,654 @@
-use crate::{dialects::hir::HirDialect, traits::*, *};
+use crate::{derive::operation, dialects::hir::HirDialect, traits::*, *};
 
-macro_rules! derive_binary_op_with_overflow {
-    ($Op:ident) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                lhs: OpOperandRef,
-                #[operand]
-                rhs: OpOperandRef,
-                #[result]
-                result: OpResultRef,
-                #[attr]
-                overflow: Overflow,
+/// Two's complement sum
+#[operation(
+    dialect = HirDialect,
+    traits(BinaryOp, Commutative, SameTypeOperands),
+    implements(InferTypeOpInterface)
+)]
+pub struct Add {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+    #[attr]
+    overflow: Overflow,
+}
+
+impl InferTypeOpInterface for Add {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
             }
-
-            derives BinaryOp;
         }
-    };
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
+}
 
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                lhs: OpOperandRef,
-                #[operand]
-                rhs: OpOperandRef,
-                #[result]
-                result: OpResultRef,
-                #[attr]
-                overflow: Overflow,
+/// Two's complement sum with overflow bit
+#[operation(
+    dialect = HirDialect,
+    traits(BinaryOp, Commutative, SameTypeOperands),
+    implements(InferTypeOpInterface)
+)]
+pub struct AddOverflowing {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    overflowed: Bool,
+    #[result]
+    result: AnyInteger,
+}
+
+impl InferTypeOpInterface for AddOverflowing {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
             }
-
-            derives BinaryOp, $OpTrait $(, $OpTraitRest)*;
         }
-    };
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
 }
 
-macro_rules! derive_binary_op {
-    ($Op:ident) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                lhs: OpOperandRef,
-                #[operand]
-                rhs: OpOperandRef,
-                #[result]
-                result: OpResultRef,
+/// Two's complement difference (subtraction)
+#[operation(
+    dialect = HirDialect,
+    traits(BinaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface)
+)]
+pub struct Sub {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+    #[attr]
+    overflow: Overflow,
+}
+
+impl InferTypeOpInterface for Sub {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
             }
-
-            derives BinaryOp;
         }
-    };
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
+}
 
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive! {
-            pub struct $Op: Op {
-                #[dialect]
-                dialect: HirDialect,
-                #[operand]
-                lhs: OpOperandRef,
-                #[operand]
-                rhs: OpOperandRef,
-                #[result]
-                result: OpResultRef,
+/// Two's complement difference (subtraction) with underflow bit
+#[operation(
+    dialect = HirDialect,
+    traits(BinaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface)
+)]
+pub struct SubOverflowing {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    overflowed: Bool,
+    #[result]
+    result: AnyInteger,
+}
+
+impl InferTypeOpInterface for SubOverflowing {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
             }
-
-            derives BinaryOp, $OpTrait $(, $OpTraitRest)*;
         }
-    };
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
 }
 
-macro_rules! derive_binary_logical_op {
-    ($Op:ident) => {
-        derive_binary_op!($Op derives SameTypeOperands, SameOperandsAndResultType, Commutative);
-    };
-
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_binary_op!($Op derives SameTypeOperands, SameOperandsAndResultType, Commutative, $OpTrait $(, $OpTraitRest)*);
-    };
+/// Two's complement product
+#[operation(
+    dialect = HirDialect,
+    traits(BinaryOp, Commutative, SameTypeOperands),
+    implements(InferTypeOpInterface)
+)]
+pub struct Mul {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+    #[attr]
+    overflow: Overflow,
 }
 
-macro_rules! derive_binary_bitwise_op {
-    ($Op:ident) => {
-        derive_binary_op!($Op derives SameTypeOperands, SameOperandsAndResultType);
-    };
-
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_binary_op!($Op derives SameTypeOperands, SameOperandsAndResultType, $OpTrait $(, $OpTraitRest)*);
-    };
+impl InferTypeOpInterface for Mul {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
+            }
+        }
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
 }
 
-macro_rules! derive_binary_comparison_op {
-    ($Op:ident) => {
-        derive_binary_op!($Op derives SameTypeOperands);
-    };
-
-    ($Op:ident derives $OpTrait:ident $(, $OpTraitRest:ident)*) => {
-        derive_binary_op!($Op derives SameTypeOperands, $OpTrait $(, $OpTraitRest)*);
-    };
+/// Two's complement product with overflow bit
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands),
+        implements(InferTypeOpInterface)
+    )]
+pub struct MulOverflowing {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    overflowed: Bool,
+    #[result]
+    result: AnyInteger,
 }
 
-derive_binary_op_with_overflow!(Add derives Commutative, SameTypeOperands);
-derive_binary_op_with_overflow!(Sub derives SameTypeOperands);
-derive_binary_op_with_overflow!(Mul derives Commutative, SameTypeOperands);
-derive_binary_op_with_overflow!(Exp);
+impl InferTypeOpInterface for MulOverflowing {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        use midenc_session::diagnostics::Severity;
+        let span = self.span();
+        let lhs = self.lhs().ty().clone();
+        {
+            let rhs = self.rhs();
+            if lhs != rhs.ty() {
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operand types")
+                    .with_primary_label(span, "operands of this operation are not compatible")
+                    .with_secondary_label(
+                        rhs.span(),
+                        format!("expected this value to have type '{lhs}', but got '{}'", rhs.ty()),
+                    )
+                    .into_report());
+            }
+        }
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
+}
 
-derive_binary_op!(Div derives SameTypeOperands, SameOperandsAndResultType);
-derive_binary_op!(Mod derives SameTypeOperands, SameOperandsAndResultType);
-derive_binary_op!(DivMod derives SameTypeOperands, SameOperandsAndResultType);
+/// Exponentiation for field elements
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Exp {
+    #[operand]
+    lhs: IntFelt,
+    #[operand]
+    rhs: IntFelt,
+    #[result]
+    result: IntFelt,
+}
 
-derive_binary_logical_op!(And);
-derive_binary_logical_op!(Or);
-derive_binary_logical_op!(Xor);
+/// Unsigned integer division, traps on division by zero
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Div {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
 
-derive_binary_bitwise_op!(Band derives Commutative);
-derive_binary_bitwise_op!(Bor derives Commutative);
-derive_binary_bitwise_op!(Bxor derives Commutative);
-derive_binary_op!(Shl);
-derive_binary_op!(Shr);
-derive_binary_op!(Rotl);
-derive_binary_op!(Rotr);
+/// Signed integer division, traps on division by zero or dividing the minimum signed value by -1
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Sdiv {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
 
-derive_binary_comparison_op!(Eq derives Commutative);
-derive_binary_comparison_op!(Neq derives Commutative);
-derive_binary_comparison_op!(Gt);
-derive_binary_comparison_op!(Gte);
-derive_binary_comparison_op!(Lt);
-derive_binary_comparison_op!(Lte);
-derive_binary_comparison_op!(Min derives Commutative);
-derive_binary_comparison_op!(Max derives Commutative);
+/// Unsigned integer Euclidean modulo, traps on division by zero
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Mod {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Signed integer Euclidean modulo, traps on division by zero
+///
+/// The result has the same sign as the dividend (lhs)
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Smod {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Combined unsigned integer Euclidean division and remainder (modulo).
+///
+/// Traps on division by zero.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Divmod {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    remainder: AnyInteger,
+    #[result]
+    quotient: AnyInteger,
+}
+
+/// Combined signed integer Euclidean division and remainder (modulo).
+///
+/// Traps on division by zero.
+///
+/// The remainder has the same sign as the dividend (lhs)
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Sdivmod {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    remainder: AnyInteger,
+    #[result]
+    quotient: AnyInteger,
+}
+
+/// Logical AND
+///
+/// Operands must be boolean.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct And {
+    #[operand]
+    lhs: Bool,
+    #[operand]
+    rhs: Bool,
+    #[result]
+    result: Bool,
+}
+
+/// Logical OR
+///
+/// Operands must be boolean.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Or {
+    #[operand]
+    lhs: Bool,
+    #[operand]
+    rhs: Bool,
+    #[result]
+    result: Bool,
+}
+
+/// Logical XOR
+///
+/// Operands must be boolean.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Xor {
+    #[operand]
+    lhs: Bool,
+    #[operand]
+    rhs: Bool,
+    #[result]
+    result: Bool,
+}
+
+/// Bitwise AND
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Band {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise OR
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Bor {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise XOR
+///
+/// Operands must be boolean.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Bxor {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise shift-left
+///
+/// Shifts larger than the bitwidth of the value will be wrapped to zero.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp),
+    )]
+pub struct Shl {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    shift: UInt32,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise (logical) shift-right
+///
+/// Shifts larger than the bitwidth of the value will effectively truncate the value to zero.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp),
+    )]
+pub struct Shr {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    shift: UInt32,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Arithmetic (signed) shift-right
+///
+/// The result of shifts larger than the bitwidth of the value depend on the sign of the value;
+/// for positive values, it rounds to zero; for negative values, it rounds to MIN.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp),
+    )]
+pub struct Ashr {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    shift: UInt32,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise rotate-left
+///
+/// The rotation count must be < the bitwidth of the value type.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp),
+    )]
+pub struct Rotl {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    shift: UInt32,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Bitwise rotate-right
+///
+/// The rotation count must be < the bitwidth of the value type.
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp),
+    )]
+pub struct Rotr {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    shift: UInt32,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Equality comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands),
+    )]
+pub struct Eq {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Inequality comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands),
+    )]
+pub struct Neq {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Greater-than comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands),
+    )]
+pub struct Gt {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Greater-than-or-equal comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands),
+    )]
+pub struct Gte {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Less-than comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands),
+    )]
+pub struct Lt {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Less-than-or-equal comparison
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, SameTypeOperands),
+    )]
+pub struct Lte {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: Bool,
+}
+
+/// Select minimum value
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Min {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
+
+/// Select maximum value
+#[operation(
+        dialect = HirDialect,
+        traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    )]
+pub struct Max {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+}
