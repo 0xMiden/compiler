@@ -1,5 +1,8 @@
-use self::traits::AsCallableSymbolRef;
-use crate::*;
+use crate::{
+    dialects::hir::*, AsCallableSymbolRef, BlockRef, Builder, Immediate, InsertionPoint, Op,
+    OpBuilder, Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, Usable,
+    ValueRef,
+};
 
 pub struct FunctionBuilder<'f> {
     pub func: &'f mut Function,

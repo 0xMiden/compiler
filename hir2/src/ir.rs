@@ -1,16 +1,15 @@
 mod attribute;
 mod block;
 mod builder;
+mod callable;
 mod component;
 mod context;
 mod dialect;
 mod entity;
-mod function;
 mod ident;
 mod immediates;
 mod insert;
 mod interface;
-mod module;
 mod op;
 mod operands;
 mod operation;
@@ -35,6 +34,7 @@ pub use self::{
         BlockRef,
     },
     builder::{Builder, Listener, ListenerType, OpBuilder},
+    callable::*,
     context::Context,
     dialect::{Dialect, DialectName, DialectRegistration},
     entity::{
@@ -42,11 +42,9 @@ pub use self::{
         EntityMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, RawEntityRef,
         StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
     },
-    function::{AbiParam, ArgumentExtension, ArgumentPurpose, Function, Signature},
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
     insert::{Insert, InsertionPoint, ProgramPoint},
-    module::Module,
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

@@ -1,7 +1,7 @@
 use crate::{
-    traits::{AsCallableSymbolRef, Terminator},
-    AsSymbolRef, AttributeValue, BlockRef, Builder, KeyedSuccessor, Op, OpBuilder, OperationRef,
-    Region, Report, Spanned, SuccessorInfo, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    traits::Terminator, AsCallableSymbolRef, AsSymbolRef, AttributeValue, BlockRef, Builder,
+    KeyedSuccessor, Op, OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type,
+    UnsafeIntrusiveEntityRef, ValueRef,
 };
 
 /// The [OperationBuilder] is a primitive for imperatively constructing an [Operation].

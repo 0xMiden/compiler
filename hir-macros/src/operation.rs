@@ -1042,11 +1042,11 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                         #(
                             #[doc = #set_symbol_doc_lines]
                         )*
-                        pub fn #set_symbol(&mut self, symbol: impl ::midenc_hir2::traits::AsCallableSymbolRef) -> Result<(), ::midenc_hir2::InvalidSymbolRefError> {
+                        pub fn #set_symbol(&mut self, symbol: impl ::midenc_hir2::AsCallableSymbolRef) -> Result<(), ::midenc_hir2::InvalidSymbolRefError> {
                             let symbol = symbol.as_callable_symbol_ref();
                             let (data_ptr, _) = ::midenc_hir2::SymbolRef::as_ptr(&symbol).to_raw_parts();
                             if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
-                                if !self.op.implements::<dyn ::midenc_hir2::traits::CallableOpInterface>() {
+                                if !self.op.implements::<dyn ::midenc_hir2::CallableOpInterface>() {
                                     return Err(::midenc_hir2::InvalidSymbolRefError::NotCallable {
                                         symbol: self.span(),
                                     });
@@ -1054,7 +1054,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                             } else {
                                 let symbol = symbol.borrow();
                                 let symbol_op = symbol.as_symbol_operation();
-                                if !symbol_op.implements::<dyn ::midenc_hir2::traits::CallableOpInterface>() {
+                                if !symbol_op.implements::<dyn ::midenc_hir2::CallableOpInterface>() {
                                     return Err(::midenc_hir2::InvalidSymbolRefError::NotCallable {
                                         symbol: symbol_op.span(),
                                     });
@@ -2413,10 +2413,9 @@ impl OpCreateParam {
                     })]
                 }
                 SymbolType::Callable => {
-                    let as_callable_symbol_ref_bound = syn::parse_str::<syn::TypeParamBound>(
-                        "::midenc_hir2::traits::AsCallableSymbolRef",
-                    )
-                    .unwrap();
+                    let as_callable_symbol_ref_bound =
+                        syn::parse_str::<syn::TypeParamBound>("::midenc_hir2::AsCallableSymbolRef")
+                            .unwrap();
                     vec![syn::GenericParam::Type(syn::TypeParam {
                         attrs: vec![],
                         ident: format_ident!("T{}", name.to_string().to_pascal_case()),

@@ -1,163 +1,138 @@
 use core::fmt;
 
-use super::*;
 use crate::{
-    derive::operation,
-    dialects::hir::HirDialect,
-    formatter,
-    traits::{
-        CallableOpInterface, IsolatedFromAbove, RegionKind, RegionKindInterface, SingleRegion,
-    },
-    CallConv, Symbol, SymbolName, SymbolUse, SymbolUseList, SymbolUsesIter, Visibility,
+    formatter, CallConv, EntityRef, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol,
+    SymbolNameAttr, SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility,
 };
 
-trait UsableSymbol = Usable<Use = SymbolUse>;
-
-#[operation(
-    dialect = HirDialect,
-    traits(SingleRegion, IsolatedFromAbove),
-    implements(
-        UsableSymbol,
-        Symbol,
-        CallableOpInterface,
-        RegionKindInterface
-    )
-)]
-pub struct Function {
-    #[region]
-    body: RegionRef,
-    #[attr]
-    name: Ident,
-    #[attr]
-    signature: Signature,
-    /// The uses of this function as a symbol
-    uses: SymbolUseList,
-}
-
-impl Function {
-    #[inline]
-    pub fn entry_block(&self) -> BlockRef {
-        unsafe { BlockRef::from_raw(&*self.body().entry()) }
-    }
-
-    pub fn last_block(&self) -> BlockRef {
-        self.body()
-            .body()
-            .back()
-            .as_pointer()
-            .expect("cannot access blocks of a function declaration")
-    }
-}
-
-impl RegionKindInterface for Function {
-    #[inline(always)]
-    fn kind(&self) -> RegionKind {
-        RegionKind::SSA
-    }
-}
-
-impl Usable for Function {
-    type Use = SymbolUse;
-
-    #[inline(always)]
-    fn uses(&self) -> &EntityList<Self::Use> {
-        &self.uses
-    }
-
-    #[inline(always)]
-    fn uses_mut(&mut self) -> &mut EntityList<Self::Use> {
-        &mut self.uses
-    }
-}
-
-impl Symbol for Function {
-    #[inline(always)]
-    fn as_symbol_operation(&self) -> &Operation {
-        &self.op
-    }
-
-    #[inline(always)]
-    fn as_symbol_operation_mut(&mut self) -> &mut Operation {
-        &mut self.op
-    }
-
-    fn name(&self) -> SymbolName {
-        Self::name(self).as_symbol()
-    }
-
-    fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
-    }
-
-    fn visibility(&self) -> Visibility {
-        self.signature().visibility
-    }
-
-    fn set_visibility(&mut self, visibility: Visibility) {
-        self.signature_mut().visibility = visibility;
-    }
-
-    fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter {
-        SymbolUsesIter::from_iter(self.uses.iter().filter_map(|user| {
-            if OperationRef::ptr_eq(&from, &user.owner)
-                || from.borrow().is_proper_ancestor_of(user.owner.clone())
-            {
-                Some(unsafe { SymbolUseRef::from_raw(&*user) })
-            } else {
-                None
-            }
-        }))
-    }
-
-    fn replace_all_uses(
-        &mut self,
-        replacement: SymbolRef,
-        from: OperationRef,
-    ) -> Result<(), Report> {
-        for symbol_use in self.symbol_uses(from) {
-            let (mut owner, attr_name) = {
-                let user = symbol_use.borrow();
-                (user.owner.clone(), user.symbol)
-            };
-            let mut owner = owner.borrow_mut();
-            // Unlink previously used symbol
-            {
-                let current_symbol = owner
-                    .get_typed_attribute_mut::<SymbolNameAttr, _>(&attr_name)
-                    .expect("stale symbol user");
-                unsafe {
-                    self.uses.cursor_mut_from_ptr(current_symbol.user.clone()).remove();
-                }
-            }
-            // Link replacement symbol
-            owner.set_symbol_attribute(attr_name, replacement.clone());
-        }
-
-        Ok(())
-    }
-
-    /// Returns true if this operation is a declaration, rather than a definition, of a symbol
+/// A call-like operation is one that transfers control from one function to another.
+///
+/// These operations may be traditional static calls, e.g. `call @foo`, or indirect calls, e.g.
+/// `call_indirect v1`. An operation that uses this interface cannot _also_ implement the
+/// `CallableOpInterface`.
+pub trait CallOpInterface {
+    /// Get the callee of this operation.
     ///
-    /// The default implementation assumes that all operations are definitions
-    #[inline]
-    fn is_declaration(&self) -> bool {
-        self.body().is_empty()
+    /// A callee is either a symbol, or a reference to an SSA value.
+    fn callable_for_callee(&self) -> Callable;
+    /// Sets the callee for this operation.
+    fn set_callee(&mut self, callable: Callable);
+    /// Get the operands of this operation that are used as arguments for the callee
+    fn arguments(&self) -> OpOperandRange<'_>;
+    /// Get a mutable reference to the operands of this operation that are used as arguments for the
+    /// callee
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_>;
+    /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
+    /// if a valid callable was not resolved, using the provided symbol table.
+    ///
+    /// This method is used to perform callee resolution using a cached symbol table, rather than
+    /// traversing the operation hierarchy looking for symbol tables to try resolving with.
+    fn resolve_in_symbol_table(&self, symbols: &dyn crate::SymbolTable) -> Option<SymbolRef>;
+    /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
+    /// if a valid callable was not resolved.
+    fn resolve(&self) -> Option<SymbolRef>;
+}
+
+/// A callable operation is one who represents a potential function, and may be a target for a call-
+/// like operation (i.e. implementations of `CallOpInterface`). These operations may be traditional
+/// function ops (i.e. `Function`), as well as function reference-producing operations, such as an
+/// op that creates closures, or captures a function by reference.
+///
+/// These operations may only contain a single region.
+pub trait CallableOpInterface {
+    /// Returns the region on the current operation that is callable.
+    ///
+    /// This may return `None` in the case of an external callable object, e.g. an externally-
+    /// defined function reference.
+    fn get_callable_region(&self) -> Option<RegionRef>;
+    /// Returns the signature of the callable
+    fn signature(&self) -> &Signature;
+}
+
+#[doc(hidden)]
+pub trait AsCallableSymbolRef {
+    fn as_callable_symbol_ref(&self) -> SymbolRef;
+}
+impl<T: Symbol + CallableOpInterface> AsCallableSymbolRef for T {
+    #[inline(always)]
+    fn as_callable_symbol_ref(&self) -> SymbolRef {
+        unsafe { SymbolRef::from_raw(self as &dyn Symbol) }
+    }
+}
+impl<T: Symbol + CallableOpInterface> AsCallableSymbolRef for UnsafeIntrusiveEntityRef<T> {
+    #[inline(always)]
+    fn as_callable_symbol_ref(&self) -> SymbolRef {
+        let t_ptr = Self::as_ptr(self);
+        unsafe { SymbolRef::from_raw(t_ptr as *const dyn Symbol) }
     }
 }
 
-impl CallableOpInterface for Function {
-    fn get_callable_region(&self) -> Option<RegionRef> {
-        if self.is_declaration() {
-            None
-        } else {
-            self.regions().front().as_pointer()
+/// A [Callable] represents a symbol or a value which can be used as a valid _callee_ for a
+/// [CallOpInterface] implementation.
+///
+/// Symbols are not SSA values, but there are situations where we want to treat them as one, such
+/// as indirect calls. Abstracting over whether the callable is a symbol or an SSA value allows us
+/// to focus on the call semantics, rather than the difference between the type types of value.
+#[derive(Debug, Clone)]
+pub enum Callable {
+    Symbol(SymbolNameAttr),
+    Value(ValueRef),
+}
+impl From<&SymbolNameAttr> for Callable {
+    fn from(value: &SymbolNameAttr) -> Self {
+        Self::Symbol(value.clone())
+    }
+}
+impl From<SymbolNameAttr> for Callable {
+    fn from(value: SymbolNameAttr) -> Self {
+        Self::Symbol(value)
+    }
+}
+impl From<ValueRef> for Callable {
+    fn from(value: ValueRef) -> Self {
+        Self::Value(value)
+    }
+}
+impl Callable {
+    #[inline(always)]
+    pub fn new(callable: impl Into<Self>) -> Self {
+        callable.into()
+    }
+
+    pub fn is_symbol(&self) -> bool {
+        matches!(self, Self::Symbol(_))
+    }
+
+    pub fn is_value(&self) -> bool {
+        matches!(self, Self::Value(_))
+    }
+
+    pub fn as_symbol_name(&self) -> Option<&SymbolNameAttr> {
+        match self {
+            Self::Symbol(ref name) => Some(name),
+            _ => None,
         }
     }
 
-    #[inline]
-    fn signature(&self) -> &Signature {
-        Function::signature(self)
+    pub fn as_value(&self) -> Option<EntityRef<'_, dyn Value>> {
+        match self {
+            Self::Value(ref value_ref) => Some(value_ref.borrow()),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_symbol_name(self) -> SymbolNameAttr {
+        match self {
+            Self::Symbol(name) => name,
+            Self::Value(value_ref) => panic!("expected symbol, got {}", value_ref.borrow().id()),
+        }
+    }
+
+    pub fn unwrap_value_ref(self) -> ValueRef {
+        match self {
+            Self::Value(value) => value,
+            Self::Symbol(ref name) => panic!("expected value, got {name}"),
+        }
     }
 }
 

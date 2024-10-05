@@ -1,11 +1,10 @@
-mod callable;
 mod info;
 mod types;
 
 use midenc_session::diagnostics::Severity;
 
 pub(crate) use self::info::TraitInfo;
-pub use self::{callable::*, types::*};
+pub use self::types::*;
 use crate::{derive, Context, Operation, Report, Spanned};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`

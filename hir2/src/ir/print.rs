@@ -3,8 +3,8 @@ use core::fmt;
 use super::{Context, Operation};
 use crate::{
     formatter::PrettyPrint,
-    traits::{CallableOpInterface, SingleBlock, SingleRegion},
-    Entity, Value,
+    traits::{SingleBlock, SingleRegion},
+    CallableOpInterface, Entity, Value,
 };
 
 pub struct OpPrintingFlags;
