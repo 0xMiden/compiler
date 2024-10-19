@@ -123,6 +123,12 @@ impl Ord for SymbolNameAttr {
         self.path.cmp(&other.path).then_with(|| self.name.cmp(&other.name))
     }
 }
+impl core::hash::Hash for SymbolNameAttr {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.path.hash(state);
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum SymbolNameComponent {
@@ -592,7 +598,7 @@ impl SymbolUse {
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let op = self.owner.borrow();
-        let value = op.get_typed_attribute::<SymbolName, _>(&self.symbol);
+        let value = op.get_typed_attribute::<SymbolName>(self.symbol);
         f.debug_struct("SymbolUse")
             .field("attr", &self.symbol)
             .field("symbol", &value)

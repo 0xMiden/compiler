@@ -9,7 +9,7 @@ use crate::define_attr_type;
 /// Always check the documentation of the specific instruction involved to see if there
 /// are any specific differences in how this enum is interpreted compared to the default
 /// meaning of each variant.
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq, Hash)]
 pub enum Overflow {
     /// Typically, this means the operation is performed using the equivalent field element
     /// operation, rather than a dedicated operation for the given type. Because of this, the

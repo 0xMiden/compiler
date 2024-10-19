@@ -3,7 +3,7 @@ use core::{fmt, str::FromStr};
 use crate::define_attr_type;
 
 /// The types of visibility that a [Symbol] may have
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Visibility {
     /// The symbol is public and may be referenced anywhere internal or external to the visible
     /// references in the IR.

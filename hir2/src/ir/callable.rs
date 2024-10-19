@@ -138,7 +138,7 @@ impl Callable {
 
 /// Represents whether an argument or return value has a special purpose in
 /// the calling convention of a function.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(
     feature = "serde",
     derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
@@ -168,7 +168,7 @@ impl fmt::Display for ArgumentPurpose {
 /// are unsigned 32-bit integers with a standard twos-complement binary representation.
 ///
 /// It is for the latter scenario that argument extension is really relevant.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(
     feature = "serde",
     derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
@@ -194,7 +194,7 @@ impl fmt::Display for ArgumentExtension {
 }
 
 /// Describes a function parameter or result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AbiParam {
     /// The type associated with this value
@@ -257,7 +257,7 @@ impl fmt::Display for AbiParam {
 /// A function signature provides us with all of the necessary detail to correctly
 /// validate and emit code for a function, whether from the perspective of a caller,
 /// or the callee.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Signature {
     /// The arguments expected by this function
@@ -352,15 +352,6 @@ impl Signature {
             }] => &[],
             results => results,
         }
-    }
-}
-impl Eq for Signature {}
-impl PartialEq for Signature {
-    fn eq(&self, other: &Self) -> bool {
-        self.visibility == other.visibility
-            && self.cc == other.cc
-            && self.params.len() == other.params.len()
-            && self.results.len() == other.results.len()
     }
 }
 impl formatter::PrettyPrint for Signature {

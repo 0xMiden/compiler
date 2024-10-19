@@ -1,4 +1,3 @@
-mod attribute;
 mod block;
 mod builder;
 mod callable;
@@ -28,7 +27,6 @@ pub use midenc_hir_symbol as interner;
 pub use midenc_session::diagnostics::{Report, SourceSpan, Span, Spanned};
 
 pub use self::{
-    attribute::{attributes::*, Attribute, AttributeSet, AttributeValue, DictAttr, SetAttr},
     block::{
         Block, BlockCursor, BlockCursorMut, BlockId, BlockList, BlockOperand, BlockOperandRef,
         BlockRef,

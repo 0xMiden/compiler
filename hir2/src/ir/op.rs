@@ -1,5 +1,5 @@
 use super::*;
-use crate::any::AsAny;
+use crate::{any::AsAny, AttributeValue};
 
 pub trait OpRegistration: Op {
     fn name() -> ::midenc_hir_symbol::Symbol;
@@ -87,16 +87,10 @@ impl Spanned for dyn Op {
 
 pub trait OpExt {
     /// Return the value associated with attribute `name` for this function
-    fn get_attribute<Q>(&self, name: &Q) -> Option<&dyn AttributeValue>
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
+    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue>;
 
     /// Return true if this function has an attributed named `name`
-    fn has_attribute<Q>(&self, name: &Q) -> bool
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
+    fn has_attribute(&self, name: impl Into<interner::Symbol>) -> bool;
 
     /// Set the attribute `name` with `value` for this function.
     fn set_attribute(
@@ -106,10 +100,7 @@ pub trait OpExt {
     );
 
     /// Remove any attribute with the given name from this function
-    fn remove_attribute<Q>(&mut self, name: &Q)
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized;
+    fn remove_attribute(&mut self, name: impl Into<interner::Symbol>);
 
     /// Returns a handle to the nearest containing [Operation] of type `T` for this operation, if it
     /// is attached to one
@@ -118,20 +109,12 @@ pub trait OpExt {
 
 impl<T: ?Sized + Op> OpExt for T {
     #[inline]
-    fn get_attribute<Q>(&self, name: &Q) -> Option<&dyn AttributeValue>
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
+    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue> {
         self.as_operation().get_attribute(name)
     }
 
     #[inline]
-    fn has_attribute<Q>(&self, name: &Q) -> bool
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
+    fn has_attribute(&self, name: impl Into<interner::Symbol>) -> bool {
         self.as_operation().has_attribute(name)
     }
 
@@ -145,11 +128,7 @@ impl<T: ?Sized + Op> OpExt for T {
     }
 
     #[inline]
-    fn remove_attribute<Q>(&mut self, name: &Q)
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
+    fn remove_attribute(&mut self, name: impl Into<interner::Symbol>) {
         self.as_operation_mut().remove_attribute(name);
     }
 

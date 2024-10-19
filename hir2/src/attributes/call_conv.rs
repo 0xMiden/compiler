@@ -14,7 +14,7 @@ use core::fmt;
 /// from the public API to private functions. In short, choose a calling convention that is
 /// well-suited for a given function, to the extent that other constraints don't impose a choice
 /// on you.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(
     feature = "serde",
     derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)

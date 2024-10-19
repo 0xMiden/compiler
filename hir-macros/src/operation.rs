@@ -981,12 +981,12 @@ impl quote::ToTokens for OpSymbolFns<'_> {
 
                 #[doc = #symbol_doc]
                 pub fn #symbol(&self) -> &::midenc_hir2::SymbolNameAttr {
-                    self.op.get_typed_attribute(&Self::#symbol_symbol()).unwrap()
+                    self.op.get_typed_attribute(Self::#symbol_symbol()).unwrap()
                 }
 
                 #[doc = #symbol_mut_doc]
                 pub fn #symbol_mut(&mut self) -> &mut ::midenc_hir2::SymbolNameAttr {
-                    self.op.get_typed_attribute_mut(&Self::#symbol_symbol()).unwrap()
+                    self.op.get_typed_attribute_mut(Self::#symbol_symbol()).unwrap()
                 }
 
                 #(
@@ -1109,12 +1109,12 @@ impl quote::ToTokens for OpAttrFns<'_> {
 
                 #[doc = #attr_doc]
                 pub fn #attr(&self) -> &#attr_ty {
-                    self.op.get_typed_attribute::<#attr_ty, _>(&Self::#attr_symbol()).unwrap()
+                    self.op.get_typed_attribute::<#attr_ty>(Self::#attr_symbol()).unwrap()
                 }
 
                 #[doc = #attr_mut_doc]
                 pub fn #attr_mut(&mut self) -> &mut #attr_ty {
-                    self.op.get_typed_attribute_mut::<#attr_ty, _>(&Self::#attr_symbol()).unwrap()
+                    self.op.get_typed_attribute_mut::<#attr_ty>(Self::#attr_symbol()).unwrap()
                 }
 
                 #[doc = #set_attr_doc]

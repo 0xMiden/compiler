@@ -173,7 +173,7 @@ mod tests {
         Operation, Report, Spanned, Value,
     };
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     enum Overflow {
         #[allow(unused)]
         None,

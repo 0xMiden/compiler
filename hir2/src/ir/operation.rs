@@ -9,6 +9,7 @@ use core::{
 
 pub use self::{builder::OperationBuilder, name::OperationName};
 use super::*;
+use crate::{AttributeSet, AttributeValue};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
@@ -279,52 +280,42 @@ impl Operation {
     }
 
     /// Return the value associated with attribute `name` for this function
-    pub fn get_attribute<Q>(&self, name: &Q) -> Option<&dyn AttributeValue>
-    where
-        interner::Symbol: core::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.attrs.get_any(name)
+    pub fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue> {
+        self.attrs.get_any(name.into())
     }
 
     /// Return the value associated with attribute `name` for this function
-    pub fn get_attribute_mut<Q>(&mut self, name: &Q) -> Option<&mut dyn AttributeValue>
-    where
-        interner::Symbol: core::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.attrs.get_any_mut(name)
+    pub fn get_attribute_mut(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+    ) -> Option<&mut dyn AttributeValue> {
+        self.attrs.get_any_mut(name.into())
     }
 
     /// Return the value associated with attribute `name` for this function, as its concrete type
     /// `T`, _if_ the attribute by that name, is of that type.
-    pub fn get_typed_attribute<T, Q>(&self, name: &Q) -> Option<&T>
+    pub fn get_typed_attribute<T>(&self, name: impl Into<interner::Symbol>) -> Option<&T>
     where
         T: AttributeValue,
-        interner::Symbol: core::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
     {
-        self.attrs.get(name)
+        self.attrs.get(name.into())
     }
 
     /// Return the value associated with attribute `name` for this function, as its concrete type
     /// `T`, _if_ the attribute by that name, is of that type.
-    pub fn get_typed_attribute_mut<T, Q>(&mut self, name: &Q) -> Option<&mut T>
+    pub fn get_typed_attribute_mut<T>(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+    ) -> Option<&mut T>
     where
         T: AttributeValue,
-        interner::Symbol: core::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
     {
-        self.attrs.get_mut(name)
+        self.attrs.get_mut(name.into())
     }
 
     /// Return true if this function has an attributed named `name`
-    pub fn has_attribute<Q>(&self, name: &Q) -> bool
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.attrs.has(name)
+    pub fn has_attribute(&self, name: impl Into<interner::Symbol>) -> bool {
+        self.attrs.has(name.into())
     }
 
     /// Set the attribute `name` with `value` for this function.
@@ -337,12 +328,8 @@ impl Operation {
     }
 
     /// Remove any attribute with the given name from this function
-    pub fn remove_attribute<Q>(&mut self, name: &Q)
-    where
-        interner::Symbol: std::borrow::Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.attrs.remove(name);
+    pub fn remove_attribute(&mut self, name: impl Into<interner::Symbol>) {
+        self.attrs.remove(name.into());
     }
 }
 
@@ -361,8 +348,8 @@ impl Operation {
             owner: self.as_operation_ref(),
             symbol: name,
         });
-        if self.has_attribute(&name) {
-            let attr = self.get_typed_attribute_mut::<SymbolNameAttr, _>(&name).unwrap();
+        if self.has_attribute(name) {
+            let attr = self.get_typed_attribute_mut::<SymbolNameAttr>(name).unwrap();
             let symbol = symbol.borrow();
             assert!(
                 !attr.user.is_linked(),
