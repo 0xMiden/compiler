@@ -31,6 +31,8 @@ blink-alloc = { version = "0.3", default-features = false, features = [
     "alloc",
     "nightly",
 ] }
+bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+bitflags.workspace = true
 either.workspace = true
 cranelift-entity.workspace = true
 compact_str.workspace = true
@@ -63,3 +65,4 @@ indexmap.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.0"
+env_logger.workspace = true
