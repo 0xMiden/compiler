@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 use core::{borrow::Borrow, ops::Deref};
 
-use crate::{AsAny, OperationName};
+use crate::{AsAny, AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type};
 
 /// A [Dialect] represents a collection of IR entities that are used in conjunction with one
 /// another. Multiple dialects can co-exist _or_ be mutually exclusive. Converting between dialects
@@ -20,6 +20,25 @@ pub trait Dialect {
         opcode: ::midenc_hir_symbol::Symbol,
         register: fn(DialectName, ::midenc_hir_symbol::Symbol) -> OperationName,
     ) -> OperationName;
+
+    /// A hook to materialize a single constant operation from a given attribute value and type.
+    ///
+    /// This method should use the provided builder to create the operation without changing the
+    /// insertion point. The generated operation is expected to be constant-like, i.e. single result
+    /// zero operands, no side effects, etc.
+    ///
+    /// Returns `None` if a constant cannot be materialized for the given attribute.
+    #[allow(unused_variables)]
+    #[inline]
+    fn materialize_constant(
+        &self,
+        builder: &mut dyn Builder,
+        attr: Box<dyn AttributeValue>,
+        ty: &Type,
+        span: SourceSpan,
+    ) -> Option<OperationRef> {
+        None
+    }
 }
 
 /// A [DialectRegistration] must be implemented for any implementation of [Dialect], to allow the
