@@ -2,8 +2,13 @@ use alloc::{collections::BTreeMap, rc::Rc};
 
 use smallvec::SmallVec;
 
-use super::{FrozenRewritePatternSet, PatternBenefit, PatternRewriter, RewritePattern};
-use crate::{Builder, OperationName, OperationRef, Report};
+use super::{FrozenRewritePatternSet, PatternBenefit, RewritePattern, Rewriter};
+use crate::{OperationName, OperationRef, Report};
+
+pub enum PatternApplicationError {
+    NoMatchesFound,
+    Report(Report),
+}
 
 /// This type manages the application of a group of rewrite patterns, with a user-provided cost model
 pub struct PatternApplicator {
@@ -56,7 +61,8 @@ impl PatternApplicator {
     /// Apply the default cost model that solely uses the pattern's static benefit
     #[inline]
     pub fn apply_default_cost_model(&mut self) {
-        self.apply_cost_model(|pattern| pattern.benefit());
+        log::debug!("applying default cost model");
+        self.apply_cost_model(|pattern| *pattern.benefit());
     }
 
     /// Walk all of the patterns within the applicator.
@@ -74,18 +80,19 @@ impl PatternApplicator {
         }
     }
 
-    pub fn match_and_rewrite<A, F, S>(
+    pub fn match_and_rewrite<A, F, S, R>(
         &mut self,
         op: OperationRef,
-        rewriter: &mut PatternRewriter,
-        can_apply: Option<A>,
-        mut on_failure: Option<F>,
-        mut on_success: Option<S>,
-    ) -> Result<(), Report>
+        rewriter: &mut R,
+        can_apply: A,
+        mut on_failure: F,
+        mut on_success: S,
+    ) -> Result<(), PatternApplicationError>
     where
-        A: Fn(&dyn RewritePattern) -> bool,
-        F: FnMut(&dyn RewritePattern),
-        S: FnMut(&dyn RewritePattern) -> Result<(), Report>,
+        A: for<'a> Fn(&'a dyn RewritePattern) -> bool,
+        F: for<'a> FnMut(&'a dyn RewritePattern),
+        S: for<'a> FnMut(&'a dyn RewritePattern) -> Result<(), Report>,
+        R: Rewriter,
     {
         // Check to see if there are patterns matching this specific operation type.
         let op_name = {
@@ -94,9 +101,21 @@ impl PatternApplicator {
         };
         let op_specific_patterns = self.patterns.get(&op_name).map(|p| p.as_slice()).unwrap_or(&[]);
 
+        if op_specific_patterns.is_empty() {
+            log::trace!("no op-specific patterns found for '{op_name}'");
+        } else {
+            log::trace!(
+                "found {} op-specific patterns for '{op_name}'",
+                op_specific_patterns.len()
+            );
+        }
+
+        log::trace!("{} op-agnostic patterns available", self.match_any_patterns.len());
+
         // Process the op-specific patterns and op-agnostic patterns in an interleaved fashion
         let mut op_patterns = op_specific_patterns.iter().peekable();
         let mut any_op_patterns = self.match_any_patterns.iter().peekable();
+        let mut result = Err(PatternApplicationError::NoMatchesFound);
         loop {
             // Find the next pattern with the highest benefit
             //
@@ -108,20 +127,39 @@ impl PatternApplicator {
             if let Some(next_any_pattern) = any_op_patterns
                 .next_if(|p| best_pattern.is_none_or(|bp| bp.benefit() < p.benefit()))
             {
+                if let Some(best_pattern) = best_pattern {
+                    log::trace!(
+                        "selected op-agnostic pattern '{}' because its benefit is higher than the \
+                         next best op-specific pattern '{}'",
+                        next_any_pattern.name(),
+                        best_pattern.name()
+                    );
+                } else {
+                    log::trace!(
+                        "selected op-agnostic pattern '{}' because no op-specific pattern is \
+                         available",
+                        next_any_pattern.name()
+                    );
+                }
                 best_pattern.replace(next_any_pattern);
             } else {
-                // The op-specific pattern is best, so actually consume it from the iterator
+                // The op-specific pattern is best, if available, so actually consume it from the iterator
+                if let Some(best_pattern) = best_pattern {
+                    log::trace!("selected op-specific pattern '{}'", best_pattern.name());
+                }
                 best_pattern = op_patterns.next();
             }
 
             // Break if we have exhausted all patterns
             let Some(best_pattern) = best_pattern else {
+                log::trace!("all patterns have been exhausted");
                 break;
             };
 
             // Can we apply this pattern?
-            let applicable = can_apply.as_ref().is_none_or(|can_apply| can_apply(&**best_pattern));
+            let applicable = can_apply(&**best_pattern);
             if !applicable {
+                log::trace!("skipping pattern: can_apply returned false");
                 continue;
             }
 
@@ -134,22 +172,27 @@ impl PatternApplicator {
             // messages/rendering, as the rewrite may invalidate `op`
             log::debug!("trying to match '{}'", best_pattern.name());
 
-            if best_pattern.match_and_rewrite(op.clone(), rewriter)? {
-                log::debug!("successfully matched pattern '{}'", best_pattern.name());
-                if let Some(on_success) = on_success.as_mut() {
-                    on_success(&**best_pattern)?;
+            match best_pattern.match_and_rewrite(op.clone(), rewriter) {
+                Ok(matched) => {
+                    if matched {
+                        log::trace!("pattern matched successfully");
+                        result =
+                            on_success(&**best_pattern).map_err(PatternApplicationError::Report);
+                        break;
+                    } else {
+                        log::trace!("failed to match pattern");
+                        on_failure(&**best_pattern);
+                    }
                 }
-                break;
-            } else {
-                // Perform any necessary cleanup
-                log::debug!("failed to match pattern '{}'", best_pattern.name());
-                if let Some(on_failure) = on_failure.as_mut() {
+                Err(err) => {
+                    log::error!("error occurred during match_and_rewrite: {err}");
+                    result = Err(PatternApplicationError::Report(err));
                     on_failure(&**best_pattern);
                 }
             }
         }
 
-        Ok(())
+        result
     }
 }
 
