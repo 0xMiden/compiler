@@ -9,6 +9,7 @@
 #![feature(rustc_attrs)]
 #![feature(debug_closure_helpers)]
 #![feature(trait_alias)]
+#![feature(trait_upcasting)]
 #![feature(is_none_or)]
 #![feature(try_trait_v2)]
 #![feature(try_trait_v2_residual)]
@@ -37,7 +38,9 @@ pub mod demangle;
 pub mod derive;
 pub mod dialects;
 pub mod formatter;
+mod hash;
 mod ir;
+pub mod matchers;
 mod patterns;
 
 pub use self::{any::AsAny, attributes::*, ir::*, patterns::*};

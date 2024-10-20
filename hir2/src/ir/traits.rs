@@ -5,8 +5,11 @@ mod types;
 use midenc_session::diagnostics::Severity;
 
 pub(crate) use self::info::TraitInfo;
-pub use self::types::*;
-use crate::{derive, Context, Operation, Report, Spanned};
+pub use self::{
+    foldable::{FoldResult, Foldable, OpFoldResult},
+    types::*,
+};
+use crate::{derive, AttributeValue, Context, Operation, Report, Spanned};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
 pub trait Commutative {}
@@ -59,42 +62,117 @@ pub trait HasOnlyGraphRegion {}
 ///
 /// This trait _cannot_ be derived via `derive!`
 pub trait GraphRegionNoTerminator:
-    NoTerminator + SingleBlock + RegionKindInterface + HasOnlyGraphRegion
+    NoTerminator + SingleBlock + crate::RegionKindInterface + HasOnlyGraphRegion
 {
 }
 
-/// Represents the types of regions that can be represented in the IR
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RegionKind {
-    /// A graph region is one without control-flow semantics, i.e. dataflow between operations is
-    /// the only thing that dictates order, and operations can be conceptually executed in parallel
-    /// if the runtime supports it.
+// TODO(pauls): Implement verifier
+/// This interface provides information for branching terminator operations, i.e. terminator
+/// operations with successors.
+///
+/// This interface is meant to model well-defined cases of control-flow of value propagation, where
+/// what occurs along control-flow edges is assumed to be side-effect free. For example,
+/// corresponding successor operands and successor block arguments may have different types. In such
+/// cases, `are_types_compatible` can be implemented to compare types along control-flow edges. By
+/// default, type equality is used.
+pub trait BranchOpInterface: crate::Op {
+    /// Returns the operands that correspond to the arguments of the successor at `index`.
     ///
-    /// As there is no control-flow in these regions, graph regions may only contain a single block.
-    Graph,
-    /// An SSA region is one where the strict control-flow semantics and properties of SSA (static
-    /// single assignment) form must be upheld.
+    /// It consists of a number of operands that are internally produced by the operation, followed
+    /// by a range of operands that are forwarded. An example operation making use of produced
+    /// operands would be:
     ///
-    /// SSA regions must adhere to:
+    /// ```hir,ignore
+    /// invoke %function(%0)
+    ///     label ^success ^error(%1 : i32)
     ///
-    /// * Values can only be defined once
-    /// * Definitions must dominate uses
-    /// * Ordering of operations in a block corresponds to execution order, i.e. operations earlier
-    ///   in a block dominate those later in the block.
-    /// * Blocks must end with a terminator.
-    #[default]
-    SSA,
+    /// ^error(%e: !error, %arg0: i32):
+    ///     ...
+    ///```
+    ///
+    /// The operand that would map to the `^error`s `%e` operand is produced by the `invoke`
+    /// operation, while `%1` is a forwarded operand that maps to `%arg0` in the successor.
+    ///
+    /// Produced operands always map to the first few block arguments of the successor, followed by
+    /// the forwarded operands. Mapping them in any other order is not supported by the interface.
+    ///
+    /// By having the forwarded operands last allows users of the interface to append more forwarded
+    /// operands to the branch operation without interfering with other successor operands.
+    fn get_successor_operands(&self, index: usize) -> crate::SuccessorOperandRange<'_> {
+        let op = <Self as crate::Op>::as_operation(self);
+        let operand_group = op.successors()[index].operand_group as usize;
+        crate::SuccessorOperandRange::forward(op.operands().group(operand_group))
+    }
+    /// The mutable version of [Self::get_successor_operands].
+    fn get_successor_operands_mut(&mut self, index: usize) -> crate::SuccessorOperandRangeMut<'_> {
+        let op = <Self as crate::Op>::as_operation_mut(self);
+        let operand_group = op.successors()[index].operand_group as usize;
+        crate::SuccessorOperandRangeMut::forward(op.operands_mut().group_mut(operand_group))
+    }
+    /// Returns the block argument of the successor corresponding to the operand at `operand_index`.
+    ///
+    /// Returns `None` if the specified operand is not a successor operand.
+    fn get_successor_block_argument(
+        &self,
+        operand_index: usize,
+    ) -> Option<crate::BlockArgumentRef> {
+        let op = <Self as crate::Op>::as_operation(self);
+        let operand_groups = op.operands().num_groups();
+        let mut next_index = 0usize;
+        for operand_group in 0..operand_groups {
+            let group_size = op.operands().group(operand_group).len();
+            if (next_index..(next_index + group_size)).contains(&operand_index) {
+                let arg_index = operand_index - next_index;
+                // We found the operand group, now map that to a successor
+                let succ_info =
+                    op.successors().iter().find(|s| operand_group == s.operand_group as usize)?;
+                return succ_info.block.borrow().block.borrow().arguments().get(arg_index).cloned();
+            }
+
+            next_index += group_size;
+        }
+
+        None
+    }
+    /// Returns the successor that would be chosen with the given constant operands.
+    ///
+    /// Returns `None` if a single successor could not be chosen.
+    #[inline]
+    #[allow(unused_variables)]
+    fn get_successor_for_operands(
+        &self,
+        operands: &[Box<dyn AttributeValue>],
+    ) -> Option<crate::BlockRef> {
+        None
+    }
+    /// This is called to compare types along control-flow edges.
+    ///
+    /// By default, types must be exactly equal to be compatible.
+    fn are_types_compatible(&self, lhs: &crate::Type, rhs: &crate::Type) -> bool {
+        lhs == rhs
+    }
 }
 
-/// An op interface that indicates what types of regions it holds
-pub trait RegionKindInterface {
-    /// Get the [RegionKind] for this operation
-    fn kind(&self) -> RegionKind;
-    /// Returns true if the kind of this operation's regions requires SSA dominance
-    #[inline]
-    fn has_ssa_dominance(&self) -> bool {
-        matches!(self.kind(), RegionKind::SSA)
-    }
+/// This interface provides information for select-like operations, i.e., operations that forward
+/// specific operands to the output, depending on a binary condition.
+///
+/// If the value of the condition is 1, then the `true` operand is returned, and the third operand
+/// is ignored, even if it was poison.
+///
+/// If the value of the condition is 0, then the `false` operand is returned, and the second operand
+/// is ignored, even if it was poison.
+///
+/// If the condition is poison, then poison is returned.
+///
+/// Implementing operations can also accept shaped conditions, in which case the operation works
+/// element-wise.
+pub trait SelectLikeOpInterface {
+    /// Returns the operand that represents the boolean condition for this select-like op.
+    fn get_condition(&self) -> crate::ValueRef;
+    /// Returns the operand that would be chosen for a true condition.
+    fn get_true_value(&self) -> crate::ValueRef;
+    /// Returns the operand that would be chosen for a false condition.
+    fn get_false_value(&self) -> crate::ValueRef;
 }
 
 derive! {

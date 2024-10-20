@@ -1,4 +1,25 @@
+mod branch_point;
+mod interfaces;
+mod invocation_bounds;
+mod kind;
+mod successor;
+mod transforms;
+
+use smallvec::SmallVec;
+
+pub use self::{
+    branch_point::RegionBranchPoint,
+    interfaces::{
+        RegionBranchOpInterface, RegionBranchTerminatorOpInterface, RegionKindInterface,
+        RegionSuccessorIter,
+    },
+    invocation_bounds::InvocationBounds,
+    kind::RegionKind,
+    successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorMut},
+    transforms::RegionTransformFailed,
+};
 use super::*;
+use crate::RegionSimplificationLevel;
 
 pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;
 /// An intrusive, doubly-linked list of [Region]s
@@ -206,6 +227,197 @@ impl Region {
     /// Drop any references to blocks in this region - this is used to break cycles when cleaning
     /// up regions.
     pub fn drop_all_references(&mut self) {
-        todo!()
+        let mut cursor = self.body_mut().front_mut();
+        while let Some(mut op) = cursor.as_pointer() {
+            op.borrow_mut().drop_all_references();
+            cursor.move_next();
+        }
+    }
+}
+
+/// Values
+impl Region {
+    /// Check if every value in `values` is defined above this region, i.e. they are defined in a
+    /// region which is a proper ancestor of `self`.
+    pub fn values_are_defined_above(&self, values: &[ValueRef]) -> bool {
+        let this = self.as_region_ref();
+        for value in values {
+            if !value
+                .borrow()
+                .parent_region()
+                .is_some_and(|value_region| Self::is_proper_ancestor_of(&value_region, &this))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Replace all uses of `value` with `replacement`, within this region.
+    pub fn replace_all_uses_in_region_with(&mut self, _value: ValueRef, _replacement: ValueRef) {
+        todo!("RegionUtils.h")
+    }
+
+    /// Visit each use of a value in this region (and its descendants), where that value was defined
+    /// in an ancestor of `limit`.
+    pub fn visit_used_values_defined_above<F>(&self, _limit: &RegionRef, _callback: F)
+    where
+        F: FnMut(OpOperand),
+    {
+        todo!("RegionUtils.h")
+    }
+
+    /// Visit each use of a value in any of the provided regions (or their descendants), where that
+    /// value was defined in an ancestor of that region.
+    pub fn visit_used_values_defined_above_any<F>(_regions: &[RegionRef], _callback: F)
+    where
+        F: FnMut(OpOperand),
+    {
+        todo!("RegionUtils.h")
+    }
+
+    /// Return a vector of values used in this region (and its descendants), and defined in an
+    /// ancestor of the `limit` region.
+    pub fn get_used_values_defined_above(&self, _limit: &RegionRef) -> SmallVec<[ValueRef; 1]> {
+        todo!("RegionUtils.h")
+    }
+
+    /// Return a vector of values used in any of the provided regions, but defined in an ancestor.
+    pub fn get_used_values_defined_above_any(_regions: &[RegionRef]) -> SmallVec<[ValueRef; 1]> {
+        todo!("RegionUtils.h")
+    }
+
+    /// Make this region isolated from above.
+    ///
+    /// * Capture the values that are defined above the region and used within it.
+    /// * Append block arguments to the entry block that represent each captured value.
+    /// * Replace all uses of the captured values within the region, with the new block arguments
+    /// * `clone_into_region` is called with the defining op of a captured value. If it returns
+    ///   true, it indicates that the op needs to be cloned into the region. As a result, the
+    ///   operands of that operation become part of the captured value set (unless the operations
+    ///   that define the operand values themselves are to be cloned). The cloned operations are
+    ///   added to the entry block of the region.
+    ///
+    /// Returns the set of captured values.
+    pub fn make_isolated_from_above<R, F>(
+        &mut self,
+        _rewriter: &mut R,
+        _clone_into_region: F,
+    ) -> SmallVec<[ValueRef; 1]>
+    where
+        R: crate::Rewriter,
+        F: Fn(&Operation) -> bool,
+    {
+        todo!("RegionUtils.h")
+    }
+}
+
+/// Queries
+impl Region {
+    pub fn find_common_ancestor(ops: &[OperationRef]) -> Option<RegionRef> {
+        use bitvec::prelude::*;
+
+        match ops.len() {
+            0 => None,
+            1 => unsafe { ops.get_unchecked(0) }.borrow().parent_region(),
+            num_ops => {
+                let (first, rest) = unsafe { ops.split_first().unwrap_unchecked() };
+                let mut region = first.borrow().parent_region();
+                let mut remaining_ops = bitvec![1; num_ops - 1];
+                while let Some(r) = region.take() {
+                    while let Some(index) = remaining_ops.first_one() {
+                        // Is this op contained in `region`?
+                        if r.borrow().find_ancestor_op(&rest[index]).is_some() {
+                            unsafe {
+                                remaining_ops.set_unchecked(index, false);
+                            }
+                        }
+                    }
+                    if remaining_ops.not_any() {
+                        break;
+                    }
+                    region = r.borrow().parent_region();
+                }
+                region
+            }
+        }
+    }
+
+    /// Returns `block` if `block` lies in this region, or otherwise finds the ancestor of `block`
+    /// that lies in this region.
+    ///
+    /// Returns `None` if the latter fails.
+    pub fn find_ancestor_block(&self, block: &BlockRef) -> Option<BlockRef> {
+        let this = self.as_region_ref();
+        let mut current = Some(block.clone());
+        while let Some(current_block) = current.take() {
+            let parent = current_block.borrow().parent()?;
+            if parent == this {
+                return Some(current_block);
+            }
+            current =
+                parent.borrow().owner.as_ref().and_then(|parent_op| parent_op.borrow().parent());
+        }
+        current
+    }
+
+    /// Returns `op` if `op` lies in this region, or otherwise finds the ancestor of `op` that lies
+    /// in this region.
+    ///
+    /// Returns `None` if the latter fails.
+    pub fn find_ancestor_op(&self, op: &OperationRef) -> Option<OperationRef> {
+        let this = self.as_region_ref();
+        let mut current = Some(op.clone());
+        while let Some(current_op) = current.take() {
+            let parent = current_op.borrow().parent_region()?;
+            if parent == this {
+                return Some(current_op);
+            }
+            current = parent.borrow().parent();
+        }
+        current
+    }
+}
+
+/// Transforms
+impl Region {
+    /// Run a set of structural simplifications over the regions in `regions`.
+    ///
+    /// This includes transformations like unreachable block elimination, dead argument elimination,
+    /// as well as some other DCE.
+    ///
+    /// This function returns `Ok` if any of the regions were simplified, `Err` otherwise.
+    ///
+    /// The provided rewriter is used to notify callers of operation and block deletion.
+    ///
+    /// The provided [RegionSimplificationLevel] will be used to determine whether to apply more
+    /// aggressive simplifications, namely block merging. Note that when block merging is enabled,
+    /// this can lead to merged blocks with extra arguments.
+    pub fn simplify_all(
+        regions: &[RegionRef],
+        rewriter: &mut dyn crate::Rewriter,
+        simplification_level: RegionSimplificationLevel,
+    ) -> Result<(), RegionTransformFailed> {
+        let merge_blocks = matches!(simplification_level, RegionSimplificationLevel::Aggressive);
+
+        let eliminated_blocks = Self::erase_unreachable_blocks(regions, rewriter).is_ok();
+        let eliminated_ops_or_args = Self::dead_code_elimination(regions, rewriter).is_ok();
+
+        let mut merged_identical_blocks = false;
+        let mut dropped_redundant_arguments = false;
+        if merge_blocks {
+            merged_identical_blocks = Self::merge_identical_blocks(regions, rewriter).is_ok();
+            dropped_redundant_arguments = Self::drop_redundant_arguments(regions, rewriter).is_ok();
+        }
+
+        if eliminated_blocks
+            || eliminated_ops_or_args
+            || merged_identical_blocks
+            || dropped_redundant_arguments
+        {
+            Ok(())
+        } else {
+            Err(RegionTransformFailed)
+        }
     }
 }

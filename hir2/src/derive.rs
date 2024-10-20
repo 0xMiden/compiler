@@ -169,8 +169,8 @@ mod tests {
 
     use super::operation;
     use crate::{
-        define_attr_type, dialects::hir::HirDialect, formatter, traits::*, Builder, Context, Op,
-        Operation, Report, Spanned, Value,
+        define_attr_type, dialects::hir::HirDialect, formatter, traits::*, Builder, BuilderExt,
+        Context, Op, Operation, Report, Spanned, Value,
     };
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

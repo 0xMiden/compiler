@@ -7,6 +7,201 @@ pub type OpSuccessorStorage = crate::EntityStorage<SuccessorInfo, 0>;
 pub type OpSuccessorRange<'a> = crate::EntityRange<'a, SuccessorInfo>;
 pub type OpSuccessorRangeMut<'a> = crate::EntityRangeMut<'a, SuccessorInfo, 0>;
 
+/// This trait represents common behavior shared by any range of successor operands.
+pub trait SuccessorOperands {
+    /// Returns true if there are no operands in this set
+    fn is_empty(&self) -> bool {
+        self.num_produced() == 0 && self.len() == 0
+    }
+    /// Returns the total number of operands in this set
+    fn len(&self) -> usize;
+    /// Returns the number of internally produced operands in this set
+    fn num_produced(&self) -> usize;
+    /// Returns true if the operand at `index` is internally produced
+    #[inline]
+    fn is_operand_produced(&self, index: usize) -> bool {
+        index < self.num_produced()
+    }
+    /// Get the range of forwarded operands
+    fn forwarded(&self) -> OpOperandRange<'_>;
+    /// Get a [SuccessorOperand] representing the operand at `index`
+    ///
+    /// Returns `None` if the index is out of range.
+    fn get(&self, index: usize) -> Option<SuccessorOperand> {
+        if self.is_operand_produced(index) {
+            Some(SuccessorOperand::Produced)
+        } else {
+            self.forwarded()
+                .get(index)
+                .map(|op_operand| SuccessorOperand::Forwarded(op_operand.borrow().as_value_ref()))
+        }
+    }
+
+    /// Get a [SuccessorOperand] representing the operand at `index`.
+    ///
+    /// Panics if the index is out of range.
+    fn get_unchecked(&self, index: usize) -> SuccessorOperand {
+        if self.is_operand_produced(index) {
+            SuccessorOperand::Produced
+        } else {
+            SuccessorOperand::Forwarded(self.forwarded()[index].borrow().as_value_ref())
+        }
+    }
+
+    /// Gets the index of the forwarded operand which maps to the given successor block argument
+    /// index.
+    ///
+    /// Panics if the given block argument index does not correspond to a forwarded operand.
+    fn get_operand_index(&self, block_argument_index: usize) -> usize {
+        assert!(
+            self.is_operand_produced(block_argument_index),
+            "cannot map operands produced by the operation"
+        );
+        let base_index = self.forwarded()[0].borrow().index as usize;
+        base_index + (block_argument_index - self.num_produced())
+    }
+}
+
+/// This type models how operands are forwarded to block arguments in control flow. It consists of a
+/// number, denoting how many of the successor block arguments are produced by the operation,
+/// followed by a range of operands that are forwarded. The produced operands are passed to the
+/// first few block arguments of the successor, followed by the forwarded operands. It is
+/// unsupported to pass them in a different order.
+///
+/// An example operation with both of these concepts would be a branch-on-error operation, that
+/// internally produces an error object on the error path:
+///
+/// ```hir,ignore
+/// invoke %function(%0)
+///    label ^success ^error(%1 : i32)
+///
+/// ^error(%e: !error, %arg0 : i32):
+///     ...
+/// ```
+///
+/// This operation would return an instance of [SuccessorOperands] with a produced operand count of
+/// 1 (mapped to `%e` in the successor) and forwarded operands consisting of `%1` in the example
+/// above (mapped to `%arg0` in the successor).
+pub struct SuccessorOperandRange<'a> {
+    /// The explicit op operands which are to be passed along to the successor
+    forwarded: OpOperandRange<'a>,
+    /// The number of operands that are produced internally within the operation and which are to
+    /// be passed to the successor before any forwarded operands.
+    num_produced: usize,
+}
+impl<'a> SuccessorOperandRange<'a> {
+    /// Create an empty successor operand set
+    pub fn empty() -> Self {
+        Self {
+            forwarded: OpOperandRange::empty(),
+            num_produced: 0,
+        }
+    }
+
+    /// Create a successor operand set consisting solely of forwarded op operands
+    #[inline]
+    pub const fn forward(forwarded: OpOperandRange<'a>) -> Self {
+        Self {
+            forwarded,
+            num_produced: 0,
+        }
+    }
+
+    /// Create a successor operand set consisting solely of `num_produced` internally produced
+    /// results
+    pub fn produced(num_produced: usize) -> Self {
+        Self {
+            forwarded: OpOperandRange::empty(),
+            num_produced,
+        }
+    }
+
+    /// Create a new successor operand set with the given number of internally produced results,
+    /// and forwarded op operands.
+    #[inline]
+    pub const fn new(num_produced: usize, forwarded: OpOperandRange<'a>) -> Self {
+        Self {
+            forwarded,
+            num_produced,
+        }
+    }
+}
+impl<'a> SuccessorOperands for SuccessorOperandRange<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.num_produced + self.forwarded.len()
+    }
+
+    #[inline(always)]
+    fn num_produced(&self) -> usize {
+        self.num_produced
+    }
+
+    fn forwarded(&self) -> OpOperandRange<'_> {
+        self.forwarded.clone()
+    }
+}
+
+/// The mutable variant of [SuccessorOperandsRange].
+pub struct SuccessorOperandRangeMut<'a> {
+    /// The explicit op operands which are to be passed along to the successor
+    forwarded: OpOperandRangeMut<'a>,
+    /// The number of operands that are produced internally within the operation and which are to
+    /// be passed to the successor before any forwarded operands.
+    num_produced: usize,
+}
+impl<'a> SuccessorOperandRangeMut<'a> {
+    /// Create a successor operand set consisting solely of forwarded op operands
+    #[inline]
+    pub const fn forward(forwarded: OpOperandRangeMut<'a>) -> Self {
+        Self {
+            forwarded,
+            num_produced: 0,
+        }
+    }
+
+    /// Create a new successor operand set with the given number of internally produced results,
+    /// and forwarded op operands.
+    #[inline]
+    pub const fn new(num_produced: usize, forwarded: OpOperandRangeMut<'a>) -> Self {
+        Self {
+            forwarded,
+            num_produced,
+        }
+    }
+
+    #[inline(always)]
+    pub fn forwarded_mut(&mut self) -> &mut OpOperandRangeMut<'a> {
+        &mut self.forwarded
+    }
+}
+impl<'a> SuccessorOperands for SuccessorOperandRangeMut<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.num_produced + self.forwarded.len()
+    }
+
+    #[inline(always)]
+    fn num_produced(&self) -> usize {
+        self.num_produced
+    }
+
+    #[inline(always)]
+    fn forwarded(&self) -> OpOperandRange<'_> {
+        self.forwarded.as_immutable()
+    }
+}
+
+/// Represents an operand in a [SuccessorOperands] set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SuccessorOperand {
+    /// This operand is internally produced by the operation, and passed to the successor before
+    /// any forwarded op operands.
+    Produced,
+    /// This operand is a forwarded operand of the operation.
+    Forwarded(crate::ValueRef),
+}
+
 /// This trait represents successor-like values for operations, with support for control-flow
 /// predicated on a "key", a sentinel value that must match in order for the successor block to be
 /// taken.
@@ -134,6 +329,13 @@ impl<'a, T> KeyedSuccessorRange<'a, T> {
             }
         })
     }
+
+    pub fn iter(&self) -> KeyedSuccessorRangeIter<'a, '_, T> {
+        KeyedSuccessorRangeIter {
+            range: self,
+            index: 0,
+        }
+    }
 }
 
 pub struct KeyedSuccessorRangeMut<'a, T> {
@@ -170,6 +372,24 @@ impl<'a, T> KeyedSuccessorRangeMut<'a, T> {
                 _marker: core::marker::PhantomData,
             }
         })
+    }
+}
+
+pub struct KeyedSuccessorRangeIter<'a, 'b: 'a, T> {
+    range: &'b KeyedSuccessorRange<'a, T>,
+    index: usize,
+}
+impl<'a, 'b: 'a, T> Iterator for KeyedSuccessorRangeIter<'a, 'b, T> {
+    type Item = SuccessorWithKey<'b, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.range.range.len() {
+            return None;
+        }
+
+        let idx = self.index;
+        self.index += 1;
+        self.range.get(idx)
     }
 }
 

@@ -3,10 +3,12 @@ use core::fmt;
 use super::{Context, Operation};
 use crate::{
     formatter::PrettyPrint,
+    matchers::Matcher,
     traits::{SingleBlock, SingleRegion},
-    CallableOpInterface, Entity, Value,
+    CallableOpInterface, EntityWithId, Value,
 };
 
+#[derive(Default)]
 pub struct OpPrintingFlags;
 
 /// The `OpPrinter` trait is expected to be implemented by all [Op] impls as a prequisite.
@@ -29,6 +31,12 @@ impl OpPrinter for Operation {
         _context: &Context,
         f: &mut fmt::Formatter,
     ) -> fmt::Result {
+        write!(f, "{}", self.render())
+    }
+}
+
+impl fmt::Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.render())
     }
 }
@@ -73,7 +81,7 @@ impl PrettyPrint for Operation {
         } else {
             Document::Empty
         };
-        doc += display(self.name());
+        doc += display(self.name()) + const_text(" ");
         let doc = if is_callable_op && is_symbol && no_operands {
             let name = self.as_symbol().unwrap().name();
             let callable = self.as_trait::<dyn CallableOpInterface>().unwrap();
@@ -107,24 +115,27 @@ impl PrettyPrint for Operation {
             }
             doc
         } else {
-            let operands = self.operands();
-            let doc = if !operands.is_empty() {
-                operands.iter().enumerate().fold(doc + const_text("("), |doc, (i, operand)| {
-                    let operand = operand.borrow();
-                    let value = operand.value();
-                    if i > 0 {
-                        doc + const_text(", ")
-                            + display(value.id())
-                            + const_text(": ")
-                            + display(value.ty())
-                    } else {
-                        doc + display(value.id()) + const_text(": ") + display(value.ty())
-                    }
-                }) + const_text(")")
+            let mut is_constant = false;
+            let doc = if let Some(value) = crate::matchers::constant().matches(self) {
+                is_constant = true;
+                doc + value.render()
             } else {
-                doc
+                let operands = self.operands();
+                if !operands.is_empty() {
+                    operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
+                        let operand = operand.borrow();
+                        let value = operand.value();
+                        if i > 0 {
+                            doc + const_text(", ") + display(value.id())
+                        } else {
+                            doc + display(value.id())
+                        }
+                    })
+                } else {
+                    doc
+                }
             };
-            if !results.is_empty() {
+            let doc = if !results.is_empty() {
                 let results =
                     results.iter().enumerate().fold(Document::Empty, |doc, (i, result)| {
                         if i > 0 {
@@ -136,56 +147,73 @@ impl PrettyPrint for Operation {
                 doc + const_text(" : ") + results
             } else {
                 doc
+            };
+
+            if is_constant {
+                doc
+            } else {
+                self.attrs.iter().fold(doc, |doc, attr| {
+                    let doc = doc + const_text(" ");
+                    if let Some(value) = attr.value() {
+                        doc + const_text("#[")
+                            + display(attr.name)
+                            + const_text(" = ")
+                            + value.render()
+                            + const_text("]")
+                    } else {
+                        doc + text(format!("#[{}]", &attr.name))
+                    }
+                })
             }
         };
 
-        let doc = self.attrs.iter().enumerate().fold(doc, |doc, (i, attr)| {
-            let doc = if i > 0 { doc + const_text(" ") } else { doc };
-            if let Some(value) = attr.value() {
-                doc + const_text("#[")
-                    + display(attr.name)
-                    + const_text(" = ")
-                    + value.render()
-                    + const_text("]")
-            } else {
-                doc + text(format!("#[{}]", &attr.name))
-            }
-        });
-
         if self.has_regions() {
             self.regions.iter().fold(doc, |doc, region| {
-                let blocks = region.body().iter().fold(Document::Empty, |doc, block| {
-                    let ops =
-                        block.body().iter().fold(Document::Empty, |doc, op| doc + op.render());
-                    if is_single_region_single_block && no_operands {
-                        doc + indent(4, nl() + ops) + nl()
-                    } else {
-                        let block_args = block.arguments().iter().enumerate().fold(
+                let blocks = region.body().iter().enumerate().fold(
+                    Document::Empty,
+                    |mut doc, (block_index, block)| {
+                        if block_index > 0 {
+                            doc += nl();
+                        }
+                        let ops = block.body().iter().enumerate().fold(
                             Document::Empty,
-                            |doc, (i, arg)| {
+                            |mut doc, (i, op)| {
                                 if i > 0 {
-                                    doc + const_text(", ") + arg.borrow().render()
-                                } else {
-                                    doc + arg.borrow().render()
+                                    doc += nl();
                                 }
+                                doc + op.render()
                             },
                         );
-                        let block_args = if block_args.is_empty() {
-                            block_args
+                        if is_single_region_single_block && no_operands {
+                            doc + indent(4, nl() + ops)
                         } else {
-                            const_text("(") + block_args + const_text(")")
-                        };
-                        doc + indent(
-                            4,
-                            text(format!("^{}", block.id()))
-                                + block_args
-                                + const_text(":")
-                                + nl()
-                                + ops,
-                        ) + nl()
-                    }
-                });
-                doc + indent(4, const_text(" {") + nl() + blocks) + nl() + const_text("}")
+                            let block_args = block.arguments().iter().enumerate().fold(
+                                Document::Empty,
+                                |doc, (i, arg)| {
+                                    if i > 0 {
+                                        doc + const_text(", ") + arg.borrow().render()
+                                    } else {
+                                        doc + arg.borrow().render()
+                                    }
+                                },
+                            );
+                            let block_args = if block_args.is_empty() {
+                                block_args
+                            } else {
+                                const_text("(") + block_args + const_text(")")
+                            };
+                            doc + indent(
+                                4,
+                                text(format!("^{}", block.id()))
+                                    + block_args
+                                    + const_text(":")
+                                    + nl()
+                                    + ops,
+                            )
+                        }
+                    },
+                );
+                doc + const_text(" {") + nl() + blocks + nl() + const_text("}")
             }) + const_text(";")
         } else {
             doc + const_text(";")

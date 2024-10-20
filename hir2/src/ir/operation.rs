@@ -640,6 +640,14 @@ impl Operation {
             arguments: self.operands.group_mut(info.operand_group as usize),
         }
     }
+
+    /// Get an iterator over the successors of this operation
+    pub fn successor_iter(&self) -> impl DoubleEndedIterator<Item = OpSuccessor<'_>> + '_ {
+        self.successors.iter().map(|info| OpSuccessor {
+            dest: info.block.clone(),
+            arguments: self.operands.group(info.operand_group as usize),
+        })
+    }
 }
 
 /// Operands

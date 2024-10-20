@@ -196,9 +196,11 @@ pub trait BuilderExt: Builder {
     }
 }
 
-pub struct OpBuilder {
+impl<B: ?Sized + Builder> BuilderExt for B {}
+
+pub struct OpBuilder<L = NoopBuilderListener> {
     context: Rc<Context>,
-    listener: Option<Box<dyn Listener>>,
+    listener: Option<L>,
     ip: Option<InsertionPoint>,
 }
 
@@ -210,38 +212,51 @@ impl OpBuilder {
             ip: None,
         }
     }
+}
 
+impl<L: Listener> OpBuilder<L> {
     /// Sets the listener of this builder to `listener`
-    pub fn with_listener(&mut self, listener: impl Listener) -> &mut Self {
-        self.listener = Some(Box::new(listener));
-        self
+    pub fn with_listener<L2>(self, listener: L2) -> OpBuilder<L2>
+    where
+        L2: Listener,
+    {
+        OpBuilder {
+            context: self.context,
+            listener: Some(listener),
+            ip: self.ip,
+        }
+    }
+
+    #[inline]
+    pub fn into_parts(self) -> (Rc<Context>, Option<L>, Option<InsertionPoint>) {
+        (self.context, self.listener, self.ip)
     }
 }
 
-impl Listener for OpBuilder {
+impl<L: Listener> Listener for OpBuilder<L> {
     fn kind(&self) -> ListenerType {
         self.listener.as_ref().map(|l| l.kind()).unwrap_or(ListenerType::Builder)
     }
 
-    fn notify_block_inserted(
-        &mut self,
-        block: BlockRef,
-        prev: Option<RegionRef>,
-        ip: Option<InsertionPoint>,
-    ) {
-        if let Some(listener) = self.listener.as_deref_mut() {
-            listener.notify_block_inserted(block, prev, ip);
+    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+        if let Some(listener) = self.listener.as_ref() {
+            listener.notify_operation_inserted(op, prev);
         }
     }
 
-    fn notify_operation_inserted(&mut self, op: OperationRef, prev: Option<InsertionPoint>) {
-        if let Some(listener) = self.listener.as_deref_mut() {
-            listener.notify_operation_inserted(op, prev);
+    fn notify_block_inserted(
+        &self,
+        block: BlockRef,
+        prev: Option<RegionRef>,
+        ip: Option<BlockRef>,
+    ) {
+        if let Some(listener) = self.listener.as_ref() {
+            listener.notify_block_inserted(block, prev, ip);
         }
     }
 }
 
-impl Builder for OpBuilder {
+impl<L: Listener> Builder for OpBuilder<L> {
     #[inline(always)]
     fn context(&self) -> &Context {
         self.context.as_ref()
@@ -279,40 +294,148 @@ pub enum ListenerType {
     Rewriter,
 }
 
+#[allow(unused_variables)]
 pub trait Listener: 'static {
     fn kind(&self) -> ListenerType;
     /// Notify the listener that the specified operation was inserted.
     ///
     /// * If the operation was moved, then `prev` is the previous location of the op
     /// * If the operation was unlinked before it was inserted, then `prev` is `None`
-    fn notify_operation_inserted(&mut self, op: OperationRef, prev: Option<InsertionPoint>);
+    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {}
     /// Notify the listener that the specified block was inserted.
     ///
     /// * If the block was moved, then `prev` and `ip` represent the previous location of the block.
     /// * If the block was unlinked before it was inserted, then `prev` and `ip` are `None`
     fn notify_block_inserted(
-        &mut self,
+        &self,
         block: BlockRef,
         prev: Option<RegionRef>,
-        ip: Option<InsertionPoint>,
-    );
+        ip: Option<BlockRef>,
+    ) {
+    }
 }
 
-pub struct InsertionGuard<'a> {
-    builder: &'a mut OpBuilder,
-    ip: Option<InsertionPoint>,
-}
-impl<'a> InsertionGuard<'a> {
-    #[allow(unused)]
-    pub fn new(builder: &'a mut OpBuilder, ip: InsertionPoint) -> Self {
-        Self {
-            builder,
-            ip: Some(ip),
+impl<L: Listener> Listener for Option<L> {
+    fn kind(&self) -> ListenerType {
+        ListenerType::Builder
+    }
+
+    fn notify_block_inserted(
+        &self,
+        block: BlockRef,
+        prev: Option<RegionRef>,
+        ip: Option<BlockRef>,
+    ) {
+        if let Some(listener) = self.as_ref() {
+            listener.notify_block_inserted(block, prev, ip);
+        }
+    }
+
+    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+        if let Some(listener) = self.as_ref() {
+            listener.notify_operation_inserted(op, prev);
         }
     }
 }
-impl Drop for InsertionGuard<'_> {
+
+impl<L: ?Sized + Listener> Listener for Box<L> {
+    #[inline]
+    fn kind(&self) -> ListenerType {
+        (**self).kind()
+    }
+
+    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+        (**self).notify_operation_inserted(op, prev)
+    }
+
+    fn notify_block_inserted(
+        &self,
+        block: BlockRef,
+        prev: Option<RegionRef>,
+        ip: Option<BlockRef>,
+    ) {
+        (**self).notify_block_inserted(block, prev, ip)
+    }
+}
+
+impl<L: ?Sized + Listener> Listener for Rc<L> {
+    #[inline]
+    fn kind(&self) -> ListenerType {
+        (**self).kind()
+    }
+
+    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+        (**self).notify_operation_inserted(op, prev)
+    }
+
+    fn notify_block_inserted(
+        &self,
+        block: BlockRef,
+        prev: Option<RegionRef>,
+        ip: Option<BlockRef>,
+    ) {
+        (**self).notify_block_inserted(block, prev, ip)
+    }
+}
+
+/// A listener of kind `Builder` that does nothing
+pub struct NoopBuilderListener;
+impl Listener for NoopBuilderListener {
+    #[inline]
+    fn kind(&self) -> ListenerType {
+        ListenerType::Builder
+    }
+}
+
+/// This is used to allow [InsertionGuard] to be agnostic about the type of builder/rewriter it
+/// wraps, while still performing the necessary insertion point restoration on drop. Without this,
+/// we would be required to specify a `B: Builder` bound on the definition of [InsertionGuard].
+#[doc(hidden)]
+#[allow(unused_variables)]
+trait RestoreInsertionPointOnDrop {
+    fn restore_insertion_point_on_drop(&mut self, ip: Option<InsertionPoint>);
+}
+impl<B: ?Sized> RestoreInsertionPointOnDrop for InsertionGuard<'_, B> {
+    #[inline(always)]
+    default fn restore_insertion_point_on_drop(&mut self, _ip: Option<InsertionPoint>) {}
+}
+impl<B: ?Sized + Builder> RestoreInsertionPointOnDrop for InsertionGuard<'_, B> {
+    fn restore_insertion_point_on_drop(&mut self, ip: Option<InsertionPoint>) {
+        self.builder.restore_insertion_point(ip);
+    }
+}
+
+pub struct InsertionGuard<'a, B: ?Sized> {
+    builder: &'a mut B,
+    ip: Option<InsertionPoint>,
+}
+impl<'a, B> InsertionGuard<'a, B>
+where
+    B: ?Sized + Builder,
+{
+    #[allow(unused)]
+    pub fn new(builder: &'a mut B) -> Self {
+        let ip = builder.insertion_point().cloned();
+        Self { builder, ip }
+    }
+}
+impl<B: ?Sized> core::ops::Deref for InsertionGuard<'_, B> {
+    type Target = B;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.builder
+    }
+}
+impl<B: ?Sized> core::ops::DerefMut for InsertionGuard<'_, B> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.builder
+    }
+}
+impl<B: ?Sized> Drop for InsertionGuard<'_, B> {
     fn drop(&mut self) {
-        self.builder.restore_insertion_point(self.ip.take());
+        let ip = self.ip.take();
+        self.restore_insertion_point_on_drop(ip);
     }
 }

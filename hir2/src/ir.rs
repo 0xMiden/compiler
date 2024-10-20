@@ -31,14 +31,14 @@ pub use self::{
         Block, BlockCursor, BlockCursorMut, BlockId, BlockList, BlockOperand, BlockOperandRef,
         BlockRef,
     },
-    builder::{Builder, Listener, ListenerType, OpBuilder},
+    builder::{Builder, BuilderExt, InsertionGuard, Listener, ListenerType, OpBuilder},
     callable::*,
     context::Context,
     dialect::{Dialect, DialectName, DialectRegistration},
     entity::{
         Entity, EntityCursor, EntityCursorMut, EntityGroup, EntityId, EntityIter, EntityList,
-        EntityMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, RawEntityRef,
-        StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
+        EntityMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId,
+        EntityWithParent, RawEntityRef, StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
@@ -51,11 +51,17 @@ pub use self::{
     operation::{
         OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
     },
-    print::OpPrinter,
-    region::{Region, RegionCursor, RegionCursorMut, RegionList, RegionRef},
+    print::{OpPrinter, OpPrintingFlags},
+    region::{
+        InvocationBounds, Region, RegionBranchOpInterface, RegionBranchPoint,
+        RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,
+        RegionKindInterface, RegionList, RegionRef, RegionSuccessor, RegionSuccessorInfo,
+        RegionSuccessorIter, RegionSuccessorMut, RegionTransformFailed,
+    },
     successor::{
         KeyedSuccessor, KeyedSuccessorRange, KeyedSuccessorRangeMut, OpSuccessor, OpSuccessorMut,
-        OpSuccessorRange, OpSuccessorRangeMut, OpSuccessorStorage, SuccessorInfo, SuccessorWithKey,
+        OpSuccessorRange, OpSuccessorRangeMut, OpSuccessorStorage, SuccessorInfo, SuccessorOperand,
+        SuccessorOperandRange, SuccessorOperandRangeMut, SuccessorOperands, SuccessorWithKey,
         SuccessorWithKeyMut,
     },
     symbol_table::{
@@ -64,6 +70,7 @@ pub use self::{
         SymbolUseCursor, SymbolUseCursorMut, SymbolUseIter, SymbolUseList, SymbolUseRef,
         SymbolUsesIter,
     },
+    traits::{FoldResult, OpFoldResult},
     types::*,
     usable::Usable,
     value::{
@@ -72,7 +79,7 @@ pub use self::{
     },
     verifier::{OpVerifier, Verify},
     visit::{
-        OpVisitor, OperationVisitor, Searcher, SymbolVisitor, Visitor, WalkOrder, WalkResult,
-        WalkStage, Walkable,
+        BlockIter, OpVisitor, OperationVisitor, PostOrderBlockIter, Searcher, SymbolVisitor,
+        Visitor, WalkOrder, WalkResult, WalkStage, Walkable,
     },
 };
