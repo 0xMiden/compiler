@@ -37,13 +37,24 @@ mod attributes;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
+mod folder;
 pub mod formatter;
 mod hash;
 mod ir;
 pub mod matchers;
 mod patterns;
 
-pub use self::{any::AsAny, attributes::*, ir::*, patterns::*};
+pub use self::{
+    any::AsAny,
+    attributes::{
+        markers::*, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr, Overflow, SetAttr,
+        Visibility,
+    },
+    folder::OperationFolder,
+    hash::{DynHash, DynHasher},
+    ir::*,
+    patterns::*,
+};
 
 // TODO(pauls): The following is a rough list of what needs to be implemented for the IR
 // refactoring to be complete and usable in place of the old IR (some are optional):
