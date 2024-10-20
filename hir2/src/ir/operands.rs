@@ -34,6 +34,16 @@ impl OpOperandImpl {
         self.value.borrow()
     }
 
+    #[inline]
+    pub fn as_value_ref(&self) -> ValueRef {
+        self.value.clone()
+    }
+
+    #[inline]
+    pub fn as_operand_ref(&self) -> OpOperand {
+        unsafe { OpOperand::from_raw(self) }
+    }
+
     pub fn owner(&self) -> EntityRef<'_, crate::Operation> {
         self.owner.borrow()
     }
@@ -65,6 +75,7 @@ impl crate::Spanned for OpOperandImpl {
         self.value.borrow().span()
     }
 }
+impl crate::Entity for OpOperandImpl {}
 impl crate::StorableEntity for OpOperandImpl {
     #[inline(always)]
     fn index(&self) -> usize {
@@ -76,7 +87,7 @@ impl crate::StorableEntity for OpOperandImpl {
     }
 
     fn unlink(&mut self) {
-        let ptr = unsafe { OpOperand::from_raw(self as *mut Self) };
+        let ptr = self.as_operand_ref();
         let mut value = self.value.borrow_mut();
         let uses = value.uses_mut();
         unsafe {

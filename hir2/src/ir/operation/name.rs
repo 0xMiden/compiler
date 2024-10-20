@@ -44,8 +44,8 @@ impl OperationName {
     }
 
     /// Returns the dialect name of this operation
-    pub fn dialect(&self) -> DialectName {
-        self.0.dialect
+    pub fn dialect(&self) -> &DialectName {
+        &self.0.dialect
     }
 
     /// Returns the namespace to which this operation name belongs (i.e. dialect name)

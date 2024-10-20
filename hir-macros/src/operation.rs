@@ -647,8 +647,6 @@ impl quote::ToTokens for OpCreateFn<'_> {
             .create_params
             .iter()
             .flat_map(OpCreateParam::binding_types);
-        let traits = &self.op.traits;
-        let implements = &self.op.implements;
         let initialize_custom_fields = InitializeCustomFields(self.op);
         let with_symbols = WithSymbols(self.op);
         let with_attrs = WithAttrs(self.op);
@@ -680,26 +678,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                     let __operation_name = {
                         let context = builder.context();
                         let dialect = context.get_or_register_dialect::<#dialect>();
-                        let opcode = <Self as ::midenc_hir2::OpRegistration>::name();
-                        dialect.get_or_register_op(
-                            opcode,
-                            |dialect_name, opcode| {
-                                ::midenc_hir2::OperationName::new::<Self, _, _>(
-                                    dialect_name,
-                                    opcode,
-                                    [
-                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn core::any::Any>(),
-                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn ::midenc_hir2::Op>(),
-                                        #(
-                                            ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #traits>(),
-                                        )*
-                                        #(
-                                            ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #implements>(),
-                                        )*
-                                    ]
-                                )
-                            }
-                        )
+                        <Self as ::midenc_hir2::OpRegistration>::register_with(&*dialect)
                     };
                     let __context = builder.context_rc();
                     let mut __op = __context.alloc_uninit_tracked::<Self>();
@@ -773,6 +752,8 @@ impl quote::ToTokens for OpDefinition {
         // impl OpRegistration
         let opcode = &self.opcode;
         let opcode_str = syn::Lit::Str(syn::LitStr::new(&opcode.to_string(), opcode.span()));
+        let traits = &self.traits;
+        let implements = &self.implements;
         tokens.extend(quote! {
             impl #impl_generics ::midenc_hir2::Op for #op_ident #ty_generics #where_clause {
                 #[inline]
@@ -794,6 +775,29 @@ impl quote::ToTokens for OpDefinition {
             impl #impl_generics ::midenc_hir2::OpRegistration for #op_ident #ty_generics #where_clause {
                 fn name() -> ::midenc_hir_symbol::Symbol {
                     ::midenc_hir_symbol::Symbol::intern(#opcode_str)
+                }
+
+                fn register_with(dialect: &dyn ::midenc_hir2::Dialect) -> ::midenc_hir2::OperationName {
+                    let opcode = <Self as ::midenc_hir2::OpRegistration>::name();
+                    dialect.get_or_register_op(
+                        opcode,
+                        |dialect_name, opcode| {
+                            ::midenc_hir2::OperationName::new::<Self, _, _>(
+                                dialect_name,
+                                opcode,
+                                [
+                                    ::midenc_hir2::traits::TraitInfo::new::<Self, dyn core::any::Any>(),
+                                    ::midenc_hir2::traits::TraitInfo::new::<Self, dyn ::midenc_hir2::Op>(),
+                                    #(
+                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #traits>(),
+                                    )*
+                                    #(
+                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #implements>(),
+                                    )*
+                                ]
+                            )
+                        }
+                    )
                 }
             }
         });
@@ -881,6 +885,10 @@ impl quote::ToTokens for OpCustomFieldFns<'_> {
         // User-defined fields
         for field in self.0.op.fields.iter() {
             let field_name = field.ident.as_ref().unwrap();
+            // Do not generate field functions for custom fields with private visibility
+            if matches!(field.vis, syn::Visibility::Inherited) {
+                continue;
+            }
             let field_name_mut = format_ident!("{field_name}_mut");
             let set_field_name = format_ident!("set_{field_name}");
             let field_doc = syn::Lit::Str(syn::LitStr::new(

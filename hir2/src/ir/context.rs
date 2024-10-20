@@ -65,6 +65,10 @@ impl Context {
         self.registered_dialects.borrow()
     }
 
+    pub fn get_registered_dialect(&self, dialect: &DialectName) -> Rc<dyn Dialect> {
+        self.registered_dialects.borrow()[dialect].clone()
+    }
+
     pub fn get_or_register_dialect<T: DialectRegistration>(&self) -> Rc<dyn Dialect> {
         use alloc::collections::btree_map::Entry;
 

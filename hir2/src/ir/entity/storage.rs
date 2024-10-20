@@ -191,11 +191,20 @@ impl<T, const INLINE: usize> core::ops::IndexMut<usize> for EntityStorage<T, INL
 }
 
 /// A reference to a range of items in [EntityStorage]
+#[derive(Clone)]
 pub struct EntityRange<'a, T> {
     range: core::ops::Range<usize>,
     items: &'a [T],
 }
 impl<'a, T> EntityRange<'a, T> {
+    /// Get an empty range
+    pub fn empty() -> Self {
+        Self {
+            range: 0..0,
+            items: &[],
+        }
+    }
+
     /// Returns true if this range is empty
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -238,6 +247,15 @@ impl<'a, T> core::ops::Index<usize> for EntityRange<'a, T> {
         &self.as_slice()[index]
     }
 }
+impl<'a, T> IntoIterator for EntityRange<'a, T> {
+    type IntoIter = core::slice::Iter<'a, T>;
+    type Item = &'a T;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
 
 /// A mutable range of items in [EntityStorage]
 ///
@@ -261,6 +279,14 @@ impl<'a, T, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
     #[inline]
     pub fn len(&self) -> usize {
         self.as_slice().len()
+    }
+
+    /// Temporarily borrow this range immutably
+    pub fn as_immutable(&self) -> EntityRange<'_, T> {
+        EntityRange {
+            range: self.range.clone(),
+            items: self.items.as_slice(),
+        }
     }
 
     /// Get this range as a slice
@@ -384,6 +410,39 @@ impl<'a, T: StorableEntity, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
         }
     }
 
+    /// Remove the item at `index` in this group, and return it.
+    ///
+    /// NOTE: This will panic if `index` is out of bounds of the group.
+    pub fn erase(&mut self, index: usize) -> T {
+        assert!(self.range.len() > index, "index out of bounds");
+        self.range.end -= 1;
+        self.groups[self.group].shrink(1);
+        let mut removed = self.items.remove(self.range.start + index);
+        {
+            removed.unlink();
+        }
+
+        // Shift groups
+        let next_group = self.group + 1;
+        if next_group < self.groups.len() {
+            for group in self.groups[next_group..].iter_mut() {
+                group.shift_start(-1);
+            }
+        }
+
+        // Shift item indices
+        let next_item = index;
+        if next_item < self.items.len() {
+            for (offset, item) in self.items[next_item..].iter_mut().enumerate() {
+                unsafe {
+                    item.set_index(next_item + offset);
+                }
+            }
+        }
+
+        removed
+    }
+
     /// Remove the last item from this group, or `None` if empty
     pub fn pop(&mut self) -> Option<T> {
         if self.range.is_empty() {
@@ -430,6 +489,15 @@ impl<'a, T, const INLINE: usize> core::ops::IndexMut<usize> for EntityRangeMut<'
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.as_slice_mut()[index]
+    }
+}
+impl<'a, T> IntoIterator for EntityRangeMut<'a, T> {
+    type IntoIter = core::slice::IterMut<'a, T>;
+    type Item = &'a mut T;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
     }
 }
 

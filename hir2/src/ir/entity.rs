@@ -20,10 +20,51 @@ pub use self::{
 };
 use crate::any::*;
 
-/// A trait implemented by an IR entity that has a unique identifier
+/// A trait implemented by an IR entity
+pub trait Entity: Any {}
+
+/// A trait implemented by an [Entity] that is a logical child of another entity type, and is stored
+/// in the parent using an [EntityList].
+///
+/// This trait defines callbacks that are executed any time the entity is modified in relation to its
+/// parent entity, i.e. inserted in a parent, removed from a parent, or moved from one to another.
+///
+/// By default, these callbacks are no-ops.
+pub trait EntityWithParent: Entity {
+    /// The parent entity that this entity logically belongs to.
+    type Parent: Entity;
+
+    /// Invoked when this entity type is inserted into an intrusive list
+    #[allow(unused_variables)]
+    #[inline]
+    fn on_inserted_into_parent(
+        this: UnsafeIntrusiveEntityRef<Self>,
+        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
+    ) {
+    }
+    /// Invoked when this entity type is removed from an intrusive list
+    #[allow(unused_variables)]
+    #[inline]
+    fn on_removed_from_parent(
+        this: UnsafeIntrusiveEntityRef<Self>,
+        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
+    ) {
+    }
+    /// Invoked when a set of entities is moved from one intrusive list to another
+    #[allow(unused_variables)]
+    #[inline]
+    fn on_transfered_to_new_parent(
+        from: UnsafeIntrusiveEntityRef<Self::Parent>,
+        to: UnsafeIntrusiveEntityRef<Self::Parent>,
+        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
+    ) {
+    }
+}
+
+/// A trait implemented by an [Entity] that has a unique identifier
 ///
 /// Currently, this is used only for [Value]s and [Block]s.
-pub trait Entity: Any {
+pub trait EntityWithId: Entity {
     type Id: EntityId;
 
     fn id(&self) -> Self::Id;
@@ -445,11 +486,7 @@ impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
         Obj: ?Sized,
     {
         let borrow = from.borrow();
-        if let Some(to) = borrow.as_any().downcast_ref() {
-            Some(unsafe { RawEntityRef::from_raw(to) })
-        } else {
-            None
-        }
+        borrow.as_any().downcast_ref().map(|to| unsafe { RawEntityRef::from_raw(to) })
     }
 
     #[track_caller]
@@ -498,8 +535,23 @@ where
 }
 impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
 impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Self::ptr_eq(self, other)
+    }
+}
+impl<T: ?Sized, Metadata> PartialOrd for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T: ?Sized, Metadata> Ord for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        let a = self.inner.as_ptr() as *const () as usize;
+        let b = other.inner.as_ptr() as *const () as usize;
+        a.cmp(&b)
     }
 }
 impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {

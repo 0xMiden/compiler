@@ -78,38 +78,28 @@ pub trait Builder: Listener {
 
     /// Add a new block with `args` arguments, and set the insertion point to the end of it.
     ///
-    /// The block is inserted at the provided insertion point `ip`, or at the end of `parent` if
+    /// The block is inserted after the provided insertion point `ip`, or at the end of `parent` if
     /// not.
     ///
     /// Panics if `ip` is in a different region than `parent`, or if the position it refers to is no
     /// longer valid.
-    fn create_block<P>(
-        &mut self,
-        parent: RegionRef,
-        ip: Option<InsertionPoint>,
-        args: P,
-    ) -> BlockRef
-    where
-        P: IntoIterator<Item = Type>,
-    {
-        let mut block = self.context().create_block_with_params(args);
-        if let Some(InsertionPoint { at, action }) = ip {
-            let at = at.block().expect("invalid insertion point");
+    fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
+        let mut block = self.context().create_block_with_params(args.iter().cloned());
+        if let Some(at) = ip {
             let region = at.borrow().parent().unwrap();
             assert!(
                 RegionRef::ptr_eq(&parent, &region),
                 "insertion point region differs from 'parent'"
             );
 
-            match action {
-                crate::Insert::Before => block.borrow_mut().insert_before(at),
-                crate::Insert::After => block.borrow_mut().insert_after(at),
-            }
+            block.borrow_mut().insert_after(at);
         } else {
             block.borrow_mut().insert_at_end(parent);
         }
 
         self.notify_block_inserted(block.clone(), None, None);
+
+        self.set_insertion_point_to_end(block.clone());
 
         block
     }
@@ -117,35 +107,45 @@ pub trait Builder: Listener {
     /// Add a new block with `args` arguments, and set the insertion point to the end of it.
     ///
     /// The block is inserted before `before`.
-    fn create_block_before<P>(&mut self, before: BlockRef, args: P) -> BlockRef
-    where
-        P: IntoIterator<Item = Type>,
-    {
-        let mut block = self.context().create_block_with_params(args);
+    fn create_block_before(&mut self, before: BlockRef, args: &[Type]) -> BlockRef {
+        let mut block = self.context().create_block_with_params(args.iter().cloned());
         block.borrow_mut().insert_before(before);
         self.notify_block_inserted(block.clone(), None, None);
+        self.set_insertion_point_to_end(block.clone());
         block
     }
 
-    /// Insert `op` at the current insertion point
+    /// Insert `op` at the current insertion point.
+    ///
+    /// If the insertion point is inserting after the current operation, then after calling this
+    /// function, the insertion point will have been moved to the newly inserted operation. This
+    /// ensures that subsequent calls to `insert` will place operations in the block in the same
+    /// sequence as they were inserted. The other insertion point placements already have more or
+    /// less intuitive behavior, e.g. inserting _before_ the current operation multiple times will
+    /// result in operations being placed in the same sequence they were inserted, just before the
+    /// current op.
     ///
     /// This function will panic if no insertion point is set.
     fn insert(&mut self, mut op: OperationRef) {
-        let InsertionPoint { at, action } =
-            self.insertion_point().expect("insertion point is unset").clone();
-        match at {
-            ProgramPoint::Block(block) => match action {
+        let ip = self.insertion_point().expect("insertion point is unset").clone();
+        match ip.at {
+            ProgramPoint::Block(block) => match ip.placement {
                 crate::Insert::Before => op.borrow_mut().insert_at_start(block),
                 crate::Insert::After => op.borrow_mut().insert_at_end(block),
             },
-            ProgramPoint::Op(other_op) => match action {
+            ProgramPoint::Op(other_op) => match ip.placement {
                 crate::Insert::Before => op.borrow_mut().insert_before(other_op),
-                crate::Insert::After => op.borrow_mut().insert_after(other_op),
+                crate::Insert::After => {
+                    op.borrow_mut().insert_after(other_op.clone());
+                    self.set_insertion_point_after(ProgramPoint::Op(other_op));
+                }
             },
         }
         self.notify_operation_inserted(op, None);
     }
+}
 
+pub trait BuilderExt: Builder {
     /// Returns a specialized builder for a concrete [Op], `T`, which can be called like a closure
     /// with the arguments required to create an instance of the specified operation.
     ///

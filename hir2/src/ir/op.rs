@@ -3,6 +3,7 @@ use crate::{any::AsAny, AttributeValue};
 
 pub trait OpRegistration: Op {
     fn name() -> ::midenc_hir_symbol::Symbol;
+    fn register_with(dialect: &dyn Dialect) -> OperationName;
 }
 
 pub trait BuildableOp<Args: core::marker::Tuple>: Op {
@@ -34,6 +35,9 @@ pub trait Op: AsAny + OpVerifier {
     }
     fn parent_op(&self) -> Option<OperationRef> {
         self.as_operation().parent_op()
+    }
+    fn num_regions(&self) -> usize {
+        self.as_operation().num_regions()
     }
     fn regions(&self) -> &RegionList {
         self.as_operation().regions()

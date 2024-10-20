@@ -238,8 +238,10 @@ where
             op.verify(self.builder.context())?;
         }
 
-        // Insert op at current insertion point
-        self.builder.insert(self.op);
+        // Insert op at current insertion point, if set
+        if self.builder.insertion_point().is_some() {
+            self.builder.insert(self.op);
+        }
 
         Ok(op)
     }

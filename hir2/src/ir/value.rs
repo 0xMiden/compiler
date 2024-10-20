@@ -38,7 +38,9 @@ impl fmt::Display for ValueId {
 /// of a [Value] are operands (see [OpOperandImpl]). Operands are associated with an operation. Thus
 /// the graph formed of the edges between values and operations via operands forms the data-flow
 /// graph of the program.
-pub trait Value: Entity<Id = ValueId> + Spanned + Usable<Use = OpOperandImpl> + fmt::Debug {
+pub trait Value:
+    EntityWithId<Id = ValueId> + Spanned + Usable<Use = OpOperandImpl> + fmt::Debug
+{
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     /// Set the source location of this value
@@ -51,6 +53,52 @@ pub trait Value: Entity<Id = ValueId> + Spanned + Usable<Use = OpOperandImpl> + 
     ///
     /// Returns `None` if this value is defined by other means than an operation result.
     fn get_defining_op(&self) -> Option<OperationRef>;
+    /// Get the region which contains the definition of this value
+    fn parent_region(&self) -> Option<RegionRef> {
+        self.parent_block().and_then(|block| block.borrow().parent())
+    }
+    /// Get the block which contains the definition of this value
+    fn parent_block(&self) -> Option<BlockRef>;
+    /// Returns true if this value is used outside of the given block
+    fn is_used_outside_of_block(&self, block: &BlockRef) -> bool {
+        self.iter_uses().any(|user| {
+            user.owner.borrow().parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block))
+        })
+    }
+    /// Replace all uses of `self` with `replacement`
+    fn replace_all_uses_with(&mut self, mut replacement: ValueRef) {
+        let mut cursor = self.uses_mut().front_mut();
+        while let Some(mut user) = cursor.as_pointer() {
+            // Rewrite use of `self` with `replacement`
+            {
+                let mut user = user.borrow_mut();
+                user.value = replacement.clone();
+            }
+            // Remove `user` from the use list of `self`
+            cursor.remove();
+            // Add `user` to the use list of `replacement`
+            replacement.borrow_mut().insert_use(user);
+        }
+    }
+    /// Replace all uses of `self` with `replacement` unless the user is in `exceptions`
+    fn replace_all_uses_except(&mut self, mut replacement: ValueRef, exceptions: &[OperationRef]) {
+        let mut cursor = self.uses_mut().front_mut();
+        while let Some(mut user) = cursor.as_pointer() {
+            // Rewrite use of `self` with `replacement` if user not in `exceptions`
+            {
+                let mut user = user.borrow_mut();
+                if exceptions.contains(&user.owner) {
+                    cursor.move_next();
+                    continue;
+                }
+                user.value = replacement.clone();
+            }
+            // Remove `user` from the use list of `self`
+            cursor.remove();
+            // Add `user` to the use list of `replacement`
+            replacement.borrow_mut().insert_use(user);
+        }
+    }
 }
 
 impl dyn Value {
@@ -68,6 +116,29 @@ impl dyn Value {
     pub fn downcast_mut<T: Value>(&mut self) -> Option<&mut T> {
         self.as_any_mut().downcast_mut::<T>()
     }
+
+    /// Replace all uses of `self` with `replacement` if `should_replace` returns true
+    pub fn replace_uses_with_if<F>(&mut self, mut replacement: ValueRef, should_replace: F)
+    where
+        F: Fn(&OpOperandImpl) -> bool,
+    {
+        let mut cursor = self.uses_mut().front_mut();
+        while let Some(mut user) = cursor.as_pointer() {
+            // Rewrite use of `self` with `replacement` if `should_replace` returns true
+            {
+                let mut user = user.borrow_mut();
+                if !should_replace(&user) {
+                    cursor.move_next();
+                    continue;
+                }
+                user.value = replacement.clone();
+            }
+            // Remove `user` from the use list of `self`
+            cursor.remove();
+            // Add `user` to the use list of `replacement`
+            replacement.borrow_mut().insert_use(user);
+        }
+    }
 }
 
 /// Generates the boilerplate for a concrete [Value] type.
@@ -75,13 +146,19 @@ macro_rules! value_impl {
     (
         $(#[$outer:meta])*
         $vis:vis struct $ValueKind:ident {
+            $(#[doc $($owner_doc_args:tt)*])*
+            owner: $OwnerTy:ty,
+            $(#[doc $($index_doc_args:tt)*])*
+            index: u8,
             $(
-                $(*[$inner:ident $($args:tt)*])*
+                $(#[$inner:ident $($args:tt)*])*
                 $Field:ident: $FieldTy:ty,
             )*
         }
 
         fn get_defining_op(&$GetDefiningOpSelf:ident) -> Option<OperationRef> $GetDefiningOp:block
+
+        fn parent_block(&$ParentBlockSelf:ident) -> Option<BlockRef> $ParentBlock:block
 
         $($t:tt)*
     ) => {
@@ -93,6 +170,8 @@ macro_rules! value_impl {
             span: SourceSpan,
             ty: Type,
             uses: OpOperandList,
+            owner: $OwnerTy,
+            index: u8,
             $(
                 $(#[$inner $($args)*])*
                 $Field: $FieldTy
@@ -104,6 +183,8 @@ macro_rules! value_impl {
                 span: SourceSpan,
                 id: ValueId,
                 ty: Type,
+                owner: $OwnerTy,
+                index: u8,
                 $(
                     $Field: $FieldTy
                 ),*
@@ -113,10 +194,22 @@ macro_rules! value_impl {
                     ty,
                     span,
                     uses: Default::default(),
+                    owner,
+                    index,
                     $(
                         $Field
                     ),*
                 }
+            }
+
+            $(#[doc $($owner_doc_args)*])*
+            pub fn owner(&self) -> $OwnerTy {
+                self.owner.clone()
+            }
+
+            $(#[doc $($index_doc_args)*])*
+            pub fn index(&self) -> usize {
+                self.index as usize
             }
         }
 
@@ -142,9 +235,12 @@ macro_rules! value_impl {
             }
 
             fn get_defining_op(&$GetDefiningOpSelf) -> Option<OperationRef> $GetDefiningOp
+
+            fn parent_block(&$ParentBlockSelf) -> Option<BlockRef> $ParentBlock
         }
 
-        impl Entity for $ValueKind {
+        impl Entity for $ValueKind {}
+        impl EntityWithId for $ValueKind {
             type Id = ValueId;
 
             #[inline(always)]
@@ -167,13 +263,22 @@ macro_rules! value_impl {
             }
         }
 
+        impl fmt::Display for $ValueKind {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                use crate::formatter::PrettyPrint;
+
+                self.pretty_print(f)
+            }
+        }
+
         impl fmt::Debug for $ValueKind {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let mut builder = f.debug_struct(stringify!($ValueKind));
                 builder
                     .field("id", &self.id)
                     .field("ty", &self.ty)
-                    .field("uses", &self.uses);
+                    .field("index", &self.index)
+                    .field("is_used", &(!self.uses.is_empty()));
 
                 $(
                     builder.field(stringify!($Field), &self.$Field);
@@ -197,36 +302,30 @@ pub type OpResultRef = UnsafeEntityRef<OpResult>;
 value_impl!(
     /// A [BlockArgument] represents the definition of a [Value] by a block parameter
     pub struct BlockArgument {
+        /// Get the [Block] to which this [BlockArgument] belongs
         owner: BlockRef,
+        /// Get the index of this argument in the argument list of the owning [Block]
         index: u8,
     }
 
     fn get_defining_op(&self) -> Option<OperationRef> {
         None
     }
-);
 
-value_impl!(
-    /// An [OpResult] represents the definition of a [Value] by the result of an [Operation]
-    pub struct OpResult {
-        owner: OperationRef,
-        index: u8,
-    }
-
-    fn get_defining_op(&self) -> Option<OperationRef> {
+    fn parent_block(&self) -> Option<BlockRef> {
         Some(self.owner.clone())
     }
 );
 
 impl BlockArgument {
-    /// Get the [Block] to which this [BlockArgument] belongs
-    pub fn owner(&self) -> BlockRef {
-        self.owner.clone()
+    #[inline]
+    pub fn as_value_ref(&self) -> ValueRef {
+        self.as_block_argument_ref().upcast()
     }
 
-    /// Get the index of this argument in the argument list of the owning [Block]
-    pub fn index(&self) -> usize {
-        self.index as usize
+    #[inline]
+    pub fn as_block_argument_ref(&self) -> BlockArgumentRef {
+        unsafe { BlockArgumentRef::from_raw(self) }
     }
 }
 
@@ -234,7 +333,7 @@ impl crate::formatter::PrettyPrint for BlockArgument {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
 
-        text(format!("{}", self.id)) + const_text(": ") + self.ty.render()
+        display(self.id) + const_text(": ") + self.ty.render()
     }
 }
 
@@ -249,17 +348,25 @@ impl StorableEntity for BlockArgument {
     }
 }
 
+value_impl!(
+    /// An [OpResult] represents the definition of a [Value] by the result of an [Operation]
+    pub struct OpResult {
+        /// Get the [Operation] to which this [OpResult] belongs
+        owner: OperationRef,
+        /// Get the index of this result in the result list of the owning [Operation]
+        index: u8,
+    }
+
+    fn get_defining_op(&self) -> Option<OperationRef> {
+        Some(self.owner.clone())
+    }
+
+    fn parent_block(&self) -> Option<BlockRef> {
+        self.owner.borrow().parent()
+    }
+);
+
 impl OpResult {
-    /// Get the [Operation] to which this [OpResult] belongs
-    pub fn owner(&self) -> OperationRef {
-        self.owner.clone()
-    }
-
-    /// Get the index of this result in the result list of the owning [Operation]
-    pub fn index(&self) -> usize {
-        self.index as usize
-    }
-
     #[inline]
     pub fn as_value_ref(&self) -> ValueRef {
         unsafe { ValueRef::from_raw(self as &dyn Value) }

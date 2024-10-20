@@ -5,7 +5,10 @@ use alloc::rc::Rc;
 use core::{
     fmt,
     ptr::{DynMetadata, NonNull, Pointee},
+    sync::atomic::AtomicU32,
 };
+
+use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
 use super::*;
@@ -77,6 +80,13 @@ pub struct Operation {
     /// cannot be constructed without providing it to the `uninit` function, and callers of that
     /// function are required to ensure that it is correct.
     offset: usize,
+    /// The order of this operation in its containing block
+    ///
+    /// This is atomic to ensure that even if a mutable reference to this operation is held, loads
+    /// of this field cannot be elided, as the value can still be mutated at any time. In practice,
+    /// the only time this is ever written, is when all operations in a block have their orders
+    /// recomputed, or when a single operation is updating its own order.
+    order: AtomicU32,
     #[span]
     pub span: SourceSpan,
     /// Attributes that apply to this operation
@@ -104,6 +114,8 @@ impl fmt::Debug for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Operation")
             .field_with("name", |f| write!(f, "{}", &self.name()))
+            .field("offset", &self.offset)
+            .field("order", &self.order)
             .field("attrs", &self.attrs)
             .field("block", &self.block.as_ref().map(|b| b.borrow().id()))
             .field("operands", &self.operands)
@@ -112,14 +124,56 @@ impl fmt::Debug for Operation {
             .finish_non_exhaustive()
     }
 }
+
 impl AsRef<dyn Op> for Operation {
     fn as_ref(&self) -> &dyn Op {
         self.name.upcast(self.container()).unwrap()
     }
 }
+
 impl AsMut<dyn Op> for Operation {
     fn as_mut(&mut self) -> &mut dyn Op {
         self.name.upcast_mut(self.container().cast_mut()).unwrap()
+    }
+}
+
+impl Entity for Operation {}
+impl EntityWithParent for Operation {
+    type Parent = Block;
+
+    fn on_inserted_into_parent(
+        mut this: UnsafeIntrusiveEntityRef<Self>,
+        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
+    ) {
+        let mut op = this.borrow_mut();
+        op.block = Some(parent);
+        op.order.store(Self::INVALID_ORDER, std::sync::atomic::Ordering::Release);
+    }
+
+    fn on_removed_from_parent(
+        mut this: UnsafeIntrusiveEntityRef<Self>,
+        _parent: UnsafeIntrusiveEntityRef<Self::Parent>,
+    ) {
+        this.borrow_mut().block = None;
+    }
+
+    fn on_transfered_to_new_parent(
+        from: UnsafeIntrusiveEntityRef<Self::Parent>,
+        mut to: UnsafeIntrusiveEntityRef<Self::Parent>,
+        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
+    ) {
+        // Invalidate the ordering of the new parent block
+        to.borrow_mut().invalidate_op_order();
+
+        // If we are transferring operations within the same block, the block pointer doesn't
+        // need to be updated
+        if BlockRef::ptr_eq(&from, &to) {
+            return;
+        }
+
+        for mut transferred_op in transferred {
+            transferred_op.borrow_mut().block = Some(to.clone());
+        }
     }
 }
 
@@ -133,6 +187,7 @@ impl Operation {
             context: unsafe { NonNull::new_unchecked(Rc::as_ptr(&context).cast_mut()) },
             name,
             offset,
+            order: AtomicU32::new(0),
             span: Default::default(),
             attrs: Default::default(),
             block: Default::default(),
@@ -150,8 +205,12 @@ impl Operation {
     ///
     /// An operation name consists of both its dialect, and its opcode.
     pub fn name(&self) -> OperationName {
-        //AsRef::<dyn Op>::as_ref(self).name()
         self.name.clone()
+    }
+
+    /// Get the dialect associated with this operation
+    pub fn dialect(&self) -> Rc<dyn Dialect> {
+        self.context().get_registered_dialect(self.name.dialect())
     }
 
     /// Set the source location associated with this operation
@@ -609,31 +668,73 @@ impl Operation {
         &mut self.operands
     }
 
-    /// TODO: Remove in favor of [OpBuilder]
+    /// Replace the current operands of this operation with the ones provided in `operands`.
+    pub fn set_operands(&mut self, operands: impl Iterator<Item = ValueRef>) {
+        self.operands.clear();
+        let context = self.context_rc();
+        let owner = self.as_operation_ref();
+        self.operands.extend(
+            operands
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| context.make_operand(value, owner.clone(), index as u8)),
+        );
+    }
+
+    /// Replace any uses of `from` with `to` within this operation
     pub fn replaces_uses_of_with(&mut self, mut from: ValueRef, mut to: ValueRef) {
         if ValueRef::ptr_eq(&from, &to) {
             return;
         }
 
-        let from_id = from.borrow().id();
-        if from_id == to.borrow().id() {
-            return;
-        }
-
-        for mut operand in self.operands.iter().cloned() {
-            if operand.borrow().value.borrow().id() == from_id {
-                debug_assert!(operand.is_linked());
-                // Remove the operand from `from`
+        for operand in self.operands.iter_mut() {
+            debug_assert!(operand.is_linked());
+            if ValueRef::ptr_eq(&from, &operand.borrow().value) {
+                // Remove use of `from` by `operand`
                 {
                     let mut from_mut = from.borrow_mut();
                     let from_uses = from_mut.uses_mut();
                     let mut cursor = unsafe { from_uses.cursor_mut_from_ptr(operand.clone()) };
                     cursor.remove();
                 }
-                // Add the operand to `to`
+                // Add use of `to` by `operand`
                 operand.borrow_mut().value = to.clone();
-                to.borrow_mut().insert_use(operand);
+                to.borrow_mut().insert_use(operand.clone());
             }
+        }
+    }
+
+    /// Replace all uses of this operation's results with `values`
+    ///
+    /// The number of results and the number of values in `values` must be exactly the same,
+    /// otherwise this function will panic.
+    pub fn replace_all_uses_with(&mut self, values: impl ExactSizeIterator<Item = ValueRef>) {
+        assert_eq!(self.num_results(), values.len());
+        for (result, replacement) in self.results.iter_mut().zip(values) {
+            if ValueRef::ptr_eq(&result.clone().upcast(), &replacement) {
+                continue;
+            }
+            result.borrow_mut().replace_all_uses_with(replacement);
+        }
+    }
+
+    /// Replace uses of this operation's results with `values`, for each use which, when provided
+    /// to the given callback, returns true.
+    ///
+    /// The number of results and the number of values in `values` must be exactly the same,
+    /// otherwise this function will panic.
+    pub fn replace_uses_with_if<F, V>(&mut self, values: V, should_replace: F)
+    where
+        V: ExactSizeIterator<Item = ValueRef>,
+        F: Fn(&OpOperandImpl) -> bool,
+    {
+        assert_eq!(self.num_results(), values.len());
+        for (result, replacement) in self.results.iter_mut().zip(values) {
+            let mut result = result.clone().upcast();
+            if ValueRef::ptr_eq(&result, &replacement) {
+                continue;
+            }
+            result.borrow_mut().replace_uses_with_if(replacement, &should_replace);
         }
     }
 }
@@ -662,6 +763,109 @@ impl Operation {
     #[inline]
     pub fn results_mut(&mut self) -> &mut OpResultStorage {
         &mut self.results
+    }
+
+    /// Get a reference to the result at `index` among all results of this operation
+    #[inline]
+    pub fn get_result(&self, index: usize) -> &OpResultRef {
+        &self.results[index]
+    }
+
+    /// Returns true if the results of this operation are used
+    pub fn is_used(&self) -> bool {
+        self.results.iter().any(|result| result.borrow().is_used())
+    }
+
+    /// Returns true if the results of this operation have exactly one user
+    pub fn has_exactly_one_use(&self) -> bool {
+        let mut used_by = None;
+        for result in self.results.iter() {
+            let result = result.borrow();
+            if !result.is_used() {
+                continue;
+            }
+
+            for used in result.iter_uses() {
+                if used_by.as_ref().is_some_and(|user| !OperationRef::eq(user, &used.owner)) {
+                    // We found more than one user
+                    return false;
+                } else if used_by.is_none() {
+                    used_by = Some(used.owner.clone());
+                }
+            }
+        }
+
+        // If we reach here, and we have a `used_by` set, we have exactly one user
+        used_by.is_some()
+    }
+
+    /// Returns true if the results of this operation are used outside of the given block
+    pub fn is_used_outside_of_block(&self, block: &BlockRef) -> bool {
+        self.results
+            .iter()
+            .any(|result| result.borrow().is_used_outside_of_block(block))
+    }
+
+    /// Returns true if this operation is unused and has no side effects that prevent it being erased
+    pub fn is_trivially_dead(&self) -> bool {
+        !self.is_used() && self.would_be_trivially_dead()
+    }
+
+    /// Returns true if this operation would be dead if unused, and has no side effects that would
+    /// prevent erasing it. This is equivalent to checking `is_trivially_dead` if `self` is unused.
+    ///
+    /// NOTE: Terminators and symbols are never considered to be trivially dead by this function.
+    pub fn would_be_trivially_dead(&self) -> bool {
+        if self.implements::<dyn crate::traits::Terminator>() || self.implements::<dyn Symbol>() {
+            false
+        } else {
+            self.would_be_trivially_dead_even_if_terminator()
+        }
+    }
+
+    /// Implementation of `would_be_trivially_dead` that also considers terminator operations as
+    /// dead if they have no side effects. This allows for marking region operations as trivially
+    /// dead without always being conservative about terminators.
+    pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
+        // The set of operations to consider when checking for side effects
+        let mut effecting_ops = SmallVec::<[OperationRef; 1]>::from_iter([self.as_operation_ref()]);
+        while let Some(op) = effecting_ops.pop() {
+            let op = op.borrow();
+            // If the operation has recursive effects, push all of the nested operations on to the
+            // stack to consider.
+            let has_recursive_effects =
+                op.implements::<dyn crate::traits::HasRecursiveMemoryEffects>();
+            if has_recursive_effects {
+                for region in op.regions() {
+                    for block in region.body() {
+                        let mut cursor = block.body().front();
+                        while let Some(op) = cursor.as_pointer() {
+                            effecting_ops.push(op);
+                            cursor.move_next();
+                        }
+                    }
+                }
+            }
+
+            // If the op has memory effects, try to characterize them to see if the op is trivially
+            // dead here.
+            if op.implements::<dyn crate::traits::MemoryWrite>()
+                || op.implements::<dyn crate::traits::MemoryFree>()
+            {
+                return false;
+            }
+
+            // If there were no effect interfaces, we treat this op as conservatively having effects
+            if !op.implements::<dyn crate::traits::MemoryRead>()
+                && !op.implements::<dyn crate::traits::MemoryAlloc>()
+            {
+                return false;
+            }
+        }
+
+        // If we get here, none of the operations had effects that prevented marking this operation
+        // as dead.
+        true
     }
 }
 
@@ -807,16 +1011,42 @@ impl Operation {
             regions.move_next();
         }
     }
+
+    /// Drop all uses of results of this operation
+    pub fn drop_all_uses(&mut self) {
+        for result in self.results.iter_mut() {
+            result.borrow_mut().uses_mut().clear();
+        }
+    }
 }
 
 /// Ordering
 impl Operation {
-    /// Returns true if this operation is a proper ancestor of `other`
-    pub fn is_proper_ancestor_of(&self, other: OperationRef) -> bool {
+    /// This value represents an invalid index ordering for an operation within its containing block
+    const INVALID_ORDER: u32 = u32::MAX;
+    /// This value represents the stride to use when computing a new order for an operation
+    const ORDER_STRIDE: u32 = 5;
+
+    /// Returns true if this operation is an ancestor of `other`.
+    ///
+    /// An operation is considered its own ancestor, use [Self::is_proper_ancestor_of] if you do not
+    /// want this behavior.
+    pub fn is_ancestor_of(&self, other: &OperationRef) -> bool {
         let this = self.as_operation_ref();
-        let mut next = other.borrow().parent_op();
-        while let Some(other) = next.take() {
-            if OperationRef::ptr_eq(&this, &other) {
+        OperationRef::ptr_eq(&this, other) || Self::is_a_proper_ancestor_of_b(&this, other)
+    }
+
+    /// Returns true if this operation is a proper ancestor of `other`
+    pub fn is_proper_ancestor_of(&self, other: &OperationRef) -> bool {
+        let this = self.as_operation_ref();
+        Self::is_a_proper_ancestor_of_b(&this, other)
+    }
+
+    /// Returns true if operation `a` is a proper ancestor of operation `b`
+    fn is_a_proper_ancestor_of_b(a: &OperationRef, b: &OperationRef) -> bool {
+        let mut next = b.borrow().parent_op();
+        while let Some(b) = next.take() {
+            if OperationRef::ptr_eq(a, &b) {
                 return true;
             }
         }
@@ -828,94 +1058,158 @@ impl Operation {
     ///
     /// NOTE: This function has an average complexity of O(1), but worst case may take O(N) where
     /// N is the number of operations within the parent block.
-    pub fn is_before_in_block(&self, _other: OperationRef) -> bool {
-        /*
-        let block = self.block().expect("operations without parent blocks have no order");
+    pub fn is_before_in_block(&self, other: &OperationRef) -> bool {
+        use core::sync::atomic::Ordering;
+
+        let block = self.block.clone().expect("operations without parent blocks have no order");
         let other = other.borrow();
-        assert!(other.block().is_some_and(|other_block| BlockRef::ptr_eq(&block, other_block)), "expected both operations to have the same parent block");
+        assert!(
+            other
+                .block
+                .as_ref()
+                .is_some_and(|other_block| BlockRef::ptr_eq(&block, other_block)),
+            "expected both operations to have the same parent block"
+        );
+
         // If the order of the block is already invalid, directly recompute the parent
-        let block = block.borrow();
-        if !block.is_op_order_valid() {
-            block.recompute_op_order();
+        if !block.borrow().is_op_order_valid() {
+            Self::recompute_block_order(block);
         } else {
             // Update the order of either operation if necessary.
             self.update_order_if_necessary();
             other.update_order_if_necessary();
         }
 
-        self.order < other.order
-         */
-        todo!()
+        self.order.load(Ordering::Relaxed) < other.order.load(Ordering::Relaxed)
     }
 
     /// Update the order index of this operation of this operation if necessary,
     /// potentially recomputing the order of the parent block.
     fn update_order_if_necessary(&self) {
-        /*
+        use core::sync::atomic::Ordering;
+
         assert!(self.block.is_some(), "expected valid parent");
 
-        let this = self.as_operation_ref();
-
         // If the order is valid for this operation there is nothing to do.
-        let block = self.block.as_ref().unwrap().borrow();
-        if self.has_valid_order() || block.body().iter().count() == 1 {
+        let block = self.block.clone().unwrap();
+        if self.has_valid_order() || block.borrow().body().iter().count() == 1 {
             return;
         }
 
-        let back = block.body().back().as_pointer();
-        let front = block.body().front().as_pointer();
-        assert!(!OperationRef::ptr_eq(&front, &back));
+        let this = self.as_operation_ref();
+        let prev = this.prev();
+        let next = this.next();
+        assert!(prev.is_some() || next.is_some(), "expected more than one operation in block");
 
         // If the operation is at the end of the block.
-        if Operation::ptr_eq(&this, &back) {
-            let prev = self.get_prev();
-            if !prev.borrow().has_valid_order() {
-                return block.recompute_op_order();
+        if next.is_none() {
+            let prev = prev.unwrap();
+            let prev = prev.borrow();
+            let prev_order = prev.order.load(Ordering::Acquire);
+            if prev_order == Self::INVALID_ORDER {
+                return Self::recompute_block_order(block);
             }
 
             // Add the stride to the previous operation.
-            self.order = prev.order + Self::ORDER_STRIDE;
+            self.order.store(prev_order + Self::ORDER_STRIDE, Ordering::Release);
             return;
         }
 
         // If this is the first operation try to use the next operation to compute the
         // ordering.
-        if Operation::ptr_eq(&this, &front) {
-            let next = self.get_next();
-            if !next.has_valid_order() {
-                return block.recompute_op_order();
-            }
-            // There is no order to give this operation.
-            if next.order == 0 {
-                return block.recompute_op_order();
-            }
-
-            // If we can't use the stride, just take the middle value left. This is safe
-            // because we know there is at least one valid index to assign to.
-            if next.order <= Self::ORDER_STRIDE {
-                self.order = next.order / 2;
-            } else {
-                self.order = Self::ORDER_STRIDE;
+        if prev.is_none() {
+            let next = next.unwrap();
+            let next = next.borrow();
+            let next_order = next.order.load(Ordering::Acquire);
+            match next_order {
+                Self::INVALID_ORDER | 0 => {
+                    return Self::recompute_block_order(block);
+                }
+                // If we can't use the stride, just take the middle value left. This is safe
+                // because we know there is at least one valid index to assign to.
+                order if order <= Self::ORDER_STRIDE => {
+                    self.order.store(order / 2, Ordering::Release);
+                }
+                _ => {
+                    self.order.store(Self::ORDER_STRIDE, Ordering::Release);
+                }
             }
             return;
         }
 
         // Otherwise, this operation is between two others. Place this operation in
         // the middle of the previous and next if possible.
-        let prev = self.get_prev();
-        let next = self.get_next();
-        if !prev.has_valid_order() || !next.has_valid_order() {
-            return block.recompute_op_order();
+        let prev = prev.unwrap().borrow().order.load(Ordering::Acquire);
+        let next = next.unwrap().borrow().order.load(Ordering::Acquire);
+        if prev == Self::INVALID_ORDER || next == Self::INVALID_ORDER {
+            return Self::recompute_block_order(block);
         }
-        let prev_order = prev.order;
-        let next_order = next.order;
 
         // Check to see if there is a valid order between the two.
-        if prev_order + 1 == next_order {
-            return block.recompute_op_order();
+        if prev + 1 == next {
+            return Self::recompute_block_order(block);
         }
-        self.order = prev_order + ((next_order - prev_order) / 2);
-         */
-        todo!()
+        self.order.store(prev + ((next - prev) / 2), Ordering::Release);
+    }
+
+    fn recompute_block_order(mut block: BlockRef) {
+        use core::sync::atomic::Ordering;
+
+        let mut block = block.borrow_mut();
+        let mut cursor = block.body().front();
+        let mut index = 0;
+        while let Some(op) = cursor.as_pointer() {
+            index += Self::ORDER_STRIDE;
+            cursor.move_next();
+            let ptr = OperationRef::as_ptr(&op);
+            unsafe {
+                let order_addr = core::ptr::addr_of!((*ptr).order);
+                (*order_addr).store(index, Ordering::Release);
+            }
+        }
+
+        block.mark_op_order_valid();
+    }
+
+    /// Returns `None` if this operation has invalid ordering
+    #[inline]
+    pub(super) fn order(&self) -> Option<u32> {
+        use core::sync::atomic::Ordering;
+        match self.order.load(Ordering::Acquire) {
+            Self::INVALID_ORDER => None,
+            order => Some(order),
+        }
+    }
+
+    /// Returns true if this operation has a valid order
+    #[inline(always)]
+    pub(super) fn has_valid_order(&self) -> bool {
+        self.order().is_some()
+    }
+}
+
+impl crate::traits::Foldable for Operation {
+    fn fold(&self, results: &mut smallvec::SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        use crate::traits::Foldable;
+
+        if let Some(foldable) = self.as_trait::<dyn Foldable>() {
+            foldable.fold(results)
+        } else {
+            FoldResult::Failed
+        }
+    }
+
+    fn fold_with<'operands>(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+        results: &mut smallvec::SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        use crate::traits::Foldable;
+
+        if let Some(foldable) = self.as_trait::<dyn Foldable>() {
+            foldable.fold_with(operands, results)
+        } else {
+            FoldResult::Failed
+        }
     }
 }
