@@ -6,10 +6,11 @@ use crate::{
     symbol_table::SymbolUsesIter,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
-        NoTerminator, RegionKind, RegionKindInterface, SingleBlock, SingleRegion,
+        NoTerminator, SingleBlock, SingleRegion,
     },
-    Ident, InsertionPoint, Operation, OperationRef, Report, Symbol, SymbolName, SymbolNameAttr,
-    SymbolRef, SymbolTable, SymbolUseList, SymbolUseRef, Usable, Visibility,
+    Ident, InsertionPoint, Operation, OperationRef, RegionKind, RegionKindInterface, Report,
+    Symbol, SymbolName, SymbolNameAttr, SymbolRef, SymbolTable, SymbolUseList, SymbolUseRef,
+    Usable, Visibility,
 };
 
 #[operation(
@@ -90,9 +91,9 @@ impl Symbol for Module {
 
     fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter {
         SymbolUsesIter::from_iter(self.uses.iter().filter_map(|user| {
-            if OperationRef::ptr_eq(&from, &user.owner) {
-                Some(unsafe { SymbolUseRef::from_raw(&*user) })
-            } else if from.borrow().is_proper_ancestor_of(user.owner.clone()) {
+            if OperationRef::ptr_eq(&from, &user.owner)
+                || from.borrow().is_proper_ancestor_of(&user.owner)
+            {
                 Some(unsafe { SymbolUseRef::from_raw(&*user) })
             } else {
                 None
@@ -114,7 +115,7 @@ impl Symbol for Module {
             // Unlink previously used symbol
             {
                 let current_symbol = owner
-                    .get_typed_attribute_mut::<SymbolNameAttr, _>(&attr_name)
+                    .get_typed_attribute_mut::<SymbolNameAttr>(attr_name)
                     .expect("stale symbol user");
                 unsafe {
                     self.uses.cursor_mut_from_ptr(current_symbol.user.clone()).remove();
@@ -207,7 +208,7 @@ impl SymbolTable for Module {
                     let mut next_use = next_use.borrow_mut();
                     let mut op = next_use.owner.borrow_mut();
                     let symbol_name = op
-                        .get_typed_attribute_mut::<crate::SymbolNameAttr, _>(&next_use.symbol)
+                        .get_typed_attribute_mut::<crate::SymbolNameAttr>(next_use.symbol)
                         .expect("stale symbol user");
                     symbol_name.name = to;
                 }

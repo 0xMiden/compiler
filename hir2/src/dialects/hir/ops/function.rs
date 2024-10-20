@@ -1,10 +1,10 @@
 use crate::{
     derive::operation,
     dialects::hir::HirDialect,
-    traits::{IsolatedFromAbove, RegionKind, RegionKindInterface, SingleRegion},
-    BlockRef, CallableOpInterface, Ident, Operation, OperationRef, RegionRef, Report, Signature,
-    Symbol, SymbolName, SymbolNameAttr, SymbolRef, SymbolUse, SymbolUseList, SymbolUseRef,
-    SymbolUsesIter, Usable, Visibility,
+    traits::{IsolatedFromAbove, SingleRegion},
+    Block, BlockRef, CallableOpInterface, Ident, Op, Operation, OperationRef, RegionKind,
+    RegionKindInterface, RegionRef, Report, Signature, Symbol, SymbolName, SymbolNameAttr,
+    SymbolRef, SymbolUse, SymbolUseList, SymbolUseRef, SymbolUsesIter, Usable, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
@@ -20,16 +20,42 @@ trait UsableSymbol = Usable<Use = SymbolUse>;
     )
 )]
 pub struct Function {
-    #[region]
-    body: RegionRef,
     #[attr]
     name: Ident,
     #[attr]
     signature: Signature,
+    #[region]
+    body: RegionRef,
     /// The uses of this function as a symbol
+    #[default]
     uses: SymbolUseList,
 }
 
+/// Builders
+impl Function {
+    /// Conver this function from a declaration (no body) to a definition (has a body) by creating
+    /// the entry block based on the function signature.
+    ///
+    /// NOTE: The resulting function is _invalid_ until the block has a terminator inserted into it.
+    ///
+    /// This function will panic if an entry block has already been created
+    pub fn create_entry_block(&mut self) -> BlockRef {
+        use crate::EntityWithParent;
+
+        assert!(self.body().is_empty(), "entry block already exists");
+        let signature = self.signature();
+        let block = self
+            .as_operation()
+            .context()
+            .create_block_with_params(signature.params().iter().map(|p| p.ty.clone()));
+        let mut body = self.body_mut();
+        body.push_back(block.clone());
+        Block::on_inserted_into_parent(block.clone(), body.as_region_ref());
+        block
+    }
+}
+
+/// Accessors
 impl Function {
     #[inline]
     pub fn entry_block(&self) -> BlockRef {
@@ -97,7 +123,7 @@ impl Symbol for Function {
     fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter {
         SymbolUsesIter::from_iter(self.uses.iter().filter_map(|user| {
             if OperationRef::ptr_eq(&from, &user.owner)
-                || from.borrow().is_proper_ancestor_of(user.owner.clone())
+                || from.borrow().is_proper_ancestor_of(&user.owner)
             {
                 Some(unsafe { SymbolUseRef::from_raw(&*user) })
             } else {
@@ -120,7 +146,7 @@ impl Symbol for Function {
             // Unlink previously used symbol
             {
                 let current_symbol = owner
-                    .get_typed_attribute_mut::<SymbolNameAttr, _>(&attr_name)
+                    .get_typed_attribute_mut::<SymbolNameAttr>(attr_name)
                     .expect("stale symbol user");
                 unsafe {
                     self.uses.cursor_mut_from_ptr(current_symbol.user.clone()).remove();

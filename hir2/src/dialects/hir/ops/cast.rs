@@ -44,6 +44,14 @@ pub struct PtrToInt {
     result: AnyInteger,
 }
 
+impl InferTypeOpInterface for PtrToInt {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp)
@@ -55,6 +63,14 @@ pub struct IntToPtr {
     ty: Type,
     #[result]
     result: AnyPointer,
+}
+
+impl InferTypeOpInterface for IntToPtr {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
 }
 
 #[operation(
@@ -70,6 +86,14 @@ pub struct Cast {
     result: AnyInteger,
 }
 
+impl InferTypeOpInterface for Cast {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp)
@@ -81,6 +105,14 @@ pub struct Bitcast {
     ty: Type,
     #[result]
     result: AnyPointerOrInteger,
+}
+
+impl InferTypeOpInterface for Bitcast {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
 }
 
 #[operation(
@@ -96,6 +128,14 @@ pub struct Trunc {
     result: AnyInteger,
 }
 
+impl InferTypeOpInterface for Trunc {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp)
@@ -109,6 +149,14 @@ pub struct Zext {
     result: AnyUnsignedInteger,
 }
 
+impl InferTypeOpInterface for Zext {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp)
@@ -120,4 +168,12 @@ pub struct Sext {
     ty: Type,
     #[result]
     result: AnySignedInteger,
+}
+
+impl InferTypeOpInterface for Sext {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
 }

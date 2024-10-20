@@ -1,5 +1,28 @@
 use crate::{derive::operation, dialects::hir::HirDialect, traits::*, *};
 
+macro_rules! infer_return_ty_for_unary_op {
+    ($Op:ty) => {
+        impl InferTypeOpInterface for $Op {
+            fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+                let lhs = self.operand().ty().clone();
+                self.result_mut().set_type(lhs);
+                Ok(())
+            }
+        }
+    };
+
+    ($Op:ty as $manually_specified_ty:expr) => {
+        paste::paste! {
+            impl InferTypeOpInterface for $Op {
+                fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+                    self.result_mut().set_type($manually_specified_ty);
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+
 /// Increment
 #[operation (
         dialect = HirDialect,
@@ -11,6 +34,8 @@ pub struct Incr {
     #[result]
     result: AnyInteger,
 }
+
+infer_return_ty_for_unary_op!(Incr);
 
 /// Negation
 #[operation (
@@ -24,6 +49,8 @@ pub struct Neg {
     result: AnyInteger,
 }
 
+infer_return_ty_for_unary_op!(Neg);
+
 /// Modular inverse
 #[operation (
         dialect = HirDialect,
@@ -35,6 +62,8 @@ pub struct Inv {
     #[result]
     result: IntFelt,
 }
+
+infer_return_ty_for_unary_op!(Inv);
 
 /// log2(operand)
 #[operation (
@@ -48,6 +77,8 @@ pub struct Ilog2 {
     result: IntFelt,
 }
 
+infer_return_ty_for_unary_op!(Ilog2);
+
 /// pow2(operand)
 #[operation (
         dialect = HirDialect,
@@ -59,6 +90,8 @@ pub struct Pow2 {
     #[result]
     result: AnyInteger,
 }
+
+infer_return_ty_for_unary_op!(Pow2);
 
 /// Logical NOT
 #[operation (
@@ -72,6 +105,8 @@ pub struct Not {
     result: Bool,
 }
 
+infer_return_ty_for_unary_op!(Not);
+
 /// Bitwise NOT
 #[operation (
         dialect = HirDialect,
@@ -83,6 +118,8 @@ pub struct Bnot {
     #[result]
     result: AnyInteger,
 }
+
+infer_return_ty_for_unary_op!(Bnot);
 
 /// is_odd(operand)
 #[operation (
@@ -96,6 +133,8 @@ pub struct IsOdd {
     result: Bool,
 }
 
+infer_return_ty_for_unary_op!(IsOdd as Type::I1);
+
 /// Count of non-zero bits (population count)
 #[operation (
         dialect = HirDialect,
@@ -107,6 +146,8 @@ pub struct Popcnt {
     #[result]
     result: UInt32,
 }
+
+infer_return_ty_for_unary_op!(Popcnt as Type::U32);
 
 /// Count Leading Zeros
 #[operation (
@@ -120,6 +161,8 @@ pub struct Clz {
     result: UInt32,
 }
 
+infer_return_ty_for_unary_op!(Clz as Type::U32);
+
 /// Count Trailing Zeros
 #[operation (
         dialect = HirDialect,
@@ -131,6 +174,8 @@ pub struct Ctz {
     #[result]
     result: UInt32,
 }
+
+infer_return_ty_for_unary_op!(Ctz as Type::U32);
 
 /// Count Leading Ones
 #[operation (
@@ -144,6 +189,8 @@ pub struct Clo {
     result: UInt32,
 }
 
+infer_return_ty_for_unary_op!(Clo as Type::U32);
+
 /// Count Trailing Ones
 #[operation (
         dialect = HirDialect,
@@ -155,3 +202,5 @@ pub struct Cto {
     #[result]
     result: UInt32,
 }
+
+infer_return_ty_for_unary_op!(Cto as Type::U32);

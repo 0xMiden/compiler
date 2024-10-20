@@ -13,6 +13,13 @@ pub struct MemGrow {
     result: UInt32,
 }
 
+impl InferTypeOpInterface for MemGrow {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(HasSideEffects, MemoryRead)
@@ -20,6 +27,13 @@ pub struct MemGrow {
 pub struct MemSize {
     #[result]
     result: UInt32,
+}
+
+impl InferTypeOpInterface for MemSize {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
 }
 
 #[operation(

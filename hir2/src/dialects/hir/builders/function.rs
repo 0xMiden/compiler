@@ -1,5 +1,5 @@
 use crate::{
-    dialects::hir::*, AsCallableSymbolRef, BlockRef, Builder, Immediate, InsertionPoint, Op,
+    dialects::hir::*, AsCallableSymbolRef, Block, BlockRef, Builder, Immediate, InsertionPoint, Op,
     OpBuilder, Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, Usable,
     ValueRef,
 };
@@ -10,9 +10,15 @@ pub struct FunctionBuilder<'f> {
 }
 impl<'f> FunctionBuilder<'f> {
     pub fn new(func: &'f mut Function) -> Self {
+        let current_block = if func.body().is_empty() {
+            func.create_entry_block()
+        } else {
+            func.last_block()
+        };
         let context = func.as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
-        builder.set_insertion_point_to_end(func.last_block());
+
+        builder.set_insertion_point_to_end(current_block);
 
         Self { func, builder }
     }
@@ -44,10 +50,12 @@ impl<'f> FunctionBuilder<'f> {
     }
 
     pub fn create_block(&mut self) -> BlockRef {
-        self.builder.create_block(self.body_region(), None, None)
+        self.builder.create_block(self.body_region(), None, &[])
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
+        use crate::EntityWithParent;
+
         assert_ne!(
             block,
             self.current_block(),
@@ -63,6 +71,7 @@ impl<'f> FunctionBuilder<'f> {
             body.body_mut().cursor_mut_from_ptr(block.clone()).remove();
         }
         block.borrow_mut().uses_mut().clear();
+        Block::on_removed_from_parent(block, body.as_region_ref());
     }
 
     pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
@@ -171,6 +180,12 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::dialects::hir::AssertEqImm>, Report> {
         let op_builder = self.builder_mut().create::<crate::dialects::hir::AssertEqImm, _>(span);
         op_builder(lhs, rhs)
+    }
+
+    fn u32(mut self, value: u32, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Constant, _>(span);
+        let constant = op_builder(Immediate::U32(value))?;
+        Ok(constant.borrow().result().as_value_ref())
     }
 
     //signed_integer_literal!(1, bool);
@@ -577,35 +592,276 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    /*
-    binary_int_op_with_overflow!(add, Opcode::Add);
-    binary_int_op_with_overflow!(sub, Opcode::Sub);
-    binary_int_op_with_overflow!(mul, Opcode::Mul);
-    checked_binary_int_op!(div, Opcode::Div);
-    binary_int_op!(min, Opcode::Min);
-    binary_int_op!(max, Opcode::Max);
-    checked_binary_int_op!(r#mod, Opcode::Mod);
-    checked_binary_int_op!(divmod, Opcode::DivMod);
-    binary_int_op!(exp, Opcode::Exp);
-    binary_boolean_op!(and, Opcode::And);
-    binary_int_op!(band, Opcode::Band);
-    binary_boolean_op!(or, Opcode::Or);
-    binary_int_op!(bor, Opcode::Bor);
-    binary_boolean_op!(xor, Opcode::Xor);
-    binary_int_op!(bxor, Opcode::Bxor);
-    unary_int_op!(neg, Opcode::Neg);
-    unary_int_op!(inv, Opcode::Inv);
-    unary_int_op_with_overflow!(incr, Opcode::Incr);
-    unary_int_op!(ilog2, Opcode::Ilog2);
-    unary_int_op!(pow2, Opcode::Pow2);
-    unary_boolean_op!(not, Opcode::Not);
-    unary_int_op!(bnot, Opcode::Bnot);
-    unary_int_op!(popcnt, Opcode::Popcnt);
-    unary_int_op!(clz, Opcode::Clz);
-    unary_int_op!(ctz, Opcode::Ctz);
-    unary_int_op!(clo, Opcode::Clo);
-    unary_int_op!(cto, Opcode::Cto);
-     */
+    /// Two's complement addition which traps on overflow
+    fn add(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Add, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Checked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Unchecked two's complement addition. Behavior is undefined if the result overflows.
+    fn add_unchecked(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Add, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Unchecked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement addition which wraps around on overflow, e.g. `wrapping_add`
+    fn add_wrapping(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Add, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Wrapping)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement addition which wraps around on overflow, but returns a boolean flag that
+    /// indicates whether or not the operation overflowed, followed by the wrapped result, e.g.
+    /// `overflowing_add` (but with the result types inverted compared to Rust's version).
+    fn add_overflowing(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::AddOverflowing, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        let op = op.borrow();
+        let overflowed = op.overflowed().as_value_ref();
+        let result = op.result().as_value_ref();
+        Ok((overflowed, result))
+    }
+
+    /// Two's complement subtraction which traps on under/overflow
+    fn sub(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Sub, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Checked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Unchecked two's complement subtraction. Behavior is undefined if the result under/overflows.
+    fn sub_unchecked(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Sub, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Unchecked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement subtraction which wraps around on under/overflow, e.g. `wrapping_sub`
+    fn sub_wrapping(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Sub, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Wrapping)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement subtraction which wraps around on overflow, but returns a boolean flag that
+    /// indicates whether or not the operation under/overflowed, followed by the wrapped result,
+    /// e.g. `overflowing_sub` (but with the result types inverted compared to Rust's version).
+    fn sub_overflowing(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::SubOverflowing, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        let op = op.borrow();
+        let overflowed = op.overflowed().as_value_ref();
+        let result = op.result().as_value_ref();
+        Ok((overflowed, result))
+    }
+
+    /// Two's complement multiplication which traps on overflow
+    fn mul(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Mul, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Checked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Unchecked two's complement multiplication. Behavior is undefined if the result overflows.
+    fn mul_unchecked(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Mul, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Unchecked)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement multiplication which wraps around on overflow, e.g. `wrapping_mul`
+    fn mul_wrapping(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Mul, _>(span);
+        let op = op_builder(lhs, rhs, crate::Overflow::Wrapping)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement multiplication which wraps around on overflow, but returns a boolean flag
+    /// that indicates whether or not the operation overflowed, followed by the wrapped result,
+    /// e.g. `overflowing_mul` (but with the result types inverted compared to Rust's version).
+    fn mul_overflowing(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::MulOverflowing, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        let op = op.borrow();
+        let overflowed = op.overflowed().as_value_ref();
+        let result = op.result().as_value_ref();
+        Ok((overflowed, result))
+    }
+
+    /// Integer division. Traps if `rhs` is zero.
+    fn div(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Div, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Integer Euclidean modulo. Traps if `rhs` is zero.
+    fn r#mod(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Mod, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Combined integer Euclidean division and modulo. Traps if `rhs` is zero.
+    fn divmod(
+        mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Divmod, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        let op = op.borrow();
+        let quotient = op.quotient().as_value_ref();
+        let remainder = op.remainder().as_value_ref();
+        Ok((quotient, remainder))
+    }
+
+    /// Exponentiation
+    fn exp(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Exp, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Compute 2^n
+    fn pow2(mut self, n: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Pow2, _>(span);
+        let op = op_builder(n)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Compute ilog2(n)
+    fn ilog2(mut self, n: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Ilog2, _>(span);
+        let op = op_builder(n)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Modular inverse
+    fn inv(mut self, n: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Inv, _>(span);
+        let op = op_builder(n)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Unary negation
+    fn neg(mut self, n: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Neg, _>(span);
+        let op = op_builder(n)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Two's complement unary increment by one which traps on overflow
+    fn incr(mut self, lhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Incr, _>(span);
+        let op = op_builder(lhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Logical AND
+    fn and(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::And, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Logical OR
+    fn or(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Or, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Logical XOR
+    fn xor(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Xor, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Logical NOT
+    fn not(mut self, lhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Not, _>(span);
+        let op = op_builder(lhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Bitwise AND
+    fn band(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Band, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Bitwise OR
+    fn bor(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Bor, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Bitwise XOR
+    fn bxor(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Bxor, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Bitwise NOT
+    fn bnot(mut self, lhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Bnot, _>(span);
+        let op = op_builder(lhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
 
     fn rotl(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::dialects::hir::Rotl, _>(span);
@@ -631,6 +887,36 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn popcnt(mut self, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Popcnt, _>(span);
+        let op = op_builder(rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn clz(mut self, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Clz, _>(span);
+        let op = op_builder(rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn ctz(mut self, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Ctz, _>(span);
+        let op = op_builder(rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn clo(mut self, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Clo, _>(span);
+        let op = op_builder(rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn cto(mut self, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Cto, _>(span);
+        let op = op_builder(rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     fn eq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::dialects::hir::Eq, _>(span);
         let op = op_builder(lhs, rhs)?;
@@ -639,6 +925,20 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
 
     fn neq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::dialects::hir::Neq, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Compares two integers and returns the minimum value
+    fn min(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Min, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Compares two integers and returns the maximum value
+    fn max(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::dialects::hir::Max, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
     }
