@@ -1,14 +1,13 @@
 use alloc::{collections::BTreeMap, rc::Rc};
 
-use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
     matchers::Matcher,
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
-    AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, OpFoldResult, OperationRef,
-    RegionRef, Rewriter, RewriterImpl, RewriterListener, SourceSpan, Spanned, Type, Value,
-    ValueRef,
+    AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
+    OperationRef, RegionRef, Rewriter, RewriterImpl, RewriterListener, SourceSpan, Spanned, Type,
+    Value, ValueRef,
 };
 
 /// Represents a constant value uniqued by dialect, value, and type.

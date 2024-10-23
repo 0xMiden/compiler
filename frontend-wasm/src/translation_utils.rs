@@ -5,13 +5,10 @@ use midenc_hir::{
     AbiParam, CallConv, Felt, FieldElement, InstBuilder, Linkage, Signature, Value,
 };
 use midenc_hir_type::{FunctionType, Type};
-use rustc_hash::FxHasher;
 
 use crate::{
     error::WasmResult, module::function_builder_ext::FunctionBuilderExt, unsupported_diag,
 };
-
-pub type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
 
 /// Represents the possible sizes in bytes of the discriminant of a variant type in the component
 /// model

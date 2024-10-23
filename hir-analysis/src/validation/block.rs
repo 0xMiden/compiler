@@ -2,7 +2,6 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, Report, Severity, Spanned},
     *,
 };
-use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 
 use super::Rule;

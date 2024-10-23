@@ -7,7 +7,6 @@ use midenc_hir::{
 };
 use midenc_hir_analysis::ControlFlowGraph;
 use midenc_session::{diagnostics::IntoDiagnostic, Session};
-use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 
 /// This pass breaks any critical edges in the CFG of a function.

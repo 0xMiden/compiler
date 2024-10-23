@@ -27,6 +27,10 @@ pub use midenc_hir_type::{
 };
 pub use midenc_session::diagnostics::{self, SourceSpan};
 
+pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
+pub use rustc_hash::{FxBuildHasher, FxHasher};
+
 /// Represents a field element in Miden
 pub type Felt = miden_core::Felt;
 

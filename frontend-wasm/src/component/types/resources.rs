@@ -66,7 +66,7 @@
 
 // Based on wasmtime v16.0 Wasm component translation
 
-use rustc_hash::FxHashMap;
+use midenc_hir::FxHashMap;
 use wasmparser::types;
 
 use crate::component::{

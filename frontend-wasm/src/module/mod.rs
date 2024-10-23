@@ -9,9 +9,8 @@ use indexmap::IndexMap;
 use midenc_hir::{
     cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap},
     diagnostics::{DiagnosticsHandler, Severity},
-    Ident, Symbol,
+    FxHashMap, Ident, Symbol,
 };
-use rustc_hash::FxHashMap;
 
 use self::types::*;
 use crate::{component::SignatureIndex, error::WasmResult, unsupported_diag};

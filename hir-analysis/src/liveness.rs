@@ -9,7 +9,6 @@ use midenc_hir::{
     Block as BlockId, Inst as InstId, Value as ValueId, *,
 };
 use midenc_session::Session;
-use rustc_hash::FxHashMap;
 
 use super::{ControlFlowGraph, DominatorTree, LoopAnalysis};
 
@@ -417,7 +416,7 @@ fn compute_liveness(
     domtree: &DominatorTree,
     loops: &LoopAnalysis,
 ) {
-    use std::collections::hash_map::Entry;
+    use hashbrown::hash_map::Entry;
 
     let mut worklist = VecDeque::from_iter(domtree.cfg_postorder().iter().copied());
 

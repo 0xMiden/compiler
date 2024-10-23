@@ -32,6 +32,10 @@ pub use compact_str::{
     CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
 };
 
+pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
+pub use rustc_hash::{FxBuildHasher, FxHasher};
+
 mod any;
 mod attributes;
 pub mod demangle;

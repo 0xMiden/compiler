@@ -5,7 +5,6 @@ use intrusive_collections::{
     linked_list::{Cursor, CursorMut},
     LinkedList, LinkedListLink, RBTreeLink,
 };
-use rustc_hash::FxHashSet;
 
 use self::formatter::PrettyPrint;
 use crate::{

@@ -3241,6 +3241,7 @@ dependencies = [
  "bitcode",
  "cranelift-entity",
  "env_logger 0.11.5",
+ "hashbrown 0.14.5",
  "intrusive-collections",
  "inventory",
  "log",
@@ -3257,7 +3258,6 @@ dependencies = [
  "paste",
  "petgraph",
  "proptest",
- "rustc-hash 1.1.0",
  "serde 1.0.210",
  "serde_bytes",
  "smallvec",
@@ -3336,6 +3336,7 @@ dependencies = [
  "derive_more",
  "expect-test",
  "gimli",
+ "hashbrown 0.14.5",
  "indexmap 2.5.0",
  "log",
  "miden-core",
@@ -3343,7 +3344,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-type",
  "midenc-session",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "smallvec",
  "wasmparser 0.214.0",
  "wat",
@@ -3357,6 +3358,7 @@ dependencies = [
  "cranelift-entity",
  "derive_more",
  "either",
+ "hashbrown 0.14.5",
  "indexmap 2.5.0",
  "intrusive-collections",
  "inventory",
@@ -3376,7 +3378,7 @@ dependencies = [
  "petgraph",
  "pretty_assertions",
  "rustc-demangle",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde 1.0.210",
  "serde_bytes",
  "serde_repr",
@@ -3392,13 +3394,13 @@ dependencies = [
  "anyhow",
  "cranelift-bforest",
  "cranelift-entity",
+ "hashbrown 0.14.5",
  "intrusive-collections",
  "inventory",
  "miden-thiserror",
  "midenc-hir",
  "midenc-session",
  "pretty_assertions",
- "rustc-hash 1.1.0",
  "smallvec",
 ]
 
@@ -3419,10 +3421,11 @@ version = "0.0.7"
 dependencies = [
  "Inflector",
  "compact_str",
+ "hashbrown 0.14.5",
  "lock_api",
  "miden-formatting",
  "parking_lot",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde 1.0.210",
  "toml 0.8.19",
 ]
@@ -3438,7 +3441,6 @@ dependencies = [
  "midenc-hir-analysis",
  "midenc-session",
  "pretty_assertions",
- "rustc-hash 1.1.0",
  "smallvec",
 ]
 
@@ -3485,7 +3487,7 @@ dependencies = [
  "petgraph",
  "pretty_assertions",
  "rustc-demangle",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde 1.0.210",
  "serde_bytes",
  "serde_repr",
@@ -4431,7 +4433,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash 2.0.0",
+ "rustc-hash",
  "rustls",
  "socket2 0.5.7",
  "thiserror",
@@ -4448,7 +4450,7 @@ dependencies = [
  "bytes",
  "rand",
  "ring",
- "rustc-hash 2.0.0",
+ "rustc-hash",
  "rustls",
  "slab",
  "thiserror",
@@ -4764,12 +4766,6 @@ name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"

@@ -21,6 +21,7 @@ gimli = { version = "0.31", default-features = false, features = [
 ] }
 indexmap.workspace = true
 log.workspace = true
+hashbrown.workspace = true
 miden-core.workspace = true
 midenc-hir.workspace = true
 midenc-hir-type.workspace = true

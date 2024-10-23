@@ -1,11 +1,10 @@
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Severity, CanonAbiImport, ComponentBuilder,
-    ComponentExport, FunctionIdent, FunctionType, Ident, InterfaceFunctionIdent, InterfaceIdent,
+    ComponentExport, FunctionIdent, FunctionType, FxHashMap, Ident, InterfaceFunctionIdent, InterfaceIdent,
     MidenAbiImport, Symbol,
 };
 use midenc_hir_type::Abi;
-use midenc_session::{DiagnosticsHandler, Session};
-use rustc_hash::FxHashMap;
+use midenc_session::Session;
 
 use super::{
     interface_type_to_ir, CanonicalOptions, ComponentTypes, CoreDef, CoreExport, Export,

@@ -32,6 +32,7 @@ intrusive-collections.workspace = true
 inventory.workspace = true
 lalrpop-util = "0.20"
 log.workspace = true
+hashbrown.workspace = true
 miden-core.workspace = true
 miden-assembly.workspace = true
 midenc-hir-symbol.workspace = true

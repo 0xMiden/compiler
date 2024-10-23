@@ -7,7 +7,6 @@ use midenc_hir::{
 };
 use midenc_hir_analysis::ControlFlowGraph;
 use midenc_session::{diagnostics::IntoDiagnostic, Session};
-use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 
 use crate::adt::ScopedMap;
