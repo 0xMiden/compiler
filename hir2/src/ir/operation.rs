@@ -284,7 +284,7 @@ impl Operation {
 
     /// Returns true if the concrete type of this operation is `T`
     #[inline]
-    pub fn is<T: Op>(&self) -> bool {
+    pub fn is<T: 'static>(&self) -> bool {
         self.name.is::<T>()
     }
 
@@ -298,12 +298,12 @@ impl Operation {
     }
 
     /// Attempt to downcast to the concrete [Op] type of this operation
-    pub fn downcast_ref<T: Op>(&self) -> Option<&T> {
+    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
         self.name.downcast_ref::<T>(self.container())
     }
 
     /// Attempt to downcast to the concrete [Op] type of this operation
-    pub fn downcast_mut<T: Op>(&mut self) -> Option<&mut T> {
+    pub fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
         self.name.downcast_mut::<T>(self.container().cast_mut())
     }
 

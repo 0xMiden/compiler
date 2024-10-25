@@ -59,7 +59,7 @@ impl OperationName {
     }
 
     /// Returns true if `T` is the concrete type that implements this operation
-    pub fn is<T: Op>(&self) -> bool {
+    pub fn is<T: 'static>(&self) -> bool {
         TypeId::of::<T>() == self.0.type_id
     }
 
@@ -79,7 +79,7 @@ impl OperationName {
     }
 
     #[inline]
-    pub(super) fn downcast_ref<T: Op>(&self, ptr: *const ()) -> Option<&T> {
+    pub(super) fn downcast_ref<T: 'static>(&self, ptr: *const ()) -> Option<&T> {
         if self.is::<T>() {
             Some(unsafe { self.downcast_ref_unchecked(ptr) })
         } else {
@@ -88,12 +88,12 @@ impl OperationName {
     }
 
     #[inline(always)]
-    unsafe fn downcast_ref_unchecked<T: Op>(&self, ptr: *const ()) -> &T {
+    unsafe fn downcast_ref_unchecked<T: 'static>(&self, ptr: *const ()) -> &T {
         &*core::ptr::from_raw_parts(ptr.cast::<T>(), ())
     }
 
     #[inline]
-    pub(super) fn downcast_mut<T: Op>(&mut self, ptr: *mut ()) -> Option<&mut T> {
+    pub(super) fn downcast_mut<T: 'static>(&mut self, ptr: *mut ()) -> Option<&mut T> {
         if self.is::<T>() {
             Some(unsafe { self.downcast_mut_unchecked(ptr) })
         } else {
@@ -102,7 +102,7 @@ impl OperationName {
     }
 
     #[inline(always)]
-    unsafe fn downcast_mut_unchecked<T: Op>(&mut self, ptr: *mut ()) -> &mut T {
+    unsafe fn downcast_mut_unchecked<T: 'static>(&mut self, ptr: *mut ()) -> &mut T {
         &mut *core::ptr::from_raw_parts_mut(ptr.cast::<T>(), ())
     }
 

@@ -18,6 +18,9 @@
 #![feature(unboxed_closures)]
 #![feature(const_type_id)]
 #![feature(exact_size_is_empty)]
+#![feature(generic_const_exprs)]
+#![feature(new_uninit)]
+#![feature(clone_to_uninit)]
 #![allow(incomplete_features)]
 #![allow(internal_features)]
 
@@ -46,6 +49,7 @@ pub mod formatter;
 mod hash;
 mod ir;
 pub mod matchers;
+pub mod pass;
 mod patterns;
 
 pub use self::{

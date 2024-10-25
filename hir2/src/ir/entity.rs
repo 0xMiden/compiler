@@ -701,6 +701,19 @@ pub struct EntityMut<'b, T: ?Sized> {
     _marker: core::marker::PhantomData<&'b mut T>,
 }
 impl<'b, T: ?Sized> EntityMut<'b, T> {
+    #[inline]
+    pub fn map<U: ?Sized, F>(mut orig: Self, f: F) -> EntityMut<'b, U>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let value = NonNull::from(f(&mut *orig));
+        EntityMut {
+            value,
+            borrow: orig.borrow,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
     /// Splits an `EntityMut` into multiple `EntityMut`s for different components of the borrowed
     /// data.
     ///
