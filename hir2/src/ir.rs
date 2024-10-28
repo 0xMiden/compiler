@@ -11,6 +11,7 @@ mod ident;
 mod immediates;
 mod insert;
 mod interface;
+pub mod loops;
 mod op;
 mod operands;
 mod operation;
