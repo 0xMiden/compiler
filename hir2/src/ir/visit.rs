@@ -1,4 +1,3 @@
-mod blocks;
 mod searcher;
 mod visitor;
 mod walkable;
@@ -6,7 +5,6 @@ mod walkable;
 pub use core::ops::ControlFlow;
 
 pub use self::{
-    blocks::{BlockIter, PostOrderBlockIter},
     searcher::Searcher,
     visitor::{OpVisitor, OperationVisitor, SymbolVisitor, Visitor},
     walkable::{WalkOrder, WalkStage, Walkable},

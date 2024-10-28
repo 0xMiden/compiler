@@ -84,6 +84,55 @@ impl EntityWithParent for Region {
     }
 }
 
+impl cfg::Graph for Region {
+    type ChildEdgeIter = block::BlockSuccessorEdgesIter;
+    type ChildIter = block::BlockSuccessorIter;
+    type Edge = BlockOperandRef;
+    type Node = BlockRef;
+
+    fn is_empty(&self) -> bool {
+        self.body.is_empty()
+    }
+
+    fn size(&self) -> usize {
+        self.body.len()
+    }
+
+    fn children(parent: Self::Node) -> Self::ChildIter {
+        block::BlockSuccessorIter::new(parent)
+    }
+
+    fn children_edges(parent: Self::Node) -> Self::ChildEdgeIter {
+        block::BlockSuccessorEdgesIter::new(parent)
+    }
+
+    fn edge_dest(edge: Self::Edge) -> Self::Node {
+        edge.borrow().block.clone()
+    }
+
+    fn entry_node(&self) -> Self::Node {
+        self.body.front().as_pointer().expect("empty region")
+    }
+}
+
+impl<'a> cfg::InvertibleGraph for &'a Region {
+    type Inverse = cfg::Inverse<&'a Region>;
+    type InvertibleChildEdgeIter = block::BlockPredecessorEdgesIter;
+    type InvertibleChildIter = block::BlockPredecessorIter;
+
+    fn inverse(self) -> Self::Inverse {
+        cfg::Inverse::new(self)
+    }
+
+    fn inverse_children(parent: Self::Node) -> Self::InvertibleChildIter {
+        block::BlockPredecessorIter::new(parent)
+    }
+
+    fn inverse_children_edges(parent: Self::Node) -> Self::InvertibleChildEdgeIter {
+        block::BlockPredecessorEdgesIter::new(parent)
+    }
+}
+
 /// Blocks
 impl Region {
     /// Returns true if this region is empty (has no blocks)

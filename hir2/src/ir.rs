@@ -1,6 +1,7 @@
 mod block;
 mod builder;
 mod callable;
+pub mod cfg;
 mod component;
 mod context;
 mod dialect;
@@ -29,7 +30,7 @@ pub use midenc_session::diagnostics::{Report, SourceSpan, Span, Spanned};
 pub use self::{
     block::{
         Block, BlockCursor, BlockCursorMut, BlockId, BlockList, BlockOperand, BlockOperandRef,
-        BlockRef,
+        BlockRef, PostOrderBlockIter, PreOrderBlockIter,
     },
     builder::{Builder, BuilderExt, InsertionGuard, Listener, ListenerType, OpBuilder},
     callable::*,
@@ -80,7 +81,7 @@ pub use self::{
     },
     verifier::{OpVerifier, Verify},
     visit::{
-        BlockIter, OpVisitor, OperationVisitor, PostOrderBlockIter, Searcher, SymbolVisitor,
-        Visitor, WalkOrder, WalkResult, WalkStage, Walkable,
+        OpVisitor, OperationVisitor, Searcher, SymbolVisitor, Visitor, WalkOrder, WalkResult,
+        WalkStage, Walkable,
     },
 };

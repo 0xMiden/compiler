@@ -1,5 +1,7 @@
 use core::fmt;
 
+use smallvec::SmallVec;
+
 use super::*;
 
 /// A pointer to a [Block]
@@ -10,6 +12,10 @@ pub type BlockList = EntityList<Block>;
 pub type BlockCursor<'a> = EntityCursor<'a, Block>;
 /// A mutable cursor into a [BlockList]
 pub type BlockCursorMut<'a> = EntityCursorMut<'a, Block>;
+/// An iterator over blocks produced by a depth-first, pre-order visit of the CFG
+pub type PreOrderBlockIter = cfg::PreOrderIter<BlockRef>;
+/// An iterator over blocks produced by a depth-first, post-order visit of the CFG
+pub type PostOrderBlockIter = cfg::PostOrderIter<BlockRef>;
 
 /// The unique identifier for a [Block]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -90,7 +96,9 @@ impl fmt::Debug for Block {
             .finish_non_exhaustive()
     }
 }
+
 impl Entity for Block {}
+
 impl EntityWithId for Block {
     type Id = BlockId;
 
@@ -98,6 +106,7 @@ impl EntityWithId for Block {
         self.id
     }
 }
+
 impl EntityWithParent for Block {
     type Parent = Region;
 
@@ -125,6 +134,7 @@ impl EntityWithParent for Block {
         }
     }
 }
+
 impl Usable for Block {
     type Use = BlockOperand;
 
@@ -138,6 +148,357 @@ impl Usable for Block {
         &mut self.uses
     }
 }
+
+impl cfg::Graph for Block {
+    type ChildEdgeIter = BlockSuccessorEdgesIter;
+    type ChildIter = BlockSuccessorIter;
+    type Edge = BlockOperandRef;
+    type Node = BlockRef;
+
+    fn size(&self) -> usize {
+        if let Some(term) = self.terminator() {
+            term.borrow().num_successors()
+        } else {
+            0
+        }
+    }
+
+    fn entry_node(&self) -> Self::Node {
+        self.as_block_ref()
+    }
+
+    fn children(parent: Self::Node) -> Self::ChildIter {
+        BlockSuccessorIter::new(parent)
+    }
+
+    fn children_edges(parent: Self::Node) -> Self::ChildEdgeIter {
+        BlockSuccessorEdgesIter::new(parent)
+    }
+
+    fn edge_dest(edge: Self::Edge) -> Self::Node {
+        edge.borrow().block.clone()
+    }
+}
+
+impl<'a> cfg::InvertibleGraph for &'a Block {
+    type Inverse = cfg::Inverse<&'a Block>;
+    type InvertibleChildEdgeIter = BlockPredecessorEdgesIter;
+    type InvertibleChildIter = BlockPredecessorIter;
+
+    fn inverse(self) -> Self::Inverse {
+        cfg::Inverse::new(self)
+    }
+
+    fn inverse_children(parent: Self::Node) -> Self::InvertibleChildIter {
+        BlockPredecessorIter::new(parent)
+    }
+
+    fn inverse_children_edges(parent: Self::Node) -> Self::InvertibleChildEdgeIter {
+        BlockPredecessorEdgesIter::new(parent)
+    }
+}
+
+impl cfg::Graph for BlockRef {
+    type ChildEdgeIter = BlockSuccessorEdgesIter;
+    type ChildIter = BlockSuccessorIter;
+    type Edge = BlockOperandRef;
+    type Node = BlockRef;
+
+    fn size(&self) -> usize {
+        if let Some(term) = self.borrow().terminator() {
+            term.borrow().num_successors()
+        } else {
+            0
+        }
+    }
+
+    fn entry_node(&self) -> Self::Node {
+        self.clone()
+    }
+
+    fn children(parent: Self::Node) -> Self::ChildIter {
+        BlockSuccessorIter::new(parent)
+    }
+
+    fn children_edges(parent: Self::Node) -> Self::ChildEdgeIter {
+        BlockSuccessorEdgesIter::new(parent)
+    }
+
+    fn edge_dest(edge: Self::Edge) -> Self::Node {
+        edge.borrow().block.clone()
+    }
+}
+
+impl cfg::InvertibleGraph for BlockRef {
+    type Inverse = cfg::Inverse<Self>;
+    type InvertibleChildEdgeIter = BlockPredecessorEdgesIter;
+    type InvertibleChildIter = BlockPredecessorIter;
+
+    fn inverse(self) -> Self::Inverse {
+        cfg::Inverse::new(self)
+    }
+
+    fn inverse_children(parent: Self::Node) -> Self::InvertibleChildIter {
+        BlockPredecessorIter::new(parent)
+    }
+
+    fn inverse_children_edges(parent: Self::Node) -> Self::InvertibleChildEdgeIter {
+        BlockPredecessorEdgesIter::new(parent)
+    }
+}
+
+#[doc(hidden)]
+pub struct BlockSuccessorIter {
+    iter: BlockSuccessorEdgesIter,
+}
+impl BlockSuccessorIter {
+    pub fn new(parent: BlockRef) -> Self {
+        Self {
+            iter: BlockSuccessorEdgesIter::new(parent),
+        }
+    }
+}
+impl ExactSizeIterator for BlockSuccessorIter {
+    #[inline]
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.iter.is_empty()
+    }
+}
+impl Iterator for BlockSuccessorIter {
+    type Item = BlockRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bo| bo.borrow().block.clone())
+    }
+
+    #[inline]
+    fn collect<B: FromIterator<Self::Item>>(self) -> B
+    where
+        Self: Sized,
+    {
+        let Some(terminator) = self.iter.terminator.as_ref() else {
+            return B::from_iter([]);
+        };
+        let terminator = terminator.borrow();
+        let successors = terminator.successors();
+        B::from_iter(
+            successors.all().as_slice()[self.iter.index..self.iter.num_successors]
+                .iter()
+                .map(|succ| succ.block.borrow().block.clone()),
+        )
+    }
+
+    fn collect_into<E: Extend<Self::Item>>(self, collection: &mut E) -> &mut E
+    where
+        Self: Sized,
+    {
+        let Some(terminator) = self.iter.terminator.as_ref() else {
+            return collection;
+        };
+        let terminator = terminator.borrow();
+        let successors = terminator.successors();
+        collection.extend(
+            successors.all().as_slice()[self.iter.index..self.iter.num_successors]
+                .iter()
+                .map(|succ| succ.block.borrow().block.clone()),
+        );
+        collection
+    }
+}
+
+#[doc(hidden)]
+pub struct BlockSuccessorEdgesIter {
+    terminator: Option<OperationRef>,
+    num_successors: usize,
+    index: usize,
+}
+impl BlockSuccessorEdgesIter {
+    pub fn new(parent: BlockRef) -> Self {
+        let terminator = parent.borrow().terminator();
+        let num_successors = terminator.as_ref().map(|t| t.borrow().num_successors()).unwrap_or(0);
+        Self {
+            terminator,
+            num_successors,
+            index: 0,
+        }
+    }
+}
+impl ExactSizeIterator for BlockSuccessorEdgesIter {
+    #[inline]
+    fn len(&self) -> usize {
+        self.num_successors.saturating_sub(self.index)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.index >= self.num_successors
+    }
+}
+impl Iterator for BlockSuccessorEdgesIter {
+    type Item = BlockOperandRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.num_successors {
+            return None;
+        }
+
+        // SAFETY: We'll never have a none terminator if we have non-zero number of successors
+        let terminator = unsafe { self.terminator.as_ref().unwrap_unchecked() };
+        let index = self.index;
+        self.index += 1;
+        Some(terminator.borrow().successor(index).dest.clone())
+    }
+
+    fn collect<B: FromIterator<Self::Item>>(self) -> B
+    where
+        Self: Sized,
+    {
+        let Some(terminator) = self.terminator.as_ref() else {
+            return B::from_iter([]);
+        };
+        let terminator = terminator.borrow();
+        let successors = terminator.successors();
+        B::from_iter(
+            successors.all().as_slice()[self.index..self.num_successors]
+                .iter()
+                .map(|succ| succ.block.clone()),
+        )
+    }
+
+    fn collect_into<E: Extend<Self::Item>>(self, collection: &mut E) -> &mut E
+    where
+        Self: Sized,
+    {
+        let Some(terminator) = self.terminator.as_ref() else {
+            return collection;
+        };
+        let terminator = terminator.borrow();
+        let successors = terminator.successors();
+        collection.extend(
+            successors.all().as_slice()[self.index..self.num_successors]
+                .iter()
+                .map(|succ| succ.block.clone()),
+        );
+        collection
+    }
+}
+
+#[doc(hidden)]
+pub struct BlockPredecessorIter {
+    preds: SmallVec<[BlockRef; 4]>,
+    index: usize,
+}
+impl BlockPredecessorIter {
+    pub fn new(child: BlockRef) -> Self {
+        let preds = child.borrow().predecessors().map(|bo| bo.block.clone()).collect();
+        Self { preds, index: 0 }
+    }
+
+    #[inline(always)]
+    pub fn into_inner(self) -> SmallVec<[BlockRef; 4]> {
+        self.preds
+    }
+}
+impl ExactSizeIterator for BlockPredecessorIter {
+    #[inline]
+    fn len(&self) -> usize {
+        self.preds.len().saturating_sub(self.index)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.index >= self.preds.len()
+    }
+}
+impl Iterator for BlockPredecessorIter {
+    type Item = BlockRef;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_empty() {
+            return None;
+        }
+        let index = self.index;
+        self.index += 1;
+        Some(self.preds[index].clone())
+    }
+
+    fn collect<B: FromIterator<Self::Item>>(self) -> B
+    where
+        Self: Sized,
+    {
+        B::from_iter(self.preds)
+    }
+
+    fn collect_into<E: Extend<Self::Item>>(self, collection: &mut E) -> &mut E
+    where
+        Self: Sized,
+    {
+        collection.extend(self.preds);
+        collection
+    }
+}
+
+#[doc(hidden)]
+pub struct BlockPredecessorEdgesIter {
+    preds: SmallVec<[BlockOperandRef; 4]>,
+    index: usize,
+}
+impl BlockPredecessorEdgesIter {
+    pub fn new(child: BlockRef) -> Self {
+        let preds = child
+            .borrow()
+            .predecessors()
+            .map(|bo| unsafe { BlockOperandRef::from_raw(&*bo) })
+            .collect();
+        Self { preds, index: 0 }
+    }
+}
+impl ExactSizeIterator for BlockPredecessorEdgesIter {
+    #[inline]
+    fn len(&self) -> usize {
+        self.preds.len().saturating_sub(self.index)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.index >= self.preds.len()
+    }
+}
+impl Iterator for BlockPredecessorEdgesIter {
+    type Item = BlockOperandRef;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_empty() {
+            return None;
+        }
+        let index = self.index;
+        self.index += 1;
+        Some(self.preds[index].clone())
+    }
+
+    fn collect<B: FromIterator<Self::Item>>(self) -> B
+    where
+        Self: Sized,
+    {
+        B::from_iter(self.preds)
+    }
+
+    fn collect_into<E: Extend<Self::Item>>(self, collection: &mut E) -> &mut E
+    where
+        Self: Sized,
+    {
+        collection.extend(self.preds);
+        collection
+    }
+}
+
 impl Block {
     pub fn new(id: BlockId) -> Self {
         Self {
@@ -163,6 +524,11 @@ impl Block {
     /// Get a handle to the containing [Operation] of this block, if it is attached to one
     pub fn parent_op(&self) -> Option<OperationRef> {
         self.region.as_ref().and_then(|region| region.borrow().parent())
+    }
+
+    /// Get a handle to the ancestor [Block] of this block, if one is present
+    pub fn parent_block(&self) -> Option<BlockRef> {
+        self.parent_op().and_then(|op| op.borrow().parent())
     }
 
     /// Returns true if this block is the entry block for its containing region
