@@ -21,6 +21,25 @@
 #![feature(generic_const_exprs)]
 #![feature(new_uninit)]
 #![feature(clone_to_uninit)]
+// The following are used in impls of custom collection types based on SmallVec
+#![feature(iter_repeat_n)]
+#![feature(std_internals)] // for ByRefSized
+#![feature(extend_one)]
+#![feature(extend_one_unchecked)]
+#![feature(iter_advance_by)]
+#![feature(iter_next_chunk)]
+#![feature(iter_collect_into)]
+#![feature(trusted_len)]
+#![feature(never_type)]
+#![feature(maybe_uninit_slice)]
+#![feature(maybe_uninit_array_assume_init)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_uninit_array_transpose)]
+#![feature(array_into_iter_constructors)]
+#![feature(slice_range)]
+#![feature(slice_swap_unchecked)]
+#![feature(hasher_prefixfree_extras)]
+// Some of the above features require us to disable these warnings
 #![allow(incomplete_features)]
 #![allow(internal_features)]
 
@@ -39,6 +58,7 @@ pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 pub use rustc_hash::{FxBuildHasher, FxHasher};
 
+pub mod adt;
 mod any;
 mod attributes;
 pub mod demangle;

@@ -28,7 +28,7 @@ exclude = [
 
 [workspace.package]
 version = "0.0.7"
-rust-version = "1.80"
+rust-version = "1.81"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
 repository = "https://github.com/0xPolygonMiden/compiler"
