@@ -52,7 +52,13 @@ impl fmt::Debug for RegionSuccessor<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RegionSuccessor")
             .field("dest", &self.dest)
-            .field_with("arguments", |f| f.debug_list().entries(self.arguments.iter()).finish())
+            .field_with("arguments", |f| {
+                let mut list = f.debug_list();
+                for operand in self.arguments.iter() {
+                    list.entry(&operand.borrow());
+                }
+                list.finish()
+            })
             .finish()
     }
 }
@@ -90,7 +96,13 @@ impl fmt::Debug for RegionSuccessorMut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RegionSuccessorMut")
             .field("dest", &self.dest)
-            .field_with("arguments", |f| f.debug_list().entries(self.arguments.iter()).finish())
+            .field_with("arguments", |f| {
+                let mut list = f.debug_list();
+                for operand in self.arguments.iter() {
+                    list.entry(&operand.borrow());
+                }
+                list.finish()
+            })
             .finish()
     }
 }

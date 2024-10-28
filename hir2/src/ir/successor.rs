@@ -254,7 +254,7 @@ pub trait KeyedSuccessor {
 }
 
 /// This struct tracks successor metadata needed by [crate::Operation]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SuccessorInfo {
     pub block: BlockOperandRef,
     pub(crate) key: Option<core::ptr::NonNull<()>>,
@@ -276,6 +276,15 @@ impl crate::StorableEntity for SuccessorInfo {
         self.block.unlink();
     }
 }
+impl fmt::Debug for SuccessorInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SuccessorInfo")
+            .field("block", &self.block.borrow())
+            .field("key", &self.key)
+            .field("operand_group", &self.operand_group)
+            .finish()
+    }
+}
 
 /// An [OpSuccessor] is a BlockOperand + OpOperandRange for that block
 pub struct OpSuccessor<'a> {
@@ -286,7 +295,13 @@ impl fmt::Debug for OpSuccessor<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpSuccessor")
             .field("block", &self.dest.borrow().block_id())
-            .field_with("arguments", |f| f.debug_list().entries(self.arguments.iter()).finish())
+            .field_with("arguments", |f| {
+                let mut list = f.debug_list();
+                for operand in self.arguments.iter() {
+                    list.entry(&operand.borrow());
+                }
+                list.finish()
+            })
             .finish()
     }
 }
@@ -300,7 +315,13 @@ impl fmt::Debug for OpSuccessorMut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpSuccessorMut")
             .field("block", &self.dest.borrow().block_id())
-            .field_with("arguments", |f| f.debug_list().entries(self.arguments.iter()).finish())
+            .field_with("arguments", |f| {
+                let mut list = f.debug_list();
+                for operand in self.arguments.iter() {
+                    list.entry(&operand.borrow());
+                }
+                list.finish()
+            })
             .finish()
     }
 }

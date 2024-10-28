@@ -38,7 +38,8 @@ pub use self::{
     entity::{
         Entity, EntityCursor, EntityCursorMut, EntityGroup, EntityId, EntityIter, EntityList,
         EntityMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId,
-        EntityWithParent, RawEntityRef, StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
+        EntityWithParent, MaybeDefaultEntityIter, RawEntityRef, StorableEntity, UnsafeEntityRef,
+        UnsafeIntrusiveEntityRef,
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},

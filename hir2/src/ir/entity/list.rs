@@ -572,6 +572,30 @@ impl<'a, T> DoubleEndedIterator for EntityIter<'a, T> {
     }
 }
 
+pub struct MaybeDefaultEntityIter<'a, T> {
+    iter: Option<EntityIter<'a, T>>,
+}
+impl<'a, T> Default for MaybeDefaultEntityIter<'a, T> {
+    fn default() -> Self {
+        Self { iter: None }
+    }
+}
+impl<'a, T> core::iter::FusedIterator for MaybeDefaultEntityIter<'a, T> {}
+impl<'a, T> Iterator for MaybeDefaultEntityIter<'a, T> {
+    type Item = EntityRef<'a, T>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.as_mut().and_then(|iter| iter.next())
+    }
+}
+impl<'a, T> DoubleEndedIterator for MaybeDefaultEntityIter<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.as_mut().and_then(|iter| iter.next_back())
+    }
+}
+
 pub type IntrusiveLink = intrusive_collections::LinkedListLink;
 
 impl<T: 'static> RawEntityRef<T, IntrusiveLink> {

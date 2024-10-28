@@ -118,10 +118,21 @@ impl fmt::Debug for Operation {
             .field("order", &self.order)
             .field("attrs", &self.attrs)
             .field("block", &self.block.as_ref().map(|b| b.borrow().id()))
-            .field("operands", &self.operands)
+            .field_with("operands", |f| {
+                let mut list = f.debug_list();
+                for operand in self.operands().all() {
+                    list.entry(&operand.borrow());
+                }
+                list.finish()
+            })
             .field("results", &self.results)
             .field("successors", &self.successors)
             .finish_non_exhaustive()
+    }
+}
+impl fmt::Debug for OperationRef {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        fmt::Debug::fmt(&self.borrow(), f)
     }
 }
 

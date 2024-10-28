@@ -5,7 +5,7 @@ use core::{
     ptr::{DynMetadata, Pointee},
 };
 
-use crate::{interner, traits::TraitInfo, DialectName, Op};
+use crate::{interner, traits::TraitInfo, DialectName};
 
 /// The operation name, or mnemonic, that uniquely identifies an operation.
 ///

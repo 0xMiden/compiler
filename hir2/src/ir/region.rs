@@ -55,6 +55,7 @@ pub struct Region {
 }
 
 impl Entity for Region {}
+
 impl EntityWithParent for Region {
     type Parent = Operation;
 

@@ -44,7 +44,7 @@ pub enum InvalidSymbolRefError {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SymbolNameAttr {
     pub user: SymbolUseRef,
     /// The path through the abstract symbol space to the containing symbol table
@@ -98,6 +98,15 @@ impl fmt::Display for SymbolNameAttr {
         } else {
             f.write_str(self.name.as_str())
         }
+    }
+}
+impl fmt::Debug for SymbolNameAttr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SymbolNameAttr")
+            .field("user", &self.user.borrow())
+            .field("path", &self.path)
+            .field("name", &self.name)
+            .finish()
     }
 }
 impl crate::formatter::PrettyPrint for SymbolNameAttr {

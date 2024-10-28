@@ -15,7 +15,7 @@ use core::{
 
 pub use self::{
     group::EntityGroup,
-    list::{EntityCursor, EntityCursorMut, EntityIter, EntityList},
+    list::{EntityCursor, EntityCursorMut, EntityIter, EntityList, MaybeDefaultEntityIter},
     storage::{EntityRange, EntityRangeMut, EntityStorage},
 };
 use crate::any::*;
@@ -89,7 +89,7 @@ pub trait StorableEntity {
 }
 
 /// A trait that must be implemented by the unique identifier for an [Entity]
-pub trait EntityId: Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Hash {
+pub trait EntityId: Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Hash + fmt::Display {
     fn as_usize(&self) -> usize;
 }
 
@@ -565,11 +565,17 @@ impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
         fmt::Pointer::fmt(&Self::as_ptr(self), f)
     }
 }
-
-impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
+impl<T: ?Sized + EntityWithId, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.borrow(), f)
+        write!(f, "{}", self.borrow().id())
+    }
+}
+
+impl<T: ?Sized + EntityWithId, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.borrow().id())
     }
 }
 impl<T: ?Sized + crate::formatter::PrettyPrint, Metadata> crate::formatter::PrettyPrint
