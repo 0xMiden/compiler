@@ -68,6 +68,7 @@ mod folder;
 pub mod formatter;
 mod hash;
 mod ir;
+pub mod itertools;
 pub mod matchers;
 pub mod pass;
 mod patterns;
@@ -81,6 +82,7 @@ pub use self::{
     folder::OperationFolder,
     hash::{DynHash, DynHasher},
     ir::*,
+    itertools::IteratorExt,
     patterns::*,
 };
 
