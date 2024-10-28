@@ -5,6 +5,7 @@ pub mod cfg;
 mod component;
 mod context;
 mod dialect;
+pub mod dominance;
 mod entity;
 mod ident;
 mod immediates;

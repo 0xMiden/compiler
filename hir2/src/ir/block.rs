@@ -747,6 +747,143 @@ impl Block {
     }
 }
 
+/// Ancestors
+impl Block {
+    pub fn is_legal_to_hoist_into(&self) -> bool {
+        use crate::traits::{HasSideEffects, ReturnLike};
+
+        // No terminator means the block is under construction, and thus legal to hoist into
+        let Some(terminator) = self.terminator() else {
+            return true;
+        };
+
+        // If the block has no successors, it can never be legal to hoist into it, there is nothing
+        // to hoist!
+        if self.num_successors() == 0 {
+            return false;
+        }
+
+        // Instructions should not be hoisted across effectful or return-like terminators. This is
+        // typically only exception handling intrinsics, which HIR doesn't really have, but which
+        // we may nevertheless want to represent in the future.
+        //
+        // NOTE: Most return-like terminators would have no successors, but in LLVM, for example,
+        // there are instructions like `catch_ret`, which semantically are return-like, but which
+        // have a successor block (the landing pad).
+        let terminator = terminator.borrow();
+        terminator.implements::<dyn HasSideEffects>() || terminator.implements::<dyn ReturnLike>()
+    }
+
+    pub fn has_ssa_dominance(&self) -> bool {
+        self.parent_op()
+            .and_then(|op| {
+                op.borrow()
+                    .as_trait::<dyn RegionKindInterface>()
+                    .map(|rki| rki.has_ssa_dominance())
+            })
+            .unwrap_or(true)
+    }
+
+    /// Walk up the ancestor blocks of `block`, until `f` returns `true` for a block.
+    ///
+    /// NOTE: `block` is visited before any of its ancestors.
+    pub fn traverse_ancestors<F>(block: BlockRef, mut f: F) -> Option<BlockRef>
+    where
+        F: FnMut(BlockRef) -> bool,
+    {
+        let mut block = Some(block);
+        while let Some(current) = block.take() {
+            if f(current.clone()) {
+                return Some(current);
+            }
+            block = current.borrow().parent_block();
+        }
+
+        None
+    }
+
+    /// Try to get a pair of blocks, starting with the given pair, which live in the same region,
+    /// by exploring the relationships of both blocks with respect to their regions.
+    ///
+    /// The returned block pair will either be the same input blocks, or some combination of those
+    /// blocks or their ancestors.
+    pub fn get_blocks_in_same_region(a: &BlockRef, b: &BlockRef) -> Option<(BlockRef, BlockRef)> {
+        // If both blocks do not live in the same region, we will have to check their parent
+        // operations.
+        let a_region = a.borrow().parent().unwrap();
+        let b_region = b.borrow().parent().unwrap();
+        if a_region == b_region {
+            return Some((a.clone(), b.clone()));
+        }
+
+        // Iterate over all ancestors of `a`, counting the depth of `a`.
+        //
+        // If one of `a`'s ancestors are in the same region as `b`, then we stop early because we
+        // found our nearest common ancestor.
+        let mut a_depth = 0;
+        let result = Self::traverse_ancestors(a.clone(), |block| {
+            a_depth += 1;
+            block.borrow().parent().is_some_and(|r| r == b_region)
+        });
+        if let Some(a) = result {
+            return Some((a, b.clone()));
+        }
+
+        // Iterate over all ancestors of `b`, counting the depth of `b`.
+        //
+        // If one of `b`'s ancestors are in the same region as `a`, then we stop early because we
+        // found our nearest common ancestor.
+        let mut b_depth = 0;
+        let result = Self::traverse_ancestors(b.clone(), |block| {
+            b_depth += 1;
+            block.borrow().parent().is_some_and(|r| r == a_region)
+        });
+        if let Some(b) = result {
+            return Some((a.clone(), b));
+        }
+
+        // Otherwise, we found two blocks that are siblings at some level. Walk the deepest one
+        // up until we reach the top or find a nearest common ancestor.
+        let mut a = Some(a.clone());
+        let mut b = Some(b.clone());
+        loop {
+            use core::cmp::Ordering;
+
+            match a_depth.cmp(&b_depth) {
+                Ordering::Greater => {
+                    a = a.and_then(|a| a.borrow().parent_block());
+                    a_depth -= 1;
+                }
+                Ordering::Less => {
+                    b = b.and_then(|b| b.borrow().parent_block());
+                    b_depth -= 1;
+                }
+                Ordering::Equal => break,
+            }
+        }
+
+        // If we found something with the same level, then we can march both up at the same time
+        // from here on out.
+        while let Some(next_a) = a.take() {
+            // If they are at the same level, and have the same parent region, then we succeeded.
+            let next_a_parent = next_a.borrow().parent();
+            let b_parent = b.as_ref().and_then(|b| b.borrow().parent());
+            if next_a_parent == b_parent {
+                return Some((next_a, b.unwrap()));
+            }
+
+            a = next_a_parent
+                .and_then(|r| r.borrow().parent())
+                .and_then(|op| op.borrow().parent());
+            b = b_parent.and_then(|r| r.borrow().parent()).and_then(|op| op.borrow().parent());
+        }
+
+        // They don't share a nearest common ancestor, perhaps they are in different modules or
+        // something.
+        None
+    }
+}
+
 /// Predecessors and Successors
 impl Block {
     /// Returns true if this block has predecessors
