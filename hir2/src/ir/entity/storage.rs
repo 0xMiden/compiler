@@ -197,6 +197,12 @@ pub struct EntityRange<'a, T> {
     items: &'a [T],
 }
 impl<'a, T> EntityRange<'a, T> {
+    pub fn new(range: core::ops::Range<usize>, items: &'a [T]) -> Self {
+        assert!(range.end <= items.len());
+
+        Self { range, items }
+    }
+
     /// Get an empty range
     pub fn empty() -> Self {
         Self {

@@ -9,13 +9,10 @@ use smallvec::SmallVec;
 
 pub use self::{
     branch_point::RegionBranchPoint,
-    interfaces::{
-        RegionBranchOpInterface, RegionBranchTerminatorOpInterface, RegionKindInterface,
-        RegionSuccessorIter,
-    },
+    interfaces::{RegionBranchOpInterface, RegionBranchTerminatorOpInterface, RegionKindInterface},
     invocation_bounds::InvocationBounds,
     kind::RegionKind,
-    successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorMut},
+    successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorIter},
     transforms::RegionTransformFailed,
 };
 use super::*;
@@ -172,6 +169,14 @@ impl Region {
     #[inline]
     pub fn as_region_ref(&self) -> RegionRef {
         unsafe { RegionRef::from_raw(self) }
+    }
+
+    pub fn region_number(&self) -> usize {
+        let op = self.owner.as_ref().unwrap().borrow();
+        op.regions()
+            .iter()
+            .position(|r| core::ptr::addr_eq(self, &*r))
+            .expect("invalid region parent")
     }
 
     /// Returns true if this region is an ancestor of `other`, i.e. it contains it.

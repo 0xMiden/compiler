@@ -2,12 +2,14 @@ use crate::{
     derive::operation,
     dialects::hir::HirDialect,
     traits::{IsolatedFromAbove, SingleRegion},
-    Block, BlockRef, CallableOpInterface, Ident, Op, Operation, OperationRef, RegionKind,
-    RegionKindInterface, RegionRef, Report, Signature, Symbol, SymbolName, SymbolNameAttr,
-    SymbolRef, SymbolUse, SymbolUseList, SymbolUseRef, SymbolUsesIter, Usable, Visibility,
+    Block, BlockRef, CallableOpInterface, Ident, Op, Operation, RegionKind, RegionKindInterface,
+    RegionRef, Signature, Symbol, SymbolName, SymbolUse, SymbolUseList, UnsafeIntrusiveEntityRef,
+    Usable, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
+
+pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
 
 #[operation(
     dialect = HirDialect,
@@ -118,45 +120,6 @@ impl Symbol for Function {
 
     fn set_visibility(&mut self, visibility: Visibility) {
         self.signature_mut().visibility = visibility;
-    }
-
-    fn symbol_uses(&self, from: OperationRef) -> SymbolUsesIter {
-        SymbolUsesIter::from_iter(self.uses.iter().filter_map(|user| {
-            if OperationRef::ptr_eq(&from, &user.owner)
-                || from.borrow().is_proper_ancestor_of(&user.owner)
-            {
-                Some(unsafe { SymbolUseRef::from_raw(&*user) })
-            } else {
-                None
-            }
-        }))
-    }
-
-    fn replace_all_uses(
-        &mut self,
-        replacement: SymbolRef,
-        from: OperationRef,
-    ) -> Result<(), Report> {
-        for symbol_use in self.symbol_uses(from) {
-            let (mut owner, attr_name) = {
-                let user = symbol_use.borrow();
-                (user.owner.clone(), user.symbol)
-            };
-            let mut owner = owner.borrow_mut();
-            // Unlink previously used symbol
-            {
-                let current_symbol = owner
-                    .get_typed_attribute_mut::<SymbolNameAttr>(attr_name)
-                    .expect("stale symbol user");
-                unsafe {
-                    self.uses.cursor_mut_from_ptr(current_symbol.user.clone()).remove();
-                }
-            }
-            // Link replacement symbol
-            owner.set_symbol_attribute(attr_name, replacement.clone());
-        }
-
-        Ok(())
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol

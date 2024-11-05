@@ -441,7 +441,7 @@ pub trait Rewriter: Builder + RewriterListener {
         self.maybe_replace_op_uses_with(from, to, |operand| {
             !parent_op
                 .as_ref()
-                .is_some_and(|op| op.borrow().is_proper_ancestor_of(&operand.owner))
+                .is_some_and(|op| op.borrow().is_proper_ancestor_of(&operand.owner.borrow()))
         })
     }
 

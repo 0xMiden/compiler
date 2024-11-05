@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::{BlockRef, OperationRef};
+use crate::{Block, BlockRef, Operation, OperationRef};
 
 /// Represents the placement of inserted items relative to a [ProgramPoint]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -213,9 +213,19 @@ impl From<OperationRef> for ProgramPoint {
         Self::Op(op)
     }
 }
+impl<'a> From<&'a Operation> for ProgramPoint {
+    fn from(op: &'a Operation) -> Self {
+        Self::Op(op.as_operation_ref())
+    }
+}
 impl From<BlockRef> for ProgramPoint {
     fn from(block: BlockRef) -> Self {
         Self::Block(block)
+    }
+}
+impl<'a> From<&'a Block> for ProgramPoint {
+    fn from(op: &'a Block) -> Self {
+        Self::Block(op.as_block_ref())
     }
 }
 impl fmt::Display for ProgramPoint {

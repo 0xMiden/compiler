@@ -1,3 +1,5 @@
+mod component;
 mod function;
+mod module;
 
-pub use self::function::*;
+pub use self::{component::*, function::*, module::*};

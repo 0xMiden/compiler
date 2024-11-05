@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::{
-    formatter, CallConv, EntityRef, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol,
+    formatter, CallConv, EntityRef, Op, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol,
     SymbolNameAttr, SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility,
 };
 
@@ -10,7 +10,7 @@ use crate::{
 /// These operations may be traditional static calls, e.g. `call @foo`, or indirect calls, e.g.
 /// `call_indirect v1`. An operation that uses this interface cannot _also_ implement the
 /// `CallableOpInterface`.
-pub trait CallOpInterface {
+pub trait CallOpInterface: Op {
     /// Get the callee of this operation.
     ///
     /// A callee is either a symbol, or a reference to an SSA value.
@@ -39,7 +39,7 @@ pub trait CallOpInterface {
 /// op that creates closures, or captures a function by reference.
 ///
 /// These operations may only contain a single region.
-pub trait CallableOpInterface {
+pub trait CallableOpInterface: Op {
     /// Returns the region on the current operation that is callable.
     ///
     /// This may return `None` in the case of an external callable object, e.g. an externally-

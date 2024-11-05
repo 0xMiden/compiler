@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 use core::{borrow::Borrow, ops::Deref};
 
-use crate::{AsAny, AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type};
+use crate::{any::AsAny, AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type};
 
 /// A [Dialect] represents a collection of IR entities that are used in conjunction with one
 /// another. Multiple dialects can co-exist _or_ be mutually exclusive. Converting between dialects

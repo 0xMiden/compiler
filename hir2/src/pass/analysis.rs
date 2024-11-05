@@ -410,7 +410,10 @@ impl AnalysisManager {
     /// current operation represented by this analysis manager.
     pub fn nest(&self, op: &OperationRef) -> AnalysisManager {
         let current_op = self.analyses.get_operation();
-        assert!(current_op.borrow().is_proper_ancestor_of(op), "expected valid descendant op");
+        assert!(
+            current_op.borrow().is_proper_ancestor_of(&op.borrow()),
+            "expected valid descendant op"
+        );
 
         // Check for the base case where the provided operation is immediately nested
         if current_op == op.borrow().parent_op().expect("expected `op` to have a parent") {

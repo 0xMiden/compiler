@@ -135,6 +135,11 @@ impl fmt::Debug for OperationRef {
         fmt::Debug::fmt(&self.borrow(), f)
     }
 }
+impl fmt::Display for OperationRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.borrow().name())
+    }
+}
 
 impl AsRef<dyn Op> for Operation {
     fn as_ref(&self) -> &dyn Op {
@@ -416,7 +421,7 @@ impl Operation {
         // Store the underlying attribute value
         let user = self.context().alloc_tracked(SymbolUse {
             owner: self.as_operation_ref(),
-            symbol: name,
+            attr: name,
         });
         if self.has_attribute(name) {
             let attr = self.get_typed_attribute_mut::<SymbolNameAttr>(name).unwrap();
@@ -1050,22 +1055,21 @@ impl Operation {
     ///
     /// An operation is considered its own ancestor, use [Self::is_proper_ancestor_of] if you do not
     /// want this behavior.
-    pub fn is_ancestor_of(&self, other: &OperationRef) -> bool {
-        let this = self.as_operation_ref();
-        OperationRef::ptr_eq(&this, other) || Self::is_a_proper_ancestor_of_b(&this, other)
+    pub fn is_ancestor_of(&self, other: &Self) -> bool {
+        core::ptr::addr_eq(self, other) || Self::is_a_proper_ancestor_of_b(self, other)
     }
 
     /// Returns true if this operation is a proper ancestor of `other`
-    pub fn is_proper_ancestor_of(&self, other: &OperationRef) -> bool {
-        let this = self.as_operation_ref();
-        Self::is_a_proper_ancestor_of_b(&this, other)
+    pub fn is_proper_ancestor_of(&self, other: &Self) -> bool {
+        Self::is_a_proper_ancestor_of_b(self, other)
     }
 
     /// Returns true if operation `a` is a proper ancestor of operation `b`
-    fn is_a_proper_ancestor_of_b(a: &OperationRef, b: &OperationRef) -> bool {
-        let mut next = b.borrow().parent_op();
+    fn is_a_proper_ancestor_of_b(a: &Self, b: &Self) -> bool {
+        let a = a.as_operation_ref();
+        let mut next = b.parent_op();
         while let Some(b) = next.take() {
-            if OperationRef::ptr_eq(a, &b) {
+            if OperationRef::ptr_eq(&a, &b) {
                 return true;
             }
         }

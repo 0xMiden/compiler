@@ -6,7 +6,7 @@ use alloc::collections::BTreeMap;
 use core::{any::Any, borrow::Borrow, fmt};
 
 pub use self::{call_conv::CallConv, overflow::Overflow, visibility::Visibility};
-use crate::interner::Symbol;
+use crate::{interner::Symbol, Immediate};
 
 pub mod markers {
     use midenc_hir_symbol::symbols;
@@ -211,6 +211,14 @@ impl dyn AttributeValue {
 
     pub fn downcast_mut<T: AttributeValue>(&mut self) -> Option<&mut T> {
         self.as_any_mut().downcast_mut::<T>()
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        if let Some(imm) = self.downcast_ref::<Immediate>() {
+            imm.as_bool()
+        } else {
+            self.downcast_ref::<bool>().copied()
+        }
     }
 }
 

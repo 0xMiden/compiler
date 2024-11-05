@@ -733,9 +733,10 @@ impl OpToOpPassAdaptor {
         let pipeline_callback: Box<super::pass::DynamicPipelineExecutor> = Box::new(
             move |pipeline: &mut OpPassManager, root: OperationRef| -> Result<(), Report> {
                 let pi = callback_analysis_manager.pass_instrumentor();
-                let context = callback_op.borrow().context_rc();
+                let op = callback_op.borrow();
+                let context = op.context_rc();
                 let root_op = root.borrow();
-                if !root_op.is_ancestor_of(&callback_op) {
+                if !root_op.is_ancestor_of(&op) {
                     return Err(context
                         .session
                         .diagnostics

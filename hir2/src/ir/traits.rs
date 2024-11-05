@@ -136,12 +136,15 @@ pub trait BranchOpInterface: crate::Op {
     }
     /// Returns the successor that would be chosen with the given constant operands.
     ///
+    /// Each operand of this op has an entry in the `operands` slice. If the operand is non-constant,
+    /// the corresponding entry will be `None`.
+    ///
     /// Returns `None` if a single successor could not be chosen.
     #[inline]
     #[allow(unused_variables)]
     fn get_successor_for_operands(
         &self,
-        operands: &[Box<dyn AttributeValue>],
+        operands: &[Option<Box<dyn AttributeValue>>],
     ) -> Option<crate::BlockRef> {
         None
     }

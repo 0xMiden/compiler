@@ -202,6 +202,15 @@ pub enum SuccessorOperand {
     Forwarded(crate::ValueRef),
 }
 
+impl SuccessorOperand {
+    pub fn into_value_ref(self) -> Option<crate::ValueRef> {
+        match self {
+            Self::Produced => None,
+            Self::Forwarded(value) => Some(value),
+        }
+    }
+}
+
 /// This trait represents successor-like values for operations, with support for control-flow
 /// predicated on a "key", a sentinel value that must match in order for the successor block to be
 /// taken.

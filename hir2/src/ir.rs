@@ -6,7 +6,7 @@ mod component;
 mod context;
 mod dialect;
 pub mod dominance;
-mod entity;
+pub(crate) mod entity;
 mod ident;
 mod immediates;
 mod insert;
@@ -18,7 +18,7 @@ mod operation;
 mod print;
 mod region;
 mod successor;
-pub(crate) mod symbol_table;
+pub(crate) mod symbols;
 pub mod traits;
 mod types;
 mod usable;
@@ -60,7 +60,7 @@ pub use self::{
         InvocationBounds, Region, RegionBranchOpInterface, RegionBranchPoint,
         RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,
         RegionKindInterface, RegionList, RegionRef, RegionSuccessor, RegionSuccessorInfo,
-        RegionSuccessorIter, RegionSuccessorMut, RegionTransformFailed,
+        RegionSuccessorIter, RegionTransformFailed,
     },
     successor::{
         KeyedSuccessor, KeyedSuccessorRange, KeyedSuccessorRangeMut, OpSuccessor, OpSuccessorMut,
@@ -68,18 +68,14 @@ pub use self::{
         SuccessorOperandRange, SuccessorOperandRangeMut, SuccessorOperands, SuccessorWithKey,
         SuccessorWithKeyMut,
     },
-    symbol_table::{
-        AsSymbolRef, InvalidSymbolRefError, Symbol, SymbolName, SymbolNameAttr,
-        SymbolNameComponent, SymbolNameComponents, SymbolRef, SymbolTable, SymbolUse,
-        SymbolUseCursor, SymbolUseCursorMut, SymbolUseIter, SymbolUseList, SymbolUseRef,
-        SymbolUsesIter,
-    },
+    symbols::*,
     traits::{FoldResult, OpFoldResult},
     types::*,
     usable::Usable,
     value::{
-        BlockArgument, BlockArgumentRef, OpResult, OpResultRange, OpResultRangeMut, OpResultRef,
-        OpResultStorage, Value, ValueId, ValueRef,
+        BlockArgument, BlockArgumentRange, BlockArgumentRangeMut, BlockArgumentRef, OpResult,
+        OpResultRange, OpResultRangeMut, OpResultRef, OpResultStorage, Value, ValueId, ValueRange,
+        ValueRef,
     },
     verifier::{OpVerifier, Verify},
     visit::{

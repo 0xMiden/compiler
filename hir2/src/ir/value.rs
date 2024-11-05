@@ -1,5 +1,8 @@
+mod range;
+
 use core::{any::Any, fmt};
 
+pub use self::range::ValueRange;
 use super::*;
 
 /// A unique identifier for a [Value] in the IR
@@ -347,6 +350,9 @@ impl StorableEntity for BlockArgument {
         self.index = index.try_into().expect("too many block arguments");
     }
 }
+
+pub type BlockArgumentRange<'a> = crate::EntityRange<'a, BlockArgumentRef>;
+pub type BlockArgumentRangeMut<'a> = crate::EntityRangeMut<'a, BlockArgumentRef, 1>;
 
 value_impl!(
     /// An [OpResult] represents the definition of a [Value] by the result of an [Operation]

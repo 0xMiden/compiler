@@ -1,4 +1,5 @@
 use midenc_hir_macros::operation;
+use midenc_session::diagnostics::Severity;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{dialects::hir::HirDialect, traits::*, *};
@@ -38,7 +39,7 @@ impl BranchOpInterface for Br {
     #[inline]
     fn get_successor_for_operands(
         &self,
-        _operands: &[Box<dyn AttributeValue>],
+        _operands: &[Option<Box<dyn AttributeValue>>],
     ) -> Option<BlockRef> {
         Some(self.target().dest.borrow().block.clone())
     }
@@ -60,8 +61,11 @@ pub struct CondBr {
     else_dest: Successor,
 }
 impl BranchOpInterface for CondBr {
-    fn get_successor_for_operands(&self, operands: &[Box<dyn AttributeValue>]) -> Option<BlockRef> {
-        let value = &*operands[0];
+    fn get_successor_for_operands(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+    ) -> Option<BlockRef> {
+        let value = operands[0].as_deref()?;
         let cond = if let Some(imm) = value.downcast_ref::<Immediate>() {
             imm.as_bool().expect("invalid boolean condition for 'hir.if'")
         } else if let Some(yes) = value.downcast_ref::<bool>() {
@@ -102,8 +106,11 @@ pub struct Switch {
 
 impl BranchOpInterface for Switch {
     #[inline]
-    fn get_successor_for_operands(&self, operands: &[Box<dyn AttributeValue>]) -> Option<BlockRef> {
-        let value = &*operands[0];
+    fn get_successor_for_operands(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+    ) -> Option<BlockRef> {
+        let value = operands[0].as_deref()?;
         let selector = if let Some(selector) = value.downcast_ref::<Immediate>() {
             selector.as_u32().expect("invalid selector value for 'hir.switch'")
         } else if let Some(selector) = value.downcast_ref::<u32>() {
@@ -203,7 +210,7 @@ impl KeyedSuccessor for SwitchCase {
 #[operation(
     dialect = HirDialect,
     traits(SingleBlock, NoRegionArguments),
-    implements(RegionBranchOpInterface)
+    implements(RegionBranchOpInterface, InferTypeOpInterface)
 )]
 pub struct If {
     #[operand]
@@ -214,81 +221,124 @@ pub struct If {
     else_body: Region,
 }
 
+impl InferTypeOpInterface for If {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let then_region = self.then_body();
+        if then_region.is_empty() {
+            return Err(context
+                .session
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message("invalid `if` operation")
+                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
+                .into_report());
+        }
+
+        let then_block = then_region.entry();
+        if then_block.body().is_empty() {
+            return Err(context
+                .session
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message("invalid `if` operation")
+                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
+                .into_report());
+        }
+
+        if let Some(terminator) = then_block.terminator() {
+            drop(then_block);
+            drop(then_region);
+            let terminator = terminator.borrow();
+            if let Some(yield_op) = terminator.downcast_ref::<Yield>() {
+                let types = yield_op
+                    .yielded()
+                    .iter()
+                    .map(|operand| operand.borrow().ty())
+                    .collect::<SmallVec<[_; 2]>>();
+
+                let span = self.span();
+                let owner = self.as_operation().as_operation_ref();
+                self.results_mut().extend(types.into_iter().enumerate().map(|(index, ty)| {
+                    context.make_result(
+                        span,
+                        ty,
+                        owner.clone(),
+                        index.try_into().expect("too many results"),
+                    )
+                }));
+
+                Ok(())
+            } else {
+                Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid `if` operation")
+                    .with_primary_label(terminator.span(), "expected `yield` op here")
+                    .with_help("The `if` operation blocks must be terminated by a `yield`")
+                    .into_report())
+            }
+        } else {
+            Err(context
+                .session
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message("invalid `if` operation")
+                .with_primary_label(self.span(), "`if` blocks require a terminator")
+                .with_help("The `if` operation blocks must be terminated by a `yield`")
+                .into_report())
+        }
+    }
+}
+
 impl RegionBranchOpInterface for If {
     fn get_entry_successor_regions(
         &self,
         operands: &[Option<Box<dyn AttributeValue>>],
     ) -> RegionSuccessorIter<'_> {
-        match operands[0].as_deref() {
-            None => self.get_successor_regions(RegionBranchPoint::Parent),
-            Some(value) => {
-                let cond = if let Some(imm) = value.downcast_ref::<Immediate>() {
-                    imm.as_bool().expect("invalid boolean condition for 'hir.if'")
-                } else if let Some(yes) = value.downcast_ref::<bool>() {
-                    *yes
-                } else {
-                    panic!(
-                        "expected boolean immediate for '{}' condition, got: {:?}",
-                        self.name(),
-                        value
-                    )
-                };
+        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+        let has_then = condition.is_none_or(|v| v);
+        let else_possible = condition.is_none_or(|v| !v);
+        let has_else = else_possible && !self.else_body().is_empty();
 
-                if cond {
-                    RegionSuccessorIter::new(
-                        self.as_operation(),
-                        [RegionSuccessorInfo {
-                            successor: RegionBranchPoint::Child(self.then_body().as_region_ref()),
-                            key: None,
-                            operand_group: 0,
-                        }],
-                    )
-                } else {
-                    RegionSuccessorIter::new(
-                        self.as_operation(),
-                        [RegionSuccessorInfo {
-                            successor: RegionBranchPoint::Child(self.else_body().as_region_ref()),
-                            key: None,
-                            operand_group: 0,
-                        }],
-                    )
-                }
+        let mut infos = SmallVec::<[RegionSuccessorInfo; 2]>::default();
+        if has_then {
+            infos.push(RegionSuccessorInfo::Entering(self.then_body().as_region_ref()));
+        }
+
+        if else_possible {
+            if has_else {
+                infos.push(RegionSuccessorInfo::Entering(self.else_body().as_region_ref()));
+            } else {
+                // Branching back to parent with `then` results
+                infos.push(RegionSuccessorInfo::Returning(
+                    self.results().all().iter().map(|v| v.borrow().as_value_ref()).collect(),
+                ));
             }
         }
+
+        RegionSuccessorIter::new(self.as_operation(), infos)
     }
 
     fn get_successor_regions(&self, point: RegionBranchPoint) -> RegionSuccessorIter<'_> {
         match point {
             RegionBranchPoint::Parent => {
-                // Either branch is reachable on entry
-                RegionSuccessorIter::new(
-                    self.as_operation(),
-                    [
-                        RegionSuccessorInfo {
-                            successor: RegionBranchPoint::Child(self.then_body().as_region_ref()),
-                            key: None,
-                            operand_group: 0,
-                        },
-                        RegionSuccessorInfo {
-                            successor: RegionBranchPoint::Child(self.else_body().as_region_ref()),
-                            key: None,
-                            operand_group: 0,
-                        },
-                    ],
-                )
+                // Either branch is reachable on entry (unless `else` is empty, as it is optional)
+                let mut infos: SmallVec<[_; 2]> =
+                    smallvec![RegionSuccessorInfo::Entering(self.then_body().as_region_ref())];
+                // Don't consider the else region if it is empty
+                if !self.else_body().is_empty() {
+                    infos.push(RegionSuccessorInfo::Entering(self.else_body().as_region_ref()));
+                }
+                RegionSuccessorIter::new(self.as_operation(), infos)
             }
             RegionBranchPoint::Child(_) => {
                 // Only the parent If is reachable from then_body/else_body
                 RegionSuccessorIter::new(
                     self.as_operation(),
-                    [RegionSuccessorInfo {
-                        successor: RegionBranchPoint::Parent,
-                        key: None,
-                        // TODO(pauls): Need to handle operand groups properly, as this group refers
-                        // to the operand groups of If, but the results of the If come from the
-                        // Yield contained in the If body
-                        operand_group: 0,
-                    }],
+                    [RegionSuccessorInfo::Returning(
+                        self.results().all().iter().map(|v| v.borrow().as_value_ref()).collect(),
+                    )],
                 )
             }
         }
@@ -300,29 +350,17 @@ impl RegionBranchOpInterface for If {
     ) -> SmallVec<[InvocationBounds; 1]> {
         use smallvec::smallvec;
 
-        match operands[0].as_deref() {
-            None => {
-                // Only one region is invoked, and no more than a single time
-                smallvec![InvocationBounds::NoMoreThan(1); 2]
+        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+
+        if let Some(condition) = condition {
+            if condition {
+                smallvec![InvocationBounds::Exact(1), InvocationBounds::Never]
+            } else {
+                smallvec![InvocationBounds::Never, InvocationBounds::Exact(1)]
             }
-            Some(value) => {
-                let cond = if let Some(imm) = value.downcast_ref::<Immediate>() {
-                    imm.as_bool().expect("invalid boolean condition for 'hir.if'")
-                } else if let Some(yes) = value.downcast_ref::<bool>() {
-                    *yes
-                } else {
-                    panic!(
-                        "expected boolean immediate for '{}' condition, got: {:?}",
-                        self.name(),
-                        value
-                    )
-                };
-                if cond {
-                    smallvec![InvocationBounds::Exact(1), InvocationBounds::Never]
-                } else {
-                    smallvec![InvocationBounds::Never, InvocationBounds::Exact(1)]
-                }
-            }
+        } else {
+            // Only one region is invoked, and no more than a single time
+            smallvec![InvocationBounds::NoMoreThan(1); 2]
         }
     }
 
@@ -375,50 +413,33 @@ impl RegionBranchOpInterface for While {
                 // `before` region.
                 RegionSuccessorIter::new(
                     self.as_operation(),
-                    [RegionSuccessorInfo {
-                        successor: RegionBranchPoint::Child(self.before().as_region_ref()),
-                        key: None,
-                        operand_group: 0,
-                    }],
+                    [RegionSuccessorInfo::Entering(self.before().as_region_ref())],
                 )
             }
             RegionBranchPoint::Child(region) => {
+                let before_region = self.before().as_region_ref();
+                let after_region = self.after().as_region_ref();
+                assert!(region == before_region || region == after_region);
+
                 // When branching from `before`, the only successor is `after` or the While itself,
                 // otherwise, when branching from `after` the only successor is `before`.
-                let after_region = self.after().as_region_ref();
                 if region == after_region {
-                    // TODO(pauls): We should handle operands properly here - the While op itself
-                    // does not have any operands for this transfer of control, that comes from the
-                    // Yield op
                     RegionSuccessorIter::new(
                         self.as_operation(),
-                        [RegionSuccessorInfo {
-                            successor: RegionBranchPoint::Child(self.before().as_region_ref()),
-                            key: None,
-                            operand_group: 0,
-                        }],
+                        [RegionSuccessorInfo::Entering(before_region)],
                     )
                 } else {
-                    // TODO(pauls): We should handle operands properly here - the While op itself
-                    // does not have any operands for this transfer of control, that comes from the
-                    // Condition op
-                    assert!(
-                        region == self.before().as_region_ref(),
-                        "unexpected region branch point"
-                    );
                     RegionSuccessorIter::new(
                         self.as_operation(),
                         [
-                            RegionSuccessorInfo {
-                                successor: RegionBranchPoint::Child(after_region),
-                                key: None,
-                                operand_group: 0,
-                            },
-                            RegionSuccessorInfo {
-                                successor: RegionBranchPoint::Parent,
-                                key: None,
-                                operand_group: 0,
-                            },
+                            RegionSuccessorInfo::Returning(
+                                self.results()
+                                    .all()
+                                    .iter()
+                                    .map(|r| r.borrow().as_value_ref())
+                                    .collect(),
+                            ),
+                            RegionSuccessorInfo::Entering(after_region),
                         ],
                     )
                 }
@@ -491,71 +512,27 @@ impl RegionBranchTerminatorOpInterface for Condition {
         //
         // We can return a single statically-known region if we were given a constant condition
         // value, otherwise we must return both possible regions.
-        let cond = operands[0].as_deref();
-        match cond {
-            None => {
-                let after_region = self
-                    .parent_op()
-                    .unwrap()
-                    .borrow()
-                    .downcast_ref::<While>()
-                    .expect("expected `Condition` op to be a child of a `While` op")
-                    .after()
-                    .as_region_ref();
-                // We can't know the condition until runtime, so both the parent `while` op and
-                // the `after` region could be successors
-                let if_false = RegionSuccessorInfo {
-                    successor: RegionBranchPoint::Parent,
-                    key: None,
-                    // the `forwarded` operand group
-                    operand_group: 1,
-                };
-                let if_true = RegionSuccessorInfo {
-                    successor: RegionBranchPoint::Child(after_region),
-                    key: None,
-                    // the `forwarded` operand group
-                    operand_group: 1,
-                };
-                smallvec![if_false, if_true]
-            }
-            Some(value) => {
-                // Extract the boolean value of the condition
-                let should_continue = if let Some(imm) = value.downcast_ref::<Immediate>() {
-                    imm.as_bool().expect("invalid boolean immediate for 'hir.condition'")
-                } else if let Some(yes) = value.downcast_ref::<bool>() {
-                    *yes
-                } else {
-                    panic!("expected boolean immediate for 'hir.condition'")
-                };
+        let cond = operands[0].as_deref().and_then(|v| v.as_bool());
+        let mut regions = SmallVec::<[RegionSuccessorInfo; 2]>::default();
 
-                // Choose the specific region successor implied by the condition
-                if should_continue {
-                    // Proceed to the 'after' region
-                    let after_region = self
-                        .parent_op()
-                        .unwrap()
-                        .borrow()
-                        .downcast_ref::<While>()
-                        .expect("expected `Condition` op to be a child of a `While` op")
-                        .after()
-                        .as_region_ref();
-                    smallvec![RegionSuccessorInfo {
-                        successor: RegionBranchPoint::Child(after_region),
-                        key: None,
-                        // the `forwarded` operand group
-                        operand_group: 1,
-                    }]
-                } else {
-                    // Break out to the parent 'while' operation
-                    smallvec![RegionSuccessorInfo {
-                        successor: RegionBranchPoint::Parent,
-                        key: None,
-                        // the `forwarded` operand group
-                        operand_group: 1,
-                    }]
-                }
-            }
+        let parent_op = self.parent_op().unwrap();
+        let parent_op = parent_op.borrow();
+        let while_op = parent_op
+            .downcast_ref::<While>()
+            .expect("expected `Condition` op to be a child of a `While` op");
+        let after_region = while_op.after().as_region_ref();
+
+        // We can't know the condition until runtime, so both the parent `while` op and
+        if cond.is_none_or(|v| v) {
+            regions.push(RegionSuccessorInfo::Entering(after_region));
         }
+        if cond.is_none_or(|v| !v) {
+            regions.push(RegionSuccessorInfo::Returning(
+                while_op.results().all().iter().map(|r| r.borrow().as_value_ref()).collect(),
+            ));
+        }
+
+        regions
     }
 }
 
@@ -607,18 +584,12 @@ impl RegionBranchTerminatorOpInterface for Yield {
         let parent_op = self.parent_op().unwrap();
         let parent_op = parent_op.borrow();
         if parent_op.is::<If>() {
-            smallvec![RegionSuccessorInfo {
-                successor: RegionBranchPoint::Parent,
-                key: None,
-                operand_group: 0,
-            }]
+            smallvec![RegionSuccessorInfo::Returning(
+                parent_op.results().all().iter().map(|v| v.borrow().as_value_ref()).collect()
+            )]
         } else if let Some(while_op) = parent_op.downcast_ref::<While>() {
             let before_region = while_op.before().as_region_ref();
-            smallvec![RegionSuccessorInfo {
-                successor: RegionBranchPoint::Child(before_region),
-                key: None,
-                operand_group: 0,
-            }]
+            smallvec![RegionSuccessorInfo::Entering(before_region)]
         } else {
             panic!("unsupported parent operation for '{}': '{}'", self.name(), parent_op.name())
         }

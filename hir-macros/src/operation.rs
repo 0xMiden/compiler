@@ -51,6 +51,7 @@ pub struct OpDefinition {
     /// Keyed successor groups are handled a bit differently than "normal" successor groups in terms
     /// of the types expected by the op builder for this type.
     successors: Vec<SuccessorGroup>,
+    /// The symbolic references held by this op
     symbols: Vec<Symbol>,
     /// The struct definition
     op: syn::ItemStruct,
@@ -664,6 +665,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
             /// Manually construct a new [#op_ident]
             ///
             /// It is generally preferable to use [`::midenc_hir2::Builder::create`] instead.
+            #[allow(clippy::too_many_arguments)]
             pub fn create #impl_generics(
                 builder: &mut B,
                 span: ::midenc_session::diagnostics::SourceSpan,
@@ -726,7 +728,7 @@ impl quote::ToTokens for OpDefinition {
         tokens.extend(quote! {
             impl #impl_generics ::midenc_session::diagnostics::Spanned for #op_ident #ty_generics #where_clause {
                 fn span(&self) -> ::midenc_session::diagnostics::SourceSpan {
-                    self.op.span()
+                    ::midenc_session::diagnostics::Spanned::span(&self.op)
                 }
             }
         });
@@ -1012,19 +1014,19 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                     if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
                         if !self.op.is::<#ty>() {
                             return Err(::midenc_hir2::InvalidSymbolRefError::InvalidType {
-                                symbol: span,
+                                symbol: self.op.span(),
                                 expected: stringify!(#ty),
                                 got: self.op.name(),
                             });
                         }
-                    } else {
-                        if !symbol.borrow().is::<#ty>() {
-                            return Err(::midenc_hir2::InvalidSymbolRefError::InvalidType {
-                                symbol: span,
-                                expected: stringify!(#ty),
-                                got: symbol.as_symbol_operation().name(),
-                            });
-                        }
+                    } else if !symbol.borrow().is::<#ty>() {
+                        let symbol = symbol.borrow();
+                        let symbol_op = symbol.as_symbol_operation();
+                        return Err(::midenc_hir2::InvalidSymbolRefError::InvalidType {
+                            symbol: symbol_op.span(),
+                            expected: stringify!(#ty),
+                            got: symbol_op.name(),
+                        });
                     }
                 }],
                 _ => [quote! {}],
@@ -1051,6 +1053,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                             #[doc = #set_symbol_doc_lines]
                         )*
                         pub fn #set_symbol(&mut self, symbol: impl ::midenc_hir2::AsCallableSymbolRef) -> Result<(), ::midenc_hir2::InvalidSymbolRefError> {
+                            use ::midenc_hir2::Spanned;
                             let symbol = symbol.as_callable_symbol_ref();
                             let (data_ptr, _) = ::midenc_hir2::SymbolRef::as_ptr(&symbol).to_raw_parts();
                             if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
@@ -2332,7 +2335,12 @@ impl OpCreateParam {
                 SymbolType::Any | SymbolType::Callable | SymbolType::Trait(_) => {
                     vec![make_type(format!("T{}", name.to_string().to_pascal_case()))]
                 }
-                SymbolType::Concrete(ty) => vec![ty.clone()],
+                SymbolType::Concrete(ty) => vec![syn::Type::Reference(syn::TypeReference {
+                    and_token: Default::default(),
+                    lifetime: None,
+                    mutability: None,
+                    elem: Box::new(ty.clone()),
+                })],
             },
         }
     }
@@ -2477,7 +2485,7 @@ pub enum SymbolType {
     Any,
     /// Any `Symbol + CallableOpInterface` implementation can be used
     Callable,
-    /// Only the specific concrete type can be used, it must implement the `Symbol` trait
+    /// Only the specific concrete type can be used, it must implement `Op` and `Symbol` traits
     Concrete(syn::Type),
     /// Any implementation of the provided trait can be used.
     ///

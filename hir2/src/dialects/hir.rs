@@ -5,7 +5,10 @@ use alloc::rc::Rc;
 use core::cell::{Cell, RefCell};
 
 pub use self::{
-    builders::{DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase},
+    builders::{
+        ComponentBuilder, DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase,
+        ModuleBuilder,
+    },
     ops::*,
 };
 use crate::{

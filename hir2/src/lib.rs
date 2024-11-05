@@ -92,17 +92,8 @@ pub use self::{
 // TODO(pauls): The following is a rough list of what needs to be implemented for the IR
 // refactoring to be complete and usable in place of the old IR (some are optional):
 //
-// * constants and constant-like ops
-// * global variables and global ops
-// * Need to implement InferTypeOpInterface for all applicable ops
-// * Builders (i.e. component builder, interface builder, module builder, function builder, last is most important)
-//   NOTE: The underlying builder infra is done, so layering on the high-level builders is pretty simple
 // * canonicalization (optional)
 // * pattern matching/rewrites (needed for legalization/conversion, mostly complete, see below)
-//   - Need to provide implementations of stubbed out rewriter methods
-//   - Need to implement the GreedyRewritePatternDriver
-//   - Need to implement matchers
-// * dataflow analysis framework (required to replace old analyses)
 // * linking/global symbol resolution (required to replace old linker, partially implemented via symbols/symbol tables already)
 // * legalization/dialect conversion (required to convert between unstructured and structured control flow dialects at minimum)
 // * lowering
