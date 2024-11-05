@@ -1,3 +1,4 @@
+pub mod arena;
 pub mod smalldeque;
 pub mod smallmap;
 pub mod smallordset;
@@ -6,6 +7,7 @@ pub mod smallset;
 pub mod sparsemap;
 
 pub use self::{
+    arena::Arena,
     smalldeque::SmallDeque,
     smallmap::SmallMap,
     smallordset::SmallOrdSet,

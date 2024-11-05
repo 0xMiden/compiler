@@ -177,6 +177,15 @@ where
         self.items
     }
 
+    /// Drain items from the set
+    #[inline]
+    pub fn drain(
+        &mut self,
+        range: impl core::ops::RangeBounds<usize>,
+    ) -> impl Iterator<Item = T> + '_ {
+        self.items.drain(range)
+    }
+
     #[inline]
     fn find<Q>(&self, item: &Q) -> Option<usize>
     where
