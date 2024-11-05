@@ -64,6 +64,7 @@ mod attributes;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
+mod eq;
 mod folder;
 pub mod formatter;
 mod hash;
@@ -72,13 +73,14 @@ pub mod itertools;
 pub mod matchers;
 pub mod pass;
 mod patterns;
+pub mod version;
 
 pub use self::{
-    any::AsAny,
     attributes::{
         markers::*, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr, Overflow, SetAttr,
         Visibility,
     },
+    eq::DynPartialEq,
     folder::OperationFolder,
     hash::{DynHash, DynHasher},
     ir::*,

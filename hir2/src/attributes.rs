@@ -184,7 +184,7 @@ impl fmt::Display for Attribute {
 }
 
 pub trait AttributeValue:
-    Any + fmt::Debug + crate::formatter::PrettyPrint + crate::DynHash + 'static
+    Any + fmt::Debug + crate::formatter::PrettyPrint + crate::DynPartialEq + crate::DynHash + 'static
 {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -220,6 +220,16 @@ impl core::hash::Hash for dyn AttributeValue {
 
         let hashable = self as &dyn DynHash;
         hashable.dyn_hash(state);
+    }
+}
+
+impl Eq for dyn AttributeValue {}
+impl PartialEq for dyn AttributeValue {
+    fn eq(&self, other: &Self) -> bool {
+        use crate::DynPartialEq;
+
+        let partial_eqable = self as &dyn DynPartialEq;
+        partial_eqable.dyn_eq(other as &dyn DynPartialEq)
     }
 }
 
@@ -305,7 +315,7 @@ where
 }
 impl<K> AttributeValue for SetAttr<K>
 where
-    K: fmt::Debug + crate::formatter::PrettyPrint + Clone + core::hash::Hash + 'static,
+    K: fmt::Debug + crate::formatter::PrettyPrint + Clone + Eq + core::hash::Hash + 'static,
 {
     #[inline(always)]
     fn as_any(&self) -> &dyn Any {
@@ -428,8 +438,8 @@ where
 }
 impl<K, V> AttributeValue for DictAttr<K, V>
 where
-    K: fmt::Debug + crate::formatter::PrettyPrint + Clone + core::hash::Hash + 'static,
-    V: fmt::Debug + crate::formatter::PrettyPrint + Clone + core::hash::Hash + 'static,
+    K: fmt::Debug + crate::formatter::PrettyPrint + Clone + Eq + core::hash::Hash + 'static,
+    V: fmt::Debug + crate::formatter::PrettyPrint + Clone + Eq + core::hash::Hash + 'static,
 {
     #[inline(always)]
     fn as_any(&self) -> &dyn Any {
