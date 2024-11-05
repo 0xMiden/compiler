@@ -1,0 +1,85 @@
+use alloc::collections::VecDeque;
+use core::fmt;
+
+use super::{SymbolName, SymbolNameAttr};
+use crate::{EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
+
+pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
+pub type SymbolUseList = crate::EntityList<SymbolUse>;
+pub type SymbolUseIter<'a> = crate::EntityIter<'a, SymbolUse>;
+pub type SymbolUseCursor<'a> = crate::EntityCursor<'a, SymbolUse>;
+pub type SymbolUseCursorMut<'a> = crate::EntityCursorMut<'a, SymbolUse>;
+
+/// An [OpOperand] represents a use of a [Value] by an [Operation]
+pub struct SymbolUse {
+    /// The user of the symbol
+    pub owner: OperationRef,
+    /// The symbol attribute of the op that stores the symbol
+    pub attr: crate::interner::Symbol,
+}
+impl SymbolUse {
+    #[inline]
+    pub fn new(owner: OperationRef, symbol: crate::interner::Symbol) -> Self {
+        Self {
+            owner,
+            attr: symbol,
+        }
+    }
+
+    pub fn symbol(&self) -> EntityRef<'_, SymbolNameAttr> {
+        EntityRef::map(self.owner.borrow(), |owner| {
+            owner.get_typed_attribute::<SymbolNameAttr>(self.attr).expect("expected symbol")
+        })
+    }
+}
+impl fmt::Debug for SymbolUse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = self.owner.borrow();
+        let value = op.get_typed_attribute::<SymbolName>(self.attr);
+        f.debug_struct("SymbolUse")
+            .field("attr", &self.attr)
+            .field("symbol", &value)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An iterator over [SymbolUseRef] which owns the collection it iterates over.
+///
+/// This is primarily used in contexts where the set of symbol uses is being gathered from many
+/// places, and thus [SymbolUseIter] is not able to be used.
+pub struct SymbolUsesIter {
+    items: VecDeque<SymbolUseRef>,
+}
+impl SymbolUsesIter {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+impl ExactSizeIterator for SymbolUsesIter {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+impl From<VecDeque<SymbolUseRef>> for SymbolUsesIter {
+    fn from(items: VecDeque<SymbolUseRef>) -> Self {
+        Self { items }
+    }
+}
+impl FromIterator<SymbolUseRef> for SymbolUsesIter {
+    fn from_iter<T: IntoIterator<Item = SymbolUseRef>>(iter: T) -> Self {
+        Self {
+            items: iter.into_iter().collect(),
+        }
+    }
+}
+impl core::iter::FusedIterator for SymbolUsesIter {}
+impl Iterator for SymbolUsesIter {
+    type Item = SymbolUseRef;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.items.pop_front()
+    }
+}
