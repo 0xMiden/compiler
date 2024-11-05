@@ -1,3 +1,4 @@
+mod canonicalization;
 mod foldable;
 mod info;
 mod types;
@@ -6,6 +7,7 @@ use midenc_session::diagnostics::Severity;
 
 pub(crate) use self::info::TraitInfo;
 pub use self::{
+    canonicalization::Canonicalizable,
     foldable::{FoldResult, Foldable, OpFoldResult},
     types::*,
 };

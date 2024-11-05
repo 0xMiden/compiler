@@ -1211,6 +1211,19 @@ impl Operation {
     }
 }
 
+/// Canonicalization
+impl Operation {
+    /// Populates `rewrites` with the set of canonicalization patterns registered for this operation
+    #[inline]
+    pub fn populate_canonicalization_patterns(
+        &self,
+        rewrites: &mut crate::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        self.name.populate_canonicalization_patterns(rewrites, context);
+    }
+}
+
 impl crate::traits::Foldable for Operation {
     fn fold(&self, results: &mut smallvec::SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         use crate::traits::Foldable;

@@ -5,7 +5,11 @@ use core::{
     ptr::{DynMetadata, Pointee},
 };
 
-use crate::{interner, traits::TraitInfo, DialectName};
+use crate::{
+    interner,
+    traits::{Canonicalizable, TraitInfo},
+    Context, DialectName, RewritePatternSet,
+};
 
 /// The operation name, or mnemonic, that uniquely identifies an operation.
 ///
@@ -26,6 +30,8 @@ struct OperationInfo {
     /// traits are implemented, as well as reconstruct `&dyn Trait` references given a pointer to
     /// the data of a specific operation instance.
     traits: Box<[TraitInfo]>,
+    /// The implementation of `Canonicalizable::get_canonicalization_patterns` for this type
+    get_canonicalization_patterns: fn(&mut RewritePatternSet, Rc<Context>),
 }
 
 impl OperationName {
@@ -39,7 +45,14 @@ impl OperationName {
         let mut traits = traits.into_iter().collect::<Vec<_>>();
         traits.sort_by_key(|ti| *ti.type_id());
         let traits = traits.into_boxed_slice();
-        let info = Rc::new(OperationInfo::new(dialect, name.into(), type_id, traits));
+        let get_canonicalization_patterns = <O as Canonicalizable>::get_canonicalization_patterns;
+        let info = Rc::new(OperationInfo::new(
+            dialect,
+            name.into(),
+            type_id,
+            traits,
+            get_canonicalization_patterns,
+        ));
         Self(info)
     }
 
@@ -56,6 +69,15 @@ impl OperationName {
     /// Returns the name/opcode of this operation
     pub fn name(&self) -> interner::Symbol {
         self.0.name
+    }
+
+    /// Populates `rewrites` with the set of canonicalization patterns registered for this operation
+    pub fn populate_canonicalization_patterns(
+        &self,
+        rewrites: &mut RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        (self.0.get_canonicalization_patterns)(rewrites, context)
     }
 
     /// Returns true if `T` is the concrete type that implements this operation
@@ -153,12 +175,14 @@ impl OperationInfo {
         name: interner::Symbol,
         type_id: TypeId,
         traits: Box<[TraitInfo]>,
+        get_canonicalization_patterns: fn(&mut RewritePatternSet, Rc<Context>),
     ) -> Self {
         Self {
             dialect,
             name,
             type_id,
             traits,
+            get_canonicalization_patterns,
         }
     }
 }
