@@ -332,6 +332,36 @@ impl GreedyRewriteConfig {
         self.use_top_down_traversal = yes;
         self
     }
+
+    #[inline]
+    pub fn scope(&self) -> Option<RegionRef> {
+        self.scope.clone()
+    }
+
+    #[inline]
+    pub fn max_iterations(&self) -> Option<core::num::NonZeroU32> {
+        self.max_iterations
+    }
+
+    #[inline]
+    pub fn max_rewrites(&self) -> Option<core::num::NonZeroU32> {
+        self.max_rewrites
+    }
+
+    #[inline]
+    pub fn region_simplification_level(&self) -> RegionSimplificationLevel {
+        self.region_simplification
+    }
+
+    #[inline]
+    pub fn strictness(&self) -> GreedyRewriteStrictness {
+        self.restrict
+    }
+
+    #[inline]
+    pub fn use_top_down_traversal(&self) -> bool {
+        self.use_top_down_traversal
+    }
 }
 
 pub struct GreedyPatternRewriteDriver {

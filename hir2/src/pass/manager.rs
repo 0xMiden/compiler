@@ -276,6 +276,10 @@ impl OpPassManager {
         self.passes.len()
     }
 
+    pub fn is_op_agnostic(&self) -> bool {
+        self.name.is_none()
+    }
+
     pub fn clear(&mut self) {
         self.passes.clear();
     }
@@ -324,68 +328,82 @@ impl OpPassManager {
     }
 
     pub fn finalize_pass_list(&mut self) -> Result<(), Report> {
-        /*
-        auto finalizeAdaptor = [ctx](OpToOpPassAdaptor *adaptor) {
-          for (auto &pm : adaptor->getPassManagers())
-            if (failed(pm.getImpl().finalizePassList(ctx)))
-              return failure();
-          return success();
+        let finalize_adaptor = |adaptor: &mut OpToOpPassAdaptor| -> Result<(), Report> {
+            for pm in adaptor.pass_managers_mut() {
+                pm.finalize_pass_list()?;
+            }
+
+            Ok(())
         };
 
         // Walk the pass list and merge adjacent adaptors.
-        OpToOpPassAdaptor *lastAdaptor = nullptr;
-        for (auto &pass : passes) {
-          // Check to see if this pass is an adaptor.
-          if (auto *currentAdaptor = dyn_cast<OpToOpPassAdaptor>(pass.get())) {
-            // If it is the first adaptor in a possible chain, remember it and
-            // continue.
-            if (!lastAdaptor) {
-              lastAdaptor = currentAdaptor;
-              continue;
-            }
-
-            // Otherwise, try to merge into the existing adaptor and delete the
-            // current one. If merging fails, just remember this as the last adaptor.
-            if (succeeded(currentAdaptor->tryMergeInto(ctx, *lastAdaptor)))
-              pass.reset();
-            else
-              lastAdaptor = currentAdaptor;
-          } else if (lastAdaptor) {
-            // If this pass isn't an adaptor, finalize it and forget the last adaptor.
-            if (failed(finalizeAdaptor(lastAdaptor)))
-              return failure();
-            lastAdaptor = nullptr;
-          }
-        }
-
-        // If there was an adaptor at the end of the manager, finalize it as well.
-        if (lastAdaptor && failed(finalizeAdaptor(lastAdaptor)))
-          return failure();
-
-        // Now that the adaptors have been merged, erase any empty slots corresponding
-        // to the merged adaptors that were nulled-out in the loop above.
-        llvm::erase_if(passes, std::logical_not<std::unique_ptr<Pass>>());
+        let num_passes = self.passes.len();
+        let passes = core::mem::replace(&mut self.passes, SmallVec::with_capacity(num_passes));
+        let prev_adaptor = None::<Box<OpToOpPassAdaptor>>;
+        passes.into_iter().try_fold(
+            (&mut self.passes, prev_adaptor),
+            |(passes, prev), mut pass| {
+                // Is this pass an adaptor?
+                match pass.as_any_mut().downcast_mut::<OpToOpPassAdaptor>() {
+                    // Yes, merge it into the previous one if present, otherwise use this as the
+                    // first adaptor in a potential chain of them
+                    Some(adaptor) => match prev {
+                        Some(mut prev_adaptor) => {
+                            if adaptor.try_merge_into(&mut prev_adaptor) {
+                                Ok::<_, Report>((passes, Some(prev_adaptor)))
+                            } else {
+                                let current =
+                                    pass.into_any().downcast::<OpToOpPassAdaptor>().unwrap();
+                                Ok((passes, Some(current)))
+                            }
+                        }
+                        None => {
+                            let current = pass.into_any().downcast::<OpToOpPassAdaptor>().unwrap();
+                            Ok((passes, Some(current)))
+                        }
+                    },
+                    // This pass isn't an adaptor, but if we have one, we need to finalize it
+                    None => {
+                        match prev {
+                            Some(mut prev_adaptor) => {
+                                finalize_adaptor(&mut prev_adaptor)?;
+                                passes.push(prev_adaptor as Box<dyn OperationPass>);
+                                passes.push(pass);
+                            }
+                            None => {
+                                passes.push(pass);
+                            }
+                        }
+                        Ok((passes, None))
+                    }
+                }
+            },
+        )?;
 
         // If this is a op-agnostic pass manager, there is nothing left to do.
-        std::optional<OperationName> rawOpName = getOpName(*ctx);
-        if (!rawOpName)
-          return success();
+        match self.name.as_ref() {
+            None => Ok(()),
+            // Otherwise, verify that all of the passes are valid for the current operation anchor.
+            Some(name) => {
+                for pass in self.passes.iter() {
+                    if !pass.can_schedule_on(name) {
+                        return Err(self
+                            .context
+                            .session
+                            .diagnostics
+                            .diagnostic(Severity::Error)
+                            .with_message(format!(
+                                "unable to schedule pass '{}' on pass manager intended for \
+                                 '{name}'",
+                                pass.name()
+                            ))
+                            .into_report());
+                    }
+                }
 
-        // Otherwise, verify that all of the passes are valid for the current
-        // operation anchor.
-        std::optional<RegisteredOperationName> opName =
-            rawOpName->getRegisteredInfo();
-        for (std::unique_ptr<Pass> &pass : passes) {
-          if (opName && !pass->canScheduleOn(*opName)) {
-            return emitError(UnknownLoc::get(ctx))
-                   << "unable to schedule pass '" << pass->getName()
-                   << "' on a PassManager intended to run on '" << getOpAnchorName()
-                   << "'!";
-          }
+                Ok(())
+            }
         }
-        return success();
-        */
-        todo!()
     }
 
     pub fn name(&self) -> Option<&OperationName> {
@@ -445,6 +463,22 @@ impl OpPassManager {
             parent: self,
             nested: Some(adaptor),
         }
+    }
+
+    /// Prints out the passes of the pass manager as the textual representation of pipelines.
+    pub fn print_as_textual_pipeline(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        if let Some(anchor) = self.name() {
+            write!(f, "{anchor}(")?;
+        } else {
+            f.write_str("any(")?;
+        }
+        for (i, pass) in self.passes().iter().enumerate() {
+            if i > 0 {
+                f.write_str(",")?;
+            }
+            pass.print_as_textual_pipeline(f)?;
+        }
+        f.write_str(")")
     }
 
     pub fn print_statistics(
@@ -634,9 +668,63 @@ impl OpToOpPassAdaptor {
     /// other adaptor. For example, if this adaptor has a `hir.function` pipeline and `rhs` has an
     /// `any` pipeline that operates on a FunctionOpInterface. In this situation the pipelines have
     /// a conflict (they both want to run on the same operations), so we can't merge.
-    #[allow(unused)]
-    pub fn try_merge_into(&mut self, _rhs: &mut Self) -> bool {
-        todo!()
+    pub fn try_merge_into(&mut self, rhs: &mut Self) -> bool {
+        // Functor used to detect if the given generic pass manager will have a potential schedule
+        // conflict with the given `pms`.
+        let has_schedule_conflict_with = |generic_pm: &OpPassManager, pms: &[OpPassManager]| {
+            pms.iter().any(|pm| {
+                // If this is a non-generic pass manager, a conflict will arise if a non-generic
+                // pass manager's operation name can be scheduled on the generic passmanager.
+                if let Some(name) = pm.name() {
+                    generic_pm.can_schedule_on(name)
+                } else {
+                    // Otherwise, this is a generic pass manager. We current can't determine when
+                    // generic pass managers can be merged, so conservatively assume they conflict.
+                    true
+                }
+            })
+        };
+
+        // Check that if either adaptor has a generic pass manager, that pm is compatible within any
+        // non-generic pass managers.
+        //
+        // Check the current adaptor.
+        let lhs_generic = self.pass_managers().iter().find(|pm| pm.is_op_agnostic());
+        if lhs_generic.is_some_and(|pm| has_schedule_conflict_with(pm, rhs.pass_managers())) {
+            return false;
+        }
+
+        // Check the rhs adaptor.
+        let rhs_generic = self.pass_managers().iter().find(|pm| pm.is_op_agnostic());
+        if rhs_generic.is_some_and(|pm| has_schedule_conflict_with(pm, self.pass_managers())) {
+            return false;
+        }
+
+        for mut pm in self.pms.drain(..) {
+            // If an existing pass manager exists, then merge the given pass manager into it.
+            if let Some(existing) =
+                rhs.pass_managers_mut().iter_mut().find(|rpm| pm.name() == rpm.name())
+            {
+                pm.merge_into(existing);
+            } else {
+                // Otherwise, add the given pass manager to the list.
+                rhs.pms.push(pm);
+            }
+        }
+
+        // After coalescing, sort the pass managers within rhs by name.
+        rhs.pms.sort_by(|lhs, rhs| {
+            use core::cmp::Ordering;
+            // Order op-specific pass managers first and op-agnostic pass managers last.
+            match (lhs.name(), rhs.name()) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(lhs), Some(rhs)) => lhs.cmp(rhs),
+            }
+        });
+
+        true
     }
 
     pub fn pass_managers(&self) -> &[OpPassManager] {
@@ -815,8 +903,13 @@ impl OpToOpPassAdaptor {
         result
     }
 
-    fn verify(_op: &OperationRef, _verify_recursively: bool) -> Result<(), Report> {
-        todo!()
+    fn verify(op: &OperationRef, verify_recursively: bool) -> Result<(), Report> {
+        let op = op.borrow();
+        if verify_recursively {
+            op.recursively_verify()
+        } else {
+            op.verify()
+        }
     }
 
     fn run_on_operation(
@@ -876,17 +969,15 @@ impl Pass for OpToOpPassAdaptor {
     }
 
     fn print_as_textual_pipeline(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{}", &self.name())
-    }
+        let pms = self.pass_managers();
+        for (i, pm) in pms.iter().enumerate() {
+            if i > 0 {
+                f.write_str(",")?;
+            }
+            pm.print_as_textual_pipeline(f)?;
+        }
 
-    #[inline(always)]
-    fn statistics(&self) -> &[Box<dyn Statistic>] {
-        &[]
-    }
-
-    #[inline(always)]
-    fn statistics_mut(&mut self) -> &mut [Box<dyn Statistic>] {
-        &mut []
+        Ok(())
     }
 
     #[inline(always)]
@@ -900,14 +991,5 @@ impl Pass for OpToOpPassAdaptor {
         _state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         unreachable!("unexpected call to `Pass::run_on_operation` for OpToOpPassAdaptor")
-    }
-
-    fn run_pipeline(
-        &mut self,
-        _pipeline: &mut OpPassManager,
-        _op: OperationRef,
-        _state: &mut PassExecutionState,
-    ) -> Result<(), Report> {
-        todo!()
     }
 }

@@ -13,6 +13,7 @@ use crate::{Context, EntityMut, OperationName, OperationRef, Report};
 pub trait OperationPass {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
     fn name(&self) -> &'static str;
     fn argument(&self) -> &'static str {
         // NOTE: Could we compute an argument string from the type name?
@@ -62,6 +63,10 @@ where
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         <P as Pass>::as_any_mut(self)
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        <P as Pass>::into_any(self)
     }
 
     fn name(&self) -> &'static str {
@@ -151,11 +156,17 @@ pub trait Pass: Sized + Any {
         self as &mut dyn Any
     }
 
+    /// Used for downcasting
+    #[inline(always)]
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self as Box<dyn Any>
+    }
+
     /// The display name of this pass
     fn name(&self) -> &'static str;
     /// The command line option name used to control this pass
     fn argument(&self) -> &'static str {
-        // NOTE: Could we compute an argument string from the type name?
+        // NOTE: Could we compute an argument string from the type name or `self.name()`?
         ""
     }
     /// A description of what this pass does.
@@ -177,16 +188,29 @@ pub trait Pass: Sized + Any {
     fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
         Ok(())
     }
-    /// Print this pass as a textual pipeline.
-    fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result;
+    /// Prints out the pass in the textual representation of pipelines.
+    ///
+    /// If this is an adaptor pass, print its pass managers.
+    fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let argument = self.argument();
+        if !argument.is_empty() {
+            write!(f, "{argument}")
+        } else {
+            write!(f, "unknown<{}>", self.name())
+        }
+    }
     /// Returns true if this pass has associated statistics
     fn has_statistics(&self) -> bool {
         !self.statistics().is_empty()
     }
     /// Get pass statistics associated with this pass
-    fn statistics(&self) -> &[Box<dyn Statistic>];
+    fn statistics(&self) -> &[Box<dyn Statistic>] {
+        &[]
+    }
     /// Get mutable access to the pass statistics associated with this pass
-    fn statistics_mut(&mut self) -> &mut [Box<dyn Statistic>];
+    fn statistics_mut(&mut self) -> &mut [Box<dyn Statistic>] {
+        &mut []
+    }
     /// Initialize any complex state necessary for running this pass.
     ///
     /// This hook should not rely on any state accessible during the execution of a pass. For
@@ -208,13 +232,18 @@ pub trait Pass: Sized + Any {
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report>;
-    /// Run this pass as part of `pipeline` on `op`
+    /// Schedule an arbitrary pass pipeline on the provided operation.
+    ///
+    /// This can be invoke any time in a pass to dynamic schedule more passes. The provided
+    /// operation must be the current one or one nested below.
     fn run_pipeline(
         &mut self,
         pipeline: &mut OpPassManager,
         op: OperationRef,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report>;
+    ) -> Result<(), Report> {
+        state.run_pipeline(pipeline, op)
+    }
 }
 
 impl<P> Pass for Box<P>
@@ -229,6 +258,11 @@ where
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         (**self).as_any_mut()
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        let pass = Box::into_inner(self);
+        <P as Pass>::into_any(pass)
     }
 
     #[inline]
@@ -367,5 +401,17 @@ impl PassExecutionState {
     #[inline(always)]
     pub fn preserved_analyses_mut(&mut self) -> &mut PreservedAnalyses {
         &mut self.preserved_analyses
+    }
+
+    pub fn run_pipeline(
+        &mut self,
+        pipeline: &mut OpPassManager,
+        op: OperationRef,
+    ) -> Result<(), Report> {
+        if let Some(pipeline_executor) = self.pipeline_executor.as_deref_mut() {
+            pipeline_executor(pipeline, op)
+        } else {
+            Ok(())
+        }
     }
 }

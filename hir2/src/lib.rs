@@ -17,6 +17,7 @@
 #![feature(tuple_trait)]
 #![feature(fn_traits)]
 #![feature(unboxed_closures)]
+#![feature(box_into_inner)]
 #![feature(const_type_id)]
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]

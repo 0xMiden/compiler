@@ -82,8 +82,8 @@ impl<T, C: TypeConstraint> crate::Verify<dyn Variadic<C>> for T
 where
     T: crate::Op + Variadic<C>,
 {
-    fn verify(&self, context: &Context) -> Result<(), Report> {
-        self.as_operation().verify(context)
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        self.as_operation().verify()
     }
 }
 impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {

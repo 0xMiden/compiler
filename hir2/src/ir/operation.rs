@@ -264,19 +264,19 @@ impl Operation {
 /// Verification
 impl Operation {
     /// Run any verifiers for this operation
-    pub fn verify(&self, context: &Context) -> Result<(), Report> {
+    pub fn verify(&self) -> Result<(), Report> {
         let dyn_op: &dyn Op = self.as_ref();
-        dyn_op.verify(context)
+        dyn_op.verify(self.context())
     }
 
     /// Run any verifiers for this operation, and all of its nested operations, recursively.
     ///
     /// The verification is performed in post-order, so that when the verifier(s) for `self` are
     /// run, it is known that all of its children have successfully verified.
-    pub fn recursively_verify(&self, context: &Context) -> Result<(), Report> {
+    pub fn recursively_verify(&self) -> Result<(), Report> {
         self.postwalk_interruptible(|op: OperationRef| {
             let op = op.borrow();
-            op.verify(context).into()
+            op.verify().into()
         })
         .into_result()
     }
