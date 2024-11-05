@@ -1,6 +1,11 @@
 use core::{any::Any, marker::Unsize};
 
 pub trait AsAny: Any + Unsize<dyn Any> {
+    #[inline]
+    fn type_name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+    }
+
     #[inline(always)]
     fn as_any(&self) -> &dyn Any {
         self
