@@ -3488,6 +3488,7 @@ dependencies = [
  "pretty_assertions",
  "rustc-demangle",
  "rustc-hash",
+ "semver 1.0.23",
  "serde 1.0.210",
  "serde_bytes",
  "serde_repr",
