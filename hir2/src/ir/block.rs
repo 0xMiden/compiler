@@ -97,6 +97,12 @@ impl fmt::Debug for Block {
     }
 }
 
+impl Spanned for Block {
+    fn span(&self) -> SourceSpan {
+        self.body.front().get().map(|op| op.span()).unwrap_or_default()
+    }
+}
+
 impl Entity for Block {}
 
 impl EntityWithId for Block {
