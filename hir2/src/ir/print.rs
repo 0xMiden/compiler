@@ -5,7 +5,7 @@ use crate::{
     formatter::PrettyPrint,
     matchers::Matcher,
     traits::{SingleBlock, SingleRegion},
-    CallableOpInterface, EntityWithId, Value,
+    CallableOpInterface, EntityWithId, Op, Value,
 };
 
 #[derive(Default)]
@@ -21,6 +21,28 @@ pub trait OpPrinter {
         context: &Context,
         f: &mut fmt::Formatter,
     ) -> fmt::Result;
+}
+
+impl<T: Op> OpPrinter for T {
+    default fn print(
+        &self,
+        flags: &OpPrintingFlags,
+        context: &Context,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result {
+        <Operation as OpPrinter>::print(self.as_operation(), flags, context, f)
+    }
+}
+
+impl<T: PrettyPrint + Op> OpPrinter for T {
+    default fn print(
+        &self,
+        _flags: &OpPrintingFlags,
+        _context: &Context,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result {
+        PrettyPrint::pretty_print(self, f)
+    }
 }
 
 impl OpPrinter for Operation {
