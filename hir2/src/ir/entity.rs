@@ -625,6 +625,7 @@ impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
     }
 }
 impl<'b, T: ?Sized> EntityRef<'b, T> {
+    /// Map this reference to a derived reference.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> EntityRef<'b, U>
     where
@@ -634,6 +635,28 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
             value: NonNull::from(f(&*orig)),
             borrow: orig.borrow,
         }
+    }
+
+    /// Project this borrow into a owned (but semantically borrowed) value that inherits ownership
+    /// of the underlying borrow.
+    pub fn project<U, F>(orig: Self, f: F) -> EntityProjection<'b, U>
+    where
+        F: FnOnce(&T) -> U,
+    {
+        EntityProjection {
+            value: f(&*orig),
+            borrow: orig.borrow,
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn into_borrow_ref(self) -> BorrowRef<'b> {
+        self.borrow
+    }
+
+    #[allow(unused)]
+    pub(crate) fn from_raw_parts(value: NonNull<T>, borrow: BorrowRef<'b>) -> Self {
+        Self { value, borrow }
     }
 }
 
@@ -713,6 +736,7 @@ pub struct EntityMut<'b, T: ?Sized> {
     _marker: core::marker::PhantomData<&'b mut T>,
 }
 impl<'b, T: ?Sized> EntityMut<'b, T> {
+    /// Map this mutable reference to a derived mutable reference.
     #[inline]
     pub fn map<U: ?Sized, F>(mut orig: Self, f: F) -> EntityMut<'b, U>
     where
@@ -723,6 +747,18 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
             value,
             borrow: orig.borrow,
             _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Project this mutable borrow into a owned (but semantically borrowed) value that inherits
+    /// ownership of the underlying mutable borrow.
+    pub fn project<U, F>(mut orig: Self, f: F) -> EntityProjectionMut<'b, U>
+    where
+        F: FnOnce(&mut T) -> U,
+    {
+        EntityProjectionMut {
+            value: f(&mut *orig),
+            borrow: orig.borrow,
         }
     }
 
@@ -774,6 +810,20 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
                 _marker: core::marker::PhantomData,
             },
         )
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn into_borrow_ref_mut(self) -> BorrowRefMut<'b> {
+        self.borrow
+    }
+
+    #[allow(unused)]
+    pub(crate) fn from_raw_parts(value: NonNull<T>, borrow: BorrowRefMut<'b>) -> Self {
+        Self {
+            value,
+            borrow,
+            _marker: core::marker::PhantomData,
+        }
     }
 }
 impl<T: ?Sized> Deref for EntityMut<'_, T> {
@@ -854,6 +904,196 @@ impl<T: ?Sized + Hash> Hash for EntityMut<'_, T> {
     }
 }
 
+/// Represents a projection of an [EntityRef] into an owned value.
+///
+/// This retains the lifetime of the borrow, while allowing the projection itself to be owned. This
+/// is useful in cases where you would like to return a value derived from an [EntityRef] from a
+/// function, when the borrowed entity outlives the function itself. Since [EntityRef] can only
+/// represent references, deriving owned (but semantically borrowed) values from an [EntityRef]
+/// cannot be returned from an enclosing function, unlike if the value was a reference.
+///
+/// NOTE: An [EntityProjection] takes ownership of the [EntityRef] from which it was derived, and
+/// propagates the lifetime of the borrowed entity. When this type is dropped, so is the original
+/// borrow.
+pub struct EntityProjection<'b, T: 'b> {
+    borrow: BorrowRef<'b>,
+    value: T,
+}
+impl<T> core::ops::Deref for EntityProjection<'_, T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+impl<T> core::ops::DerefMut for EntityProjection<'_, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+impl<'b, T> EntityProjection<'b, T> {
+    pub fn map<U, F>(orig: Self, f: F) -> EntityProjection<'b, U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        EntityProjection {
+            value: f(orig.value),
+            borrow: orig.borrow,
+        }
+    }
+}
+impl<T: fmt::Debug> fmt::Debug for EntityProjection<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.value, f)
+    }
+}
+impl<T: fmt::Display> fmt::Display for EntityProjection<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.value, f)
+    }
+}
+impl<T: crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityProjection<'_, T> {
+    #[inline]
+    fn render(&self) -> crate::formatter::Document {
+        crate::formatter::PrettyPrint::render(&self.value)
+    }
+}
+impl<T: Eq> Eq for EntityProjection<'_, T> {}
+impl<T: PartialEq> PartialEq for EntityProjection<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+impl<T: PartialOrd> PartialOrd for EntityProjection<'_, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.value.ge(&other.value)
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        self.value.gt(&other.value)
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.value.le(&other.value)
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.value.lt(&other.value)
+    }
+}
+impl<T: Ord> Ord for EntityProjection<'_, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+impl<T: Hash> Hash for EntityProjection<'_, T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
+    }
+}
+
+/// Represents a projection of an [EntityMut] into an owned value.
+///
+/// This retains the lifetime of the borrow, while allowing the projection itself to be owned. This
+/// is useful in cases where you would like to return a value derived from an [EntityMut] from a
+/// function, when the borrowed entity outlives the function itself. Since [EntityMut] can only
+/// represent references, deriving owned (but semantically borrowed) values from an [EntityMut]
+/// cannot be returned from an enclosing function, unlike if the value was a reference.
+///
+/// NOTE: An [EntityProjectionMut] takes ownership of the [EntityMut] from which it was derived, and
+/// propagates the lifetime of the borrowed entity. When this type is dropped, so is the original
+/// borrow.
+pub struct EntityProjectionMut<'b, T: 'b> {
+    borrow: BorrowRefMut<'b>,
+    value: T,
+}
+impl<T> core::ops::Deref for EntityProjectionMut<'_, T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+impl<T> core::ops::DerefMut for EntityProjectionMut<'_, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+impl<'b, T> EntityProjectionMut<'b, T> {
+    pub fn map<U, F>(orig: Self, f: F) -> EntityProjectionMut<'b, U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        EntityProjectionMut {
+            value: f(orig.value),
+            borrow: orig.borrow,
+        }
+    }
+}
+impl<T: fmt::Debug> fmt::Debug for EntityProjectionMut<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.value, f)
+    }
+}
+impl<T: fmt::Display> fmt::Display for EntityProjectionMut<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.value, f)
+    }
+}
+impl<T: crate::formatter::PrettyPrint> crate::formatter::PrettyPrint
+    for EntityProjectionMut<'_, T>
+{
+    #[inline]
+    fn render(&self) -> crate::formatter::Document {
+        crate::formatter::PrettyPrint::render(&self.value)
+    }
+}
+impl<T: Eq> Eq for EntityProjectionMut<'_, T> {}
+impl<T: PartialEq> PartialEq for EntityProjectionMut<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+impl<T: PartialOrd> PartialOrd for EntityProjectionMut<'_, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.value.ge(&other.value)
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        self.value.gt(&other.value)
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.value.le(&other.value)
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.value.lt(&other.value)
+    }
+}
+impl<T: Ord> Ord for EntityProjectionMut<'_, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+impl<T: Hash> Hash for EntityProjectionMut<'_, T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
+    }
+}
+
 // This type wraps the entity data with extra metadata we want to associate with the entity, but
 // separately from it, so that pointers to the metadata do not cause aliasing violations if the
 // entity itself is borrowed.
@@ -883,12 +1123,12 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
     }
 }
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
-    pub(self) fn borrow(&self) -> EntityRef<'_, T> {
+    pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
         let ptr = self as *const Self;
         unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
     }
 
-    pub(self) fn borrow_mut(&self) -> EntityMut<'_, T> {
+    pub(crate) fn borrow_mut(&self) -> EntityMut<'_, T> {
         let ptr = (self as *const Self).cast_mut();
         unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() }
     }
@@ -935,7 +1175,7 @@ fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layo
 /// checking functionality for [UnsafeEntityRef], thereby protecting the entity by ensuring that
 /// all accesses adhere to Rust's aliasing rules.
 #[repr(C)]
-struct RawEntity<T: ?Sized> {
+pub(crate) struct RawEntity<T: ?Sized> {
     borrow: Cell<BorrowFlag>,
     #[cfg(debug_assertions)]
     borrowed_at: Cell<Option<&'static core::panic::Location<'static>>>,
@@ -951,9 +1191,44 @@ impl<T> RawEntity<T> {
             cell: UnsafeCell::new(value),
         }
     }
+
+    #[allow(unused)]
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) fn entity_addr(&self) -> *mut T {
+        self.cell.get()
+    }
+
+    #[allow(unused)]
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) const fn entity_offset(&self) -> usize {
+        core::mem::offset_of!(Self, cell)
+    }
+}
+
+impl<T, U> core::ops::CoerceUnsized<RawEntity<U>> for RawEntity<T> where
+    T: core::ops::CoerceUnsized<U>
+{
 }
 
 impl<T: ?Sized> RawEntity<T> {
+    #[allow(unused)]
+    pub unsafe fn borrow_unsafe(&self) -> (NonNull<T>, BorrowRef<'_>) {
+        match self.try_borrow() {
+            Ok(b) => (b.value, b.into_borrow_ref()),
+            Err(err) => panic_aliasing_violation(err),
+        }
+    }
+
+    /// Return true if the underlying entity can be exclusively borrowed
+    pub unsafe fn borrow_mut_unsafe(&self) -> (NonNull<T>, BorrowRefMut<'_>) {
+        match self.try_borrow_mut() {
+            Ok(b) => (b.value, b.into_borrow_ref_mut()),
+            Err(err) => panic_aliasing_violation(err),
+        }
+    }
+
     #[track_caller]
     #[inline]
     pub fn borrow(&self) -> EntityRef<'_, T> {
@@ -1027,7 +1302,8 @@ impl<T: ?Sized> RawEntity<T> {
     }
 }
 
-struct BorrowRef<'b> {
+#[doc(hidden)]
+pub(crate) struct BorrowRef<'b> {
     borrow: &'b Cell<BorrowFlag>,
 }
 impl<'b> BorrowRef<'b> {
@@ -1079,7 +1355,8 @@ impl Clone for BorrowRef<'_> {
     }
 }
 
-struct BorrowRefMut<'b> {
+#[doc(hidden)]
+pub(crate) struct BorrowRefMut<'b> {
     borrow: &'b Cell<BorrowFlag>,
 }
 impl Drop for BorrowRefMut<'_> {
@@ -1091,6 +1368,16 @@ impl Drop for BorrowRefMut<'_> {
     }
 }
 impl<'b> BorrowRefMut<'b> {
+    /// Consume this mutable borrow and convert it into a immutable one without releasing it
+    #[allow(unused)]
+    pub(crate) fn into_borrow_ref(self) -> BorrowRef<'b> {
+        let borrow = self.borrow;
+        debug_assert!(borrow.get().is_writing());
+        borrow.set(borrow.get() + 2);
+        core::mem::forget(self);
+        BorrowRef { borrow }
+    }
+
     #[inline]
     fn new(borrow: &'b Cell<BorrowFlag>) -> Option<Self> {
         // NOTE: Unlike BorrowRefMut::clone, new is called to create the initial
@@ -1134,6 +1421,11 @@ impl BorrowFlag {
     const MAX: Self = Self(isize::MAX);
     const MIN: Self = Self(isize::MIN);
     const UNUSED: Self = Self(0);
+
+    #[allow(unused)]
+    pub fn is_unused(&self) -> bool {
+        self.0 == Self::UNUSED.0
+    }
 
     pub fn is_writing(&self) -> bool {
         self.0 < Self::UNUSED.0

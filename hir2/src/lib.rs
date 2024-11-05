@@ -3,6 +3,7 @@
 #![feature(coerce_unsized)]
 #![feature(unsize)]
 #![feature(ptr_metadata)]
+#![feature(ptr_as_uninit)]
 #![feature(layout_for_ptr)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
@@ -62,6 +63,7 @@ pub mod adt;
 mod any;
 mod attributes;
 pub mod constants;
+pub mod dataflow;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
