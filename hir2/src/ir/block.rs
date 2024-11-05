@@ -1101,6 +1101,11 @@ impl fmt::Debug for BlockOperand {
             .finish()
     }
 }
+impl fmt::Display for BlockOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.block_id())
+    }
+}
 impl StorableEntity for BlockOperand {
     #[inline(always)]
     fn index(&self) -> usize {
