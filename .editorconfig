@@ -10,13 +10,8 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
-[*.rs]
-
 [*.yml]
 ident_size = 2
-
-[*.hir]
-indent_size = 4
 
 [*.toml]
 indent_size = 4
