@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeMap, rc::Rc};
+use alloc::{collections::BTreeMap, rc::Rc, sync::Arc};
 use core::{
     cell::{Cell, RefCell},
     mem::MaybeUninit,
@@ -8,6 +8,7 @@ use blink_alloc::Blink;
 use midenc_session::Session;
 
 use super::*;
+use crate::constants::{ConstantData, ConstantId, ConstantPool};
 
 /// Represents the shared state of the IR, used during a compilation session.
 ///
@@ -25,9 +26,9 @@ pub struct Context {
     pub session: Rc<Session>,
     allocator: Rc<Blink>,
     registered_dialects: RefCell<BTreeMap<DialectName, Rc<dyn Dialect>>>,
+    constants: RefCell<ConstantPool>,
     next_block_id: Cell<u32>,
     next_value_id: Cell<u32>,
-    //pub constants: ConstantPool,
 }
 
 impl Default for Context {
@@ -53,9 +54,9 @@ impl Context {
             session,
             allocator,
             registered_dialects: Default::default(),
+            constants: Default::default(),
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
-            //constants: Default::default(),
         }
     }
 
@@ -82,6 +83,19 @@ impl Context {
                 dialect
             }
         }
+    }
+
+    pub fn create_constant(&self, data: impl Into<ConstantData>) -> ConstantId {
+        let mut constants = self.constants.borrow_mut();
+        constants.insert(data.into())
+    }
+
+    pub fn get_constant(&self, id: ConstantId) -> Arc<ConstantData> {
+        self.constants.borrow().get(id)
+    }
+
+    pub fn get_constant_size_in_bytes(&self, id: ConstantId) -> usize {
+        self.constants.borrow().get_by_ref(id).len()
     }
 
     /// Get a new [OpBuilder] for this context

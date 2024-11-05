@@ -61,6 +61,7 @@ pub use rustc_hash::{FxBuildHasher, FxHasher};
 pub mod adt;
 mod any;
 mod attributes;
+pub mod constants;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
