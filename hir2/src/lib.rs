@@ -77,6 +77,7 @@ pub mod itertools;
 pub mod matchers;
 pub mod pass;
 mod patterns;
+pub mod transforms;
 pub mod version;
 
 pub use self::{
