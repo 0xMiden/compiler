@@ -604,6 +604,12 @@ impl<T: ?Sized + StorableEntity, Metadata> StorableEntity for RawEntityRef<T, Me
         self.borrow_mut().unlink()
     }
 }
+impl<T: ?Sized + crate::Spanned, Metadata> crate::Spanned for RawEntityRef<T, Metadata> {
+    #[inline]
+    fn span(&self) -> crate::SourceSpan {
+        self.borrow().span()
+    }
+}
 
 /// A guard that ensures a reference to an IR entity cannot be mutably aliased
 pub struct EntityRef<'b, T: ?Sized + 'b> {
