@@ -5,8 +5,9 @@ use smallvec::SmallVec;
 
 use crate::{
     dataflow::{
-        sparse, AnalysisStateGuard, DataFlowSolver, Lattice, LatticeValue,
-        SparseForwardDataFlowAnalysis, SparseLattice,
+        sparse::{self, SparseDataFlowAnalysis},
+        AnalysisStateGuard, BuildableDataFlowAnalysis, DataFlowSolver, Forward, Lattice,
+        LatticeValue, SparseForwardDataFlowAnalysis, SparseLattice,
     },
     traits::Foldable,
     AttributeValue, Dialect, EntityRef, OpFoldResult, Operation, Report,
@@ -130,6 +131,15 @@ impl LatticeValue for ConstantValue {
 /// commonly abbreviated as _SCCP_.
 #[derive(Default)]
 pub struct SparseConstantPropagation;
+
+impl BuildableDataFlowAnalysis for SparseConstantPropagation {
+    type Strategy = SparseDataFlowAnalysis<Self, Forward>;
+
+    #[inline(always)]
+    fn new(_solver: &mut DataFlowSolver) -> Self {
+        Self
+    }
+}
 
 impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
     type Lattice = Lattice<ConstantValue>;

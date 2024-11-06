@@ -10,7 +10,7 @@ use super::{
     analysis::state::{AnalysisStateDescriptor, AnalysisStateInfo, AnalysisStateKey},
     *,
 };
-use crate::{EntityRef, FxHashMap, InsertionPoint, OperationRef, Report};
+use crate::{EntityRef, FxHashMap, InsertionPoint, Operation, Report};
 
 pub type AnalysisQueue = VecDeque<QueuedAnalysis, DataFlowSolverAlloc>;
 
@@ -70,6 +70,11 @@ pub struct DataFlowSolver {
     /// data structures without custom allocator support, or ad-hoc items which we don't want
     /// attached to the solver lifetime.
     alloc: DataFlowSolverAlloc,
+}
+impl Default for DataFlowSolver {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
 }
 impl DataFlowSolver {
     /// Create a new solver instance with the provided configuration
@@ -164,7 +169,7 @@ impl DataFlowSolver {
     /// impose a limit on the number of iterations performed, though we may introduce such limits,
     /// or other forms of sanity checks in the future.
     #[track_caller]
-    pub fn initialize_and_run(&mut self, op: OperationRef) -> Result<(), Report> {
+    pub fn initialize_and_run(&mut self, op: &Operation) -> Result<(), Report> {
         // If we have no analyses, there is nothing to do
         if self.child_analyses.is_empty() {
             // Log a warning when this happens, since the calling code might benefit from not
@@ -174,7 +179,7 @@ impl DataFlowSolver {
             return Ok(());
         }
 
-        self.analyze(op.clone())?;
+        self.analyze(op)?;
         self.run_to_fixpoint()
     }
 
@@ -186,11 +191,11 @@ impl DataFlowSolver {
     ///
     /// Once initialization is complete, every analysis has been run exactly once, but some may have
     /// been re-enqueued due to dependencies on analysis states which changed during initialization.
-    fn analyze(&mut self, op: OperationRef) -> Result<(), Report> {
+    fn analyze(&mut self, op: &Operation) -> Result<(), Report> {
         for mut analysis in core::mem::take(&mut self.child_analyses) {
             // priming analysis {analysis.debug_name()}
             unsafe {
-                analysis.as_mut().initialize(&op.borrow(), self)?;
+                analysis.as_mut().initialize(op, self)?;
             }
         }
 
