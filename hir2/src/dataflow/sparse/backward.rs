@@ -62,7 +62,7 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     fn set_to_exit_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
 }
 
-fn set_all_to_exit_states<A>(
+pub fn set_all_to_exit_states<A>(
     analysis: &A,
     lattices: &mut [AnalysisStateGuard<'_, <A as SparseBackwardDataFlowAnalysis>::Lattice>],
 ) where

@@ -1,12 +1,12 @@
-mod analyses;
+pub mod analyses;
 mod analysis;
 mod anchor;
 mod change_result;
 mod config;
-mod dense;
+pub mod dense;
 mod program_point;
 mod solver;
-mod sparse;
+pub mod sparse;
 
 use self::anchor::LatticeAnchorExt;
 pub use self::{

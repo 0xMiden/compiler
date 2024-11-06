@@ -3,8 +3,8 @@ mod forward;
 mod lattice;
 
 pub use self::{
-    backward::SparseBackwardDataFlowAnalysis,
-    forward::SparseForwardDataFlowAnalysis,
+    backward::{set_all_to_exit_states, SparseBackwardDataFlowAnalysis},
+    forward::{set_all_to_entry_states, SparseForwardDataFlowAnalysis},
     lattice::{Lattice, LatticeValue, SparseLattice},
 };
 use super::{

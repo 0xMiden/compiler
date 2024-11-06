@@ -74,7 +74,7 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
     fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
 }
 
-fn set_all_to_entry_states<A>(
+pub fn set_all_to_entry_states<A>(
     analysis: &A,
     lattices: &mut [AnalysisStateGuard<'_, <A as SparseForwardDataFlowAnalysis>::Lattice>],
 ) where

@@ -1,7 +1,16 @@
 use alloc::rc::Rc;
 use core::fmt;
 
-use crate::{dataflow::LatticeValue, AttributeValue, Dialect};
+use smallvec::SmallVec;
+
+use crate::{
+    dataflow::{
+        sparse, AnalysisStateGuard, DataFlowSolver, Lattice, LatticeValue,
+        SparseForwardDataFlowAnalysis, SparseLattice,
+    },
+    traits::Foldable,
+    AttributeValue, Dialect, EntityRef, OpFoldResult, Operation, Report,
+};
 
 /// This lattice value represents a known constant value of a lattice.
 #[derive(Default)]
@@ -110,5 +119,81 @@ impl LatticeValue for ConstantValue {
 
     fn meet(&self, _other: &Self) -> Self {
         self.clone()
+    }
+}
+
+/// This analysis implements sparse constant propagation, which attempts to determine constant-
+/// valued results for operations using constant-valued operands, by speculatively folding
+/// operations.
+///
+/// When combined with dead-code analysis, this becomes sparse conditional constant propagation,
+/// commonly abbreviated as _SCCP_.
+#[derive(Default)]
+pub struct SparseConstantPropagation;
+
+impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
+    type Lattice = Lattice<ConstantValue>;
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        operands: &[EntityRef<'_, Self::Lattice>],
+        results: &mut [AnalysisStateGuard<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        log::debug!("sparse-constant-propagation: visiting operation '{}'", op.name());
+
+        // Don't try to simulate the results of a region operation as we can't guarantee that
+        // folding will be out-of-place. We don't allow in-place folds as the desire here is for
+        // simulated execution, and not general folding.
+        if op.has_regions() {
+            sparse::set_all_to_entry_states(self, results);
+            return Ok(());
+        }
+
+        let mut constant_operands =
+            SmallVec::<[Option<Box<dyn AttributeValue>>; 8]>::with_capacity(op.num_operands());
+        for operand_lattice in operands.iter() {
+            if operand_lattice.value().is_uninitialized() {
+                return Ok(());
+            }
+            constant_operands.push(operand_lattice.value().constant_value());
+        }
+
+        // Save the original operands and attributes just in case the operation folds in-place.
+        // The constant passed in may not correspond to the real runtime value, so in-place updates
+        // are not allowed.
+        //
+        // Simulate the result of folding this operation to a constant. If folding fails or would be
+        // an in-place fold, mark the results as overdefined.
+        let mut fold_results = SmallVec::with_capacity(op.num_results());
+        let fold_result = op.fold(&mut fold_results);
+        if matches!(fold_result, crate::FoldResult::Failed | crate::FoldResult::InPlace) {
+            sparse::set_all_to_entry_states(self, results);
+            return Ok(());
+        }
+
+        // Merge the fold results into the lattice for this operation.
+        assert_eq!(fold_results.len(), op.num_results());
+        for (lattice, fold_result) in results.iter_mut().zip(fold_results.into_iter()) {
+            // Merge in the result of the fold, either a constant or a value.
+            match fold_result {
+                OpFoldResult::Attribute(value) => {
+                    log::trace!("folded to constant: {}", value.render());
+                    lattice.join(&ConstantValue::new(value, op.dialect()));
+                }
+                OpFoldResult::Value(value) => {
+                    log::trace!("folded to value: {value}");
+                    lattice
+                        .join(solver.get_or_create_mut::<Lattice<ConstantValue>, _>(value).value());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>) {
+        lattice.join(&ConstantValue::unknown());
     }
 }
