@@ -42,11 +42,46 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
         op: &Operation,
         after: &Self::Lattice,
         before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
     /// Set the dense lattice before the control flow exit point and propagate an update if it
     /// changed.
-    fn set_to_exit_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
+    fn set_to_exit_state(
+        &self,
+        lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    );
+
+    /// Propagate the dense lattice backward along the control flow edge represented by `from` and
+    /// `to`, which is known to be the result of intra-region control flow, i.e. via
+    /// [BranchOpInterface]. This is invoked when visiting blocks, rather than the terminators of
+    /// those blocks.
+    ///
+    /// The default implementation just invokes `meet` on the states, meaning that operations
+    /// implementing [BranchOpInterface] don't have any effect on the lattice that isn't already
+    /// expressed by the interface itself.
+    ///
+    /// The lattices are as follows:
+    ///
+    /// * `after` is the lattice at the beginning of `to`
+    /// * `before` is the lattice at the end of `from`
+    ///
+    /// By default, the `before` state is met with the `after` state. Implementations can override
+    /// this in certain cases. Specifically, if the edge itself should be taken into account in
+    /// some way, such as if there are subtleties in the transfer function due to edge weights or
+    /// other control flow considerations. For example, one might wish to take into account the
+    /// fact that an edge enters or exits a loop.
+    fn visit_branch_control_flow_transfer(
+        &self,
+        from: &Block,
+        to: BlockRef,
+        after: &Self::Lattice,
+        before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        before.meet(after.lattice());
+    }
 
     /// Propagate the dense lattice backwards along the control flow edge from `region_from` to
     /// `region_to` regions of the `branch` operation. If set to `None`, this corresponds to control
@@ -80,6 +115,7 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
         region_to: Option<RegionRef>,
         after: &Self::Lattice,
         before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         before.meet(after.lattice());
     }
@@ -92,12 +128,15 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
     /// lattice that isn't already expressed by the interface itself. The default implementation for
     /// external callee action additionally sets the result to the exit (fixpoint) state.
     ///
-    /// Two types of back-propagation are possible here:
+    /// Three types of back-propagation are possible here:
     ///
-    /// * `action === CalLControlFlowAction::Enter`, indicates that:
+    /// * `CallControlFlowAction::External` indicates that:
+    ///   - `after` is the state following the call operation
+    ///   - `before` is the state before the call operation
+    /// * `CallControlFlowAction::Enter` indicates that:
     ///   - `after` is the state at the top of the callee entry block
     ///   - `before` is the state before the call operation
-    /// * `action === CalLControlFlowAction::Exit`, indicates that:
+    /// * `CallControlFlowAction::Exit` indicates that:
     ///   - `after` is the state after the call operation
     ///   - `before` is the state of exit blocks of the callee
     ///
@@ -112,13 +151,14 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
         action: CallControlFlowAction,
         after: &Self::Lattice,
         before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         before.meet(after.lattice());
         // Note that `set_to_exit_state` may be a "partial fixpoint" for some
         // lattices, e.g., lattices that are lists of maps of other lattices will
         // only set fixpoint for "known" lattices.
         if matches!(action, CallControlFlowAction::External) {
-            self.set_to_exit_state(before);
+            self.set_to_exit_state(before, solver);
         }
     }
 }
@@ -163,13 +203,14 @@ where
         );
         return Ok(());
     }
+
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
         visit_call_operation(analysis, call, &after, &mut before, solver);
         return Ok(());
     }
 
     // Invoke the operation transfer function.
-    analysis.visit_operation(op, &after, &mut before)
+    analysis.visit_operation(op, &after, &mut before, solver)
 }
 
 /// Visit a block. The state at the end of the block is propagated from control-flow successors of
@@ -190,7 +231,7 @@ where
     let mut before = solver.get_or_create_mut(point.clone());
 
     // We need "exit" blocks, i.e. the blocks that may return control to the parent operation.
-    let is_exit_block = |block: &Block| {
+    let is_region_exit_block = |block: &Block| {
         match block.terminator() {
             // Treat empty and terminator-less blocks as exit blocks.
             None => true,
@@ -201,7 +242,7 @@ where
         }
     };
 
-    if is_exit_block(block) {
+    if is_region_exit_block(block) {
         // If this block is exiting from a callable, the successors of exiting from a callable are
         // the successors of all call sites. And the call sites themselves are predecessors of the
         // callable.
@@ -217,7 +258,7 @@ where
                 // If not all call sites are known, conservative mark all lattices as
                 // having reached their pessimistic fix points.
                 if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
-                    return analysis.set_to_exit_state(&mut before);
+                    return analysis.set_to_exit_state(&mut before, solver);
                 }
 
                 for callsite in callsites.known_predecessors() {
@@ -230,6 +271,7 @@ where
                         CallControlFlowAction::Exit,
                         &after,
                         &mut before,
+                        solver,
                     );
                 }
 
@@ -251,7 +293,7 @@ where
         }
 
         // Cannot reason about successors of an exit block, set the pessimistic fixpoint.
-        return analysis.set_to_exit_state(&mut before);
+        return analysis.set_to_exit_state(&mut before, solver);
     }
 
     // Meet the state with the state before block's successors.
@@ -268,7 +310,8 @@ where
 
         // Merge in the state from the successor: either the first operation, or the block itself
         // when empty.
-        before.meet(&solver.require(solver.program_point_before(successor), point.clone()));
+        let after = solver.require(solver.program_point_before(successor.clone()), point.clone());
+        analysis.visit_branch_control_flow_transfer(block, successor, &after, &mut before, solver);
     }
 }
 
@@ -276,9 +319,18 @@ where
 /// inter-procedural data flow as follows:
 ///
 /// * Find the callable (resolve via the symbol table)
-/// * Get the entry block of the callable region
-/// * Take the state before the first operation if present or at block end otherwise,
-/// * Meet that state with the state before the call-like op, or use the
+/// * If the solver is not configured for inter-procedural analysis, or the callable op is just a
+///   declaration, then invoke the `visit_call_control_flow_transfer` callback of the analysis, to
+///   let it decide how to proceed. This can work just like `visit_operation` for some analyses.
+/// * If the solver is configured for inter-procedural analysis, and the callable op is a definition
+///   then `after` is set to the lattice state of the entry block of the callable region, and then
+///   the `visit_call_control_flow_transfer` callback is invoked.
+/// * Lastly, if the callable op is not resolvable:
+///   * If configured for inter-procedural analysis, then `set_to_exit_state` is called on the
+///     `before` lattice. This is because we expected to perform an analyis taking into account
+///     the state of the callee, but it was not available, so we cannot assume anything.
+///   * If _not_ configured for inter-procedural analysis, then `visit_call_control_flow_transfer`
+///     is invoked, so that the analysis implementation can decide how to proceed.
 pub fn visit_call_operation<A>(
     analysis: &A,
     call: &dyn CallOpInterface,
@@ -302,14 +354,16 @@ pub fn visit_call_operation<A>(
 
     // No region means the callee is only declared in this module. If that is the case or if the
     // solver is not interprocedural, let the hook handle it.
-    if !solver.config().is_interprocedural()
-        || callable.is_some_and(|c| c.get_callable_region().is_none_or(|cr| cr.borrow().is_empty()))
-    {
+    let is_declaration =
+        callable.is_some_and(|c| c.get_callable_region().is_none_or(|cr| cr.borrow().is_empty()));
+    let is_interprocedural = solver.config().is_interprocedural();
+    if is_declaration || !is_interprocedural {
         return analysis.visit_call_control_flow_transfer(
             call,
             CallControlFlowAction::External,
             after,
             before,
+            solver,
         );
     }
 
@@ -338,9 +392,10 @@ pub fn visit_call_operation<A>(
             CallControlFlowAction::Enter,
             &lattice_at_callee_entry,
             lattice_before_call,
+            solver,
         );
     } else {
-        analysis.set_to_exit_state(before);
+        analysis.set_to_exit_state(before, solver);
     }
 }
 
@@ -359,15 +414,14 @@ pub fn visit_region_branch_operation<A>(
     // The successors of the operation may be either the first operation of the entry block of each
     // possible successor region, or the next operation when the branch is a successor of itself.
     for successor in branch.get_successor_regions(branch_point.clone()) {
-        let region = successor.successor();
-        let after = match successor.successor() {
-            _ if successor.is_parent() => {
-                solver.require(solver.program_point_after(branch.as_operation()), point.clone())
-            }
+        let successor_region = successor.successor();
+        let after = match successor_region.as_ref() {
             None => {
+                // The successor is `branch` itself
                 solver.require(solver.program_point_after(branch.as_operation()), point.clone())
             }
             Some(region) => {
+                // The successor is a region of `branch`
                 let block =
                     region.borrow().entry_block_ref().expect("unexpected empty successor region");
                 if !solver
@@ -384,13 +438,13 @@ pub fn visit_region_branch_operation<A>(
         };
 
         let region_from = branch_point.region();
-        let region_to = region;
         analysis.visit_region_branch_control_flow_transfer(
             branch,
             region_from,
-            region_to,
+            successor_region,
             &after,
             before,
+            solver,
         );
     }
 }

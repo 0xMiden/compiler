@@ -5,12 +5,12 @@ mod lattice;
 pub use self::{
     backward::{set_all_to_exit_states, SparseBackwardDataFlowAnalysis},
     forward::{set_all_to_entry_states, SparseForwardDataFlowAnalysis},
-    lattice::{Lattice, LatticeValue, SparseLattice},
+    lattice::SparseLattice,
 };
 use super::{
     AnalysisStrategy, Backward, DataFlowAnalysis, DataFlowSolver, Forward, ProgramPoint, Sparse,
 };
-use crate::{Operation, Report};
+use crate::{pass::AnalysisManager, Operation, Report};
 
 pub struct SparseDataFlowAnalysis<A, D> {
     analysis: A,
@@ -49,7 +49,12 @@ impl<A: SparseForwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalys
     }
 
     /// Initialize the analysis by visiting every owner of an SSA value: all operations and blocks.
-    fn initialize(&self, top: &Operation, solver: &mut DataFlowSolver) -> Result<(), Report> {
+    fn initialize(
+        &self,
+        top: &Operation,
+        solver: &mut DataFlowSolver,
+        _analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
         // Mark the entry block arguments as having reached their pessimistic fixpoints.
         for region in top.regions() {
             if region.is_empty() {
@@ -96,7 +101,12 @@ impl<A: SparseBackwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnaly
     }
 
     /// Initialize the analysis by visiting the operation and everything nested under it.
-    fn initialize(&self, top: &Operation, solver: &mut DataFlowSolver) -> Result<(), Report> {
+    fn initialize(
+        &self,
+        top: &Operation,
+        solver: &mut DataFlowSolver,
+        _analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
         backward::initialize_recursively(&self.analysis, top, solver)
     }
 

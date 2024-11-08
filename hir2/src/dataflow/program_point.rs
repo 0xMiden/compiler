@@ -33,6 +33,38 @@ impl ProgramPoint {
         }
     }
 
+    pub fn before(op: OperationRef) -> Self {
+        let block = op.borrow().parent();
+        Self::Op {
+            block,
+            op,
+            point: Insert::Before,
+        }
+    }
+
+    pub fn after(op: OperationRef) -> Self {
+        let block = op.borrow().parent();
+        Self::Op {
+            block,
+            op,
+            point: Insert::After,
+        }
+    }
+
+    pub fn at_start_of(block: BlockRef) -> Self {
+        Self::Block {
+            block,
+            point: Insert::Before,
+        }
+    }
+
+    pub fn at_end_of(block: BlockRef) -> Self {
+        Self::Block {
+            block,
+            point: Insert::After,
+        }
+    }
+
     /// Returns true if this program point is at the start of the containing block
     pub fn is_at_block_start(&self) -> bool {
         match self {

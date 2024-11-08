@@ -29,10 +29,45 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         op: &Operation,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
     /// Set the dense lattice at control flow entry point and propagate an update if it changed.
-    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
+    fn set_to_entry_state(
+        &self,
+        lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    );
+
+    /// Propagate the dense lattice forward along the control flow edge represented by `from` and
+    /// `to`, which is known to be the result of intra-region control flow, i.e. via
+    /// [BranchOpInterface]. This is invoked when visiting blocks, rather than the terminators of
+    /// those blocks. The block being visited when this function is called is `to`.
+    ///
+    /// The default implementation just invokes `join` on the states, meaning that operations
+    /// implementing [BranchOpInterface] don't have any effect on the lattice that isn't already
+    /// expressed by the interface itself.
+    ///
+    /// The lattices are as follows:
+    ///
+    /// * `before` is the lattice at the end of `from`
+    /// * `after` is the lattice at the beginning of `to`
+    ///
+    /// By default, the `after` state is joined with the `before` state. Implementations can
+    /// override this in certain cases. Specifically, if the edge itself should be taken into
+    /// account in some way, such as if there are subtleties in the transfer function due to edge
+    /// weights or other control flow considerations. For example, one might wish to take into
+    /// account the fact that an edge enters or exits a loop.
+    fn visit_branch_control_flow_transfer(
+        &self,
+        from: BlockRef,
+        to: &Block,
+        before: &Self::Lattice,
+        after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        after.join(before.lattice());
+    }
 
     /// Propagate the dense lattice forward along the control flow edge from `region_from` to
     /// `region_to`, which must be regions of the `branch` operation, or `None`, which corresponds
@@ -66,6 +101,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         region_to: Option<RegionRef>,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         after.join(before.lattice());
     }
@@ -73,7 +109,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
     /// Propagate the dense lattice forward along the call control flow edge, which can be either
     /// entering or exiting the callee.
     ///
-    /// The default implementation for enter and exit callee actions invokes `meet` on the states,
+    /// The default implementation for enter and exit callee actions invokes `join` on the states,
     /// meaning that operations implementing [CallOpInterface] don't have any effect on the lattice
     /// that isn't already expressed by the interface itself. The default handling for the external
     /// callee action additionally sets the `after` lattice to the entry state.
@@ -97,13 +133,14 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         action: CallControlFlowAction,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         after.join(before.lattice());
         // Note that `set_to_entry_state` may be a "partial fixpoint" for some
         // lattices, e.g., lattices that are lists of maps of other lattices will
         // only set fixpoint for "known" lattices.
         if matches!(action, CallControlFlowAction::External) {
-            self.set_to_entry_state(after);
+            self.set_to_entry_state(after, solver);
         }
     }
 }
@@ -151,7 +188,7 @@ where
     }
 
     // Invoke the operation transfer function.
-    analysis.visit_operation(op, &before, &mut after)
+    analysis.visit_operation(op, &before, &mut after, solver)
 }
 
 /// Visit a block. The state at the start of the block is propagated from
@@ -186,7 +223,7 @@ where
                 // reached their pessimistic fixpoints. Do the same if interprocedural analysis
                 // is not enabled.
                 if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
-                    return analysis.set_to_entry_state(&mut after);
+                    return analysis.set_to_entry_state(&mut after, solver);
                 }
 
                 for callsite in callsites.known_predecessors() {
@@ -200,6 +237,7 @@ where
                         CallControlFlowAction::Enter,
                         &before,
                         &mut after,
+                        solver,
                     );
                 }
                 return;
@@ -212,7 +250,7 @@ where
         }
 
         // Otherwise, we can't reason about the data-flow.
-        return analysis.set_to_entry_state(&mut after);
+        return analysis.set_to_entry_state(&mut after, solver);
     }
 
     // Join the state with the state after the block's predecessors.
@@ -224,8 +262,17 @@ where
         }
 
         // Merge in the state from the predecessor's terminator.
-        let before = solver.require(point.clone(), solver.program_point_after(pred.owner.clone()));
-        after.join(&before);
+        let before = solver.require::<<A as DenseForwardDataFlowAnalysis>::Lattice, _>(
+            point.clone(),
+            solver.program_point_after(pred.owner.clone()),
+        );
+        analysis.visit_branch_control_flow_transfer(
+            pred.block.clone(),
+            block,
+            &before,
+            &mut after,
+            solver,
+        );
     }
 }
 
@@ -254,6 +301,7 @@ pub fn visit_call_operation<A>(
             CallControlFlowAction::External,
             before,
             after,
+            solver,
         );
     }
 
@@ -266,7 +314,7 @@ pub fn visit_call_operation<A>(
         anchor, pp, // solver.program_point_after(call) is there any diff?
     );
     if !predecessors.all_predecessors_known() {
-        return analysis.set_to_entry_state(after);
+        return analysis.set_to_entry_state(after, solver);
     }
 
     for predecessor in predecessors.known_predecessors() {
@@ -293,6 +341,7 @@ pub fn visit_call_operation<A>(
             CallControlFlowAction::Exit,
             &lattice_at_callee_return,
             lattice_after_call,
+            solver,
         );
     }
 }
@@ -350,6 +399,7 @@ pub fn visit_region_branch_operation<A>(
                 Some(region_to),
                 &before,
                 after,
+                solver,
             );
         } else {
             assert_eq!(
@@ -367,6 +417,7 @@ pub fn visit_region_branch_operation<A>(
                     None,
                     &before,
                     after,
+                    solver,
                 );
             } else {
                 after.join(before.lattice());

@@ -88,6 +88,7 @@ impl DenseForwardDataFlowAnalysis for ExampleDenseForwardDataFlowAnalysisImpl {
         op: &Operation,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         /*
         auto memory = dyn_cast<MemoryEffectOpInterface>(op);
@@ -160,6 +161,7 @@ impl DenseForwardDataFlowAnalysis for ExampleDenseForwardDataFlowAnalysisImpl {
         action: CallControlFlowAction,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         /*
         if (action == CallControlFlowAction::ExternalCallee && assumeFuncWrites) {
@@ -204,6 +206,7 @@ impl DenseForwardDataFlowAnalysis for ExampleDenseForwardDataFlowAnalysisImpl {
         region_to: Option<RegionRef>,
         before: &Self::Lattice,
         after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
     ) {
         /*
         auto defaultHandling = [&]() {
@@ -223,7 +226,11 @@ impl DenseForwardDataFlowAnalysis for ExampleDenseForwardDataFlowAnalysisImpl {
         todo!()
     }
 
-    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>) {
+    fn set_to_entry_state(
+        &self,
+        lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
         lattice.reset();
     }
 }

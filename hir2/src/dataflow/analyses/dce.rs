@@ -16,6 +16,7 @@ use crate::{
         BuildableAnalysisState, BuildableDataFlowAnalysis, ChangeResult, DataFlowAnalysis,
         DataFlowSolver, Dense, Forward, Lattice, LatticeAnchor, LatticeAnchorRef, ProgramPoint,
     },
+    pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
     AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, InsertionPoint,
     Operation, OperationRef, RegionBranchOpInterface, RegionBranchTerminatorOpInterface, Report,
@@ -351,6 +352,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         &self,
         top: &crate::Operation,
         solver: &mut crate::dataflow::DataFlowSolver,
+        _analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
         // Mark the top-level blocks as executable.
         for region in top.regions() {

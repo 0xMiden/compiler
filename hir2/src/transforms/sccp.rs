@@ -46,7 +46,7 @@ impl Pass for SparseConditionalConstantPropagation {
         let mut solver = DataFlowSolver::default();
         solver.load::<DeadCodeAnalysis>();
         solver.load::<SparseConstantPropagation>();
-        solver.initialize_and_run(&op)?;
+        solver.initialize_and_run(&op, state.analysis_manager().clone())?;
 
         // Rewrite based on results of analysis
         self.rewrite(&mut op, state, &solver)

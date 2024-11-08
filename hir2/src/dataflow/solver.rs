@@ -10,7 +10,7 @@ use super::{
     analysis::state::{AnalysisStateDescriptor, AnalysisStateInfo, AnalysisStateKey},
     *,
 };
-use crate::{EntityRef, FxHashMap, InsertionPoint, Operation, Report};
+use crate::{pass::AnalysisManager, EntityRef, FxHashMap, InsertionPoint, Operation, Report};
 
 pub type AnalysisQueue = VecDeque<QueuedAnalysis, DataFlowSolverAlloc>;
 
@@ -111,14 +111,8 @@ impl DataFlowSolver {
     /// to run the analysis.
     ///
     /// In particular, an instance of `A` is created using [BuildableDataFlowAnalysis::new], and
-    /// then the corresponding strategy type is instantiated via [AnalysisStrategy::build], passing
-    /// in the newly created `A`.
-    ///
-    /// Once instantiated, the resulting analysis is stored in a queue until
-    /// [DataFlowSolver::initialize_and_run] is invoked.
-    ///
-    /// If an attempt is made to load the same analysis type twice while a previous instance is
-    /// still pending, the load is a no-op.
+    /// then calls [Self::load_with_strategy] to instantiate the actual [DataFlowAnalysis]
+    /// implementation, by using the associated [BuildableDataFlowAnalysis::Strategy] type.
     ///
     /// # Panics
     ///
@@ -129,14 +123,55 @@ impl DataFlowSolver {
     where
         A: BuildableDataFlowAnalysis + 'static,
     {
+        let analysis = <A as BuildableDataFlowAnalysis>::new(self);
+        self.load_with_strategy(analysis)
+    }
+
+    /// Load `analysis` into the solver.
+    ///
+    /// Since `analysis` might not implement [DataFlowAnalysis] itself, we must obtain an
+    /// implementation using the strategy type given via [BuildableDataFlowAnalysis::Strategy].
+    /// Specifically, we invoke [AnalysisStrategy::build], passing in `analysis` as the underlying
+    /// implementation.
+    ///
+    /// Once instantiated, the resulting [DataFlowAnalysis] implementation is loaded into the solver
+    /// using [Self::load_analysis].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if you attempt to load new analyses while the solver is running.
+    /// It is only permitted to load analyses before calling [initialize_and_run], or after a call
+    /// to that function has returned, and you are starting a new round of analysis.
+    pub fn load_with_strategy<A>(&mut self, analysis: A)
+    where
+        A: BuildableDataFlowAnalysis + 'static,
+    {
+        let analysis = <<A as BuildableDataFlowAnalysis>::Strategy as AnalysisStrategy<A>>::build(
+            analysis, self,
+        );
+        self.load_analysis(analysis);
+    }
+
+    /// Load `analysis` into the solver.
+    ///
+    /// The provided analysis is stored in a queue until [DataFlowSolver::initialize_and_run] is
+    /// invoked.
+    ///
+    /// If an attempt is made to load the same analysis type twice while a previous instance is
+    /// still pending, the load is a no-op.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if you attempt to load new analyses while the solver is running.
+    /// It is only permitted to load analyses before calling [initialize_and_run], or after a call
+    /// to that function has returned, and you are starting a new round of analysis.
+    pub fn load_analysis<A>(&mut self, analysis: A)
+    where
+        A: DataFlowAnalysis + 'static,
+    {
         assert!(
             self.worklist.borrow().is_empty() && self.current_analysis.is_none(),
             "it is not permitted to load analyses while the solver is running!"
-        );
-        let analysis_impl = <A as BuildableDataFlowAnalysis>::new(self);
-        let analysis = <<A as BuildableDataFlowAnalysis>::Strategy as AnalysisStrategy<A>>::build(
-            analysis_impl,
-            self,
         );
         let type_id = analysis.analysis_id();
         let already_loaded = self
@@ -169,7 +204,11 @@ impl DataFlowSolver {
     /// impose a limit on the number of iterations performed, though we may introduce such limits,
     /// or other forms of sanity checks in the future.
     #[track_caller]
-    pub fn initialize_and_run(&mut self, op: &Operation) -> Result<(), Report> {
+    pub fn initialize_and_run(
+        &mut self,
+        op: &Operation,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
         // If we have no analyses, there is nothing to do
         if self.child_analyses.is_empty() {
             // Log a warning when this happens, since the calling code might benefit from not
@@ -179,7 +218,7 @@ impl DataFlowSolver {
             return Ok(());
         }
 
-        self.analyze(op)?;
+        self.analyze(op, analysis_manager.clone())?;
         self.run_to_fixpoint()
     }
 
@@ -191,11 +230,11 @@ impl DataFlowSolver {
     ///
     /// Once initialization is complete, every analysis has been run exactly once, but some may have
     /// been re-enqueued due to dependencies on analysis states which changed during initialization.
-    fn analyze(&mut self, op: &Operation) -> Result<(), Report> {
+    fn analyze(&mut self, op: &Operation, analysis_manager: AnalysisManager) -> Result<(), Report> {
         for mut analysis in core::mem::take(&mut self.child_analyses) {
             // priming analysis {analysis.debug_name()}
             unsafe {
-                analysis.as_mut().initialize(op, self)?;
+                analysis.as_mut().initialize(op, self, analysis_manager.clone())?;
             }
         }
 

@@ -11,7 +11,14 @@ pub use self::{
 use super::{
     AnalysisStrategy, Backward, DataFlowAnalysis, DataFlowSolver, Dense, Forward, ProgramPoint,
 };
-use crate::{Operation, Report};
+use crate::{
+    cfg::Graph,
+    dataflow::analyses::{dce::CfgEdge, LoopAction, LoopState},
+    dominance::DominanceInfo,
+    loops::LoopForest,
+    pass::AnalysisManager,
+    BlockRef, Operation, RegionKindInterface, Report, Spanned,
+};
 
 pub struct DenseDataFlowAnalysis<T, D> {
     analysis: T,
@@ -49,18 +56,86 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
 
     /// Initialize the analysis by visiting every program point whose execution may modify the
     /// program state; that is, every operation and block.
-    fn initialize(&self, top: &Operation, solver: &mut DataFlowSolver) -> Result<(), Report> {
-        // Visit every operation and block
+    fn initialize(
+        &self,
+        top: &Operation,
+        solver: &mut DataFlowSolver,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
         forward::process_operation(&self.analysis, top, solver)?;
 
-        for region in top.regions() {
-            for block in region.body() {
-                forward::visit_block(&self.analysis, &block, solver);
-                for op in block.body() {
-                    self.initialize(&op, solver)?;
+        // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
+        // CFG top-down. Otherwise, fall back to a naive iteration over the contents of each region.
+        //
+        // If we have a domtree, we don't bother visiting unreachable blocks (i.e. blocks that
+        // are not in the tree because they are unreachable via the CFG). If we don't have a domtree,
+        // then all blocks are visited, regardless of reachability.
+        if !top.has_regions() {
+            return Ok(());
+        }
+
+        let is_ssa_cfg = top
+            .as_trait::<dyn RegionKindInterface>()
+            .is_none_or(|rki| rki.has_ssa_dominance());
+        if is_ssa_cfg {
+            let dominfo = analysis_manager.get_analysis::<DominanceInfo>();
+            for region in top.regions() {
+                // Single-block regions do not require a dominance tree (and do not have one)
+                if region.has_one_block() {
+                    let block = region.entry();
+                    forward::visit_block(&self.analysis, &block, solver);
+                    for op in block.body() {
+                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        self.initialize(&op, solver, child_analysis_manager)?;
+                    }
+                } else {
+                    let domtree = dominfo.info().dominance(&region.as_region_ref());
+                    let loop_forest = LoopForest::new(&domtree);
+
+                    // Visit blocks in CFG preorder
+                    for node in domtree.preorder() {
+                        let Some(block) = node.block().cloned() else {
+                            continue;
+                        };
+
+                        // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
+                        // if applicable for this block
+                        if let Some(loop_info) = loop_forest.loop_for(&block) {
+                            // This block can exit a loop
+                            if loop_info.is_loop_exiting(&block) {
+                                for succ in BlockRef::children(block.clone()) {
+                                    if !loop_info.contains_block(&succ) {
+                                        let mut guard = solver.get_or_create_mut::<LoopState, _>(
+                                            CfgEdge::new(block.clone(), succ, block.span()),
+                                        );
+                                        guard.join(LoopAction::Exit);
+                                    }
+                                }
+                            }
+                        }
+
+                        let block = block.borrow();
+                        forward::visit_block(&self.analysis, &block, solver);
+                        for op in block.body() {
+                            let child_analysis_manager =
+                                analysis_manager.nest(&op.as_operation_ref());
+                            self.initialize(&op, solver, child_analysis_manager)?;
+                        }
+                    }
+                }
+            }
+        } else {
+            for region in top.regions() {
+                for block in region.body() {
+                    forward::visit_block(&self.analysis, &block, solver);
+                    for op in block.body() {
+                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        self.initialize(&op, solver, child_analysis_manager)?;
+                    }
                 }
             }
         }
+
         Ok(())
     }
 
@@ -91,20 +166,86 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
 
     /// Initialize the analysis by visiting every program point whose execution may modify the
     /// program state; that is, every operation and block.
-    fn initialize(&self, top: &Operation, solver: &mut DataFlowSolver) -> Result<(), Report> {
-        // Visit every operation and block
+    fn initialize(
+        &self,
+        top: &Operation,
+        solver: &mut DataFlowSolver,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
         backward::process_operation(&self.analysis, top, solver)?;
 
-        for region in top.regions() {
-            for block in region.body() {
-                backward::visit_block(&self.analysis, &block, solver);
-                let mut ops = block.body().back();
-                while let Some(op) = ops.as_pointer() {
-                    ops.move_prev();
-                    self.initialize(&op.borrow(), solver)?;
+        // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
+        // CFG in post-order. Otherwise, fall back to a naive iteration over the contents of each region.
+        //
+        // If we have a domtree, we don't bother visiting unreachable blocks (i.e. blocks that
+        // are not in the tree because they are unreachable via the CFG). If we don't have a domtree,
+        // then all blocks are visited, regardless of reachability.
+        if !top.has_regions() {
+            return Ok(());
+        }
+
+        let is_ssa_cfg = top
+            .as_trait::<dyn RegionKindInterface>()
+            .is_none_or(|rki| rki.has_ssa_dominance());
+        if is_ssa_cfg {
+            let dominfo = analysis_manager.get_analysis::<DominanceInfo>();
+            for region in top.regions() {
+                // Single-block regions do not require a dominance tree (and do not have one)
+                if region.has_one_block() {
+                    let block = region.entry();
+                    backward::visit_block(&self.analysis, &block, solver);
+                    for op in block.body().iter().rev() {
+                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        self.initialize(&op, solver, child_analysis_manager)?;
+                    }
+                } else {
+                    let domtree = dominfo.info().dominance(&region.as_region_ref());
+                    let loop_forest = LoopForest::new(&domtree);
+
+                    // Visit blocks in CFG postorder
+                    for node in domtree.postorder() {
+                        let Some(block) = node.block().cloned() else {
+                            continue;
+                        };
+
+                        // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
+                        // if applicable for this block
+                        if let Some(loop_info) = loop_forest.loop_for(&block) {
+                            // This block can exit a loop
+                            if loop_info.is_loop_exiting(&block) {
+                                for succ in BlockRef::children(block.clone()) {
+                                    if !loop_info.contains_block(&succ) {
+                                        let mut guard = solver.get_or_create_mut::<LoopState, _>(
+                                            CfgEdge::new(block.clone(), succ, block.span()),
+                                        );
+                                        guard.join(LoopAction::Exit);
+                                    }
+                                }
+                            }
+                        }
+
+                        let block = block.borrow();
+                        backward::visit_block(&self.analysis, &block, solver);
+                        for op in block.body().iter().rev() {
+                            let child_analysis_manager =
+                                analysis_manager.nest(&op.as_operation_ref());
+                            self.initialize(&op, solver, child_analysis_manager)?;
+                        }
+                    }
+                }
+            }
+        } else {
+            for region in top.regions() {
+                for block in region.body().iter().rev() {
+                    backward::visit_block(&self.analysis, &block, solver);
+                    for op in block.body().iter().rev() {
+                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        self.initialize(&op, solver, child_analysis_manager)?;
+                    }
                 }
             }
         }
+
         Ok(())
     }
 

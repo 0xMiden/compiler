@@ -4,6 +4,7 @@ mod anchor;
 mod change_result;
 mod config;
 pub mod dense;
+mod lattice;
 mod program_point;
 mod solver;
 pub mod sparse;
@@ -20,10 +21,8 @@ pub use self::{
     change_result::ChangeResult,
     config::DataFlowConfig,
     dense::{DenseBackwardDataFlowAnalysis, DenseForwardDataFlowAnalysis, DenseLattice},
+    lattice::{Lattice, LatticeLike},
     program_point::ProgramPoint,
     solver::{AnalysisQueue, DataFlowSolver},
-    sparse::{
-        Lattice, LatticeValue, SparseBackwardDataFlowAnalysis, SparseForwardDataFlowAnalysis,
-        SparseLattice,
-    },
+    sparse::{SparseBackwardDataFlowAnalysis, SparseForwardDataFlowAnalysis, SparseLattice},
 };

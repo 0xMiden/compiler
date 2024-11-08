@@ -190,22 +190,36 @@ impl PreservedAnalyses {
     }
 
     /// Returns true if the specified type is preserved.
+    ///
+    /// This will return true if all analyses are marked preserved, even if the specified type was
+    /// not explicitly preserved.
     pub fn is_preserved<A: 'static>(&self) -> bool {
-        self.preserved.contains(&TypeId::of::<A>())
+        self.preserved.contains(&TypeId::of::<A>()) || self.is_all()
     }
 
     /// Returns true if the specified [TypeId] is marked preserved.
+    ///
+    /// This will return true if all analyses are marked preserved, even if the specified type was
+    /// not explicitly preserved.
     pub fn is_preserved_raw(&self, ty: &TypeId) -> bool {
-        self.preserved.contains(ty)
+        self.preserved.contains(ty) || self.is_all()
     }
 
     /// Mark a previously preserved type as invalidated.
+    ///
+    /// This will also remove the "all preserved" flag, if it had been set.
     pub fn unpreserve<A: 'static>(&mut self) {
-        self.remove(&TypeId::of::<A>())
+        // We must also remove the `all` marker, as we have invalidated one of the analyses
+        self.remove(&AllAnalyses::TYPE_ID);
+        self.remove(&TypeId::of::<A>());
     }
 
     /// Mark a previously preserved [TypeId] as invalidated.
+    ///
+    /// This will also remove the "all preserved" flag, if it had been set.
     pub fn unpreserve_raw(&mut self, ty: &TypeId) {
+        // We must also remove the `all` marker, as we have invalidated one of the analyses
+        self.remove(&AllAnalyses::TYPE_ID);
         self.remove(ty)
     }
 

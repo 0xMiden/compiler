@@ -290,6 +290,40 @@ impl DomTreeBase<false> {
     pub fn root(&self) -> &BlockRef {
         self.roots[0].as_ref().unwrap()
     }
+
+    /// Get all the nodes of this tree as a vector in pre-order visitation order
+    pub fn preorder(&self) -> Vec<Rc<DomTreeNode>> {
+        let mut nodes = self
+            .nodes
+            .iter()
+            .filter_map(|(blk, node)| {
+                if blk.is_some() {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        nodes.sort_by(|a, b| a.num_in.get().cmp(&b.num_in.get()));
+        nodes
+    }
+
+    /// Get all the nodes of this tree as a vector in post-order visitation order
+    pub fn postorder(&self) -> Vec<Rc<DomTreeNode>> {
+        let mut nodes = self
+            .nodes
+            .iter()
+            .filter_map(|(blk, node)| {
+                if blk.is_some() {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()));
+        nodes
+    }
 }
 
 impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {

@@ -7,7 +7,7 @@ use crate::{
     dataflow::{
         sparse::{self, SparseDataFlowAnalysis},
         AnalysisStateGuard, BuildableDataFlowAnalysis, DataFlowSolver, Forward, Lattice,
-        LatticeValue, SparseForwardDataFlowAnalysis, SparseLattice,
+        LatticeLike, SparseForwardDataFlowAnalysis, SparseLattice,
     },
     traits::Foldable,
     AttributeValue, Dialect, EntityRef, OpFoldResult, Operation, Report,
@@ -100,7 +100,7 @@ impl PartialEq for ConstantValue {
     }
 }
 
-impl LatticeValue for ConstantValue {
+impl LatticeLike for ConstantValue {
     /// The join of two constant values is:
     ///
     /// * `unknown` if they represent different values

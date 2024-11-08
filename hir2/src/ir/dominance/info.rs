@@ -1,18 +1,49 @@
 use alloc::{collections::BTreeMap, rc::Rc};
 use core::cell::{LazyCell, Ref, RefCell};
 
+use smallvec::SmallVec;
+
 use super::*;
-use crate::{Block, BlockRef, OperationRef, RegionKindInterface, RegionRef};
+use crate::{
+    pass::Analysis, Block, BlockRef, Operation, OperationRef, RegionKindInterface, RegionRef,
+};
 
 /// [DominanceInfo] provides a high-level API for querying dominance information.
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
+#[derive(Default)]
 pub struct DominanceInfo {
     info: DominanceInfoBase<false>,
 }
 
+impl Analysis for DominanceInfo {
+    type Target = Operation;
+
+    fn name(&self) -> &'static str {
+        "dominance"
+    }
+
+    fn analyze(&mut self, op: &Self::Target, _analysis_manager: crate::pass::AnalysisManager) {
+        if !op.has_regions() {
+            return;
+        }
+        self.info.recompute(op);
+    }
+
+    fn invalidate(&self, _preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
+        true
+    }
+}
+
 impl DominanceInfo {
+    /// Compute the dominance information for `op`
+    pub fn new(op: &Operation) -> Self {
+        Self {
+            info: DominanceInfoBase::new(op),
+        }
+    }
+
     #[doc(hidden)]
     #[inline(always)]
     pub(crate) fn info(&self) -> &DominanceInfoBase<false> {
@@ -107,14 +138,41 @@ impl DominanceInfo {
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
+#[derive(Default)]
 pub struct PostDominanceInfo {
     info: DominanceInfoBase<true>,
 }
 
+impl Analysis for PostDominanceInfo {
+    type Target = Operation;
+
+    fn name(&self) -> &'static str {
+        "post-dominance"
+    }
+
+    fn analyze(&mut self, op: &Self::Target, _analysis_manager: crate::pass::AnalysisManager) {
+        if !op.has_regions() {
+            return;
+        }
+        self.info.recompute(op);
+    }
+
+    fn invalidate(&self, _preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
+        true
+    }
+}
+
 impl PostDominanceInfo {
+    /// Compute the post-dominance information for `op`
+    pub fn new(op: &Operation) -> Self {
+        Self {
+            info: DominanceInfoBase::new(op),
+        }
+    }
+
     #[doc(hidden)]
     #[inline(always)]
-    pub(super) fn info(&self) -> &DominanceInfoBase<true> {
+    pub(crate) fn info(&self) -> &DominanceInfoBase<true> {
         &self.info
     }
 
@@ -207,24 +265,29 @@ pub(crate) struct DominanceInfoBase<const IS_POST_DOM: bool> {
 #[allow(unused)]
 impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     /// Compute dominance information for all of the regions in `op`.
-    pub fn new(op: OperationRef) -> Self {
-        let op = op.borrow();
+    pub fn new(op: &Operation) -> Self {
+        let mut this = Self::default();
+        this.recompute(op);
+        this
+    }
+
+    /// Recompute dominance information for all of the regions in `op`.
+    pub fn recompute(&mut self, op: &Operation) {
+        let dominance_infos = self.dominance_infos.get_mut();
+        dominance_infos.clear();
+
         let has_ssa_dominance = op
             .as_trait::<dyn RegionKindInterface>()
-            .map(|rki| rki.has_ssa_dominance())
-            .unwrap_or(true);
-        let dominance_infos = BTreeMap::from_iter(op.regions().iter().map(|r| {
-            let region = r.as_region_ref();
+            .is_none_or(|rki| rki.has_ssa_dominance());
+        for region in op.regions() {
+            let has_one_block = region.has_one_block();
+            let region = region.as_region_ref();
             let info = RegionDominanceInfo::<IS_POST_DOM>::create(
                 region.clone(),
                 has_ssa_dominance,
-                r.has_one_block(),
+                has_one_block,
             );
-            (region, info)
-        }));
-
-        Self {
-            dominance_infos: RefCell::new(dominance_infos),
+            dominance_infos.insert(region, info);
         }
     }
 
@@ -391,6 +454,20 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
 
         // Otherwise, they are two different blocks in the same region, use dominance tree
         self.dominance(&a_region.unwrap()).properly_dominates(Some(a), Some(&b))
+    }
+}
+
+impl DominanceInfoBase<true> {
+    #[allow(unused)]
+    pub fn root_nodes(&self, region: &RegionRef) -> SmallVec<[BlockRef; 4]> {
+        self.dominance_infos
+            .borrow()
+            .get(region)
+            .and_then(|dominfo| dominfo.domtree.as_deref())
+            .map(|domtree| {
+                domtree.roots().iter().filter_map(|maybe_root| maybe_root.clone()).collect()
+            })
+            .unwrap_or_default()
     }
 }
 

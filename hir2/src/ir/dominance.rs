@@ -7,11 +7,11 @@ pub use self::{
     info::{DominanceInfo, PostDominanceInfo, RegionDominanceInfo},
     traits::{Dominates, PostDominates},
     tree::{
-        DomTreeError, DomTreeVerificationLevel, DominanceTree, PostDominanceTree,
-        PostOrderDomTreeIter, PreOrderDomTreeIter,
+        DomTreeBase, DomTreeError, DomTreeNode, DomTreeVerificationLevel, DominanceTree,
+        PostDominanceTree, PostOrderDomTreeIter, PreOrderDomTreeIter,
     },
 };
 use self::{
     nca::{BatchUpdateInfo, SemiNCA},
-    tree::{DomTreeBase, DomTreeNode, DomTreeRoots},
+    tree::DomTreeRoots,
 };

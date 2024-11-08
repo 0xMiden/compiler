@@ -1,11 +1,11 @@
-use crate::dataflow::{AnalysisState, BuildableAnalysisState, ChangeResult};
+use crate::dataflow::{AnalysisState, ChangeResult};
 
 /// A [DenseLattice] represents some program state at a specific program point.
 ///
 /// It is propagated through the IR by dense data-flow analysis.
 #[allow(unused_variables)]
 pub trait DenseLattice: AnalysisState {
-    type Lattice: BuildableAnalysisState;
+    type Lattice;
 
     fn lattice(&self) -> &Self::Lattice;
 

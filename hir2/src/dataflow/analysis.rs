@@ -5,7 +5,7 @@ pub use self::state::{
     AnalysisStateSubscriptionBehavior, BuildableAnalysisState, Revision,
 };
 use super::{DataFlowSolver, ProgramPoint};
-use crate::{Operation, Report};
+use crate::{pass::AnalysisManager, Operation, Report};
 
 /// Indicates whether the control enters, exits, or skips over the callee (in the case of
 /// external functions).
@@ -47,7 +47,12 @@ pub trait DataFlowAnalysis {
     ///
     /// An analysis can optionally provide initial values to certain analysis states to influence
     /// the evolution of the analysis.
-    fn initialize(&self, op: &Operation, solver: &mut DataFlowSolver) -> Result<(), Report>;
+    fn initialize(
+        &self,
+        op: &Operation,
+        solver: &mut DataFlowSolver,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report>;
 
     /// Visit the given program point.
     ///
