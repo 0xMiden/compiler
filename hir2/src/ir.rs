@@ -46,7 +46,7 @@ pub use self::{
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
-    insert::{Insert, InsertionPoint, ProgramPoint},
+    insert::Insert,
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

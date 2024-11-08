@@ -118,7 +118,7 @@ impl Operation {
         let mut parent = self.nearest_symbol_table();
         let mut found = None;
         while let Some(nearest_symbol_table) = parent.take() {
-            found = Some(nearest_symbol_table.clone());
+            found = Some(nearest_symbol_table);
             parent = nearest_symbol_table.borrow().nearest_symbol_table();
         }
         found

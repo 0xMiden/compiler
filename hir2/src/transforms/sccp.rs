@@ -87,7 +87,7 @@ impl SparseConditionalConstantPropagation {
             while let Some(mut op) = ops.as_pointer() {
                 ops.move_next();
 
-                builder.set_insertion_point_after(op.clone().into());
+                builder.set_insertion_point_after(op);
 
                 // Replace any result with constants.
                 let num_results = op.borrow().num_results();

@@ -114,7 +114,7 @@ impl PassManager {
         self.pm.finalize_pass_list()?;
 
         // Construct a top level analysis manager for the pipeline.
-        let analysis_manager = AnalysisManager::new(op.clone(), Some(self.instrumentor.clone()));
+        let analysis_manager = AnalysisManager::new(op, Some(self.instrumentor.clone()));
 
         // If reproducer generation is enabled, run the pass manager with crash handling enabled.
         /*
@@ -764,7 +764,7 @@ impl OpToOpPassAdaptor {
         }
 
         for pass in pm.passes_mut() {
-            Self::run(&mut **pass, op.clone(), analysis_manager.clone(), verify)?;
+            Self::run(&mut **pass, op, analysis_manager.clone(), verify)?;
         }
 
         if let Some(instrumentor) = instrumentor.as_deref() {
@@ -816,7 +816,7 @@ impl OpToOpPassAdaptor {
         let parent_info = PipelineParentInfo {
             pass: Some(pass.name().to_compact_string()),
         };
-        let callback_op = op.clone();
+        let callback_op = op;
         let callback_analysis_manager = analysis_manager.clone();
         let pipeline_callback: Box<super::pass::DynamicPipelineExecutor> = Box::new(
             move |pipeline: &mut OpPassManager, root: OperationRef| -> Result<(), Report> {
@@ -847,14 +847,14 @@ impl OpToOpPassAdaptor {
                 let nested_am = if root == callback_op {
                     callback_analysis_manager.clone()
                 } else {
-                    callback_analysis_manager.nest(&root)
+                    callback_analysis_manager.nest(root)
                 };
                 Self::run_pipeline(pipeline, root, nested_am, verify, pi, Some(&parent_info))
             },
         );
 
         let mut execution_state = PassExecutionState::new(
-            op.clone(),
+            op,
             context.clone(),
             analysis_manager.clone(),
             Some(pipeline_callback),
@@ -867,9 +867,9 @@ impl OpToOpPassAdaptor {
 
         let mut result =
             if let Some(adaptor) = pass.as_any_mut().downcast_mut::<OpToOpPassAdaptor>() {
-                adaptor.run_on_operation(op.clone(), &mut execution_state, verify)
+                adaptor.run_on_operation(op, &mut execution_state, verify)
             } else {
-                pass.run_on_operation(op.clone(), &mut execution_state)
+                pass.run_on_operation(op, &mut execution_state)
             };
 
         // Invalidate any non-preserved analyses
@@ -938,7 +938,7 @@ impl OpToOpPassAdaptor {
                     if let Some(manager) =
                         self.pms.iter_mut().find(|pm| pm.can_schedule_on(&op_name))
                     {
-                        let am = analysis_manager.nest(&op);
+                        let am = analysis_manager.nest(op);
                         Self::run_pipeline(
                             manager,
                             op,

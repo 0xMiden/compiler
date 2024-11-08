@@ -1,8 +1,8 @@
 use alloc::rc::Rc;
 
 use crate::{
-    BlockArgument, BlockRef, BuildableOp, Context, InsertionPoint, OperationRef, ProgramPoint,
-    RegionRef, SourceSpan, Type, Value,
+    BlockArgument, BlockRef, BuildableOp, Context, OperationRef, ProgramPoint, RegionRef,
+    SourceSpan, Type, Value,
 };
 
 /// The [Builder] trait encompasses all of the functionality needed to construct and insert blocks
@@ -11,26 +11,24 @@ pub trait Builder: Listener {
     fn context(&self) -> &Context;
     fn context_rc(&self) -> Rc<Context>;
     /// Returns the current insertion point of the builder
-    fn insertion_point(&self) -> Option<&InsertionPoint>;
+    fn insertion_point(&self) -> &ProgramPoint;
     /// Clears the current insertion point
-    fn clear_insertion_point(&mut self) -> Option<InsertionPoint>;
+    fn clear_insertion_point(&mut self) -> ProgramPoint;
     /// Restores the current insertion point to `ip`
-    fn restore_insertion_point(&mut self, ip: Option<InsertionPoint>);
+    fn restore_insertion_point(&mut self, ip: ProgramPoint);
     /// Sets the current insertion point to `ip`
-    fn set_insertion_point(&mut self, ip: InsertionPoint);
+    fn set_insertion_point(&mut self, ip: ProgramPoint);
 
-    /// Sets the insertion point to the specified program point, causing subsequent insertions to
-    /// be placed before it.
+    /// Sets the insertion point before `op`, causing subsequent insertions to be placed before it.
     #[inline]
-    fn set_insertion_point_before(&mut self, pp: ProgramPoint) {
-        self.set_insertion_point(InsertionPoint::before(pp));
+    fn set_insertion_point_before(&mut self, op: OperationRef) {
+        self.set_insertion_point(ProgramPoint::before(op));
     }
 
-    /// Sets the insertion point to the specified program point, causing subsequent insertions to
-    /// be placed after it.
+    /// Sets the insertion point after `op`, causing subsequent insertions to be placed after it.
     #[inline]
-    fn set_insertion_point_after(&mut self, pp: ProgramPoint) {
-        self.set_insertion_point(InsertionPoint::after(pp));
+    fn set_insertion_point_after(&mut self, op: OperationRef) {
+        self.set_insertion_point(ProgramPoint::after(op));
     }
 
     /// Sets the insertion point to the node after the specified value is defined.
@@ -42,12 +40,12 @@ pub trait Builder: Listener {
     /// of the block, causing insertions to be placed starting at the front of the block.
     fn set_insertion_point_after_value(&mut self, value: &dyn Value) {
         let pp = if let Some(op) = value.get_defining_op() {
-            ProgramPoint::Op(op)
+            ProgramPoint::after(op)
         } else {
             let block_argument = value.downcast_ref::<BlockArgument>().unwrap();
-            ProgramPoint::Block(block_argument.owner())
+            ProgramPoint::at_start_of(block_argument.owner())
         };
-        self.set_insertion_point_after(pp);
+        self.set_insertion_point(pp);
     }
 
     /// Sets the current insertion point to the start of `block`.
@@ -55,7 +53,7 @@ pub trait Builder: Listener {
     /// Operations inserted will be placed starting at the beginning of the block.
     #[inline]
     fn set_insertion_point_to_start(&mut self, block: BlockRef) {
-        self.set_insertion_point_before(block.into());
+        self.set_insertion_point(ProgramPoint::at_start_of(block));
     }
 
     /// Sets the current insertion point to the end of `block`.
@@ -63,7 +61,7 @@ pub trait Builder: Listener {
     /// Operations inserted will be placed starting at the end of the block.
     #[inline]
     fn set_insertion_point_to_end(&mut self, block: BlockRef) {
-        self.set_insertion_point_after(block.into());
+        self.set_insertion_point(ProgramPoint::at_end_of(block));
     }
 
     /// Return the block the current insertion point belongs to.
@@ -73,7 +71,7 @@ pub trait Builder: Listener {
     /// Returns `None` if the insertion point is unset, or is pointing at an operation which is
     /// detached from a block.
     fn insertion_block(&self) -> Option<BlockRef> {
-        self.insertion_point().and_then(|ip| ip.at.block())
+        self.insertion_point().block()
     }
 
     /// Add a new block with `args` arguments, and set the insertion point to the end of it.
@@ -97,9 +95,9 @@ pub trait Builder: Listener {
             block.borrow_mut().insert_at_end(parent);
         }
 
-        self.notify_block_inserted(block.clone(), None, None);
+        self.notify_block_inserted(block, None, None);
 
-        self.set_insertion_point_to_end(block.clone());
+        self.set_insertion_point_to_end(block);
 
         block
     }
@@ -110,8 +108,8 @@ pub trait Builder: Listener {
     fn create_block_before(&mut self, before: BlockRef, args: &[Type]) -> BlockRef {
         let mut block = self.context().create_block_with_params(args.iter().cloned());
         block.borrow_mut().insert_before(before);
-        self.notify_block_inserted(block.clone(), None, None);
-        self.set_insertion_point_to_end(block.clone());
+        self.notify_block_inserted(block, None, None);
+        self.set_insertion_point_to_end(block);
         block
     }
 
@@ -127,21 +125,27 @@ pub trait Builder: Listener {
     ///
     /// This function will panic if no insertion point is set.
     fn insert(&mut self, mut op: OperationRef) {
-        let ip = self.insertion_point().expect("insertion point is unset").clone();
-        match ip.at {
-            ProgramPoint::Block(block) => match ip.placement {
+        let ip = self.insertion_point();
+
+        match *ip {
+            ProgramPoint::Block { block, point } => match point {
                 crate::Insert::Before => op.borrow_mut().insert_at_start(block),
                 crate::Insert::After => op.borrow_mut().insert_at_end(block),
             },
-            ProgramPoint::Op(other_op) => match ip.placement {
+            ProgramPoint::Op {
+                op: other_op,
+                point,
+                ..
+            } => match point {
                 crate::Insert::Before => op.borrow_mut().insert_before(other_op),
                 crate::Insert::After => {
-                    op.borrow_mut().insert_after(other_op.clone());
-                    self.set_insertion_point_after(ProgramPoint::Op(other_op));
+                    op.borrow_mut().insert_after(other_op);
+                    self.set_insertion_point(ProgramPoint::after(op));
                 }
             },
+            ProgramPoint::Invalid => panic!("insertion point is invalid/unset"),
         }
-        self.notify_operation_inserted(op, None);
+        self.notify_operation_inserted(op, ProgramPoint::Invalid);
     }
 }
 
@@ -201,7 +205,7 @@ impl<B: ?Sized + Builder> BuilderExt for B {}
 pub struct OpBuilder<L = NoopBuilderListener> {
     context: Rc<Context>,
     listener: Option<L>,
-    ip: Option<InsertionPoint>,
+    ip: ProgramPoint,
 }
 
 impl OpBuilder {
@@ -209,7 +213,7 @@ impl OpBuilder {
         Self {
             context,
             listener: None,
-            ip: None,
+            ip: ProgramPoint::default(),
         }
     }
 }
@@ -228,7 +232,7 @@ impl<L: Listener> OpBuilder<L> {
     }
 
     #[inline]
-    pub fn into_parts(self) -> (Rc<Context>, Option<L>, Option<InsertionPoint>) {
+    pub fn into_parts(self) -> (Rc<Context>, Option<L>, ProgramPoint) {
         (self.context, self.listener, self.ip)
     }
 }
@@ -238,7 +242,7 @@ impl<L: Listener> Listener for OpBuilder<L> {
         self.listener.as_ref().map(|l| l.kind()).unwrap_or(ListenerType::Builder)
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         if let Some(listener) = self.listener.as_ref() {
             listener.notify_operation_inserted(op, prev);
         }
@@ -268,23 +272,25 @@ impl<L: Listener> Builder for OpBuilder<L> {
     }
 
     #[inline(always)]
-    fn insertion_point(&self) -> Option<&InsertionPoint> {
-        self.ip.as_ref()
+    fn insertion_point(&self) -> &ProgramPoint {
+        &self.ip
     }
 
     #[inline]
-    fn clear_insertion_point(&mut self) -> Option<InsertionPoint> {
-        self.ip.take()
+    fn clear_insertion_point(&mut self) -> ProgramPoint {
+        let ip = self.ip;
+        self.ip = ProgramPoint::Invalid;
+        ip
     }
 
     #[inline]
-    fn restore_insertion_point(&mut self, ip: Option<InsertionPoint>) {
+    fn restore_insertion_point(&mut self, ip: ProgramPoint) {
         self.ip = ip;
     }
 
     #[inline(always)]
-    fn set_insertion_point(&mut self, ip: InsertionPoint) {
-        self.ip = Some(ip);
+    fn set_insertion_point(&mut self, ip: ProgramPoint) {
+        self.ip = ip;
     }
 }
 
@@ -300,8 +306,8 @@ pub trait Listener: 'static {
     /// Notify the listener that the specified operation was inserted.
     ///
     /// * If the operation was moved, then `prev` is the previous location of the op
-    /// * If the operation was unlinked before it was inserted, then `prev` is `None`
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {}
+    /// * If the operation was unlinked before it was inserted, then `prev` is `Invalid`
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {}
     /// Notify the listener that the specified block was inserted.
     ///
     /// * If the block was moved, then `prev` and `ip` represent the previous location of the block.
@@ -331,7 +337,7 @@ impl<L: Listener> Listener for Option<L> {
         }
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         if let Some(listener) = self.as_ref() {
             listener.notify_operation_inserted(op, prev);
         }
@@ -344,7 +350,7 @@ impl<L: ?Sized + Listener> Listener for Box<L> {
         (**self).kind()
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         (**self).notify_operation_inserted(op, prev)
     }
 
@@ -364,7 +370,7 @@ impl<L: ?Sized + Listener> Listener for Rc<L> {
         (**self).kind()
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         (**self).notify_operation_inserted(op, prev)
     }
 
@@ -393,21 +399,21 @@ impl Listener for NoopBuilderListener {
 #[doc(hidden)]
 #[allow(unused_variables)]
 trait RestoreInsertionPointOnDrop {
-    fn restore_insertion_point_on_drop(&mut self, ip: Option<InsertionPoint>);
+    fn restore_insertion_point_on_drop(&mut self, ip: ProgramPoint);
 }
 impl<B: ?Sized> RestoreInsertionPointOnDrop for InsertionGuard<'_, B> {
     #[inline(always)]
-    default fn restore_insertion_point_on_drop(&mut self, _ip: Option<InsertionPoint>) {}
+    default fn restore_insertion_point_on_drop(&mut self, _ip: ProgramPoint) {}
 }
 impl<B: ?Sized + Builder> RestoreInsertionPointOnDrop for InsertionGuard<'_, B> {
-    fn restore_insertion_point_on_drop(&mut self, ip: Option<InsertionPoint>) {
+    fn restore_insertion_point_on_drop(&mut self, ip: ProgramPoint) {
         self.builder.restore_insertion_point(ip);
     }
 }
 
 pub struct InsertionGuard<'a, B: ?Sized> {
     builder: &'a mut B,
-    ip: Option<InsertionPoint>,
+    ip: ProgramPoint,
 }
 impl<'a, B> InsertionGuard<'a, B>
 where
@@ -415,7 +421,7 @@ where
 {
     #[allow(unused)]
     pub fn new(builder: &'a mut B) -> Self {
-        let ip = builder.insertion_point().cloned();
+        let ip = *builder.insertion_point();
         Self { builder, ip }
     }
 }
@@ -435,7 +441,7 @@ impl<B: ?Sized> core::ops::DerefMut for InsertionGuard<'_, B> {
 }
 impl<B: ?Sized> Drop for InsertionGuard<'_, B> {
     fn drop(&mut self) {
-        let ip = self.ip.take();
+        let ip = self.ip;
         self.restore_insertion_point_on_drop(ip);
     }
 }

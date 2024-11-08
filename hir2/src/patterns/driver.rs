@@ -50,7 +50,7 @@ pub fn apply_patterns_and_fold_region_greedily(
 
     // Set scope if not specified
     if config.scope.is_none() {
-        config.scope = Some(region.clone());
+        config.scope = Some(region);
     }
 
     let mut driver = RegionPatternRewriteDriver::new(context, patterns, config, region);
@@ -167,7 +167,7 @@ pub fn apply_patterns_and_fold(
     // Determine scope of rewrite
     if let Some(scope) = config.scope.as_ref() {
         // If a scope was provided, make sure that all ops are in scope.
-        let all_ops_in_scope = ops.iter().all(|op| scope.borrow().find_ancestor_op(op).is_some());
+        let all_ops_in_scope = ops.iter().all(|op| scope.borrow().find_ancestor_op(*op).is_some());
         assert!(all_ops_in_scope, "ops must be within the specified scope");
     } else {
         // Compute scope if none was provided. The scope will remain `None` if there is a top-level
@@ -335,7 +335,7 @@ impl GreedyRewriteConfig {
 
     #[inline]
     pub fn scope(&self) -> Option<RegionRef> {
-        self.scope.clone()
+        self.scope
     }
 
     #[inline]
@@ -498,7 +498,7 @@ impl GreedyPatternRewriteDriver {
             if op.fold(&mut results).is_ok() {
                 if results.is_empty() {
                     // Op was modified in-place
-                    self.notify_operation_modified(op_ref.clone());
+                    self.notify_operation_modified(op_ref);
                     log::trace!("operation was succesfully folded/modified in-place");
                     return true;
                 } else {
@@ -515,7 +515,7 @@ impl GreedyPatternRewriteDriver {
                     "folder produced incorrect number of results"
                 );
                 let mut rewriter = InsertionGuard::new(&mut **rewriter);
-                rewriter.set_insertion_point_before(ProgramPoint::Op(op_ref.clone()));
+                rewriter.set_insertion_point(ProgramPoint::before(op_ref));
 
                 log::trace!("replacing op with fold results..");
                 let mut replacements = SmallVec::<[ValueRef; 2]>::default();
@@ -582,8 +582,7 @@ impl GreedyPatternRewriteDriver {
                                         "materialize_constant produced op that does not implement \
                                          ConstantLike"
                                     );
-                                    let result: ValueRef =
-                                        const_op.results().all()[0].clone().upcast();
+                                    let result: ValueRef = const_op.results().all()[0].upcast();
                                     assert_eq!(
                                         result.borrow().ty(),
                                         &result_ty,
@@ -636,7 +635,7 @@ impl GreedyPatternRewriteDriver {
             let op_name = op.name();
             let can_apply = |pattern: &dyn RewritePattern| {
                 log::trace!("applying pattern {} to op {}", pattern.name(), &op_name);
-                listener.notify_pattern_begin(pattern, op_ref.clone());
+                listener.notify_pattern_begin(pattern, op_ref);
                 true
             };
             let on_failure = |pattern: &dyn RewritePattern| {
@@ -650,7 +649,7 @@ impl GreedyPatternRewriteDriver {
             };
             drop(op);
             self.matcher.borrow_mut().match_and_rewrite(
-                op_ref.clone(),
+                op_ref,
                 &mut **rewriter,
                 can_apply,
                 on_failure,
@@ -659,7 +658,7 @@ impl GreedyPatternRewriteDriver {
         } else {
             drop(op);
             self.matcher.borrow_mut().match_and_rewrite(
-                op_ref.clone(),
+                op_ref,
                 &mut **rewriter,
                 |_| true,
                 |_| {},
@@ -707,7 +706,7 @@ impl GreedyPatternRewriteDriver {
                     continue;
                 }
                 if other_user.is_none() {
-                    other_user = Some(user.owner.clone());
+                    other_user = Some(user.owner);
                     continue;
                 }
                 has_more_than_two_uses = true;
@@ -741,12 +740,12 @@ impl Listener for GreedyPatternRewriteDriver {
     /// Notify the driver that the specified operation was inserted.
     ///
     /// Update the worklist as needed: the operation is enqueued depending on scope and strictness
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<crate::InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         if let Some(listener) = self.config.listener.as_deref() {
-            listener.notify_operation_inserted(op.clone(), prev.clone());
+            listener.notify_operation_inserted(op, prev);
         }
         if matches!(self.config.restrict, GreedyRewriteStrictness::ExistingAndNew) {
-            self.filtered_ops.borrow_mut().insert(op.clone());
+            self.filtered_ops.borrow_mut().insert(op);
         }
         self.add_to_worklist(op);
     }
@@ -763,7 +762,7 @@ impl RewriterListener for GreedyPatternRewriteDriver {
     /// operation is added to the worklist.
     fn notify_operation_modified(&self, op: OperationRef) {
         if let Some(listener) = self.config.listener.as_deref() {
-            listener.notify_operation_modified(op.clone());
+            listener.notify_operation_modified(op);
         }
         self.add_to_worklist(op);
     }
@@ -785,10 +784,10 @@ impl RewriterListener for GreedyPatternRewriteDriver {
         }
 
         if let Some(listener) = self.config.listener.as_deref() {
-            listener.notify_operation_erased(op.clone());
+            listener.notify_operation_erased(op);
         }
 
-        self.add_operands_to_worklist(op.clone());
+        self.add_operands_to_worklist(op);
         self.worklist.borrow_mut().remove(&op);
 
         if self.config.restrict != GreedyRewriteStrictness::Any {
@@ -874,7 +873,7 @@ impl RegionPatternRewriteDriver {
                 // Add operations to the worklist in postorder.
                 log::trace!("adding operations in postorder");
                 self.region.borrow().postwalk(|op| {
-                    if !insert_known_constant(op.clone()) {
+                    if !insert_known_constant(op) {
                         self.driver.add_to_worklist(op);
                     }
                 });
@@ -884,7 +883,7 @@ impl RegionPatternRewriteDriver {
                 self.region
                     .borrow()
                     .prewalk_interruptible(|op| {
-                        if !insert_known_constant(op.clone()) {
+                        if !insert_known_constant(op) {
                             self.driver.add_to_worklist(op);
                             WalkResult::<Report>::Continue(())
                         } else {
@@ -912,7 +911,7 @@ impl RegionPatternRewriteDriver {
                     Rc::clone(&self.driver),
                 );
                 continue_rewrites |= Region::simplify_all(
-                    &[self.region.clone()],
+                    &[self.region],
                     &mut *rewriter,
                     self.driver.config.region_simplification,
                 )
@@ -973,8 +972,8 @@ impl MultiOpPatternRewriteDriver {
 
     pub fn simplify(&mut self, ops: &[OperationRef]) -> Result<bool, bool> {
         // Populate the initial worklist
-        for op in ops {
-            self.driver.add_single_op_to_worklist(op.clone());
+        for op in ops.iter().copied() {
+            self.driver.add_single_op_to_worklist(op);
         }
 
         // Process ops on the worklist

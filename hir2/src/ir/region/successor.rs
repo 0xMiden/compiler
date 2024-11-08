@@ -20,7 +20,7 @@ pub enum RegionSuccessorInfo {
 impl RegionSuccessorInfo {
     pub fn successor(&self) -> RegionBranchPoint {
         match self {
-            Self::Entering(region) => RegionBranchPoint::Child(region.clone()),
+            Self::Entering(region) => RegionBranchPoint::Child(*region),
             Self::Returning(_) => RegionBranchPoint::Parent,
         }
     }
@@ -148,7 +148,7 @@ impl<'a> RegionSuccessorIter<'a> {
                         .map(|arg| arg.borrow().as_value_ref())
                         .collect(),
                 );
-                RegionSuccessor::new(RegionBranchPoint::Child(region.clone()), operands)
+                RegionSuccessor::new(RegionBranchPoint::Child(*region), operands)
             }
             RegionSuccessorInfo::Returning(results) => {
                 RegionSuccessor::new(RegionBranchPoint::Parent, results.clone())

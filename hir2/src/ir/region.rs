@@ -76,7 +76,7 @@ impl EntityWithParent for Region {
         transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
     ) {
         for mut transferred_region in transferred {
-            transferred_region.borrow_mut().owner = Some(to.clone());
+            transferred_region.borrow_mut().owner = Some(to);
         }
     }
 }
@@ -104,7 +104,7 @@ impl cfg::Graph for Region {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block.clone()
+        edge.borrow().block
     }
 
     fn entry_node(&self) -> Self::Node {
@@ -236,7 +236,7 @@ impl Region {
 
     /// Get the defining [Operation] for this region, if the region is attached to one.
     pub fn parent(&self) -> Option<OperationRef> {
-        self.owner.clone()
+        self.owner
     }
 
     /// Get the region which contains the parent operation of this region, if there is one.
@@ -382,7 +382,7 @@ impl Region {
                 while let Some(r) = region.take() {
                     while let Some(index) = remaining_ops.first_one() {
                         // Is this op contained in `region`?
-                        if r.borrow().find_ancestor_op(&rest[index]).is_some() {
+                        if r.borrow().find_ancestor_op(rest[index]).is_some() {
                             unsafe {
                                 remaining_ops.set_unchecked(index, false);
                             }
@@ -402,9 +402,9 @@ impl Region {
     /// that lies in this region.
     ///
     /// Returns `None` if the latter fails.
-    pub fn find_ancestor_block(&self, block: &BlockRef) -> Option<BlockRef> {
+    pub fn find_ancestor_block(&self, block: BlockRef) -> Option<BlockRef> {
         let this = self.as_region_ref();
-        let mut current = Some(block.clone());
+        let mut current = Some(block);
         while let Some(current_block) = current.take() {
             let parent = current_block.borrow().parent()?;
             if parent == this {
@@ -420,9 +420,9 @@ impl Region {
     /// in this region.
     ///
     /// Returns `None` if the latter fails.
-    pub fn find_ancestor_op(&self, op: &OperationRef) -> Option<OperationRef> {
+    pub fn find_ancestor_op(&self, op: OperationRef) -> Option<OperationRef> {
         let this = self.as_region_ref();
-        let mut current = Some(op.clone());
+        let mut current = Some(op);
         while let Some(current_op) = current.take() {
             let parent = current_op.borrow().parent_region()?;
             if parent == this {

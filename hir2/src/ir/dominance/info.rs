@@ -82,8 +82,8 @@ impl DominanceInfo {
     /// by the `enclosing_op_ok` flag.
     pub fn properly_dominates_with_options(
         &self,
-        a: &OperationRef,
-        b: &OperationRef,
+        a: OperationRef,
+        mut b: OperationRef,
         enclosing_op_ok: bool,
     ) -> bool {
         let a_block = a.borrow().parent().expect("`a` must be in a block");
@@ -97,11 +97,10 @@ impl DominanceInfo {
 
         // If these ops are in different regions, then normalize one into the other.
         let a_region = a_block.borrow().parent().unwrap();
-        let mut b = b.clone();
         if a_region != b_block.borrow().parent().unwrap() {
             // Walk up `b`'s region tree until we find an operation in `a`'s region that encloses
             // it. If this fails, then we know there is no post-dominance relation.
-            let Some(found) = a_region.borrow().find_ancestor_op(&b) else {
+            let Some(found) = a_region.borrow().find_ancestor_op(b) else {
                 return false;
             };
             b = found;
@@ -109,7 +108,7 @@ impl DominanceInfo {
             assert!(b_block.borrow().parent().unwrap() == a_region);
 
             // If `a` encloses `b`, then we consider it to dominate.
-            if a == &b && enclosing_op_ok {
+            if a == b && enclosing_op_ok {
                 return true;
             }
         }
@@ -128,9 +127,7 @@ impl DominanceInfo {
         }
 
         // If the blocks are different, use the dominance tree to resolve the query
-        self.info
-            .dominance(&a_region)
-            .properly_dominates(Some(&a_block), Some(&b_block))
+        self.info.dominance(a_region).properly_dominates(Some(a_block), Some(b_block))
     }
 }
 
@@ -283,7 +280,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
             let has_one_block = region.has_one_block();
             let region = region.as_region_ref();
             let info = RegionDominanceInfo::<IS_POST_DOM>::create(
-                region.clone(),
+                region,
                 has_ssa_dominance,
                 has_one_block,
             );
@@ -312,8 +309,8 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     /// If no common dominator can be found, this function will return `None`.
     pub fn find_nearest_common_dominator_of(
         &self,
-        a: Option<&BlockRef>,
-        b: Option<&BlockRef>,
+        a: Option<BlockRef>,
+        b: Option<BlockRef>,
     ) -> Option<BlockRef> {
         // If either `a` or `b` are `None`, then conservatively return `None`
         let a = a?;
@@ -321,7 +318,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
 
         // If they are the same block, then we are done.
         if a == b {
-            return Some(a.clone());
+            return Some(a);
         }
 
         // Try to find blocks that are in the same region.
@@ -333,21 +330,20 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
         }
 
         // Otherwise, there must be multiple blocks in the region, check the dominance tree
-        self.dominance(&a.borrow().parent().unwrap())
-            .find_nearest_common_dominator(&a, &b)
+        self.dominance(a.borrow().parent().unwrap()).find_nearest_common_dominator(a, b)
     }
 
     /// Finds the nearest common dominator block for the given range of blocks.
     ///
     /// If no common dominator can be found, this function will return `None`.
-    pub fn find_nearest_common_dominator_of_all<'a>(
+    pub fn find_nearest_common_dominator_of_all(
         &self,
-        mut blocks: impl ExactSizeIterator<Item = &'a BlockRef>,
+        mut blocks: impl ExactSizeIterator<Item = BlockRef>,
     ) -> Option<BlockRef> {
-        let mut dom = blocks.next().cloned();
+        let mut dom = blocks.next();
 
         for block in blocks {
-            dom = self.find_nearest_common_dominator_of(dom.as_ref(), Some(block));
+            dom = self.find_nearest_common_dominator_of(dom, Some(block));
         }
 
         dom
@@ -356,7 +352,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     /// Get the root dominance node of the given region.
     ///
     /// Panics if `region` is not a multi-block region.
-    pub fn root_node(&self, region: &RegionRef) -> Rc<DomTreeNode> {
+    pub fn root_node(&self, region: RegionRef) -> Rc<DomTreeNode> {
         self.get_dominance_info(region)
             .domtree
             .as_deref()
@@ -368,8 +364,8 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     /// Return the dominance node for the region containing `block`.
     ///
     /// Panics if `block` is not a member of a multi-block region.
-    pub fn node(&self, block: &BlockRef) -> Option<Rc<DomTreeNode>> {
-        self.get_dominance_info(&block.borrow().parent().expect("block isn't attached to region"))
+    pub fn node(&self, block: BlockRef) -> Option<Rc<DomTreeNode>> {
+        self.get_dominance_info(block.borrow().parent().expect("block isn't attached to region"))
             .domtree
             .as_deref()
             .expect("`block` isn't in a multi-block region")
@@ -377,35 +373,35 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     }
 
     /// Return true if the specified block is reachable from the entry block of its region.
-    pub fn is_reachable_from_entry(&self, block: &BlockRef) -> bool {
+    pub fn is_reachable_from_entry(&self, block: BlockRef) -> bool {
         // If this is the first block in its region, then it is trivially reachable.
         if block.borrow().is_entry_block() {
             return true;
         }
 
         let region = block.borrow().parent().expect("block isn't attached to region");
-        self.dominance(&region).is_reachable_from_entry(block)
+        self.dominance(region).is_reachable_from_entry(block)
     }
 
     /// Return true if operations in the specified block are known to obey SSA dominance rules.
     ///
     /// Returns false if the block is a graph region or unknown.
-    pub fn block_has_ssa_dominance(&self, block: &BlockRef) -> bool {
+    pub fn block_has_ssa_dominance(&self, block: BlockRef) -> bool {
         let region = block.borrow().parent().expect("block isn't attached to region");
-        self.get_dominance_info(&region).has_ssa_dominance
+        self.get_dominance_info(region).has_ssa_dominance
     }
 
     /// Return true if operations in the specified region are known to obey SSA dominance rules.
     ///
     /// Returns false if the region is a graph region or unknown.
-    pub fn region_has_ssa_dominance(&self, region: &RegionRef) -> bool {
+    pub fn region_has_ssa_dominance(&self, region: RegionRef) -> bool {
         self.get_dominance_info(region).has_ssa_dominance
     }
 
     /// Returns the dominance tree for `region`.
     ///
     /// Panics if `region` is a single-block region.
-    pub fn dominance(&self, region: &RegionRef) -> Rc<DomTreeBase<IS_POST_DOM>> {
+    pub fn dominance(&self, region: RegionRef) -> Rc<DomTreeBase<IS_POST_DOM>> {
         self.get_dominance_info(region)
             .dominance()
             .expect("cannot get dominator tree for single block regions")
@@ -414,18 +410,18 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     /// Return the dominance information for `region`.
     ///
     /// NOTE: The dominance tree for single-block regions will be `None`
-    fn get_dominance_info(&self, region: &RegionRef) -> Ref<'_, RegionDominanceInfo<IS_POST_DOM>> {
+    fn get_dominance_info(&self, region: RegionRef) -> Ref<'_, RegionDominanceInfo<IS_POST_DOM>> {
         // Check to see if we already have this information.
         self.dominance_infos
             .borrow_mut()
-            .entry(region.clone())
-            .or_insert_with(|| RegionDominanceInfo::new(region.clone()));
+            .entry(region)
+            .or_insert_with(|| RegionDominanceInfo::new(region));
 
-        Ref::map(self.dominance_infos.borrow(), |di| &di[region])
+        Ref::map(self.dominance_infos.borrow(), |di| &di[&region])
     }
 
     /// Return true if the specified block A properly dominates block B.
-    pub fn properly_dominates(&self, a: &BlockRef, b: &BlockRef) -> bool {
+    pub fn properly_dominates(&self, a: BlockRef, mut b: BlockRef) -> bool {
         // A block dominates itself, but does not properly dominate itself.
         if a == b {
             return false;
@@ -434,11 +430,10 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
         // If both blocks are not in the same region, `a` properly dominates `b` if `b` is defined
         // in an operation region that (recursively) ends up being dominated by `a`. Walk up the
         // ancestors of `b`.
-        let mut b = b.clone();
         let a_region = a.borrow().parent();
         if a_region != b.borrow().parent() {
             // If we could not find a valid block `b` then it is not a dominator.
-            let Some(found) = a_region.as_ref().and_then(|r| r.borrow().find_ancestor_block(&b))
+            let Some(found) = a_region.as_ref().and_then(|r| r.borrow().find_ancestor_block(b))
             else {
                 return false;
             };
@@ -447,26 +442,24 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
 
             // Check to see if the ancestor of `b` is the same block as `a`. `a` properly dominates
             // `b` if it contains an op that contains the `b` block
-            if a == &b {
+            if a == b {
                 return true;
             }
         }
 
         // Otherwise, they are two different blocks in the same region, use dominance tree
-        self.dominance(&a_region.unwrap()).properly_dominates(Some(a), Some(&b))
+        self.dominance(a_region.unwrap()).properly_dominates(Some(a), Some(b))
     }
 }
 
 impl DominanceInfoBase<true> {
     #[allow(unused)]
-    pub fn root_nodes(&self, region: &RegionRef) -> SmallVec<[BlockRef; 4]> {
+    pub fn root_nodes(&self, region: RegionRef) -> SmallVec<[BlockRef; 4]> {
         self.dominance_infos
             .borrow()
-            .get(region)
+            .get(&region)
             .and_then(|dominfo| dominfo.domtree.as_deref())
-            .map(|domtree| {
-                domtree.roots().iter().filter_map(|maybe_root| maybe_root.clone()).collect()
-            })
+            .map(|domtree| domtree.roots().iter().filter_map(|maybe_root| *maybe_root).collect())
             .unwrap_or_default()
     }
 }
@@ -482,15 +475,11 @@ impl<const IS_POST_DOM: bool> FnOnce<()> for RegionDomTreeCtor<IS_POST_DOM> {
 }
 impl<const IS_POST_DOM: bool> FnMut<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call_mut(&mut self, _args: ()) -> Self::Output {
-        self.0
-            .as_ref()
-            .and_then(|region| DomTreeBase::new(region.clone()).ok().map(Rc::new))
+        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
     }
 }
 impl<const IS_POST_DOM: bool> Fn<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call(&self, _args: ()) -> Self::Output {
-        self.0
-            .as_ref()
-            .and_then(|region| DomTreeBase::new(region.clone()).ok().map(Rc::new))
+        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
     }
 }

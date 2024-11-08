@@ -85,6 +85,7 @@ pub use self::{
         markers::*, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr, Overflow, SetAttr,
         Visibility,
     },
+    dataflow::ProgramPoint,
     eq::DynPartialEq,
     folder::OperationFolder,
     hash::{DynHash, DynHasher},

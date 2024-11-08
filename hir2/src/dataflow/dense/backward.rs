@@ -175,21 +175,21 @@ pub fn process_operation<A>(
 where
     A: DenseBackwardDataFlowAnalysis,
 {
-    let point = solver.program_point_before(op);
+    let point = ProgramPoint::before(op);
     // If the containing block is not executable, bail out.
     if op.parent().is_some_and(|block| {
         !solver
-            .require::<Executable, _>(solver.program_point_before(block), point.clone())
+            .require::<Executable, _>(ProgramPoint::at_start_of(block), point)
             .is_live()
     }) {
         return Ok(());
     }
 
     // Get the dense lattice to update.
-    let mut before = solver.get_or_create_mut(point.clone());
+    let mut before = solver.get_or_create_mut(point);
 
     // Get the dense state after execution of this op.
-    let after = solver.require(solver.program_point_after(op), point.clone());
+    let after = solver.require(ProgramPoint::after(op), point);
 
     // Special cases where control flow may dictate data flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -219,16 +219,16 @@ pub fn visit_block<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
 where
     A: DenseBackwardDataFlowAnalysis,
 {
-    let point = solver.program_point_after(block);
+    let point = ProgramPoint::at_end_of(block);
     // If the block is not executable, bail out.
     if !solver
-        .require::<Executable, _>(solver.program_point_before(block), point.clone())
+        .require::<Executable, _>(ProgramPoint::at_start_of(block), point)
         .is_live()
     {
         return;
     }
 
-    let mut before = solver.get_or_create_mut(point.clone());
+    let mut before = solver.get_or_create_mut(point);
 
     // We need "exit" blocks, i.e. the blocks that may return control to the parent operation.
     let is_region_exit_block = |block: &Block| {
@@ -252,8 +252,8 @@ where
             let callable_region = callable.get_callable_region();
             if callable_region.is_some_and(|r| r == region) {
                 let callsites = solver.require::<PredecessorState, _>(
-                    solver.program_point_after(callable.as_operation()),
-                    point.clone(),
+                    ProgramPoint::after(callable.as_operation()),
+                    point,
                 );
                 // If not all call sites are known, conservative mark all lattices as
                 // having reached their pessimistic fix points.
@@ -264,8 +264,7 @@ where
                 for callsite in callsites.known_predecessors() {
                     let call = callsite.borrow();
                     let call = call.as_trait::<dyn CallOpInterface>().expect("invalid callsite");
-                    let after =
-                        solver.require(solver.program_point_after(callsite.clone()), point.clone());
+                    let after = solver.require(ProgramPoint::after(*callsite), point);
                     analysis.visit_call_control_flow_transfer(
                         call,
                         CallControlFlowAction::Exit,
@@ -300,8 +299,8 @@ where
     for successor in Block::children(block.as_block_ref()) {
         if !solver
             .require::<Executable, _>(
-                CfgEdge::new(block.as_block_ref(), successor.clone(), block.span()),
-                point.clone(),
+                CfgEdge::new(block.as_block_ref(), successor, block.span()),
+                point,
             )
             .is_live()
         {
@@ -310,7 +309,7 @@ where
 
         // Merge in the state from the successor: either the first operation, or the block itself
         // when empty.
-        let after = solver.require(solver.program_point_before(successor.clone()), point.clone());
+        let after = solver.require(ProgramPoint::before(successor), point);
         analysis.visit_branch_control_flow_transfer(block, successor, &after, &mut before, solver);
     }
 }
@@ -383,9 +382,9 @@ pub fn visit_call_operation<A>(
         //   }
         let region = callable.get_callable_region().unwrap().borrow();
         let callee_entry_block = region.entry();
-        let callee_entry = solver.program_point_before(&*callee_entry_block);
+        let callee_entry = ProgramPoint::at_start_of(&*callee_entry_block);
         let lattice_at_callee_entry =
-            solver.require(callee_entry, solver.program_point_before(call.as_operation()));
+            solver.require(callee_entry, ProgramPoint::before(call.as_operation()));
         let lattice_before_call = &mut *before;
         analysis.visit_call_control_flow_transfer(
             call,
@@ -418,22 +417,19 @@ pub fn visit_region_branch_operation<A>(
         let after = match successor_region.as_ref() {
             None => {
                 // The successor is `branch` itself
-                solver.require(solver.program_point_after(branch.as_operation()), point.clone())
+                solver.require(ProgramPoint::after(branch.as_operation()), point)
             }
             Some(region) => {
                 // The successor is a region of `branch`
                 let block =
                     region.borrow().entry_block_ref().expect("unexpected empty successor region");
                 if !solver
-                    .require::<Executable, _>(
-                        solver.program_point_before(block.clone()),
-                        point.clone(),
-                    )
+                    .require::<Executable, _>(ProgramPoint::at_start_of(block), point)
                     .is_live()
                 {
                     continue;
                 }
-                solver.require(solver.program_point_before(block), point.clone())
+                solver.require(ProgramPoint::at_start_of(block), point)
             }
         };
 

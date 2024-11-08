@@ -35,7 +35,7 @@ impl RegionBranchPoint {
     /// Returns the region if branching from a region, otherwise `None`.
     pub fn region(&self) -> Option<RegionRef> {
         match self {
-            Self::Child(ref region) => Some(region.clone()),
+            Self::Child(region) => Some(*region),
             Self::Parent => None,
         }
     }

@@ -18,9 +18,9 @@ use crate::{
     },
     pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
-    AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, InsertionPoint,
-    Operation, OperationRef, RegionBranchOpInterface, RegionBranchTerminatorOpInterface, Report,
-    SourceSpan, Spanned, Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
+    AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, Operation, OperationRef,
+    RegionBranchOpInterface, RegionBranchTerminatorOpInterface, Report, SourceSpan, Spanned,
+    Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
 };
 
 /// This is a simple analysis state that represents whether the associated lattice anchor
@@ -110,12 +110,12 @@ impl AnalysisStateSubscriptionBehavior for Executable {
                 // Re-invoke analyses on the block itself
                 info.subscribe(AnalysisStateSubscription::AtPoint {
                     analysis: subscriber,
-                    point: pp.clone(),
+                    point: pp,
                 });
                 // Re-invoke the analysis on all operations in the block
                 let block = pp.block().unwrap();
                 for op in block.borrow().body() {
-                    let point = ProgramPoint::new(InsertionPoint::after(&*op));
+                    let point = ProgramPoint::after(&*op);
                     info.subscribe(AnalysisStateSubscription::AtPoint {
                         analysis: subscriber,
                         point,
@@ -124,7 +124,7 @@ impl AnalysisStateSubscriptionBehavior for Executable {
             }
         } else if let Some(edge) = anchor.as_any().downcast_ref::<CfgEdge>() {
             // Re-invoke the analysis on the successor block
-            let point = ProgramPoint::new(InsertionPoint::before(edge.to().clone()));
+            let point = ProgramPoint::before(edge.to());
             info.subscribe(AnalysisStateSubscription::AtPoint {
                 analysis: subscriber,
                 point,
@@ -187,7 +187,7 @@ impl PredecessorState {
     }
 
     pub fn join(&mut self, predecessor: OperationRef) -> ChangeResult {
-        if self.known_predecessors.insert(predecessor.clone()) {
+        if self.known_predecessors.insert(predecessor) {
             self.successor_inputs.insert(predecessor, Default::default());
             ChangeResult::Changed
         } else {
@@ -200,7 +200,7 @@ impl PredecessorState {
         predecessor: OperationRef,
         inputs: impl IntoIterator<Item = ValueRef>,
     ) -> ChangeResult {
-        if self.known_predecessors.insert(predecessor.clone()) {
+        if self.known_predecessors.insert(predecessor) {
             self.successor_inputs.insert(predecessor, inputs.into_iter().collect());
             ChangeResult::Changed
         } else {
@@ -251,19 +251,19 @@ impl CfgEdge {
 
     #[allow(unused)]
     #[inline(always)]
-    pub fn from(&self) -> &BlockRef {
-        &self.from
+    pub const fn from(&self) -> BlockRef {
+        self.from
     }
 
     #[inline(always)]
-    pub fn to(&self) -> &BlockRef {
-        &self.to
+    pub const fn to(&self) -> BlockRef {
+        self.to
     }
 }
 impl Eq for CfgEdge {}
 impl PartialEq for CfgEdge {
     fn eq(&self, other: &Self) -> bool {
-        BlockRef::ptr_eq(&self.from, &other.from) && BlockRef::ptr_eq(&self.to, &other.to)
+        self.from == other.from && self.to == other.to
     }
 }
 impl core::hash::Hash for CfgEdge {
@@ -360,9 +360,9 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
                 continue;
             }
 
-            let mut state = solver.get_or_create_mut::<Executable, _>(
-                solver.program_point_before(region.entry_block_ref().unwrap()),
-            );
+            let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(
+                region.entry_block_ref().unwrap(),
+            ));
             state.mark_live();
         }
 
@@ -388,7 +388,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         // If the parent block is not executable, there is nothing to do.
         if op.parent().is_none_or(|block| {
             !solver
-                .get_or_create_mut::<Executable, _>(solver.program_point_before(block))
+                .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
                 .is_live()
         }) {
             return Ok(());
@@ -406,8 +406,8 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
                 self.visit_region_branch_operation(branch, solver);
             } else if let Some(callable) = op.as_trait::<dyn CallableOpInterface>() {
                 let callsites = solver.require::<PredecessorState, _>(
-                    solver.program_point_after(callable.as_operation()),
-                    solver.program_point_after(&*op),
+                    ProgramPoint::after(callable.as_operation()),
+                    ProgramPoint::after(&*op),
                 );
 
                 // If the callsites could not be resolved or are known to be non-empty, mark the
@@ -490,7 +490,7 @@ impl DeadCodeAnalysis {
                 let visibility = symbol.visibility();
                 if visibility.is_public() || (!all_uses_visible && visibility.is_internal()) {
                     let mut state = solver.get_or_create_mut::<PredecessorState, _>(
-                        solver.program_point_after(callable.as_operation()),
+                        ProgramPoint::after(callable.as_operation()),
                     );
                     state.set_has_unknown_predecessors();
                 }
@@ -515,9 +515,8 @@ impl DeadCodeAnalysis {
                 // callsites.
                 let symbol_attr = symbol_use.symbol();
                 if let Some(symbol) = top_symbol_table.lookup_symbol_ref(&symbol_attr) {
-                    let mut state = solver.get_or_create_mut::<PredecessorState, _>(
-                        solver.program_point_after(symbol),
-                    );
+                    let mut state = solver
+                        .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(symbol));
                     state.set_has_unknown_predecessors();
                 }
             }
@@ -542,12 +541,12 @@ impl DeadCodeAnalysis {
             // the op.
             if let Some(block) = op.parent() {
                 let mut exec =
-                    solver.get_or_create_mut::<Executable, _>(solver.program_point_before(block));
+                    solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block));
                 AnalysisStateGuard::subscribe(&mut exec, self);
             }
 
             // Visit the op.
-            let point = solver.program_point_after(op);
+            let point = ProgramPoint::after(op);
             self.visit(&point, solver)?;
         }
 
@@ -565,7 +564,7 @@ impl DeadCodeAnalysis {
 
     /// Mark the edge between `from` and `to` as executable.
     fn mark_edge_live(&self, from: &Block, to: &Block, solver: &mut DataFlowSolver) {
-        let mut state = solver.get_or_create_mut::<Executable, _>(solver.program_point_before(to));
+        let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(to));
         state.mark_live();
         drop(state);
         let anchor = solver.create_lattice_anchor(CfgEdge::new(
@@ -581,7 +580,7 @@ impl DeadCodeAnalysis {
         for region in op.regions() {
             if let Some(entry) = region.entry_block_ref() {
                 let mut state =
-                    solver.get_or_create_mut::<Executable, _>(solver.program_point_before(entry));
+                    solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(entry));
                 state.mark_live();
             }
         }
@@ -608,9 +607,8 @@ impl DeadCodeAnalysis {
 
         // If the callabel is unresolvable, mark the call ops predecessors as overdefined/unknown
         if callable.is_none() {
-            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(
-                solver.program_point_after(call.as_operation()),
-            );
+            let mut predecessors = solver
+                .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
             predecessors.set_has_unknown_predecessors();
             return;
         }
@@ -626,14 +624,13 @@ impl DeadCodeAnalysis {
         if !is_external_callable(callable.as_symbol_operation()) {
             // Add the live callsite
             let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
-                solver.program_point_after(callable.as_symbol_operation()),
+                ProgramPoint::after(callable.as_symbol_operation()),
             );
             callsites.join(call.as_operation().as_operation_ref());
         } else {
             // Mark this call op's predecessors as overdefined
-            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(
-                solver.program_point_after(call.as_operation()),
-            );
+            let mut predecessors = solver
+                .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
             predecessors.set_has_unknown_predecessors();
         }
     }
@@ -679,12 +676,12 @@ impl DeadCodeAnalysis {
         for successor in branch.get_entry_successor_regions(&operands) {
             // The successor can be either an entry block or the parent operation.
             let point = if let Some(succ) = successor.successor() {
-                solver.program_point_before(succ.borrow().entry_block_ref().unwrap())
+                ProgramPoint::at_start_of(succ.borrow().entry_block_ref().unwrap())
             } else {
-                solver.program_point_after(branch.as_operation())
+                ProgramPoint::after(branch.as_operation())
             };
             // Mark the entry block as executable.
-            let mut state = solver.get_or_create_mut::<Executable, _>(point.clone());
+            let mut state = solver.get_or_create_mut::<Executable, _>(point);
             state.mark_live();
             // Add the parent op as a predecessor
             let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
@@ -723,15 +720,15 @@ impl DeadCodeAnalysis {
         for successor in successors {
             let mut predecessors = if let Some(region) = successor.successor() {
                 let entry = region.borrow().entry_block_ref().unwrap();
-                let point = solver.program_point_before(entry);
-                let mut state = solver.get_or_create_mut::<Executable, _>(point.clone());
+                let point = ProgramPoint::at_start_of(entry);
+                let mut state = solver.get_or_create_mut::<Executable, _>(point);
                 state.mark_live();
                 solver.get_or_create_mut::<PredecessorState, _>(point)
             } else {
                 // Add this terminator as a predecessor to the parent op.
-                solver.get_or_create_mut::<PredecessorState, _>(
-                    solver.program_point_after(branch.as_operation()),
-                )
+                solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(
+                    branch.as_operation(),
+                ))
             };
             predecessors
                 .join_with_inputs(op.as_operation_ref(), successor.successor_inputs().iter());
@@ -748,16 +745,15 @@ impl DeadCodeAnalysis {
     ) {
         // Add as predecessors to all callsites this return op.
         let callsites = solver.require::<PredecessorState, _>(
-            solver.program_point_after(callable.as_operation()),
-            solver.program_point_after(op),
+            ProgramPoint::after(callable.as_operation()),
+            ProgramPoint::after(op),
         );
         let can_resolve = op.implements::<dyn ReturnLike>();
         for predecessor in callsites.known_predecessors().iter() {
             let predecessor = predecessor.borrow();
             assert!(predecessor.implements::<dyn CallOpInterface>());
-            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(
-                solver.program_point_after(&*predecessor),
-            );
+            let mut predecessors =
+                solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(&*predecessor));
             if can_resolve {
                 predecessors.join(op.as_operation_ref());
             } else {
@@ -777,7 +773,7 @@ impl DeadCodeAnalysis {
         solver: &mut DataFlowSolver,
     ) -> Option<MaybeConstOperands> {
         return get_operand_values(op, |value: &ValueRef| {
-            let mut lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(value.clone());
+            let mut lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(*value);
             AnalysisStateGuard::subscribe(&mut lattice, self);
             lattice
         });
@@ -789,9 +785,7 @@ impl DeadCodeAnalysis {
     where
         F: FnMut(&Operation) -> T,
     {
-        let scope = unsafe { &*self.analysis_scope.as_ptr() }
-            .clone()
-            .expect("expected analysis scope to be set");
+        let scope = self.analysis_scope.get().expect("expected analysis scope to be set");
         callback(&scope.borrow())
     }
 }

@@ -273,7 +273,7 @@ impl Matcher<ValueRef> for AnyValueMatcher {
 
     #[inline(always)]
     fn matches(&self, entity: &ValueRef) -> Option<Self::Matched> {
-        Some(entity.clone())
+        Some(*entity)
     }
 }
 
@@ -285,7 +285,7 @@ impl Matcher<ValueRef> for ExactValueMatcher {
     #[inline(always)]
     fn matches(&self, entity: &ValueRef) -> Option<Self::Matched> {
         if ValueRef::ptr_eq(&self.0, entity) {
-            Some(entity.clone())
+            Some(*entity)
         } else {
             None
         }
@@ -636,7 +636,7 @@ mod tests {
 
         // All three values should match themselves via `match_value`
         for value in [&lhs, &rhs, &sum] {
-            assert_eq!(match_value(value.clone()).matches(value).as_ref(), Some(value));
+            assert_eq!(match_value(*value).matches(value).as_ref(), Some(value));
         }
     }
 
@@ -761,9 +761,9 @@ mod tests {
         let mut builder = FunctionBuilder::new(&mut func);
         let lhs = builder.ins().u32(1, SourceSpan::default()).unwrap();
         let block = builder.current_block();
-        let rhs = block.borrow().arguments()[0].clone().upcast();
-        let sum = builder.ins().add(lhs.clone(), rhs.clone(), SourceSpan::default()).unwrap();
-        builder.ins().ret(Some(sum.clone()), SourceSpan::default()).unwrap();
+        let rhs = block.borrow().arguments()[0].upcast();
+        let sum = builder.ins().add(lhs, rhs, SourceSpan::default()).unwrap();
+        builder.ins().ret(Some(sum), SourceSpan::default()).unwrap();
 
         (lhs, rhs, sum)
     }

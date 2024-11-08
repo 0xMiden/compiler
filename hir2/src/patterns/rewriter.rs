@@ -4,9 +4,9 @@ use core::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    Block, BlockRef, Builder, Context, EntityWithParent, InsertionGuard, InsertionPoint, Listener,
-    ListenerType, OpBuilder, OpOperandImpl, Operation, OperationRef, Pattern, PostOrderBlockIter,
-    ProgramPoint, RegionRef, Report, SourceSpan, Usable, ValueRef,
+    Block, BlockRef, Builder, Context, EntityWithParent, InsertionGuard, Listener, ListenerType,
+    OpBuilder, OpOperandImpl, Operation, OperationRef, Pattern, PostOrderBlockIter, ProgramPoint,
+    RegionRef, Report, SourceSpan, Usable, ValueRef,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -27,7 +27,7 @@ pub trait Rewriter: Builder + RewriterListener {
         assert_eq!(op.borrow().num_results(), values.len());
 
         // Replace all result uses, notifies listener of the modifications
-        self.replace_all_op_uses_with_values(op.clone(), values);
+        self.replace_all_op_uses_with_values(op, values);
 
         // Erase the op and notify the listener
         self.erase_op(op);
@@ -40,7 +40,7 @@ pub trait Rewriter: Builder + RewriterListener {
         assert_eq!(op.borrow().num_results(), new_op.borrow().num_results());
 
         // Replace all result uses, notifies listener of the modifications
-        self.replace_all_op_uses_with(op.clone(), new_op);
+        self.replace_all_op_uses_with(op, new_op);
 
         // Erase the op and notify the listener
         self.erase_op(op);
@@ -136,12 +136,12 @@ pub trait Rewriter: Builder + RewriterListener {
         }
 
         // Notify the listener that the block is about to be removed.
-        self.notify_block_erased(block.clone());
+        self.notify_block_erased(block);
 
         // Remove block from parent region
         let mut region = blk.parent().expect("expected 'block' to have a parent region");
         let mut region_mut = region.borrow_mut();
-        let mut cursor = unsafe { region_mut.body_mut().cursor_mut_from_ptr(block.clone()) };
+        let mut cursor = unsafe { region_mut.body_mut().cursor_mut_from_ptr(block) };
         cursor.remove();
     }
 
@@ -157,18 +157,18 @@ pub trait Rewriter: Builder + RewriterListener {
             {
                 let mut region_cursor = region_body.front_mut();
                 while let Some(block) = region_cursor.as_pointer() {
-                    Block::on_inserted_into_parent(block, parent.clone());
+                    Block::on_inserted_into_parent(block, parent);
                     region_cursor.move_next();
                 }
             }
             let mut parent_region = parent.borrow_mut();
             let parent_body = parent_region.body_mut();
-            let mut cursor = unsafe { parent_body.cursor_mut_from_ptr(ip.clone()) };
+            let mut cursor = unsafe { parent_body.cursor_mut_from_ptr(ip) };
             cursor.splice_before(region_body);
         } else {
             // Move blocks from beginning of the region one-by-one
             for block in region_body {
-                self.move_block_before(block, ip.clone());
+                self.move_block_before(block, ip);
             }
         }
     }
@@ -207,8 +207,9 @@ pub trait Rewriter: Builder + RewriterListener {
         }
 
         // Replace all of the successor arguments with the provided values.
-        for (arg, replacement) in src.borrow().arguments().iter().zip(args) {
-            self.replace_all_uses_of_value_with(arg.clone().upcast(), replacement.clone());
+        for (arg, replacement) in src.borrow().arguments().iter().copied().zip(args.iter().copied())
+        {
+            self.replace_all_uses_of_value_with(arg.upcast(), replacement);
         }
 
         // Move operations from the source block to the dest block and erase the source block.
@@ -216,7 +217,7 @@ pub trait Rewriter: Builder + RewriterListener {
             let mut src_ops = src.borrow_mut().body_mut().take();
             let mut src_cursor = src_ops.front_mut();
             while let Some(op) = src_cursor.remove() {
-                self.move_op_before(op, ip.clone());
+                self.move_op_before(op, ip);
             }
         } else {
             // Fast path: If no listener is attached, move all operations at once.
@@ -226,7 +227,7 @@ pub trait Rewriter: Builder + RewriterListener {
             {
                 let mut src_cursor = src_ops.front_mut();
                 while let Some(op) = src_cursor.as_pointer() {
-                    Operation::on_inserted_into_parent(op, dest.clone());
+                    Operation::on_inserted_into_parent(op, dest);
                     src_cursor.move_next();
                 }
             }
@@ -271,7 +272,7 @@ pub trait Rewriter: Builder + RewriterListener {
 
         // `create_block` sets the insertion point to the start of the new block
         let mut guard = InsertionGuard::new(self);
-        let new_block = guard.create_block(region, Some(block.clone()), &[]);
+        let new_block = guard.create_block(region, Some(block), &[]);
 
         // If `ip` points to the end of the block, no ops should be moved
         if OperationRef::ptr_eq(&ip, &block.borrow().body().back().as_pointer().unwrap()) {
@@ -296,46 +297,22 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Unlink this block and insert it right before `ip`.
     fn move_block_before(&mut self, mut block: BlockRef, ip: BlockRef) {
         let current_region = block.borrow().parent();
-        block.borrow_mut().move_before(ip.clone());
+        block.borrow_mut().move_before(ip);
         self.notify_block_inserted(block, current_region, Some(ip));
     }
 
     /// Unlink this operation from its current block and insert it right before `ip`, which
     /// may be in the same or another block in the same function.
     fn move_op_before(&mut self, mut op: OperationRef, ip: OperationRef) {
-        let current_block = op.borrow().parent();
-        let current_ip = current_block.map(|block| {
-            let blk = block.borrow();
-            let cursor = unsafe { blk.body().cursor_from_ptr(op.clone()) };
-            if let Some(next_op) = cursor.peek_next().as_pointer() {
-                InsertionPoint::before(next_op)
-            } else if let Some(prev_op) = cursor.peek_prev().as_pointer() {
-                InsertionPoint::after(prev_op)
-            } else {
-                InsertionPoint::after(block)
-            }
-        });
-        op.borrow_mut().move_before(ProgramPoint::Op(ip.clone()));
-        self.notify_operation_inserted(op, current_ip);
+        op.borrow_mut().move_to(ProgramPoint::before(ip));
+        self.notify_operation_inserted(op, ProgramPoint::before(op));
     }
 
     /// Unlink this operation from its current block and insert it right after `ip`, which may be
     /// in the same or another block in the same function.
     fn move_op_after(&mut self, mut op: OperationRef, ip: OperationRef) {
-        let current_block = op.borrow().parent();
-        let current_ip = current_block.map(|block| {
-            let blk = block.borrow();
-            let cursor = unsafe { blk.body().cursor_from_ptr(op.clone()) };
-            if let Some(next_op) = cursor.peek_next().as_pointer() {
-                InsertionPoint::before(next_op)
-            } else if let Some(prev_op) = cursor.peek_prev().as_pointer() {
-                InsertionPoint::after(prev_op)
-            } else {
-                InsertionPoint::after(block)
-            }
-        });
-        op.borrow_mut().move_after(ProgramPoint::Op(ip.clone()));
-        self.notify_operation_inserted(op, current_ip);
+        op.borrow_mut().move_to(ProgramPoint::after(ip));
+        self.notify_operation_inserted(op, ProgramPoint::before(op));
     }
 
     /// Find uses of `from` and replace them with `to`.
@@ -346,10 +323,9 @@ pub trait Rewriter: Builder + RewriterListener {
         let from_uses = from_val.uses_mut();
         let mut cursor = from_uses.front_mut();
         while let Some(mut operand) = cursor.remove() {
-            let to = &mut to;
-            let op = operand.borrow().owner.clone();
+            let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().value = to.clone();
+            operand.borrow_mut().value = to;
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -363,10 +339,9 @@ pub trait Rewriter: Builder + RewriterListener {
         let from_uses = from_block.uses_mut();
         let mut cursor = from_uses.front_mut();
         while let Some(mut operand) = cursor.remove() {
-            let to = &mut to;
-            let op = operand.borrow().owner.clone();
+            let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().block = to.clone();
+            operand.borrow_mut().block = to;
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -387,7 +362,7 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Notifies the listener about every in-place modification (for every use that was replaced),
     /// and that the `from` operation is about to be replaced.
     fn replace_all_op_uses_with_values(&mut self, from: OperationRef, to: &[ValueRef]) {
-        self.notify_operation_replaced_with_values(from.clone(), to);
+        self.notify_operation_replaced_with_values(from, to);
 
         let results = from
             .borrow()
@@ -405,7 +380,7 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Notifies the listener about every in-place modification (for every use that was replaced),
     /// and that the `from` operation is about to be replaced.
     fn replace_all_op_uses_with(&mut self, from: OperationRef, to: OperationRef) {
-        self.notify_operation_replaced(from.clone(), to.clone());
+        self.notify_operation_replaced(from, to);
 
         let from_results = from
             .borrow()
@@ -485,11 +460,11 @@ pub trait RewriterExt: Rewriter {
         let mut cursor = from_uses.front_mut();
         while let Some(user) = cursor.as_pointer() {
             if should_replace(&user.borrow()) {
-                let owner = user.borrow().owner.clone();
+                let owner = user.borrow().owner;
                 self.notify_operation_modification_started(&owner);
                 let mut operand = cursor.remove().unwrap();
                 {
-                    operand.borrow_mut().value = to.clone();
+                    operand.borrow_mut().value = to;
                 }
                 to.borrow_mut().insert_use(operand);
                 self.notify_operation_modified(owner);
@@ -761,7 +736,7 @@ impl Listener for NoopRewriterListener {
     }
 
     #[inline(always)]
-    fn notify_operation_inserted(&self, _op: OperationRef, _prev: Option<InsertionPoint>) {}
+    fn notify_operation_inserted(&self, _op: OperationRef, _prev: ProgramPoint) {}
 
     #[inline(always)]
     fn notify_block_inserted(
@@ -796,12 +771,12 @@ impl<Base: Listener, Derived: Listener> Listener for ForwardingListener<Base, De
         prev: Option<RegionRef>,
         ip: Option<BlockRef>,
     ) {
-        self.base.notify_block_inserted(block.clone(), prev.clone(), ip.clone());
+        self.base.notify_block_inserted(block, prev, ip);
         self.derived.notify_block_inserted(block, prev, ip);
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
-        self.base.notify_operation_inserted(op.clone(), prev.clone());
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
+        self.base.notify_operation_inserted(op, prev);
         self.derived.notify_operation_inserted(op, prev);
     }
 }
@@ -809,7 +784,7 @@ impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
     for ForwardingListener<Base, Derived>
 {
     fn notify_block_erased(&self, block: BlockRef) {
-        self.base.notify_block_erased(block.clone());
+        self.base.notify_block_erased(block);
         self.derived.notify_block_erased(block);
     }
 
@@ -824,27 +799,27 @@ impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
     }
 
     fn notify_operation_modified(&self, op: OperationRef) {
-        self.base.notify_operation_modified(op.clone());
+        self.base.notify_operation_modified(op);
         self.derived.notify_operation_modified(op);
     }
 
     fn notify_operation_replaced(&self, op: OperationRef, replacement: OperationRef) {
-        self.base.notify_operation_replaced(op.clone(), replacement.clone());
+        self.base.notify_operation_replaced(op, replacement);
         self.derived.notify_operation_replaced(op, replacement);
     }
 
     fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
-        self.base.notify_operation_replaced_with_values(op.clone(), replacement);
+        self.base.notify_operation_replaced_with_values(op, replacement);
         self.derived.notify_operation_replaced_with_values(op, replacement);
     }
 
     fn notify_operation_erased(&self, op: OperationRef) {
-        self.base.notify_operation_erased(op.clone());
+        self.base.notify_operation_erased(op);
         self.derived.notify_operation_erased(op);
     }
 
     fn notify_pattern_begin(&self, pattern: &dyn Pattern, op: OperationRef) {
-        self.base.notify_pattern_begin(pattern, op.clone());
+        self.base.notify_pattern_begin(pattern, op);
         self.derived.notify_pattern_begin(pattern, op);
     }
 
@@ -920,7 +895,7 @@ impl<R: ?Sized + Rewriter> Drop for InPlaceModificationGuard<'_, R> {
         if self.canceled {
             self.rewriter.notify_operation_modification_canceled(&self.op);
         } else {
-            self.rewriter.notify_operation_modified(self.op.clone());
+            self.rewriter.notify_operation_modified(self.op);
         }
     }
 }
@@ -988,7 +963,7 @@ impl<L> DerefMut for PatternRewriter<L> {
 pub struct RewriterImpl<L = NoopRewriterListener> {
     context: Rc<Context>,
     listener: Option<L>,
-    ip: Option<InsertionPoint>,
+    ip: ProgramPoint,
 }
 
 impl<L> RewriterImpl<L> {
@@ -996,7 +971,7 @@ impl<L> RewriterImpl<L> {
         Self {
             context,
             listener: None,
-            ip: None,
+            ip: ProgramPoint::default(),
         }
     }
 
@@ -1036,23 +1011,25 @@ impl<L: Listener> Builder for RewriterImpl<L> {
     }
 
     #[inline(always)]
-    fn insertion_point(&self) -> Option<&InsertionPoint> {
-        self.ip.as_ref()
+    fn insertion_point(&self) -> &ProgramPoint {
+        &self.ip
     }
 
     #[inline(always)]
-    fn clear_insertion_point(&mut self) -> Option<InsertionPoint> {
-        self.ip.take()
+    fn clear_insertion_point(&mut self) -> ProgramPoint {
+        let ip = self.ip;
+        self.ip = ProgramPoint::Invalid;
+        ip
     }
 
     #[inline(always)]
-    fn restore_insertion_point(&mut self, ip: Option<InsertionPoint>) {
+    fn restore_insertion_point(&mut self, ip: ProgramPoint) {
         self.ip = ip;
     }
 
     #[inline(always)]
-    fn set_insertion_point(&mut self, ip: InsertionPoint) {
-        self.ip = Some(ip);
+    fn set_insertion_point(&mut self, ip: ProgramPoint) {
+        self.ip = ip;
     }
 }
 
@@ -1068,7 +1045,7 @@ impl<L: Listener> Listener for RewriterImpl<L> {
         ListenerType::Rewriter
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: Option<InsertionPoint>) {
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         if let Some(listener) = self.listener.as_ref() {
             listener.notify_operation_inserted(op, prev);
         }

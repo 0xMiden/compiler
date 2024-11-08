@@ -1,7 +1,7 @@
 use super::{generate_symbol_name, Symbol, SymbolName, SymbolNameAttr, SymbolRef};
 use crate::{
-    traits::Terminator, FxHashMap, InsertionPoint, IteratorExt, Op, Operation, OperationRef,
-    Report, UnsafeIntrusiveEntityRef,
+    traits::Terminator, FxHashMap, IteratorExt, Op, Operation, OperationRef, ProgramPoint, Report,
+    UnsafeIntrusiveEntityRef,
 };
 
 /// A type alias for [SymbolTable] implementations referenced via [UnsafeIntrusiveEntityRef]
@@ -42,14 +42,14 @@ pub trait SymbolTable {
     /// This function will panic if the symbol is attached to another symbol table.
     ///
     /// Returns `true` if successful, `false` if the symbol is already defined
-    fn insert_new(&mut self, entry: SymbolRef, ip: Option<InsertionPoint>) -> bool {
+    fn insert_new(&mut self, entry: SymbolRef, ip: ProgramPoint) -> bool {
         self.symbol_manager_mut().insert_new(entry, ip)
     }
 
     /// Like [SymbolTable::insert_new], except the symbol is renamed to avoid collisions.
     ///
     /// Returns the name of the symbol after insertion.
-    fn insert(&mut self, entry: SymbolRef, ip: Option<InsertionPoint>) -> SymbolName {
+    fn insert(&mut self, entry: SymbolRef, ip: ProgramPoint) -> SymbolName {
         self.symbol_manager_mut().insert(entry, ip)
     }
 
@@ -58,7 +58,7 @@ pub trait SymbolTable {
         let mut manager = self.symbol_manager_mut();
 
         if let Some(symbol) = manager.lookup(name) {
-            manager.remove(symbol.clone());
+            manager.remove(symbol);
             Some(symbol)
         } else {
             None
@@ -184,7 +184,7 @@ impl SymbolMap {
     pub fn insert(&mut self, name: SymbolName, mut symbol: SymbolRef) -> SymbolName {
         // Add the symbol to the symbol map
         let sym = symbol.borrow();
-        match self.symbols.try_insert(name, symbol.clone()) {
+        match self.symbols.try_insert(name, symbol) {
             Ok(_) => {
                 symbol.borrow_mut().set_name(name);
                 name
@@ -465,7 +465,7 @@ impl<'a> SymbolManagerMut<'a> {
     /// # Panics
     ///
     /// This function will panic if `symbol` is already attached to another operation.
-    pub fn insert_new(&mut self, symbol: SymbolRef, ip: Option<InsertionPoint>) -> bool {
+    pub fn insert_new(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> bool {
         let name = symbol.borrow().name();
         if self.symbols.contains_key(&name) {
             return false;
@@ -487,7 +487,7 @@ impl<'a> SymbolManagerMut<'a> {
     /// # Panics
     ///
     /// This function will panic if `symbol` is already attached to another operation.
-    pub fn insert(&mut self, symbol: SymbolRef, ip: Option<InsertionPoint>) -> SymbolName {
+    pub fn insert(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> SymbolName {
         // The symbol cannot be the child of another op, and must be the child of the symbol table
         // after insertion.
         let (name, symbol_op) = {
@@ -510,45 +510,48 @@ impl<'a> SymbolManagerMut<'a> {
             let block_ref = block.as_block_ref();
             let ops = block.body_mut();
             let (mut cursor, placement) = match ip {
-                Some(ip) => match ip.at {
-                    crate::ProgramPoint::Block(b) => {
-                        assert_eq!(
-                            b, block_ref,
-                            "invalid insertion point: referenced block is not in this symbol table"
-                        );
-                        // Move the insertion point before the terminator, if there is one
-                        match ip.placement {
-                            crate::Insert::After if has_terminator => {
-                                (ops.back_mut(), crate::Insert::Before)
-                            }
-                            crate::Insert::After => (ops.back_mut(), crate::Insert::After),
-                            crate::Insert::Before => (ops.front_mut(), crate::Insert::Before),
+                ProgramPoint::Block { block: b, point } => {
+                    assert_eq!(
+                        b, block_ref,
+                        "invalid insertion point: referenced block is not in this symbol table"
+                    );
+                    // Move the insertion point before the terminator, if there is one
+                    match point {
+                        crate::Insert::After if has_terminator => {
+                            (ops.back_mut(), crate::Insert::Before)
                         }
+                        crate::Insert::After => (ops.back_mut(), crate::Insert::After),
+                        crate::Insert::Before => (ops.front_mut(), crate::Insert::Before),
                     }
-                    crate::ProgramPoint::Op(op) => {
-                        assert!(
-                            op.borrow().parent().is_some_and(|b| b == block_ref),
-                            "invalid insertion point: referenced op is not a child of this symbol \
-                             table"
-                        );
-                        let is_terminator =
-                            has_terminator && ops.back().as_pointer().is_some_and(|o| o == op);
-                        match ip.placement {
-                            // The caller _explicitly_ requested this, raise an assertion if the op being
-                            // inserted is not a valid terminator
-                            crate::Insert::After if is_terminator => {
-                                assert!(
-                                    op.borrow().implements::<dyn Terminator>(),
-                                    "cannot insert a symbol after the terminator of its parent \
-                                     symbol table, if it is not itself a valid terminator"
-                                );
-                                (ops.back_mut(), crate::Insert::After)
-                            }
-                            placement => (unsafe { ops.cursor_mut_from_ptr(op) }, placement),
+                }
+                ProgramPoint::Op {
+                    op,
+                    block: op_block,
+                    point,
+                    ..
+                } => {
+                    assert!(
+                        op_block.is_some_and(|b| b == block_ref),
+                        "invalid insertion point: referenced op is not a child of this symbol \
+                         table"
+                    );
+                    let is_terminator =
+                        has_terminator && ops.back().as_pointer().is_some_and(|o| o == op);
+                    match point {
+                        // The caller _explicitly_ requested this, raise an assertion if the op being
+                        // inserted is not a valid terminator
+                        crate::Insert::After if is_terminator => {
+                            assert!(
+                                op.borrow().implements::<dyn Terminator>(),
+                                "cannot insert a symbol after the terminator of its parent symbol \
+                                 table, if it is not itself a valid terminator"
+                            );
+                            (ops.back_mut(), crate::Insert::After)
                         }
+                        placement => (unsafe { ops.cursor_mut_from_ptr(op) }, placement),
                     }
-                },
-                None => {
+                }
+                ProgramPoint::Invalid => {
                     if has_terminator {
                         (ops.back_mut(), crate::Insert::Before)
                     } else {
@@ -558,9 +561,9 @@ impl<'a> SymbolManagerMut<'a> {
             };
 
             if matches!(placement, crate::Insert::Before) {
-                cursor.insert_before(symbol_op.clone());
+                cursor.insert_before(symbol_op);
             } else {
-                cursor.insert_after(symbol_op.clone());
+                cursor.insert_after(symbol_op);
             }
         }
 
@@ -594,16 +597,16 @@ impl<'a> SymbolManagerMut<'a> {
         };
 
         // Rename the name stored in all users of `op`
-        self.replace_all_symbol_uses(op.clone(), to)?;
+        self.replace_all_symbol_uses(op, to)?;
 
         // Remove op with old name, change name, add with new name.
         //
         // The order is important here due to how `remove` and `insert` rely on the op name.
-        self.remove(op.clone());
+        self.remove(op);
         {
             op.borrow_mut().set_name(to);
         }
-        self.insert(op.clone(), None);
+        self.insert(op, ProgramPoint::default());
 
         assert!(
             self.lookup(to).is_some_and(|o| o == op),

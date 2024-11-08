@@ -10,7 +10,7 @@ use super::{
     analysis::state::{AnalysisStateDescriptor, AnalysisStateInfo, AnalysisStateKey},
     *,
 };
-use crate::{pass::AnalysisManager, EntityRef, FxHashMap, InsertionPoint, Operation, Report};
+use crate::{pass::AnalysisManager, EntityRef, FxHashMap, Operation, Report};
 
 pub type AnalysisQueue = VecDeque<QueuedAnalysis, DataFlowSolverAlloc>;
 
@@ -316,18 +316,6 @@ impl DataFlowSolver {
         Ok(())
     }
 
-    /// A helper to construct a [ProgramPoint] for `point`, such that it is positioned "before" that
-    /// point.
-    pub fn program_point_before(&self, point: impl Into<crate::ProgramPoint>) -> ProgramPoint {
-        ProgramPoint::new(InsertionPoint::before(point))
-    }
-
-    /// A helper to construct a [ProgramPoint] for `point`, such that it is positioned "after" that
-    /// point.
-    pub fn program_point_after(&self, point: impl Into<crate::ProgramPoint>) -> ProgramPoint {
-        ProgramPoint::new(InsertionPoint::after(point))
-    }
-
     /// Allocate a custom [LatticeAnchor] with this solver
     ///
     /// NOTE: The resulting [LatticeAnchorRef] has a lifetime that is implicitly bound to that of
@@ -483,7 +471,7 @@ impl DataFlowSolver {
 /// another analysis, that has since changed. As a result, the dependent analysis must be re-applied
 /// at that program point to determine if the state changes have any effect on the state of its
 /// previous analysis.
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct QueuedAnalysis {
     /// The dependent program point
     pub point: ProgramPoint,

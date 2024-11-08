@@ -1,64 +1,158 @@
 use core::fmt;
 
-use crate::{BlockRef, Insert, InsertionPoint, OperationRef, Spanned};
+use crate::{
+    entity::{EntityProjection, EntityProjectionMut},
+    Block, BlockRef, EntityCursor, EntityCursorMut, EntityMut, EntityRef, Insert, Operation,
+    OperationRef, Spanned,
+};
 
 /// [ProgramPoint] represents a specific location in the execution of a program.
 ///
 /// A sequence of program points can be combined into a control flow graph.
-#[derive(Default, Clone)]
+#[derive(Default, Copy, Clone)]
 pub enum ProgramPoint {
+    /// A program point which refers to nothing, and is always invalid if used
     #[default]
     Invalid,
+    /// A program point referring to the entry or exit of a block
     Block {
+        /// The block this program point refers to
         block: BlockRef,
+        /// The placement of the cursor relative to `block`
         point: Insert,
     },
+    /// A program point referring to the entry or exit of an operation
     Op {
+        /// The block to which this operation belongs
         block: Option<BlockRef>,
+        /// The operation this program point refers to
         op: OperationRef,
+        /// The placement of the cursor relative to `op`
         point: Insert,
     },
 }
 
-impl ProgramPoint {
-    pub fn new(ip: impl Into<InsertionPoint>) -> Self {
-        let ip = ip.into();
-        let point = ip.placement;
-        match ip.at {
-            crate::ProgramPoint::Block(block) => Self::Block { block, point },
-            crate::ProgramPoint::Op(op) => {
-                let block = op.borrow().parent();
-                Self::Op { block, op, point }
-            }
-        }
+impl<T> From<EntityRef<'_, T>> for ProgramPoint
+where
+    for<'a> ProgramPoint: From<&'a T>,
+{
+    #[inline]
+    fn from(entity: EntityRef<'_, T>) -> Self {
+        Self::from(&*entity)
     }
+}
 
-    pub fn before(op: OperationRef) -> Self {
-        let block = op.borrow().parent();
+impl<T> From<EntityMut<'_, T>> for ProgramPoint
+where
+    for<'a> ProgramPoint: From<&'a T>,
+{
+    #[inline]
+    fn from(entity: EntityMut<'_, T>) -> Self {
+        Self::from(&*entity)
+    }
+}
+
+/// Construct a ProgramPoint referring to the point at entry to `op`
+impl From<&Operation> for ProgramPoint {
+    #[inline]
+    fn from(op: &Operation) -> Self {
+        let block = op.parent();
         Self::Op {
             block,
-            op,
+            op: op.as_operation_ref(),
             point: Insert::Before,
         }
     }
+}
 
-    pub fn after(op: OperationRef) -> Self {
-        let block = op.borrow().parent();
-        Self::Op {
+/// Construct a ProgramPoint referring to the point at entry to `op`
+impl From<OperationRef> for ProgramPoint {
+    #[inline]
+    fn from(op: OperationRef) -> Self {
+        Self::from(op.borrow())
+    }
+}
+
+/// Construct a ProgramPoint referring to the point at entry to `block`
+impl From<&Block> for ProgramPoint {
+    #[inline]
+    fn from(block: &Block) -> Self {
+        Self::at_start_of(block.as_block_ref())
+    }
+}
+
+/// Construct a ProgramPoint referring to the point at entry to `block`
+impl From<BlockRef> for ProgramPoint {
+    #[inline]
+    fn from(block: BlockRef) -> Self {
+        Self::Block {
             block,
-            op,
-            point: Insert::After,
+            point: Insert::Before,
         }
     }
+}
 
-    pub fn at_start_of(block: BlockRef) -> Self {
+#[derive(Copy, Clone)]
+pub struct BlockPoint {
+    block: BlockRef,
+    point: Insert,
+}
+impl From<BlockPoint> for ProgramPoint {
+    fn from(point: BlockPoint) -> Self {
+        ProgramPoint::Block {
+            block: point.block,
+            point: point.point,
+        }
+    }
+}
+impl From<BlockRef> for BlockPoint {
+    fn from(block: BlockRef) -> Self {
+        Self {
+            block,
+            point: Insert::Before,
+        }
+    }
+}
+impl From<&Block> for BlockPoint {
+    fn from(block: &Block) -> Self {
+        Self {
+            block: block.as_block_ref(),
+            point: Insert::Before,
+        }
+    }
+}
+
+impl ProgramPoint {
+    /// Create a [ProgramPoint] at entry to `entity`, i.e. "before"
+    #[inline]
+    pub fn before(entity: impl Into<ProgramPoint>) -> Self {
+        entity.into()
+    }
+
+    /// Create a [ProgramPoint] at exit from `entity`, i.e. "after"
+    pub fn after(entity: impl Into<ProgramPoint>) -> Self {
+        let mut pp = entity.into();
+        match &mut pp {
+            Self::Invalid => (),
+            Self::Op { ref mut point, .. } | Self::Block { ref mut point, .. } => {
+                *point = Insert::After;
+            }
+        }
+        pp
+    }
+
+    /// Create a [ProgramPoint] at entry to `block`, i.e. "before"
+    pub fn at_start_of(block: impl Into<BlockPoint>) -> Self {
+        let BlockPoint { block, .. } = block.into();
         Self::Block {
             block,
             point: Insert::Before,
         }
     }
 
-    pub fn at_end_of(block: BlockRef) -> Self {
+    /// Create a [ProgramPoint] at exit from `block`, i.e. "after"
+    pub fn at_end_of(block: impl Into<BlockPoint>) -> Self {
+        let BlockPoint { block, .. } = block.into();
         Self::Block {
             block,
             point: Insert::After,
@@ -99,8 +193,8 @@ impl ProgramPoint {
     pub fn block(&self) -> Option<BlockRef> {
         match self {
             Self::Invalid => None,
-            Self::Block { block, .. } => Some(block.clone()),
-            Self::Op { block, .. } => block.clone(),
+            Self::Block { block, .. } => Some(*block),
+            Self::Op { block, .. } => *block,
         }
     }
 
@@ -109,7 +203,7 @@ impl ProgramPoint {
     /// Returns `None` if the program point is either invalid, or not pointing to a specific op
     pub fn operation(&self) -> Option<OperationRef> {
         match self {
-            Self::Op { op, .. } => Some(op.clone()),
+            Self::Op { op, .. } => Some(*op),
             Self::Block { .. } | Self::Invalid => None,
         }
     }
@@ -126,7 +220,7 @@ impl ProgramPoint {
             } => op.next(),
             Self::Op {
                 block: None, op, ..
-            } => Some(op.clone()),
+            } => Some(*op),
             Self::Block { .. } | Self::Invalid => None,
         }
     }
@@ -143,9 +237,21 @@ impl ProgramPoint {
             } => op.prev(),
             Self::Op {
                 block: None, op, ..
-            } => Some(op.clone()),
+            } => Some(*op),
             Self::Block { .. } | Self::Invalid => None,
         }
+    }
+
+    /// Returns true if this program point refers to a valid program point
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        !self.is_unset()
+    }
+
+    /// Returns true if this program point is invalid/unset
+    #[inline]
+    pub fn is_unset(&self) -> bool {
+        matches!(self, Self::Invalid)
     }
 
     pub fn point(&self) -> Option<Insert> {
@@ -161,7 +267,8 @@ impl ProgramPoint {
     /// which this point is relative. The intuition around where the cursor is placed for a given
     /// program point can be understood as answering the question of "where does the cursor need
     /// to be, such that if I inserted an op at that cursor, that the insertion would be placed at
-    /// the correct position relative to `self`. The specific rules are as follows:
+    /// the referenced program point (semantically before or after an operation or block). The
+    /// specific rules are as follows:
     ///
     /// * If "before" a block, the resulting cursor is the null cursor for the containing block,
     ///   since an insertion at the null cursor will be placed at the start of the block.
@@ -172,27 +279,64 @@ impl ProgramPoint {
     ///   would be placed immediately before `self`
     /// * If "after" an operation, the cursor is placed on the operation in `self`, so that
     ///   insertion will place the inserted op immediately after `self`.
-    pub fn insertion_point(&self) -> Option<InsertionPoint> {
+    ///
+    /// NOTE: The block to which this program point refers will be borrowed for the lifetime of the
+    /// returned [EntityProjection].
+    pub fn cursor<'a, 'b: 'a, 'c: 'b>(
+        &'c self,
+    ) -> Option<EntityProjection<'b, EntityCursor<'a, Operation>>> {
         match self {
             Self::Invalid => None,
-            Self::Block { block, point } => Some(InsertionPoint::new(block.clone().into(), *point)),
+            Self::Block { block, point } => {
+                Some(EntityRef::project(block.borrow(), |block| match point {
+                    Insert::Before => block.body().front(),
+                    Insert::After => block.body().back(),
+                }))
+            }
             Self::Op { block: None, .. } => None,
             Self::Op {
-                block: Some(ref block),
+                block: Some(block),
                 op,
                 point,
-            } => match point {
-                // Place cursor on the op just prior to `op`, so that inserting at the cursor, inserts before `op`
-                //
-                // If there are no ops before `op`, this returns a cursor to the front of the block, which has the same effect
-                Insert::Before => Some(
-                    op.prev()
-                        .map(|op| InsertionPoint::new(op.into(), *point))
-                        .unwrap_or_else(|| InsertionPoint::new(block.clone().into(), *point)),
-                ),
-                // Place cursor on `op`, so that inserting at the cursor, inserts immediately after `op`
-                Insert::After => Some(InsertionPoint::new(op.clone().into(), *point)),
-            },
+            } => Some(EntityRef::project(block.borrow(), |block| match point {
+                Insert::Before => {
+                    let mut cursor = unsafe { block.body().cursor_from_ptr(*op) };
+                    cursor.move_prev();
+                    cursor
+                }
+                Insert::After => unsafe { block.body().cursor_from_ptr(*op) },
+            })),
+        }
+    }
+
+    /// Same as [Self::cursor], but obtains a mutable cursor instead.
+    ///
+    /// NOTE: The block to which this program point refers will be borrowed mutably for the lifetime
+    /// of the returned [EntityProjectionMut].
+    pub fn cursor_mut<'a, 'b: 'a, 'c: 'b>(
+        &'c mut self,
+    ) -> Option<EntityProjectionMut<'b, EntityCursorMut<'a, Operation>>> {
+        match self {
+            Self::Invalid => None,
+            Self::Block { block, point } => {
+                Some(EntityMut::project(block.borrow_mut(), |block| match point {
+                    Insert::Before => block.body_mut().cursor_mut(),
+                    Insert::After => block.body_mut().back_mut(),
+                }))
+            }
+            Self::Op { block: None, .. } => None,
+            Self::Op {
+                block: Some(block),
+                op,
+                point,
+            } => Some(EntityMut::project(block.borrow_mut(), |block| match point {
+                Insert::Before => {
+                    let mut cursor = unsafe { block.body_mut().cursor_mut_from_ptr(*op) };
+                    cursor.move_prev();
+                    cursor
+                }
+                Insert::After => unsafe { block.body_mut().cursor_mut_from_ptr(*op) },
+            })),
         }
     }
 }
@@ -204,7 +348,25 @@ impl PartialEq for ProgramPoint {
         match (self, other) {
             (Self::Invalid, Self::Invalid) => true,
             (Self::Invalid, _) | (_, Self::Invalid) => false,
-            (a, b) => a.insertion_point() == b.insertion_point(),
+            (
+                Self::Block {
+                    block: x,
+                    point: xp,
+                },
+                Self::Block {
+                    block: y,
+                    point: yp,
+                },
+            ) => x == y && xp == yp,
+            (
+                Self::Op {
+                    op: x, point: xp, ..
+                },
+                Self::Op {
+                    op: y, point: yp, ..
+                },
+            ) => x == y && xp == yp,
+            (..) => false,
         }
     }
 }

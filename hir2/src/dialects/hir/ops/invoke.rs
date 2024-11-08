@@ -26,8 +26,7 @@ impl InferTypeOpInterface for Exec {
             {
                 let signature = callable.signature();
                 for (i, result) in signature.results().iter().enumerate() {
-                    let value =
-                        context.make_result(span, result.ty.clone(), owner.clone(), i as u8);
+                    let value = context.make_result(span, result.ty.clone(), owner, i as u8);
                     self.op.results.push(value);
                 }
 

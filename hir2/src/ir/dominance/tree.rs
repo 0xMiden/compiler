@@ -215,8 +215,8 @@ impl DomTreeNode {
         self
     }
 
-    pub fn block(&self) -> Option<&BlockRef> {
-        self.block.as_ref()
+    pub fn block(&self) -> Option<BlockRef> {
+        self.block
     }
 
     pub fn idom(&self) -> Option<Rc<DomTreeNode>> {
@@ -287,8 +287,8 @@ impl PartialEq for DomTreeNode {
 
 impl DomTreeBase<false> {
     #[inline]
-    pub fn root(&self) -> &BlockRef {
-        self.roots[0].as_ref().unwrap()
+    pub fn root(&self) -> BlockRef {
+        self.roots[0].unwrap()
     }
 
     /// Get all the nodes of this tree as a vector in pre-order visitation order
@@ -330,8 +330,8 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// Compute a dominator tree for `region`
     pub fn new(region: RegionRef) -> Result<Self, DomTreeError> {
         let entry = region.borrow().entry_block_ref().ok_or(DomTreeError::EmptyRegion)?;
-        let root = Rc::new(DomTreeNode::new(Some(entry.clone()), None));
-        let nodes = smallvec![(Some(entry.clone()), root.clone())];
+        let root = Rc::new(DomTreeNode::new(Some(entry), None));
+        let nodes = smallvec![(Some(entry), root.clone())];
         let roots = smallvec![Some(entry)];
 
         let mut this = Self {
@@ -349,8 +349,8 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     #[inline]
-    pub fn parent(&self) -> &RegionRef {
-        &self.parent
+    pub fn parent(&self) -> RegionRef {
+        self.parent
     }
 
     pub fn len(&self) -> usize {
@@ -393,13 +393,13 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// Get the node for `block`, if one exists in the tree.
     ///
     /// Use `None` to get the virtual node, if this is a post-dominator tree
-    pub fn get(&self, block: Option<&BlockRef>) -> Option<Rc<DomTreeNode>> {
+    pub fn get(&self, block: Option<BlockRef>) -> Option<Rc<DomTreeNode>> {
         self.node_index(block)
             .map(|index| unsafe { self.nodes.get_unchecked(index).1.clone() })
     }
 
     #[inline]
-    fn node_index(&self, block: Option<&BlockRef>) -> Option<usize> {
+    fn node_index(&self, block: Option<BlockRef>) -> Option<usize> {
         assert!(
             block.is_none_or(|block| block
                 .borrow()
@@ -408,7 +408,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
             "cannot get dominance info of block with different parent"
         );
         if let Some(block) = block {
-            self.nodes.iter().position(|(b, _)| b.as_ref().is_some_and(|b| b == block))
+            self.nodes.iter().position(|(b, _)| b.is_some_and(|b| b == block))
         } else {
             self.nodes.iter().position(|(b, _)| b.is_none())
         }
@@ -425,7 +425,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     /// Get all nodes dominated by `r`, including `r` itself
-    pub fn get_descendants(&self, r: &BlockRef) -> SmallVec<[BlockRef; 2]> {
+    pub fn get_descendants(&self, r: BlockRef) -> SmallVec<[BlockRef; 2]> {
         let mut results = SmallVec::default();
         let Some(rn) = self.get(Some(r)) else {
             return results;
@@ -437,7 +437,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
             let Some(n_block) = n.block() else {
                 continue;
             };
-            results.push(n_block.clone());
+            results.push(n_block);
             worklist.extend(n.children.borrow().iter().cloned());
         }
 
@@ -445,7 +445,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     /// Return true if `a` is dominated by the entry block of the region containing it.
-    pub fn is_reachable_from_entry(&self, a: &BlockRef) -> bool {
+    pub fn is_reachable_from_entry(&self, a: BlockRef) -> bool {
         assert!(!self.is_post_dominator(), "unimplemented for post dominator trees");
 
         self.get(Some(a)).is_some()
@@ -459,7 +459,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// Returns true if and only if `a` dominates `b` and `a != b`
     ///
     /// Note that this is not a constant time operation.
-    pub fn properly_dominates(&self, a: Option<&BlockRef>, b: Option<&BlockRef>) -> bool {
+    pub fn properly_dominates(&self, a: Option<BlockRef>, b: Option<BlockRef>) -> bool {
         if a == b {
             return false;
         }
@@ -485,7 +485,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// Returns true iff `a` dominates `b`.
     ///
     /// Note that this is not a constant time operation
-    pub fn dominates(&self, a: Option<&BlockRef>, b: Option<&BlockRef>) -> bool {
+    pub fn dominates(&self, a: Option<BlockRef>, b: Option<BlockRef>) -> bool {
         if a == b {
             return true;
         }
@@ -545,7 +545,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     /// Finds the nearest block which is a common dominator of both `a` and `b`
-    pub fn find_nearest_common_dominator(&self, a: &BlockRef, b: &BlockRef) -> Option<BlockRef> {
+    pub fn find_nearest_common_dominator(&self, a: BlockRef, b: BlockRef) -> Option<BlockRef> {
         assert!(a.borrow().parent() == b.borrow().parent(), "two blocks are not in same region");
 
         // If either A or B is an entry block then it is nearest common dominator (for forward
@@ -553,7 +553,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         if !self.is_post_dominator() {
             let parent = a.borrow().parent().unwrap();
             let entry = parent.borrow().entry_block_ref().unwrap();
-            if a == &entry || b == &entry {
+            if a == entry || b == entry {
                 return Some(entry);
             }
         }
@@ -571,7 +571,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
             a = a.idom().unwrap();
         }
 
-        a.block().cloned()
+        a.block()
     }
 }
 
@@ -587,7 +587,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         if self.is_post_dominator() {
             core::mem::swap(&mut from, &mut to);
         }
-        SemiNCA::<IS_POST_DOM>::delete_edge(self, None, from.as_ref(), to.as_ref())
+        SemiNCA::<IS_POST_DOM>::delete_edge(self, None, from, to)
     }
 
     pub fn apply_updates(
@@ -647,7 +647,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     fn is_same_as_fresh_tree(&self) -> bool {
-        let fresh = Self::new(self.parent.clone()).unwrap();
+        let fresh = Self::new(self.parent).unwrap();
         let is_same = self == &fresh;
         if !is_same {
             log::error!(
@@ -670,23 +670,23 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     pub fn add_new_block(&mut self, block: BlockRef, idom: Option<BlockRef>) -> Rc<DomTreeNode> {
-        assert!(self.get(Some(&block)).is_none(), "block already in dominator tree");
-        let idom = self.get(idom.as_ref()).expect("no immediate dominator specified for `idom`");
+        assert!(self.get(Some(block)).is_none(), "block already in dominator tree");
+        let idom = self.get(idom).expect("no immediate dominator specified for `idom`");
         self.mark_invalid();
         self.create_node(Some(block), Some(idom))
     }
 
     pub fn set_new_root(&mut self, block: BlockRef) -> Rc<DomTreeNode> {
-        assert!(self.get(Some(&block)).is_none(), "block already in dominator tree");
+        assert!(self.get(Some(block)).is_none(), "block already in dominator tree");
         assert!(!self.is_post_dominator(), "cannot change root of post-dominator tree");
 
         self.valid.set(false);
-        let node = self.create_node(Some(block.clone()), None);
+        let node = self.create_node(Some(block), None);
         if self.roots.is_empty() {
             self.roots.push(Some(block));
         } else {
             assert_eq!(self.roots.len(), 1);
-            let old_node = self.get(self.roots[0].as_ref()).unwrap();
+            let old_node = self.get(self.roots[0]).unwrap();
             node.add_child(old_node.clone());
             old_node.idom.set(Some(node.clone()));
             old_node.update_level();
@@ -696,7 +696,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         node
     }
 
-    pub fn change_immediate_dominator(&mut self, n: &BlockRef, idom: Option<&BlockRef>) {
+    pub fn change_immediate_dominator(&mut self, n: BlockRef, idom: Option<BlockRef>) {
         let n = self.get(Some(n)).expect("expected `n` to be in tree");
         let idom = self.get(idom).expect("expected `idom` to be in tree");
         self.change_immediate_dominator_node(n, idom);
@@ -713,7 +713,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     ///
     /// Removes node from the children of its immediate dominator. Deletes dominator node associated
     /// with `block`.
-    pub fn erase_node(&mut self, block: &BlockRef) {
+    pub fn erase_node(&mut self, block: BlockRef) {
         let node_index = self.node_index(Some(block)).expect("removing node that isn't in tree");
         let node = unsafe { self.nodes.get_unchecked(node_index).1.clone() };
         assert!(node.is_leaf(), "node is not a leaf node");
@@ -732,9 +732,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         }
 
         // Remember to update PostDominatorTree roots
-        if let Some(root_index) =
-            self.roots.iter().position(|r| r.as_ref().is_some_and(|r| r == block))
-        {
+        if let Some(root_index) = self.roots.iter().position(|r| r.is_some_and(|r| r == block)) {
             self.roots.swap_remove(root_index);
         }
     }
@@ -792,7 +790,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         block: Option<BlockRef>,
         idom: Option<Rc<DomTreeNode>>,
     ) -> Rc<DomTreeNode> {
-        let node = Rc::new(DomTreeNode::new(block.clone(), idom.clone()));
+        let node = Rc::new(DomTreeNode::new(block, idom.clone()));
         self.nodes.push((block, node.clone()));
         if let Some(idom) = idom {
             idom.add_child(node.clone());
@@ -803,11 +801,11 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// `block` is split and now it has one successor.
     ///
     /// Update dominator tree to reflect the change.
-    pub fn split_block(&mut self, block: &BlockRef) {
+    pub fn split_block(&mut self, block: BlockRef) {
         if IS_POST_DOM {
-            self.split::<Inverse<BlockRef>>(block.clone());
+            self.split::<Inverse<BlockRef>>(block);
         } else {
-            self.split::<BlockRef>(block.clone());
+            self.split::<BlockRef>(block);
         }
     }
 
@@ -816,19 +814,19 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     where
         G: InvertibleGraph<Node = BlockRef>,
     {
-        let mut successors = G::children(block.clone());
+        let mut successors = G::children(block);
         assert_eq!(successors.len(), 1, "`block` should have a single successor");
 
         let succ = successors.next().unwrap();
-        let predecessors = G::inverse_children(block.clone()).collect::<SmallVec<[BlockRef; 4]>>();
+        let predecessors = G::inverse_children(block).collect::<SmallVec<[BlockRef; 4]>>();
 
         assert!(!predecessors.is_empty(), "expected at at least one predecessor");
 
         let mut block_dominates_succ = true;
-        for pred in G::inverse_children(succ.clone()) {
+        for pred in G::inverse_children(succ) {
             if pred != block
-                && !self.dominates(Some(&succ), Some(&pred))
-                && self.is_reachable_from_entry(&pred)
+                && !self.dominates(Some(succ), Some(pred))
+                && self.is_reachable_from_entry(pred)
             {
                 block_dominates_succ = false;
                 break;
@@ -836,7 +834,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         }
 
         // Find `block`'s immediate dominator and create new dominator tree node for `block`.
-        let idom = predecessors.iter().find(|p| self.is_reachable_from_entry(p)).cloned();
+        let idom = predecessors.iter().find(|p| self.is_reachable_from_entry(**p)).copied();
 
         // It's possible that none of the predecessors of `block` are reachable;
         // in that case, `block` itself is unreachable, so nothing needs to be
@@ -845,21 +843,21 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
             return;
         };
 
-        let idom = predecessors.iter().fold(idom, |idom, p| {
+        let idom = predecessors.iter().copied().fold(idom, |idom, p| {
             if self.is_reachable_from_entry(p) {
-                self.find_nearest_common_dominator(&idom, p).expect("expected idom")
+                self.find_nearest_common_dominator(idom, p).expect("expected idom")
             } else {
                 idom
             }
         });
 
         // Create the new dominator tree node... and set the idom of `block`.
-        let node = self.add_new_block(block.clone(), Some(idom));
+        let node = self.add_new_block(block, Some(idom));
 
         // If NewBB strictly dominates other blocks, then it is now the immediate
         // dominator of NewBBSucc.  Update the dominator tree as appropriate.
         if block_dominates_succ {
-            let succ_node = self.get(Some(&succ)).expect("expected 'succ' to be in dominator tree");
+            let succ_node = self.get(Some(succ)).expect("expected 'succ' to be in dominator tree");
             self.change_immediate_dominator_node(succ_node, node);
         }
     }

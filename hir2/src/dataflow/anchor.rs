@@ -1,9 +1,7 @@
 use core::{any::Any, fmt, hash::Hash, ptr::NonNull};
 
 use super::ProgramPoint;
-use crate::{
-    BlockRef, DynHash, DynPartialEq, Insert, InsertionPoint, OperationRef, Spanned, ValueRef,
-};
+use crate::{BlockRef, DynHash, DynPartialEq, Insert, OperationRef, Spanned, ValueRef};
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
 ///
@@ -116,7 +114,7 @@ pub trait LatticeAnchor:
         LatticeAnchor::as_any(self).is::<ValueRef>()
     }
     fn as_value(&self) -> Option<ValueRef> {
-        LatticeAnchor::as_any(self).downcast_ref::<ValueRef>().cloned()
+        LatticeAnchor::as_any(self).downcast_ref::<ValueRef>().copied()
     }
     fn is_valid_program_point(&self) -> bool {
         let any = LatticeAnchor::as_any(self);
@@ -125,7 +123,7 @@ pub trait LatticeAnchor:
     fn as_program_point(&self) -> Option<ProgramPoint> {
         let any = LatticeAnchor::as_any(self);
         if let Some(pp) = any.downcast_ref::<ProgramPoint>() {
-            Some(pp.clone())
+            Some(*pp)
         } else if let Some(op) = any.downcast_ref::<OperationRef>().cloned() {
             let block = op.borrow().parent();
             Some(ProgramPoint::Op {
@@ -134,7 +132,7 @@ pub trait LatticeAnchor:
                 point: Insert::Before,
             })
         } else {
-            any.downcast_ref::<BlockRef>().cloned().map(|block| ProgramPoint::Block {
+            any.downcast_ref::<BlockRef>().copied().map(|block| ProgramPoint::Block {
                 block,
                 point: Insert::Before,
             })
@@ -203,7 +201,7 @@ impl LatticeAnchor for ValueRef {
 
     #[inline]
     fn as_value(&self) -> Option<ValueRef> {
-        Some(self.clone())
+        Some(*self)
     }
 
     #[inline(always)]
@@ -233,7 +231,7 @@ impl LatticeAnchor for ProgramPoint {
 
     #[inline]
     fn as_program_point(&self) -> Option<ProgramPoint> {
-        Some(self.clone())
+        Some(*self)
     }
 }
 impl LatticeAnchor for OperationRef {
@@ -258,7 +256,7 @@ impl LatticeAnchor for OperationRef {
 
     #[inline]
     fn as_program_point(&self) -> Option<ProgramPoint> {
-        Some(ProgramPoint::new(InsertionPoint::before(self.clone())))
+        Some(ProgramPoint::before(*self))
     }
 }
 impl LatticeAnchor for BlockRef {
@@ -283,6 +281,6 @@ impl LatticeAnchor for BlockRef {
 
     #[inline]
     fn as_program_point(&self) -> Option<ProgramPoint> {
-        Some(ProgramPoint::new(InsertionPoint::before(self.clone())))
+        Some(ProgramPoint::before(*self))
     }
 }

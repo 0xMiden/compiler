@@ -10,7 +10,7 @@ pub enum CfgUpdateKind {
     Delete,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct CfgUpdate {
     kind: CfgUpdateKind,
     from: BlockRef,
@@ -23,13 +23,13 @@ impl CfgUpdate {
     }
 
     #[inline(always)]
-    pub const fn from(&self) -> &BlockRef {
-        &self.from
+    pub const fn from(&self) -> BlockRef {
+        self.from
     }
 
     #[inline(always)]
-    pub const fn to(&self) -> &BlockRef {
-        &self.to
+    pub const fn to(&self) -> BlockRef {
+        self.to
     }
 }
 impl fmt::Debug for CfgUpdate {
@@ -74,7 +74,7 @@ pub trait GraphDiff {
         self.legalized_updates().len()
     }
     fn pop_update_for_incremental_updates(&mut self) -> CfgUpdate;
-    fn get_children<const INVERSE_EDGE: bool>(&self, node: &BlockRef) -> SmallVec<[BlockRef; 8]>;
+    fn get_children<const INVERSE_EDGE: bool>(&self, node: BlockRef) -> SmallVec<[BlockRef; 8]>;
 }
 
 /// GraphDiff defines a CFG snapshot: given a set of Update<NodePtr>, provides
@@ -126,16 +126,8 @@ impl<const INVERSE_GRAPH: bool> CfgDiff<INVERSE_GRAPH> {
         };
         for update in this.legalized_updates.iter() {
             let is_insert = matches!(update.kind(), CfgUpdateKind::Insert) || reverse_apply_updates;
-            this.succ
-                .entry(update.from.clone())
-                .or_default()
-                .di_mut(is_insert)
-                .push(update.to.clone());
-            this.pred
-                .entry(update.to.clone())
-                .or_default()
-                .di_mut(is_insert)
-                .push(update.from.clone());
+            this.succ.entry(update.from).or_default().di_mut(is_insert).push(update.to);
+            this.pred.entry(update.to).or_default().di_mut(is_insert).push(update.from);
         }
         this.updated_are_reverse_applied = reverse_apply_updates;
         this
@@ -157,28 +149,28 @@ impl<const INVERSE_GRAPH: bool> GraphDiff for CfgDiff<INVERSE_GRAPH> {
         let update = self.legalized_updates.pop().unwrap();
         let is_insert =
             matches!(update.kind(), CfgUpdateKind::Insert) || self.updated_are_reverse_applied;
-        let succ_di_list = &mut self.succ[update.from()];
+        let succ_di_list = &mut self.succ[&update.from];
         let is_empty = {
             let succ_list = succ_di_list.di_mut(is_insert);
-            assert_eq!(succ_list.last(), Some(update.to()));
+            assert_eq!(succ_list.last(), Some(&update.to));
             succ_list.pop();
             succ_list.is_empty()
         };
         if is_empty && succ_di_list.di(!is_insert).is_empty() {
-            self.succ.remove(update.from());
+            self.succ.remove(&update.from);
         }
 
-        let pred_di_list = &mut self.pred[update.to()];
+        let pred_di_list = &mut self.pred[&update.to];
         let pred_list = pred_di_list.di_mut(is_insert);
-        assert_eq!(pred_list.last(), Some(update.from()));
+        assert_eq!(pred_list.last(), Some(&update.from));
         pred_list.pop();
         if pred_list.is_empty() && pred_di_list.di(!is_insert).is_empty() {
-            self.pred.remove(update.to());
+            self.pred.remove(&update.to);
         }
         update
     }
 
-    fn get_children<const INVERSE_EDGE: bool>(&self, node: &BlockRef) -> SmallVec<[BlockRef; 8]> {
+    fn get_children<const INVERSE_EDGE: bool>(&self, node: BlockRef) -> SmallVec<[BlockRef; 8]> {
         let mut r = crate::dominance::nca::get_children::<INVERSE_EDGE>(node);
         if !INVERSE_EDGE {
             r.reverse();
@@ -189,7 +181,7 @@ impl<const INVERSE_GRAPH: bool> GraphDiff for CfgDiff<INVERSE_GRAPH> {
         } else {
             &self.succ
         };
-        let Some(found) = children.get(node) else {
+        let Some(found) = children.get(&node) else {
             return r;
         };
 
@@ -265,7 +257,7 @@ where
     }
 
     let mut result = SmallVec::<[CfgUpdate; 4]>::with_capacity(operations.len());
-    for ((from, to), update_op) in operations.iter() {
+    for (&(from, to), update_op) in operations.iter() {
         assert!(update_op.num_insertions.abs() <= 1, "unbalanced operations!");
         if update_op.num_insertions == 0 {
             continue;
@@ -275,11 +267,7 @@ where
         } else {
             CfgUpdateKind::Delete
         };
-        result.push(CfgUpdate {
-            kind,
-            from: from.clone(),
-            to: to.clone(),
-        });
+        result.push(CfgUpdate { kind, from, to });
     }
 
     // Make the order consistent by not relying on pointer values within the set. Reuse the old
@@ -288,8 +276,8 @@ where
     // In the future, we should sort by something else to minimize the amount of work needed to
     // perform the series of updates.
     result.sort_by(|a, b| {
-        let op_a = &operations[&(a.from.clone(), a.to.clone())];
-        let op_b = &operations[&(b.from.clone(), b.to.clone())];
+        let op_a = &operations[&(a.from, a.to)];
+        let op_b = &operations[&(b.from, b.to)];
         if reverse_result_order {
             op_a.index.cmp(&op_b.index)
         } else {

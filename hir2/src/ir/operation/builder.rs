@@ -82,7 +82,7 @@ where
     pub fn create_region(&mut self) {
         let mut region = Region::default();
         unsafe {
-            region.set_owner(Some(self.op.clone()));
+            region.set_owner(Some(self.op));
         }
         let region = self.builder.context().alloc_tracked(region);
         let mut op = self.op.borrow_mut();
@@ -94,16 +94,18 @@ where
         dest: BlockRef,
         arguments: impl IntoIterator<Item = ValueRef>,
     ) {
-        let owner = self.op.clone();
+        let owner = self.op;
         // Insert operand group for this successor
         let mut op = self.op.borrow_mut();
-        let operand_group =
-            op.operands.push_group(arguments.into_iter().enumerate().map(|(index, arg)| {
-                self.builder.context().make_operand(arg, owner.clone(), index as u8)
-            }));
+        let operand_group = op.operands.push_group(
+            arguments
+                .into_iter()
+                .enumerate()
+                .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u8)),
+        );
         // Record SuccessorInfo for this successor in the op
         let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
-        let successor = self.builder.context().make_block_operand(dest.clone(), owner, succ_index);
+        let successor = self.builder.context().make_block_operand(dest, owner, succ_index);
         op.successors.push_group([SuccessorInfo {
             block: successor,
             key: None,
@@ -115,14 +117,14 @@ where
     where
         I: IntoIterator<Item = (BlockRef, Vec<ValueRef>)>,
     {
-        let owner = self.op.clone();
+        let owner = self.op;
         let mut op = self.op.borrow_mut();
         let mut group = vec![];
         for (i, (block, args)) in succs.into_iter().enumerate() {
-            let block = self.builder.context().make_block_operand(block, owner.clone(), i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u8);
             let operands = args
                 .into_iter()
-                .map(|value_ref| self.builder.context().make_operand(value_ref, owner.clone(), 0));
+                .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
             let operand_group = op.operands.push_group(operands);
             group.push(SuccessorInfo {
                 block,
@@ -138,15 +140,15 @@ where
         S: KeyedSuccessor,
         I: IntoIterator<Item = S>,
     {
-        let owner = self.op.clone();
+        let owner = self.op;
         let mut op = self.op.borrow_mut();
         let mut group = vec![];
         for (i, successor) in succs.into_iter().enumerate() {
             let (key, block, args) = successor.into_parts();
-            let block = self.builder.context().make_block_operand(block, owner.clone(), i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u8);
             let operands = args
                 .into_iter()
-                .map(|value_ref| self.builder.context().make_operand(value_ref, owner.clone(), 0));
+                .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
             let operand_group = op.operands.push_group(operands);
             let key = Box::new(key);
             let key = unsafe { core::ptr::NonNull::new_unchecked(Box::into_raw(key)) };
@@ -164,10 +166,11 @@ where
     where
         I: IntoIterator<Item = ValueRef>,
     {
-        let owner = self.op.clone();
-        let operands = operands.into_iter().enumerate().map(|(index, value)| {
-            self.builder.context().make_operand(value, owner.clone(), index as u8)
-        });
+        let owner = self.op;
+        let operands = operands
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
         let mut op = self.op.borrow_mut();
         op.operands.extend(operands);
     }
@@ -177,10 +180,11 @@ where
     where
         I: IntoIterator<Item = ValueRef>,
     {
-        let owner = self.op.clone();
-        let operands = operands.into_iter().enumerate().map(|(index, value)| {
-            self.builder.context().make_operand(value, owner.clone(), index as u8)
-        });
+        let owner = self.op;
+        let operands = operands
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
         let mut op = self.op.borrow_mut();
         op.operands.extend_group(group, operands);
     }
@@ -188,12 +192,9 @@ where
     /// Allocate `n` results for this op, of unknown type, to be filled in later
     pub fn with_results(&mut self, n: usize) {
         let span = self.op.borrow().span;
-        let owner = self.op.clone();
-        let results = (0..n).map(|idx| {
-            self.builder
-                .context()
-                .make_result(span, Type::Unknown, owner.clone(), idx as u8)
-        });
+        let owner = self.op;
+        let results = (0..n)
+            .map(|idx| self.builder.context().make_result(span, Type::Unknown, owner, idx as u8));
         let mut op = self.op.borrow_mut();
         op.results.clear();
         op.results.extend(results);
@@ -238,7 +239,7 @@ where
         }
 
         // Insert op at current insertion point, if set
-        if self.builder.insertion_point().is_some() {
+        if self.builder.insertion_point().is_valid() {
             self.builder.insert(self.op);
         }
 

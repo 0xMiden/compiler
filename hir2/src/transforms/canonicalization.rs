@@ -103,11 +103,8 @@ impl Pass for Canonicalizer {
             drop(op);
             ptr
         };
-        let converged = patterns::apply_patterns_and_fold_greedily(
-            op.clone(),
-            rewrites.clone(),
-            self.config.clone(),
-        );
+        let converged =
+            patterns::apply_patterns_and_fold_greedily(op, rewrites.clone(), self.config.clone());
         if self.require_convergence && converged.is_err() {
             let span = op.borrow().span();
             return Err(state

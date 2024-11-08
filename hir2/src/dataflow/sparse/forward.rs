@@ -135,7 +135,7 @@ where
     // If the containing block is not executable, bail out.
     if op.parent().is_some_and(|block| {
         !solver
-            .get_or_create_mut::<Executable, _>(solver.program_point_before(block))
+            .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
             .is_live()
     }) {
         return Ok(());
@@ -146,7 +146,7 @@ where
 
     // The results of a region branch operation are determined by control-flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
-        let point = solver.program_point_after(op);
+        let point = ProgramPoint::after(op);
         visit_region_successors(
             analysis,
             point,
@@ -186,8 +186,8 @@ where
 
         // Otherwise, the results of a call operation are determined by the callgraph.
         let predecessors = solver.require::<PredecessorState, _>(
-            solver.program_point_after(call.as_operation()),
-            solver.program_point_after(op),
+            ProgramPoint::after(call.as_operation()),
+            ProgramPoint::after(op),
         );
 
         // If not all return sites are known, then conservatively assume we can't reason about the
@@ -197,13 +197,13 @@ where
             return Ok(());
         }
 
-        let current_point = solver.program_point_after(op);
+        let current_point = ProgramPoint::after(op);
         for predecessor in predecessors.known_predecessors() {
             for (operand, result_lattice) in
                 predecessor.borrow().operands().all().iter().zip(result_lattices.iter_mut())
             {
                 let operand_lattice = get_lattice_element_for::<A>(
-                    current_point.clone(),
+                    current_point,
                     operand.borrow().as_value_ref(),
                     solver,
                 );
@@ -234,7 +234,7 @@ where
 
     // If the block is not executable, bail out.
     if !solver
-        .get_or_create_mut::<Executable, _>(solver.program_point_before(block))
+        .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
         .is_live()
     {
         return;
@@ -248,7 +248,7 @@ where
     }
 
     // The argument lattices of entry blocks are set by region control-flow or the callgraph.
-    let current_point = solver.program_point_before(block);
+    let current_point = ProgramPoint::at_start_of(block);
     if block.is_entry_block() {
         // Check if this block is the entry block of a callable region.
         let parent_op = block.parent_op().unwrap();
@@ -257,8 +257,8 @@ where
         if callable.is_some_and(|c| c.get_callable_region() == block.parent()) {
             let callable = callable.unwrap();
             let callsites = solver.require::<PredecessorState, _>(
-                solver.program_point_after(callable.as_operation()),
-                current_point.clone(),
+                ProgramPoint::after(callable.as_operation()),
+                current_point,
             );
 
             // If not all callsites are known, conservatively mark all lattices as having reached
@@ -272,7 +272,7 @@ where
                 let call = callsite.as_trait::<dyn CallOpInterface>().unwrap();
                 for (arg, arg_lattice) in call.arguments().iter().zip(arg_lattices.iter_mut()) {
                     let input = get_lattice_element_for::<A>(
-                        current_point.clone(),
+                        current_point,
                         arg.borrow().as_value_ref(),
                         solver,
                     );
@@ -287,7 +287,7 @@ where
         if let Some(branch) = parent_op.as_trait::<dyn RegionBranchOpInterface>() {
             return visit_region_successors(
                 analysis,
-                current_point.clone(),
+                current_point,
                 branch,
                 RegionBranchPoint::Child(block.parent().unwrap()),
                 &mut arg_lattices,
@@ -340,7 +340,7 @@ where
                     operands.get(idx).and_then(|operand| operand.into_value_ref())
                 {
                     let operand_lattice =
-                        get_lattice_element_for::<A>(current_point.clone(), operand, solver);
+                        get_lattice_element_for::<A>(current_point, operand, solver);
                     lattice.join(operand_lattice.lattice());
                 } else {
                     // Conservatively consider internally produced arguments as entry points.
@@ -367,7 +367,7 @@ fn visit_region_successors<A>(
 ) where
     A: SparseForwardDataFlowAnalysis,
 {
-    let predecessors = solver.require::<PredecessorState, _>(point.clone(), point.clone());
+    let predecessors = solver.require::<PredecessorState, _>(point, point);
     assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
 
     for op in predecessors.known_predecessors() {
@@ -445,11 +445,8 @@ fn visit_region_successors<A>(
         for (operand, lattice) in
             operands.forwarded().iter().zip(lattices.iter_mut().skip(first_index))
         {
-            let operand_lattice = get_lattice_element_for::<A>(
-                point.clone(),
-                operand.borrow().as_value_ref(),
-                solver,
-            );
+            let operand_lattice =
+                get_lattice_element_for::<A>(point, operand.borrow().as_value_ref(), solver);
             lattice.join(operand_lattice.lattice());
         }
     }

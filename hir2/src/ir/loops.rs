@@ -64,7 +64,7 @@ impl Analysis for LoopInfo {
 
             // Otherwise, compute it for this region
             let region = region.as_region_ref();
-            let forest = LoopForest::new(&dominfo.info().dominance(&region));
+            let forest = LoopForest::new(&dominfo.info().dominance(region));
             self.per_region_info.push(RegionLoopInfo { region, forest });
         }
     }
@@ -163,8 +163,8 @@ impl LoopForest {
 
     /// Returns true if `block` is in this loop forest
     #[inline]
-    pub fn contains_block(&self, block: &BlockRef) -> bool {
-        self.block_map.contains_key(block)
+    pub fn contains_block(&self, block: BlockRef) -> bool {
+        self.block_map.contains_key(&block)
     }
 
     /// Get the set of top-level/outermost loops in the forest
@@ -222,20 +222,20 @@ impl LoopForest {
     /// Return the inner most loop that `block` lives in.
     ///
     /// If a basic block is in no loop (for example the entry node), `None` is returned.
-    pub fn loop_for(&self, block: &BlockRef) -> Option<Rc<Loop>> {
-        self.block_map.get(block).cloned()
+    pub fn loop_for(&self, block: BlockRef) -> Option<Rc<Loop>> {
+        self.block_map.get(&block).cloned()
     }
 
     /// Return the loop nesting level of the specified block.
     ///
     /// A depth of 0 means the block is not inside any loop.
-    pub fn loop_depth(&self, block: &BlockRef) -> usize {
+    pub fn loop_depth(&self, block: BlockRef) -> usize {
         self.loop_for(block).map(|l| l.depth()).unwrap_or(0)
     }
 
     /// Returns true if the block is a loop header
-    pub fn is_loop_header(&self, block: &BlockRef) -> bool {
-        self.loop_for(block).map(|l| &l.header() == block).unwrap_or(false)
+    pub fn is_loop_header(&self, block: BlockRef) -> bool {
+        self.loop_for(block).map(|l| l.header() == block).unwrap_or(false)
     }
 
     /// This removes the specified top-level loop from this loop info object.
@@ -284,8 +284,8 @@ impl LoopForest {
 
     /// This method completely removes `block` from all data structures, including all of the loop
     /// objects it is nested in and our mapping from basic blocks to loops.
-    pub fn remove_block(&mut self, block: &BlockRef) {
-        if let Some(l) = self.block_map.remove(block) {
+    pub fn remove_block(&mut self, block: BlockRef) {
+        if let Some(l) = self.block_map.remove(&block) {
             let mut next_l = Some(l);
             while let Some(l) = next_l.take() {
                 next_l = l.parent_loop();
@@ -326,13 +326,13 @@ impl LoopForest {
             return;
         };
         for node in PostOrderDomTreeIter::new(root.clone()) {
-            let header = node.block().expect("expected header block").clone();
+            let header = node.block().expect("expected header block");
             let mut backedges = SmallVec::<[BlockRef; 4]>::default();
 
             // Check each predecessor of the potential loop header.
-            for backedge in BlockRef::inverse_children(header.clone()) {
+            for backedge in BlockRef::inverse_children(header) {
                 // If `header` dominates `pred`, this is a new loop. Collect the backedges.
-                let backedge_node = tree.get(Some(&backedge));
+                let backedge_node = tree.get(Some(backedge));
                 if backedge_node.is_some() && tree.dominates_node(Some(node.clone()), backedge_node)
                 {
                     backedges.push(backedge);
@@ -341,13 +341,13 @@ impl LoopForest {
 
             // Perform a backward CFG traversal to discover and map blocks in this loop.
             if !backedges.is_empty() {
-                let l = Rc::new(Loop::new(header.clone()));
+                let l = Rc::new(Loop::new(header));
                 self.discover_and_map_sub_loop(l, backedges, tree);
             }
         }
 
         // Perform a single forward CFG traversal to populate blocks and subloops for all loops.
-        for block in PostOrderBlockIter::new(root.block().cloned().unwrap()) {
+        for block in PostOrderBlockIter::new(root.block().unwrap()) {
             self.insert_into_loop(block);
         }
     }
@@ -368,18 +368,18 @@ impl LoopForest {
         // Perform a backward CFG traversal using a worklist.
         let mut reverse_cfg_worklist = backedges;
         while let Some(pred) = reverse_cfg_worklist.pop() {
-            match self.loop_for(&pred) {
-                None if !tree.is_reachable_from_entry(&pred) => continue,
+            match self.loop_for(pred) {
+                None if !tree.is_reachable_from_entry(pred) => continue,
                 None => {
                     // This is an undiscovered block. Map it to the current loop.
-                    self.change_loop_for(pred.clone(), Some(l.clone()));
+                    self.change_loop_for(pred, Some(l.clone()));
                     num_blocks += 1;
                     if pred == l.header() {
                         continue;
                     }
 
                     // Push all block predecessors on the worklist
-                    reverse_cfg_worklist.extend(Inverse::<BlockRef>::children(pred.clone()));
+                    reverse_cfg_worklist.extend(Inverse::<BlockRef>::children(pred));
                 }
                 Some(subloop) => {
                     // This is a discovered block. Find its outermost discovered loop.
@@ -400,7 +400,7 @@ impl LoopForest {
                     // another subloop that is not yet discovered to be a subloop of this loop,
                     // which we must traverse.
                     for pred in BlockRef::inverse_children(subloop.header()) {
-                        if self.loop_for(&pred).is_none_or(|l| l != subloop) {
+                        if self.loop_for(pred).is_none_or(|l| l != subloop) {
                             reverse_cfg_worklist.push(pred);
                         }
                     }
@@ -417,7 +417,7 @@ impl LoopForest {
     /// If the block is a subloop header, add the subloop to its parent in post-order, then reverse
     /// the block and subloop vectors of the now complete subloop to achieve RPO.
     fn insert_into_loop(&mut self, block: BlockRef) {
-        let mut subloop = self.loop_for(&block);
+        let mut subloop = self.loop_for(block);
         if let Some(sl) = subloop.clone().filter(|sl| sl.header() == block) {
             let parent = sl.parent_loop();
             // We reach this point once per subloop after processing all the blocks in the subloop.
@@ -435,7 +435,7 @@ impl LoopForest {
         }
 
         while let Some(sl) = subloop.take() {
-            sl.add_block_entry(block.clone());
+            sl.add_block_entry(block);
             subloop = sl.parent_loop();
         }
     }
@@ -453,6 +453,7 @@ impl LoopForest {
         if cfg!(debug_assertions) {
             // Verify that blocks are mapped to valid loops.
             for (block, block_loop) in self.block_map.iter() {
+                let block = *block;
                 if !loops.contains(block_loop) {
                     return Err(Report::msg("orphaned loop"));
                 }
@@ -653,7 +654,7 @@ impl Loop {
     /// Create a new [Loop] with `block` as its header.
     pub fn new(block: BlockRef) -> Self {
         let mut this = Self::default();
-        this.blocks.get_mut().push(block.clone());
+        this.blocks.get_mut().push(block);
         this.block_set.get_mut().insert(block);
         this
     }
@@ -674,7 +675,7 @@ impl Loop {
 
     /// Get the header block of this loop
     pub fn header(&self) -> BlockRef {
-        self.blocks.borrow()[0].clone()
+        self.blocks.borrow()[0]
     }
 
     /// Return the parent loop of this loop, if it has one, or `None` if it is a top-level loop.
@@ -714,8 +715,8 @@ impl Loop {
     }
 
     /// Returns true if the specified basic block is in this loop
-    pub fn contains_block(&self, block: &BlockRef) -> bool {
-        self.block_set.borrow().contains(block)
+    pub fn contains_block(&self, block: BlockRef) -> bool {
+        self.block_set.borrow().contains(&block)
     }
 
     /// Returns true if the specified operation is in this loop
@@ -723,7 +724,7 @@ impl Loop {
         let Some(block) = op.borrow().parent() else {
             return false;
         };
-        self.contains_block(&block)
+        self.contains_block(block)
     }
 
     /// Return the loops contained entirely within this loop.
@@ -776,9 +777,9 @@ impl Loop {
     /// # Panics
     ///
     /// This function will panic if `block` is not inside this loop.
-    pub fn is_loop_exiting(&self, block: &BlockRef) -> bool {
+    pub fn is_loop_exiting(&self, block: BlockRef) -> bool {
         assert!(self.contains_block(block), "exiting block must be part of the loop");
-        BlockRef::children(block.clone()).any(|succ| !self.contains_block(&succ))
+        BlockRef::children(block).any(|succ| !self.contains_block(succ))
     }
 
     /// Returns true if `block` is a loop-latch.
@@ -787,15 +788,15 @@ impl Loop {
     ///
     /// This function is useful when there are multiple latches in a loop because `get_loop_latch`
     /// will return `None` in that case.
-    pub fn is_loop_latch(&self, block: &BlockRef) -> bool {
+    pub fn is_loop_latch(&self, block: BlockRef) -> bool {
         assert!(self.contains_block(block), "block does not belong to the loop");
-        BlockRef::inverse_children(self.header()).any(|pred| &pred == block)
+        BlockRef::inverse_children(self.header()).any(|pred| pred == block)
     }
 
     /// Calculate the number of back edges to the loop header
     pub fn num_backedges(&self) -> usize {
         BlockRef::inverse_children(self.header())
-            .filter(|pred| self.contains_block(pred))
+            .filter(|pred| self.contains_block(*pred))
             .count()
     }
 }
@@ -812,11 +813,11 @@ impl Loop {
     /// always unique.
     pub fn exiting_blocks(&self) -> SmallVec<[BlockRef; 2]> {
         let mut exiting_blocks = SmallVec::default();
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
                 // A block must be an exit block if it is not contained in the current loop
-                if !self.contains_block(&succ) {
-                    exiting_blocks.push(block.clone());
+                if !self.contains_block(succ) {
+                    exiting_blocks.push(block);
                     break;
                 }
             }
@@ -827,13 +828,13 @@ impl Loop {
     /// If [Self::exiting_blocks] would return exactly one block, return it, otherwise `None`.
     pub fn exiting_block(&self) -> Option<BlockRef> {
         let mut exiting_block = None;
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
-                if !self.contains_block(&succ) {
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
+                if !self.contains_block(succ) {
                     if exiting_block.is_some() {
                         return None;
                     } else {
-                        exiting_block = Some(block.clone());
+                        exiting_block = Some(block);
                     }
                     break;
                 }
@@ -847,9 +848,9 @@ impl Loop {
     /// These are the blocks _outside of the current loop_ which are branched to.
     pub fn exit_blocks(&self) -> SmallVec<[BlockRef; 2]> {
         let mut exit_blocks = SmallVec::default();
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
-                if !self.contains_block(&succ) {
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
+                if !self.contains_block(succ) {
                     exit_blocks.push(succ);
                 }
             }
@@ -860,9 +861,9 @@ impl Loop {
     /// If [Self::exit_blocks] would return exactly one block, return it, otherwise `None`.
     pub fn exit_block(&self) -> Option<BlockRef> {
         let mut exit_block = None;
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
-                if !self.contains_block(&succ) {
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
+                if !self.contains_block(succ) {
                     if exit_block.is_some() {
                         return None;
                     } else {
@@ -879,7 +880,7 @@ impl Loop {
         // Each predecessor of each exit block of a normal loop is contained within the loop.
         for exit_block in self.unique_exit_blocks() {
             for pred in BlockRef::inverse_children(exit_block) {
-                if !self.contains_block(&pred) {
+                if !self.contains_block(pred) {
                     return false;
                 }
             }
@@ -906,7 +907,7 @@ impl Loop {
     pub fn unique_non_latch_exit_blocks(&self) -> SmallVec<[BlockRef; 2]> {
         let latch_block = self.loop_latch().expect("latch must exist");
         let mut unique_exits = SmallVec::default();
-        unique_exit_blocks_helper(self, &mut unique_exits, |block| block != &latch_block);
+        unique_exit_blocks_helper(self, &mut unique_exits, |block| block != latch_block);
         unique_exits
     }
 
@@ -918,9 +919,9 @@ impl Loop {
 
     /// Return true if this loop does not have any exit blocks.
     pub fn has_no_exit_blocks(&self) -> bool {
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
-                if !self.contains_block(&succ) {
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
+                if !self.contains_block(succ) {
                     return false;
                 }
             }
@@ -931,10 +932,10 @@ impl Loop {
     /// Return all pairs of (_inside_block_, _outside_block_).
     pub fn exit_edges(&self) -> SmallVec<[LoopEdge; 2]> {
         let mut exit_edges = SmallVec::default();
-        for block in self.blocks.borrow().iter() {
-            for succ in BlockRef::children(block.clone()) {
-                if !self.contains_block(&succ) {
-                    exit_edges.push((block.clone(), succ));
+        for block in self.blocks.borrow().iter().copied() {
+            for succ in BlockRef::children(block) {
+                if !self.contains_block(succ) {
+                    exit_edges.push((block, succ));
                 }
             }
         }
@@ -960,7 +961,7 @@ impl Loop {
         }
 
         // Make sure there is only one exit out of the preheader.
-        if !BlockRef::children(out.clone()).has_single_element() {
+        if !BlockRef::children(out).has_single_element() {
             // Multiple exits from the block, must not be a preheader.
             return None;
         }
@@ -979,7 +980,7 @@ impl Loop {
         // Loop over the predecessors of the header node...
         let header = self.header();
         for pred in BlockRef::inverse_children(header) {
-            if !self.contains_block(&pred) {
+            if !self.contains_block(pred) {
                 if out.as_ref().is_some_and(|out| out != &pred) {
                     // Multiple predecessors outside the loop
                     return None;
@@ -997,7 +998,7 @@ impl Loop {
         let header = self.header();
         let mut latch_block = None;
         for pred in BlockRef::inverse_children(header) {
-            if self.contains_block(&pred) {
+            if self.contains_block(pred) {
                 if latch_block.is_some() {
                     return None;
                 }
@@ -1012,7 +1013,7 @@ impl Loop {
     /// A latch block is a block that contains a branch back to the header.
     pub fn loop_latches(&self) -> SmallVec<[BlockRef; 2]> {
         BlockRef::inverse_children(self.header())
-            .filter(|pred| self.contains_block(pred))
+            .filter(|pred| self.contains_block(*pred))
             .collect()
     }
 
@@ -1047,12 +1048,12 @@ fn unique_exit_blocks_helper<F>(
     exit_blocks: &mut SmallVec<[BlockRef; 2]>,
     mut predicate: F,
 ) where
-    F: FnMut(&BlockRef) -> bool,
+    F: FnMut(BlockRef) -> bool,
 {
     let mut visited = SmallSet::<BlockRef, 32>::default();
-    for block in l.blocks.borrow().iter().filter(|b| predicate(b)).cloned() {
+    for block in l.blocks.borrow().iter().copied().filter(|b| predicate(*b)) {
         for succ in BlockRef::children(block) {
-            if !l.contains_block(&succ) && visited.insert(succ.clone()) {
+            if !l.contains_block(succ) && visited.insert(succ) {
                 exit_blocks.push(succ);
             }
         }
@@ -1067,15 +1068,15 @@ impl Loop {
     ///
     /// This is intended for use by analyses which need to update loop information.
     pub fn add_block_to_loop(self: Rc<Self>, block: BlockRef, forest: &mut LoopForest) {
-        assert!(!forest.contains_block(&block), "`block` is already in this loop");
+        assert!(!forest.contains_block(block), "`block` is already in this loop");
 
         // Add the loop mapping to the LoopForest object...
-        forest.block_map.insert(block.clone(), self.clone());
+        forest.block_map.insert(block, self.clone());
 
         // Add the basic block to this loop and all parent loops...
         let mut next_l = Some(self);
         while let Some(l) = next_l.take() {
-            l.add_block_entry(block.clone());
+            l.add_block_entry(block);
             next_l = l.parent_loop();
         }
     }
@@ -1144,7 +1145,7 @@ impl Loop {
     /// This should only be used by transformations that create new loops.  Other transformations
     /// should use [add_block_to_loop].
     pub fn add_block_entry(&self, block: BlockRef) {
-        self.blocks.borrow_mut().push(block.clone());
+        self.blocks.borrow_mut().push(block);
         self.block_set.borrow_mut().insert(block);
     }
 
@@ -1162,7 +1163,7 @@ impl Loop {
     /// of the loop (the block that dominates all others).
     pub fn move_to_header(&self, block: BlockRef) {
         let mut blocks = self.blocks.borrow_mut();
-        let index = blocks.iter().position(|b| b == &block).expect("loop does not contain `block`");
+        let index = blocks.iter().position(|b| *b == block).expect("loop does not contain `block`");
         if index == 0 {
             return;
         }
@@ -1173,11 +1174,11 @@ impl Loop {
 
     /// This removes the specified basic block from the current loop, updating the `self.blocks` as
     /// appropriate. This does not update the mapping in the corresponding [LoopInfo].
-    pub fn remove_block_from_loop(&self, block: &BlockRef) {
+    pub fn remove_block_from_loop(&self, block: BlockRef) {
         let mut blocks = self.blocks.borrow_mut();
-        let index = blocks.iter().position(|b| b == block).expect("loop does not contain `block`");
+        let index = blocks.iter().position(|b| *b == block).expect("loop does not contain `block`");
         blocks.swap_remove(index);
-        self.block_set.borrow_mut().remove(block);
+        self.block_set.borrow_mut().remove(&block);
     }
 
     /// Verify loop structure
@@ -1199,23 +1200,20 @@ impl Loop {
 
         // Check the individual blocks.
         let header = self.header();
-        for block in
-            PreOrderBlockIter::new_with_visited(header.clone(), exit_blocks.iter().cloned())
-        {
-            let has_in_loop_successors =
-                BlockRef::children(block.clone()).any(|b| self.contains_block(&b));
+        for block in PreOrderBlockIter::new_with_visited(header, exit_blocks.iter().cloned()) {
+            let has_in_loop_successors = BlockRef::children(block).any(|b| self.contains_block(b));
             if !has_in_loop_successors {
                 return Err(Report::msg("loop block has no in-loop successors"));
             }
 
             let has_in_loop_predecessors =
-                BlockRef::inverse_children(block.clone()).any(|b| self.contains_block(&b));
+                BlockRef::inverse_children(block).any(|b| self.contains_block(b));
             if !has_in_loop_predecessors {
                 return Err(Report::msg("loop block has no in-loop predecessors"));
             }
 
-            let outside_loop_preds = BlockRef::inverse_children(block.clone())
-                .filter(|b| !self.contains_block(b))
+            let outside_loop_preds = BlockRef::inverse_children(block)
+                .filter(|b| !self.contains_block(*b))
                 .collect::<SmallVec<[BlockRef; 2]>>();
 
             if block == header && outside_loop_preds.is_empty() {
@@ -1250,7 +1248,7 @@ impl Loop {
         for subloop in self.nested().iter() {
             // Each block in each subloop should be contained within this loop.
             for block in subloop.blocks().iter() {
-                if !self.contains_block(block) {
+                if !self.contains_block(*block) {
                     return Err(Report::msg(
                         "loop does not contain all the blocks of its subloops",
                     ));
@@ -1311,17 +1309,17 @@ impl<'a> crate::formatter::PrettyPrint for PrintLoop<'a> {
 
         let mut doc = const_text("loop containing: ");
         let header = self.loop_info.header();
-        for (i, block) in self.loop_info.blocks().iter().enumerate() {
+        for (i, block) in self.loop_info.blocks().iter().copied().enumerate() {
             if !self.verbose {
                 if i > 0 {
                     doc += const_text(", ");
                 }
-                doc += display(block.clone());
+                doc += display(block);
             } else {
                 doc += nl();
             }
 
-            if block == &header {
+            if block == header {
                 doc += const_text("<header>");
             } else if self.loop_info.is_loop_latch(block) {
                 doc += const_text("<latch>");

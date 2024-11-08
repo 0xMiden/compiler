@@ -35,8 +35,8 @@ impl OpOperandImpl {
     }
 
     #[inline]
-    pub fn as_value_ref(&self) -> ValueRef {
-        self.value.clone()
+    pub const fn as_value_ref(&self) -> ValueRef {
+        self.value
     }
 
     #[inline]

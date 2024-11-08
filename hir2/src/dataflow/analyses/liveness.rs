@@ -13,7 +13,7 @@ use crate::{
     dialects::hir::Function,
     dominance::DominanceInfo,
     pass::Analysis,
-    BlockRef, Op, Operation, Report, Spanned, ValueRef,
+    BlockRef, Op, Operation, ProgramPoint, Report, Spanned, ValueRef,
 };
 
 // The distance penalty applied to an edge which exits a loop
@@ -263,7 +263,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
         // Increment the next-use distances by LOOP_EXIT_DISTANCE if this edge exits
         // a loop
-        let edge = CfgEdge::new(from.as_block_ref(), to.clone(), from.span());
+        let edge = CfgEdge::new(from.as_block_ref(), to, from.span());
         let is_loop_exit =
             solver.get::<LoopState, _>(&edge).is_some_and(|state| state.is_exiting_loop());
         if is_loop_exit {
@@ -443,8 +443,8 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 // needed.
                 let mut live_in = after.value().clone();
                 let region_to = region_to.borrow();
-                for arg in region_to.entry().arguments() {
-                    let arg = arg.clone() as ValueRef;
+                for arg in region_to.entry().arguments().iter().copied() {
+                    let arg = arg as ValueRef;
                     live_in.remove(&arg);
                 }
 
@@ -477,8 +477,8 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 //    remaining next-use distances by LOOP_EXIT_DISTANCE
                 let op = branch.as_operation();
                 let mut live_out = after.value().clone();
-                for result in op.results().iter() {
-                    let result = result.clone() as ValueRef;
+                for result in op.results().iter().copied() {
+                    let result = result as ValueRef;
                     live_out.remove(&result);
                 }
 
@@ -511,8 +511,8 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 //    distance of all live values by LOOP_EXIT_DISTANCE
                 let mut live_out = after.value().clone();
                 let region_to = region_to.borrow();
-                for arg in region_to.entry().arguments().iter() {
-                    let arg = arg.clone() as ValueRef;
+                for arg in region_to.entry().arguments().iter().copied() {
+                    let arg = arg as ValueRef;
                     live_out.remove(&arg);
                 }
 
@@ -569,7 +569,7 @@ impl Liveness {
             }
 
             // Ensure the analysis state for `prev` is initialized with `live_out_prev`
-            let point = solver.program_point_after(prev);
+            let point = ProgramPoint::after(prev);
             let mut prev_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
             if prev_liveness.value() != &live_out_prev {
                 *prev_liveness.value_mut() = live_out_prev;
@@ -588,7 +588,7 @@ impl Liveness {
                 live_in_block.insert(arg, u32::MAX);
             }
 
-            let point = solver.program_point_before(parent_block);
+            let point = ProgramPoint::at_start_of(parent_block);
             let mut block_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
             if block_liveness.value() != &live_in_block {
                 *block_liveness.value_mut() = live_in_block;

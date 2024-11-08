@@ -3,7 +3,7 @@ use alloc::{collections::BTreeMap, rc::Rc};
 use smallvec::SmallVec;
 
 use super::{FrozenRewritePatternSet, PatternBenefit, RewritePattern, Rewriter};
-use crate::{OperationName, OperationRef, Report};
+use crate::{OperationName, OperationRef, ProgramPoint, Report};
 
 pub enum PatternApplicationError {
     NoMatchesFound,
@@ -166,13 +166,13 @@ impl PatternApplicator {
             // Try to match and rewrite this pattern.
             //
             // The patterns are sorted by benefit, so if we match we can immediately rewrite.
-            rewriter.set_insertion_point_before(crate::ProgramPoint::Op(op.clone()));
+            rewriter.set_insertion_point(ProgramPoint::before(op));
 
             // TODO: Save the nearest parent IsolatedFromAbove op of this op for use in debug
             // messages/rendering, as the rewrite may invalidate `op`
             log::debug!("trying to match '{}'", best_pattern.name());
 
-            match best_pattern.match_and_rewrite(op.clone(), rewriter) {
+            match best_pattern.match_and_rewrite(op, rewriter) {
                 Ok(matched) => {
                     if matched {
                         log::trace!("pattern matched successfully");

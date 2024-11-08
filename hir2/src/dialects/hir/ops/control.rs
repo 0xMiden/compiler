@@ -41,7 +41,7 @@ impl BranchOpInterface for Br {
         &self,
         _operands: &[Option<Box<dyn AttributeValue>>],
     ) -> Option<BlockRef> {
-        Some(self.target().dest.borrow().block.clone())
+        Some(self.target().dest.borrow().block)
     }
 }
 
@@ -75,9 +75,9 @@ impl BranchOpInterface for CondBr {
         };
 
         Some(if cond {
-            self.then_dest().dest.borrow().block.clone()
+            self.then_dest().dest.borrow().block
         } else {
-            self.else_dest().dest.borrow().block.clone()
+            self.else_dest().dest.borrow().block
         })
     }
 }
@@ -131,7 +131,7 @@ impl BranchOpInterface for Switch {
         }
 
         // If we reach here, no selector match was found, so use the fallback successor
-        Some(self.fallback().dest.borrow().block.clone())
+        Some(self.fallback().dest.borrow().block)
     }
 }
 
@@ -262,7 +262,7 @@ impl InferTypeOpInterface for If {
                     context.make_result(
                         span,
                         ty,
-                        owner.clone(),
+                        owner,
                         index.try_into().expect("too many results"),
                     )
                 }));

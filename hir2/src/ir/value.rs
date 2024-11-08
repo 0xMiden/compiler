@@ -75,7 +75,7 @@ pub trait Value:
             // Rewrite use of `self` with `replacement`
             {
                 let mut user = user.borrow_mut();
-                user.value = replacement.clone();
+                user.value = replacement;
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -94,7 +94,7 @@ pub trait Value:
                     cursor.move_next();
                     continue;
                 }
-                user.value = replacement.clone();
+                user.value = replacement;
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -134,7 +134,7 @@ impl dyn Value {
                     cursor.move_next();
                     continue;
                 }
-                user.value = replacement.clone();
+                user.value = replacement;
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -316,7 +316,7 @@ value_impl!(
     }
 
     fn parent_block(&self) -> Option<BlockRef> {
-        Some(self.owner.clone())
+        Some(self.owner)
     }
 );
 
@@ -364,7 +364,7 @@ value_impl!(
     }
 
     fn get_defining_op(&self) -> Option<OperationRef> {
-        Some(self.owner.clone())
+        Some(self.owner)
     }
 
     fn parent_block(&self) -> Option<BlockRef> {

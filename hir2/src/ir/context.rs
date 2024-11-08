@@ -116,14 +116,14 @@ impl Context {
     {
         let block = Block::new(self.alloc_block_id());
         let mut block = self.alloc_tracked(block);
-        let owner = block.clone();
+        let owner = block;
         let args = tys.into_iter().enumerate().map(|(index, ty)| {
             let id = self.alloc_value_id();
             let arg = BlockArgument::new(
                 SourceSpan::default(),
                 id,
                 ty,
-                owner.clone(),
+                owner,
                 index.try_into().expect("too many block arguments"),
             );
             self.alloc(arg)
@@ -147,11 +147,11 @@ impl Context {
             span,
             id,
             ty,
-            block.clone(),
+            block,
             next_index.try_into().expect("too many block arguments"),
         );
         let arg = self.alloc(arg);
-        block.borrow_mut().arguments_mut().push(arg.clone());
+        block.borrow_mut().arguments_mut().push(arg);
         arg.upcast()
     }
 
@@ -161,9 +161,9 @@ impl Context {
     /// `owner`'s operand storage, the caller is expected to do that. This makes this function a
     /// more useful primitive.
     pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u8) -> OpOperand {
-        let op_operand = self.alloc_tracked(OpOperandImpl::new(value.clone(), owner, index));
+        let op_operand = self.alloc_tracked(OpOperandImpl::new(value, owner, index));
         let mut value = value.borrow_mut();
-        value.insert_use(op_operand.clone());
+        value.insert_use(op_operand);
         op_operand
     }
 
@@ -178,9 +178,9 @@ impl Context {
         owner: OperationRef,
         index: u8,
     ) -> BlockOperandRef {
-        let block_operand = self.alloc_tracked(BlockOperand::new(block.clone(), owner, index));
+        let block_operand = self.alloc_tracked(BlockOperand::new(block, owner, index));
         let mut block = block.borrow_mut();
-        block.insert_use(block_operand.clone());
+        block.insert_use(block_operand);
         block_operand
     }
 

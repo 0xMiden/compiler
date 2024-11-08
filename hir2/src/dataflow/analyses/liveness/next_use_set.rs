@@ -6,7 +6,7 @@ use crate::{
 };
 
 /// Represents a single value and its next use distance at some program point
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct NextUse {
     /// The value in question
     pub value: ValueRef,
@@ -53,7 +53,7 @@ impl PartialEq for NextUseSet {
             if !other
                 .0
                 .iter()
-                .find(|nu| &nu.value == &next_use.value)
+                .find(|nu| nu.value == next_use.value)
                 .is_some_and(|nu| nu.distance == next_use.distance)
             {
                 return false;
@@ -189,7 +189,7 @@ impl NextUseSet {
             match other.get(value) {
                 None => continue,
                 Some(NextUse { distance: v2, .. }) => {
-                    result.insert(value.clone(), core::cmp::min(*v1, *v2));
+                    result.insert(*value, core::cmp::min(*v1, *v2));
                 }
             }
         }
@@ -202,12 +202,12 @@ impl NextUseSet {
         let mut result = Self::default();
         for next_use in self.iter() {
             if !other.contains(&next_use.value) {
-                result.0.push(next_use.clone());
+                result.0.push(*next_use);
             }
         }
         for next_use in other.iter() {
             if !self.contains(&next_use.value) {
-                result.0.push(next_use.clone());
+                result.0.push(*next_use);
             }
         }
         result
@@ -222,14 +222,14 @@ impl NextUseSet {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = ValueRef> + '_ {
-        self.0.iter().map(|next_use| next_use.value.clone())
+        self.0.iter().map(|next_use| next_use.value)
     }
 
     /// Returns an iterator over the values in this set with a finite next-use distance
     pub fn live(&self) -> impl Iterator<Item = ValueRef> + '_ {
         self.0.iter().filter_map(|next_use| {
             if next_use.distance < u32::MAX {
-                Some(next_use.value.clone())
+                Some(next_use.value)
             } else {
                 None
             }

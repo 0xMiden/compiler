@@ -111,8 +111,8 @@ impl LiveMap {
                 continue;
             }
 
-            for arg in block.arguments() {
-                let arg = arg.clone().upcast();
+            for arg in block.arguments().iter().copied() {
+                let arg = arg as ValueRef;
                 if !self.was_proven_live(&arg) {
                     self.process_value(arg);
                 }
@@ -142,8 +142,8 @@ impl LiveMap {
         }
 
         // If the op isn't intrinsically alive, check it's results
-        for result in op.results().iter() {
-            self.process_value(result.clone().upcast());
+        for result in op.results().iter().copied() {
+            self.process_value(result as ValueRef);
         }
     }
 
@@ -159,7 +159,7 @@ impl LiveMap {
             for succ_index in 0..num_successors {
                 let succ_operands = branch_op.get_successor_operands(succ_index);
                 for arg_index in 0..succ_operands.num_produced() {
-                    let succ = op.successors()[succ_index].block.borrow().block.clone();
+                    let succ = op.successors()[succ_index].block.borrow().block;
                     let succ_arg = succ.borrow().get_argument(arg_index).upcast();
                     self.set_proved_live(succ_arg);
                 }
@@ -272,7 +272,7 @@ impl Region {
         live_map: &LiveMap,
     ) -> Result<(), RegionTransformFailed> {
         let mut erased_anything = false;
-        for region in regions {
+        for mut region in regions.iter().copied() {
             let current_region = region.borrow();
             if current_region.body().is_empty() {
                 continue;
@@ -315,7 +315,6 @@ impl Region {
             // Delete block arguments.
             //
             // The entry block has an unknown contract with their enclosing block, so leave it alone.
-            let mut region = region.clone();
             let mut current_region = region.borrow_mut();
             let mut blocks = current_region.body_mut().front_mut();
             while let Some(mut block) = blocks.as_pointer() {

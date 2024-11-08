@@ -226,7 +226,7 @@ pub trait RewritePattern: Pattern {
         op: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        if self.matches(op.clone())? {
+        if self.matches(op)? {
             self.rewrite(op, rewriter);
 
             Ok(true)
@@ -344,7 +344,7 @@ mod tests {
             let mut builder = FunctionBuilder::new(&mut func);
             let shift = builder.ins().u32(1, SourceSpan::default()).unwrap();
             let block = builder.current_block();
-            let lhs = block.borrow().arguments()[0].clone().upcast();
+            let lhs = block.borrow().arguments()[0].upcast();
             let result = builder.ins().shl(lhs, shift, SourceSpan::default()).unwrap();
             builder.ins().ret(Some(result), SourceSpan::default()).unwrap();
         }

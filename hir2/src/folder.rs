@@ -6,8 +6,8 @@ use crate::{
     matchers::Matcher,
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
-    OperationRef, RegionRef, Rewriter, RewriterImpl, RewriterListener, SourceSpan, Spanned, Type,
-    Value, ValueRef,
+    OperationRef, ProgramPoint, RegionRef, Rewriter, RewriterImpl, RewriterListener, SourceSpan,
+    Spanned, Type, Value, ValueRef,
 };
 
 /// Represents a constant value uniqued by dialect, value, and type.
@@ -104,7 +104,7 @@ impl OperationFolder {
                 && !self.is_folder_owned_constant(&op.prev().unwrap())
             {
                 let mut op = op.borrow_mut();
-                op.move_before(crate::ProgramPoint::Block(block));
+                op.move_to(ProgramPoint::at_start_of(block));
                 op.set_span(self.erased_folded_location);
             }
             return FoldResult::Failed;
@@ -124,12 +124,10 @@ impl OperationFolder {
                     !fold_results.is_empty(),
                     "expected non-empty fold results from a successful fold"
                 );
-                if let FoldResult::Ok(replacements) =
-                    self.process_fold_results(op.clone(), &fold_results)
-                {
+                if let FoldResult::Ok(replacements) = self.process_fold_results(op, &fold_results) {
                     // Constant folding succeeded. Replace all of the result values and erase the
                     // operation.
-                    self.notify_removal(op.clone());
+                    self.notify_removal(op);
                     self.rewriter.replace_op_with_values(op, &replacements);
                     FoldResult::Ok(())
                 } else {
@@ -163,13 +161,13 @@ impl OperationFolder {
             match fold_result {
                 // Check if the result was an SSA value.
                 OpFoldResult::Value(value) => {
-                    out.push(value.clone());
+                    out.push(*value);
                     continue;
                 }
                 // Check to see if there is a canonicalized version of this constant.
                 OpFoldResult::Attribute(attr_repl) => {
                     if let Some(mut const_op) = self.try_get_or_create_constant(
-                        insert_region.clone(),
+                        insert_region,
                         dialect.clone(),
                         attr_repl.clone_value(),
                         op_result.borrow().ty().clone(),
@@ -183,7 +181,7 @@ impl OperationFolder {
                         if op_block == const_op.borrow().parent().unwrap()
                             && op_block.borrow().front().unwrap() != const_op
                         {
-                            const_op.borrow_mut().move_before(crate::ProgramPoint::Block(op_block));
+                            const_op.borrow_mut().move_to(ProgramPoint::at_start_of(op_block));
                         }
                         out.push(const_op.borrow().get_result(0).borrow().as_value_ref());
                         continue;
@@ -191,10 +189,10 @@ impl OperationFolder {
 
                     // If materialization fails, clean up any operations generated for the previous
                     // results and return failure.
-                    let inserted_before = self.rewriter.insertion_point().unwrap().op();
+                    let inserted_before = self.rewriter.insertion_point().operation();
                     if let Some(inserted_before) = inserted_before {
                         while let Some(inserted_op) = inserted_before.prev() {
-                            self.notify_removal(inserted_op.clone());
+                            self.notify_removal(inserted_op);
                             self.rewriter.erase_op(inserted_op);
                         }
                     }
@@ -269,7 +267,7 @@ impl OperationFolder {
                 && !self.is_folder_owned_constant(&op.prev().unwrap())
             {
                 let mut op = op.borrow_mut();
-                op.move_before(crate::ProgramPoint::Block(block));
+                op.move_to(ProgramPoint::at_start_of(block));
                 op.set_span(self.erased_folded_location);
             }
             return true;
@@ -283,22 +281,19 @@ impl OperationFolder {
         });
 
         // Check for an existing constant operation for the attribute value.
-        let insert_region = get_insertion_region(block.clone());
-        let uniqued_constants = self.scopes.entry(insert_region.clone()).or_default();
+        let insert_region = get_insertion_region(block);
+        let uniqued_constants = self.scopes.entry(insert_region).or_default();
         let uniqued_constant = UniquedConstant::new(&op, value);
         let mut is_new = false;
-        let mut folder_const_op = uniqued_constants
-            .entry(uniqued_constant)
-            .or_insert_with(|| {
-                is_new = true;
-                op.clone()
-            })
-            .clone();
+        let mut folder_const_op = *uniqued_constants.entry(uniqued_constant).or_insert_with(|| {
+            is_new = true;
+            op
+        });
 
         // If there is an existing constant, replace `op`
         if !is_new {
-            self.notify_removal(op.clone());
-            self.rewriter.replace_op(op, folder_const_op.clone());
+            self.notify_removal(op);
+            self.rewriter.replace_op(op, folder_const_op);
             folder_const_op.borrow_mut().set_span(self.erased_folded_location);
             return false;
         }
@@ -313,11 +308,11 @@ impl OperationFolder {
                 && !self.is_folder_owned_constant(&op.prev().unwrap()))
         {
             let mut op = op.borrow_mut();
-            op.move_before(crate::ProgramPoint::Block(insert_block));
+            op.move_to(ProgramPoint::at_start_of(insert_block));
             op.set_span(self.erased_folded_location);
         }
 
-        let referenced_dialects = self.referenced_dialects.entry(op.clone()).or_default();
+        let referenced_dialects = self.referenced_dialects.entry(op).or_default();
         let dialect = op.borrow().dialect();
         let dialect_name = dialect.name();
         if !referenced_dialects.iter().any(|d| d.name() == dialect_name) {
@@ -339,7 +334,7 @@ impl OperationFolder {
         ty: Type,
     ) -> Option<ValueRef> {
         // Find an insertion point for the constant.
-        let insert_region = get_insertion_region(block.clone());
+        let insert_region = get_insertion_region(block);
         let entry = insert_region.borrow().entry_block_ref().unwrap();
         self.rewriter.set_insertion_point_to_start(entry);
 
@@ -394,7 +389,7 @@ impl OperationFolder {
         // Check to see if the generated constant is in the expected dialect.
         let new_dialect = const_op.borrow().dialect();
         if new_dialect.name() == dialect.name() {
-            self.referenced_dialects.entry(const_op.clone()).or_default().push(new_dialect);
+            self.referenced_dialects.entry(const_op).or_default().push(new_dialect);
             return Some(const_op);
         }
 
@@ -405,12 +400,9 @@ impl OperationFolder {
             ty: uniqued_constant.ty.clone(),
         };
         let maybe_existing_op = uniqued_constants.get(&new_uniqued_constant).cloned();
-        uniqued_constants.insert(
-            uniqued_constant,
-            maybe_existing_op.clone().unwrap_or_else(|| const_op.clone()),
-        );
+        uniqued_constants.insert(uniqued_constant, maybe_existing_op.unwrap_or(const_op));
         if let Some(mut existing_op) = maybe_existing_op {
-            self.notify_removal(const_op.clone());
+            self.notify_removal(const_op);
             self.rewriter.erase_op(const_op);
             self.referenced_dialects
                 .get_mut(&existing_op)
@@ -422,9 +414,8 @@ impl OperationFolder {
             }
             Some(existing_op)
         } else {
-            self.referenced_dialects
-                .insert(const_op.clone(), smallvec![dialect, new_dialect]);
-            uniqued_constants.insert(new_uniqued_constant, const_op.clone());
+            self.referenced_dialects.insert(const_op, smallvec![dialect, new_dialect]);
+            uniqued_constants.insert(new_uniqued_constant, const_op);
             Some(const_op)
         }
     }
@@ -447,11 +438,11 @@ fn materialize_constant(
     ty: &Type,
     span: SourceSpan,
 ) -> Option<OperationRef> {
-    let ip = builder.insertion_point().cloned();
+    let ip = *builder.insertion_point();
 
     // Ask the dialect to materialize a constant operation for this value.
     let const_op = dialect.materialize_constant(builder, value, ty, span)?;
-    assert_eq!(ip.as_ref(), builder.insertion_point());
+    assert_eq!(ip, *builder.insertion_point());
     assert!(const_op.borrow().implements::<dyn ConstantLike>());
     Some(const_op)
 }

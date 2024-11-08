@@ -53,8 +53,7 @@ impl Region {
             while let Some(block) = blocks.as_pointer() {
                 blocks.move_next();
 
-                any_changed |=
-                    Self::drop_redundant_block_arguments(block.clone(), rewriter).is_ok();
+                any_changed |= Self::drop_redundant_block_arguments(block, rewriter).is_ok();
 
                 for op in block.borrow().body() {
                     let mut regions = op.regions().front();

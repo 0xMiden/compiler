@@ -342,13 +342,13 @@ impl AnalysisManager {
 
     /// Query for a cached analysis on the given parent operation. The analysis may not exist and if
     /// it does it may be out-of-date.
-    pub fn get_cached_parent_analysis<A>(&self, parent: &OperationRef) -> Option<Rc<A>>
+    pub fn get_cached_parent_analysis<A>(&self, parent: OperationRef) -> Option<Rc<A>>
     where
         A: Analysis,
     {
         let mut current_parent = self.analyses.parent();
         while let Some(parent_am) = current_parent.take() {
-            if &parent_am.get_operation() == parent {
+            if parent_am.get_operation() == parent {
                 return parent_am.analyses().get_cached::<A>();
             }
             current_parent = parent_am.parent();
@@ -387,7 +387,7 @@ impl AnalysisManager {
     }
 
     /// Query for an analysis of a child operation, constructing it if necessary.
-    pub fn get_child_analysis<A>(&self, op: &OperationRef) -> Rc<A>
+    pub fn get_child_analysis<A>(&self, op: OperationRef) -> Rc<A>
     where
         A: Analysis<Target = Operation>,
     {
@@ -404,7 +404,7 @@ impl AnalysisManager {
         O: Op,
     {
         self.clone()
-            .nest(&op.as_operation().as_operation_ref())
+            .nest(op.as_operation().as_operation_ref())
             .get_analysis_for::<A, O>()
     }
 
@@ -422,7 +422,7 @@ impl AnalysisManager {
 
     /// Get an analysis manager for the given operation, which must be a proper descendant of the
     /// current operation represented by this analysis manager.
-    pub fn nest(&self, op: &OperationRef) -> AnalysisManager {
+    pub fn nest(&self, op: OperationRef) -> AnalysisManager {
         let current_op = self.analyses.get_operation();
         assert!(
             current_op.borrow().is_proper_ancestor_of(&op.borrow()),
@@ -431,14 +431,14 @@ impl AnalysisManager {
 
         // Check for the base case where the provided operation is immediately nested
         if current_op == op.borrow().parent_op().expect("expected `op` to have a parent") {
-            return self.nest_immediate(op.clone());
+            return self.nest_immediate(op);
         }
 
         // Otherwise, we need to collect all ancestors up to the current operation
         let mut ancestors = SmallVec::<[OperationRef; 4]>::default();
-        let mut next_op = op.clone();
+        let mut next_op = op;
         while next_op != current_op {
-            ancestors.push(next_op.clone());
+            ancestors.push(next_op);
             next_op = next_op.borrow().parent_op().unwrap();
         }
 
@@ -458,7 +458,7 @@ impl AnalysisManager {
         );
         let parent = self.analyses.clone();
         let mut child_analyses = self.analyses.child_analyses.borrow_mut();
-        match child_analyses.entry(op.clone()) {
+        match child_analyses.entry(op) {
             Entry::Vacant(entry) => {
                 let analyses = entry.insert(Rc::new(parent.nest(op)));
                 AnalysisManager {
@@ -692,7 +692,7 @@ impl AnalysisMap {
 
     /// Returns the operation that this analysis map represents.
     pub fn get_operation(&self) -> OperationRef {
-        self.ir.clone()
+        self.ir
     }
 
     /// Clear any held analyses.

@@ -1,6 +1,4 @@
 mod backward;
-#[cfg(test)]
-mod examples;
 mod forward;
 mod lattice;
 
@@ -20,6 +18,73 @@ use crate::{
     BlockRef, Operation, RegionKindInterface, Report, Spanned,
 };
 
+/// This type provides an [AnalysisStrategy] for dense data-flow analyses.
+///
+/// In short, it implements the [DataFlowAnalysis] trait, and handles all of the boilerplate that
+/// any well-structured dense data-flow analysis requires. Analyses can make use of this strategy
+/// by implementing one of the dense data-flow analysis traits, which [DenseDataFlowAnalysis] will
+/// use to delegate analysis-specific details to the analysis implementation. The two traits are:
+///
+/// * [DenseForwardDataFlowAnalysis], for forward-propagating dense analyses
+/// * [DenseBackwardDataFlowAnalysis], for backward-propagating dense analyses
+///
+/// ## What is a dense analysis?
+///
+/// A dense data-flow analysis is one which associates analysis state with program points, in order
+/// to represent the evolution of some state as the program executes (in the case of forward
+/// analysis), or to derive facts about program points based on the possible paths that execution
+/// might take (backward analysis).
+///
+/// This is in contrast to sparse data-flow analysis, which associates state with SSA values at
+/// their definition, and thus the state does not evolve as the program executes. This is also where
+/// the distinction between _dense_ and _sparse_ comes from - program points are dense, while SSA
+/// value definitions are sparse (insofar as the state associated with an SSA value only ever occurs
+/// once, while states associated with program points are duplicated at each point).
+///
+/// Some examples of dense analyses:
+///
+/// * Dead code analysis - at the extreme, indicates whether every program point is executable, i.e.
+///   "live", or not. In practice, dead code analysis tends to only associate its state with
+///   specific control-flow edges, i.e. changes to the state only occur at block boundaries.
+/// * Reaching definition analysis - tracks, for each program point, the set of values whose
+///   definitions reach that point.
+/// * Dead store analysis - determines for each store instruction in a function, whether or not the
+///   stored value is ever read. For example, if you are initializing a struct, and set some field
+///   `foo` to `1`, and then set it to `2`, the first store is never observable, and so the store
+///   could be eliminated entirely.
+///
+/// ## Usage
+///
+/// This type is meant to be used indirectly, as an [AnalysisStrategy] implementation, rather than
+/// directly as a [DataFlowAnalysis] implementation, as shown below:
+///
+/// ```rust,ignore
+/// use midenc_hir2::dataflow::*;
+///
+/// #[derive(Default)]
+/// pub struct MyAnalysis;
+/// impl BuildableDataFlowAnalysis for MyAnalysis {
+///     type Strategy = DenseDataFlowAnalysis<Self, Forward>;
+///
+///     fn new(_solver: &mut DataFlowSolver) -> Self {
+///         Self
+///     }
+/// }
+/// impl DenseForwardDataFlowAnalysis for MyAnalysis {
+///     type Lattice = Lattice<u32>;
+///
+///     //...
+/// }
+/// ```
+///
+/// The above permits us to load `MyAnalysis` into a `DataFlowSolver` without ever mentioning the
+/// `DenseDataFlowAnalysis` type at all, like so:
+///
+/// ```rust,ignore
+/// let mut solver = DataFlowSolver::default();
+/// solver.load::<MyAnalysis>();
+/// solver.initialize_and_run(&op, analysis_manager);
+/// ```
 pub struct DenseDataFlowAnalysis<T, D> {
     analysis: T,
     _direction: core::marker::PhantomData<D>,
@@ -85,28 +150,28 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                     let block = region.entry();
                     forward::visit_block(&self.analysis, &block, solver);
                     for op in block.body() {
-                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 } else {
-                    let domtree = dominfo.info().dominance(&region.as_region_ref());
+                    let domtree = dominfo.info().dominance(region.as_region_ref());
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG preorder
                     for node in domtree.preorder() {
-                        let Some(block) = node.block().cloned() else {
+                        let Some(block) = node.block() else {
                             continue;
                         };
 
                         // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
                         // if applicable for this block
-                        if let Some(loop_info) = loop_forest.loop_for(&block) {
+                        if let Some(loop_info) = loop_forest.loop_for(block) {
                             // This block can exit a loop
-                            if loop_info.is_loop_exiting(&block) {
-                                for succ in BlockRef::children(block.clone()) {
-                                    if !loop_info.contains_block(&succ) {
+                            if loop_info.is_loop_exiting(block) {
+                                for succ in BlockRef::children(block) {
+                                    if !loop_info.contains_block(succ) {
                                         let mut guard = solver.get_or_create_mut::<LoopState, _>(
-                                            CfgEdge::new(block.clone(), succ, block.span()),
+                                            CfgEdge::new(block, succ, block.span()),
                                         );
                                         guard.join(LoopAction::Exit);
                                     }
@@ -118,7 +183,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                         forward::visit_block(&self.analysis, &block, solver);
                         for op in block.body() {
                             let child_analysis_manager =
-                                analysis_manager.nest(&op.as_operation_ref());
+                                analysis_manager.nest(op.as_operation_ref());
                             self.initialize(&op, solver, child_analysis_manager)?;
                         }
                     }
@@ -129,7 +194,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                 for block in region.body() {
                     forward::visit_block(&self.analysis, &block, solver);
                     for op in block.body() {
-                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 }
@@ -195,28 +260,28 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                     let block = region.entry();
                     backward::visit_block(&self.analysis, &block, solver);
                     for op in block.body().iter().rev() {
-                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 } else {
-                    let domtree = dominfo.info().dominance(&region.as_region_ref());
+                    let domtree = dominfo.info().dominance(region.as_region_ref());
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG postorder
                     for node in domtree.postorder() {
-                        let Some(block) = node.block().cloned() else {
+                        let Some(block) = node.block() else {
                             continue;
                         };
 
                         // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
                         // if applicable for this block
-                        if let Some(loop_info) = loop_forest.loop_for(&block) {
+                        if let Some(loop_info) = loop_forest.loop_for(block) {
                             // This block can exit a loop
-                            if loop_info.is_loop_exiting(&block) {
-                                for succ in BlockRef::children(block.clone()) {
-                                    if !loop_info.contains_block(&succ) {
+                            if loop_info.is_loop_exiting(block) {
+                                for succ in BlockRef::children(block) {
+                                    if !loop_info.contains_block(succ) {
                                         let mut guard = solver.get_or_create_mut::<LoopState, _>(
-                                            CfgEdge::new(block.clone(), succ, block.span()),
+                                            CfgEdge::new(block, succ, block.span()),
                                         );
                                         guard.join(LoopAction::Exit);
                                     }
@@ -228,7 +293,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                         backward::visit_block(&self.analysis, &block, solver);
                         for op in block.body().iter().rev() {
                             let child_analysis_manager =
-                                analysis_manager.nest(&op.as_operation_ref());
+                                analysis_manager.nest(op.as_operation_ref());
                             self.initialize(&op, solver, child_analysis_manager)?;
                         }
                     }
@@ -239,7 +304,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                 for block in region.body().iter().rev() {
                     backward::visit_block(&self.analysis, &block, solver);
                     for op in block.body().iter().rev() {
-                        let child_analysis_manager = analysis_manager.nest(&op.as_operation_ref());
+                        let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 }

@@ -145,7 +145,7 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         for symbol_use in self.symbol_uses_in(from) {
             let (mut owner, attr_name) = {
                 let user = symbol_use.borrow();
-                (user.owner.clone(), user.attr)
+                (user.owner, user.attr)
             };
             let mut owner = owner.borrow_mut();
             // Unlink previously used symbol
@@ -154,11 +154,11 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
                     .get_typed_attribute_mut::<SymbolNameAttr>(attr_name)
                     .expect("stale symbol user");
                 unsafe {
-                    self.uses_mut().cursor_mut_from_ptr(current_symbol.user.clone()).remove();
+                    self.uses_mut().cursor_mut_from_ptr(current_symbol.user).remove();
                 }
             }
             // Link replacement symbol
-            owner.set_symbol_attribute(attr_name, replacement.clone());
+            owner.set_symbol_attribute(attr_name, replacement);
         }
 
         Ok(())

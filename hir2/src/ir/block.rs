@@ -116,27 +116,21 @@ impl EntityWithId for Block {
 impl EntityWithParent for Block {
     type Parent = Region;
 
-    fn on_inserted_into_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
+    fn on_inserted_into_parent(mut this: BlockRef, parent: RegionRef) {
         this.borrow_mut().region = Some(parent);
     }
 
-    fn on_removed_from_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        _parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
+    fn on_removed_from_parent(mut this: BlockRef, _parent: RegionRef) {
         this.borrow_mut().region = None;
     }
 
     fn on_transfered_to_new_parent(
-        _from: UnsafeIntrusiveEntityRef<Self::Parent>,
-        to: UnsafeIntrusiveEntityRef<Self::Parent>,
+        _from: RegionRef,
+        to: RegionRef,
         transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
     ) {
         for mut transferred_block in transferred {
-            transferred_block.borrow_mut().region = Some(to.clone());
+            transferred_block.borrow_mut().region = Some(to);
         }
     }
 }
@@ -182,7 +176,7 @@ impl cfg::Graph for Block {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block.clone()
+        edge.borrow().block
     }
 }
 
@@ -219,7 +213,7 @@ impl cfg::Graph for BlockRef {
     }
 
     fn entry_node(&self) -> Self::Node {
-        self.clone()
+        *self
     }
 
     fn children(parent: Self::Node) -> Self::ChildIter {
@@ -231,7 +225,7 @@ impl cfg::Graph for BlockRef {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block.clone()
+        edge.borrow().block
     }
 }
 
@@ -279,7 +273,7 @@ impl Iterator for BlockSuccessorIter {
     type Item = BlockRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|bo| bo.borrow().block.clone())
+        self.iter.next().map(|bo| bo.borrow().block)
     }
 
     #[inline]
@@ -295,7 +289,7 @@ impl Iterator for BlockSuccessorIter {
         B::from_iter(
             successors.all().as_slice()[self.iter.index..self.iter.num_successors]
                 .iter()
-                .map(|succ| succ.block.borrow().block.clone()),
+                .map(|succ| succ.block.borrow().block),
         )
     }
 
@@ -311,7 +305,7 @@ impl Iterator for BlockSuccessorIter {
         collection.extend(
             successors.all().as_slice()[self.iter.index..self.iter.num_successors]
                 .iter()
-                .map(|succ| succ.block.borrow().block.clone()),
+                .map(|succ| succ.block.borrow().block),
         );
         collection
     }
@@ -357,7 +351,7 @@ impl Iterator for BlockSuccessorEdgesIter {
         let terminator = unsafe { self.terminator.as_ref().unwrap_unchecked() };
         let index = self.index;
         self.index += 1;
-        Some(terminator.borrow().successor(index).dest.clone())
+        Some(terminator.borrow().successor(index).dest)
     }
 
     fn collect<B: FromIterator<Self::Item>>(self) -> B
@@ -372,7 +366,7 @@ impl Iterator for BlockSuccessorEdgesIter {
         B::from_iter(
             successors.all().as_slice()[self.index..self.num_successors]
                 .iter()
-                .map(|succ| succ.block.clone()),
+                .map(|succ| succ.block),
         )
     }
 
@@ -388,7 +382,7 @@ impl Iterator for BlockSuccessorEdgesIter {
         collection.extend(
             successors.all().as_slice()[self.index..self.num_successors]
                 .iter()
-                .map(|succ| succ.block.clone()),
+                .map(|succ| succ.block),
         );
         collection
     }
@@ -401,7 +395,7 @@ pub struct BlockPredecessorIter {
 }
 impl BlockPredecessorIter {
     pub fn new(child: BlockRef) -> Self {
-        let preds = child.borrow().predecessors().map(|bo| bo.block.clone()).collect();
+        let preds = child.borrow().predecessors().map(|bo| bo.block).collect();
         Self { preds, index: 0 }
     }
 
@@ -431,7 +425,7 @@ impl Iterator for BlockPredecessorIter {
         }
         let index = self.index;
         self.index += 1;
-        Some(self.preds[index].clone())
+        Some(self.preds[index])
     }
 
     fn collect<B: FromIterator<Self::Item>>(self) -> B
@@ -486,7 +480,7 @@ impl Iterator for BlockPredecessorEdgesIter {
         }
         let index = self.index;
         self.index += 1;
-        Some(self.preds[index].clone())
+        Some(self.preds[index])
     }
 
     fn collect<B: FromIterator<Self::Item>>(self) -> B
@@ -524,7 +518,7 @@ impl Block {
 
     /// Get a handle to the containing [Region] of this block, if it is attached to one
     pub fn parent(&self) -> Option<RegionRef> {
-        self.region.clone()
+        self.region
     }
 
     /// Get a handle to the containing [Operation] of this block, if it is attached to one
@@ -595,7 +589,7 @@ impl Block {
 
     #[inline]
     pub fn get_argument(&self, index: usize) -> BlockArgumentRef {
-        self.arguments[index].clone()
+        self.arguments[index]
     }
 
     /// Erase the block argument at `index`
@@ -724,8 +718,8 @@ impl Block {
         {
             let mut region_mut = region.borrow_mut();
             let blocks = region_mut.body_mut();
-            let mut cursor = unsafe { blocks.cursor_mut_from_ptr(this.clone()) };
-            cursor.insert_after(new_block.clone());
+            let mut cursor = unsafe { blocks.cursor_mut_from_ptr(this) };
+            cursor.insert_after(new_block);
         }
         // Split the body of `self` at `before`, and splice everything after `before`, including
         // `before` itself, into the new block we created.
@@ -738,7 +732,7 @@ impl Block {
         core::mem::swap(&mut self.body, &mut ops);
         // Visit all of the ops and notify them of the move
         for op in ops.iter() {
-            Operation::on_inserted_into_parent(op.as_operation_ref(), new_block.clone());
+            Operation::on_inserted_into_parent(op.as_operation_ref(), new_block);
         }
         new_block.borrow_mut().body = ops;
         new_block
@@ -799,7 +793,7 @@ impl Block {
     {
         let mut block = Some(block);
         while let Some(current) = block.take() {
-            if f(current.clone()) {
+            if f(current) {
                 return Some(current);
             }
             block = current.borrow().parent_block();
@@ -813,13 +807,13 @@ impl Block {
     ///
     /// The returned block pair will either be the same input blocks, or some combination of those
     /// blocks or their ancestors.
-    pub fn get_blocks_in_same_region(a: &BlockRef, b: &BlockRef) -> Option<(BlockRef, BlockRef)> {
+    pub fn get_blocks_in_same_region(a: BlockRef, b: BlockRef) -> Option<(BlockRef, BlockRef)> {
         // If both blocks do not live in the same region, we will have to check their parent
         // operations.
         let a_region = a.borrow().parent().unwrap();
         let b_region = b.borrow().parent().unwrap();
         if a_region == b_region {
-            return Some((a.clone(), b.clone()));
+            return Some((a, b));
         }
 
         // Iterate over all ancestors of `a`, counting the depth of `a`.
@@ -827,12 +821,12 @@ impl Block {
         // If one of `a`'s ancestors are in the same region as `b`, then we stop early because we
         // found our nearest common ancestor.
         let mut a_depth = 0;
-        let result = Self::traverse_ancestors(a.clone(), |block| {
+        let result = Self::traverse_ancestors(a, |block| {
             a_depth += 1;
             block.borrow().parent().is_some_and(|r| r == b_region)
         });
         if let Some(a) = result {
-            return Some((a, b.clone()));
+            return Some((a, b));
         }
 
         // Iterate over all ancestors of `b`, counting the depth of `b`.
@@ -840,18 +834,18 @@ impl Block {
         // If one of `b`'s ancestors are in the same region as `a`, then we stop early because we
         // found our nearest common ancestor.
         let mut b_depth = 0;
-        let result = Self::traverse_ancestors(b.clone(), |block| {
+        let result = Self::traverse_ancestors(b, |block| {
             b_depth += 1;
             block.borrow().parent().is_some_and(|r| r == a_region)
         });
         if let Some(b) = result {
-            return Some((a.clone(), b));
+            return Some((a, b));
         }
 
         // Otherwise, we found two blocks that are siblings at some level. Walk the deepest one
         // up until we reach the top or find a nearest common ancestor.
-        let mut a = Some(a.clone());
-        let mut b = Some(b.clone());
+        let mut a = Some(a);
+        let mut b = Some(b);
         loop {
             use core::cmp::Ordering;
 
@@ -917,7 +911,7 @@ impl Block {
         let front = front.as_pointer().unwrap();
         let back = self.uses.back().as_pointer().unwrap();
         if BlockOperandRef::ptr_eq(&front, &back) {
-            Some(front.borrow().block.clone())
+            Some(front.borrow().block)
         } else {
             None
         }
@@ -928,7 +922,7 @@ impl Block {
     pub fn get_unique_predecessor(&self) -> Option<BlockRef> {
         let mut front = self.uses.front();
         let block_operand = front.get()?;
-        let block = block_operand.block.clone();
+        let block = block_operand.block;
         loop {
             front.move_next();
             if let Some(bo) = front.get() {
@@ -955,7 +949,7 @@ impl Block {
     /// Get the `index`th successor of this block's terminator operation
     pub fn get_successor(&self, index: usize) -> BlockRef {
         let op = self.terminator().expect("this block has no terminator");
-        op.borrow().successor(index).dest.borrow().block.clone()
+        op.borrow().successor(index).dest.borrow().block
     }
 
     /// This drops all operand uses from operations within this block, which is an essential step in

@@ -434,7 +434,7 @@ impl<'a, T> SuccessorWithKey<'a, T> {
     }
 
     pub fn block(&self) -> BlockRef {
-        self.info.block.borrow().block.clone()
+        self.info.block.borrow().block
     }
 
     #[inline(always)]
@@ -454,7 +454,7 @@ impl<'a, T> SuccessorWithKeyMut<'a, T> {
     }
 
     pub fn block(&self) -> BlockRef {
-        self.info.block.borrow().block.clone()
+        self.info.block.borrow().block
     }
 
     #[inline(always)]

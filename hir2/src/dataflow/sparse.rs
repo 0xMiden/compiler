@@ -12,6 +12,74 @@ use super::{
 };
 use crate::{pass::AnalysisManager, Operation, Report};
 
+/// This type provides an [AnalysisStrategy] for sparse data-flow analyses.
+///
+/// In short, it implements the [DataFlowAnalysis] trait, and handles all of the boilerplate that
+/// any well-structured sparse data-flow analysis requires. Analyses can make use of this strategy
+/// by implementing one of the sparse data-flow analysis traits, which [SparseDataFlowAnalysis] will
+/// use to delegate analysis-specific details to the analysis implementation. The two traits are:
+///
+/// * [SparseForwardDataFlowAnalysis], for forward-propagating sparse analyses
+/// * [SparseBackwardDataFlowAnalysis], for backward-propagating sparse analyses
+///
+/// ## What is a sparse analysis?
+///
+/// A sparse data-flow analysis is one which associates analysis state with SSA value definitions,
+/// in order to represent known facts about those values, either as a result of deriving them from
+/// previous values used as operands of the defining operation (forward analysis), or as a result of
+/// deriving them based on how the value is used along all possible paths that execution might take
+/// (backward analysis). The state associated with a value does not change as a program executes,
+/// it is fixed at the value definition, derived only from the states of other values and the
+/// defining op itself.
+///
+/// This is in contrast to dense data-flow analysis, which associates state with program points,
+/// which then evolves as the program executes. This is also where the distinction between _dense_
+/// and _sparse_ comes from - program points are dense, while SSA value definitions are sparse
+/// (insofar as the state associated with an SSA value only ever occurs once, while states
+/// associated with program points are duplicated at each point).
+///
+/// Some examples of sparse analyses:
+///
+/// * Constant propagation - if a value is determined to be constant, the constant value is the
+///   state associated with a given value definition. This determination is made based on the
+///   semantics of an operation and its operands (i.e. if an operation can be constant-folded, then
+///   the results of that operation are themselves constant). This is a forward analysis.
+/// * Dead value analysis - determines whether or not a value is ever used. This is a backward
+///   analysis, as it propagates uses to definitions. In our IR, we do not require this analysis,
+///   as it is implicit in the use-def graph, however the concept is what we're interested in here.
+///
+/// ## Usage
+///
+/// This type is meant to be used indirectly, as an [AnalysisStrategy] implementation, rather than
+/// directly as a [DataFlowAnalysis] implementation, as shown below:
+///
+/// ```rust,ignore
+/// use midenc_hir2::dataflow::*;
+///
+/// #[derive(Default)]
+/// pub struct MyAnalysis;
+/// impl BuildableDataFlowAnalysis for MyAnalysis {
+///     type Strategy = SparseDataFlowAnalysis<Self, Forward>;
+///
+///     fn new(_solver: &mut DataFlowSolver) -> Self {
+///         Self
+///     }
+/// }
+/// impl SparseForwardDataFlowAnalysis for MyAnalysis {
+///     type Lattice = Lattice<u32>;
+///
+///     //...
+/// }
+/// ```
+///
+/// The above permits us to load `MyAnalysis` into a `DataFlowSolver` without ever mentioning the
+/// `SparseDataFlowAnalysis` type at all, like so:
+///
+/// ```rust,ignore
+/// let mut solver = DataFlowSolver::default();
+/// solver.load::<MyAnalysis>();
+/// solver.initialize_and_run(&op, analysis_manager);
+/// ```
 pub struct SparseDataFlowAnalysis<A, D> {
     analysis: A,
     _direction: core::marker::PhantomData<D>,

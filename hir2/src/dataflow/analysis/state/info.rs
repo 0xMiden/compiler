@@ -118,7 +118,7 @@ impl AnalysisStateInfo {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum AnalysisStateSubscription {
     /// This subscribes `analysis` to state changes handled by the `on_update` callback of the
     /// analysis state.
@@ -153,27 +153,21 @@ impl AnalysisStateSubscription {
     ) where
         A: alloc::alloc::Allocator,
     {
-        match self {
+        match *self {
             Self::OnUpdate { analysis: _ } => {
                 todo!()
             }
             Self::AtPoint { analysis, point } => {
-                worklist.push_back(QueuedAnalysis {
-                    point: point.clone(),
-                    analysis: *analysis,
-                });
+                worklist.push_back(QueuedAnalysis { point, analysis });
             }
             Self::Uses { analysis } => {
                 let value = anchor
                     .as_value()
                     .unwrap_or_else(|| panic!("expected value anchor, got: {:?}", anchor));
                 for user in value.borrow().iter_uses() {
-                    let user = user.owner.clone();
-                    let point = ProgramPoint::new(InsertionPoint::after(user));
-                    worklist.push_back(QueuedAnalysis {
-                        point,
-                        analysis: *analysis,
-                    });
+                    let user = user.owner;
+                    let point = ProgramPoint::after(user);
+                    worklist.push_back(QueuedAnalysis { point, analysis });
                 }
             }
         }

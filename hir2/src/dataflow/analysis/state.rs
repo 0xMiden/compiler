@@ -14,10 +14,7 @@ pub use self::{
     },
 };
 use super::DataFlowAnalysis;
-use crate::{
-    dataflow::{LatticeAnchor, LatticeAnchorRef, ProgramPoint},
-    InsertionPoint,
-};
+use crate::dataflow::{LatticeAnchor, LatticeAnchorRef, ProgramPoint};
 
 /// The identifier for a uniqued [AnalysisStateKeyImpl]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

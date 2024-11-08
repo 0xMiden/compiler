@@ -238,7 +238,7 @@ where
     let mut regions = op.regions().front();
     while let Some(region) = regions.as_pointer() {
         regions.move_next();
-        match callback(region.clone()) {
+        match callback(region) {
             WalkResult::Continue(_) => {
                 let region = region.borrow();
                 for block in region.body().iter() {
@@ -301,7 +301,7 @@ where
         let mut cursor = block.body().front();
         while let Some(op) = cursor.as_pointer() {
             cursor.move_next();
-            match callback(op.clone()) {
+            match callback(op) {
                 WalkResult::Continue(_) => {
                     let op = op.borrow();
                     for region in op.regions() {
@@ -366,7 +366,7 @@ where
         let mut blocks = region.body().front();
         while let Some(block) = blocks.as_pointer() {
             blocks.move_next();
-            match callback(block.clone()) {
+            match callback(block) {
                 WalkResult::Continue(_) => {
                     let block = block.borrow();
                     for op in block.body().iter() {
@@ -396,7 +396,7 @@ where
                     postwalk_blocks_interruptible(&op, callback)?;
                 }
             }
-            callback(block.clone())?;
+            callback(block)?;
         }
     }
 

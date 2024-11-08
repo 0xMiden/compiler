@@ -184,9 +184,10 @@ pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, intrusive_collections::Li
 pub struct RawEntityRef<T: ?Sized, Metadata = ()> {
     inner: NonNull<RawEntityMetadata<T, Metadata>>,
 }
+impl<T: ?Sized, Metadata> Copy for RawEntityRef<T, Metadata> {}
 impl<T: ?Sized, Metadata> Clone for RawEntityRef<T, Metadata> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner }
+        *self
     }
 }
 impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
@@ -639,12 +640,16 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
 
     /// Project this borrow into a owned (but semantically borrowed) value that inherits ownership
     /// of the underlying borrow.
-    pub fn project<U, F>(orig: Self, f: F) -> EntityProjection<'b, U>
+    pub fn project<'to, 'from: 'to, To, F>(
+        orig: EntityRef<'from, T>,
+        f: F,
+    ) -> EntityProjection<'from, To>
     where
-        F: FnOnce(&T) -> U,
+        F: FnOnce(&'to T) -> To,
+        To: 'to,
     {
         EntityProjection {
-            value: f(&*orig),
+            value: f(unsafe { orig.value.as_ref() }),
             borrow: orig.borrow,
         }
     }
@@ -752,12 +757,16 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
 
     /// Project this mutable borrow into a owned (but semantically borrowed) value that inherits
     /// ownership of the underlying mutable borrow.
-    pub fn project<U, F>(mut orig: Self, f: F) -> EntityProjectionMut<'b, U>
+    pub fn project<'to, 'from: 'to, To, F>(
+        mut orig: EntityMut<'from, T>,
+        f: F,
+    ) -> EntityProjectionMut<'from, To>
     where
-        F: FnOnce(&mut T) -> U,
+        F: FnOnce(&'to mut T) -> To,
+        To: 'to,
     {
         EntityProjectionMut {
-            value: f(&mut *orig),
+            value: f(unsafe { orig.value.as_mut() }),
             borrow: orig.borrow,
         }
     }

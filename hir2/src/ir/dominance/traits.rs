@@ -45,7 +45,7 @@ impl Dominates for Block {
     ///   block to `b`, flow through `a`.
     /// * In graph regions, all blocks dominate all other blocks.
     fn properly_dominates(&self, other: &Self, dom_info: &DominanceInfo) -> bool {
-        dom_info.info().properly_dominates(&self.as_block_ref(), &other.as_block_ref())
+        dom_info.info().properly_dominates(self.as_block_ref(), other.as_block_ref())
     }
 }
 
@@ -64,7 +64,7 @@ impl PostDominates for Block {
     ///   an exit node, flow through `a`.
     /// * In graph regions, all blocks post-dominate all other blocks.
     fn properly_post_dominates(&self, other: &Self, dom_info: &PostDominanceInfo) -> bool {
-        dom_info.info().properly_dominates(&self.as_block_ref(), &other.as_block_ref())
+        dom_info.info().properly_dominates(self.as_block_ref(), other.as_block_ref())
     }
 }
 
@@ -85,7 +85,7 @@ impl Dominates for Operation {
     fn properly_dominates(&self, other: &Self, dom_info: &DominanceInfo) -> bool {
         let a = self.as_operation_ref();
         let b = other.as_operation_ref();
-        dom_info.properly_dominates_with_options(&a, &b, /*enclosing_op_ok= */ true)
+        dom_info.properly_dominates_with_options(a, b, /*enclosing_op_ok= */ true)
     }
 }
 
@@ -121,8 +121,7 @@ impl PostDominates for Operation {
         if a_region != b_region {
             // Walk up `b`'s region tree until we find an operation in `a`'s region that encloses
             // it. If this fails, then we know there is no post-dominance relation.
-            let Some(found) = a_region.as_ref().and_then(|r| r.borrow().find_ancestor_op(&b))
-            else {
+            let Some(found) = a_region.as_ref().and_then(|r| r.borrow().find_ancestor_op(b)) else {
                 return false;
             };
             b = found;
@@ -150,8 +149,8 @@ impl PostDominates for Operation {
         // If the blocks are different, check if `a`'s block post-dominates `b`'s
         dom_info
             .info()
-            .dominance(&a_region.unwrap())
-            .properly_dominates(Some(&a_block), Some(&b_block))
+            .dominance(a_region.unwrap())
+            .properly_dominates(Some(a_block), Some(b_block))
     }
 }
 
@@ -185,8 +184,8 @@ impl Dominates<Operation> for dyn Value {
         // does not itself enclose `b` in one of its regions.
         let defining_op = self.get_defining_op().unwrap();
         dom_info.properly_dominates_with_options(
-            &defining_op,
-            &other.as_operation_ref(),
+            defining_op,
+            other.as_operation_ref(),
             /*enclosing_op_ok= */ false,
         )
     }

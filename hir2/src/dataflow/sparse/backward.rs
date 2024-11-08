@@ -88,9 +88,8 @@ where
     for region in op.regions() {
         for block in region.body() {
             {
-                let mut state = solver.get_or_create_mut::<Executable, _>(
-                    solver.program_point_before(block.as_block_ref()),
-                );
+                let mut state =
+                    solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(&*block));
                 AnalysisStateGuard::subscribe_nonnull(&mut state, current_analysis);
             }
 
@@ -123,16 +122,16 @@ where
     // If we're in a dead block, bail out.
     let in_dead_block = op.parent().is_some_and(|block| {
         !solver
-            .get_or_create_mut::<Executable, _>(solver.program_point_before(block))
+            .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
             .is_live()
     });
     if in_dead_block {
         return Ok(());
     }
 
-    let current_point = solver.program_point_after(op);
+    let current_point = ProgramPoint::after(op);
     let mut operands = get_lattice_elements::<A>(op.operands().all(), solver);
-    let results = get_lattice_elements_for::<A>(current_point.clone(), op.results().all(), solver);
+    let results = get_lattice_elements_for::<A>(current_point, op.results().all(), solver);
 
     // Block arguments of region branch operations flow back into the operands of the parent op
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -160,7 +159,7 @@ where
                         let mut operand_lattice =
                             get_lattice_element::<A>(operand.borrow().as_value_ref(), solver);
                         let result_lattice = get_lattice_element_for::<A>(
-                            current_point.clone(),
+                            current_point,
                             block_arg.borrow().as_value_ref(),
                             solver,
                         );
@@ -213,7 +212,7 @@ where
                     let mut arg_lattice =
                         get_lattice_element::<A>(arg_operand.borrow().as_value_ref(), solver);
                     let result_lattice = get_lattice_element_for::<A>(
-                        current_point.clone(),
+                        current_point,
                         block_arg.borrow().as_value_ref(),
                         solver,
                     );
@@ -256,17 +255,14 @@ where
         let parent_op = parent_op.borrow();
         if let Some(callable) = parent_op.as_trait::<dyn CallableOpInterface>() {
             let callsites = solver.require::<PredecessorState, _>(
-                solver.program_point_after(callable.as_operation()),
-                current_point.clone(),
+                ProgramPoint::after(callable.as_operation()),
+                current_point,
             );
             if callsites.all_predecessors_known() {
                 for call in callsites.known_predecessors() {
                     let call = call.borrow();
-                    let call_result_lattices = get_lattice_elements_for::<A>(
-                        current_point.clone(),
-                        call.results().all(),
-                        solver,
-                    );
+                    let call_result_lattices =
+                        get_lattice_elements_for::<A>(current_point, call.results().all(), solver);
                     for (op, result) in operands.iter_mut().zip(call_result_lattices.into_iter()) {
                         op.meet(result.lattice());
                     }
@@ -310,7 +306,7 @@ fn visit_region_successors<A>(
             let operand = operand.borrow();
             let operand_index = operand.index as usize;
             let mut operand_lattice = get_lattice_element::<A>(operand.as_value_ref(), solver);
-            let point = solver.program_point_after(op);
+            let point = ProgramPoint::after(op);
             let input_lattice = get_lattice_element_for::<A>(point, input, solver);
             operand_lattice.meet(input_lattice.lattice());
             unaccounted.set(operand_index, false);
@@ -363,7 +359,7 @@ fn visit_region_successors_from_terminator<A>(
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
             let mut operand_lattice = get_lattice_element::<A>(operand.as_value_ref(), solver);
-            let point = solver.program_point_after(terminator_op);
+            let point = ProgramPoint::after(terminator_op);
             let input_lattice = get_lattice_element_for::<A>(point, input, solver);
             operand_lattice.meet(input_lattice.lattice());
             unaccounted.set(operand.index(), false);
@@ -427,7 +423,7 @@ where
 {
     let mut results = SmallVec::with_capacity(values.len());
     for value in values.iter() {
-        let lattice = solver.require(value.borrow().as_value_ref(), point.clone());
+        let lattice = solver.require(value.borrow().as_value_ref(), point);
         results.push(lattice);
     }
     results

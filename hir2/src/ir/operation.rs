@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
 use super::*;
-use crate::{AttributeSet, AttributeValue};
+use crate::{AttributeSet, AttributeValue, ProgramPoint};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
@@ -188,7 +188,7 @@ impl EntityWithParent for Operation {
         }
 
         for mut transferred_op in transferred {
-            transferred_op.borrow_mut().block = Some(to.clone());
+            transferred_op.borrow_mut().block = Some(to);
         }
     }
 }
@@ -431,7 +431,7 @@ impl Operation {
                 "attempted to replace symbol use without unlinking the previously used symbol \
                  first"
             );
-            attr.user = user.clone();
+            attr.user = user;
             attr.name = symbol.name();
             attr.path = symbol.components().into_path(true);
         } else {
@@ -439,11 +439,7 @@ impl Operation {
                 let symbol = symbol.borrow();
                 let name = symbol.name();
                 let path = symbol.components().into_path(true);
-                SymbolNameAttr {
-                    name,
-                    path,
-                    user: user.clone(),
-                }
+                SymbolNameAttr { name, path, user }
             };
             self.set_attribute(name, Some(attr));
         }
@@ -463,8 +459,9 @@ impl Operation {
 /// Navigation
 impl Operation {
     /// Returns a handle to the containing [Block] of this operation, if it is attached to one
-    pub fn parent(&self) -> Option<BlockRef> {
-        self.block.clone()
+    #[inline(always)]
+    pub const fn parent(&self) -> Option<BlockRef> {
+        self.block
     }
 
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
@@ -618,7 +615,7 @@ impl Operation {
     pub fn successor_in_group(&self, group_index: usize, index: usize) -> OpSuccessor<'_> {
         let info = &self.successors.group(group_index)[index];
         OpSuccessor {
-            dest: info.block.clone(),
+            dest: info.block,
             arguments: self.operands.group(info.operand_group as usize),
         }
     }
@@ -632,7 +629,7 @@ impl Operation {
     ) -> OpSuccessorMut<'_> {
         let info = &self.successors.group(group_index)[index];
         OpSuccessorMut {
-            dest: info.block.clone(),
+            dest: info.block,
             arguments: self.operands.group_mut(info.operand_group as usize),
         }
     }
@@ -642,7 +639,7 @@ impl Operation {
     pub fn successor(&self, index: usize) -> OpSuccessor<'_> {
         let info = &self.successors[index];
         OpSuccessor {
-            dest: info.block.clone(),
+            dest: info.block,
             arguments: self.operands.group(info.operand_group as usize),
         }
     }
@@ -660,7 +657,7 @@ impl Operation {
     /// Get an iterator over the successors of this operation
     pub fn successor_iter(&self) -> impl DoubleEndedIterator<Item = OpSuccessor<'_>> + '_ {
         self.successors.iter().map(|info| OpSuccessor {
-            dest: info.block.clone(),
+            dest: info.block,
             arguments: self.operands.group(info.operand_group as usize),
         })
     }
@@ -701,7 +698,7 @@ impl Operation {
             operands
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| context.make_operand(value, owner.clone(), index as u8)),
+                .map(|(index, value)| context.make_operand(value, owner, index as u8)),
         );
     }
 
@@ -718,12 +715,12 @@ impl Operation {
                 {
                     let mut from_mut = from.borrow_mut();
                     let from_uses = from_mut.uses_mut();
-                    let mut cursor = unsafe { from_uses.cursor_mut_from_ptr(operand.clone()) };
+                    let mut cursor = unsafe { from_uses.cursor_mut_from_ptr(*operand) };
                     cursor.remove();
                 }
                 // Add use of `to` by `operand`
-                operand.borrow_mut().value = to.clone();
-                to.borrow_mut().insert_use(operand.clone());
+                operand.borrow_mut().value = to;
+                to.borrow_mut().insert_use(*operand);
             }
         }
     }
@@ -735,7 +732,7 @@ impl Operation {
     pub fn replace_all_uses_with(&mut self, values: impl ExactSizeIterator<Item = ValueRef>) {
         assert_eq!(self.num_results(), values.len());
         for (result, replacement) in self.results.iter_mut().zip(values) {
-            if ValueRef::ptr_eq(&result.clone().upcast(), &replacement) {
+            if (*result as ValueRef) == replacement {
                 continue;
             }
             result.borrow_mut().replace_all_uses_with(replacement);
@@ -754,8 +751,8 @@ impl Operation {
     {
         assert_eq!(self.num_results(), values.len());
         for (result, replacement) in self.results.iter_mut().zip(values) {
-            let mut result = result.clone().upcast();
-            if ValueRef::ptr_eq(&result, &replacement) {
+            let mut result = *result as ValueRef;
+            if result == replacement {
                 continue;
             }
             result.borrow_mut().replace_uses_with_if(replacement, &should_replace);
@@ -814,7 +811,7 @@ impl Operation {
                     // We found more than one user
                     return false;
                 } else if used_by.is_none() {
-                    used_by = Some(used.owner.clone());
+                    used_by = Some(used.owner);
                 }
             }
         }
@@ -902,7 +899,7 @@ impl Operation {
         );
         {
             let mut block = block.borrow_mut();
-            block.body_mut().push_front(unsafe { OperationRef::from_raw(self) });
+            block.body_mut().push_front(self.as_operation_ref());
         }
         self.block = Some(block);
     }
@@ -914,7 +911,7 @@ impl Operation {
         );
         {
             let mut block = block.borrow_mut();
-            block.body_mut().push_back(unsafe { OperationRef::from_raw(self) });
+            block.body_mut().push_back(self.as_operation_ref());
         }
         self.block = Some(block);
     }
@@ -930,7 +927,7 @@ impl Operation {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
-            cursor.insert_before(unsafe { OperationRef::from_raw(self) });
+            cursor.insert_before(self.as_operation_ref());
         }
         self.block = Some(block);
     }
@@ -945,7 +942,7 @@ impl Operation {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
-            cursor.insert_after(unsafe { OperationRef::from_raw(self) });
+            cursor.insert_after(self.as_operation_ref());
         }
         self.block = Some(block);
     }
@@ -971,32 +968,37 @@ impl Operation {
         cursor.remove();
     }
 
-    /// Unlink this operation from its current block and insert it right before `ip`, which may
-    /// be in the same or another block in the same function.
-    pub fn move_before(&mut self, ip: ProgramPoint) {
-        self.remove();
-        match ip {
-            ProgramPoint::Op(other) => {
-                self.insert_before(other);
+    /// Unlink this operation from its current block and insert it at `ip`, which may be in the same
+    /// or another block in the same function.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the given program point is unset, or refers to an orphaned op,
+    /// i.e. an op that has no parent block.
+    pub fn move_to(&mut self, mut ip: ProgramPoint) {
+        let this = self.as_operation_ref();
+        if let Some(op) = ip.operation() {
+            if op == this {
+                // The move is a no-op
+                return;
             }
-            ProgramPoint::Block(block) => {
-                self.insert_at_start(block);
-            }
-        }
-    }
 
-    /// Unlink this operation from its current block and insert it right after `ip`, which may
-    /// be in the same or another block in the same function.
-    pub fn move_after(&mut self, ip: ProgramPoint) {
-        self.remove();
-        match ip {
-            ProgramPoint::Op(other) => {
-                self.insert_after(other);
-            }
-            ProgramPoint::Block(block) => {
-                self.insert_at_end(block);
-            }
+            assert!(ip.block().is_some(), "cannot insert an operation relative to an orphaned op");
         }
+
+        // Detach `self`
+        self.remove();
+
+        {
+            // Move `self` to `ip`
+            let mut cursor = ip.cursor_mut().expect("insertion point is invalid/unset");
+            // NOTE: We use `insert_after` here because the cursor we get is positioned such that
+            // insert_after will always insert at the precise point specified.
+            cursor.insert_after(self.as_operation_ref());
+        }
+
+        // Ensure the parent of `self` is set properly
+        self.block = ip.block();
     }
 
     /// This drops all operand uses from this operation, which is used to break cyclic dependencies
@@ -1084,7 +1086,7 @@ impl Operation {
     pub fn is_before_in_block(&self, other: &OperationRef) -> bool {
         use core::sync::atomic::Ordering;
 
-        let block = self.block.clone().expect("operations without parent blocks have no order");
+        let block = self.block.expect("operations without parent blocks have no order");
         let other = other.borrow();
         assert!(
             other
@@ -1114,7 +1116,7 @@ impl Operation {
         assert!(self.block.is_some(), "expected valid parent");
 
         // If the order is valid for this operation there is nothing to do.
-        let block = self.block.clone().unwrap();
+        let block = self.block.unwrap();
         if self.has_valid_order() || block.borrow().body().iter().count() == 1 {
             return;
         }

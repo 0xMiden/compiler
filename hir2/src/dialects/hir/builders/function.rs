@@ -1,7 +1,6 @@
 use crate::{
-    dialects::hir::*, AsCallableSymbolRef, Block, BlockRef, Builder, Immediate, InsertionPoint, Op,
-    OpBuilder, Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, Usable,
-    ValueRef,
+    dialects::hir::*, AsCallableSymbolRef, Block, BlockRef, Builder, Immediate, Op, OpBuilder,
+    Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, Usable, ValueRef,
 };
 
 pub struct FunctionBuilder<'f> {
@@ -23,7 +22,7 @@ impl<'f> FunctionBuilder<'f> {
         Self { func, builder }
     }
 
-    pub fn at(func: &'f mut Function, ip: InsertionPoint) -> Self {
+    pub fn at(func: &'f mut Function, ip: crate::ProgramPoint) -> Self {
         let context = func.as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
         builder.set_insertion_point(ip);
@@ -68,7 +67,7 @@ impl<'f> FunctionBuilder<'f> {
         );
         let mut body = self.func.body_mut();
         unsafe {
-            body.body_mut().cursor_mut_from_ptr(block.clone()).remove();
+            body.body_mut().cursor_mut_from_ptr(block).remove();
         }
         block.borrow_mut().uses_mut().clear();
         Block::on_removed_from_parent(block, body.as_region_ref());
