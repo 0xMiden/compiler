@@ -157,8 +157,8 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                     let domtree = dominfo.info().dominance(region.as_region_ref());
                     let loop_forest = LoopForest::new(&domtree);
 
-                    // Visit blocks in CFG preorder
-                    for node in domtree.preorder() {
+                    // Visit blocks in CFG reverse post-order
+                    for node in domtree.reverse_postorder() {
                         let Some(block) = node.block() else {
                             continue;
                         };

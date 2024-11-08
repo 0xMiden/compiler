@@ -324,6 +324,29 @@ impl DomTreeBase<false> {
         nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()));
         nodes
     }
+
+    /// Get all the nodes of this tree as a vector in reverse post-order visitation order
+    ///
+    /// This differs from `preorder` in that it is the exact inverse of `postorder`.
+    /// Where `preorder` represents the order in which each node is first seen when traversing the
+    /// CFG from the entry point, `postorder` is the order in which nodes are visited, once all their
+    /// children are visited. Thus, a reverse post-order traversal is equivalent to a preorder
+    /// traversal of the dominance tree, where `preorder` corresponds to a traversal of the CFG.
+    pub fn reverse_postorder(&self) -> Vec<Rc<DomTreeNode>> {
+        let mut nodes = self
+            .nodes
+            .iter()
+            .filter_map(|(blk, node)| {
+                if blk.is_some() {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()).reverse());
+        nodes
+    }
 }
 
 impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
