@@ -1,113 +1,22 @@
 mod next_use_set;
 
-use self::next_use_set::NextUseSet;
-use super::{DeadCodeAnalysis, SparseConstantPropagation};
+pub use self::next_use_set::NextUseSet;
+use super::{dce::Executable, DeadCodeAnalysis, SparseConstantPropagation};
 use crate::{
     dataflow::{
         analyses::{dce::CfgEdge, LoopState},
         dense::DenseDataFlowAnalysis,
-        AnalysisState, AnalysisStateGuard, Backward, BuildableAnalysisState,
-        BuildableDataFlowAnalysis, CallControlFlowAction, ChangeResult, DataFlowSolver,
-        DenseBackwardDataFlowAnalysis, DenseLattice, Lattice, LatticeAnchor, LatticeAnchorRef,
+        AnalysisStateGuard, Backward, BuildableDataFlowAnalysis, CallControlFlowAction,
+        DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice, Lattice,
     },
     dialects::hir::Function,
     dominance::DominanceInfo,
     pass::Analysis,
-    BlockRef, Op, Operation, ProgramPoint, Report, Spanned, ValueRef,
+    BlockRef, EntityRef, Op, Operation, ProgramPoint, Report, Spanned, ValueRef,
 };
 
-// The distance penalty applied to an edge which exits a loop
+/// The distance penalty applied to an edge which exits a loop
 pub const LOOP_EXIT_DISTANCE: u32 = 100_000;
-
-/// The lattice representing liveness information for a program point.
-///
-/// The lattice consists of two sets of values, representing values known to be used/live at, and
-/// after, the associated anchor (a program point in our case).
-///
-/// Each value in those sets are associated with a distance from the anchor (at and after,
-/// respectively), to the next known use of that value. These distances are what provide the
-/// partial order for the sets, from which we derive the lattice structure itself, with the
-/// following rules:
-///
-/// * If a value is not in the set, it is in an unknown state. We have either not observed that
-///   value yet (either a use or a definition), or the set is in its initial state. Either way, we
-///   cannot reason about whether a value is dead or alive based on this state. We call this the
-///   _bottom_ or _uninitialized_ state.
-/// * If a value is in the set, and its next-use distance is `u32::MAX`, it is known to be unused
-///   at (or after) that point in the program. Such a distance is only assigned when we reach the
-///   definition for a value for which we have observed no uses. We call this the _top_ or
-///   _overdefined_ state.
-/// * If a value is in the set, and its next-use distance is a finite value less than `u32::MAX`,
-///   it is known to be used at (or after) that point in the program, with the given distance.
-///   A distance of 0 indicates that the use is at the point associated with the set. A distance of
-///   1 indicates that the use is at the next operation, and so on. Special consideration is applied
-///   to the distances of values across edges that exit from a loop. In these cases, the increment
-///   for distances across the edge is 10,000; rather than 1, to encourage any consumers of the
-///   liveness information to treat values within the loop as "closer", so as to avoid situations
-///   where not doing so would result in spilling a value used inside a loop to make room for a
-///   value used only when exiting the loop.
-///
-/// The lattice structure is given by the partial order over the next-use distances of each value.
-/// We are specifically interested in the _meet semi-lattice_ of this structure, which is given by
-/// computing the least-upper bound of the next-use distances in the union of two such sets. We
-/// choose this over the _join semi-lattice_, because our analysis is a backwards one, working from
-/// the bottom up, and at each program, what we really are interested in, are two questions:
-///
-/// 1. Is a given value live at (or after) some point in the program
-/// 2. Given the set of live values at (or after) some point in the program, which values have the
-///    closest next use?
-///
-/// The second question is of primary importance for spills analysis, register allocation and (in
-/// the case of Miden) operand stack management. If we're going to choose what values to spill, so
-/// as to keep the most important values available in registers (or the operand stack), then we
-/// want to know when those values are needed.
-
-/// The lattice representing register pressure information for a program point
-#[derive(Debug, Clone)]
-pub struct RegisterPressure {
-    anchor: LatticeAnchorRef,
-    pressure: u32,
-}
-impl AnalysisState for RegisterPressure {
-    fn anchor(&self) -> &dyn LatticeAnchor {
-        &*self.anchor
-    }
-
-    fn as_any(&self) -> &dyn core::any::Any {
-        self
-    }
-}
-impl BuildableAnalysisState for RegisterPressure {
-    fn create(anchor: LatticeAnchorRef) -> Self {
-        Self {
-            anchor,
-            pressure: 0,
-        }
-    }
-}
-impl DenseLattice for RegisterPressure {
-    type Lattice = Self;
-
-    #[inline(always)]
-    fn lattice(&self) -> &Self::Lattice {
-        self
-    }
-
-    #[inline(always)]
-    fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {
-        if self.pressure != rhs.pressure {
-            self.pressure = core::cmp::max(self.pressure, rhs.pressure);
-            ChangeResult::Changed
-        } else {
-            ChangeResult::Unchanged
-        }
-    }
-
-    #[inline(always)]
-    fn meet(&mut self, _rhs: &Self::Lattice) -> ChangeResult {
-        ChangeResult::Unchanged
-    }
-}
 
 /// This analysis computes what values are live, and the distance to next use, for all program
 /// points in the given operation. It computes both live-in and live-out sets, in order to answer
@@ -177,6 +86,50 @@ pub struct Liveness;
 #[derive(Default)]
 pub struct LivenessAnalysis {
     solver: DataFlowSolver,
+}
+
+impl LivenessAnalysis {
+    #[inline]
+    pub fn solver(&self) -> &DataFlowSolver {
+        &self.solver
+    }
+
+    pub fn is_live_at_start(&self, value: ValueRef, block: BlockRef) -> bool {
+        let next_uses = self.next_uses_at(&ProgramPoint::at_start_of(block));
+        next_uses.is_some_and(|nu| nu.is_live(&value))
+    }
+
+    pub fn is_live_at_end(&self, value: ValueRef, block: BlockRef) -> bool {
+        let next_uses = self.next_uses_at(&ProgramPoint::at_end_of(block));
+        next_uses.is_some_and(|nu| nu.is_live(&value))
+    }
+
+    pub fn is_live_before(&self, value: ValueRef, op: &Operation) -> bool {
+        let next_uses = self.next_uses_at(&ProgramPoint::before(op));
+        next_uses.is_some_and(|nu| nu.is_live(&value))
+    }
+
+    pub fn is_live_after(&self, value: ValueRef, op: &Operation) -> bool {
+        let next_uses = self.next_uses_at(&ProgramPoint::after(op));
+        next_uses.is_some_and(|nu| nu.is_live(&value))
+    }
+
+    pub fn next_use_after(&self, value: ValueRef, op: &Operation) -> u32 {
+        let next_uses = self.next_uses_at(&ProgramPoint::after(op));
+        next_uses.map(|nu| nu.distance(&value)).unwrap_or(u32::MAX)
+    }
+
+    pub fn is_block_executable(&self, block: BlockRef) -> bool {
+        self.solver
+            .get::<Executable, _>(&ProgramPoint::at_start_of(block))
+            .is_none_or(|state| state.is_live())
+    }
+
+    pub fn next_uses_at(&self, anchor: &ProgramPoint) -> Option<EntityRef<'_, NextUseSet>> {
+        self.solver
+            .get::<Lattice<NextUseSet>, _>(anchor)
+            .map(|next_uses| EntityRef::map(next_uses, |nu| nu.value()))
+    }
 }
 
 impl Analysis for LivenessAnalysis {

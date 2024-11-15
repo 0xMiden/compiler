@@ -15,6 +15,14 @@ pub struct NextUse {
     /// The distance is `u32::MAX` if unused/unknown, 0 if used at the current program point
     pub distance: u32,
 }
+
+impl NextUse {
+    #[inline]
+    pub const fn is_live(&self) -> bool {
+        self.distance < u32::MAX
+    }
+}
+
 impl Eq for NextUse {}
 impl PartialEq for NextUse {
     fn eq(&self, other: &Self) -> bool {
@@ -34,11 +42,46 @@ impl Ord for NextUse {
     }
 }
 
-/// This data structure is used to maintain a mapping from variables to
-/// their next-use distance at a specific program point.
+/// The lattice representing global next-use information for a program point.
 ///
-/// If a value is not in the set, we have not observed its definition, or
-/// any uses at the associated program point.
+/// The lattice maps zero or more SSA values to their global next-use distance at a given program
+/// point. It has set-like semantics: a value only appears once in each set, and the union of two
+/// sets takes the minimum distance for values present in both sets.
+///
+/// From this, we derive the partial order required for a join semi-lattice:
+///
+/// * The _bottom_ value of the lattice, which represents uninitialized or unknown state, is the
+///   empty set. A set which does not contain a specific value, indicates that we have not observed
+///   any uses of that value at that point, so we cannot reason about it until we do, or until we
+///   have reached its definition.
+/// * The _top_ value of the lattice, which represents that a value is never used, is given by a
+///   next-use distance of `u32::MAX`. This value is only applied when we reach the definition of
+///   a value and have observed no uses of it.
+/// * All other values represent the fact that a value has a given _minimal_ next-use distance. If
+///   we observe two different next-use distances at some join point in the program, the larger
+///   distance is discarded in favor of the shorter distance.
+///
+/// For known distances, there are a few distance-related properties that are worth keeping in mind:
+///
+/// * A distance of `0` indicates that the next-use of a value is at the current operation/anchor
+/// * A distance of `1` indicates that the next-use of a value is at the operation immediately
+///   succeeding the current operation.
+/// * Distances are incremented by 1 at each program point preceding a use. The exception to this
+///   is when a loop exit is reached, in which case all next-use distances across that edge are
+///   incremented by a large constant value, 10,000, to ensure that next-use distances reflect the
+///   fact that a use may actually be much further away than it appears, depending on how many
+///   iterations of the loop occur before exiting the loop.
+///
+/// This lattice lets us answer the following questions:
+///
+/// 1. Is a given value live at the current program point
+/// 2. Given the set of live values at the current program point, which values have the closest
+///    (or furthest) next use?
+///
+/// The second question is of primary importance for spills analysis, register allocation and (in
+/// the case of Miden) operand stack management. If we're going to choose what values to spill, so
+/// as to keep the most important values available in registers (or the operand stack), then we
+/// want to know when those values are needed.
 #[derive(Default, Debug, Clone)]
 pub struct NextUseSet(SmallVec<[NextUse; 4]>);
 
@@ -111,6 +154,24 @@ impl NextUseSet {
             self.0.push(NextUse { value, distance });
             ChangeResult::Changed
         }
+    }
+
+    /// Returns true if this set is empty/uninitialized
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of values recorded in this set
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns the number of live values in this set, i.e. values whose next-use distance is not
+    /// overdefined.
+    pub fn num_live(&self) -> usize {
+        self.0.iter().filter(|nu| nu.distance < u32::MAX).count()
     }
 
     /// Returns `true` if `value` is live in this set

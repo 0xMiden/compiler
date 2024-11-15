@@ -23,11 +23,14 @@ use crate::{
 /// This type implements [Analysis], so can be used in conjunction with other passes.
 #[derive(Default)]
 pub struct LoopInfo {
-    per_region_info: SmallVec<[RegionLoopInfo; 2]>,
+    per_region: SmallVec<[IntraRegionLoopInfo; 2]>,
 }
 
-struct RegionLoopInfo {
+/// Represents loop information for a intra-region CFG contained in `region`
+struct IntraRegionLoopInfo {
+    /// The region which contains the CFG
     pub region: RegionRef,
+    /// The loop forest for the CFG in `region`
     pub forest: LoopForest,
 }
 
@@ -38,7 +41,11 @@ impl Analysis for LoopInfo {
         "loops"
     }
 
-    fn analyze(&mut self, op: &Self::Target, analysis_manager: crate::pass::AnalysisManager) {
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        analysis_manager: crate::pass::AnalysisManager,
+    ) -> Result<(), Report> {
         // If the op has no regions, or it does, but they are graph regions, do not compute the
         // forest, as it cannot succeed.
         if !op.has_regions()
@@ -46,16 +53,16 @@ impl Analysis for LoopInfo {
                 .as_trait::<dyn RegionKindInterface>()
                 .is_some_and(|rki| rki.has_graph_regions())
         {
-            return;
+            return Ok(());
         }
 
         // First, obtain the dominance info for this op
-        let dominfo = analysis_manager.get_analysis::<DominanceInfo>();
+        let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
         // Then compute the forests for each region of the op
         for region in op.regions() {
             // If this region has a single block, the loop forest is empty
             if region.has_one_block() {
-                self.per_region_info.push(RegionLoopInfo {
+                self.per_region.push(IntraRegionLoopInfo {
                     region: region.as_region_ref(),
                     forest: LoopForest::default(),
                 });
@@ -65,8 +72,10 @@ impl Analysis for LoopInfo {
             // Otherwise, compute it for this region
             let region = region.as_region_ref();
             let forest = LoopForest::new(&dominfo.info().dominance(region));
-            self.per_region_info.push(RegionLoopInfo { region, forest });
+            self.per_region.push(IntraRegionLoopInfo { region, forest });
         }
+
+        Ok(())
     }
 
     fn invalidate(&self, preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
@@ -78,13 +87,12 @@ impl Analysis for LoopInfo {
 impl LoopInfo {
     /// Returns true if the op this info was derived from contains any loops
     pub fn has_loops(&self) -> bool {
-        !self.per_region_info.is_empty()
-            && !self.per_region_info.iter().any(|info| !info.forest.is_empty())
+        !self.per_region.is_empty() && !self.per_region.iter().any(|info| !info.forest.is_empty())
     }
 
     /// Returns true if `region` has loops according to this loop info
     pub fn region_has_loops(&self, region: &RegionRef) -> bool {
-        self.per_region_info
+        self.per_region
             .iter()
             .find_map(|info| {
                 if &info.region == region {
@@ -98,7 +106,7 @@ impl LoopInfo {
 
     /// Get the [LoopForest] for `region`
     pub fn get(&self, region: &RegionRef) -> Option<&LoopForest> {
-        self.per_region_info.iter().find_map(|info| {
+        self.per_region.iter().find_map(|info| {
             if &info.region == region {
                 Some(&info.forest)
             } else {

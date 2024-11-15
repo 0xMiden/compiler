@@ -770,8 +770,8 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         let mut worklist = SmallVec::<[(Rc<DomTreeNode>, usize); 32]>::default();
         let this_root = self.root_node().unwrap();
 
-        // Both dominators and postdominators have a single root node. In the case
-        // case of PostDominatorTree, this node is a virtual root.
+        // Both dominators and postdominators have a single root node. In the case of
+        // PostDominatorTree, this node is a virtual root.
         this_root.num_in.set(NonZeroU32::new(1));
         worklist.push((this_root, 0));
 

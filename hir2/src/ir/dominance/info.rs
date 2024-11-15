@@ -6,6 +6,7 @@ use smallvec::SmallVec;
 use super::*;
 use crate::{
     pass::Analysis, Block, BlockRef, Operation, OperationRef, RegionKindInterface, RegionRef,
+    Report,
 };
 
 /// [DominanceInfo] provides a high-level API for querying dominance information.
@@ -24,11 +25,16 @@ impl Analysis for DominanceInfo {
         "dominance"
     }
 
-    fn analyze(&mut self, op: &Self::Target, _analysis_manager: crate::pass::AnalysisManager) {
-        if !op.has_regions() {
-            return;
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        _analysis_manager: crate::pass::AnalysisManager,
+    ) -> Result<(), Report> {
+        if op.has_regions() {
+            self.info.recompute(op);
         }
-        self.info.recompute(op);
+
+        Ok(())
     }
 
     fn invalidate(&self, _preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
@@ -147,11 +153,16 @@ impl Analysis for PostDominanceInfo {
         "post-dominance"
     }
 
-    fn analyze(&mut self, op: &Self::Target, _analysis_manager: crate::pass::AnalysisManager) {
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        _analysis_manager: crate::pass::AnalysisManager,
+    ) -> Result<(), Report> {
         if !op.has_regions() {
-            return;
+            self.info.recompute(op);
         }
-        self.info.recompute(op);
+
+        Ok(())
     }
 
     fn invalidate(&self, _preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
