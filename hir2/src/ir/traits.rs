@@ -147,7 +147,7 @@ pub trait BranchOpInterface: crate::Op {
     fn get_successor_for_operands(
         &self,
         operands: &[Option<Box<dyn AttributeValue>>],
-    ) -> Option<crate::BlockRef> {
+    ) -> Option<crate::SuccessorInfo> {
         None
     }
     /// This is called to compare types along control-flow edges.

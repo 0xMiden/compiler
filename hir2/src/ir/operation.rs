@@ -647,7 +647,7 @@ impl Operation {
     /// Get a mutable reference to the successor at `index`
     #[inline]
     pub fn successor_mut(&mut self, index: usize) -> OpSuccessorMut<'_> {
-        let info = self.successors[index].clone();
+        let info = self.successors[index];
         OpSuccessorMut {
             dest: info.block,
             arguments: self.operands.group_mut(info.operand_group as usize),

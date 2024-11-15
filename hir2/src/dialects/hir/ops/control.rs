@@ -40,8 +40,8 @@ impl BranchOpInterface for Br {
     fn get_successor_for_operands(
         &self,
         _operands: &[Option<Box<dyn AttributeValue>>],
-    ) -> Option<BlockRef> {
-        Some(self.target().dest.borrow().block)
+    ) -> Option<SuccessorInfo> {
+        Some(self.successors()[0])
     }
 }
 
@@ -64,20 +64,16 @@ impl BranchOpInterface for CondBr {
     fn get_successor_for_operands(
         &self,
         operands: &[Option<Box<dyn AttributeValue>>],
-    ) -> Option<BlockRef> {
+    ) -> Option<SuccessorInfo> {
         let value = operands[0].as_deref()?;
-        let cond = if let Some(imm) = value.downcast_ref::<Immediate>() {
-            imm.as_bool().expect("invalid boolean condition for 'hir.if'")
-        } else if let Some(yes) = value.downcast_ref::<bool>() {
-            *yes
-        } else {
+        let cond = value.as_bool().unwrap_or_else(|| {
             panic!("expected boolean immediate for '{}' condition, got: {:?}", self.name(), value)
-        };
+        });
 
         Some(if cond {
-            self.then_dest().dest.borrow().block
+            self.successors()[0]
         } else {
-            self.else_dest().dest.borrow().block
+            self.successors()[1]
         })
     }
 }
@@ -109,7 +105,7 @@ impl BranchOpInterface for Switch {
     fn get_successor_for_operands(
         &self,
         operands: &[Option<Box<dyn AttributeValue>>],
-    ) -> Option<BlockRef> {
+    ) -> Option<SuccessorInfo> {
         let value = operands[0].as_deref()?;
         let selector = if let Some(selector) = value.downcast_ref::<Immediate>() {
             selector.as_u32().expect("invalid selector value for 'hir.switch'")
@@ -124,14 +120,14 @@ impl BranchOpInterface for Switch {
         };
 
         for switch_case in self.cases().iter() {
-            let key = switch_case.key().unwrap();
-            if selector == key.value {
-                return Some(switch_case.block());
+            let key = *switch_case.key().unwrap();
+            if selector == key {
+                return Some(*switch_case.info());
             }
         }
 
         // If we reach here, no selector match was found, so use the fallback successor
-        Some(self.fallback().dest.borrow().block)
+        Some(self.successors().all().as_slice().last().copied().unwrap())
     }
 }
 
@@ -390,13 +386,43 @@ impl RegionBranchOpInterface for If {
 #[operation(
     dialect = HirDialect,
     traits(SingleBlock),
-    implements(RegionBranchOpInterface)
+    implements(RegionBranchOpInterface, LoopLikeOpInterface)
 )]
 pub struct While {
     #[region]
     before: Region,
     #[region]
     after: Region,
+}
+
+impl LoopLikeOpInterface for While {
+    fn get_region_iter_args(&self) -> Option<EntityRef<'_, [BlockArgumentRef]>> {
+        let entry = self.before().entry_block_ref()?;
+        Some(EntityRef::map(entry.borrow(), |block| block.arguments()))
+    }
+
+    fn get_loop_header_region(&self) -> RegionRef {
+        self.before().as_region_ref()
+    }
+
+    fn get_loop_regions(&self) -> SmallVec<[RegionRef; 2]> {
+        smallvec![self.before().as_region_ref(), self.after().as_region_ref()]
+    }
+
+    fn get_inits_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(0)
+    }
+
+    fn get_yielded_values_mut(&mut self) -> Option<EntityProjectionMut<'_, OpOperandRangeMut<'_>>> {
+        let mut yield_op = self
+            .after()
+            .entry()
+            .terminator()
+            .expect("invalid `while`: expected loop body to be terminated");
+
+        // The values which are yielded to each iteration
+        Some(EntityMut::project(yield_op.borrow_mut(), |op| op.operands_mut().group_mut(0)))
+    }
 }
 
 impl RegionBranchOpInterface for While {

@@ -263,7 +263,7 @@ pub trait KeyedSuccessor {
 }
 
 /// This struct tracks successor metadata needed by [crate::Operation]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct SuccessorInfo {
     pub block: BlockOperandRef,
     pub(crate) key: Option<core::ptr::NonNull<()>>,
@@ -428,9 +428,16 @@ pub struct SuccessorWithKey<'a, T> {
     operands: OpOperandRange<'a>,
     _marker: core::marker::PhantomData<T>,
 }
-impl<'a, T> SuccessorWithKey<'a, T> {
-    pub fn key(&self) -> Option<&T> {
-        self.info.key.map(|ptr| unsafe { &*(ptr.as_ptr() as *mut T) })
+impl<'a, T: KeyedSuccessor> SuccessorWithKey<'a, T> {
+    #[inline]
+    pub fn info(&self) -> &SuccessorInfo {
+        self.info
+    }
+
+    pub fn key(&self) -> Option<&<T as KeyedSuccessor>::Key> {
+        self.info
+            .key
+            .map(|ptr| unsafe { &*(ptr.as_ptr() as *mut <T as KeyedSuccessor>::Key) })
     }
 
     pub fn block(&self) -> BlockRef {
@@ -448,9 +455,11 @@ pub struct SuccessorWithKeyMut<'a, T> {
     operands: OpOperandRangeMut<'a>,
     _marker: core::marker::PhantomData<T>,
 }
-impl<'a, T> SuccessorWithKeyMut<'a, T> {
-    pub fn key(&self) -> Option<&T> {
-        self.info.key.map(|ptr| unsafe { &*(ptr.as_ptr() as *mut T) })
+impl<'a, T: KeyedSuccessor> SuccessorWithKeyMut<'a, T> {
+    pub fn key(&self) -> Option<&<T as KeyedSuccessor>::Key> {
+        self.info
+            .key
+            .map(|ptr| unsafe { &*(ptr.as_ptr() as *mut <T as KeyedSuccessor>::Key) })
     }
 
     pub fn block(&self) -> BlockRef {
