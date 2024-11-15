@@ -141,11 +141,22 @@ pub trait RegionBranchOpInterface: Op {
     }
     /// Returns `true` if control flow originating from the region at `index` may eventually branch
     /// back to the same region, either from itself, or after passing through other regions first.
-    fn is_repetitive_region(&self, index: usize) -> bool;
+    fn is_repetitive_region(&self, index: usize) -> bool {
+        self.region(index).is_repetitive_region()
+    }
     /// Returns `true` if there is a loop in the region branching graph.
     ///
     /// Only reachable regions (starting from the entry region) are considered.
-    fn has_loop(&self) -> bool;
+    fn has_loop(&self) -> bool {
+        self.get_successor_regions(RegionBranchPoint::Parent)
+            .filter_map(|entry| entry.into_successor())
+            .any(|region| {
+                Region::traverse_region_graph(&region.borrow(), |r, visited| {
+                    // Interrupted traversal if the region was already visited
+                    visited.contains(&r.as_region_ref())
+                })
+            })
+    }
 }
 
 // TODO(pauls): Implement verifier (should have no results and no successors)
@@ -185,5 +196,189 @@ pub trait RegionBranchTerminatorOpInterface: Op + Terminator {
             .expect("invalid region terminator parent: must implement RegionBranchOpInterface")
             .get_successor_regions(RegionBranchPoint::Child(parent_region))
             .into_successor_infos()
+    }
+}
+
+/// This trait is implemented by operations which have loop-like semantics.
+///
+/// It provides useful helpers and access to properties of the loop represented, and is used in
+/// order to perform transformations on the loop. Implementors will be considered by loop-invariant
+/// code motion.
+///
+/// Loop-carried variables can be exposed through this interface. There are 3 components to a
+/// loop-carried variable:
+///
+/// - The "region iter_arg" is the block argument of the entry block that represents the loop-
+///   carried variable in each iteration.
+/// - The "init value" is an operand of the loop op that serves as the initial region iter_arg value
+///   for the first iteration (if any).
+/// - The "yielded" value is the value that is forwarded from one iteration to serve as the region
+///   iter_arg of the next iteration.
+///
+/// If one of the respective interface methods is implemented, so must the other two. The interface
+/// verifier ensures that the number of types of the region iter_args, init values and yielded
+/// values match.
+///
+/// Optionally, "loop results" can be exposed through this interface. These are the values that are
+/// returned from the loop op when there are no more iterations. The number and types of the loop
+/// results must match with the region iter_args. Note: Loop results are optional because some loops
+/// (e.g., `scf.while`) may produce results that do match 1-to-1 with the region iter_args.
+#[allow(unused_variables)]
+#[allow(clippy::result_unit_err)]
+pub trait LoopLikeOpInterface: Op {
+    /// Returns true if the given value is defined outside of the loop.
+    ///
+    /// A sensible implementation could be to check whether the value's defining operation lies
+    /// outside of the loops body region. If the loop uses explicit capture of dependencies, an
+    /// implementation could check whether the value corresponds to a captured dependency.
+    fn is_defined_outside_of_loop(&self, value: ValueRef) -> bool {
+        let value = value.borrow();
+        if let Some(defining_op) = value.get_defining_op() {
+            self.as_operation().is_ancestor_of(&defining_op.borrow())
+        } else {
+            let block_arg = value
+                .downcast_ref::<BlockArgument>()
+                .expect("invalid value reference: defining op is orphaned");
+            let defining_region = block_arg.parent_region().unwrap();
+            let defining_op = defining_region.borrow().parent().unwrap();
+            self.as_operation().is_ancestor_of(&defining_op.borrow())
+        }
+    }
+
+    /// Returns the entry region for this loop, which is expected to also play the role of loop
+    /// header.
+    ///
+    /// NOTE: It is expected that if the loop has iteration arguments, that the values returned
+    /// from `Self::get_region_iter_args` correspond to block arguments of the header region.
+    /// Additionally, it is presumed that initialization variables expected by the op are provided
+    /// to the loop body via block arguments of this region.
+    fn get_loop_header_region(&self) -> RegionRef;
+
+    /// Returns the regions that make up the body of the loop, and should be inspected for loop-
+    /// invariant operations.
+    fn get_loop_regions(&self) -> SmallVec<[RegionRef; 2]>;
+
+    /// Moves the given loop-invariant operation out of the loop.
+    fn move_out_of_loop(&mut self, mut op: OperationRef) {
+        op.borrow_mut().move_to(crate::ProgramPoint::before(self.as_operation()));
+    }
+
+    /// Promotes the loop body to its containing block if the loop is known to have a single
+    /// iteration.
+    ///
+    /// Returns `Ok` if the promotion was successful
+    fn promote_if_single_iteration(
+        &mut self,
+        rewriter: &mut dyn crate::Rewriter,
+    ) -> Result<(), ()> {
+        Err(())
+    }
+
+    /// Return all induction variables, if they exist.
+    ///
+    /// If the op has no notion of induction variable, then return `None`. If it does have a notion
+    /// but an instance doesn't have induction variables, then return an empty vector.
+    fn get_loop_induction_vars(&self) -> Option<SmallVec<[ValueRef; 2]>> {
+        None
+    }
+
+    /// Return all lower bounds, if they exist.
+    ///
+    /// If the op has no notion of lower bounds, then return `None`. If it does have a notion but an
+    /// instance doesn't have lower bounds, then return an empty vector.
+    fn get_loop_lower_bounds(&self) -> Option<SmallVec<[OpFoldResult; 2]>> {
+        None
+    }
+
+    /// Return all upper bounds, if they exist.
+    ///
+    /// If the op has no notion of upper bounds, then return `None`. If it does have a notion but an
+    /// instance doesn't have upper bounds, then return an empty vector.
+    fn get_loop_upper_bounds(&self) -> Option<SmallVec<[OpFoldResult; 2]>> {
+        None
+    }
+
+    /// Return all steps, if they exist.
+    ///
+    /// If the op has no notion of steps, then return `None`. If it does have a notion but an
+    /// instance doesn't have steps, then return an empty vector.
+    fn get_loop_steps(&self) -> Option<SmallVec<[OpFoldResult; 2]>> {
+        None
+    }
+
+    /// Return the mutable "init" operands that are used as initialization values for the region
+    /// "iter_args" of this loop.
+    fn get_inits_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().empty_mut()
+    }
+
+    /// Return the region "iter_args" (block arguments) that correspond to the "init" operands.
+    ///
+    /// If the op has multiple regions, return the corresponding block arguments of the entry region.
+    fn get_region_iter_args(&self) -> Option<EntityRef<'_, [BlockArgumentRef]>> {
+        None
+    }
+
+    /// Return the mutable operand range of values that are yielded to the next iteration by the
+    /// loop terminator.
+    ///
+    /// For loop operations that dont yield a value, this should return `None`.
+    fn get_yielded_values_mut(&mut self) -> Option<EntityProjectionMut<'_, OpOperandRangeMut<'_>>> {
+        None
+    }
+
+    /// Return the range of results that are return from this loop and correspond to the "init"
+    /// operands.
+    ///
+    /// Note: This interface method is optional. If loop results are not exposed via this interface,
+    /// `None` should be returned.
+    ///
+    /// Otherwise, the number and types of results must match with the region iter_args, inits and
+    /// yielded values that are exposed via this interface. If loop results are exposed but this
+    /// loop op has no loop-carried variables, an empty result range (and not `None`) should be
+    /// returned.
+    fn get_loop_results(&self) -> Option<OpResultRange<'_>> {
+        None
+    }
+}
+
+impl dyn LoopLikeOpInterface {
+    /// If there is a single induction variable return it, otherwise return `None`
+    pub fn get_single_induction_var(&self) -> Option<ValueRef> {
+        let vars = self.get_loop_induction_vars();
+        if let Some([var]) = vars.as_deref() {
+            return Some(*var);
+        }
+        None
+    }
+
+    /// Return the single lower bound value or attribute if it exists, otherwise return `None`
+    pub fn get_single_lower_bound(&self) -> Option<OpFoldResult> {
+        let mut lower_bounds = self.get_loop_lower_bounds()?;
+        if lower_bounds.len() == 1 {
+            lower_bounds.pop()
+        } else {
+            None
+        }
+    }
+
+    /// Return the single upper bound value or attribute if it exists, otherwise return `None`
+    pub fn get_single_upper_bound(&self) -> Option<OpFoldResult> {
+        let mut upper_bounds = self.get_loop_upper_bounds()?;
+        if upper_bounds.len() == 1 {
+            upper_bounds.pop()
+        } else {
+            None
+        }
+    }
+
+    /// Return the single step value or attribute if it exists, otherwise return `None`
+    pub fn get_single_step(&self) -> Option<OpFoldResult> {
+        let mut steps = self.get_loop_steps()?;
+        if steps.len() == 1 {
+            steps.pop()
+        } else {
+            None
+        }
     }
 }

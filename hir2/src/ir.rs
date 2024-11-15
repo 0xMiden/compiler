@@ -40,9 +40,9 @@ pub use self::{
     dialect::{Dialect, DialectName, DialectRegistration},
     entity::{
         Entity, EntityCursor, EntityCursorMut, EntityGroup, EntityId, EntityIter, EntityList,
-        EntityMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId,
-        EntityWithParent, MaybeDefaultEntityIter, RawEntityRef, StorableEntity, UnsafeEntityRef,
-        UnsafeIntrusiveEntityRef,
+        EntityMut, EntityProjection, EntityProjectionMut, EntityRange, EntityRangeMut, EntityRef,
+        EntityStorage, EntityWithId, EntityWithParent, MaybeDefaultEntityIter, RawEntityRef,
+        StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
@@ -57,7 +57,7 @@ pub use self::{
     },
     print::{OpPrinter, OpPrintingFlags},
     region::{
-        InvocationBounds, Region, RegionBranchOpInterface, RegionBranchPoint,
+        InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
         RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,
         RegionKindInterface, RegionList, RegionRef, RegionSuccessor, RegionSuccessorInfo,
         RegionSuccessorIter, RegionTransformFailed,

@@ -8,7 +8,7 @@ use super::*;
 ///
 /// * The parent operation (i.e. the op implementing `RegionBranchOpInterface`).
 /// * A region within the parent operation (where the parent implements `RegionBranchOpInterface`).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum RegionBranchPoint {
     /// A branch from the current operation to one of its regions
     Parent,

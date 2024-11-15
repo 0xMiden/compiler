@@ -87,6 +87,16 @@ impl<T, const INLINE: usize> EntityStorage<T, INLINE> {
 }
 
 impl<T: StorableEntity, const INLINE: usize> EntityStorage<T, INLINE> {
+    /// Get an empty [EntityRangeMut] derived from this storage
+    pub fn empty_mut(&mut self) -> EntityRangeMut<'_, T, INLINE> {
+        EntityRangeMut {
+            group: 0,
+            range: 0..0,
+            groups: &mut self.groups,
+            items: &mut self.items,
+        }
+    }
+
     /// Push an item to the last group
     pub fn push(&mut self, mut item: T) {
         let index = self.items.len();

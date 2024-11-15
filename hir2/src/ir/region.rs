@@ -5,18 +5,21 @@ mod kind;
 mod successor;
 mod transforms;
 
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 pub use self::{
     branch_point::RegionBranchPoint,
-    interfaces::{RegionBranchOpInterface, RegionBranchTerminatorOpInterface, RegionKindInterface},
+    interfaces::{
+        LoopLikeOpInterface, RegionBranchOpInterface, RegionBranchTerminatorOpInterface,
+        RegionKindInterface,
+    },
     invocation_bounds::InvocationBounds,
     kind::RegionKind,
     successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorIter},
     transforms::RegionTransformFailed,
 };
 use super::*;
-use crate::RegionSimplificationLevel;
+use crate::{adt::SmallSet, RegionSimplificationLevel};
 
 pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;
 /// An intrusive, doubly-linked list of [Region]s
@@ -262,6 +265,141 @@ impl Region {
             None => self.owner.take(),
             Some(owner) => self.owner.replace(owner),
         }
+    }
+}
+
+/// Region Graph
+impl Region {
+    /// Traverse the region graph starting at `begin`.
+    ///
+    /// The traversal is interrupted if `stop` evaluates to `true` for a successor region. The
+    /// first argument given to the callback is the successor region, and the second argument is
+    /// the set of successor regions visited thus far.
+    ///
+    /// Returns `true` if traversal was interrupted, otherwise false.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `begin` is a region that does not belong to an operation, or
+    /// if that operation does not implement `RegionBranchOpInterface`.
+    pub fn traverse_region_graph<F>(begin: &Self, mut stop: F) -> bool
+    where
+        F: FnMut(&Region, &SmallSet<RegionRef, 4>) -> bool,
+    {
+        let op = begin.parent().expect("cannot traverse an orphaned region");
+        let op = op.borrow();
+        let branch = op
+            .as_trait::<dyn RegionBranchOpInterface>()
+            .expect("expected parent op to implement RegionBranchOpInterface");
+
+        let mut visited = SmallSet::<RegionRef, 4>::default();
+        visited.insert(begin.as_region_ref());
+
+        let mut worklist = SmallVec::<[RegionRef; 4]>::default();
+        for successor in
+            branch.get_successor_regions(RegionBranchPoint::Child(begin.as_region_ref()))
+        {
+            if let Some(successor) = successor.into_successor() {
+                worklist.push(successor);
+            }
+        }
+
+        while let Some(next_region_ref) = worklist.pop() {
+            let next_region = next_region_ref.borrow();
+
+            if stop(&next_region, &visited) {
+                return true;
+            }
+
+            if visited.insert(next_region_ref) {
+                for successor in
+                    branch.get_successor_regions(RegionBranchPoint::Child(next_region_ref))
+                {
+                    if let Some(successor) = successor.into_successor() {
+                        worklist.push(successor);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Returns true if `self` is reachable from `begin` in the region graph of the containing
+    /// operation, which must implement the `RegionBranchOpInterface` trait.
+    pub fn is_reachable_from(&self, begin: &Region) -> bool {
+        assert_eq!(self.parent(), begin.parent(), "expected both regions to belong to the same op");
+        // We interrupted the traversal if we find `self` in the region graph
+        Self::traverse_region_graph(begin, |region, _| core::ptr::addr_eq(self, region))
+    }
+
+    /// Returns true if `self` is reachable from itself in the region graph of the containing
+    /// operation, which must implement the `RegionBranchOpInterface` trait.
+    ///
+    /// The implication of this returning `true`, is that the region graph contains a loop, and
+    /// `self` participates in that loop.
+    pub fn is_repetitive_region(&self) -> bool {
+        Self::traverse_region_graph(self, |region, _| core::ptr::addr_eq(self, region))
+    }
+
+    /// Returns a vector of regions in the region graph rooted at `begin`, following a post-order
+    /// traversal of the graph, i.e. successors appear before their predecessors.
+    ///
+    /// NOTE: Backedges encountered during the traversal are ignored.
+    ///
+    /// Like [Self::traverse_region_graph], this requires the parent op to implement
+    /// [RegionBranchOpInterface].
+    pub fn postorder_region_graph(begin: &Self) -> SmallVec<[RegionRef; 4]> {
+        struct RegionNode {
+            region: RegionRef,
+            children: SmallVec<[RegionRef; 2]>,
+        }
+        impl RegionNode {
+            pub fn new(region: RegionRef, branch: &dyn RegionBranchOpInterface) -> Self {
+                // Collect unvisited children
+                let children = branch
+                    .get_successor_regions(RegionBranchPoint::Child(region))
+                    .filter_map(|s| s.into_successor())
+                    .collect();
+                Self { region, children }
+            }
+        }
+
+        let op = begin.parent().expect("cannot traverse an orphaned region");
+        let op = op.borrow();
+        let branch = op
+            .as_trait::<dyn RegionBranchOpInterface>()
+            .expect("expected parent op to implement RegionBranchOpInterface");
+
+        let mut postorder = SmallVec::<[RegionRef; 4]>::default();
+        let mut visited = SmallSet::<RegionRef, 4>::default();
+        let mut worklist = SmallVec::<[(RegionNode, usize); 4]>::default();
+
+        let root = begin.as_region_ref();
+        visited.insert(root);
+        let root = RegionNode::new(root, branch);
+        worklist.push((root, 0));
+
+        while let Some((node, child_index)) = worklist.last_mut() {
+            // If we visited all of the children of this node, "recurse" back up the stack
+            if *child_index >= node.children.len() {
+                postorder.push(node.region);
+                worklist.pop();
+            } else {
+                // Otherwise, recursively visit the given child
+                let index = *child_index;
+                *child_index += 1;
+                let child = RegionNode::new(node.children[index], branch);
+                if worklist.iter().any(|(node, _)| node.region == child.region) {
+                    // `child` forms a backedge to a node we're still visiting, so ignore it
+                    continue;
+                } else if visited.insert(child.region) {
+                    worklist.push((child, 0));
+                }
+            }
+        }
+
+        postorder
     }
 }
 
