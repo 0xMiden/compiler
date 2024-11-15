@@ -124,7 +124,14 @@ impl<'a, T: AnalysisState> AsRef<T> for AnalysisStateGuard<'a, T> {
 impl<'a, T: AnalysisState> AsMut<T> for AnalysisStateGuard<'a, T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
+        // This is overly conservative, but we assume that a mutable borrow of the underlying state
+        // changes that state, and thus must be notified. The problem is that just because you take
+        // a mutable reference and seemingly change the state, doesn't mean that the state actually
+        // changed. As a result, users of an AnalysisStateGuard are encouraged to either only take
+        // a mutable reference after checking that the state actually changed, or use the
+        // AnalysisStateGuard::change method.
         self.changed = true;
+
         unsafe { self.state.as_mut() }
     }
 }

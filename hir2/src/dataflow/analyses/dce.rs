@@ -237,7 +237,7 @@ impl AnalysisState for PredecessorState {
     }
 }
 
-#[derive(Clone, Debug, Spanned)]
+#[derive(Copy, Clone, Debug, Spanned)]
 pub struct CfgEdge {
     #[span]
     span: SourceSpan,
@@ -363,10 +363,10 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
             let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(
                 region.entry_block_ref().unwrap(),
             ));
-            state.mark_live();
+            state.change(|exec| exec.mark_live());
         }
 
-        // Mark as overdefined the predecessors of symbol callables with potentially unknown
+        // Mark as overdefined the predecessors of callable symbols with potentially unknown
         // predecessors.
         self.initialize_callable_symbols(top, solver);
 
@@ -565,14 +565,17 @@ impl DeadCodeAnalysis {
     /// Mark the edge between `from` and `to` as executable.
     fn mark_edge_live(&self, from: &Block, to: &Block, solver: &mut DataFlowSolver) {
         let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(to));
-        state.mark_live();
+        state.change(|exec| exec.mark_live());
+
+        // Ensure change notifications for the block are flushed first
         drop(state);
-        let anchor = solver.create_lattice_anchor(CfgEdge::new(
+
+        let mut edge_state = solver.get_or_create_mut::<Executable, _>(CfgEdge::new(
             from.as_block_ref(),
             to.as_block_ref(),
             from.span(),
         ));
-        let _edge_state = solver.get_or_create_mut::<Executable, _>(anchor);
+        edge_state.change(|exec| exec.mark_live());
     }
 
     /// Mark the entry blocks of the operation as executable.
@@ -581,7 +584,7 @@ impl DeadCodeAnalysis {
             if let Some(entry) = region.entry_block_ref() {
                 let mut state =
                     solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(entry));
-                state.mark_live();
+                state.change(|exec| exec.mark_live());
             }
         }
     }
@@ -605,7 +608,7 @@ impl DeadCodeAnalysis {
             }
         };
 
-        // If the callabel is unresolvable, mark the call ops predecessors as overdefined/unknown
+        // If the callable is unresolvable, mark the call ops predecessors as overdefined/unknown
         if callable.is_none() {
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
@@ -626,12 +629,12 @@ impl DeadCodeAnalysis {
             let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_symbol_operation()),
             );
-            callsites.join(call.as_operation().as_operation_ref());
+            callsites.change(|ps| ps.join(call.as_operation().as_operation_ref()));
         } else {
             // Mark this call op's predecessors as overdefined
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
-            predecessors.set_has_unknown_predecessors();
+            predecessors.change(|ps| ps.set_has_unknown_predecessors());
         }
     }
 
@@ -644,9 +647,10 @@ impl DeadCodeAnalysis {
         };
 
         if let Some(successor) = branch.get_successor_for_operands(&operands) {
+            let to = successor.block.borrow().block;
             self.mark_edge_live(
                 &branch.as_operation().parent().unwrap().borrow(),
-                &successor.borrow(),
+                &to.borrow(),
                 solver,
             );
         } else {
@@ -682,13 +686,15 @@ impl DeadCodeAnalysis {
             };
             // Mark the entry block as executable.
             let mut state = solver.get_or_create_mut::<Executable, _>(point);
-            state.mark_live();
+            state.change(|exec| exec.mark_live());
             // Add the parent op as a predecessor
             let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
-            predecessors.join_with_inputs(
-                branch.as_operation().as_operation_ref(),
-                successor.successor_inputs().iter(),
-            );
+            predecessors.change(|ps| {
+                ps.join_with_inputs(
+                    branch.as_operation().as_operation_ref(),
+                    successor.successor_inputs().iter(),
+                )
+            });
         }
     }
 
@@ -722,7 +728,7 @@ impl DeadCodeAnalysis {
                 let entry = region.borrow().entry_block_ref().unwrap();
                 let point = ProgramPoint::at_start_of(entry);
                 let mut state = solver.get_or_create_mut::<Executable, _>(point);
-                state.mark_live();
+                state.change(|exec| exec.mark_live());
                 solver.get_or_create_mut::<PredecessorState, _>(point)
             } else {
                 // Add this terminator as a predecessor to the parent op.
@@ -730,8 +736,9 @@ impl DeadCodeAnalysis {
                     branch.as_operation(),
                 ))
             };
-            predecessors
-                .join_with_inputs(op.as_operation_ref(), successor.successor_inputs().iter());
+            predecessors.change(|ps| {
+                ps.join_with_inputs(op.as_operation_ref(), successor.successor_inputs().iter())
+            });
         }
     }
 
@@ -755,11 +762,11 @@ impl DeadCodeAnalysis {
             let mut predecessors =
                 solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(&*predecessor));
             if can_resolve {
-                predecessors.join(op.as_operation_ref());
+                predecessors.change(|ps| ps.join(op.as_operation_ref()));
             } else {
                 // If the terminator is not a return-like, then conservatively assume we can't
                 // resolve the predecessor.
-                predecessors.set_has_unknown_predecessors();
+                predecessors.change(|ps| ps.set_has_unknown_predecessors());
             }
         }
     }
