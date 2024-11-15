@@ -186,13 +186,19 @@ impl Analysis for LivenessAnalysis {
         "liveness"
     }
 
-    fn analyze(&mut self, op: &Self::Target, analysis_manager: crate::pass::AnalysisManager) {
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        analysis_manager: crate::pass::AnalysisManager,
+    ) -> Result<(), Report> {
         self.solver.load::<DeadCodeAnalysis>();
         self.solver.load::<SparseConstantPropagation>();
         self.solver.load::<Liveness>();
         self.solver
             .initialize_and_run(op.as_operation(), analysis_manager)
             .expect("liveness analysis failed");
+
+        Ok(())
     }
 
     fn invalidate(&self, preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {

@@ -412,7 +412,7 @@ pub fn visit_region_branch_operation<A>(
 {
     // The successors of the operation may be either the first operation of the entry block of each
     // possible successor region, or the next operation when the branch is a successor of itself.
-    for successor in branch.get_successor_regions(branch_point.clone()) {
+    for successor in branch.get_successor_regions(branch_point) {
         let successor_region = successor.successor();
         let after = match successor_region.as_ref() {
             None => {

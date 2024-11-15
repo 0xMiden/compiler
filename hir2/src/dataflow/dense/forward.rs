@@ -33,6 +33,18 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
     ) -> Result<(), Report>;
 
     /// Set the dense lattice at control flow entry point and propagate an update if it changed.
+    ///
+    /// The lattice here may be anchored to one of the following points:
+    ///
+    /// 1. `ProgramPoint::at_start_of(block)` for the block being entered
+    /// 2. `ProgramPoint::before(op)` for the first op in a block being entered
+    /// 3. `ProgramPoint::after(call)` for propagating lattice state from the predecessor of a
+    ///    call to a callable op (i.e. from return sites to after the call returns).
+    ///
+    /// In the case of 2 specifically, we distinguish the anchors "start of block" and "before op
+    /// at start of block", however in general these effectively refer to the same program point.
+    /// It is up to the implementation to decide how they wish to handle this case, but it is safe
+    /// to simply propagate the state from 1 to 2.
     fn set_to_entry_state(
         &self,
         lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
@@ -171,15 +183,15 @@ where
     // Get the dense lattice to update.
     let mut after = solver.get_or_create_mut(point);
 
-    // Get the dense state before the execution of the op.
-    let before = solver.require(point, ProgramPoint::before(op));
-
     // If this op implements region control-flow, then control-flow dictates its transfer
     // function.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
         visit_region_branch_operation(analysis, point, branch, &mut after, solver);
         return Ok(());
     }
+
+    // Get the dense state before the execution of the op.
+    let before = solver.require(point, ProgramPoint::before(op));
 
     // If this is a call operation, then join its lattices across known return sites.
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
@@ -203,6 +215,28 @@ where
         return;
     }
 
+    visit_block_header(analysis, block, solver);
+    if let Some(op) = block.front() {
+        visit_before_block_start(analysis, &op.borrow(), solver)
+    }
+}
+
+fn visit_before_block_start<A>(analysis: &A, op: &Operation, solver: &mut DataFlowSolver)
+where
+    A: DenseForwardDataFlowAnalysis,
+{
+    // Get the dense lattice to update.
+    let point = ProgramPoint::before(op);
+    let mut after = solver.get_or_create_mut(point);
+    // By default, treat this the same as the block header itself
+    analysis.set_to_entry_state(&mut after, solver);
+}
+
+fn visit_block_header<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
+where
+    A: DenseForwardDataFlowAnalysis,
+{
+    let point = ProgramPoint::at_start_of(block);
     // Get the dense lattice to update.
     let mut after = solver.get_or_create_mut(point);
 

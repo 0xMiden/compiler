@@ -378,12 +378,12 @@ fn visit_region_successors<A>(
 
         // Check if the predecessor is the parent op.
         if core::ptr::addr_eq(OperationRef::as_ptr(op), branch.as_operation()) {
-            operands = Some(branch.get_entry_successor_operands(successor.clone()));
+            operands = Some(branch.get_entry_successor_operands(successor));
         } else if let Some(region_terminator) =
             operation.as_trait::<dyn RegionBranchTerminatorOpInterface>()
         {
             // Otherwise, try to deduce the operands from a region return-like op.
-            operands = Some(region_terminator.get_successor_operands(successor.clone()));
+            operands = Some(region_terminator.get_successor_operands(successor));
         }
 
         let Some(operands) = operands else {

@@ -300,7 +300,7 @@ fn visit_region_successors<A>(
     let mut unaccounted = bitvec![1; op.num_operands()];
 
     for successor in successors {
-        let operands = branch.get_entry_successor_operands(successor.branch_point().clone());
+        let operands = branch.get_entry_successor_operands(*successor.branch_point());
         let inputs = successor.successor_inputs();
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
@@ -355,7 +355,7 @@ fn visit_region_successors_from_terminator<A>(
 
     for successor in successors {
         let inputs = successor.successor_inputs();
-        let operands = terminator.get_successor_operands(successor.branch_point().clone());
+        let operands = terminator.get_successor_operands(*successor.branch_point());
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
             let mut operand_lattice = get_lattice_element::<A>(operand.as_value_ref(), solver);

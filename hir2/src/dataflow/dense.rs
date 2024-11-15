@@ -143,7 +143,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
             .as_trait::<dyn RegionKindInterface>()
             .is_none_or(|rki| rki.has_ssa_dominance());
         if is_ssa_cfg {
-            let dominfo = analysis_manager.get_analysis::<DominanceInfo>();
+            let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
             for region in top.regions() {
                 // Single-block regions do not require a dominance tree (and do not have one)
                 if region.has_one_block() {
@@ -253,7 +253,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
             .as_trait::<dyn RegionKindInterface>()
             .is_none_or(|rki| rki.has_ssa_dominance());
         if is_ssa_cfg {
-            let dominfo = analysis_manager.get_analysis::<DominanceInfo>();
+            let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
             for region in top.regions() {
                 // Single-block regions do not require a dominance tree (and do not have one)
                 if region.has_one_block() {

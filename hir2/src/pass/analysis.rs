@@ -6,10 +6,8 @@ use core::{
 
 use smallvec::SmallVec;
 
-type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
-
 use super::{PassInstrumentor, PassTarget};
-use crate::{Op, Operation, OperationRef};
+use crate::{FxHashMap, Op, Operation, OperationRef, Report};
 
 /// The [Analysis] trait is used to define an analysis over some operation.
 ///
@@ -66,7 +64,11 @@ pub trait Analysis: Default + Any {
     }
 
     /// Analyze `op` using the provided [AnalysisManager].
-    fn analyze(&mut self, op: &Self::Target, analysis_manager: AnalysisManager);
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report>;
 
     /// Query this analysis for invalidation.
     ///
@@ -103,7 +105,7 @@ pub trait OperationAnalysis {
     /// NOTE: This is only ever called once per instantiation of the analysis, but in theory can
     /// support multiple calls to re-analyze `op`. Each call should reset any internal state to
     /// ensure that if an analysis is reused in this way, that each analysis gets a clean slate.
-    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager);
+    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager) -> Result<(), Report>;
 
     /// Query this analysis for invalidation.
     ///
@@ -151,7 +153,7 @@ where
     }
 
     #[inline]
-    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager) {
+    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager) -> Result<(), Report> {
         let op = <<A as Analysis>::Target as PassTarget>::into_target(op);
         <A as Analysis>::analyze(self, &op, am)
     }
@@ -265,11 +267,11 @@ struct AnalysisWrapper<A> {
     analysis: A,
 }
 impl<A: Analysis> AnalysisWrapper<A> {
-    fn new(op: &<A as Analysis>::Target, am: AnalysisManager) -> Self {
+    fn new(op: &<A as Analysis>::Target, am: AnalysisManager) -> Result<Self, Report> {
         let mut analysis = A::default();
-        analysis.analyze(op, am);
+        analysis.analyze(op, am)?;
 
-        Self { analysis }
+        Ok(Self { analysis })
     }
 }
 impl<A: Default> Default for AnalysisWrapper<A> {
@@ -306,8 +308,8 @@ impl<A: Analysis> Analysis for AnalysisWrapper<A> {
     }
 
     #[inline]
-    fn analyze(&mut self, op: &Self::Target, am: AnalysisManager) {
-        self.analysis.analyze(op, am);
+    fn analyze(&mut self, op: &Self::Target, am: AnalysisManager) -> Result<(), Report> {
+        self.analysis.analyze(op, am)
     }
 
     fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) -> bool {
@@ -357,7 +359,7 @@ impl AnalysisManager {
     }
 
     /// Query for the given analysis for the current operation.
-    pub fn get_analysis<A>(&self) -> Rc<A>
+    pub fn get_analysis<A>(&self) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = Operation>,
     {
@@ -367,7 +369,7 @@ impl AnalysisManager {
     /// Query for the given analysis for the current operation of a specific derived operation type.
     ///
     /// NOTE: This will panic if the current operation is not of type `O`.
-    pub fn get_analysis_for<A, O>(&self) -> Rc<A>
+    pub fn get_analysis_for<A, O>(&self) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = O>,
         O: 'static,
@@ -387,7 +389,7 @@ impl AnalysisManager {
     }
 
     /// Query for an analysis of a child operation, constructing it if necessary.
-    pub fn get_child_analysis<A>(&self, op: OperationRef) -> Rc<A>
+    pub fn get_child_analysis<A>(&self, op: OperationRef) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = Operation>,
     {
@@ -398,7 +400,7 @@ impl AnalysisManager {
     /// constructing it if necessary.
     ///
     /// NOTE: This will panic if `op` is not of type `O`.
-    pub fn get_child_analysis_for<A, O>(&self, op: &O) -> Rc<A>
+    pub fn get_child_analysis_for<A, O>(&self, op: &O) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = O>,
         O: Op,
@@ -612,7 +614,11 @@ impl AnalysisMap {
     }
 
     /// Get an analysis for the current IR unit, computing it if necessary.
-    pub fn get<A>(&mut self, pi: Option<Rc<PassInstrumentor>>, am: AnalysisManager) -> Rc<A>
+    pub fn get<A>(
+        &mut self,
+        pi: Option<Rc<PassInstrumentor>>,
+        am: AnalysisManager,
+    ) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = Operation>,
     {
@@ -641,7 +647,7 @@ impl AnalysisMap {
         &mut self,
         pi: Option<Rc<PassInstrumentor>>,
         am: AnalysisManager,
-    ) -> Rc<A>
+    ) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = O>,
         O: 'static,
@@ -656,7 +662,7 @@ impl AnalysisMap {
         ir: &O,
         op: &OperationRef,
         am: AnalysisManager,
-    ) -> Rc<A>
+    ) -> Result<Rc<A>, Report>
     where
         A: Analysis<Target = O>,
     {
@@ -671,23 +677,27 @@ impl AnalysisMap {
                     pi.run_before_analysis(core::any::type_name::<A>(), &id, op);
                 }
 
-                let analysis = entry.insert(Self::construct_analysis::<A, O>(am, ir));
+                let analysis = entry.insert(Self::construct_analysis::<A, O>(am, ir)?);
 
                 if let Some(pi) = pi.as_deref() {
                     pi.run_after_analysis(core::any::type_name::<A>(), &id, op);
                 }
 
-                Rc::clone(analysis).downcast::<A>().unwrap()
+                Ok(Rc::clone(analysis).downcast::<A>().unwrap())
             }
-            Entry::Occupied(entry) => Rc::clone(entry.get()).downcast::<A>().unwrap(),
+            Entry::Occupied(entry) => Ok(Rc::clone(entry.get()).downcast::<A>().unwrap()),
         }
     }
 
-    fn construct_analysis<A, O>(am: AnalysisManager, op: &O) -> Rc<dyn OperationAnalysis>
+    fn construct_analysis<A, O>(
+        am: AnalysisManager,
+        op: &O,
+    ) -> Result<Rc<dyn OperationAnalysis>, Report>
     where
         A: Analysis<Target = O>,
     {
-        Rc::new(AnalysisWrapper::<A>::new(op, am)) as Rc<dyn OperationAnalysis>
+        AnalysisWrapper::<A>::new(op, am)
+            .map(|analysis| Rc::new(analysis) as Rc<dyn OperationAnalysis>)
     }
 
     /// Returns the operation that this analysis map represents.
