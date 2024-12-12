@@ -225,9 +225,8 @@ impl OpPassManager {
         let (dialect_name, opcode) = name.split_once('.').expect(
             "invalid operation name: expected format `<dialect>.<name>`, but missing `<dialect>.`",
         );
-        let dialect_name =
-            crate::DialectName::from_symbol(crate::interner::Symbol::intern(dialect_name));
-        let dialect = context.get_registered_dialect(&dialect_name);
+        let dialect_name = crate::interner::Symbol::intern(dialect_name);
+        let dialect = context.get_registered_dialect(dialect_name);
         let ops = dialect.registered_ops();
         let name =
             ops.iter()

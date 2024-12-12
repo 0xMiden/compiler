@@ -13,7 +13,7 @@ use crate::{
         },
         Lattice,
     },
-    dialects::hir::Function,
+    dialects::builtin::Function,
     dominance::DominanceInfo,
     formatter::DisplayValues,
     loops::{Loop, LoopForest, LoopInfo},

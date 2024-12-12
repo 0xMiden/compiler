@@ -1198,7 +1198,7 @@ impl Operation {
 
     /// Returns `None` if this operation has invalid ordering
     #[inline]
-    pub(super) fn order(&self) -> Option<u32> {
+    pub(crate) fn order(&self) -> Option<u32> {
         use core::sync::atomic::Ordering;
         match self.order.load(Ordering::Acquire) {
             Self::INVALID_ORDER => None,

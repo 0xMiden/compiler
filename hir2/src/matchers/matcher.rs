@@ -612,7 +612,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        dialects::hir::{InstBuilder, *},
+        dialects::{
+            builtin::*,
+            test::{InstBuilder, *},
+        },
         *,
     };
 
@@ -752,8 +755,12 @@ mod tests {
         let mut function = {
             let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
             let id = Ident::new("test".into(), SourceSpan::default());
+            let name = FunctionIdent {
+                module: id,
+                function: id,
+            };
             let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(id, signature).unwrap()
+            builder(name, signature).unwrap()
         };
 
         // Define function body

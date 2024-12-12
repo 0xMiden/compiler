@@ -84,6 +84,14 @@ impl<T, const INLINE: usize> EntityStorage<T, INLINE> {
     pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
         self.items.iter_mut()
     }
+
+    /// Returns an iterator over the groups in storage
+    pub fn groups(&self) -> impl Iterator<Item = EntityRange<'_, T>> + '_ {
+        self.groups.iter().map(|group| EntityRange {
+            range: group.as_range(),
+            items: self.items.as_slice(),
+        })
+    }
 }
 
 impl<T: StorableEntity, const INLINE: usize> EntityStorage<T, INLINE> {
@@ -231,6 +239,12 @@ impl<'a, T> EntityRange<'a, T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.as_slice().len()
+    }
+
+    /// Returns a reference to the index range covered by this EntityRange
+    #[inline(always)]
+    pub const fn range(&self) -> &core::ops::Range<usize> {
+        &self.range
     }
 
     /// Get this range as a slice

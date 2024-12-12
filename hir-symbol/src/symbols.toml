@@ -90,4 +90,5 @@ treeify = { value = "treeify" }
 entrypoint = {}
 
 [dialects]
+builtin = {}
 hir = {}

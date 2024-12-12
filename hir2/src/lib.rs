@@ -55,6 +55,7 @@ extern crate self as midenc_hir2;
 pub use compact_str::{
     CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
 };
+pub use smallvec::{smallvec, SmallVec, ToSmallVec};
 
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;

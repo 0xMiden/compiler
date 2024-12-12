@@ -1,7 +1,5 @@
 pub use midenc_hir_macros::operation;
 
-use crate::Operation;
-
 /// This macro is used to generate the boilerplate for operation trait implementations.
 #[macro_export]
 macro_rules! derive {
@@ -130,38 +128,6 @@ macro_rules! __derive_op_trait {
     };
 }
 
-/// This type represents the concrete set of derived traits for some op `T`, paired with a
-/// type-erased [Operation] reference for an instance of that op.
-///
-/// This is used for two purposes:
-///
-/// 1. To generate a specialized [OpVerifier] for `T` which contains all of the type and
-///    trait-specific validation logic for that `T`.
-/// 2. To apply the specialized verifier for `T` using the wrapped [Operation] reference.
-#[doc(hidden)]
-pub struct DeriveVerifier<'a, T, Derived: ?Sized> {
-    op: &'a Operation,
-    _t: core::marker::PhantomData<T>,
-    _derived: core::marker::PhantomData<Derived>,
-}
-impl<'a, T, Derived: ?Sized> DeriveVerifier<'a, T, Derived> {
-    #[doc(hidden)]
-    pub const fn new(op: &'a Operation) -> Self {
-        Self {
-            op,
-            _t: core::marker::PhantomData,
-            _derived: core::marker::PhantomData,
-        }
-    }
-}
-impl<'a, T, Derived: ?Sized> core::ops::Deref for DeriveVerifier<'a, T, Derived> {
-    type Target = Operation;
-
-    fn deref(&self) -> &Self::Target {
-        self.op
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alloc::rc::Rc;
@@ -169,7 +135,7 @@ mod tests {
 
     use super::operation;
     use crate::{
-        define_attr_type, dialects::hir::HirDialect, formatter, traits::*, Builder, BuilderExt,
+        define_attr_type, dialects::test::TestDialect, formatter, traits::*, Builder, BuilderExt,
         Context, Op, Operation, Report, Spanned, Value,
     };
 
@@ -196,7 +162,7 @@ mod tests {
 
     /// An example op implementation to make sure all of the type machinery works
     #[operation(
-        dialect = HirDialect,
+        dialect = TestDialect,
         traits(ArithmeticOp, BinaryOp, Commutative, SingleBlock, SameTypeOperands),
         implements(InferTypeOpInterface)
     )]

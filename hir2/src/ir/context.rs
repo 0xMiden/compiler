@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeMap, rc::Rc, sync::Arc};
+use alloc::{rc::Rc, sync::Arc};
 use core::{
     cell::{Cell, RefCell},
     mem::MaybeUninit,
@@ -8,7 +8,10 @@ use blink_alloc::Blink;
 use midenc_session::Session;
 
 use super::*;
-use crate::constants::{ConstantData, ConstantId, ConstantPool};
+use crate::{
+    constants::{ConstantData, ConstantId, ConstantPool},
+    FxHashMap,
+};
 
 /// Represents the shared state of the IR, used during a compilation session.
 ///
@@ -25,7 +28,8 @@ use crate::constants::{ConstantData, ConstantId, ConstantPool};
 pub struct Context {
     pub session: Rc<Session>,
     allocator: Rc<Blink>,
-    registered_dialects: RefCell<BTreeMap<DialectName, Rc<dyn Dialect>>>,
+    registered_dialects: RefCell<FxHashMap<interner::Symbol, Rc<dyn Dialect>>>,
+    dialect_hooks: RefCell<FxHashMap<interner::Symbol, Vec<DialectRegistrationHook>>>,
     constants: RefCell<ConstantPool>,
     next_block_id: Cell<u32>,
     next_value_id: Cell<u32>,
@@ -54,6 +58,7 @@ impl Context {
             session,
             allocator,
             registered_dialects: Default::default(),
+            dialect_hooks: Default::default(),
             constants: Default::default(),
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
@@ -62,27 +67,46 @@ impl Context {
 
     pub fn registered_dialects(
         &self,
-    ) -> core::cell::Ref<'_, BTreeMap<DialectName, Rc<dyn Dialect>>> {
+    ) -> core::cell::Ref<'_, FxHashMap<interner::Symbol, Rc<dyn Dialect>>> {
         self.registered_dialects.borrow()
     }
 
-    pub fn get_registered_dialect(&self, dialect: &DialectName) -> Rc<dyn Dialect> {
-        self.registered_dialects.borrow()[dialect].clone()
+    pub fn get_registered_dialect(&self, dialect: impl Into<interner::Symbol>) -> Rc<dyn Dialect> {
+        let dialect = dialect.into();
+        self.registered_dialects.borrow()[&dialect].clone()
     }
 
-    pub fn get_or_register_dialect<T: DialectRegistration>(&self) -> Rc<dyn Dialect> {
-        use alloc::collections::btree_map::Entry;
+    pub fn get_or_register_dialect<T>(&self) -> Rc<dyn Dialect>
+    where
+        T: DialectRegistration,
+    {
+        let dialect_name = <T as DialectRegistration>::NAMESPACE.into();
+        if let Some(dialect) = self.registered_dialects.borrow().get(&dialect_name).cloned() {
+            return dialect;
+        }
 
-        let mut registered_dialects = self.registered_dialects.borrow_mut();
-        let dialect_name = DialectName::new(T::NAMESPACE);
-        match registered_dialects.entry(dialect_name) {
-            Entry::Occupied(entry) => Rc::clone(entry.get()),
-            Entry::Vacant(entry) => {
-                let dialect = Rc::new(T::init()) as Rc<dyn Dialect>;
-                entry.insert(Rc::clone(&dialect));
-                dialect
+        let mut info = DialectInfo::new::<T>();
+        let dialect_hooks = self.dialect_hooks.borrow();
+        if let Some(hooks) = dialect_hooks.get(&dialect_name) {
+            for hook in hooks {
+                hook(&mut info, self);
             }
         }
+
+        let dialect = Rc::new(T::init(info)) as Rc<dyn Dialect>;
+        self.registered_dialects.borrow_mut().insert(dialect_name, Rc::clone(&dialect));
+        dialect
+    }
+
+    pub fn register_dialect_hook<D, F>(&self, dialect: D, hook: F)
+    where
+        D: Into<interner::Symbol>,
+        F: Fn(&mut DialectInfo, &Context) + 'static,
+    {
+        let mut dialect_hooks = self.dialect_hooks.borrow_mut();
+        let registered_hooks =
+            dialect_hooks.entry(dialect.into()).or_insert_with(|| Vec::with_capacity(1));
+        registered_hooks.push(Box::new(hook));
     }
 
     pub fn create_constant(&self, data: impl Into<ConstantData>) -> ConstantId {

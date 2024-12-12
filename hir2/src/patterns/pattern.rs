@@ -243,7 +243,10 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_str_eq};
 
     use super::*;
-    use crate::{dialects::hir::*, *};
+    use crate::{
+        dialects::{builtin::Function, test::*},
+        *,
+    };
 
     /// In Miden, `n << 1` is vastly inferior to `n * 2` in cost, so reverse it
     ///
@@ -254,8 +257,8 @@ mod tests {
     }
     impl ConvertShiftLeftBy1ToMultiply {
         pub fn new(context: Rc<Context>) -> Self {
-            let dialect = context.get_or_register_dialect::<HirDialect>();
-            let op_name = <Shl as crate::OpRegistration>::register_with(&*dialect);
+            let dialect = context.get_or_register_dialect::<TestDialect>();
+            let op_name = dialect.expect_registered_name::<Shl>();
             let mut info = PatternInfo::new(
                 context,
                 "convert-shl1-to-mul2",
@@ -334,8 +337,12 @@ mod tests {
         let mut function = {
             let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
             let id = Ident::new("test".into(), SourceSpan::default());
+            let name = FunctionIdent {
+                module: id,
+                function: id,
+            };
             let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(id, signature).unwrap()
+            builder(name, signature).unwrap()
         };
 
         // Define function body

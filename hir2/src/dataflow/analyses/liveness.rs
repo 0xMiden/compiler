@@ -9,7 +9,7 @@ use crate::{
         AnalysisStateGuard, Backward, BuildableDataFlowAnalysis, CallControlFlowAction,
         DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice, Lattice,
     },
-    dialects::hir::Function,
+    dialects::builtin::Function,
     dominance::DominanceInfo,
     pass::Analysis,
     BlockRef, EntityRef, Op, Operation, ProgramPoint, Report, Spanned, ValueRef,

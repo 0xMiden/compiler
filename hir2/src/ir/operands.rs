@@ -51,6 +51,17 @@ impl OpOperandImpl {
     pub fn ty(&self) -> crate::Type {
         self.value().ty().clone()
     }
+
+    pub fn operand_group(&self) -> u8 {
+        let owner = self.owner.borrow();
+        let operands = owner.operands();
+        let operand_index = self.index as usize;
+        let group_index = operands
+            .groups()
+            .position(|group| group.range().contains(&operand_index))
+            .expect("broken operand reference!");
+        group_index as u8
+    }
 }
 impl fmt::Debug for OpOperandImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

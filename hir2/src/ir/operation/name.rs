@@ -5,10 +5,11 @@ use core::{
     ptr::{DynMetadata, Pointee},
 };
 
+use super::OpRegistration;
 use crate::{
     interner,
     traits::{Canonicalizable, TraitInfo},
-    Context, DialectName, RewritePatternSet,
+    Context, RewritePatternSet,
 };
 
 /// The operation name, or mnemonic, that uniquely identifies an operation.
@@ -21,7 +22,7 @@ pub struct OperationName(Rc<OperationInfo>);
 
 struct OperationInfo {
     /// The dialect of this operation
-    dialect: DialectName,
+    dialect: interner::Symbol,
     /// The opcode name for this operation
     name: interner::Symbol,
     /// The type id of the concrete type that implements this operation
@@ -35,20 +36,18 @@ struct OperationInfo {
 }
 
 impl OperationName {
-    pub fn new<O, S, T>(dialect: DialectName, name: S, traits: T) -> Self
+    pub fn new<T>(dialect: interner::Symbol, mut extra_traits: Vec<TraitInfo>) -> Self
     where
-        O: crate::Op,
-        S: Into<interner::Symbol>,
-        T: IntoIterator<Item = TraitInfo>,
+        T: OpRegistration,
     {
-        let type_id = TypeId::of::<O>();
-        let mut traits = traits.into_iter().collect::<Vec<_>>();
+        let type_id = TypeId::of::<T>();
+        let mut traits = Vec::from(<T as OpRegistration>::traits());
+        traits.append(&mut extra_traits);
         traits.sort_by_key(|ti| *ti.type_id());
-        let traits = traits.into_boxed_slice();
-        let get_canonicalization_patterns = <O as Canonicalizable>::get_canonicalization_patterns;
+        let get_canonicalization_patterns = <T as Canonicalizable>::get_canonicalization_patterns;
         let info = Rc::new(OperationInfo::new(
             dialect,
-            name.into(),
+            <T as OpRegistration>::name(),
             type_id,
             traits,
             get_canonicalization_patterns,
@@ -57,18 +56,19 @@ impl OperationName {
     }
 
     /// Returns the dialect name of this operation
-    pub fn dialect(&self) -> &DialectName {
-        &self.0.dialect
-    }
-
-    /// Returns the namespace to which this operation name belongs (i.e. dialect name)
-    pub fn namespace(&self) -> interner::Symbol {
-        self.0.dialect.as_symbol()
+    pub fn dialect(&self) -> interner::Symbol {
+        self.0.dialect
     }
 
     /// Returns the name/opcode of this operation
     pub fn name(&self) -> interner::Symbol {
         self.0.name
+    }
+
+    /// Returns the [TypeId] of the operation type
+    #[inline]
+    pub fn id(&self) -> &TypeId {
+        &self.0.type_id
     }
 
     /// Populates `rewrites` with the set of canonicalization patterns registered for this operation
@@ -81,6 +81,7 @@ impl OperationName {
     }
 
     /// Returns true if `T` is the concrete type that implements this operation
+    #[inline]
     pub fn is<T: 'static>(&self) -> bool {
         TypeId::of::<T>() == self.0.type_id
     }
@@ -91,7 +92,7 @@ impl OperationName {
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
         let type_id = TypeId::of::<Trait>();
-        self.0.traits.binary_search_by(|ti| ti.type_id().cmp(&type_id)).is_ok()
+        self.implements_trait_id(&type_id)
     }
 
     /// Returns true if this operation implements `trait`, where `trait` is the `TypeId` of a
@@ -148,13 +149,14 @@ impl OperationName {
         Some(unsafe { &mut *core::ptr::from_raw_parts_mut(ptr, metadata) })
     }
 
+    #[inline]
     fn get<Trait: ?Sized + 'static>(&self) -> Option<&TraitInfo> {
         let type_id = TypeId::of::<Trait>();
-        self.0
-            .traits
+        let traits = self.0.traits.as_ref();
+        traits
             .binary_search_by(|ti| ti.type_id().cmp(&type_id))
             .ok()
-            .map(|index| &self.0.traits[index])
+            .map(|index| &traits[index])
     }
 }
 impl fmt::Debug for OperationName {
@@ -165,23 +167,23 @@ impl fmt::Debug for OperationName {
 }
 impl fmt::Display for OperationName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", &self.namespace(), &self.name())
+        write!(f, "{}.{}", &self.dialect(), &self.name())
     }
 }
 
 impl OperationInfo {
     pub fn new(
-        dialect: DialectName,
+        dialect: interner::Symbol,
         name: interner::Symbol,
         type_id: TypeId,
-        traits: Box<[TraitInfo]>,
+        traits: Vec<TraitInfo>,
         get_canonicalization_patterns: fn(&mut RewritePatternSet, Rc<Context>),
     ) -> Self {
         Self {
             dialect,
             name,
             type_id,
-            traits,
+            traits: traits.into_boxed_slice(),
             get_canonicalization_patterns,
         }
     }

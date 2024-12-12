@@ -4,6 +4,7 @@ use core::{
     ptr::{null, DynMetadata, Pointee},
 };
 
+#[doc(hidden)]
 pub struct TraitInfo {
     /// The [TypeId] of the trait type, used as a unique key for [TraitImpl]s
     type_id: TypeId,

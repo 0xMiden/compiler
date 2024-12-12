@@ -447,7 +447,7 @@ impl quote::ToTokens for WithOperands<'_> {
                                         .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                         .with_message("invalid operand")
                                         .with_primary_label(span, #constraint_violation)
-                                        .with_secondary_label(value.span(), format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                        .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                         .into_report());
                                 }
                             }
@@ -477,7 +477,7 @@ impl quote::ToTokens for WithOperands<'_> {
                                     .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                     .with_message("invalid operand")
                                     .with_primary_label(span, #constraint_violation)
-                                    .with_secondary_label(value.span(), format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                    .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                     .into_report());
                             }
                         }
@@ -581,7 +581,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                             .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                             .with_message("invalid operation")
                                             .with_primary_label(span, #constraint_violation)
-                                            .with_secondary_label(op_result.span(), format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                            .with_secondary_label(op_result.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                             .into_report());
                                     }
                                 }
@@ -612,7 +612,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                             .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                             .with_message("invalid operation")
                                             .with_primary_label(span, #constraint_violation)
-                                            .with_secondary_label(value.span(), format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                            .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                             .into_report());
                                     }
                                 }
@@ -680,7 +680,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                     let __operation_name = {
                         let context = builder.context();
                         let dialect = context.get_or_register_dialect::<#dialect>();
-                        <Self as ::midenc_hir2::OpRegistration>::register_with(&*dialect)
+                        dialect.expect_registered_name::<Self>()
                     };
                     let __context = builder.context_rc();
                     let mut __op = __context.alloc_uninit_tracked::<Self>();
@@ -779,27 +779,17 @@ impl quote::ToTokens for OpDefinition {
                     ::midenc_hir_symbol::Symbol::intern(#opcode_str)
                 }
 
-                fn register_with(dialect: &dyn ::midenc_hir2::Dialect) -> ::midenc_hir2::OperationName {
-                    let opcode = <Self as ::midenc_hir2::OpRegistration>::name();
-                    dialect.get_or_register_op(
-                        opcode,
-                        |dialect_name, opcode| {
-                            ::midenc_hir2::OperationName::new::<Self, _, _>(
-                                dialect_name,
-                                opcode,
-                                [
-                                    ::midenc_hir2::traits::TraitInfo::new::<Self, dyn core::any::Any>(),
-                                    ::midenc_hir2::traits::TraitInfo::new::<Self, dyn ::midenc_hir2::Op>(),
-                                    #(
-                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #traits>(),
-                                    )*
-                                    #(
-                                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #implements>(),
-                                    )*
-                                ]
-                            )
-                        }
-                    )
+                fn traits() -> ::alloc::boxed::Box<[::midenc_hir2::traits::TraitInfo]> {
+                    ::alloc::boxed::Box::from([
+                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn core::any::Any>(),
+                        ::midenc_hir2::traits::TraitInfo::new::<Self, dyn ::midenc_hir2::Op>(),
+                        #(
+                            ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #traits>(),
+                        )*
+                        #(
+                            ::midenc_hir2::traits::TraitInfo::new::<Self, dyn #implements>(),
+                        )*
+                    ])
                 }
             }
         });
@@ -1897,9 +1887,36 @@ impl quote::ToTokens for OpVerifierImpl {
             )*
             impl ::midenc_hir2::OpVerifier for #op {
                 fn verify(&self, context: &::midenc_hir2::Context) -> Result<(), ::midenc_session::diagnostics::Report> {
-                    /// Type alias for the generated concrete verifier type
-                    #[allow(unused_parens)]
-                    type OpVerifierImpl<'a, T> = ::midenc_hir2::derive::DeriveVerifier<'a, T, (#(&'a dyn #derived_traits,)* #(&'a dyn #implemented_traits),*)>;
+                    /// This type represents the concrete set of derived traits for some op `T`, paired with a
+                    /// type-erased [::midenc_hir2::Operation] reference for an instance of that op.
+                    ///
+                    /// This is used for two purposes:
+                    ///
+                    /// 1. To generate a specialized [::midenc_hir2::OpVerifier] for `T` which contains all of the type and
+                    ///    trait-specific validation logic for that `T`.
+                    /// 2. To apply the specialized verifier for `T` using the wrapped [::midenc_hir2::Operation] reference.
+                    struct OpVerifierImpl<'a, T> {
+                        op: &'a ::midenc_hir2::Operation,
+                        _t: ::core::marker::PhantomData<T>,
+                        #[allow(unused_parens)]
+                        _derived: ::core::marker::PhantomData<(#(&'a dyn #derived_traits,)* #(&'a dyn #implemented_traits),*)>,
+                    }
+                    impl<'a, T> OpVerifierImpl<'a, T> {
+                        const fn new(op: &'a ::midenc_hir2::Operation) -> Self {
+                            Self {
+                                op,
+                                _t: ::core::marker::PhantomData,
+                                _derived: ::core::marker::PhantomData,
+                            }
+                        }
+                    }
+                    impl<'a, T> ::core::ops::Deref for OpVerifierImpl<'a, T> {
+                        type Target = ::midenc_hir2::Operation;
+
+                        fn deref(&self) -> &Self::Target {
+                            self.op
+                        }
+                    }
 
                     #[allow(unused_parens)]
                     impl<'a> ::midenc_hir2::OpVerifier for OpVerifierImpl<'a, #op>

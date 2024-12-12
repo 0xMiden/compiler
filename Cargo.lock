@@ -3264,6 +3264,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-codegen-masm2"
+version = "0.0.6"
+dependencies = [
+ "anyhow",
+ "bitcode",
+ "env_logger 0.11.5",
+ "hashbrown 0.14.5",
+ "inventory",
+ "log",
+ "miden-assembly",
+ "miden-core",
+ "miden-processor",
+ "miden-stdlib",
+ "miden-thiserror",
+ "midenc-dialect-hir",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "petgraph",
+ "proptest",
+ "serde 1.0.210",
+ "serde_bytes",
+ "smallvec",
+]
+
+[[package]]
 name = "midenc-compile"
 version = "0.0.7"
 dependencies = [
@@ -3312,6 +3338,17 @@ dependencies = [
  "tokio-util",
  "toml 0.8.19",
  "tui-input",
+]
+
+[[package]]
+name = "midenc-dialect-hir"
+version = "0.0.6"
+dependencies = [
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
 ]
 
 [[package]]

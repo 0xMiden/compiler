@@ -1,29 +1,30 @@
 [workspace]
 resolver = "2"
 members = [
-    "codegen/*",
-    "frontend-wasm",
-    "hir",
-    "hir2",
-    "hir-analysis",
-    "hir-macros",
-    "hir-symbol",
-    "hir-transform",
-    "hir-type",
-    "midenc",
-    "midenc-compile",
-    "midenc-debug",
-    "midenc-driver",
-    "midenc-session",
-    "sdk/*",
-    "tools/*",
-    "tests/integration",
+  "codegen/*",
+  "dialects/*",
+  "frontend-wasm",
+  "hir",
+  "hir2",
+  "hir-analysis",
+  "hir-macros",
+  "hir-symbol",
+  "hir-transform",
+  "hir-type",
+  "midenc",
+  "midenc-compile",
+  "midenc-debug",
+  "midenc-driver",
+  "midenc-session",
+  "sdk/*",
+  "tools/*",
+  "tests/integration",
 ]
 exclude = [
-    "sdk/.cargo",
-    "tests/rust-apps/fib",
-    "tests/rust-apps-wasm",
-    "cargo-ext/tests/data",
+  "sdk/.cargo",
+  "tests/rust-apps/fib",
+  "tests/rust-apps-wasm",
+  "cargo-ext/tests/data",
 ]
 
 [workspace.package]
@@ -46,10 +47,10 @@ anyhow = "1.0"
 bitflags = "2.4"
 bitcode = { version = "0.6.3", default-features = false, features = ["serde"] }
 clap = { version = "4.1", default-features = false, features = [
-    "derive",
-    "std",
-    "env",
-    "help",
+  "derive",
+  "std",
+  "env",
+  "help",
 ] }
 cranelift-entity = "0.108"
 cranelift-bforest = "0.108"
@@ -75,10 +76,10 @@ serde = { version = "1.0.208", features = ["serde_derive", "alloc", "rc"] }
 serde_repr = "0.1.19"
 serde_bytes = "0.11.15"
 smallvec = { version = "1.13", features = [
-    "union",
-    "const_generics",
-    "const_new",
-    "drain_filter",
+  "union",
+  "const_generics",
+  "const_new",
+  "drain_filter",
 ] }
 smallstr = { version = "0.3", features = ["union"] }
 thiserror = { package = "miden-thiserror", version = "1.0" }
@@ -112,7 +113,9 @@ miden-package = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/m
 #miden-processor = { git = "https://github.com/0xPolygonMiden/miden-vm", rev = "828557c28ca1d159bfe42195e7ea73256ce4aa06" }
 #miden-stdlib = { git = "https://github.com/0xPolygonMiden/miden-vm", rev = "828557c28ca1d159bfe42195e7ea73256ce4aa06" }
 midenc-codegen-masm = { version = "0.0.7", path = "codegen/masm" }
+midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }
 midenc-hir = { version = "0.0.7", path = "hir" }
+midenc-hir2 = { version = "0.0.7", path = "hir2" }
 midenc-hir-analysis = { version = "0.0.7", path = "hir-analysis" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }

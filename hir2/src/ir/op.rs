@@ -1,9 +1,9 @@
 use super::*;
-use crate::{any::AsAny, AttributeValue};
+use crate::{any::AsAny, traits::TraitInfo, AttributeValue};
 
 pub trait OpRegistration: Op {
     fn name() -> ::midenc_hir_symbol::Symbol;
-    fn register_with(dialect: &dyn Dialect) -> OperationName;
+    fn traits() -> Box<[TraitInfo]>;
 }
 
 pub trait BuildableOp<Args: core::marker::Tuple>: Op {

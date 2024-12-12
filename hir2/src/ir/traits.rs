@@ -5,10 +5,10 @@ mod types;
 
 use midenc_session::diagnostics::Severity;
 
-pub(crate) use self::info::TraitInfo;
 pub use self::{
     canonicalization::Canonicalizable,
     foldable::{FoldResult, Foldable, OpFoldResult},
+    info::TraitInfo,
     types::*,
 };
 use crate::{derive, AttributeValue, Context, Operation, Report, Spanned};
