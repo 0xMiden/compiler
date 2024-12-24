@@ -1,4 +1,5 @@
 mod name;
+mod path;
 mod symbol;
 mod symbol_use;
 mod table;
@@ -10,6 +11,7 @@ use smallvec::SmallVec;
 
 pub use self::{
     name::*,
+    path::*,
     symbol::{Symbol, SymbolRef},
     symbol_use::*,
     table::*,
@@ -111,17 +113,31 @@ impl Operation {
 
     /// Return the root symbol table in which this symbol is contained, if one exists.
     ///
-    /// The root symbol table does not necessarily know about this symbol, rather the symbol table
-    /// which "owns" this symbol may itself be a symbol that belongs to another symbol table. This
-    /// function traces this chain as far as it goes, and returns the highest ancestor in the tree.
+    /// The root symbol table is always the top-level ancestor (i.e. has no parent). In general
+    /// when we refer to the root symbol table, we are referring to an anonymous symbol table that
+    /// represents the global namespace in which all symbols are rooted. However, it may be the
+    /// case that the top-level ancestor is actually a symbol, in which case it is presumed that
+    /// it is a symbol in the global namespace, and that only symbols nested within it are
+    /// resolvable.
+    ///
+    /// Callers are expected to know this difference.
     pub fn root_symbol_table(&self) -> Option<OperationRef> {
-        let mut parent = self.nearest_symbol_table();
-        let mut found = None;
-        while let Some(nearest_symbol_table) = parent.take() {
-            found = Some(nearest_symbol_table);
-            parent = nearest_symbol_table.borrow().nearest_symbol_table();
+        let mut parent = Some(self.as_operation_ref());
+        while let Some(ancestor) = parent.take() {
+            let ancestor_op = ancestor.borrow();
+            let next = ancestor_op.parent_op();
+            if next.is_none() {
+                parent = if ancestor_op.implements::<dyn SymbolTable>() {
+                    Some(ancestor)
+                } else {
+                    None
+                };
+                break;
+            } else {
+                parent = next;
+            }
         }
-        found
+        parent
     }
 
     /// Returns the nearest [SymbolTable] from this operation.
@@ -229,7 +245,7 @@ impl Operation {
     /// This does not traverse into any nested symbol tables.
     pub fn walk_symbol_uses<F>(&self, mut callback: F) -> WalkResult
     where
-        F: FnMut(&SymbolUse) -> WalkResult,
+        F: FnMut(SymbolUseRef) -> WalkResult,
     {
         // Walk the uses on this operation.
         Self::walk_symbol_refs(self, &mut callback)?;
@@ -253,51 +269,46 @@ impl Operation {
     /// This does not traverse into any nested symbol tables.
     pub fn walk_symbol_uses_in_region<F>(from: &Region, mut callback: F) -> WalkResult
     where
-        F: FnMut(&SymbolUse) -> WalkResult,
+        F: FnMut(SymbolUseRef) -> WalkResult,
     {
         Self::walk_symbol_table_region(from, |op| Self::walk_symbol_refs(op, &mut callback))
     }
 
-    /// Get an iterator over all of the uses, for any symbol, that are nested within the given
-    /// operation 'from'.
+    /// Get an iterator over all of the uses, for any symbol, that are nested within the current
+    /// operation.
     ///
     /// This does not traverse into any nested symbol tables, and will also only return uses on
-    /// 'from' if it does not also define a symbol table. This is because we treat the region as the
-    /// boundary of the symbol table, and not the op itself.
-    pub fn all_symbol_uses(&self) -> SymbolUsesIter {
+    /// the current operation if it does not also define a symbol table. This is because we treat
+    /// the region as the boundary of the symbol table, and not the op itself.
+    pub fn all_symbol_uses(&self) -> SymbolUseRefsIter {
         let mut uses = VecDeque::new();
         if self.implements::<dyn SymbolTable>() {
-            return SymbolUsesIter::from(uses);
+            return SymbolUseRefsIter::from(uses);
         }
         let _ = Self::walk_symbol_refs(self, |symbol_use| {
-            // SAFETY: The symbol use reference given to us is borrowed from a `SymbolUseRef`,
-            // so recovering the original `SymbolUseRef` is always valid.
-            uses.push_back(unsafe { SymbolUseRef::from_raw(symbol_use) });
+            uses.push_back(symbol_use);
             WalkResult::Continue(())
         });
         for region in self.regions() {
             let _ = Self::walk_symbol_uses_in_region(&region, |symbol_use| {
-                // SAFETY: Same as above
-                uses.push_back(unsafe { SymbolUseRef::from_raw(symbol_use) });
+                uses.push_back(symbol_use);
                 WalkResult::Continue(())
             });
         }
-        SymbolUsesIter::from(uses)
+        SymbolUseRefsIter::from(uses)
     }
 
     /// Get an iterator over all of the uses, for any symbol, that are nested within the given
     /// region 'from'.
     ///
     /// This does not traverse into any nested symbol tables.
-    pub fn all_symbol_uses_in_region(from: &Region) -> SymbolUsesIter {
+    pub fn all_symbol_uses_in_region(from: &Region) -> SymbolUseRefsIter {
         let mut uses = VecDeque::new();
         let _ = Self::walk_symbol_uses_in_region(from, |symbol_use| {
-            // SAFETY: The symbol use reference given to us is borrowed from a `SymbolUseRef`,
-            // so recovering the original `SymbolUseRef` is always valid.
-            uses.push_back(unsafe { SymbolUseRef::from_raw(symbol_use) });
+            uses.push_back(symbol_use);
             WalkResult::Continue(())
         });
-        SymbolUsesIter::from(uses)
+        SymbolUseRefsIter::from(uses)
     }
 
     /// Walk all of the symbol references within the given operation, invoking the provided callback
@@ -306,11 +317,11 @@ impl Operation {
     /// The callbacks takes the symbol use.
     pub fn walk_symbol_refs<F>(op: &Operation, mut callback: F) -> WalkResult
     where
-        F: FnMut(&SymbolUse) -> WalkResult,
+        F: FnMut(SymbolUseRef) -> WalkResult,
     {
         for attr in op.attrs.iter() {
-            if let Some(symbol_name_attr) = attr.value_as::<SymbolNameAttr>() {
-                callback(&symbol_name_attr.user.borrow())?;
+            if let Some(attr) = attr.value_as::<SymbolPathAttr>() {
+                callback(attr.user)?;
             }
         }
 

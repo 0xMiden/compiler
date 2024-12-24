@@ -3265,7 +3265,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-codegen-masm2"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "anyhow",
  "bitcode",
@@ -3342,7 +3342,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-hir"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "midenc-hir-symbol",
  "midenc-hir2",
@@ -3493,35 +3493,24 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir2"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
  "bitvec",
  "blink-alloc",
  "compact_str",
- "cranelift-entity",
- "derive_more",
- "either",
  "env_logger 0.11.5",
  "hashbrown 0.14.5",
- "indexmap 2.5.0",
  "intrusive-collections",
  "inventory",
- "lalrpop",
- "lalrpop-util",
  "log",
- "miden-assembly",
  "miden-core",
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "midenc-hir-type",
  "midenc-session",
- "num-bigint",
- "num-traits 0.2.19",
- "paste",
- "petgraph",
  "pretty_assertions",
  "rustc-demangle",
  "rustc-hash",
@@ -3530,8 +3519,6 @@ dependencies = [
  "serde_bytes",
  "serde_repr",
  "smallvec",
- "typed-arena",
- "unicode-width",
 ]
 
 [[package]]

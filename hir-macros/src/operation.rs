@@ -980,19 +980,19 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                 }
 
                 #[doc = #symbol_doc]
-                pub fn #symbol(&self) -> &::midenc_hir2::SymbolNameAttr {
+                pub fn #symbol(&self) -> &::midenc_hir2::SymbolPathAttr {
                     self.op.get_typed_attribute(Self::#symbol_symbol()).unwrap()
                 }
 
                 #[doc = #symbol_mut_doc]
-                pub fn #symbol_mut(&mut self) -> &mut ::midenc_hir2::SymbolNameAttr {
+                pub fn #symbol_mut(&mut self) -> &mut ::midenc_hir2::SymbolPathAttr {
                     self.op.get_typed_attribute_mut(Self::#symbol_symbol()).unwrap()
                 }
 
                 #(
                     #[doc = #set_symbol_unchecked_doc_lines]
                 )*
-                pub fn #set_symbol_unchecked(&mut self, value: ::midenc_hir2::SymbolNameAttr) {
+                pub fn #set_symbol_unchecked(&mut self, value: ::midenc_hir2::SymbolPathAttr) {
                     self.op.set_attribute(Self::#symbol_symbol(), Some(value));
                 }
             });

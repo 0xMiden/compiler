@@ -1,6 +1,9 @@
-use super::{generate_symbol_name, Symbol, SymbolName, SymbolNameAttr, SymbolRef};
+use super::{
+    generate_symbol_name, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolPathAttr,
+    SymbolRef,
+};
 use crate::{
-    traits::Terminator, FxHashMap, IteratorExt, Op, Operation, OperationRef, ProgramPoint, Report,
+    traits::Terminator, FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report,
     UnsafeIntrusiveEntityRef,
 };
 
@@ -32,6 +35,14 @@ pub trait SymbolTable {
     /// Get the entry for `name` in this table
     fn get(&self, name: SymbolName) -> Option<SymbolRef> {
         self.symbol_manager().lookup(name)
+    }
+
+    /// Resolve the entry for `path` in this table, or via the root symbol table
+    fn resolve(&self, path: &SymbolPath) -> Option<SymbolRef> {
+        let found = self.symbol_manager().lookup_symbol_ref(path)?;
+        let op = found.borrow();
+        let sym = op.as_symbol().expect("symbol table resolved to a non-symbol op!");
+        Some(unsafe { SymbolRef::from_raw(sym) })
     }
 
     /// Insert `entry` in the symbol table, but only if no other symbol with the same name exists.
@@ -149,6 +160,104 @@ impl SymbolMap {
     pub fn get_op(&self, name: impl Into<SymbolName>) -> Option<OperationRef> {
         let name = name.into();
         self.symbols.get(&name).map(|symbol| symbol.borrow().as_operation_ref())
+    }
+
+    /// Get the symbol referenced by `attr` as an [OperationRef], or `None` if undefined.
+    ///
+    /// This function will search for the symbol path according to whether the path is absolute or
+    /// relative:
+    ///
+    /// * Absolute paths will be resolved by traversing up the operation tree to the root operation,
+    ///   which will be expected to be an anonymous SymbolTable, and then resolve path components
+    ///   from there.
+    /// * Relative paths will be resolved from the current SymbolTable
+    ///
+    /// In the special case where a absolute path is given, but the root operation is also a Symbol,
+    /// it is presumed that what we have found is not the absolute root which represents the global
+    /// namespace, but rather a symbol defined in the global namespace. This means that only
+    /// children of that symbol are possibly resolvable (as we have no way to reach other symbols
+    /// defined in the global namespace). In short, we only attempt to resolve absolute paths where
+    /// the first component matches the root symbol. If it matches, then the symbol is resolved
+    /// normally from there, otherwise `None` is returned.
+    pub fn resolve(&self, symbol_table: &Operation, attr: &SymbolPath) -> Option<OperationRef> {
+        let mut components = attr.components();
+
+        // Resolve absolute paths via the root symbol table
+        if attr.is_absolute() {
+            let _ = components.next();
+
+            // Locate the root operation
+            let root = if let Some(mut root) = symbol_table.parent_op() {
+                while let Some(ancestor) = root.borrow().parent_op() {
+                    root = ancestor;
+                }
+                root
+            } else {
+                symbol_table.as_operation_ref()
+            };
+
+            let root_op = root.borrow();
+
+            // If the root is also a Symbol, then we aren't actually in the root namespace, but
+            // in one of the symbols within the root namespace. As a result, we can only resolve
+            // absolute symbol paths which are children of `root`, as we cannot reach any other
+            // symbols in the root namespace.
+            if let Some(root_symbol) = root_op.as_trait::<dyn Symbol>() {
+                match components.next()? {
+                    SymbolNameComponent::Leaf(name) => {
+                        return if name == root_symbol.name() {
+                            Some(root)
+                        } else {
+                            None
+                        };
+                    }
+                    SymbolNameComponent::Component(name) => {
+                        if name != root_symbol.name() {
+                            return None;
+                        }
+                    }
+                    SymbolNameComponent::Root => unreachable!(),
+                }
+            }
+
+            // Resolve the symbol from `root`
+            let root_symbol_table = root_op.as_trait::<dyn SymbolTable>()?;
+            let symbol_manager = root_symbol_table.symbol_manager();
+            symbol_manager.symbols().resolve_components(components)
+        } else {
+            self.resolve_components(components)
+        }
+    }
+
+    fn resolve_components(
+        &self,
+        mut components: impl ExactSizeIterator<Item = SymbolNameComponent>,
+    ) -> Option<OperationRef> {
+        match components.next()? {
+            super::SymbolNameComponent::Component(name) => {
+                let mut found = self.get_op(name);
+                loop {
+                    let op_ref = found.take()?;
+                    let op = op_ref.borrow();
+                    let symbol_table = op.as_trait::<dyn SymbolTable>()?;
+                    let manager = symbol_table.symbol_manager();
+                    match components.next()? {
+                        super::SymbolNameComponent::Component(name) => {
+                            found = manager.lookup_op(name);
+                        }
+                        super::SymbolNameComponent::Leaf(name) => {
+                            assert_eq!(components.next(), None);
+                            break manager.lookup_op(name);
+                        }
+                        super::SymbolNameComponent::Root => unreachable!(),
+                    }
+                }
+            }
+            super::SymbolNameComponent::Leaf(name) => self.get_op(name),
+            super::SymbolNameComponent::Root => {
+                unreachable!("root component should have already been consumed")
+            }
+        }
     }
 
     /// Returns true if a symbol named `name` is in the map
@@ -301,11 +410,6 @@ impl<'a> core::ops::DerefMut for SymbolsMut<'a> {
 ///
 /// See [SymbolManagerMut] for read/write use cases.
 pub struct SymbolManager<'a> {
-    /// The name associated with this symbol table
-    ///
-    /// All symbols defined within this table, are qualified with this name
-    #[allow(unused)]
-    name: SymbolName,
     /// The [SymbolTable] operation we're managing
     symbol_table: &'a Operation,
     /// The symbols registered under `symbol_table`.
@@ -317,15 +421,15 @@ pub struct SymbolManager<'a> {
 impl<'a> SymbolManager<'a> {
     /// Create a new [SymbolManager] from the given operation and symbol mappings
     pub fn new(symbol_table: &'a Operation, symbols: Symbols<'a>) -> Self {
-        let name = symbol_table
-            .as_symbol()
-            .expect("expected symbol table to implement Symbol")
-            .name();
         Self {
-            name,
             symbol_table,
             symbols,
         }
+    }
+
+    /// Returns true if this symbol table corresponds to the root namespace
+    pub fn is_root(&self) -> bool {
+        self.symbol_table.parent().is_none()
     }
 
     /// Returns a reference to the underlying symbol table [Operation]
@@ -349,24 +453,15 @@ impl<'a> SymbolManager<'a> {
 
     /// Get the symbol referenced by `attr` as an [OperationRef], or `None` if undefined.
     ///
-    /// This function will search for the symbol relative to the current symbol table, for example:
-    ///
-    /// * `::foo::bar::baz` will be resolved relative to the nearest parent symbol table which
-    ///   corresponds to a prefix of the path, falling back to the root symbol table if there is
-    ///   no common prefix.
-    /// * `bar::baz` is presumed to be in a child symbol table named `bar`, in which the symbol
-    ///   `baz` will be resolved.
-    /// * `baz` will be resolved in the current symbol table as a child of the symbol table op
-    pub fn lookup_symbol_ref(&self, _attr: &SymbolNameAttr) -> Option<OperationRef> {
-        todo!()
+    /// See [SymbolMap::resolve] for more details about symbol resolution.
+    pub fn lookup_symbol_ref(&self, attr: &SymbolPath) -> Option<OperationRef> {
+        self.symbols.resolve(self.symbol_table, attr)
     }
 }
 
 impl<'a> From<&'a Operation> for SymbolManager<'a> {
     fn from(symbol_table: &'a Operation) -> Self {
-        let name = assert_symbol_table(symbol_table);
         Self {
-            name,
             symbol_table,
             symbols: SymbolMap::build(symbol_table).into(),
         }
@@ -378,11 +473,6 @@ impl<'a> From<&'a Operation> for SymbolManager<'a> {
 /// It is designed to be able to handle both dynamically-computed symbol table mappings, or use
 /// cached mappings provided by the [SymbolTable] op itself.
 pub struct SymbolManagerMut<'a> {
-    /// The name associated with this symbol table
-    ///
-    /// All symbols defined within this table, are qualified with this name
-    #[allow(unused)]
-    name: SymbolName,
     /// The [SymbolTable] operation we're managing
     symbol_table: &'a mut Operation,
     /// The symbols registered under `symbol_table`.
@@ -393,11 +483,7 @@ pub struct SymbolManagerMut<'a> {
 impl<'a> SymbolManagerMut<'a> {
     /// Create a new [SymbolManager] from the given operation and symbol mappings
     pub fn new(symbol_table: &'a mut Operation, symbols: SymbolsMut<'a>) -> Self {
-        let name = symbol_table
-            .symbol_name_if_symbol()
-            .expect("expected symbol table to implement Symbol trait");
         Self {
-            name,
             symbol_table,
             symbols,
         }
@@ -428,16 +514,9 @@ impl<'a> SymbolManagerMut<'a> {
 
     /// Get the symbol referenced by `attr` as an [OperationRef], or `None` if undefined.
     ///
-    /// This function will search for the symbol relative to the current symbol table, for example:
-    ///
-    /// * `::foo::bar::baz` will be resolved relative to the nearest parent symbol table which
-    ///   corresponds to a prefix of the path, falling back to the root symbol table if there is
-    ///   no common prefix.
-    /// * `bar::baz` is presumed to be in a child symbol table named `bar`, in which the symbol
-    ///   `baz` will be resolved.
-    /// * `baz` will be resolved in the current symbol table as a child of the symbol table op
-    pub fn lookup_symbol_ref(&self, _attr: &SymbolNameAttr) -> Option<OperationRef> {
-        todo!()
+    /// See [SymbolMap::resolve] for more details about symbol resolution.
+    pub fn lookup_symbol_ref(&self, attr: &SymbolPath) -> Option<OperationRef> {
+        self.symbols.resolve(self.symbol_table, attr)
     }
 
     /// Remove the given [Symbol] op from the table
@@ -635,9 +714,9 @@ impl<'a> SymbolManagerMut<'a> {
             let mut user = user.borrow_mut();
             let mut user_op = user.owner.borrow_mut();
             let symbol_name_attr = user_op
-                .get_typed_attribute_mut::<SymbolNameAttr>(user.attr)
+                .get_typed_attribute_mut::<SymbolPathAttr>(user.attr)
                 .expect("invalid symbol use");
-            symbol_name_attr.name = to;
+            symbol_name_attr.path.set_name(to);
         }
 
         Ok(())
@@ -664,26 +743,10 @@ impl<'a> SymbolManagerMut<'a> {
 
 impl<'a> From<&'a mut Operation> for SymbolManagerMut<'a> {
     fn from(symbol_table: &'a mut Operation) -> Self {
-        let name = assert_symbol_table(&*symbol_table);
         let symbols = SymbolMap::build(&*symbol_table).into();
         Self {
-            name,
             symbol_table,
             symbols,
         }
     }
-}
-
-/// Assert that `op` is a valid [SymbolTable] implementation
-///
-/// Returns the symbol name of the op when successful
-fn assert_symbol_table(op: &Operation) -> SymbolName {
-    let symbol = op.as_symbol().expect("expected operation to implement the Symbol trait");
-    assert_eq!(op.num_regions(), 1, "expected operation to have a single region");
-    assert!(
-        op.region(0).body().iter().has_single_element(),
-        "expected single-region, single-block operation"
-    );
-
-    symbol.name()
 }

@@ -1,6 +1,11 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
-use midenc_hir2::{constants::ConstantBytesAttr, derive::operation, traits::*, *};
+use midenc_hir2::{
+    constants::{ConstantData, ConstantId},
+    derive::operation,
+    traits::*,
+    *,
+};
 
 use crate::HirDialect;
 
@@ -59,15 +64,26 @@ impl Foldable for Constant {
 )]
 pub struct ConstantBytes {
     #[attr]
-    value: ConstantBytesAttr,
+    id: ConstantId,
     #[result]
     result: AnyArrayOf<UInt8>,
 }
+
 impl InferTypeOpInterface for ConstantBytes {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let len = self.value().size_in_bytes();
+        let len = self.size_in_bytes();
         self.result_mut().set_type(Type::Array(Box::new(Type::U8), len));
 
         Ok(())
+    }
+}
+
+impl ConstantBytes {
+    pub fn size_in_bytes(&self) -> usize {
+        self.as_operation().context().get_constant_size_in_bytes(*self.id())
+    }
+
+    pub fn value(&self) -> Arc<ConstantData> {
+        self.as_operation().context().get_constant(*self.id())
     }
 }

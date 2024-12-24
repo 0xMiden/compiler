@@ -245,10 +245,37 @@ impl<'a> OpEmitter<'a> {
     /// Execute the given procedure.
     ///
     /// A function called using this operation is invoked in the same memory context as the caller.
-    pub fn exec(&mut self, callee: &hir::ExternalFunction, span: SourceSpan) {
-        let import = callee;
-        let callee = import.id;
-        let signature = &import.signature;
+    pub fn exec(
+        &mut self,
+        callee: masm::InvocationTarget,
+        signature: &hir::Signature,
+        span: SourceSpan,
+    ) {
+        self.process_call_signature(&callee, signature, span);
+
+        self.emit(masm::Instruction::Exec(callee), span);
+    }
+
+    /// Execute the given procedure in a new context.
+    ///
+    /// A function called using this operation is invoked in a new memory context.
+    pub fn call(
+        &mut self,
+        callee: masm::InvocationTarget,
+        signature: &hir::Signature,
+        span: SourceSpan,
+    ) {
+        self.process_call_signature(&callee, signature, span);
+
+        self.emit(masm::Instruction::Call(callee), span);
+    }
+
+    fn process_call_signature(
+        &mut self,
+        callee: &masm::InvocationTarget,
+        signature: &hir::Signature,
+        span: SourceSpan,
+    ) {
         for i in 0..signature.arity() {
             let param = &signature.params[i];
             let arg = self.stack.pop().expect("operand stack is empty");
@@ -358,7 +385,5 @@ impl<'a> OpEmitter<'a> {
         for result in signature.results.iter().rev() {
             self.push(result.ty.clone());
         }
-
-        self.emit(masm::Instruction::Exec(callee), span);
     }
 }

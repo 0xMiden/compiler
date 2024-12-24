@@ -3,7 +3,7 @@ use core::fmt;
 
 use miden_core::utils::DisplayHex;
 use miden_processor::Digest;
-use midenc_hir2::{constants::ConstantData, dialects::builtin, FunctionIdent};
+use midenc_hir2::{constants::ConstantData, dialects::builtin};
 
 use crate::{lower::NativePtr, masm};
 
@@ -13,11 +13,11 @@ pub struct MasmComponent {
     ///
     /// This function is responsible for initializing global variables and writing data segments
     /// into memory at program startup, and at cross-context call boundaries (in callee prologue).
-    pub init: Option<FunctionIdent>,
+    pub init: Option<masm::InvocationTarget>,
     /// The symbol name of the program entrypoint, if this component is executable.
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.
-    pub entrypoint: Option<FunctionIdent>,
+    pub entrypoint: Option<masm::InvocationTarget>,
     /// The kernel library to link against
     pub kernel: Option<masm::KernelLibrary>,
     /// The rodata segments of this component keyed by the offset of the segment
@@ -26,12 +26,6 @@ pub struct MasmComponent {
     pub stack_pointer: Option<u32>,
     /// The set of modules in this component
     pub modules: Vec<Box<masm::Module>>,
-    /// The set of components nested within this component.
-    ///
-    /// Nested components are typically only visible internally. When assembling to MAST, modules
-    /// and rodata from nested components are merged into their parent component. Nested components
-    /// must either have an unspecified kernel, or the same kernel as their ancestors.
-    pub components: Vec<Box<MasmComponent>>,
 }
 
 /// Represents a read-only data segment, combined with its content digest

@@ -50,51 +50,16 @@ impl fmt::Display for ConstantId {
     }
 }
 
-#[derive(Clone)]
-pub struct ConstantBytesAttr {
-    id: ConstantId,
-    data: Arc<ConstantData>,
-}
-impl ConstantBytesAttr {
-    pub fn new(id: ConstantId, data: Arc<ConstantData>) -> Self {
-        Self { id, data }
-    }
+define_attr_type!(ConstantId);
 
-    pub fn id(&self) -> ConstantId {
-        self.id
-    }
-
-    pub fn data(&self) -> Arc<ConstantData> {
-        self.data.clone()
-    }
-
-    pub fn size_in_bytes(&self) -> usize {
-        self.data.len()
-    }
-}
-define_attr_type!(ConstantBytesAttr);
-impl Eq for ConstantBytesAttr {}
-impl PartialEq for ConstantBytesAttr {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-impl core::hash::Hash for ConstantBytesAttr {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-impl fmt::Debug for ConstantBytesAttr {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("ConstantBytesAttr")
-            .field("id", &self.id)
-            .finish_non_exhaustive()
-    }
-}
-impl crate::formatter::PrettyPrint for ConstantBytesAttr {
-    fn render(&self) -> miden_core::prettier::Document {
-        use crate::formatter::*;
-        display(&self.data)
+impl crate::AttrPrinter for ConstantId {
+    fn print(
+        &self,
+        _flags: &crate::OpPrintingFlags,
+        context: &crate::Context,
+    ) -> crate::formatter::Document {
+        let data = context.get_constant(*self);
+        crate::formatter::display(data)
     }
 }
 
@@ -240,7 +205,7 @@ impl ConstantData {
 
 /// This maintains the storage for constants used within a function
 #[derive(Default)]
-pub struct ConstantPool {
+pub(crate) struct ConstantPool {
     /// This mapping maintains the insertion order as long as Constants are created with
     /// sequentially increasing integers.
     ///
@@ -255,6 +220,7 @@ pub struct ConstantPool {
 }
 impl ConstantPool {
     /// Returns true if the pool is empty
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.constants.is_empty()
     }
@@ -275,6 +241,7 @@ impl ConstantPool {
     }
 
     /// Returns true if this pool contains the given constant data
+    #[allow(unused)]
     pub fn contains(&self, data: &ConstantData) -> bool {
         self.cache.contains_key(data)
     }
@@ -295,6 +262,7 @@ impl ConstantPool {
     }
 
     /// Same as [ConstantPool::insert], but for data already allocated in an [Arc].
+    #[allow(unused)]
     pub fn insert_arc(&mut self, data: Arc<ConstantData>) -> ConstantId {
         if let Some(cst) = self.cache.get(data.as_ref()) {
             return *cst;
@@ -308,6 +276,7 @@ impl ConstantPool {
 
     /// Traverse the contents of the pool
     #[inline]
+    #[allow(unused)]
     pub fn iter(&self) -> impl Iterator<Item = (ConstantId, Arc<ConstantData>)> + '_ {
         self.constants.iter().map(|(k, v)| (*k, Arc::clone(v)))
     }

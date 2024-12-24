@@ -48,7 +48,6 @@ fn unwrap_failed_fold_result(message: &'static str) -> ! {
 }
 
 /// Represents a single result value of a folded operation.
-#[derive(Debug)]
 pub enum OpFoldResult {
     /// The value is constant
     Attribute(Box<dyn AttributeValue>),
@@ -88,10 +87,10 @@ impl PartialEq for OpFoldResult {
         }
     }
 }
-impl core::fmt::Display for OpFoldResult {
+impl core::fmt::Debug for OpFoldResult {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Attribute(ref attr) => attr.pretty_print(f),
+            Self::Attribute(attr) => core::fmt::Debug::fmt(attr, f),
             Self::Value(ref value) => write!(f, "{}", value.borrow().id()),
         }
     }

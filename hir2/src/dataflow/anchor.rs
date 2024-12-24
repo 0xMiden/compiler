@@ -1,7 +1,7 @@
 use core::{any::Any, fmt, hash::Hash, ptr::NonNull};
 
 use super::ProgramPoint;
-use crate::{BlockRef, DynHash, DynPartialEq, Insert, OperationRef, Spanned, ValueRef};
+use crate::{BlockRef, DynHash, DynPartialEq, Insert, OperationRef, SourceSpan, Spanned, ValueRef};
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
 ///
@@ -60,7 +60,7 @@ impl Hash for LatticeAnchorRef {
 }
 
 impl Spanned for LatticeAnchorRef {
-    fn span(&self) -> miden_assembly::SourceSpan {
+    fn span(&self) -> SourceSpan {
         unsafe { self.0.as_ref().span() }
     }
 }

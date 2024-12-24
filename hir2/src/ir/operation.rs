@@ -412,19 +412,33 @@ impl Operation {
 impl Operation {
     pub fn set_symbol_attribute(
         &mut self,
-        name: impl Into<interner::Symbol>,
+        attr_name: impl Into<interner::Symbol>,
         symbol: impl AsSymbolRef,
     ) {
-        let name = name.into();
+        let attr_name = attr_name.into();
         let mut symbol = symbol.as_symbol_ref();
 
-        // Store the underlying attribute value
+        // Do not allow self-references
+        //
+        // NOTE: We are using this somewhat convoluted way to check identity of the symbol,
+        // so that we do not attempt to borrow `self` again if `symbol` and `self` are the
+        // same operation. That would fail due to the mutable reference to `self` we are
+        // already holding.
+        let (data_ptr, _) = SymbolRef::as_ptr(&symbol).to_raw_parts();
+        assert!(
+            !core::ptr::addr_eq(data_ptr, self.container()),
+            "a symbol cannot use itself, except via nested operations"
+        );
+
+        // Track the usage of `symbol` by `self`
         let user = self.context().alloc_tracked(SymbolUse {
             owner: self.as_operation_ref(),
-            attr: name,
+            attr: attr_name,
         });
-        if self.has_attribute(name) {
-            let attr = self.get_typed_attribute_mut::<SymbolNameAttr>(name).unwrap();
+
+        // Store the underlying attribute value
+        if self.has_attribute(attr_name) {
+            let attr = self.get_typed_attribute_mut::<SymbolPathAttr>(attr_name).unwrap();
             let symbol = symbol.borrow();
             assert!(
                 !attr.user.is_linked(),
@@ -432,27 +446,19 @@ impl Operation {
                  first"
             );
             attr.user = user;
-            attr.name = symbol.name();
-            attr.path = symbol.components().into_path(true);
+            attr.path = symbol.path();
         } else {
             let attr = {
                 let symbol = symbol.borrow();
-                let name = symbol.name();
-                let path = symbol.components().into_path(true);
-                SymbolNameAttr { name, path, user }
+                SymbolPathAttr {
+                    user,
+                    path: symbol.path(),
+                }
             };
-            self.set_attribute(name, Some(attr));
+            self.set_attribute(attr_name, Some(attr));
         }
 
-        // Add `self` as a user of `symbol`, unless `self` is `symbol`
-        let (data_ptr, _) = SymbolRef::as_ptr(&symbol).to_raw_parts();
-        if core::ptr::addr_eq(data_ptr, self.container()) {
-            return;
-        }
-
-        let mut symbol = symbol.borrow_mut();
-        let symbol_uses = symbol.uses_mut();
-        symbol_uses.push_back(user);
+        symbol.borrow_mut().insert_use(user);
     }
 }
 

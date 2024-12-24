@@ -2,65 +2,122 @@ use core::fmt;
 
 use super::{Context, Operation};
 use crate::{
-    formatter::PrettyPrint,
+    formatter::{Document, PrettyPrint},
     matchers::Matcher,
     traits::{SingleBlock, SingleRegion},
-    CallableOpInterface, EntityWithId, Op, Value,
+    AttributeValue, CallableOpInterface, EntityWithId, Op, Value,
 };
 
 #[derive(Default)]
-pub struct OpPrintingFlags;
+pub struct OpPrintingFlags {
+    /// This field is here to silence warnings about using Default with this struct when it has
+    /// no fields. We plan on adding them in the future, so for future compatibility, we're
+    /// ensuring at least one field is present.
+    _placeholder: core::marker::PhantomData<()>,
+}
 
 /// The `OpPrinter` trait is expected to be implemented by all [Op] impls as a prequisite.
 ///
 /// The actual implementation is typically generated as part of deriving [Op].
 pub trait OpPrinter {
-    fn print(
-        &self,
-        flags: &OpPrintingFlags,
-        context: &Context,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result;
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document;
 }
 
 impl<T: Op> OpPrinter for T {
-    default fn print(
-        &self,
-        flags: &OpPrintingFlags,
-        context: &Context,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
-        <Operation as OpPrinter>::print(self.as_operation(), flags, context, f)
+    default fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
+        <Operation as OpPrinter>::print(self.as_operation(), flags, context)
     }
 }
 
 impl<T: PrettyPrint + Op> OpPrinter for T {
-    default fn print(
-        &self,
-        _flags: &OpPrintingFlags,
-        _context: &Context,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
-        PrettyPrint::pretty_print(self, f)
+    default fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> Document {
+        PrettyPrint::render(self)
     }
 }
 
 impl OpPrinter for Operation {
     #[inline]
-    fn print(
-        &self,
-        _flags: &OpPrintingFlags,
-        _context: &Context,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
-        write!(f, "{}", self.render())
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
+        let printer = OperationPrinter {
+            op: self,
+            flags,
+            context,
+        };
+        printer.render()
     }
 }
 
 impl fmt::Display for Operation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.render())
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let flags = OpPrintingFlags::default();
+        let context = self.context();
+        let printer = OperationPrinter {
+            op: self,
+            flags: &flags,
+            context,
+        };
+        write!(f, "{}", printer.render())
     }
+}
+
+pub trait AttrPrinter {
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document;
+}
+
+impl<T: PrettyPrint + AttributeValue> AttrPrinter for T {
+    default fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> Document {
+        PrettyPrint::render(self)
+    }
+}
+
+impl AttrPrinter for crate::Attribute {
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
+        use crate::formatter::*;
+
+        match self.value() {
+            None => text(format!("#[{}]", self.name.as_str())),
+            Some(value) => {
+                const_text("#[")
+                    + text(self.name.as_str())
+                    + const_text(" = ")
+                    + value.print(flags, context)
+                    + const_text("]")
+            }
+        }
+    }
+}
+
+impl AttrPrinter for crate::OpFoldResult {
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
+        use crate::formatter::*;
+
+        match self {
+            Self::Attribute(attr) => attr.print(flags, context),
+            Self::Value(value) => display(value.borrow().id()),
+        }
+    }
+}
+
+impl<T: AttrPrinter> AttrPrinter for [T] {
+    fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
+        use crate::formatter::*;
+
+        let mut doc = Document::Empty;
+        for (i, item) in self.iter().enumerate() {
+            if i == 0 {
+                doc += const_text(", ");
+            }
+
+            doc += item.print(flags, context);
+        }
+        doc
+    }
+}
+
+struct OperationPrinter<'a> {
+    op: &'a Operation,
+    flags: &'a OpPrintingFlags,
+    context: &'a Context,
 }
 
 /// The generic format for printed operations is:
@@ -80,17 +137,17 @@ impl fmt::Display for Operation {
 /// <dialect>.<op> @<symbol>(<abi_params..>) -> <abi_results..> #<attr>.. {
 ///     ...
 /// }
-impl PrettyPrint for Operation {
+impl PrettyPrint for OperationPrinter<'_> {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
 
         let is_single_region_single_block =
-            self.implements::<dyn SingleBlock>() && self.implements::<dyn SingleRegion>();
-        let is_callable_op = self.implements::<dyn CallableOpInterface>();
-        let is_symbol = self.is_symbol();
-        let no_operands = self.operands().is_empty();
+            self.op.implements::<dyn SingleBlock>() && self.op.implements::<dyn SingleRegion>();
+        let is_callable_op = self.op.implements::<dyn CallableOpInterface>();
+        let is_symbol = self.op.is_symbol();
+        let no_operands = self.op.operands().is_empty();
 
-        let results = self.results();
+        let results = self.op.results();
         let mut doc = if !results.is_empty() {
             let results = results.iter().enumerate().fold(Document::Empty, |doc, (i, result)| {
                 if i > 0 {
@@ -103,10 +160,10 @@ impl PrettyPrint for Operation {
         } else {
             Document::Empty
         };
-        doc += display(self.name()) + const_text(" ");
+        doc += display(self.op.name()) + const_text(" ");
         let doc = if is_callable_op && is_symbol && no_operands {
-            let name = self.as_symbol().unwrap().name();
-            let callable = self.as_trait::<dyn CallableOpInterface>().unwrap();
+            let name = self.op.as_symbol().unwrap().name();
+            let callable = self.op.as_trait::<dyn CallableOpInterface>().unwrap();
             let signature = callable.signature();
             let mut doc = doc + display(signature.visibility) + text(format!(" @{}", name));
             if let Some(body) = callable.get_callable_region() {
@@ -138,11 +195,11 @@ impl PrettyPrint for Operation {
             doc
         } else {
             let mut is_constant = false;
-            let doc = if let Some(value) = crate::matchers::constant().matches(self) {
+            let doc = if let Some(value) = crate::matchers::constant().matches(self.op) {
                 is_constant = true;
-                doc + value.render()
+                doc + value.print(self.flags, self.context)
             } else {
-                let operands = self.operands();
+                let operands = self.op.operands();
                 if !operands.is_empty() {
                     operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
                         let operand = operand.borrow();
@@ -174,13 +231,13 @@ impl PrettyPrint for Operation {
             if is_constant {
                 doc
             } else {
-                self.attrs.iter().fold(doc, |doc, attr| {
+                self.op.attrs.iter().fold(doc, |doc, attr| {
                     let doc = doc + const_text(" ");
                     if let Some(value) = attr.value() {
                         doc + const_text("#[")
                             + display(attr.name)
                             + const_text(" = ")
-                            + value.render()
+                            + value.print(self.flags, self.context)
                             + const_text("]")
                     } else {
                         doc + text(format!("#[{}]", &attr.name))
@@ -189,8 +246,8 @@ impl PrettyPrint for Operation {
             }
         };
 
-        if self.has_regions() {
-            self.regions.iter().fold(doc, |doc, region| {
+        if self.op.has_regions() {
+            self.op.regions.iter().fold(doc, |doc, region| {
                 let blocks = region.body().iter().enumerate().fold(
                     Document::Empty,
                     |mut doc, (block_index, block)| {
@@ -203,7 +260,7 @@ impl PrettyPrint for Operation {
                                 if i > 0 {
                                     doc += nl();
                                 }
-                                doc + op.render()
+                                doc + op.print(self.flags, self.context)
                             },
                         );
                         if is_single_region_single_block && no_operands {

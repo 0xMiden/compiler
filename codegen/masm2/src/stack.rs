@@ -225,9 +225,7 @@ impl TryFrom<&Operand> for Immediate {
 
     fn try_from(operand: &Operand) -> Result<Self, Self::Error> {
         match &operand.operand {
-            OperandType::Const(value) => {
-                value.downcast_ref::<Immediate>().map(|boxed| *boxed).ok_or(())
-            }
+            OperandType::Const(value) => value.downcast_ref::<Immediate>().copied().ok_or(()),
             _ => Err(()),
         }
     }
@@ -408,6 +406,7 @@ impl OperandStack {
     }
 
     /// Drops the top operand on the stack
+    #[allow(clippy::should_implement_trait)]
     pub fn drop(&mut self) {
         self.stack.pop().expect("operand stack is empty");
     }
@@ -566,6 +565,7 @@ mod tests {
         let three = Immediate::U32(3);
 
         #[inline]
+        #[allow(unused)]
         fn as_imms(word: [Operand; 4]) -> [Immediate; 4] {
             [
                 (&word[0]).try_into().unwrap(),

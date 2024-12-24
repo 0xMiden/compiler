@@ -19,6 +19,10 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///
 /// Modules can contain one of the following entities:
 ///
+/// * [Segment], describing how a specific region of memory should be initialized (i.e. what content
+///   it should be assumed to contain on program start). Segment definitions must not conflict
+///   within a shared-everything boundary. For example, multiple segments within the same module,
+///   or segments defined in sibling modules of the same [Component].
 /// * [Function], either a declaration of an externally-defined function, or a definition.
 ///   Declarations are required in order to reference functions which are not in the compilation
 ///   graph, but are expected to be provided at runtime. The difference between the two depends on

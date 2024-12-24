@@ -2,14 +2,31 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{IsolatedFromAbove, SingleRegion},
-    Block, BlockRef, CallableOpInterface, FunctionIdent, Op, Operation, RegionKind,
-    RegionKindInterface, RegionRef, Signature, Symbol, SymbolName, SymbolUse, SymbolUseList, Type,
+    Block, BlockRef, CallableOpInterface, Ident, Op, Operation, RegionKind, RegionKindInterface,
+    RegionRef, Signature, Symbol, SymbolName, SymbolUse, SymbolUseList, Type,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
 
 pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LocalId(u16);
+impl LocalId {
+    fn new(id: usize) -> Self {
+        assert!(
+            id <= u16::MAX as usize,
+            "system limit: unable to allocate more than u16::MAX locals per function"
+        );
+        Self(id as u16)
+    }
+
+    #[inline(always)]
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
 
 #[operation(
     dialect = BuiltinDialect,
@@ -23,7 +40,7 @@ pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
 )]
 pub struct Function {
     #[attr]
-    name: FunctionIdent,
+    name: Ident,
     #[attr]
     signature: Signature,
     #[region]
@@ -74,6 +91,26 @@ impl Function {
             .as_pointer()
             .expect("cannot access blocks of a function declaration")
     }
+
+    pub fn num_locals(&self) -> usize {
+        self.locals.len()
+    }
+
+    #[inline]
+    pub fn locals(&self) -> &[Type] {
+        &self.locals
+    }
+
+    #[inline]
+    pub fn get_local(&self, id: LocalId) -> &Type {
+        &self.locals[id.as_usize()]
+    }
+
+    pub fn alloc_local(&mut self, ty: Type) -> LocalId {
+        let id = self.locals.len();
+        self.locals.push(ty);
+        LocalId::new(id)
+    }
 }
 
 impl RegionKindInterface for Function {
@@ -109,12 +146,11 @@ impl Symbol for Function {
     }
 
     fn name(&self) -> SymbolName {
-        Self::name(self).function.as_symbol()
+        Self::name(self).as_symbol()
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.function.name = name;
+        self.name_mut().name = name;
     }
 
     fn visibility(&self) -> Visibility {

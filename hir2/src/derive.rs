@@ -133,6 +133,8 @@ mod tests {
     use alloc::rc::Rc;
     use core::fmt;
 
+    use midenc_session::diagnostics::Severity;
+
     use super::operation;
     use crate::{
         define_attr_type, dialects::test::TestDialect, formatter, traits::*, Builder, BuilderExt,
@@ -208,7 +210,7 @@ mod tests {
                 } else {
                     Err(
                         ctx.session.diagnostics
-                            .diagnostic(miden_assembly::diagnostics::Severity::Error)
+                            .diagnostic(Severity::Error)
                             .with_message("invalid operation")
                             .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))
                             .with_help("this operator implements 'ArithmeticOp' which requires ops to be binary")

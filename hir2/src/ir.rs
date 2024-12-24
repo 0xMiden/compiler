@@ -55,7 +55,7 @@ pub use self::{
     operation::{
         OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
     },
-    print::{OpPrinter, OpPrintingFlags},
+    print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
         RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,

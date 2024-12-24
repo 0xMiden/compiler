@@ -377,7 +377,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         &self,
         point: &ProgramPoint,
         solver: &mut crate::dataflow::DataFlowSolver,
-    ) -> Result<(), miden_assembly::Report> {
+    ) -> Result<(), Report> {
         if point.is_at_block_start() {
             return Ok(());
         }
@@ -514,7 +514,7 @@ impl DeadCodeAnalysis {
                 // If a callable symbol has a non-call use, then we can't be guaranteed to know all
                 // callsites.
                 let symbol_attr = symbol_use.symbol();
-                if let Some(symbol) = top_symbol_table.lookup_symbol_ref(&symbol_attr) {
+                if let Some(symbol) = top_symbol_table.lookup_symbol_ref(&symbol_attr.path) {
                     let mut state = solver
                         .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(symbol));
                     state.set_has_unknown_predecessors();

@@ -174,17 +174,9 @@ impl Attribute {
         }
     }
 }
-impl fmt::Display for Attribute {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.value.as_deref().map(|v| v.render()) {
-            None => write!(f, "#[{}]", self.name.as_str()),
-            Some(value) => write!(f, "#[{}({value})]", &self.name),
-        }
-    }
-}
 
 pub trait AttributeValue:
-    Any + fmt::Debug + crate::formatter::PrettyPrint + crate::DynPartialEq + crate::DynHash + 'static
+    Any + fmt::Debug + crate::AttrPrinter + crate::DynPartialEq + crate::DynHash + 'static
 {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;

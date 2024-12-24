@@ -1,8 +1,9 @@
 use core::fmt;
 
+use super::SymbolPathAttr;
 use crate::{
     formatter, CallConv, EntityRef, Op, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol,
-    SymbolNameAttr, SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility,
+    SymbolPath, SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility,
 };
 
 /// A call-like operation is one that transfers control from one function to another.
@@ -75,16 +76,21 @@ impl<T: Symbol + CallableOpInterface> AsCallableSymbolRef for UnsafeIntrusiveEnt
 /// to focus on the call semantics, rather than the difference between the type types of value.
 #[derive(Debug, Clone)]
 pub enum Callable {
-    Symbol(SymbolNameAttr),
+    Symbol(SymbolPath),
     Value(ValueRef),
 }
-impl From<&SymbolNameAttr> for Callable {
-    fn from(value: &SymbolNameAttr) -> Self {
+impl From<&SymbolPathAttr> for Callable {
+    fn from(value: &SymbolPathAttr) -> Self {
+        Self::Symbol(value.path.clone())
+    }
+}
+impl From<&SymbolPath> for Callable {
+    fn from(value: &SymbolPath) -> Self {
         Self::Symbol(value.clone())
     }
 }
-impl From<SymbolNameAttr> for Callable {
-    fn from(value: SymbolNameAttr) -> Self {
+impl From<SymbolPath> for Callable {
+    fn from(value: SymbolPath) -> Self {
         Self::Symbol(value)
     }
 }
@@ -107,7 +113,7 @@ impl Callable {
         matches!(self, Self::Value(_))
     }
 
-    pub fn as_symbol_name(&self) -> Option<&SymbolNameAttr> {
+    pub fn as_symbol_path(&self) -> Option<&SymbolPath> {
         match self {
             Self::Symbol(ref name) => Some(name),
             _ => None,
@@ -121,7 +127,7 @@ impl Callable {
         }
     }
 
-    pub fn unwrap_symbol_name(self) -> SymbolNameAttr {
+    pub fn unwrap_symbol_path(self) -> SymbolPath {
         match self {
             Self::Symbol(name) => name,
             Self::Value(value_ref) => panic!("expected symbol, got {}", value_ref.borrow().id()),

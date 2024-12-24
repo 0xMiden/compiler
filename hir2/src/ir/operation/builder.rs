@@ -1,3 +1,5 @@
+use midenc_session::diagnostics::Severity;
+
 use crate::{
     traits::Terminator, AsCallableSymbolRef, AsSymbolRef, AttributeValue, BlockRef, Builder,
     KeyedSuccessor, Op, OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type,
@@ -218,7 +220,7 @@ where
                     .context()
                     .session
                     .diagnostics
-                    .diagnostic(miden_assembly::diagnostics::Severity::Error)
+                    .diagnostic(Severity::Error)
                     .with_message("invalid operation")
                     .with_primary_label(
                         op.span(),

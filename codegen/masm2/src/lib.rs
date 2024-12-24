@@ -22,6 +22,6 @@ pub mod masm {
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
-    emitter::FunctionEmitter,
+    lower::ToMasmComponent,
     stack::{Constraint, Operand, OperandStack},
 };

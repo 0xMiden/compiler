@@ -1,7 +1,7 @@
 use alloc::{collections::BTreeMap, rc::Rc};
 
 use compact_str::{CompactString, ToCompactString};
-use miden_assembly::diagnostics::Severity;
+use midenc_session::diagnostics::Severity;
 use smallvec::{smallvec, SmallVec};
 
 use super::{

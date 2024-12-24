@@ -1,8 +1,10 @@
 use crate::{
+    constants::ConstantData,
     dialects::builtin::{
-        FunctionRef, GlobalVariable, GlobalVariableBuilder, Module, PrimFunctionBuilder,
+        FunctionRef, GlobalVariable, GlobalVariableBuilder, Module, PrimFunctionBuilder, Segment,
+        SegmentBuilder,
     },
-    Builder, FunctionIdent, Ident, Op, OpBuilder, Report, Signature, Spanned, Type,
+    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
     UnsafeIntrusiveEntityRef, Visibility,
 };
 
@@ -43,32 +45,6 @@ impl<'b> ModuleBuilder<'b> {
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
         let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
-        let name = FunctionIdent {
-            module: *self.module.name(),
-            function: name,
-        };
-        builder(name, signature)
-    }
-
-    /// Declare the import of an externally-defined [crate::dialects::hir::Function] into this
-    /// module - imported from `module` with the given name and signature.
-    ///
-    /// NOTE: The given `name` must match an exported symbol from `module`, and the provided
-    /// `signature` must be consistent between the definition and the import.
-    ///
-    /// It is not valid to define a body for the returned function - in order for symbol resolution
-    /// and linking to proceed as expected, imported functions must remain declarations.
-    pub fn import_function(
-        &mut self,
-        module: Ident,
-        name: Ident,
-        signature: Signature,
-    ) -> Result<FunctionRef, Report> {
-        let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
-        let name = FunctionIdent {
-            module,
-            function: name,
-        };
         builder(name, signature)
     }
 
@@ -84,5 +60,16 @@ impl<'b> ModuleBuilder<'b> {
     ) -> Result<UnsafeIntrusiveEntityRef<GlobalVariable>, Report> {
         let builder = GlobalVariableBuilder::new(&mut self.builder, name.span());
         builder(name, visibility, ty)
+    }
+
+    pub fn define_data_segment(
+        &mut self,
+        offset: u32,
+        data: impl Into<ConstantData>,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
+        let data = self.builder.context().create_constant(data);
+        let builder = SegmentBuilder::new(&mut self.builder, span);
+        builder(offset, data, /*readonly= */ false)
     }
 }

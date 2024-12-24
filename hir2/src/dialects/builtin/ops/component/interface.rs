@@ -35,6 +35,16 @@ impl ComponentId {
             && self.name == other.name
             && self.version.cmp_precedence(&other.version).is_eq()
     }
+
+    /// Get the Miden Assembly [LibraryPath] that uniquely identifies this interface.
+    pub fn to_library_path(&self) -> midenc_session::LibraryPath {
+        use midenc_session::{LibraryNamespace, LibraryPath};
+
+        let ns = format!("{}:{}", &self.namespace, &self.name);
+        let namespace = LibraryNamespace::User(ns.into_boxed_str().into());
+        // TODO(pauls): Need to add the version component to LibraryPath
+        LibraryPath::new_from_components(namespace, [])
+    }
 }
 
 impl From<&Component> for ComponentId {

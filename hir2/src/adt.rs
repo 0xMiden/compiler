@@ -4,16 +4,10 @@ pub mod smallmap;
 pub mod smallordset;
 pub mod smallprio;
 pub mod smallset;
-pub mod sparsemap;
 
 pub use self::{
-    arena::Arena,
-    smalldeque::SmallDeque,
-    smallmap::SmallMap,
-    smallordset::SmallOrdSet,
-    smallprio::SmallPriorityQueue,
-    smallset::SmallSet,
-    sparsemap::{SparseMap, SparseMapValue},
+    arena::Arena, smalldeque::SmallDeque, smallmap::SmallMap, smallordset::SmallOrdSet,
+    smallprio::SmallPriorityQueue, smallset::SmallSet,
 };
 
 #[doc(hidden)]

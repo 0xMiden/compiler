@@ -9,9 +9,9 @@ use super::{
 };
 use crate::{
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
-    BlockRef, Builder, Context, InsertionGuard, Listener, OpFoldResult, OperationFolder,
-    OperationRef, ProgramPoint, Region, RegionRef, Report, RewritePattern, SourceSpan, Spanned,
-    Value, ValueRef, WalkResult, Walkable,
+    AttrPrinter, BlockRef, Builder, Context, InsertionGuard, Listener, OpFoldResult,
+    OperationFolder, OperationRef, ProgramPoint, Region, RegionRef, Report, RewritePattern,
+    SourceSpan, Spanned, Value, ValueRef, WalkResult, Walkable,
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
@@ -504,7 +504,7 @@ impl GreedyPatternRewriteDriver {
                 } else {
                     log::trace!(
                         "operation was succesfully folded away, to be replaced with: {}",
-                        crate::formatter::DisplayValues::new(results.iter())
+                        results.as_slice().print(&crate::OpPrintingFlags::default(), op.context())
                     );
                 }
 
@@ -538,7 +538,7 @@ impl GreedyPatternRewriteDriver {
                             let span = op.span();
                             log::trace!(
                                 "materializing constant for value '{}' and type '{result_ty}'",
-                                attr.render()
+                                attr.print(&crate::OpPrintingFlags::default(), op.context())
                             );
                             let constant_op = op.dialect().materialize_constant(
                                 &mut *rewriter,

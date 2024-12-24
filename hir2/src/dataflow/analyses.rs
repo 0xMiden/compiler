@@ -2,7 +2,6 @@ pub mod constant_propagation;
 pub mod dce;
 pub mod liveness;
 mod loops;
-mod scheduling;
 pub mod spills;
 
 pub use self::{

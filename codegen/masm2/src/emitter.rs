@@ -1,75 +1,35 @@
+use alloc::collections::BTreeSet;
+
 use midenc_hir2::{
-    dataflow::analyses::LivenessAnalysis, dialects::builtin, Block, BlockRef, FxHashSet, Operation,
-    ValueRef,
+    dataflow::analyses::LivenessAnalysis, dialects::builtin, Block, Operation, ValueRef,
 };
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
 
 use crate::{
     emit::{InstOpEmitter, OpEmitter},
+    linker::LinkInfo,
     masm,
     opt::{OperandMovementConstraintSolver, SolverError},
     Constraint, OperandStack,
 };
 
-pub struct FunctionEmitter<'a> {
-    f: &'a builtin::Function,
-    f_prime: &'a mut masm::Procedure,
-    liveness: &'a LivenessAnalysis,
-    //globals: &'a GlobalVariableLayout,
-    visited: FxHashSet<BlockRef>,
-}
-
 pub(crate) struct BlockEmitter<'b> {
     pub function: &'b builtin::Function,
-    pub masm_function: &'b mut masm::Procedure,
     pub liveness: &'b LivenessAnalysis,
+    pub link_info: &'b LinkInfo,
+    pub invoked: &'b mut BTreeSet<masm::Invoke>,
     pub target: Vec<masm::Op>,
     pub stack: OperandStack,
-}
-
-impl<'a> FunctionEmitter<'a> {
-    pub fn new(
-        f: &'a builtin::Function,
-        f_prime: &'a mut masm::Procedure,
-        liveness: &'a LivenessAnalysis,
-        //globals: &'a GlobalVariableLayout,
-    ) -> Self {
-        // Allocate procedure locals for each local variable
-        //let locals = BTreeMap::from_iter(
-        //f.dfg.locals().map(|local| (local.id, f_prime.alloc_local(local.ty.clone()))),
-        //);
-
-        Self {
-            f,
-            f_prime,
-            liveness,
-            //globals,
-            visited: Default::default(),
-        }
-    }
-
-    pub fn emit(self) {
-        let stack = OperandStack::default();
-        let entry = self.f.entry_block();
-        let emitter = BlockEmitter {
-            function: self.f,
-            masm_function: self.f_prime,
-            liveness: self.liveness,
-            target: Default::default(),
-            stack,
-        };
-        let body = emitter.emit(&entry.borrow());
-        *self.f_prime.body_mut() = body;
-    }
 }
 
 impl<'b> BlockEmitter<'b> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             function: self.function,
-            masm_function: self.masm_function,
             liveness: self.liveness,
+            link_info: self.link_info,
+            invoked: self.invoked,
             target: Default::default(),
             stack: self.stack.clone(),
         }
@@ -308,11 +268,17 @@ impl<'b> BlockEmitter<'b> {
         &'long mut self,
         inst: &'long Operation,
     ) -> InstOpEmitter<'short> {
-        InstOpEmitter::new(self.masm_function, inst, &mut self.target, &mut self.stack)
+        InstOpEmitter::new(
+            inst,
+            self.function.locals(),
+            self.invoked,
+            &mut self.target,
+            &mut self.stack,
+        )
     }
 
     #[inline(always)]
     pub fn emitter<'short, 'long: 'short>(&'long mut self) -> OpEmitter<'short> {
-        OpEmitter::new(self.masm_function, &mut self.target, &mut self.stack)
+        OpEmitter::new(self.function.locals(), self.invoked, &mut self.target, &mut self.stack)
     }
 }

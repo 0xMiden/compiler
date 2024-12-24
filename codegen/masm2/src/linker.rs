@@ -1,28 +1,36 @@
-use midenc_hir2::{dialects::builtin, Alignable, FxHashMap, SymbolTable};
+use midenc_hir2::{
+    dialects::builtin::{self, DataSegmentError, SegmentRef},
+    Alignable, FxHashMap,
+};
 
 pub struct LinkInfo {
-    component: builtin::ComponentInterface,
-    globals_layout: FxHashMap<builtin::ComponentId, GlobalVariableLayout>,
-    segment_layout: FxHashMap<builtin::ComponentId, Vec<DataSegment>>,
+    component: builtin::ComponentId,
+    globals_layout: GlobalVariableLayout,
+    segment_layout: builtin::DataSegmentLayout,
     reserved_memory_pages: u32,
     page_size: u32,
 }
 
 impl LinkInfo {
     #[inline]
-    pub fn component(&self) -> &builtin::ComponentInterface {
+    pub fn component(&self) -> &builtin::ComponentId {
         &self.component
     }
 
-    pub fn globals_layout_for_component(
-        &self,
-        component: &builtin::ComponentId,
-    ) -> &GlobalVariableLayout {
-        &self.globals_layout[component]
+    pub fn has_globals(&self) -> bool {
+        !self.globals_layout.offsets.is_empty()
     }
 
-    pub fn segment_layout_for_component(&self, component: &builtin::ComponentId) -> &[DataSegment] {
-        &self.segment_layout[component]
+    pub fn has_data_segments(&self) -> bool {
+        !self.segment_layout.is_empty()
+    }
+
+    pub fn globals_layout(&self) -> &GlobalVariableLayout {
+        &self.globals_layout
+    }
+
+    pub fn segment_layout(&self) -> &builtin::DataSegmentLayout {
+        &self.segment_layout
     }
 
     #[inline(always)]
@@ -37,8 +45,8 @@ impl LinkInfo {
 }
 
 pub struct Linker {
-    globals_layout: FxHashMap<builtin::ComponentId, GlobalVariableLayout>,
-    segment_layout: FxHashMap<builtin::ComponentId, Vec<DataSegment>>,
+    globals_layout: GlobalVariableLayout,
+    segment_layout: builtin::DataSegmentLayout,
     reserved_memory_pages: u32,
     page_size: u32,
 }
@@ -66,116 +74,57 @@ impl Linker {
     }
 
     pub fn link(mut self, component: &builtin::Component) -> Result<LinkInfo, LinkerError> {
-        let interface = builtin::ComponentInterface::new(component);
+        // Gather information needed to compute component data layout
 
-        if interface.is_externally_defined() {
+        // 1. Verify that the component is non-empty
+        let body = component.body();
+        if body.is_empty() {
+            // This component has no definition
             return Err(LinkerError::Undefined);
         }
 
-        if !interface.visibility().is_public() {
-            return Err(LinkerError::Visibility);
+        // 2. Visit each Module in the component and discover Segment and GlobalVariable items
+        let body = body.entry();
+        for item in body.body() {
+            if let Some(module) = item.downcast_ref::<builtin::Module>() {
+                let module_body = module.body();
+                if module_body.is_empty() {
+                    continue;
+                }
+
+                let module_body = module_body.entry();
+                for item in module_body.body() {
+                    if let Some(segment) = item.downcast_ref::<builtin::Segment>() {
+                        self.segment_layout
+                            .insert(unsafe { SegmentRef::from_raw(segment) })
+                            .map_err(|err| LinkerError::InvalidSegment {
+                                id: component.id(),
+                                err,
+                            })?;
+                        continue;
+                    }
+
+                    if let Some(global) = item.downcast_ref::<builtin::GlobalVariable>() {
+                        self.globals_layout.insert(global);
+                    }
+                }
+            }
         }
 
-        self.compute_layout_for_component(interface.id(), component)?;
+        // 3. Layout global variables in the next page following the last data segment
+        let next_available_offset = self.segment_layout.next_available_offset();
+        self.globals_layout.global_table_offset = core::cmp::max(
+            (self.reserved_memory_pages * self.page_size).next_multiple_of(32),
+            next_available_offset,
+        );
 
         Ok(LinkInfo {
-            component: interface,
+            component: component.id(),
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
             reserved_memory_pages: self.reserved_memory_pages,
             page_size: self.page_size,
         })
-    }
-
-    fn compute_layout_for_component(
-        &mut self,
-        id: &builtin::ComponentId,
-        component: &builtin::Component,
-    ) -> Result<(), LinkerError> {
-        // Locate all data segments and global variables within this component (not including
-        // nested components, as those have their own layouts).
-
-        // Data segments must be declared at the component level, so if there are any segments, we
-        // will find them by walking the operations of the component body.
-        self.compute_segment_layout_for_component(id, component)?;
-
-        // Global variables
-        let symbol_manager = component.symbol_manager();
-        for symbol_ref in symbol_manager.symbols().symbols() {
-            let symbol = symbol_ref.borrow();
-            let symbol_op = symbol.as_symbol_operation();
-            if let Some(module) = symbol_op.downcast_ref::<builtin::Module>() {
-                // Place all global variables of this module
-                self.extend_layout_from_module(id, module)?;
-            } else if let Some(nested) = symbol_op.downcast_ref::<builtin::Component>() {
-                // Compute the layout for nested components
-                let interface = builtin::ComponentInterface::new(nested);
-                if interface.is_externally_defined() {
-                    continue;
-                }
-                self.compute_layout_for_component(interface.id(), nested)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn compute_segment_layout_for_component(
-        &mut self,
-        id: &builtin::ComponentId,
-        component: &builtin::Component,
-    ) -> Result<(), LinkerError> {
-        let segments = self.segment_layout.entry(id.clone()).or_default();
-        let body = component.body();
-        let body = body.entry();
-        for op in body.body() {
-            if let Some(segment) = op.downcast_ref::<builtin::Segment>() {
-                let offset = *segment.offset();
-                match segments.binary_search_by_key(&offset, |s| s.offset) {
-                    Ok(_index) => {
-                        return Err(LinkerError::OverlappingSegments {
-                            id: id.clone(),
-                            offset,
-                        });
-                    }
-                    Err(index) => {
-                        // TODO: Need to compute the segment size here
-                        segments.insert(index, DataSegment { offset, size: 0 });
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn extend_layout_from_module(
-        &mut self,
-        id: &builtin::ComponentId,
-        module: &builtin::Module,
-    ) -> Result<(), LinkerError> {
-        let segment_layout = &self.segment_layout[id];
-        let next_available_offset =
-            segment_layout.last().map(|segment| segment.offset + segment.size).unwrap_or(0);
-        let global_table_offset = core::cmp::max(
-            (self.reserved_memory_pages * self.page_size).next_multiple_of(32),
-            next_available_offset,
-        );
-        let globals_layout = self
-            .globals_layout
-            .entry(id.clone())
-            .or_insert_with(|| GlobalVariableLayout::new(global_table_offset));
-
-        let symbol_manager = module.symbol_manager();
-        for symbol_ref in symbol_manager.symbols().symbols() {
-            let symbol = symbol_ref.borrow();
-            let symbol_op = symbol.as_symbol_operation();
-            if let Some(global) = symbol_op.downcast_ref::<builtin::GlobalVariable>() {
-                globals_layout.insert(global);
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -189,16 +138,12 @@ pub enum LinkerError {
     #[error("invalid root component: must have public visibility")]
     Visibility,
     /// Multiple segments were defined in the same component with the same offset
-    #[error("invalid component: '{id}' has overlapping data segments at offset {offset}")]
-    OverlappingSegments {
+    #[error("invalid component: '{id}' has invalid data segment: {err}")]
+    InvalidSegment {
         id: builtin::ComponentId,
-        offset: u32,
+        #[source]
+        err: DataSegmentError,
     },
-}
-
-pub struct DataSegment {
-    pub offset: u32,
-    pub size: u32,
 }
 
 /// This struct contains data about the layout of global variables in linear memory

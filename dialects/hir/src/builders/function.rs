@@ -985,21 +985,19 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         op_builder(callee, args)
     }
 
-    /*
-    fn call(mut self, callee: FunctionIdent, args: &[Value], span: SourceSpan) -> Inst {
-        let mut vlist = ValueList::default();
-        {
-            let dfg = self.data_flow_graph_mut();
-            assert!(
-                dfg.get_import(&callee).is_some(),
-                "must import callee ({}) before calling it",
-                &callee
-            );
-            vlist.extend(args.iter().copied(), &mut dfg.value_lists);
-        }
-        self.Call(Opcode::Call, callee, vlist, span).0
+    fn call<C, A>(
+        mut self,
+        callee: C,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Call>, Report>
+    where
+        C: AsCallableSymbolRef,
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Call, (C, A)>(span);
+        op_builder(callee, args)
     }
-     */
 
     fn select(
         mut self,

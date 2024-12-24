@@ -5,15 +5,14 @@ pub use self::interface::{
 };
 use crate::{
     derive::operation,
-    dialects::builtin::{BuiltinDialect, Module},
+    dialects::builtin::BuiltinDialect,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
     version::Version,
-    FunctionIdent, Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, Usable,
-    Visibility,
+    Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
+    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, Usable, Visibility,
 };
 
 /// A [Component] is a modular abstraction operation, i.e. it is designed to model shared-nothing
@@ -21,47 +20,42 @@ use crate::{
 ///
 /// Components can contain the following entities:
 ///
-/// * [Segment], describing how a specific region of memory, shared across all modules in the
-///   component, should be initialized (i.e. what content it should be assumed to contain on
-///   program start). This must be defined at the component level, as it affects all modules in
-///   the component (though not those of nested components), and so we require data segments to
-///   be defined at the root of the shared context.
-/// * [Module], either as an abstract interface description (more below), or as the implementation
-///   of such a description. All modules within a [Component] share the same resources (i.e. memory)
-///   and can participate in interprocedural optimization.
-/// * [Component], either as an abstract interface description (see below), or as the implementation
-///   of a component visible only within the current component. Components nested within a
-///   [Component] do _not_ share the same resources, instead, this is how many components are linked
-///   together into larger programs.
+/// * [Interface], used to export groups of related functionality from the component. Interfaces
+///   always have `Public` visibility.
+/// * [Function] used to export standalone component-level functions, e.g. a program entrypoint,
+///   or component initializer. These functions always have `Public` visibility, and must be
+///   representable using the Canonical ABI.
+/// * [Module], used to implement the functionality exported backing an [Interface] or a component-
+///   level [Function]. Modules may not have `Public` visibility. All modules within a [Component]
+///   are within the same shared-everything boundary, so conflicting data segment declarations are
+///   not allowed. Additionally, global variables within the same shared-everything boundary
+///   are allocated in the same linear memory address space.
 ///
-/// ## Component Interfaces
-///
-/// As mentioned above, within a [Component], both modules and components can be expressed in a form
-/// that represents an abstract _interface_. This is used for two purposes:
-///
-/// 1. To import an externally-defined component for use by the program. This is used much like how
-///    [Function] can either be a declaration or a definition. Such components look like a normal
-///    component, except there are no function definitions contained within. To facilitate efficient
-///    compilation, such components are flagged with an `external` attribute. Any component with
-///    this flag set is assumed to contain only declarations of publically-visible symbols.
-/// 2. To indicate the specific elements of an externally-defined component that are needed by the
-///    program. Any component definition which contains those elements can satisfy the interface.
+/// Externally-defined functions are represented as declarations, and must be referenced using their
+/// fully-qualified name in order to resolve them.
 ///
 /// ## Linking
 ///
-/// Components may also have a specified [Visibility]:
+/// NOTE: Components always have `Public` visibility.
 ///
-/// * `Visibility::Public` indicates that all modules (and components) with `Public` visibility form
-///   the public interface of the component (and correspondingly, `Public` functions of any `Public`
-///   modules are also part of that interface). In addition to constituting the _component
-///   interface_, these public entities are further restricted from being candidates for dead-code
-///   elimination, or other aggressive optimizations.
-/// * `Visibility::Internal` indicates that the component is only visible to entities in the current
-///   compilation graph, so all uses can be assumed to be visible to the compiler. The component
-///   interface is otherwise described the same as `Public`.
-/// * `Visibility::Private` indicates that the component is only visible within its parent component,
-///   if it has one. As with the other two visibilities, the interface of the component module is
-///   described by its publically-visible contents.
+/// Components are linked into Miden Assembly according to the following rules:
+///
+/// * A [Component] corresponds to a Miden Assembly namespace, and a Miden package
+/// * Component-level functions are emitted to a MASM module corresponding to the root of the
+///   namespace, i.e. as if defined in `mod.masm` at the root of a MASM source project.
+/// * Each [Interface] of a component is emitted to a MASM module of the same name
+/// * Each [Module] of a component is emitted to a MASM module of the same name
+/// * The [Segment] declarations of all modules in the component are gathered together, checked for
+///   overlap, hashed, and then added to the set of advice map entries to be initialized when the
+///   resulting package is loaded. The initialization code generated to load the data segments into
+///   the linear memory of the component, is placed in a top-level component function called `init`.
+/// * The [GlobalVariable] declarations of all modules in the component are gathered together,
+///   de-duplicated, initializer data hashed and added to the set of advice map entries of the
+///   package, and allocated specific offsets in the address space of the component. Loads/stores
+///   of these variables will be lowered to use these allocated offsets. The initialization code
+///   for each global will be emitted in the top-level component function called `init`.
+/// * The set of externally-defined components that have at least one reference, will be added as
+///   dependencies of the output package.
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -165,5 +159,18 @@ impl SymbolTable for Component {
     #[inline]
     fn get(&self, name: SymbolName) -> Option<SymbolRef> {
         self.symbols.get(name)
+    }
+}
+
+impl Component {
+    pub fn id(&self) -> ComponentId {
+        let namespace = self.namespace().as_symbol();
+        let name = self.name().as_symbol();
+        let version = self.version().clone();
+        ComponentId {
+            namespace,
+            name,
+            version,
+        }
     }
 }

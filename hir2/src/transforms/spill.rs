@@ -24,7 +24,7 @@ impl Pass for InsertSpills {
 
     fn run_on_operation(
         &mut self,
-        mut op: EntityMut<'_, Self::Target>,
+        op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         // Temporary workaround to allow us to run analysis without aliasing

@@ -1,6 +1,8 @@
 use crate::{
-    dialects::builtin::{Component, ModuleRef, PrimModuleBuilder, Segment, SegmentBuilder},
-    Builder, Ident, Op, OpBuilder, Report, SourceSpan, Spanned, UnsafeIntrusiveEntityRef,
+    dialects::builtin::{
+        Component, InterfaceRef, ModuleRef, PrimInterfaceBuilder, PrimModuleBuilder,
+    },
+    Builder, Ident, Op, OpBuilder, Report, Spanned,
 };
 
 pub struct ComponentBuilder<'b> {
@@ -22,17 +24,13 @@ impl<'b> ComponentBuilder<'b> {
         Self { component, builder }
     }
 
-    pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
+    pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
+        let builder = PrimInterfaceBuilder::new(&mut self.builder, name.span());
         builder(name)
     }
 
-    pub fn define_data_segment(
-        &mut self,
-        offset: u32,
-        span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
-        let builder = SegmentBuilder::new(&mut self.builder, span);
-        builder(offset, /*readonly= */ false, /*zeroed= */ false)
+    pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
+        builder(name)
     }
 }

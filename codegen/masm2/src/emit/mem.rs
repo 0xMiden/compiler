@@ -1,27 +1,11 @@
 use miden_core::{Felt, FieldElement};
-use midenc_hir2::{self as hir, SourceSpan, StructType, Type};
+use midenc_hir2::{dialects::builtin::LocalId, SourceSpan, StructType, Type};
 
 use super::{masm, OpEmitter};
 use crate::lower::NativePtr;
 
 /// Allocation
 impl<'a> OpEmitter<'a> {
-    /// Allocate a procedure-local memory slot of sufficient size to store a value
-    /// indicated by the given pointer type, i.e the pointee type dictates the
-    /// amount of memory allocated.
-    ///
-    /// The address of that slot is placed on the operand stack.
-    pub fn alloca(&mut self, ptr: &Type, span: SourceSpan) {
-        match ptr {
-            Type::Ptr(pointee) => {
-                let local = self.function.alloc_local(pointee.as_ref().clone());
-                self.emit(masm::Instruction::LocAddr(local), span);
-                self.push(ptr.clone());
-            }
-            ty => panic!("expected a pointer type, got {ty}"),
-        }
-    }
-
     /// Return the base address of the heap
     #[allow(unused)]
     pub fn heap_base(&mut self, span: SourceSpan) {
@@ -58,9 +42,10 @@ impl<'a> OpEmitter<'a> {
     ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
-    pub fn load_local(&mut self, local: hir::LocalId, span: SourceSpan) {
-        let ty = self.function.local(local).ty.clone();
-        self.emit(masm::Instruction::LocAddr(local), span);
+    pub fn load_local(&mut self, local: LocalId, span: SourceSpan) {
+        let local_index = local.as_usize();
+        let ty = self.locals[local_index].clone();
+        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
         self.push(Type::Ptr(Box::new(ty.clone())));
         self.load(ty, span)
     }
@@ -932,9 +917,10 @@ impl<'a> OpEmitter<'a> {
     ///
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
-    pub fn store_local(&mut self, local: hir::LocalId, span: SourceSpan) {
-        let ty = self.function.local(local).ty.clone();
-        self.emit(masm::Instruction::LocAddr(local), span);
+    pub fn store_local(&mut self, local: LocalId, span: SourceSpan) {
+        let local_index = local.as_usize();
+        let ty = self.locals[local_index].clone();
+        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
         self.push(Type::Ptr(Box::new(ty)));
         self.store(span)
     }
@@ -1008,7 +994,7 @@ impl<'a> OpEmitter<'a> {
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.function, &mut body, self.stack);
+        let mut body_emitter = OpEmitter::new(self.locals, self.invoked, &mut body, self.stack);
 
         // Loop body - compute address for next value to be written
         let value_size = value.ty().size_in_bytes();
@@ -1128,7 +1114,7 @@ impl<'a> OpEmitter<'a> {
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.function, &mut body, self.stack);
+        let mut body_emitter = OpEmitter::new(self.locals, self.invoked, &mut body, self.stack);
 
         // Loop body - compute address for next value to be written
         // Compute the source and destination addresses

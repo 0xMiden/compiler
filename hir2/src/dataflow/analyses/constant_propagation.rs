@@ -189,7 +189,10 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
             // Merge in the result of the fold, either a constant or a value.
             match fold_result {
                 OpFoldResult::Attribute(value) => {
-                    log::trace!("folded to constant: {}", value.render());
+                    log::trace!(
+                        "folded to constant: {}",
+                        value.print(&crate::OpPrintingFlags::default(), op.context())
+                    );
                     lattice.join(&ConstantValue::new(value, op.dialect()));
                 }
                 OpFoldResult::Value(value) => {

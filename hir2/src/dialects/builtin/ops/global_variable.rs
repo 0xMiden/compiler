@@ -11,9 +11,15 @@ use crate::{
 
 pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
 
-/// A [GlobalVariable] represents a concrete definition for a symbolic value,
-/// i.e. it corresponds to the actual allocated memory referenced by a [GlobalValueData::Symbol]
-/// value.
+/// A [GlobalVariable] represents a named, typed, location in memory.
+///
+/// Global variables may also specify an initializer, but if not provided, the underlying bytes
+/// will be zeroed, which may or may not be a valid instance of the type. It is up to frontends
+/// to ensure that an initializer is specified if necessary.
+///
+/// Global variables, like functions, may also be assigned a visibility. This is only used when
+/// resolving symbol uses, and does not impose any access restrictions once lowered to Miden
+/// Assembly.
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -94,10 +100,12 @@ impl AsSymbolRef for GlobalVariable {
     }
 }
 
-/// A symbolic reference to a global variable symbol
+/// A [GlobalSymbol] reifies the address of a [GlobalVariable] as a value.
 ///
-/// The type of a symbolic global value is always a pointer: the address of the referenced global
-/// variable.
+/// An optional signed offset value may also be provided, which will be applied by the operation
+/// internally.
+///
+/// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
 #[operation(
     dialect = BuiltinDialect,
     traits(ConstantLike),

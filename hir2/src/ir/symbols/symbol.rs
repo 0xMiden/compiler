@@ -4,8 +4,7 @@ use core::fmt;
 use smallvec::SmallVec;
 
 use super::{
-    SymbolName, SymbolNameAttr, SymbolNameComponents, SymbolTable, SymbolUse, SymbolUseRef,
-    SymbolUsesIter,
+    SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, SymbolUse, SymbolUseRefsIter,
 };
 use crate::{
     Op, Operation, OperationRef, RegionRef, Report, UnsafeIntrusiveEntityRef, Usable, Visibility,
@@ -35,18 +34,34 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     fn as_symbol_operation_mut(&mut self) -> &mut Operation;
     /// Get the name of this symbol
     fn name(&self) -> SymbolName;
-    /// Get an iterator over the components of the fully-qualified path of this symbol.
-    fn components(&self) -> SymbolNameComponents {
-        let mut parts = VecDeque::default();
-        if let Some(symbol_table) = self.root_symbol_table() {
-            let symbol_table = symbol_table.borrow();
-            symbol_table.walk_symbol_tables(true, |symbol_table, _| {
-                if let Some(sym) = symbol_table.as_symbol_table_operation().as_symbol() {
-                    parts.push_back(sym.name().as_str());
-                }
-            });
+    /// Get the fully-qualified (absolute) path of this symbol
+    ///
+    /// # Panics
+    ///
+    /// This function traverses the parents of this operation to the top level. If called while
+    /// mutably borrowing any of the ancestors of this operation, a panic will occur.
+    fn path(&self) -> SymbolPath {
+        let mut parts = VecDeque::from_iter([SymbolNameComponent::Leaf(self.name())]);
+        let mut symbol_table = self.as_symbol_operation().nearest_symbol_table();
+
+        while let Some(parent_symbol_table) = symbol_table.take() {
+            let sym_table_op = parent_symbol_table.borrow();
+            if let Some(sym) = sym_table_op.as_symbol() {
+                parts.push_front(SymbolNameComponent::Component(sym.name()));
+                symbol_table = sym_table_op.nearest_symbol_table();
+            } else {
+                // This is an anonymous symbol table - for now we require all symbol tables to be
+                // symbols unless it is the root symbol table
+                assert!(
+                    sym_table_op.parent_op().is_none(),
+                    "anonymous symbol tables cannot have parents"
+                );
+            }
         }
-        SymbolNameComponents::from_raw_parts(parts, self.name())
+
+        parts.push_front(SymbolNameComponent::Root);
+
+        SymbolPath::from_iter(parts)
     }
     /// Set the name of this symbol
     fn set_name(&mut self, name: SymbolName);
@@ -77,18 +92,21 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         self.set_visibility(Visibility::Public);
     }
     /// Get all of the uses of this symbol that are nested within `from`
-    fn symbol_uses_in(&self, from: OperationRef) -> SymbolUsesIter {
+    fn symbol_uses_in(&self, from: OperationRef) -> SymbolUseRefsIter {
         let mut uses = VecDeque::default();
         let from = from.borrow();
-        for user in self.iter_uses() {
-            if from.is_ancestor_of(&user.owner.borrow()) {
-                uses.push_back(unsafe { SymbolUseRef::from_raw(&*user) });
+        let mut cursor = self.first_use();
+        while let Some(user) = cursor.as_pointer() {
+            let owner = user.borrow().owner;
+            if from.is_ancestor_of(&owner.borrow()) {
+                uses.push_back(user);
             }
+            cursor.move_next();
         }
-        SymbolUsesIter::from(uses)
+        SymbolUseRefsIter::from(uses)
     }
     /// Get all of the uses of this symbol that are nested within `from`
-    fn symbol_uses_in_region(&self, from: RegionRef) -> SymbolUsesIter {
+    fn symbol_uses_in_region(&self, from: RegionRef) -> SymbolUseRefsIter {
         let mut uses = VecDeque::default();
         let from = from.borrow();
 
@@ -96,14 +114,21 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         // of `from`, as all other uses cannot, by definition, be in `from`.
         let from_op = from.parent().unwrap();
         let from_op = from_op.borrow();
-        let mut scoped_uses = self
-            .iter_uses()
-            .filter(|user| from_op.is_ancestor_of(&user.owner.borrow()))
-            .collect::<SmallVec<[_; 8]>>();
+        let mut scoped_uses = SmallVec::<[_; 8]>::default();
+        {
+            let mut cursor = self.first_use();
+            while let Some(user) = cursor.as_pointer() {
+                let owner = user.borrow().owner;
+                if from_op.is_ancestor_of(&owner.borrow()) {
+                    scoped_uses.push((owner, user));
+                }
+                cursor.move_next();
+            }
+        }
 
         // Don't bother looking in `from` if there aren't any uses to begin with
         if scoped_uses.is_empty() {
-            return SymbolUsesIter::from(uses);
+            return SymbolUseRefsIter::from(uses);
         }
 
         // Visit the body of `from`, to determine which of the uses of this symbol that belong to
@@ -113,9 +138,9 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
                 // Find all uses of `self` which occur within `op`, and add them to the result set,
                 // while also removing them from the set of uses to match against, reducing the
                 // work needed by future iterations.
-                scoped_uses.retain(|user| {
-                    if op.is_ancestor_of(&user.owner.borrow()) {
-                        uses.push_back(unsafe { SymbolUseRef::from_raw(&**user) });
+                scoped_uses.retain(|(owner, user)| {
+                    if op.is_ancestor_of(&owner.borrow()) {
+                        uses.push_back(*user);
                         false
                     } else {
                         true
@@ -124,12 +149,12 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
 
                 // If there are no more uses remaining, we're done, and can stop searching
                 if scoped_uses.is_empty() {
-                    return SymbolUsesIter::from(uses);
+                    return SymbolUseRefsIter::from(uses);
                 }
             }
         }
 
-        SymbolUsesIter::from(uses)
+        SymbolUseRefsIter::from(uses)
     }
     /// Return true if there are no uses of this symbol nested within `from`
     fn symbol_uses_known_empty(&self, from: OperationRef) -> bool {
@@ -142,23 +167,15 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         replacement: SymbolRef,
         from: OperationRef,
     ) -> Result<(), Report> {
-        for symbol_use in self.symbol_uses_in(from) {
-            let (mut owner, attr_name) = {
-                let user = symbol_use.borrow();
-                (user.owner, user.attr)
-            };
+        for user in self.symbol_uses_in(from) {
+            let SymbolUse { mut owner, attr } = *user.borrow();
             let mut owner = owner.borrow_mut();
             // Unlink previously used symbol
-            {
-                let current_symbol = owner
-                    .get_typed_attribute_mut::<SymbolNameAttr>(attr_name)
-                    .expect("stale symbol user");
-                unsafe {
-                    self.uses_mut().cursor_mut_from_ptr(current_symbol.user).remove();
-                }
+            unsafe {
+                self.uses_mut().cursor_mut_from_ptr(user).remove();
             }
             // Link replacement symbol
-            owner.set_symbol_attribute(attr_name, replacement);
+            owner.set_symbol_attribute(attr, replacement);
         }
 
         Ok(())

@@ -1,13 +1,10 @@
 mod native_ptr;
 
-use alloc::rc::Rc;
-
 use midenc_dialect_hir as hir;
 use midenc_hir2::{
-    dialects::builtin, pass::AnalysisManager, Context, FunctionIdent, Op, Operation, Value,
-    ValueRef,
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, Operation, Span, Value, ValueRef,
 };
-use midenc_session::diagnostics::{Report, Spanned};
+use midenc_session::diagnostics::{Report, Severity, Spanned};
 
 pub use self::native_ptr::NativePtr;
 use crate::{
@@ -20,15 +17,6 @@ use crate::{
 pub trait ToMasmComponent {
     fn to_masm_component(&self, analysis_manager: AnalysisManager)
         -> Result<MasmComponent, Report>;
-}
-
-pub trait ExtendMasmComponent {
-    fn extend_masm_component(
-        &self,
-        component: &mut MasmComponent,
-        analysis_manager: AnalysisManager,
-        link_info: &LinkInfo,
-    ) -> Result<(), Report>;
 }
 
 pub trait HirLowering: Op {
@@ -53,152 +41,295 @@ impl ToMasmComponent for builtin::Component {
         // Get the current compiler context
         let context = self.as_operation().context_rc();
 
-        // Get the entrypoint, if specified
-        let entrypoint =
-            match context.session.options.entrypoint.as_deref() {
-                Some(entry) => Some(entry.parse::<FunctionIdent>().map_err(|| {
-                    Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
-                })?),
-                None => None,
-            };
-
         // Run the linker for this component in order to compute its data layout
-        let link_info = Linker::default().link(self)?;
+        let link_info = Linker::default().link(self).map_err(Report::msg)?;
+
+        // Get the library path of the component
+        let component_path = link_info.component().to_library_path();
+
+        // Get the entrypoint, if specified
+        let entrypoint = match context.session.options.entrypoint.as_deref() {
+            Some(entry) => {
+                let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
+                    Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
+                })?;
+                let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(
+                    Span::new(entry_id.function.span, entry_id.function.as_str().into()),
+                ));
+                let path = component_path.clone().append_unchecked(entry_id.module);
+                Some(masm::InvocationTarget::AbsoluteProcedurePath { name, path })
+            }
+            None => None,
+        };
+
+        // If we have global variables or data segments, we will require a component initializer
+        // function, as well as a module to hold component-level functions such as init
+        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let mut modules = Vec::default();
+        if requires_init {
+            modules.push(Box::new(masm::Module::new(
+                masm::ModuleKind::Library,
+                component_path.clone(),
+            )));
+        }
+        let init = if requires_init {
+            Some(masm::InvocationTarget::AbsoluteProcedurePath {
+                name: masm::ProcedureName::new("init").unwrap(),
+                path: component_path.clone(),
+            })
+        } else {
+            None
+        };
 
         // Initialize the MASM component with basic information we have already
-        let component = link_info.component();
+        let id = link_info.component().clone();
         let mut masm_component = MasmComponent {
-            id: component.id().clone(),
-            init: None,
+            id,
+            init,
             entrypoint,
             kernel: None,
             rodata: Default::default(),
             stack_pointer: None,
-            modules: Default::default(),
-            components: Default::default(),
+            modules,
+        };
+        let builder = MasmComponentBuilder {
+            analysis_manager,
+            component: &mut masm_component,
+            link_info: &link_info,
         };
 
-        // Visit the component body, converting operations (e.g. data segments, modules, nested
-        // components, initializers) to Miden Assembly, extending the MasmComponent.
-        let region = self.body();
-        let block = region.entry();
-        for op in block.body() {
-            op.extend_masm_component(&mut masm_component, analysis_manager.clone(), &link_info)?;
-        }
+        builder.build(self)?;
 
         Ok(masm_component)
     }
 }
 
-impl ExtendMasmComponent for midenc_hir2::Operation {
-    fn extend_masm_component(
-        &self,
-        component: &mut MasmComponent,
-        analysis_manager: AnalysisManager,
-        link_info: &LinkInfo,
-    ) -> Result<(), Report> {
-        if let Some(module) = self.downcast_ref::<builtin::Module>() {
-            module.extend_masm_component(component, analysis_manager, link_info)
-        } else if let Some(nested) = self.downcast_ref::<builtin::Component>() {
-            nested.extend_masm_component(component, analysis_manager, link_info)
-        } else if let Some(segment) = self.downcast_ref::<builtin::Segment>() {
-            segment.extend_masm_component(component, analysis_manager, link_info)
-        } else {
-            panic!(
-                "invalid component-level operation: '{}' is not supported in a component body",
-                self.name()
-            )
-        }
-    }
+struct MasmComponentBuilder<'a> {
+    component: &'a mut MasmComponent,
+    analysis_manager: AnalysisManager,
+    link_info: &'a LinkInfo,
 }
 
-impl ExtendMasmComponent for builtin::Component {
-    fn extend_masm_component(
-        &self,
-        component: &mut MasmComponent,
-        analysis_manager: AnalysisManager,
-        link_info: &LinkInfo,
-    ) -> Result<(), Report> {
-        // Adding a nested component to its parent MasmComponent
-        let mut nested = MasmComponent {
-            id: builtin::ComponentId::from(self),
-            init: None,
-            entrypoint: None,
-            kernel: None,
-            rodata: Default::default(),
-            modules: Default::default(),
-            components: Default::default(),
-            stack_pointer: None,
-        };
-
-        // If a component has data segments or global variables, it requires an initializer which
-        // will be invoked to initialize that component's context. Otherwise, the initializer can
-        // be elided. Initializer functions _must_ be exported.
-        let region = self.body();
+impl<'a> MasmComponentBuilder<'a> {
+    /// Convert the component body to Miden Assembly
+    pub fn build(mut self, component: &builtin::Component) -> Result<(), Report> {
+        let region = component.body();
         let block = region.entry();
         for op in block.body() {
-            op.extend_masm_component(&mut nested, analysis_manager.clone(), link_info)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl ExtendMasmComponent for builtin::Module {
-    fn extend_masm_component(
-        &self,
-        component: &mut MasmComponent,
-        analysis_manager: AnalysisManager,
-        link_info: &LinkInfo,
-    ) -> Result<(), Report> {
-        // Adding a module to its parent MasmComponent
-        //
-        // We only visit Function operations here - global variables are handled at the component
-        // level.
-        let namespace = masm::LibraryNamespace::new(component.id.namespace).unwrap();
-        let module_name = <builtin::Module as midenc_hir2::Symbol>::name(self);
-        let path = masm::LibraryPath::new_from_components(ns, [component.id.name, module_name]);
-        let mut module = Box::new(masm::Module::new(masm::ModuleKind::Library, path));
-
-        let body = self.body();
-        let block = body.entry();
-        for op in block.body() {
-            if let Some(function) = op.downcast_ref::<builtin::Function>() {
-                let procedure = compile_function(function, analysis_manager.clone(), link_info)?;
-                module.define_procedure(masm::Export::Procedure(procedure))?;
+            if let Some(module) = op.downcast_ref::<builtin::Module>() {
+                self.define_module(module)?;
+            } else if let Some(interface) = op.downcast_ref::<builtin::Interface>() {
+                self.define_interface(interface)?;
+            } else if let Some(function) = op.downcast_ref::<builtin::Function>() {
+                self.define_function(function)?;
+            } else {
+                panic!(
+                    "invalid component-level operation: '{}' is not supported in a component body",
+                    op.name()
+                )
             }
         }
 
-        component.modules.push(module);
+        Ok(())
+    }
+
+    fn define_interface(&mut self, interface: &builtin::Interface) -> Result<(), Report> {
+        let component_path = self.component.id.to_library_path();
+        let interface_path = component_path.append_unchecked(interface.name());
+        let mut masm_module =
+            Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
+        let builder = MasmModuleBuilder {
+            module: &mut masm_module,
+            analysis_manager: self
+                .analysis_manager
+                .nest(interface.as_operation().as_operation_ref()),
+            link_info: self.link_info,
+        };
+        builder.build_from_interface(interface)?;
+
+        self.component.modules.push(masm_module);
+
+        Ok(())
+    }
+
+    fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
+        let component_path = self.component.id.to_library_path();
+        let module_path = component_path.append_unchecked(module.name());
+        let mut masm_module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
+        let builder = MasmModuleBuilder {
+            module: &mut masm_module,
+            analysis_manager: self.analysis_manager.nest(module.as_operation().as_operation_ref()),
+            link_info: self.link_info,
+        };
+        builder.build(module)?;
+
+        self.component.modules.push(masm_module);
+
+        Ok(())
+    }
+
+    fn define_function(&mut self, function: &builtin::Function) -> Result<(), Report> {
+        let builder = MasmFunctionBuilder::new(function)?;
+        let procedure = builder.build(
+            function,
+            self.analysis_manager.nest(function.as_operation().as_operation_ref()),
+            self.link_info,
+        )?;
+
+        let module = &mut self.component.modules[0];
+        assert_eq!(
+            module.path().num_components(),
+            1,
+            "expected top-level namespace module, but one has not been defined"
+        );
+
+        module.define_procedure(masm::Export::Procedure(procedure))?;
 
         Ok(())
     }
 }
 
-impl ExtendMasmComponent for builtin::Segment {
-    fn extend_masm_component(
-        &self,
-        component: &mut MasmComponent,
-        analysis_manager: AnalysisManager,
-        link_info: &LinkInfo,
-    ) -> Result<(), Report> {
-        // What should we do here? In theory, segment initializers should be evaluated in the
-        // component initializer function, but we also need to have validated the initializer by
-        // now, and also determined the size of the segment (or at least, have determined whether
-        // the initializer specifies the data statically, or computes it dynamically).
-        //
-        // We could lower initializers as top-level procedures to be invoked from the component
-        // initializer..
-        todo!()
+struct MasmModuleBuilder<'a> {
+    module: &'a mut masm::Module,
+    analysis_manager: AnalysisManager,
+    link_info: &'a LinkInfo,
+}
+
+impl<'a> MasmModuleBuilder<'a> {
+    pub fn build(mut self, module: &builtin::Module) -> Result<(), Report> {
+        let region = module.body();
+        let block = region.entry();
+        for op in block.body() {
+            if let Some(function) = op.downcast_ref::<builtin::Function>() {
+                self.define_function(function)?;
+            } else if op.is::<builtin::Segment>() || op.is::<builtin::GlobalVariable>() {
+                continue;
+            } else {
+                panic!(
+                    "invalid module-level operation: '{}' is not legal in a MASM module body",
+                    op.name()
+                )
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn build_from_interface(mut self, interface: &builtin::Interface) -> Result<(), Report> {
+        let region = interface.body();
+        let block = region.entry();
+        for op in block.body() {
+            if let Some(function) = op.downcast_ref::<builtin::Function>() {
+                self.define_function(function)?;
+            } else {
+                panic!(
+                    "invalid interface-level operation: '{}' is not legal in a MASM module body",
+                    op.name()
+                )
+            }
+        }
+
+        Ok(())
+    }
+
+    fn define_function(&mut self, function: &builtin::Function) -> Result<(), Report> {
+        let builder = MasmFunctionBuilder::new(function)?;
+
+        let procedure = builder.build(
+            function,
+            self.analysis_manager.nest(function.as_operation().as_operation_ref()),
+            self.link_info,
+        )?;
+
+        self.module.define_procedure(masm::Export::Procedure(procedure))?;
+
+        Ok(())
     }
 }
 
-fn compile_function(
-    function: &builtin::Function,
-    analysis_manager: AnalysisManager,
-    link_info: &LinkInfo,
-) -> Result<masm::Procedure, Report> {
-    todo!()
+struct MasmFunctionBuilder {
+    span: midenc_hir2::SourceSpan,
+    name: masm::ProcedureName,
+    visibility: masm::Visibility,
+    num_locals: u16,
+}
+
+impl MasmFunctionBuilder {
+    pub fn new(function: &builtin::Function) -> Result<Self, Report> {
+        use midenc_hir2::{Symbol, Visibility};
+
+        let name = function.name();
+        let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(Span::new(
+            name.span,
+            name.as_str().into(),
+        )));
+        let visibility = match function.visibility() {
+            Visibility::Public => masm::Visibility::Public,
+            // TODO(pauls): Support internal visibility in MASM
+            Visibility::Internal => masm::Visibility::Public,
+            Visibility::Private => masm::Visibility::Private,
+        };
+        let num_locals = u16::try_from(function.num_locals()).map_err(|_| {
+            let context = function.as_operation().context();
+            context
+                .session
+                .diagnostics
+                .diagnostic(miden_assembly::diagnostics::Severity::Error)
+                .with_message("cannot emit masm for function")
+                .with_primary_label(
+                    function.span(),
+                    "too many locals: no more than u16::MAX are supported",
+                )
+                .into_report()
+        })?;
+
+        Ok(Self {
+            span: function.span(),
+            name,
+            visibility,
+            num_locals,
+        })
+    }
+
+    pub fn build(
+        self,
+        function: &builtin::Function,
+        analysis_manager: AnalysisManager,
+        link_info: &LinkInfo,
+    ) -> Result<masm::Procedure, Report> {
+        use alloc::collections::BTreeSet;
+
+        use midenc_hir2::dataflow::analyses::LivenessAnalysis;
+
+        let liveness =
+            analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
+
+        let mut invoked = BTreeSet::default();
+        let entry = function.entry_block();
+        let emitter = BlockEmitter {
+            function,
+            liveness: &liveness,
+            link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack: Default::default(),
+        };
+
+        let body = emitter.emit(&entry.borrow());
+
+        let Self {
+            span,
+            name,
+            visibility,
+            num_locals,
+        } = self;
+
+        let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
+
+        procedure.extend_invoked(invoked);
+
+        Ok(procedure)
+    }
 }
 
 impl HirLowering for hir::Ret {
@@ -767,7 +898,113 @@ impl HirLowering for hir::Sext {
 
 impl HirLowering for hir::Exec {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        todo!()
+        use midenc_hir2::{CallOpInterface, CallableOpInterface};
+
+        let callee = self.resolve().ok_or_else(|| {
+            let context = self.as_operation().context();
+            context
+                .session
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message("invalid call operation: unable to resolve callee")
+                .with_primary_label(
+                    self.span(),
+                    "this symbol path is not resolvable from this operation",
+                )
+                .with_help(
+                    "Make sure that all referenced symbols are reachable via the root symbol \
+                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
+                )
+                .into_report()
+        })?;
+        let callee = callee.borrow();
+        let callee_path = callee.path();
+        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
+            Some(callable) => callable.signature(),
+            None => {
+                let context = self.as_operation().context();
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid call operation: callee is not a callable op")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolved to a '{}' op, which does not implement Callable",
+                            callee.as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report());
+            }
+        };
+
+        // Convert the path components to an absolute procedure path
+        let mut path = callee_path.to_library_path();
+        let name = masm::ProcedureName::new_unchecked(
+            path.pop().expect("expected at least two path components"),
+        );
+        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+
+        emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
+
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::Call {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use midenc_hir2::{CallOpInterface, CallableOpInterface};
+
+        let callee = self.resolve().ok_or_else(|| {
+            let context = self.as_operation().context();
+            context
+                .session
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message("invalid call operation: unable to resolve callee")
+                .with_primary_label(
+                    self.span(),
+                    "this symbol path is not resolvable from this operation",
+                )
+                .with_help(
+                    "Make sure that all referenced symbols are reachable via the root symbol \
+                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
+                )
+                .into_report()
+        })?;
+        let callee = callee.borrow();
+        let callee_path = callee.path();
+        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
+            Some(callable) => callable.signature(),
+            None => {
+                let context = self.as_operation().context();
+                return Err(context
+                    .session
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid call operation: callee is not a callable op")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolved to a '{}' op, which does not implement Callable",
+                            callee.as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report());
+            }
+        };
+
+        // Convert the path components to an absolute procedure path
+        let mut path = callee_path.to_library_path();
+        let name = masm::ProcedureName::new_unchecked(
+            path.pop().expect("expected at least two path components"),
+        );
+        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+
+        emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
+
+        Ok(())
     }
 }
 
