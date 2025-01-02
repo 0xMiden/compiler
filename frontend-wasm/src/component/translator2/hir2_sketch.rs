@@ -1,0 +1,150 @@
+use std::fmt;
+
+use midenc_hir::{formatter::PrettyPrint, FunctionIdent, Ident, Signature};
+
+#[derive(Debug)]
+pub struct Function {
+    pub id: FunctionIdent,
+    pub signature: Signature,
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f)
+    }
+}
+
+impl PrettyPrint for Function {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        const_text("(")
+            + const_text("func")
+            + const_text(" ")
+            + display(self.id)
+            + const_text(" ")
+            + self.signature.render()
+            + const_text(")")
+    }
+}
+
+#[derive(Debug)]
+pub struct Interface {
+    pub name: String,
+    pub functions: Vec<Function>,
+}
+
+impl fmt::Display for Interface {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f)
+    }
+}
+
+impl PrettyPrint for Interface {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        let functions = self
+            .functions
+            .iter()
+            .map(PrettyPrint::render)
+            .reduce(|acc, doc| acc + nl() + doc)
+            .unwrap_or(Document::Empty);
+
+        const_text("(")
+            + const_text("interface")
+            + const_text(" ")
+            + text(&self.name)
+            + indent(4, nl() + functions)
+            + nl()
+            + const_text(")")
+    }
+}
+
+#[derive(Debug)]
+pub struct Module {
+    pub name: Ident,
+    pub functions: Vec<Function>,
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f)
+    }
+}
+
+impl PrettyPrint for Module {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        let functions = self
+            .functions
+            .iter()
+            .map(PrettyPrint::render)
+            .reduce(|acc, doc| acc + nl() + doc)
+            .unwrap_or(Document::Empty);
+
+        const_text("(")
+            + const_text("module")
+            + const_text(" ")
+            + display(self.name)
+            + indent(4, nl() + functions)
+            + nl()
+            + const_text(")")
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Component {
+    pub name: String,
+    pub interfaces: Vec<Interface>,
+    pub modules: Vec<Module>,
+}
+
+impl fmt::Display for Component {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f)
+    }
+}
+
+impl PrettyPrint for Component {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        let interfaces = self
+            .interfaces
+            .iter()
+            .map(PrettyPrint::render)
+            .reduce(|acc, doc| acc + nl() + doc)
+            .map(|doc| const_text(";; Interfaces") + nl() + doc)
+            .unwrap_or(Document::Empty);
+
+        let modules = self
+            .modules
+            .iter()
+            .map(PrettyPrint::render)
+            .reduce(|acc, doc| acc + nl() + doc)
+            .map(|doc| const_text(";; Modules") + nl() + doc)
+            .unwrap_or(Document::Empty);
+
+        let body = vec![interfaces, modules]
+            .into_iter()
+            .filter(|section| !section.is_empty())
+            .fold(nl(), |a, b| {
+                if matches!(a, Document::Newline) {
+                    indent(4, a + b)
+                } else {
+                    a + nl() + indent(4, nl() + b)
+                }
+            });
+
+        const_text("(")
+            + const_text("component")
+            + const_text(" ")
+            + text(&self.name)
+            + body
+            + nl()
+            + const_text(")")
+            + nl()
+    }
+}

@@ -1,0 +1,34 @@
+(component root
+    ;; Interfaces
+    (interface miden:basic-wallet/basic-wallet@1.0.0
+        (func (#miden:basic-wallet/basic-wallet@1.0.0 #receive-asset )
+        (func (#miden:basic-wallet/basic-wallet@1.0.0 #send-asset )
+    )
+    (interface miden:basic-wallet/aux@1.0.0
+        (func (#miden:basic-wallet/aux@1.0.0 #test-felt-intrinsics )
+        (func (#miden:basic-wallet/aux@1.0.0 #test-stdlib )
+        (func (#miden:basic-wallet/aux@1.0.0 #process-list-felt )
+        (func (#miden:basic-wallet/aux@1.0.0 #process-core-asset )
+    )
+
+    ;; Modules
+    (module #miden:core-import/intrinsics-felt@1.0.0
+        (func (#miden:core-import/intrinsics-felt@1.0.0 #add )
+    )
+    (module #miden:core-import/stdlib-crypto-hashes-blake3@1.0.0
+        (func (#miden:core-import/stdlib-crypto-hashes-blake3@1.0.0 #hash-one-to-one )
+    )
+    (module #miden:core-import/intrinsics-mem@1.0.0
+        (func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base )
+    )
+    (module #miden:core-import/account@1.0.0
+        (func (#miden:core-import/account@1.0.0 #add-asset )
+        (func (#miden:core-import/account@1.0.0 #remove-asset )
+    )
+    (module #miden:core-import/tx@1.0.0
+        (func (#miden:core-import/tx@1.0.0 #create-note )
+    )
+    (module #basic_wallet
+
+    )
+)

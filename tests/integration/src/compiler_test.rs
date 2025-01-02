@@ -1081,6 +1081,18 @@ impl CompilerTest {
         }
     }
 
+    /// Expect test that builds the IR2(sketch)
+    pub fn expect_ir2(&mut self, expected_hir_file: expect_test::ExpectFile) {
+        let ir = midenc_frontend_wasm::translate_component2(
+            &self.wasm_bytes(),
+            &self.config,
+            &self.session,
+        )
+        .expect("Failed to translate Wasm binary to IR component");
+        // let txt = ir_components.into_iter().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
+        expected_hir_file.assert_eq(&ir.to_string());
+    }
+
     /// Compare the compiled MASM against the expected output
     pub fn expect_masm(&mut self, expected_masm_file: expect_test::ExpectFile) {
         let program = demangle(self.masm_src().as_str());

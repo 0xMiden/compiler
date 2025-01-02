@@ -9,6 +9,7 @@ pub mod info;
 mod inline;
 mod parser;
 mod translator;
+mod translator2;
 mod types;
 
 pub use self::{info::*, parser::*, types::*};

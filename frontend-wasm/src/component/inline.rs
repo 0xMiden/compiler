@@ -58,7 +58,7 @@ use super::{
     LocalCanonicalOptions, ParsedComponent, StringEncoding,
 };
 use crate::{
-    component::{dfg, LocalInitializer},
+    component::{dfg, CanonLift, CanonLower, ComponentInstantiation, LocalInitializer},
     module::{module_env::ParsedModule, types::*, ModuleImport},
 };
 
@@ -501,12 +501,12 @@ impl<'a> Inliner<'a> {
             // Lowering a component function to a core wasm function.  Here
             // various metadata is recorded and then the final component gets an
             // initializer recording the lowering.
-            Lower {
+            Lower(CanonLower {
                 func,
                 options,
                 canonical_abi,
                 lower_ty,
-            } => {
+            }) => {
                 let lower_ty =
                     types.convert_component_func_type(frame.translation.types_ref(), *lower_ty)?;
                 let options_lower = self.adapter_options(frame, options);
@@ -580,7 +580,7 @@ impl<'a> Inliner<'a> {
             // Lifting a core wasm function is relatively easy for now in that
             // some metadata about the lifting is simply recorded. This'll get
             // plumbed through to exports or a fused adapter later on.
-            Lift(ty, func, options) => {
+            Lift(CanonLift { ty, func, options }) => {
                 let ty = types.convert_component_func_type(frame.translation.types_ref(), *ty)?;
                 let options = self.adapter_options(frame, options);
                 frame.component_funcs.push(ComponentFuncDef::Lifted {
@@ -732,7 +732,11 @@ impl<'a> Inliner<'a> {
             // of this entire module, so the "easy" step here is to simply
             // create a new inliner frame and return it to get pushed onto the
             // stack.
-            ComponentInstantiate(component, args, ty) => {
+            ComponentInstantiate(ComponentInstantiation {
+                component,
+                args,
+                ty,
+            }) => {
                 let component: &ComponentDef<'a> = &frame.components[*component];
                 let index = RuntimeComponentInstanceIndex::from_u32(
                     self.result.num_runtime_component_instances,
@@ -826,7 +830,7 @@ impl<'a> Inliner<'a> {
                 frame.components.push(frame.closed_over_component(idx));
             }
 
-            Export(item) => match item {
+            Export(_, item) => match item {
                 ComponentItem::Func(i) => {
                     frame.component_funcs.push(frame.component_funcs[*i].clone());
                 }

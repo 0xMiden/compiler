@@ -21,6 +21,7 @@ mod translation_utils;
 mod test_utils;
 
 use component::build_ir::translate_component;
+pub use component::build_ir::translate_component2;
 use error::WasmResult;
 use midenc_session::Session;
 use module::build_ir::translate_module_as_component;

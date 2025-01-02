@@ -218,3 +218,18 @@ fn rust_sdk_cross_ctx_note() {
 
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
+
+// Testing the new frontend's Wasm component translator producing HIR2(sketch)
+#[test]
+fn rust_sdk_hir2_sketch() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/basic-wallet",
+        config,
+        [],
+    );
+    let artifact_name = "hir2_sketch";
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+}

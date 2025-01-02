@@ -248,6 +248,14 @@ pub enum ComponentItem {
     ComponentInstance(ComponentInstanceIndex),
     Type(types::ComponentAnyTypeId),
 }
+impl ComponentItem {
+    pub(crate) fn unwrap_instance(&self) -> ComponentInstanceIndex {
+        match self {
+            ComponentItem::ComponentInstance(i) => *i,
+            _ => panic!("not a component instance"),
+        }
+    }
+}
 
 /// Runtime information about the type information contained within a component.
 ///
