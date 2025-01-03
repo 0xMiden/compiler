@@ -2,9 +2,9 @@
 
 use hir2_sketch::{Component, Interface, Module};
 use midenc_hir::{
-    cranelift_entity::PrimaryMap, diagnostics::Report, CanonAbiImport, ComponentBuilder,
-    ComponentExport, FunctionIdent, FunctionType, Ident, InterfaceFunctionIdent, InterfaceIdent,
-    MidenAbiImport, Signature, SourceSpan, Symbol,
+    cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, CanonAbiImport,
+    ComponentBuilder, ComponentExport, FunctionIdent, FunctionType, Ident, InterfaceFunctionIdent,
+    InterfaceIdent, Linkage, MidenAbiImport, Signature, SourceSpan, Symbol,
 };
 use midenc_hir_type::Abi;
 use midenc_session::{DiagnosticsHandler, Session};
@@ -12,13 +12,13 @@ use rustc_hash::FxHashMap;
 use wasmparser::types::ComponentEntityType;
 
 use super::{
-    interface_type_to_ir, CanonLift, CanonLower, CanonicalOptions, ComponentFuncIndex,
-    ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypes,
-    ComponentTypesBuilder, CoreDef, CoreExport, Export, ExportItem, GlobalInitializer, ImportIndex,
-    InstantiateModule, LinearComponent, LinearComponentTranslation, LoweredIndex,
-    ModuleInstanceIndex, ParsedRootComponent, RuntimeImportIndex, RuntimeInstanceIndex,
-    RuntimePostReturnIndex, RuntimeReallocIndex, StaticModuleIndex, Trampoline, TypeDef,
-    TypeFuncIndex,
+    interface_type_to_ir, translator::convert_lifted_func_ty, CanonLift, CanonLower,
+    CanonicalOptions, ComponentFuncIndex, ComponentIndex, ComponentInstanceIndex,
+    ComponentInstantiation, ComponentTypes, ComponentTypesBuilder, CoreDef, CoreExport, Export,
+    ExportItem, GlobalInitializer, ImportIndex, InstantiateModule, LinearComponent,
+    LinearComponentTranslation, LoweredIndex, ModuleInstanceIndex, ParsedRootComponent,
+    RuntimeImportIndex, RuntimeInstanceIndex, RuntimePostReturnIndex, RuntimeReallocIndex,
+    StaticModuleIndex, Trampoline, TypeDef, TypeFuncIndex,
 };
 use crate::{
     component::{ComponentItem, LocalInitializer, StaticComponentIndex, StringEncoding},
@@ -171,8 +171,22 @@ impl<'a> ComponentTranslator2<'a> {
                                 module_name = Some(import_instance.name.clone());
                             }
                             let func = Ident::new(Symbol::intern(*k), SourceSpan::default());
-                            // TODO: get the component function type
-                            let signature = Signature::new(vec![], vec![]);
+                            // TODO: handle error
+                            let type_func_idx = types
+                                .convert_component_func_type(
+                                    parsed_root_component.root_component.types_ref(),
+                                    canon_lower.lower_ty,
+                                )
+                                .unwrap();
+
+                            let component_types = types.resources_mut_and_types().1;
+                            let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
+                            let signature = Signature {
+                                params: func_ty.params.into_iter().map(AbiParam::new).collect(),
+                                results: func_ty.results.into_iter().map(AbiParam::new).collect(),
+                                cc: CallConv::CanonLower,
+                                linkage: Linkage::External,
+                            };
                             (func, signature)
                         })
                         .collect();

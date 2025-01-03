@@ -13,20 +13,20 @@
 
     ;; Modules
     (module #miden:core-import/intrinsics-felt@1.0.0
-        (func (#miden:core-import/intrinsics-felt@1.0.0 #add )
+        (func (#miden:core-import/intrinsics-felt@1.0.0 #add (cc lower) (param felt) (param felt) (result felt))
     )
     (module #miden:core-import/stdlib-crypto-hashes-blake3@1.0.0
-        (func (#miden:core-import/stdlib-crypto-hashes-blake3@1.0.0 #hash-one-to-one )
+        (func (#miden:core-import/stdlib-crypto-hashes-blake3@1.0.0 #hash-one-to-one (cc lower) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32))
     )
     (module #miden:core-import/intrinsics-mem@1.0.0
-        (func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base )
+        (func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base (cc lower) (result i32))
     )
     (module #miden:core-import/account@1.0.0
-        (func (#miden:core-import/account@1.0.0 #add-asset )
-        (func (#miden:core-import/account@1.0.0 #remove-asset )
+        (func (#miden:core-import/account@1.0.0 #add-asset (cc lower) (param felt) (param felt) (param felt) (param felt) (param i32))
+        (func (#miden:core-import/account@1.0.0 #remove-asset (cc lower) (param felt) (param felt) (param felt) (param felt) (param i32))
     )
     (module #miden:core-import/tx@1.0.0
-        (func (#miden:core-import/tx@1.0.0 #create-note )
+        (func (#miden:core-import/tx@1.0.0 #create-note (cc lower) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt))
     )
     (module #basic_wallet
 
