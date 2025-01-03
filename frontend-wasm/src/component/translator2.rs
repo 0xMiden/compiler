@@ -243,7 +243,8 @@ impl<'a> ComponentTranslator2<'a> {
                     let parsed_component =
                         &parsed_root_component.static_components[*static_component_idx];
                     dbg!(&parsed_component.exports);
-                    // let name =
+                    let module =
+                        Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
                     let functions = parsed_component
                         .exports
                         .iter()
@@ -254,11 +255,9 @@ impl<'a> ComponentTranslator2<'a> {
                                 //     .unwrap_instantiated();
                                 // TODO: get the component function type
                                 let signature = Signature::new(vec![], vec![]);
+
                                 let function_id = FunctionIdent {
-                                    module: Ident::new(
-                                        Symbol::intern(interface_name.clone()),
-                                        SourceSpan::default(),
-                                    ),
+                                    module,
                                     function: Ident::new(
                                         Symbol::intern(name.to_string()),
                                         SourceSpan::default(),
