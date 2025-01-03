@@ -82,15 +82,16 @@ impl<'a> ComponentTranslator2<'a> {
             modules: vec![],
         };
         let mut static_modules = Vec::new();
+        // TODO: extract into a frame (new frame on `ComponentInstantiate`)
         let mut components: PrimaryMap<ComponentIndex, (_, _)> = PrimaryMap::new();
         let mut component_instances: PrimaryMap<ComponentInstanceIndex, ComponentInstance> =
             PrimaryMap::new();
-        let mut component_funcs: PrimaryMap<ComponentFuncIndex, (ComponentInstanceIndex, String)> =
+        let mut component_funcs: PrimaryMap<ComponentFuncIndex, ComponentFuncDef> =
             PrimaryMap::new();
         let mut core_funcs: PrimaryMap<FuncIndex, (ModuleInstanceIndex, String)> =
             PrimaryMap::new();
+        // TODO: move to core_funcs
         let mut lowerings: PrimaryMap<FuncIndex, CanonLower> = PrimaryMap::new();
-        let mut liftings: PrimaryMap<ComponentFuncIndex, CanonLift> = PrimaryMap::new();
         let types_ref = parsed_root_component.root_component.types_ref();
         for init in parsed_root_component.root_component.initializers.iter() {
             // dbg!(&init);
@@ -129,7 +130,7 @@ impl<'a> ComponentTranslator2<'a> {
                     },
                 ) => {
                     // dbg!(&init);
-                    liftings.push(lift.clone());
+                    component_funcs.push(ComponentFuncDef::Lifted(lift.clone()));
                 }
                 LocalInitializer::Resource(aliasable_resource_id, wasm_type, func_index) => todo!(),
                 LocalInitializer::ResourceNew(aliasable_resource_id, signature_index) => todo!(),
@@ -159,8 +160,9 @@ impl<'a> ComponentTranslator2<'a> {
                         .map(|(k, v)| {
                             let func_id = v.unwrap_func();
                             let canon_lower = &lowerings[func_id];
-                            let comp_func = &component_funcs[canon_lower.func];
-                            let import_instance = &component_instances[comp_func.0].unwrap_import();
+                            let comp_func = &component_funcs[canon_lower.func].unwrap_import();
+                            let import_instance =
+                                &component_instances[*comp_func.0].unwrap_import();
                             if let Some(module_name) = &module_name {
                                 assert_eq!(
                                     module_name, &import_instance.name,
@@ -240,7 +242,10 @@ impl<'a> ComponentTranslator2<'a> {
                     // dbg!(&init);
                 }
                 LocalInitializer::AliasComponentExport(component_instance_index, name) => {
-                    component_funcs.push((*component_instance_index, name.to_string()));
+                    component_funcs.push(ComponentFuncDef::Import(
+                        *component_instance_index,
+                        name.to_string(),
+                    ));
                 }
                 LocalInitializer::AliasModule(closed_over_module) => todo!(),
                 LocalInitializer::AliasComponent(closed_over_component) => todo!(),
@@ -256,7 +261,7 @@ impl<'a> ComponentTranslator2<'a> {
                     let static_component_idx = components[instance.component].0;
                     let parsed_component =
                         &parsed_root_component.static_components[*static_component_idx];
-                    dbg!(&parsed_component.exports);
+                    // dbg!(&parsed_component.exports);
                     let module =
                         Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
                     let functions = parsed_component
@@ -264,10 +269,31 @@ impl<'a> ComponentTranslator2<'a> {
                         .iter()
                         .flat_map(|(name, item)| {
                             if let ComponentItem::Func(f) = item {
-                                // let (component_instance_id, name) = component_funcs[*f];
-                                // let component_instance = component_instances[component_instance_id]
-                                //     .unwrap_instantiated();
-                                // TODO: get the component function type
+                                // dbg!(&component_funcs, f, name);
+                                dbg!(&parsed_component.initializers);
+                                let canon_lift = component_funcs[*f].unwrap_canon_lift();
+                                // TODO: extract into a function
+                                // TODO: handle error
+                                let type_func_idx = types
+                                    .convert_component_func_type(
+                                        parsed_root_component.root_component.types_ref(),
+                                        canon_lift.ty,
+                                    )
+                                    .unwrap();
+
+                                let component_types = types.resources_mut_and_types().1;
+                                let func_ty =
+                                    convert_lifted_func_ty(&type_func_idx, component_types);
+                                let signature = Signature {
+                                    params: func_ty.params.into_iter().map(AbiParam::new).collect(),
+                                    results: func_ty
+                                        .results
+                                        .into_iter()
+                                        .map(AbiParam::new)
+                                        .collect(),
+                                    cc: CallConv::CanonLower,
+                                    linkage: Linkage::External,
+                                };
                                 let signature = Signature::new(vec![], vec![]);
 
                                 let function_id = FunctionIdent {
@@ -328,4 +354,28 @@ impl<'a> ComponentInstance<'a> {
 struct ComponentInstanceImport {
     name: String,
     ty: TypeDef,
+}
+
+#[derive(Clone, Debug)]
+enum ComponentFuncDef {
+    /// A host-imported component function.
+    Import(ComponentInstanceIndex, String),
+
+    /// A core wasm function was lifted into a component function.
+    Lifted(CanonLift),
+}
+impl ComponentFuncDef {
+    fn unwrap_import(&self) -> (&ComponentInstanceIndex, &String) {
+        match self {
+            ComponentFuncDef::Import(idx, name) => (idx, name),
+            _ => panic!("expected import"),
+        }
+    }
+
+    fn unwrap_canon_lift(&self) -> &CanonLift {
+        match self {
+            ComponentFuncDef::Lifted(lift) => lift,
+            _ => panic!("expected lift"),
+        }
+    }
 }
