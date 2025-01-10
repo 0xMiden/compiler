@@ -1090,7 +1090,8 @@ impl CompilerTest {
         )
         .expect("Failed to translate Wasm binary to IR component");
         // let txt = ir_components.into_iter().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
-        expected_hir_file.assert_eq(&ir.to_string());
+        let src = demangle(ir.to_string());
+        expected_hir_file.assert_eq(&src);
     }
 
     /// Compare the compiled MASM against the expected output

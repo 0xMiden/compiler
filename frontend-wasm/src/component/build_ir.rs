@@ -68,10 +68,15 @@ pub fn translate_component2(
     config: &WasmTranslationConfig,
     session: &Session,
 ) -> WasmResult<super::translator2::hir2_sketch::Component> {
-    let (mut component_types_builder, parsed_component) = parse(config, wasm, session)?;
-    let translator = ComponentTranslator2::new(config, session);
-    translator.translate(
-        parsed_component,
+    let (mut component_types_builder, parsed_root_component) = parse(config, wasm, session)?;
+    let translator = ComponentTranslator2::new(
+        &parsed_root_component.static_modules,
+        &parsed_root_component.static_components,
+        config,
+        session,
+    );
+    translator.translate2(
+        &parsed_root_component.root_component,
         &mut component_types_builder,
         session.diagnostics.as_ref(),
     )
