@@ -3,27 +3,31 @@ use std::fmt;
 use midenc_hir::{formatter::PrettyPrint, FunctionIdent, Ident, Signature};
 
 #[derive(Debug)]
-pub struct Function {
+pub struct SyntheticFunction {
     pub id: FunctionIdent,
     pub signature: Signature,
+    pub inner_function: FunctionIdent,
 }
 
-impl fmt::Display for Function {
+impl fmt::Display for SyntheticFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
 }
 
-impl PrettyPrint for Function {
+impl PrettyPrint for SyntheticFunction {
     fn render(&self) -> midenc_hir::formatter::Document {
         use midenc_hir::formatter::*;
 
         const_text("(")
-            + const_text("func")
+            + const_text("synth_func")
             + const_text(" ")
             + display(self.id)
             + const_text(" ")
             + self.signature.render()
+            + const_text(" (inner ")
+            + self.inner_function.render()
+            + const_text(")")
             + const_text(")")
     }
 }
@@ -31,7 +35,7 @@ impl PrettyPrint for Function {
 #[derive(Debug)]
 pub struct Interface {
     pub name: String,
-    pub functions: Vec<Function>,
+    pub functions: Vec<SyntheticFunction>,
 }
 
 impl fmt::Display for Interface {
@@ -64,7 +68,7 @@ impl PrettyPrint for Interface {
 #[derive(Debug)]
 pub struct Module {
     pub name: Ident,
-    pub functions: Vec<Function>,
+    pub functions: Vec<SyntheticFunction>,
 }
 
 impl fmt::Display for Module {

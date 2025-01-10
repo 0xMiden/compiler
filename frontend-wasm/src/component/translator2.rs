@@ -270,12 +270,11 @@ impl<'a> ComponentTranslator2<'a> {
                                     SourceSpan::default(),
                                 ),
                             };
-                            let function = hir2_sketch::Function {
+                            let function = hir2_sketch::SyntheticFunction {
                                 id: internal_func_id,
                                 signature: import_canon_lower_func_sig.clone(),
+                                inner_function: import_func_id,
                             };
-                            // TODO: generate synthetic function body with a call to imported
-                            // function
                             module.functions.push(function);
                         }
 
@@ -420,6 +419,42 @@ impl<'a> ComponentTranslator2<'a> {
                             dbg!(&nested_frame.component_funcs);
                             dbg!(&f);
                             let canon_lift = nested_frame.component_funcs[*f].unwrap_canon_lift();
+                            let core_func_id: FunctionIdent = match &frame.funcs[canon_lift.func] {
+                                CoreDef::Export(module_instance_index, name) => {
+                                    match &frame.module_instances[*module_instance_index] {
+                                        ModuleInstanceDef::Instantiated { module_idx, args } => {
+                                            match frame.modules[*module_idx] {
+                                                ModuleDef::Static(static_module_index) => {
+                                                    let parsed_module =
+                                                        &self.nested_modules[static_module_index];
+                                                    let func_idx = parsed_module.module.exports
+                                                        [*name]
+                                                        .unwrap_func();
+                                                    let func_name =
+                                                        parsed_module.module.func_name(func_idx);
+                                                    let module_ident = parsed_module.module.name();
+                                                    FunctionIdent {
+                                                        module: module_ident,
+                                                        function: Ident::new(
+                                                            func_name,
+                                                            SourceSpan::default(),
+                                                        ),
+                                                    }
+                                                }
+                                                ModuleDef::Import(type_module_index) => {
+                                                    panic!("expected static module")
+                                                }
+                                            }
+                                        }
+                                        ModuleInstanceDef::Synthetic(hash_map) => {
+                                            panic!("expected static module")
+                                        }
+                                    }
+                                }
+                                CoreDef::Lower(canon_lower) => {
+                                    panic!("expected export, got {:?}", canon_lower)
+                                }
+                            };
                             let type_func_idx = types
                                 .convert_component_func_type(types_ref, canon_lift.ty)
                                 .unwrap();
@@ -441,9 +476,10 @@ impl<'a> ComponentTranslator2<'a> {
                                 ),
                             };
                             // TODO: generate body with a call to the core module export
-                            let function = hir2_sketch::Function {
+                            let function = hir2_sketch::SyntheticFunction {
                                 id: function_id,
                                 signature,
+                                inner_function: core_func_id,
                             };
                             vec![function]
                         } else {
