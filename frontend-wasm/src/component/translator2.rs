@@ -1,4 +1,4 @@
-// TODO: remove when it is completed
+// TODO: remove after its completed
 #![allow(unused)]
 
 // TODO: refactor
@@ -65,7 +65,7 @@ impl<'a> ComponentTranslator2<'a> {
         config: &'a WasmTranslationConfig,
         session: &'a Session,
     ) -> Self {
-        let mut builder = hir2_sketch::WorldBuilder::new("root".to_string());
+        let builder = hir2_sketch::WorldBuilder::new("root".to_string());
         Self {
             config,
             session,
@@ -391,7 +391,7 @@ impl<'a> ComponentTranslator2<'a> {
                 frame.frames.insert(instance_idx, new_frame);
             }
             LocalInitializer::ComponentSynthetic(_hash_map) => {
-                dbg!(&init);
+                // dbg!(&init);
             }
             LocalInitializer::AliasExportFunc(module_instance_index, name) => {
                 // dbg!(&init);
@@ -403,32 +403,13 @@ impl<'a> ComponentTranslator2<'a> {
                 // dbg!(&init);
             }
             LocalInitializer::AliasComponentExport(component_instance_index, name) => {
-                match &frame.component_instances[*component_instance_index] {
-                    // Aliasing an export from an imported instance means that
-                    // we're extending the `ImportPath` by one name, represented
-                    // with the clone + push here. Afterwards an appropriate
-                    // item is then pushed in the relevant index space.
-                    ComponentInstanceDef::Import(import) => {
-                        dbg!(&import);
-                        // let path = path.push(*name);
-                        let def = ComponentItemDef::from_import(
-                            name,
-                            types[import.ty].exports[*name],
-                            *component_instance_index,
-                        );
-                        frame.push_item(def);
-                    }
-
-                    // Given a component instance which was either created
-                    // through instantiation of a component or through a
-                    // synthetic renaming of items we just schlep around the
-                    // definitions of various items here.
-                    // ComponentInstanceDef::Items(map) => frame.push_item(map[*name].clone()),
-                    ComponentInstanceDef::Instantiated(inst) => {
-                        dbg!(&inst);
-                    }
-                    ComponentInstanceDef::Export => todo!(),
-                }
+                let import = &frame.component_instances[*component_instance_index].unwrap_import();
+                let def = ComponentItemDef::from_import(
+                    name,
+                    types[import.ty].exports[*name],
+                    *component_instance_index,
+                );
+                frame.push_item(def);
             }
             LocalInitializer::AliasModule(_) => todo!(),
             LocalInitializer::AliasComponent(_) => todo!(),
@@ -475,31 +456,31 @@ impl<'a> ComponentTranslator2<'a> {
                             let core_func_id: FunctionIdent = match &frame.funcs[canon_lift.func] {
                                 CoreDef::Export(module_instance_index, name) => {
                                     match &frame.module_instances[*module_instance_index] {
-                                        ModuleInstanceDef::Instantiated { module_idx, args } => {
-                                            match frame.modules[*module_idx] {
-                                                ModuleDef::Static(static_module_index) => {
-                                                    let parsed_module =
-                                                        &self.nested_modules[static_module_index];
-                                                    let func_idx = parsed_module.module.exports
-                                                        [*name]
-                                                        .unwrap_func();
-                                                    let func_name =
-                                                        parsed_module.module.func_name(func_idx);
-                                                    let module_ident = parsed_module.module.name();
-                                                    FunctionIdent {
-                                                        module: module_ident,
-                                                        function: Ident::new(
-                                                            func_name,
-                                                            SourceSpan::default(),
-                                                        ),
-                                                    }
-                                                }
-                                                ModuleDef::Import(type_module_index) => {
-                                                    panic!("expected static module")
+                                        ModuleInstanceDef::Instantiated {
+                                            module_idx,
+                                            args: _,
+                                        } => match frame.modules[*module_idx] {
+                                            ModuleDef::Static(static_module_index) => {
+                                                let parsed_module =
+                                                    &self.nested_modules[static_module_index];
+                                                let func_idx = parsed_module.module.exports[*name]
+                                                    .unwrap_func();
+                                                let func_name =
+                                                    parsed_module.module.func_name(func_idx);
+                                                let module_ident = parsed_module.module.name();
+                                                FunctionIdent {
+                                                    module: module_ident,
+                                                    function: Ident::new(
+                                                        func_name,
+                                                        SourceSpan::default(),
+                                                    ),
                                                 }
                                             }
-                                        }
-                                        ModuleInstanceDef::Synthetic(hash_map) => {
+                                            ModuleDef::Import(_type_module_index) => {
+                                                panic!("expected static module")
+                                            }
+                                        },
+                                        ModuleInstanceDef::Synthetic(_hash_map) => {
                                             panic!("expected static module")
                                         }
                                     }
@@ -590,13 +571,6 @@ enum ComponentFuncDef<'a> {
     Lifted(CanonLift),
 }
 impl<'a> ComponentFuncDef<'a> {
-    fn unwrap_import(&self) -> (&ComponentInstanceIndex, &'a str) {
-        match self {
-            ComponentFuncDef::Import(idx, name) => (idx, name),
-            _ => panic!("expected import"),
-        }
-    }
-
     fn unwrap_canon_lift(&self) -> &CanonLift {
         match self {
             ComponentFuncDef::Lifted(lift) => lift,
