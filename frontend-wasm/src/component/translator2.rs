@@ -1,9 +1,6 @@
 // TODO: remove after its completed
 #![allow(unused)]
 
-// TODO: refactor
-// TODO: document
-
 use hir2_sketch::{Component, Interface, Module};
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent, Ident,
@@ -27,7 +24,7 @@ use crate::{
         module_env::ParsedModule,
         types::{EntityIndex, FuncIndex},
     },
-    WasmTranslationConfig,
+    unsupported_diag, WasmTranslationConfig,
 };
 
 pub mod hir2_sketch;
@@ -110,97 +107,83 @@ impl<'a> ComponentTranslator2<'a> {
                     // namely the root component doesn't require
                     // structural type imports to be satisfied.
                     None => {
-                        match ty {
-                            ComponentEntityType::Instance(_) => {
-                                let ty = types
-                                    .convert_component_entity_type(frame.types, *ty)
-                                    .map_err(Report::msg)?;
-                                // self.import_types.push((name.0.to_string(), ty));
-                                let ty = match ty {
-                                    TypeDef::ComponentInstance(type_component_instance_index) => {
-                                        type_component_instance_index
+                        if let ComponentEntityType::Instance(_) = ty {
+                            let ty = types
+                                .convert_component_entity_type(frame.types, *ty)
+                                .map_err(Report::msg)?;
+                            // self.import_types.push((name.0.to_string(), ty));
+                            let ty = match ty {
+                                TypeDef::ComponentInstance(type_component_instance_index) => {
+                                    type_component_instance_index
+                                }
+                                _ => panic!("expected component instance"),
+                            };
+                            frame.component_instances.push(ComponentInstanceDef::Import(
+                                ComponentInstanceImport {
+                                    name: name.0.to_string(),
+                                    ty,
+                                },
+                            ));
+                            let interface_name = name.0.to_string();
+                            let module = Ident::new(
+                                Symbol::intern(interface_name.clone()),
+                                SourceSpan::default(),
+                            );
+                            let inner_function_empty = FunctionIdent {
+                                module: Ident::new(Symbol::intern(""), SourceSpan::default()),
+                                function: Ident::new(Symbol::intern(""), SourceSpan::default()),
+                            };
+                            // Create a component with interfaces from the imported instance type
+                            let component_types = types.resources_mut_and_types().1;
+                            let instance_type = &component_types[ty];
+                            let functions = instance_type
+                                .exports
+                                .iter()
+                                .filter_map(|(name, ty)| {
+                                    if let TypeDef::ComponentFunc(func_ty) = ty {
+                                        let func_ty =
+                                            convert_lifted_func_ty(func_ty, component_types);
+                                        let signature = Signature {
+                                            params: func_ty
+                                                .params
+                                                .into_iter()
+                                                .map(AbiParam::new)
+                                                .collect(),
+                                            results: func_ty
+                                                .results
+                                                .into_iter()
+                                                .map(AbiParam::new)
+                                                .collect(),
+                                            cc: CallConv::CanonLift,
+                                            linkage: Linkage::External,
+                                        };
+                                        Some(hir2_sketch::SyntheticFunction {
+                                            id: FunctionIdent {
+                                                module,
+                                                function: Ident::new(
+                                                    Symbol::intern(name),
+                                                    SourceSpan::default(),
+                                                ),
+                                            },
+                                            signature,
+                                            inner_function: inner_function_empty,
+                                        })
+                                    } else {
+                                        None
                                     }
-                                    _ => panic!("expected component instance"),
-                                };
-                                frame.component_instances.push(ComponentInstanceDef::Import(
-                                    ComponentInstanceImport {
-                                        name: name.0.to_string(),
-                                        ty,
-                                    },
-                                ));
-                                let interface_name = name.0.to_string();
-                                let module = Ident::new(
-                                    Symbol::intern(interface_name.clone()),
-                                    SourceSpan::default(),
-                                );
-                                let inner_function_empty = FunctionIdent {
-                                    module: Ident::new(Symbol::intern(""), SourceSpan::default()),
-                                    function: Ident::new(Symbol::intern(""), SourceSpan::default()),
-                                };
-                                // Create a component with interfaces from the imported instance type
-                                let component_types = types.resources_mut_and_types().1;
-                                let instance_type = &component_types[ty];
-                                let functions = instance_type
-                                    .exports
-                                    .iter()
-                                    .filter_map(|(name, ty)| {
-                                        if let TypeDef::ComponentFunc(func_ty) = ty {
-                                            let func_ty =
-                                                convert_lifted_func_ty(func_ty, component_types);
-                                            let signature = Signature {
-                                                params: func_ty
-                                                    .params
-                                                    .into_iter()
-                                                    .map(AbiParam::new)
-                                                    .collect(),
-                                                results: func_ty
-                                                    .results
-                                                    .into_iter()
-                                                    .map(AbiParam::new)
-                                                    .collect(),
-                                                cc: CallConv::CanonLift,
-                                                linkage: Linkage::External,
-                                            };
-                                            Some(hir2_sketch::SyntheticFunction {
-                                                id: FunctionIdent {
-                                                    module,
-                                                    function: Ident::new(
-                                                        Symbol::intern(name),
-                                                        SourceSpan::default(),
-                                                    ),
-                                                },
-                                                signature,
-                                                inner_function: inner_function_empty,
-                                            })
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
+                                })
+                                .collect();
 
-                                let interface = Interface {
-                                    name: interface_name.clone(),
-                                    functions,
-                                };
-                                let import_component = Component {
-                                    name: interface_name,
-                                    interfaces: vec![interface],
-                                    modules: Default::default(),
-                                };
-                                self.result.add_import(import_component);
-                            }
-                            // ComponentEntityType::Module(component_core_module_type_id) => todo!(),
-                            ComponentEntityType::Func(_component_func_type_id) => {
-                                // frame.component_funcs.push();
-                                panic!("");
-                            }
-                            // ComponentEntityType::Value(component_val_type) => todo!(),
-                            // ComponentEntityType::Type {
-                            //     referenced,
-                            //     created,
-                            // } => (), // do nothing
-                            // ComponentEntityType::Component(component_type_id) => todo!(),
-                            _ => (),
+                            let interface = Interface {
+                                name: interface_name.clone(),
+                                functions,
+                            };
+                            let import_component = Component {
+                                name: interface_name,
+                                interfaces: vec![interface],
+                                modules: Default::default(),
+                            };
+                            self.result.add_import(import_component);
                         };
                     }
                 };
@@ -213,10 +196,24 @@ impl<'a> ComponentTranslator2<'a> {
                 // dbg!(&init);
                 frame.component_funcs.push(ComponentFuncDef::Lifted(lift.clone()));
             }
-            LocalInitializer::Resource(..) => todo!(),
-            LocalInitializer::ResourceNew(..) => todo!(),
-            LocalInitializer::ResourceRep(..) => todo!(),
-            LocalInitializer::ResourceDrop(..) => todo!(),
+            LocalInitializer::Resource(..) => {
+                unsupported_diag!(
+                    &self.session.diagnostics,
+                    "Resource initializers are not supported"
+                )
+            }
+            LocalInitializer::ResourceNew(..) => {
+                unsupported_diag!(&self.session.diagnostics, "Resource creation is not supported")
+            }
+            LocalInitializer::ResourceRep(..) => {
+                unsupported_diag!(
+                    &self.session.diagnostics,
+                    "Resource representation is not supported"
+                )
+            }
+            LocalInitializer::ResourceDrop(..) => {
+                unsupported_diag!(&self.session.diagnostics, "Resource dropping is not supported")
+            }
             LocalInitializer::ModuleStatic(static_module_index) => {
                 frame.modules.push(ModuleDef::Static(*static_module_index));
             }
@@ -244,7 +241,13 @@ impl<'a> ComponentTranslator2<'a> {
                                 ModuleInstanceDef::Instantiated {
                                     module_idx: _,
                                     args: _,
-                                } => todo!(),
+                                } => {
+                                    unsupported_diag!(
+                                        &self.session.diagnostics,
+                                        "Instantiated module as another module instantiation \
+                                         argument is not supported yet"
+                                    )
+                                }
                                 ModuleInstanceDef::Synthetic(hash_map) => {
                                     // module with CanonLower synthetic functions
                                     for (func_name, entity) in hash_map.iter() {
@@ -397,10 +400,15 @@ impl<'a> ComponentTranslator2<'a> {
                 // dbg!(&init);
                 frame.funcs.push(CoreDef::Export(*module_instance_index, name));
             }
-            LocalInitializer::AliasExportTable(..) => todo!(),
-            LocalInitializer::AliasExportGlobal(..) => todo!(),
+            LocalInitializer::AliasExportTable(..) => {
+                unsupported_diag!(&self.session.diagnostics, "Table exports are not yet supported")
+            }
+            LocalInitializer::AliasExportGlobal(..) => {
+                unsupported_diag!(&self.session.diagnostics, "Global exports are not yet supported")
+            }
             LocalInitializer::AliasExportMemory(..) => {
                 // dbg!(&init);
+                // Do nothing, assuming Rust compiled code having one memory instance.
             }
             LocalInitializer::AliasComponentExport(component_instance_index, name) => {
                 let import = &frame.component_instances[*component_instance_index].unwrap_import();
@@ -411,8 +419,15 @@ impl<'a> ComponentTranslator2<'a> {
                 );
                 frame.push_item(def);
             }
-            LocalInitializer::AliasModule(_) => todo!(),
-            LocalInitializer::AliasComponent(_) => todo!(),
+            LocalInitializer::AliasModule(_) => {
+                unsupported_diag!(&self.session.diagnostics, "Module aliases are not yet supported")
+            }
+            LocalInitializer::AliasComponent(_) => {
+                unsupported_diag!(
+                    &self.session.diagnostics,
+                    "Component aliases are not yet supported"
+                )
+            }
             LocalInitializer::Export(name, component_item) => {
                 // dbg!(&init);
                 match component_item {
@@ -420,12 +435,15 @@ impl<'a> ComponentTranslator2<'a> {
                         frame.component_funcs.push(frame.component_funcs[*i].clone());
                         return Ok(());
                     }
-                    ComponentItem::Module(_) => todo!(),
-                    ComponentItem::Component(_) => todo!(),
                     ComponentItem::ComponentInstance(_) => {
                         // handle below
                     }
                     ComponentItem::Type(_) => return Ok(()), // do nothing
+                    _ => unsupported_diag!(
+                        &self.session.diagnostics,
+                        "Exporting of {:?} is not yet supported",
+                        component_item
+                    ),
                 }
                 // FIX: ugly
                 assert!(
@@ -481,7 +499,7 @@ impl<'a> ComponentTranslator2<'a> {
                                             }
                                         },
                                         ModuleInstanceDef::Synthetic(_hash_map) => {
-                                            panic!("expected static module")
+                                            panic!("expected instantiated module")
                                         }
                                     }
                                 }
@@ -558,7 +576,6 @@ impl<'a> ComponentInstanceDef<'a> {
 #[derive(Debug, Clone)]
 struct ComponentInstanceImport {
     name: String,
-    // ty: TypeDef,
     ty: TypeComponentInstanceIndex,
 }
 
