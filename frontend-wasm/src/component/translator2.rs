@@ -11,7 +11,7 @@ use midenc_hir::{
 };
 use midenc_session::{DiagnosticsHandler, Session};
 use rustc_hash::FxHashMap;
-use wasmparser::types::ComponentEntityType;
+use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{
     translator::convert_lifted_func_ty, CanonLift, CanonLower, ClosedOverComponent,
@@ -81,7 +81,7 @@ impl<'a> ComponentTranslator2<'a> {
         types: &mut ComponentTypesBuilder,
         _diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<hir2_sketch::World> {
-        let mut frame = ComponentFrame::new(root_component, FxHashMap::default());
+        let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
 
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
@@ -98,7 +98,6 @@ impl<'a> ComponentTranslator2<'a> {
     ) -> WasmResult<()> {
         // dbg!(&init);
 
-        let types_ref = frame.translation.types_ref();
         match init {
             LocalInitializer::Import(name, ty) => {
                 // dbg!(name, ty);
@@ -114,7 +113,7 @@ impl<'a> ComponentTranslator2<'a> {
                         match ty {
                             ComponentEntityType::Instance(_) => {
                                 let ty = types
-                                    .convert_component_entity_type(types_ref, *ty)
+                                    .convert_component_entity_type(frame.types, *ty)
                                     .map_err(Report::msg)?;
                                 // self.import_types.push((name.0.to_string(), ty));
                                 let ty = match ty {
@@ -258,7 +257,7 @@ impl<'a> ComponentTranslator2<'a> {
                                         // TODO: handle error
                                         let type_func_idx = types
                                             .convert_component_func_type(
-                                                types_ref,
+                                                frame.types,
                                                 canon_lower.lower_ty,
                                             )
                                             .unwrap();
@@ -378,7 +377,7 @@ impl<'a> ComponentTranslator2<'a> {
 
                 let translation = &self.nested_components[component.index];
                 let mut new_frame = ComponentFrame::new(
-                    translation,
+                    translation.types_ref(),
                     args.iter()
                         .map(|(name, item)| Ok((*name, frame.item(*item, types)?)))
                         .collect::<WasmResult<_>>()?,
@@ -510,7 +509,7 @@ impl<'a> ComponentTranslator2<'a> {
                                 }
                             };
                             let type_func_idx = types
-                                .convert_component_func_type(types_ref, canon_lift.ty)
+                                .convert_component_func_type(frame.types, canon_lift.ty)
                                 .unwrap();
 
                             let component_types = types.resources_mut_and_types().1;
@@ -701,9 +700,7 @@ impl<'a> ComponentItemDef<'a> {
 }
 
 struct ComponentFrame<'a> {
-    // TODO: can we get away without the whole ParsedComponent but only ComponentTypes*?
-    /// The component being instantiated.
-    translation: &'a ParsedComponent<'a>,
+    types: TypesRef<'a>,
 
     /// The "closure arguments" to this component, or otherwise the maps indexed
     /// by `ModuleUpvarIndex` and `ComponentUpvarIndex`. This is created when
@@ -733,13 +730,10 @@ struct ComponentFrame<'a> {
 }
 
 impl<'a> ComponentFrame<'a> {
-    fn new(
-        translation: &'a ParsedComponent<'a>,
-        args: FxHashMap<&'a str, ComponentItemDef<'a>>,
-    ) -> Self {
+    fn new(types: TypesRef<'a>, args: FxHashMap<&'a str, ComponentItemDef<'a>>) -> Self {
         Self {
             // initializers: translation.initializers.iter(),
-            translation,
+            types,
             funcs: PrimaryMap::new(),
             component_funcs: PrimaryMap::new(),
             component_instances: PrimaryMap::new(),
@@ -779,9 +773,8 @@ impl<'a> ComponentFrame<'a> {
             }
             ComponentItem::Module(i) => ComponentItemDef::Module(self.modules[i].clone()),
             ComponentItem::Type(t) => {
-                let types_ref = self.translation.types_ref();
                 // TODO: handle error
-                ComponentItemDef::Type(types.convert_type(types_ref, t).unwrap())
+                ComponentItemDef::Type(types.convert_type(self.types, t).unwrap())
             }
         })
     }
