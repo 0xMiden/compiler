@@ -1,7 +1,7 @@
 //! Helper functions and structures for the translation.
 
 use midenc_hir::{
-    diagnostics::{DiagnosticsHandler, Severity, SourceSpan},
+    diagnostics::{DiagnosticsHandler, SourceSpan},
     AbiParam, CallConv, Felt, FieldElement, InstBuilder, Linkage, Signature, Value,
 };
 use midenc_hir_type::{FunctionType, Type};

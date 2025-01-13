@@ -72,7 +72,7 @@ pub type WasmResult<T> = Result<T, Report>;
 macro_rules! unsupported_diag {
     ($diagnostics:expr, $($arg:tt)*) => {{
         return Err($diagnostics
-            .diagnostic(Severity::Error)
+            .diagnostic(midenc_hir::diagnostics::Severity::Error)
             .with_message(format!($($arg)*))
             .into_report());
     }}
