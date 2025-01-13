@@ -1,6 +1,9 @@
 // TODO: remove when it is completed
 #![allow(unused)]
 
+// TODO: refactor
+// TODO: document
+
 use hir2_sketch::{Component, Interface, Module};
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent, Ident,
@@ -224,7 +227,6 @@ impl<'a> ComponentTranslator2<'a> {
                     args: args.clone(),
                 });
 
-                // TODO: use (Symbol, Symbol) as a key?
                 let mut import_canon_lower_args: FxHashMap<FunctionIdent, Signature> =
                     FxHashMap::default();
                 match &frame.modules[*module_idx] {
@@ -384,11 +386,9 @@ impl<'a> ComponentTranslator2<'a> {
                 for init in &translation.initializers {
                     self.initializer(&mut new_frame, types, init)?;
                 }
-                let instance_idx = frame.component_instances.push(
-                    ComponentInstanceDef::Instantiated(InstantiatedComponent {
-                        component_inst: instance.clone(),
-                    }),
-                );
+                let instance_idx = frame
+                    .component_instances
+                    .push(ComponentInstanceDef::Instantiated(instance.clone()));
                 frame.frames.insert(instance_idx, new_frame);
             }
             LocalInitializer::ComponentSynthetic(_hash_map) => {
@@ -455,8 +455,7 @@ impl<'a> ComponentTranslator2<'a> {
                 let interface_name = name.to_string();
                 let instance = &frame.component_instances[component_item.unwrap_instance()]
                     .unwrap_instantiated();
-                let static_component_idx =
-                    frame.components[instance.component_inst.component].index;
+                let static_component_idx = frame.components[instance.component].index;
                 let parsed_component = &self.nested_components[static_component_idx];
                 // dbg!(&parsed_component.exports);
                 let module =
@@ -555,15 +554,9 @@ impl<'a> ComponentTranslator2<'a> {
 }
 
 #[derive(Clone, Debug)]
-struct InstantiatedComponent<'a> {
-    // TODO: inline
-    component_inst: ComponentInstantiation<'a>,
-}
-
-#[derive(Clone, Debug)]
 enum ComponentInstanceDef<'a> {
     Import(ComponentInstanceImport),
-    Instantiated(InstantiatedComponent<'a>),
+    Instantiated(ComponentInstantiation<'a>),
     Export,
 }
 impl<'a> ComponentInstanceDef<'a> {
@@ -574,7 +567,7 @@ impl<'a> ComponentInstanceDef<'a> {
         }
     }
 
-    fn unwrap_instantiated(&self) -> &InstantiatedComponent {
+    fn unwrap_instantiated(&self) -> &ComponentInstantiation {
         match self {
             ComponentInstanceDef::Instantiated(i) => i,
             _ => panic!("expected instantiated"),
