@@ -3,7 +3,7 @@ pub(crate) mod transform;
 pub(crate) mod tx_kernel;
 
 use miden_core::crypto::hash::RpoDigest;
-use midenc_hir::{FxHashMap, FunctionType, Symbol};
+use midenc_hir::{FunctionType, FxHashMap, Symbol};
 use tx_kernel::note;
 
 use crate::intrinsics;

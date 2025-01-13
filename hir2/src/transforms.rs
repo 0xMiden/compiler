@@ -10,5 +10,7 @@ mod spill;
 //pub use self::cse::CommonSubexpressionElimination;
 //pub use self::dce::{DeadSymbolElmination, DeadValueElimination};
 //pub use self::inliner::Inliner;
-pub use self::sccp::SparseConditionalConstantPropagation;
-pub use self::{canonicalization::Canonicalizer, spill::InsertSpills};
+pub use self::{
+    canonicalization::Canonicalizer, sccp::SparseConditionalConstantPropagation,
+    spill::InsertSpills,
+};

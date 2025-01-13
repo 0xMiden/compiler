@@ -44,7 +44,9 @@ pub use self::{
     emit::Emit,
     flags::{CompileFlag, CompileFlags, FlagAction},
     inputs::{FileType, InputFile, InputType, InvalidInputError},
-    libs::{LibraryKind, LibraryNamespace, BASE, STDLIB, LibraryPath, LibraryPathComponent, LinkLibrary},
+    libs::{
+        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
+    },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
     statistics::Statistics,

@@ -1,7 +1,7 @@
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Severity, CanonAbiImport, ComponentBuilder,
-    ComponentExport, FunctionIdent, FunctionType, FxHashMap, Ident, InterfaceFunctionIdent, InterfaceIdent,
-    MidenAbiImport, Symbol,
+    ComponentExport, FunctionIdent, FunctionType, FxHashMap, Ident, InterfaceFunctionIdent,
+    InterfaceIdent, MidenAbiImport, Symbol,
 };
 use midenc_hir_type::Abi;
 use midenc_session::Session;
