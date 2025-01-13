@@ -1,13 +1,38 @@
-(component root
-    ;; Interfaces
-    (interface miden:cross-ctx-account/foo@1.0.0
-        (synth_func (#miden:cross-ctx-account/foo@1.0.0 #process-felt (cc lift) (param (struct felt)) (result (struct felt)) (inner (#cross_ctx_account #miden:cross-ctx-account/foo@1.0.0#process-felt))
+(world
+    (component miden:base/core-types@1.0.0
+        ;; Interfaces
+        (interface miden:base/core-types@1.0.0
+
+        )
     )
 
-    ;; Modules
-    (module #cross_ctx_account
-        (synth_func (#cross_ctx_account #miden_stdlib_sys::intrinsics::felt::extern_from_u32 (cc lower) (param u32) (result felt) (inner (#miden:core-import/intrinsics-felt@1.0.0 #from-u32))
-        (synth_func (#cross_ctx_account #miden_stdlib_sys::intrinsics::felt::extern_add (cc lower) (param felt) (param felt) (result felt) (inner (#miden:core-import/intrinsics-felt@1.0.0 #add))
-        (synth_func (#cross_ctx_account #miden_sdk_alloc::heap_base (cc lower) (result i32) (inner (#miden:core-import/intrinsics-mem@1.0.0 #heap-base))
+    (component miden:core-import/intrinsics-mem@1.0.0
+        ;; Interfaces
+        (interface miden:core-import/intrinsics-mem@1.0.0
+            (synth_func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base (cc lift) (result i32) (inner (# #))
+        )
     )
+
+    (component miden:core-import/intrinsics-felt@1.0.0
+        ;; Interfaces
+        (interface miden:core-import/intrinsics-felt@1.0.0
+            (synth_func (#miden:core-import/intrinsics-felt@1.0.0 #add (cc lift) (param felt) (param felt) (result felt) (inner (# #))
+            (synth_func (#miden:core-import/intrinsics-felt@1.0.0 #from-u32 (cc lift) (param u32) (result felt) (inner (# #))
+        )
+    )
+
+    (component root
+        ;; Interfaces
+        (interface miden:cross-ctx-account/foo@1.0.0
+            (synth_func (#miden:cross-ctx-account/foo@1.0.0 #process-felt (cc lift) (param (struct felt)) (result (struct felt)) (inner (#cross_ctx_account #miden:cross-ctx-account/foo@1.0.0#process-felt))
+        )
+
+        ;; Modules
+        (module #cross_ctx_account
+            (synth_func (#cross_ctx_account #miden_stdlib_sys::intrinsics::felt::extern_from_u32 (cc lower) (param u32) (result felt) (inner (#miden:core-import/intrinsics-felt@1.0.0 #from-u32))
+            (synth_func (#cross_ctx_account #miden_stdlib_sys::intrinsics::felt::extern_add (cc lower) (param felt) (param felt) (result felt) (inner (#miden:core-import/intrinsics-felt@1.0.0 #add))
+            (synth_func (#cross_ctx_account #miden_sdk_alloc::heap_base (cc lower) (result i32) (inner (#miden:core-import/intrinsics-mem@1.0.0 #heap-base))
+        )
+    )
+
 )

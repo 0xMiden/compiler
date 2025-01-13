@@ -50,7 +50,7 @@ pub struct ComponentTranslator2<'a> {
     /// `ComponentFrame` with the `ParsedComponent`s here.
     nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
 
-    result: hir2_sketch::Component,
+    result: hir2_sketch::WorldBuilder,
 
     session: &'a Session,
 }
@@ -62,17 +62,13 @@ impl<'a> ComponentTranslator2<'a> {
         config: &'a WasmTranslationConfig,
         session: &'a Session,
     ) -> Self {
-        let component = hir2_sketch::Component {
-            name: "root".to_string(),
-            interfaces: vec![],
-            modules: vec![],
-        };
+        let mut builder = hir2_sketch::WorldBuilder::new("root".to_string());
         Self {
             config,
             session,
             nested_modules,
             nested_components,
-            result: component,
+            result: builder,
         }
     }
 
@@ -81,14 +77,14 @@ impl<'a> ComponentTranslator2<'a> {
         root_component: &'a ParsedComponent,
         types: &mut ComponentTypesBuilder,
         _diagnostics: &DiagnosticsHandler,
-    ) -> WasmResult<Component> {
+    ) -> WasmResult<hir2_sketch::World> {
         let mut frame = ComponentFrame::new(root_component, FxHashMap::default());
 
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
 
-        Ok(self.result)
+        Ok(self.result.build())
     }
 
     fn initializer(
@@ -114,7 +110,6 @@ impl<'a> ComponentTranslator2<'a> {
                     None => {
                         match ty {
                             ComponentEntityType::Instance(_) => {
-                                // TODO: Create an empty component exporting functions (for each imported interface)
                                 let ty = types
                                     .convert_component_entity_type(types_ref, *ty)
                                     .map_err(Report::msg)?;
@@ -131,11 +126,71 @@ impl<'a> ComponentTranslator2<'a> {
                                         ty,
                                     },
                                 ));
+                                let interface_name = name.0.to_string();
+                                let module = Ident::new(
+                                    Symbol::intern(interface_name.clone()),
+                                    SourceSpan::default(),
+                                );
+                                let inner_function_empty = FunctionIdent {
+                                    module: Ident::new(Symbol::intern(""), SourceSpan::default()),
+                                    function: Ident::new(Symbol::intern(""), SourceSpan::default()),
+                                };
+                                // Create a component with interfaces from the imported instance type
+                                let component_types = types.resources_mut_and_types().1;
+                                let instance_type = &component_types[ty];
+                                let functions = instance_type
+                                    .exports
+                                    .iter()
+                                    .filter_map(|(name, ty)| {
+                                        if let TypeDef::ComponentFunc(func_ty) = ty {
+                                            let func_ty =
+                                                convert_lifted_func_ty(func_ty, component_types);
+                                            let signature = Signature {
+                                                params: func_ty
+                                                    .params
+                                                    .into_iter()
+                                                    .map(AbiParam::new)
+                                                    .collect(),
+                                                results: func_ty
+                                                    .results
+                                                    .into_iter()
+                                                    .map(AbiParam::new)
+                                                    .collect(),
+                                                cc: CallConv::CanonLift,
+                                                linkage: Linkage::External,
+                                            };
+                                            Some(hir2_sketch::SyntheticFunction {
+                                                id: FunctionIdent {
+                                                    module,
+                                                    function: Ident::new(
+                                                        Symbol::intern(name),
+                                                        SourceSpan::default(),
+                                                    ),
+                                                },
+                                                signature,
+                                                inner_function: inner_function_empty,
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect();
+
+                                let interface = Interface {
+                                    name: interface_name.clone(),
+                                    functions,
+                                };
+                                let import_component = Component {
+                                    name: interface_name,
+                                    interfaces: vec![interface],
+                                    modules: Default::default(),
+                                };
+                                self.result.add_import(import_component);
                             }
                             // ComponentEntityType::Module(component_core_module_type_id) => todo!(),
                             ComponentEntityType::Func(_component_func_type_id) => {
                                 // frame.component_funcs.push();
-                                panic!("unhandled component import function");
+                                panic!("");
                             }
                             // ComponentEntityType::Value(component_val_type) => todo!(),
                             // ComponentEntityType::Type {
@@ -278,7 +333,7 @@ impl<'a> ComponentTranslator2<'a> {
                             module.functions.push(function);
                         }
 
-                        self.result.modules.push(module);
+                        self.result.root_mut().modules.push(module);
                     }
                     ModuleDef::Import(_type_module_index) => {
                         panic!("Module import instantiation is not supported yet")
@@ -475,7 +530,6 @@ impl<'a> ComponentTranslator2<'a> {
                                     SourceSpan::default(),
                                 ),
                             };
-                            // TODO: generate body with a call to the core module export
                             let function = hir2_sketch::SyntheticFunction {
                                 id: function_id,
                                 signature,
@@ -492,7 +546,7 @@ impl<'a> ComponentTranslator2<'a> {
                     name: interface_name,
                     functions,
                 };
-                self.result.interfaces.push(interface);
+                self.result.root_mut().interfaces.push(interface);
                 frame.component_instances.push(ComponentInstanceDef::Export);
             }
         }

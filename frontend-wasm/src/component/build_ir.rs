@@ -67,7 +67,7 @@ pub fn translate_component2(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     session: &Session,
-) -> WasmResult<super::translator2::hir2_sketch::Component> {
+) -> WasmResult<super::translator2::hir2_sketch::World> {
     let (mut component_types_builder, parsed_root_component) = parse(config, wasm, session)?;
     let translator = ComponentTranslator2::new(
         &parsed_root_component.static_modules,

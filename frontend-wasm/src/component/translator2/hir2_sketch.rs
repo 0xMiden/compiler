@@ -152,3 +152,67 @@ impl PrettyPrint for Component {
             + nl()
     }
 }
+
+#[derive(Debug, Default)]
+pub struct World {
+    pub components: Vec<Component>,
+}
+
+impl fmt::Display for World {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f)
+    }
+}
+
+impl PrettyPrint for World {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        let components = self
+            .components
+            .iter()
+            .map(PrettyPrint::render)
+            .reduce(|acc, doc| acc + nl() + doc)
+            .unwrap_or(Document::Empty);
+
+        const_text("(")
+            + const_text("world")
+            + indent(4, nl() + components)
+            + nl()
+            + const_text(")")
+            + nl()
+    }
+}
+
+pub struct WorldBuilder {
+    root: Component,
+    imports: Vec<Component>,
+}
+
+impl WorldBuilder {
+    pub fn new(name: String) -> Self {
+        Self {
+            root: Component {
+                name,
+                interfaces: vec![],
+                modules: vec![],
+            },
+            imports: vec![],
+        }
+    }
+
+    pub fn root_mut(&mut self) -> &mut Component {
+        &mut self.root
+    }
+
+    pub fn add_import(&mut self, component: Component) {
+        self.imports.push(component);
+    }
+
+    pub fn build(self) -> World {
+        let mut components = Vec::with_capacity(1 + self.imports.len());
+        components.extend(self.imports);
+        components.push(self.root);
+        World { components }
+    }
+}
