@@ -5,11 +5,10 @@
 
 use hir2_sketch::{Component, Interface, Module};
 use midenc_hir::{
-    cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent, Ident,
-    Linkage, Signature, SourceSpan, Symbol,
+    cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent,
+    FxHashMap, Ident, Linkage, Signature, SourceSpan, Symbol,
 };
 use midenc_session::{DiagnosticsHandler, Session};
-use rustc_hash::FxHashMap;
 use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{

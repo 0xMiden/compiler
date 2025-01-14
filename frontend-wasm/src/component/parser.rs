@@ -7,9 +7,7 @@ use std::mem;
 
 use indexmap::IndexMap;
 use midenc_hir::{
-    cranelift_entity::PrimaryMap,
-    diagnostics::{IntoDiagnostic, Severity},
-    FxBuildHasher, FxHashMap,
+    cranelift_entity::PrimaryMap, diagnostics::IntoDiagnostic, FxBuildHasher, FxHashMap,
 };
 use midenc_session::Session;
 use wasmparser::{
