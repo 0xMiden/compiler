@@ -6,8 +6,6 @@
 
         ;; Global Variables
         (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-        (global (export #gv1) (id 1) (type i32) (const 0))
-        (global (export #gv2) (id 2) (type i32) (const 0))
 
         ;; Functions
         (func (export #fib) (param i32) (result i32)

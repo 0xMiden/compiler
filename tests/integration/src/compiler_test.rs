@@ -629,7 +629,7 @@ impl CompilerTestBuilder {
         let config = CargoTest::new(artifact_name, project_dir)
             .with_build_alloc(true)
             .with_target_dir(target_dir)
-            .with_target("wasm32-unknown-unknown")
+            .with_target("wasm32-wasip1")
             .with_entrypoint(entrypoint);
         CompilerTestBuilder::new(config)
     }
