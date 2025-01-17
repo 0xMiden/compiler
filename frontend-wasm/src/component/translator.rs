@@ -4,7 +4,7 @@ use midenc_hir::{
     InterfaceIdent, MidenAbiImport, Symbol,
 };
 use midenc_hir_type::Abi;
-use midenc_session::Session;
+use midenc_session::{DiagnosticsHandler, Session};
 
 use super::{
     interface_type_to_ir, CanonicalOptions, ComponentTypes, CoreDef, CoreExport, Export,
