@@ -650,7 +650,7 @@ fn try_insert_inst(
                         module: function.id.module,
                     };
                     if let Some(sig) = functions_by_id.get(&local) {
-                        use std::collections::hash_map::Entry;
+                        use hashbrown::hash_map::Entry;
                         if let Entry::Vacant(entry) = function.dfg.imports.entry(callee) {
                             entry.insert(ExternalFunction {
                                 id: callee,
@@ -672,7 +672,7 @@ fn try_insert_inst(
                     callee
                 }
                 Right(external) => {
-                    use std::collections::hash_map::Entry;
+                    use hashbrown::hash_map::Entry;
                     used_imports.insert(external);
                     if let Entry::Vacant(entry) = function.dfg.imports.entry(external) {
                         if let Some(ef) = imports_by_id.get(&external) {

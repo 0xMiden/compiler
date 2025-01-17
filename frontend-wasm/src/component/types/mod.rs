@@ -9,8 +9,10 @@ pub mod resources;
 use core::{hash::Hash, ops::Index};
 
 use anyhow::{bail, Result};
-use midenc_hir::cranelift_entity::{EntityRef, PrimaryMap};
-use rustc_hash::FxHashMap;
+use midenc_hir::{
+    cranelift_entity::{EntityRef, PrimaryMap},
+    FxHashMap,
+};
 use wasmparser::{collections::IndexSet, names::KebabString, types};
 
 use self::resources::ResourcesBuilder;

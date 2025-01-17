@@ -3,15 +3,15 @@
 
 // Based on wasmtime v16.0 Wasm component translation
 
-use std::{collections::HashMap, mem};
+use std::mem;
 
 use indexmap::IndexMap;
 use midenc_hir::{
     cranelift_entity::PrimaryMap,
     diagnostics::{IntoDiagnostic, Severity},
+    FxBuildHasher, FxHashMap,
 };
 use midenc_session::Session;
-use rustc_hash::FxHashMap;
 use wasmparser::{
     types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,
@@ -30,7 +30,6 @@ use crate::{
             TableIndex, WasmType,
         },
     },
-    translation_utils::BuildFxHasher,
     unsupported_diag, WasmTranslationConfig,
 };
 
@@ -707,7 +706,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         raw_args: &[wasmparser::ComponentInstantiationArg<'data>],
         ty: ComponentInstanceTypeId,
     ) -> WasmResult<LocalInitializer<'data>> {
-        let mut args = HashMap::with_capacity_and_hasher(raw_args.len(), BuildFxHasher::default());
+        let mut args = FxHashMap::with_capacity_and_hasher(raw_args.len(), FxBuildHasher);
         for arg in raw_args {
             let idx = self.kind_to_item(arg.kind, arg.index)?;
             args.insert(arg.name, idx);
@@ -722,7 +721,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         &mut self,
         exports: &[wasmparser::ComponentExport<'data>],
     ) -> WasmResult<LocalInitializer<'data>> {
-        let mut map = HashMap::with_capacity_and_hasher(exports.len(), BuildFxHasher::default());
+        let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
         for export in exports {
             let idx = self.kind_to_item(export.kind, export.index)?;
             map.insert(export.name.0, idx);
@@ -825,7 +824,7 @@ fn instantiate_module<'data>(
     module: ModuleIndex,
     raw_args: &[wasmparser::InstantiationArg<'data>],
 ) -> LocalInitializer<'data> {
-    let mut args = HashMap::with_capacity_and_hasher(raw_args.len(), BuildFxHasher::default());
+    let mut args = FxHashMap::with_capacity_and_hasher(raw_args.len(), FxBuildHasher);
     for arg in raw_args {
         match arg.kind {
             wasmparser::InstantiationArgKind::Instance => {
@@ -842,7 +841,7 @@ fn instantiate_module<'data>(
 fn instantiate_module_from_exports<'data>(
     exports: &[wasmparser::Export<'data>],
 ) -> LocalInitializer<'data> {
-    let mut map = HashMap::with_capacity_and_hasher(exports.len(), BuildFxHasher::default());
+    let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
     for export in exports {
         let idx = match export.kind {
             wasmparser::ExternalKind::Func => {

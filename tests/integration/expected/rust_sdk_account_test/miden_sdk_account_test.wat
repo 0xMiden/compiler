@@ -18,14 +18,16 @@
   (type (;16;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
   (type (;17;) (func (param f32 i32 i32)))
   (type (;18;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32 i32 i32)))
-  (type (;19;) (func (param i32 i32 i32) (result i32)))
-  (type (;20;) (func (param i32 i32)))
-  (type (;21;) (func (param i32 f32)))
-  (type (;22;) (func (param i32 f32 f32 i32) (result f32)))
-  (type (;23;) (func (param i32 i32) (result i32)))
-  (type (;24;) (func (param i32)))
+  (type (;19;) (func (param i32)))
+  (type (;20;) (func (param i32 i32 i32) (result i32)))
+  (type (;21;) (func (param i32 i32)))
+  (type (;22;) (func (param i32 f32)))
+  (type (;23;) (func (param i32 f32 f32 i32) (result f32)))
+  (type (;24;) (func (param i32 i32) (result i32)))
   (type (;25;) (func (param i32 i32 i32)))
   (type (;26;) (func))
+  (type (;27;) (func (param i32 i32 i32 i32 i32)))
+  (type (;28;) (func (param i32 i32 i32 i32)))
   (import "miden:core-import/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
   (import "miden:core-import/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
   (import "miden:core-import/intrinsics-felt@1.0.0" "as_u64" (func $miden_stdlib_sys::intrinsics::felt::extern_as_u64 (;2;) (type 2)))
@@ -57,7 +59,39 @@
   (import "miden:core-import/tx@1.0.0" "create-note" (func $miden_base_sys::bindings::tx::extern_tx_create_note (;28;) (type 16)))
   (import "miden:core-import/stdlib-mem@1.0.0" "pipe-words-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_words_to_memory (;29;) (type 17)))
   (import "miden:core-import/stdlib-mem@1.0.0" "pipe-double-words-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_double_words_to_memory (;30;) (type 18)))
-  (func $core::alloc::global::GlobalAlloc::alloc_zeroed (;31;) (type 19) (param i32 i32 i32) (result i32)
+  (func $<<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop::Drop>::drop (;31;) (type 19) (param i32)
+    (local i32)
+    global.get $__stack_pointer
+    i32.const 16
+    i32.sub
+    local.tee 1
+    global.set $__stack_pointer
+    local.get 1
+    local.get 0
+    i32.load
+    local.tee 0
+    i32.load
+    i32.store offset=12
+    local.get 1
+    local.get 0
+    i32.load offset=8
+    i32.store offset=8
+    local.get 1
+    i32.const 8
+    i32.add
+    call $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop
+    local.get 1
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+  )
+  (func $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop (;32;) (type 19) (param i32)
+    local.get 0
+    i32.const 4
+    i32.const 4
+    call $alloc::raw_vec::RawVecInner<A>::deallocate
+  )
+  (func $core::alloc::global::GlobalAlloc::alloc_zeroed (;33;) (type 20) (param i32 i32 i32) (result i32)
     block ;; label = @1
       local.get 0
       local.get 1
@@ -73,7 +107,26 @@
     end
     local.get 1
   )
-  (func $get_wallet_magic_number (;32;) (type 13) (result f32)
+  (func $<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop (;34;) (type 19) (param i32)
+    (local i32)
+    global.get $__stack_pointer
+    i32.const 16
+    i32.sub
+    local.tee 1
+    global.set $__stack_pointer
+    local.get 1
+    local.get 0
+    i32.store offset=12
+    local.get 1
+    i32.const 12
+    i32.add
+    call $<<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop::Drop>::drop
+    local.get 1
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+  )
+  (func $get_wallet_magic_number (;35;) (type 13) (result f32)
     (local f32)
     call $miden_base_sys::bindings::account::get_id
     local.set 0
@@ -82,7 +135,7 @@
     local.get 0
     call $miden_stdlib_sys::intrinsics::felt::extern_add
   )
-  (func $test_add_asset (;33;) (type 13) (result f32)
+  (func $test_add_asset (;36;) (type 13) (result f32)
     (local i32 i32 f32 f32 f32)
     global.get $__stack_pointer
     local.tee 0
@@ -126,7 +179,7 @@
     global.set $__stack_pointer
     local.get 2
   )
-  (func $test_felt_ops_smoke (;34;) (type 1) (param f32 f32) (result f32)
+  (func $test_felt_ops_smoke (;37;) (type 1) (param f32 f32) (result f32)
     (local i64)
     local.get 0
     call $miden_stdlib_sys::intrinsics::felt::extern_as_u64
@@ -215,8 +268,8 @@
     local.get 0
     call $miden_stdlib_sys::intrinsics::felt::extern_neg
   )
-  (func $note_script (;35;) (type 13) (result f32)
-    (local i32 f32 i32 i32)
+  (func $note_script (;38;) (type 13) (result f32)
+    (local i32 f32 i32 i32 i32 i32)
     global.get $__stack_pointer
     i32.const 16
     i32.sub
@@ -226,21 +279,37 @@
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u64_unchecked
     local.set 1
     local.get 0
-    i32.const 4
-    i32.add
     call $miden_base_sys::bindings::note::get_inputs
     local.get 0
-    i32.load offset=12
-    i32.const 2
-    i32.shl
+    i32.load
     local.set 2
     local.get 0
+    local.get 0
+    i32.load offset=4
+    local.tee 3
+    local.get 0
     i32.load offset=8
-    local.set 3
+    i32.const 2
+    i32.shl
+    local.tee 4
+    i32.add
+    local.tee 5
+    i32.store offset=12
+    local.get 0
+    local.get 2
+    i32.store offset=8
+    local.get 0
+    local.get 3
+    i32.store
     loop (result f32) ;; label = @1
       block ;; label = @2
-        local.get 2
+        local.get 4
         br_if 0 (;@2;)
+        local.get 0
+        local.get 5
+        i32.store offset=4
+        local.get 0
+        call $<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop
         local.get 0
         i32.const 16
         i32.add
@@ -248,10 +317,10 @@
         local.get 1
         return
       end
-      local.get 2
+      local.get 4
       i32.const -4
       i32.add
-      local.set 2
+      local.set 4
       local.get 1
       local.get 3
       f32.load
@@ -264,7 +333,7 @@
       br 0 (;@1;)
     end
   )
-  (func $test_blake3_hash_1to1 (;36;) (type 20) (param i32 i32)
+  (func $test_blake3_hash_1to1 (;39;) (type 21) (param i32 i32)
     (local i32 i32)
     global.get $__stack_pointer
     local.tee 2
@@ -317,7 +386,7 @@
     local.get 2
     global.set $__stack_pointer
   )
-  (func $test_blake3_hash_2to1 (;37;) (type 20) (param i32 i32)
+  (func $test_blake3_hash_2to1 (;40;) (type 21) (param i32 i32)
     local.get 1
     i32.load align=1
     local.get 1
@@ -353,7 +422,7 @@
     local.get 0
     call $miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_2to1
   )
-  (func $test_rpo_falcon512_verify (;38;) (type 20) (param i32 i32)
+  (func $test_rpo_falcon512_verify (;41;) (type 21) (param i32 i32)
     local.get 0
     f32.load
     local.get 0
@@ -372,17 +441,17 @@
     f32.load offset=12
     call $miden_stdlib_sys::stdlib::crypto::dsa::extern_rpo_falcon512_verify
   )
-  (func $test_pipe_words_to_memory (;39;) (type 21) (param i32 f32)
+  (func $test_pipe_words_to_memory (;42;) (type 22) (param i32 f32)
     local.get 0
     local.get 1
     call $miden_stdlib_sys::stdlib::mem::pipe_words_to_memory
   )
-  (func $test_pipe_double_words_to_memory (;40;) (type 21) (param i32 f32)
+  (func $test_pipe_double_words_to_memory (;43;) (type 22) (param i32 f32)
     local.get 0
     local.get 1
     call $miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory
   )
-  (func $test_remove_asset (;41;) (type 0) (param i32) (result f32)
+  (func $test_remove_asset (;44;) (type 0) (param i32) (result f32)
     (local i32 i32 f32)
     global.get $__stack_pointer
     local.tee 1
@@ -402,26 +471,27 @@
     global.set $__stack_pointer
     local.get 3
   )
-  (func $test_create_note (;42;) (type 22) (param i32 f32 f32 i32) (result f32)
+  (func $test_create_note (;45;) (type 23) (param i32 f32 f32 i32) (result f32)
     local.get 0
     local.get 1
     local.get 2
     local.get 3
     call $miden_base_sys::bindings::tx::create_note
   )
-  (func $__rust_alloc (;43;) (type 23) (param i32 i32) (result i32)
-    i32.const 1048576
+  (func $__rust_alloc (;46;) (type 24) (param i32 i32) (result i32)
+    i32.const 1048704
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
-  (func $__rust_alloc_zeroed (;44;) (type 23) (param i32 i32) (result i32)
-    i32.const 1048576
+  (func $__rust_dealloc (;47;) (type 25) (param i32 i32 i32))
+  (func $__rust_alloc_zeroed (;48;) (type 24) (param i32 i32) (result i32)
+    i32.const 1048704
     local.get 1
     local.get 0
     call $core::alloc::global::GlobalAlloc::alloc_zeroed
   )
-  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;45;) (type 19) (param i32 i32 i32) (result i32)
+  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;49;) (type 20) (param i32 i32 i32) (result i32)
     (local i32 i32)
     block ;; label = @1
       local.get 1
@@ -430,21 +500,24 @@
       i32.const 32
       i32.gt_u
       select
-      local.tee 1
+      local.tee 3
       i32.popcnt
       i32.const 1
       i32.ne
       br_if 0 (;@1;)
       i32.const -2147483648
       local.get 1
+      local.get 3
+      call $core::ptr::alignment::Alignment::max
+      local.tee 1
       i32.sub
       local.get 2
       i32.lt_u
       br_if 0 (;@1;)
       i32.const 0
       local.set 3
-      local.get 1
       local.get 2
+      local.get 1
       i32.add
       i32.const -1
       i32.add
@@ -489,10 +562,10 @@
     end
     unreachable
   )
-  (func $miden_base_sys::bindings::account::get_id (;46;) (type 13) (result f32)
+  (func $miden_base_sys::bindings::account::get_id (;50;) (type 13) (result f32)
     call $miden_base_sys::bindings::account::extern_account_get_id
   )
-  (func $miden_base_sys::bindings::account::add_asset (;47;) (type 20) (param i32 i32)
+  (func $miden_base_sys::bindings::account::add_asset (;51;) (type 21) (param i32 i32)
     local.get 1
     f32.load
     local.get 1
@@ -504,7 +577,7 @@
     local.get 0
     call $miden_base_sys::bindings::account::extern_account_add_asset
   )
-  (func $miden_base_sys::bindings::account::remove_asset (;48;) (type 20) (param i32 i32)
+  (func $miden_base_sys::bindings::account::remove_asset (;52;) (type 21) (param i32 i32)
     local.get 1
     f32.load
     local.get 1
@@ -516,7 +589,7 @@
     local.get 0
     call $miden_base_sys::bindings::account::extern_account_remove_asset
   )
-  (func $miden_base_sys::bindings::note::get_inputs (;49;) (type 24) (param i32)
+  (func $miden_base_sys::bindings::note::get_inputs (;53;) (type 19) (param i32)
     (local i32 i32 i32)
     global.get $__stack_pointer
     i32.const 16
@@ -528,7 +601,9 @@
     i32.add
     i32.const 256
     i32.const 0
-    call $alloc::raw_vec::RawVec<T,A>::try_allocate_in
+    i32.const 4
+    i32.const 4
+    call $alloc::raw_vec::RawVecInner<A>::try_allocate_in
     local.get 1
     i32.load offset=8
     local.set 2
@@ -541,6 +616,7 @@
       local.get 2
       local.get 1
       i32.load offset=12
+      i32.const 1048616
       call $alloc::raw_vec::handle_error
       unreachable
     end
@@ -563,7 +639,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $miden_base_sys::bindings::tx::create_note (;50;) (type 22) (param i32 f32 f32 i32) (result f32)
+  (func $miden_base_sys::bindings::tx::create_note (;54;) (type 23) (param i32 f32 f32 i32) (result f32)
     local.get 0
     f32.load
     local.get 0
@@ -584,126 +660,55 @@
     f32.load offset=12
     call $miden_base_sys::bindings::tx::extern_tx_create_note
   )
-  (func $alloc::vec::Vec<T>::with_capacity (;51;) (type 20) (param i32 i32)
-    (local i32 i32)
+  (func $alloc::vec::Vec<T>::with_capacity (;55;) (type 25) (param i32 i32 i32)
+    (local i32)
     global.get $__stack_pointer
     i32.const 16
     i32.sub
-    local.tee 2
+    local.tee 3
     global.set $__stack_pointer
-    local.get 2
+    local.get 3
     i32.const 4
     i32.add
     local.get 1
     i32.const 0
-    call $alloc::raw_vec::RawVec<T,A>::try_allocate_in
-    local.get 2
+    i32.const 4
+    i32.const 4
+    call $alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    local.get 3
     i32.load offset=8
     local.set 1
     block ;; label = @1
-      local.get 2
+      local.get 3
       i32.load offset=4
       i32.const 1
       i32.ne
       br_if 0 (;@1;)
       local.get 1
-      local.get 2
+      local.get 3
       i32.load offset=12
+      local.get 2
       call $alloc::raw_vec::handle_error
       unreachable
     end
-    local.get 2
+    local.get 3
     i32.load offset=12
-    local.set 3
+    local.set 2
     local.get 0
     i32.const 0
     i32.store offset=8
     local.get 0
-    local.get 3
+    local.get 2
     i32.store offset=4
     local.get 0
     local.get 1
     i32.store
-    local.get 2
+    local.get 3
     i32.const 16
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::RawVec<T,A>::try_allocate_in (;52;) (type 25) (param i32 i32 i32)
-    (local i32)
-    block ;; label = @1
-      block ;; label = @2
-        local.get 1
-        br_if 0 (;@2;)
-        local.get 0
-        i64.const 17179869184
-        i64.store offset=4 align=4
-        i32.const 0
-        local.set 1
-        br 1 (;@1;)
-      end
-      block ;; label = @2
-        block ;; label = @3
-          local.get 1
-          i32.const 536870912
-          i32.lt_u
-          br_if 0 (;@3;)
-          local.get 0
-          i32.const 0
-          i32.store offset=4
-          br 1 (;@2;)
-        end
-        local.get 1
-        i32.const 2
-        i32.shl
-        local.set 3
-        block ;; label = @3
-          block ;; label = @4
-            local.get 2
-            br_if 0 (;@4;)
-            i32.const 0
-            i32.load8_u offset=1048580
-            drop
-            local.get 3
-            i32.const 4
-            call $__rust_alloc
-            local.set 2
-            br 1 (;@3;)
-          end
-          local.get 3
-          i32.const 4
-          call $__rust_alloc_zeroed
-          local.set 2
-        end
-        block ;; label = @3
-          local.get 2
-          i32.eqz
-          br_if 0 (;@3;)
-          local.get 0
-          local.get 2
-          i32.store offset=8
-          local.get 0
-          local.get 1
-          i32.store offset=4
-          i32.const 0
-          local.set 1
-          br 2 (;@1;)
-        end
-        local.get 0
-        local.get 3
-        i32.store offset=8
-        local.get 0
-        i32.const 4
-        i32.store offset=4
-      end
-      i32.const 1
-      local.set 1
-    end
-    local.get 0
-    local.get 1
-    i32.store
-  )
-  (func $miden_stdlib_sys::stdlib::mem::pipe_words_to_memory (;53;) (type 21) (param i32 f32)
+  (func $miden_stdlib_sys::stdlib::mem::pipe_words_to_memory (;56;) (type 22) (param i32 f32)
     (local i32 i32)
     global.get $__stack_pointer
     local.tee 2
@@ -721,6 +726,7 @@
     i32.wrap_i64
     i32.const 2
     i32.shl
+    i32.const 1048672
     call $alloc::vec::Vec<T>::with_capacity
     local.get 1
     local.get 3
@@ -768,7 +774,7 @@
     local.get 2
     global.set $__stack_pointer
   )
-  (func $miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory (;54;) (type 21) (param i32 f32)
+  (func $miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory (;57;) (type 22) (param i32 f32)
     (local i32 i32 i32 i32)
     global.get $__stack_pointer
     local.tee 2
@@ -787,6 +793,7 @@
     local.tee 4
     i32.const 2
     i32.shl
+    i32.const 1048688
     call $alloc::vec::Vec<T>::with_capacity
     local.get 3
     i32.load offset=24
@@ -862,68 +869,322 @@
     local.get 2
     global.set $__stack_pointer
   )
-  (func $dummy (;55;) (type 26))
-  (func $__wasm_call_dtors (;56;) (type 26)
+  (func $dummy (;58;) (type 26))
+  (func $__wasm_call_dtors (;59;) (type 26)
     call $dummy
     call $dummy
   )
-  (func $alloc::raw_vec::handle_error (;57;) (type 20) (param i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;60;) (type 25) (param i32 i32 i32)
+    (local i32)
+    global.get $__stack_pointer
+    i32.const 16
+    i32.sub
+    local.tee 3
+    global.set $__stack_pointer
+    local.get 3
+    i32.const 4
+    i32.add
+    local.get 0
+    local.get 1
+    local.get 2
+    call $alloc::raw_vec::RawVecInner<A>::current_memory
+    block ;; label = @1
+      local.get 3
+      i32.load offset=8
+      local.tee 2
+      i32.eqz
+      br_if 0 (;@1;)
+      local.get 3
+      i32.load offset=4
+      local.get 2
+      local.get 3
+      i32.load offset=12
+      call $<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+    end
+    local.get 3
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;61;) (type 27) (param i32 i32 i32 i32 i32)
+    (local i32 i64)
+    global.get $__stack_pointer
+    i32.const 16
+    i32.sub
+    local.tee 5
+    global.set $__stack_pointer
+    block ;; label = @1
+      block ;; label = @2
+        block ;; label = @3
+          local.get 3
+          local.get 4
+          i32.add
+          i32.const -1
+          i32.add
+          i32.const 0
+          local.get 3
+          i32.sub
+          i32.and
+          i64.extend_i32_u
+          local.get 1
+          i64.extend_i32_u
+          i64.mul
+          local.tee 6
+          i64.const 32
+          i64.shr_u
+          i32.wrap_i64
+          br_if 0 (;@3;)
+          i32.const -2147483648
+          local.get 3
+          i32.sub
+          local.get 6
+          i32.wrap_i64
+          local.tee 4
+          i32.lt_u
+          br_if 0 (;@3;)
+          block ;; label = @4
+            local.get 4
+            br_if 0 (;@4;)
+            local.get 0
+            local.get 3
+            i32.store offset=8
+            i32.const 0
+            local.set 3
+            local.get 0
+            i32.const 0
+            i32.store offset=4
+            br 3 (;@1;)
+          end
+          block ;; label = @4
+            block ;; label = @5
+              local.get 2
+              br_if 0 (;@5;)
+              local.get 5
+              i32.const 8
+              i32.add
+              local.get 3
+              local.get 4
+              call $<alloc::alloc::Global as core::alloc::Allocator>::allocate
+              local.get 5
+              i32.load offset=8
+              local.set 2
+              br 1 (;@4;)
+            end
+            local.get 5
+            local.get 3
+            local.get 4
+            i32.const 1
+            call $alloc::alloc::Global::alloc_impl
+            local.get 5
+            i32.load
+            local.set 2
+          end
+          local.get 2
+          i32.eqz
+          br_if 1 (;@2;)
+          local.get 0
+          local.get 2
+          i32.store offset=8
+          local.get 0
+          local.get 1
+          i32.store offset=4
+          i32.const 0
+          local.set 3
+          br 2 (;@1;)
+        end
+        local.get 0
+        i32.const 0
+        i32.store offset=4
+        i32.const 1
+        local.set 3
+        br 1 (;@1;)
+      end
+      local.get 0
+      local.get 4
+      i32.store offset=8
+      local.get 0
+      local.get 3
+      i32.store offset=4
+      i32.const 1
+      local.set 3
+    end
+    local.get 0
+    local.get 3
+    i32.store
+    local.get 5
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+  )
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;62;) (type 25) (param i32 i32 i32)
+    (local i32)
+    global.get $__stack_pointer
+    i32.const 16
+    i32.sub
+    local.tee 3
+    global.set $__stack_pointer
+    local.get 3
+    i32.const 8
+    i32.add
+    local.get 1
+    local.get 2
+    i32.const 0
+    call $alloc::alloc::Global::alloc_impl
+    local.get 3
+    i32.load offset=12
+    local.set 2
+    local.get 0
+    local.get 3
+    i32.load offset=8
+    i32.store
+    local.get 0
+    local.get 2
+    i32.store offset=4
+    local.get 3
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+  )
+  (func $alloc::alloc::Global::alloc_impl (;63;) (type 28) (param i32 i32 i32 i32)
+    block ;; label = @1
+      local.get 2
+      i32.eqz
+      br_if 0 (;@1;)
+      i32.const 0
+      i32.load8_u offset=1048708
+      drop
+      block ;; label = @2
+        local.get 3
+        br_if 0 (;@2;)
+        local.get 2
+        local.get 1
+        call $__rust_alloc
+        local.set 1
+        br 1 (;@1;)
+      end
+      local.get 2
+      local.get 1
+      call $__rust_alloc_zeroed
+      local.set 1
+    end
+    local.get 0
+    local.get 2
+    i32.store offset=4
+    local.get 0
+    local.get 1
+    i32.store
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;64;) (type 28) (param i32 i32 i32 i32)
+    (local i32 i32 i32)
+    i32.const 0
+    local.set 4
+    i32.const 4
+    local.set 5
+    block ;; label = @1
+      local.get 3
+      i32.eqz
+      br_if 0 (;@1;)
+      local.get 1
+      i32.load
+      local.tee 6
+      i32.eqz
+      br_if 0 (;@1;)
+      local.get 0
+      local.get 2
+      i32.store offset=4
+      local.get 0
+      local.get 1
+      i32.load offset=4
+      i32.store
+      local.get 6
+      local.get 3
+      i32.mul
+      local.set 4
+      i32.const 8
+      local.set 5
+    end
+    local.get 0
+    local.get 5
+    i32.add
+    local.get 4
+    i32.store
+  )
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;65;) (type 25) (param i32 i32 i32)
+    block ;; label = @1
+      local.get 2
+      i32.eqz
+      br_if 0 (;@1;)
+      local.get 0
+      local.get 2
+      local.get 1
+      call $__rust_dealloc
+    end
+  )
+  (func $alloc::raw_vec::handle_error (;66;) (type 25) (param i32 i32 i32)
     unreachable
   )
-  (func $get_wallet_magic_number.command_export (;58;) (type 13) (result f32)
+  (func $core::ptr::alignment::Alignment::max (;67;) (type 24) (param i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    local.get 0
+    local.get 1
+    i32.gt_u
+    select
+  )
+  (func $get_wallet_magic_number.command_export (;68;) (type 13) (result f32)
     call $get_wallet_magic_number
     call $__wasm_call_dtors
   )
-  (func $test_add_asset.command_export (;59;) (type 13) (result f32)
+  (func $test_add_asset.command_export (;69;) (type 13) (result f32)
     call $test_add_asset
     call $__wasm_call_dtors
   )
-  (func $test_felt_ops_smoke.command_export (;60;) (type 1) (param f32 f32) (result f32)
+  (func $test_felt_ops_smoke.command_export (;70;) (type 1) (param f32 f32) (result f32)
     local.get 0
     local.get 1
     call $test_felt_ops_smoke
     call $__wasm_call_dtors
   )
-  (func $note_script.command_export (;61;) (type 13) (result f32)
+  (func $note_script.command_export (;71;) (type 13) (result f32)
     call $note_script
     call $__wasm_call_dtors
   )
-  (func $test_blake3_hash_1to1.command_export (;62;) (type 20) (param i32 i32)
+  (func $test_blake3_hash_1to1.command_export (;72;) (type 21) (param i32 i32)
     local.get 0
     local.get 1
     call $test_blake3_hash_1to1
     call $__wasm_call_dtors
   )
-  (func $test_blake3_hash_2to1.command_export (;63;) (type 20) (param i32 i32)
+  (func $test_blake3_hash_2to1.command_export (;73;) (type 21) (param i32 i32)
     local.get 0
     local.get 1
     call $test_blake3_hash_2to1
     call $__wasm_call_dtors
   )
-  (func $test_rpo_falcon512_verify.command_export (;64;) (type 20) (param i32 i32)
+  (func $test_rpo_falcon512_verify.command_export (;74;) (type 21) (param i32 i32)
     local.get 0
     local.get 1
     call $test_rpo_falcon512_verify
     call $__wasm_call_dtors
   )
-  (func $test_pipe_words_to_memory.command_export (;65;) (type 21) (param i32 f32)
+  (func $test_pipe_words_to_memory.command_export (;75;) (type 22) (param i32 f32)
     local.get 0
     local.get 1
     call $test_pipe_words_to_memory
     call $__wasm_call_dtors
   )
-  (func $test_pipe_double_words_to_memory.command_export (;66;) (type 21) (param i32 f32)
+  (func $test_pipe_double_words_to_memory.command_export (;76;) (type 22) (param i32 f32)
     local.get 0
     local.get 1
     call $test_pipe_double_words_to_memory
     call $__wasm_call_dtors
   )
-  (func $test_remove_asset.command_export (;67;) (type 0) (param i32) (result f32)
+  (func $test_remove_asset.command_export (;77;) (type 0) (param i32) (result f32)
     local.get 0
     call $test_remove_asset
     call $__wasm_call_dtors
   )
-  (func $test_create_note.command_export (;68;) (type 22) (param i32 f32 f32 i32) (result f32)
+  (func $test_create_note.command_export (;78;) (type 23) (param i32 f32 f32 i32) (result f32)
     local.get 0
     local.get 1
     local.get 2
@@ -946,4 +1207,5 @@
   (export "test_pipe_double_words_to_memory" (func $test_pipe_double_words_to_memory.command_export))
   (export "test_remove_asset" (func $test_remove_asset.command_export))
   (export "test_create_note" (func $test_create_note.command_export))
+  (data $.rodata (;0;) (i32.const 1048576) "../../sdk/base-sys/src/bindings/note.rs\00\00\00\10\00'\00\00\00\11\00\00\00!\00\00\00../../sdk/stdlib-sys/src/stdlib/mem.rs\00\008\00\10\00&\00\00\00J\00\00\00\22\00\00\008\00\10\00&\00\00\00a\00\00\00\1e\00\00\00")
 )

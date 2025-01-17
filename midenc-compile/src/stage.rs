@@ -47,7 +47,7 @@ pub trait Stage {
     }
 }
 
-impl<'a, I, O> Stage for &'a mut dyn FnMut(I, &mut AnalysisManager, &Session) -> CompilerResult<O> {
+impl<I, O> Stage for &mut dyn FnMut(I, &mut AnalysisManager, &Session) -> CompilerResult<O> {
     type Input = I;
     type Output = O;
 

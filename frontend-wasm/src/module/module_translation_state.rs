@@ -1,8 +1,7 @@
 use midenc_hir::{
     diagnostics::{DiagnosticsHandler, Severity},
-    AbiParam, CallConv, DataFlowGraph, FunctionIdent, Ident, Linkage, Signature,
+    AbiParam, CallConv, DataFlowGraph, FunctionIdent, FxHashMap, Ident, Linkage, Signature,
 };
-use rustc_hash::FxHashMap;
 
 use super::{instance::ModuleArgument, ir_func_type, EntityIndex, FuncIndex, Module, ModuleTypes};
 use crate::{

@@ -118,7 +118,7 @@ pub struct DisplayRegion<'a> {
     function: Option<FunctionIdent>,
     imports: &'a ModuleImportInfo,
 }
-impl<'a> midenc_hir::formatter::PrettyPrint for DisplayRegion<'a> {
+impl midenc_hir::formatter::PrettyPrint for DisplayRegion<'_> {
     fn render(&self) -> midenc_hir::formatter::Document {
         use midenc_hir::DisplayMasmBlock;
 
@@ -132,7 +132,7 @@ impl<'a> midenc_hir::formatter::PrettyPrint for DisplayRegion<'a> {
         block.render()
     }
 }
-impl<'a> fmt::Display for DisplayRegion<'a> {
+impl fmt::Display for DisplayRegion<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }

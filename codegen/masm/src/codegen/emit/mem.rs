@@ -4,7 +4,7 @@ use super::OpEmitter;
 use crate::masm::{NativePtr, Op};
 
 /// Allocation
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Allocate a procedure-local memory slot of sufficient size to store a value
     /// indicated by the given pointer type, i.e the pointee type dictates the
     /// amount of memory allocated.
@@ -51,7 +51,7 @@ impl<'a> OpEmitter<'a> {
 }
 
 /// Loads
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Load a value corresponding to the type of the given local, from the memory allocated for
     /// that local.
     ///
@@ -925,7 +925,7 @@ impl<'a> OpEmitter<'a> {
 }
 
 /// Stores
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Store a value of the type given by the specified [hir::LocalId], using the memory allocated
     /// for that local.
     ///

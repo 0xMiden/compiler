@@ -11,7 +11,6 @@ use midenc_hir_analysis::{
     spill::Placement, ControlFlowGraph, DominanceFrontier, DominatorTree, SpillAnalysis, Use, User,
 };
 use midenc_session::{diagnostics::IntoDiagnostic, Emit, Session};
-use rustc_hash::FxHashSet;
 
 /// This pass places spills of SSA values to temporaries to cap the depth of the operand stack.
 ///

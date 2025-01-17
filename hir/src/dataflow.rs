@@ -1,7 +1,6 @@
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 
 use cranelift_entity::{PrimaryMap, SecondaryMap};
-use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::{
@@ -114,7 +113,7 @@ impl DataFlowGraph {
         name: Ident,
         signature: Signature,
     ) -> Result<FunctionIdent, SymbolConflictError> {
-        use std::collections::hash_map::Entry;
+        use hashbrown::hash_map::Entry;
 
         let id = FunctionIdent {
             module,

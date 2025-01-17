@@ -2,7 +2,6 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, Report, Severity, Spanned},
     *,
 };
-use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 
 use super::Rule;
@@ -24,7 +23,7 @@ impl<'a> DefsDominateUses<'a> {
         Self { dfg, domtree }
     }
 }
-impl<'a> Rule<BlockData> for DefsDominateUses<'a> {
+impl Rule<BlockData> for DefsDominateUses<'_> {
     fn validate(
         &mut self,
         block_data: &BlockData,
@@ -107,8 +106,10 @@ impl<'a> Rule<BlockData> for DefsDominateUses<'a> {
                     .with_message("invalid instruction")
                     .with_primary_label(
                         span,
-                        "an argument of this instruction, {value}, is not defined on all paths \
-                         leading to this point",
+                        format!(
+                            "an argument of this instruction, {value}, is not defined on all \
+                             paths leading to this point"
+                        ),
                     )
                     .with_help(
                         "All uses of a value must be dominated by its definition, i.e. all \
@@ -143,7 +144,7 @@ impl<'a> BlockValidator<'a> {
         Self { dfg, span }
     }
 }
-impl<'a> Rule<BlockData> for BlockValidator<'a> {
+impl Rule<BlockData> for BlockValidator<'_> {
     fn validate(
         &mut self,
         block_data: &BlockData,

@@ -17,6 +17,7 @@ proc-macro = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+darling = { version = "0.20", features = ["diagnostics"] }
 Inflector.workspace = true
 proc-macro2 = "1.0"
 quote = "1.0"

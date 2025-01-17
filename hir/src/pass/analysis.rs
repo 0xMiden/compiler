@@ -5,11 +5,9 @@ use core::{
 };
 
 use midenc_session::Session;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::FxBuildHasher;
 
-use crate::diagnostics::Report;
-
-type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
+use crate::{diagnostics::Report, FxHashMap, FxHashSet};
 
 /// A convenient type alias for `Result<T, AnalysisError>`
 pub type AnalysisResult<T> = Result<T, Report>;
@@ -115,7 +113,7 @@ impl CachedAnalysisKey {
     {
         use core::hash::Hasher;
 
-        let mut hasher = FxHasher::default();
+        let mut hasher = rustc_hash::FxHasher::default();
         let entity_ty = TypeId::of::<T>();
         entity_ty.hash(&mut hasher);
         key.hash(&mut hasher);
@@ -204,11 +202,9 @@ impl PreservedAnalyses {
     }
 
     fn with_capacity(current_entity_key: u64, cap: usize) -> Self {
-        use std::collections::HashMap;
-
         Self {
             current_entity_key,
-            preserved: HashMap::with_capacity_and_hasher(cap, BuildFxHasher::default()),
+            preserved: FxHashMap::with_capacity_and_hasher(cap, FxBuildHasher),
         }
     }
 }
@@ -349,8 +345,6 @@ impl AnalysisManager {
     where
         T: AnalysisKey,
     {
-        use std::collections::HashMap;
-
         let current_entity_key = CachedAnalysisKey::entity_key::<T>(key);
 
         if self.preserve_none.remove(&current_entity_key) {
@@ -381,8 +375,7 @@ impl AnalysisManager {
             preserve.insert(self.preserve.take(&key).unwrap());
         }
 
-        let mut cached =
-            HashMap::with_capacity_and_hasher(to_invalidate.len(), BuildFxHasher::default());
+        let mut cached = FxHashMap::with_capacity_and_hasher(to_invalidate.len(), FxBuildHasher);
         for key in to_invalidate.into_iter() {
             let (key, value) = self.cached.remove_entry(&key).unwrap();
             cached.insert(key, value);

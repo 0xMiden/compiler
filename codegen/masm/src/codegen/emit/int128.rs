@@ -4,7 +4,7 @@ use super::OpEmitter;
 use crate::masm::Op;
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Checks if the i128 value on the stack has its sign bit set.
     #[inline(always)]
     pub fn is_signed_int128(&mut self, span: SourceSpan) {

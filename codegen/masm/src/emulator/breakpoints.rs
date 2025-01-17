@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-use midenc_hir::FunctionIdent;
-use rustc_hash::{FxHashMap, FxHashSet};
+use midenc_hir::{FunctionIdent, FxHashMap, FxHashSet};
 
 use super::{Addr, BreakpointEvent, EmulatorEvent, Instruction, InstructionPointer};
 use crate::BlockId;
@@ -143,7 +142,7 @@ impl BreakpointManager {
 
     /// Set the given breakpoint
     pub fn set(&mut self, bp: Breakpoint) {
-        use std::collections::hash_map::Entry;
+        use hashbrown::hash_map::Entry;
 
         match bp {
             Breakpoint::All => {

@@ -3,6 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Copy, Clone)]
 pub struct HumanDuration(Duration);
 impl HumanDuration {
     pub fn since(i: Instant) -> Self {
@@ -13,6 +14,41 @@ impl HumanDuration {
     #[inline]
     pub fn as_secs_f64(&self) -> f64 {
         self.0.as_secs_f64()
+    }
+
+    /// Adds two [HumanDuration], using saturating arithmetic
+    #[inline]
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+impl core::ops::Add for HumanDuration {
+    type Output = HumanDuration;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+impl core::ops::Add<Duration> for HumanDuration {
+    type Output = HumanDuration;
+
+    fn add(self, rhs: Duration) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+impl core::ops::AddAssign for HumanDuration {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+impl core::ops::AddAssign<Duration> for HumanDuration {
+    fn add_assign(&mut self, rhs: Duration) {
+        self.0 += rhs;
+    }
+}
+impl From<HumanDuration> for Duration {
+    fn from(d: HumanDuration) -> Self {
+        d.0
     }
 }
 impl From<Duration> for HumanDuration {

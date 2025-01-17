@@ -474,7 +474,7 @@ where
         self.0.next().map(|item| (item.key(), item.value()))
     }
 }
-impl<'a, K, V> DoubleEndedIterator for OrderedArenaMapIter<'a, K, V>
+impl<K, V> DoubleEndedIterator for OrderedArenaMapIter<'_, K, V>
 where
     K: EntityRef,
 {

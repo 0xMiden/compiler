@@ -3,7 +3,7 @@ use midenc_hir::{assert_matches, Felt, Immediate, Overflow, SourceSpan, Type};
 use super::OpEmitter;
 use crate::masm::Op;
 
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     pub fn eq(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");

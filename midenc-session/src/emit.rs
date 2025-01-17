@@ -47,7 +47,7 @@ pub trait Emit {
     ) -> std::io::Result<()>;
 }
 
-impl<'a, T: Emit> Emit for &'a T {
+impl<T: Emit> Emit for &T {
     #[inline]
     fn name(&self) -> Option<Symbol> {
         (**self).name()
@@ -84,7 +84,7 @@ impl<'a, T: Emit> Emit for &'a T {
     }
 }
 
-impl<'a, T: Emit> Emit for &'a mut T {
+impl<T: Emit> Emit for &mut T {
     #[inline]
     fn name(&self) -> Option<Symbol> {
         (**self).name()
@@ -255,7 +255,7 @@ impl Emit for miden_assembly::Library {
         _session: &Session,
     ) -> std::io::Result<()> {
         struct LibraryTextFormatter<'a>(&'a miden_assembly::Library);
-        impl<'a> miden_core::prettier::PrettyPrint for LibraryTextFormatter<'a> {
+        impl miden_core::prettier::PrettyPrint for LibraryTextFormatter<'_> {
             fn render(&self) -> miden_core::prettier::Document {
                 use miden_core::prettier::*;
 
@@ -299,7 +299,7 @@ impl Emit for miden_assembly::Library {
                 library_doc
             }
         }
-        impl<'a> fmt::Display for LibraryTextFormatter<'a> {
+        impl fmt::Display for LibraryTextFormatter<'_> {
             #[inline]
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 self.pretty_print(f)

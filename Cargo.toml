@@ -2,8 +2,10 @@
 resolver = "2"
 members = [
     "codegen/*",
+    "dialects/*",
     "frontend-wasm",
     "hir",
+    "hir2",
     "hir-analysis",
     "hir-macros",
     "hir-symbol",
@@ -27,7 +29,7 @@ exclude = [
 
 [workspace.package]
 version = "0.0.7"
-rust-version = "1.80"
+rust-version = "1.84"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
 repository = "https://github.com/0xPolygonMiden/compiler"
@@ -52,9 +54,11 @@ clap = { version = "4.1", default-features = false, features = [
 ] }
 cranelift-entity = "0.108"
 cranelift-bforest = "0.108"
+compact_str = { version = "0.8", default-features = false }
 env_logger = "0.11"
 either = { version = "1.10", default-features = false }
 expect-test = "1.4.1"
+hashbrown = { version = "0.14", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
@@ -67,7 +71,7 @@ parking_lot_core = "0.9"
 petgraph = "0.6"
 pretty_assertions = "1.0"
 proptest = "1.4"
-rustc-hash = "1.1"
+rustc-hash = { version = "2.0", default-features = false }
 serde = { version = "1.0.208", features = ["serde_derive", "alloc", "rc"] }
 serde_repr = "0.1.19"
 serde_bytes = "0.11.15"
@@ -85,6 +89,7 @@ derive_more = "0.99"
 indexmap = "2.2"
 # miden-assembly = { version = "0.10.3" }
 # miden-core = { version = "0.10.3" }
+miden-formatting = { version = "0.1", default-features = false }
 miden-parsing = "0.1"
 # miden-processor = { version = "0.10.3" }
 # miden-stdlib = { version = "0.10.3", features = ["with-debug-info"] }
@@ -108,7 +113,9 @@ miden-package = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/m
 #miden-processor = { git = "https://github.com/0xPolygonMiden/miden-vm", rev = "828557c28ca1d159bfe42195e7ea73256ce4aa06" }
 #miden-stdlib = { git = "https://github.com/0xPolygonMiden/miden-vm", rev = "828557c28ca1d159bfe42195e7ea73256ce4aa06" }
 midenc-codegen-masm = { version = "0.0.7", path = "codegen/masm" }
+midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }
 midenc-hir = { version = "0.0.7", path = "hir" }
+midenc-hir2 = { version = "0.0.7", path = "hir2" }
 midenc-hir-analysis = { version = "0.0.7", path = "hir-analysis" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }

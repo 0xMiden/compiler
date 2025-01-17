@@ -22,6 +22,7 @@ cranelift-entity.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
 log.workspace = true
+hashbrown.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
 miden-processor.workspace = true
@@ -33,7 +34,6 @@ midenc-session = { workspace = true }
 miden-package.workspace = true
 paste.workspace = true
 petgraph.workspace = true
-rustc-hash.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
 smallvec.workspace = true

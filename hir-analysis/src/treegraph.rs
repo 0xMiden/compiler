@@ -663,14 +663,14 @@ impl fmt::Debug for TreeGraph {
 }
 
 struct DebugNodes<'a>(&'a TreeGraph);
-impl<'a> fmt::Debug for DebugNodes<'a> {
+impl fmt::Debug for DebugNodes<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.0.nodes.iter()).finish()
     }
 }
 
 struct DebugEdges<'a>(&'a TreeGraph);
-impl<'a> fmt::Debug for DebugEdges<'a> {
+impl fmt::Debug for DebugEdges<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut edges = f.debug_list();
         for EdgeId {

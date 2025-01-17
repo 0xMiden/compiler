@@ -431,7 +431,7 @@ impl<'a, 'b, 'c, 'd> FuncInstBuilderExt<'a, 'b, 'c, 'd> {
         }
     }
 }
-impl<'a, 'b, 'c, 'd> InstBuilderBase<'a> for FuncInstBuilderExt<'a, 'b, 'c, 'd> {
+impl<'a> InstBuilderBase<'a> for FuncInstBuilderExt<'a, '_, '_, '_> {
     fn data_flow_graph(&self) -> &DataFlowGraph {
         self.builder.data_flow_graph()
     }

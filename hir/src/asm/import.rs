@@ -5,11 +5,10 @@ use core::{
 };
 
 use anyhow::bail;
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     diagnostics::{SourceSpan, Spanned},
-    FunctionIdent, Ident, Symbol,
+    FunctionIdent, FxHashMap, FxHashSet, Ident, Symbol,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -32,7 +31,7 @@ impl ModuleImportInfo {
     ///
     /// NOTE: It is assumed that the caller is adding imports using fully-qualified names.
     pub fn add(&mut self, id: FunctionIdent) {
-        use std::collections::hash_map::Entry;
+        use hashbrown::hash_map::Entry;
 
         let module_id = id.module;
         match self.modules.entry(module_id) {

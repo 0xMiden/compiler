@@ -2,8 +2,7 @@ pub(crate) mod stdlib;
 pub(crate) mod transform;
 pub(crate) mod tx_kernel;
 
-use midenc_hir::{FunctionIdent, FunctionType, Ident, Symbol};
-use rustc_hash::FxHashMap;
+use midenc_hir::{FunctionIdent, FunctionType, FxHashMap, Ident, Symbol};
 use tx_kernel::note;
 
 use crate::intrinsics;

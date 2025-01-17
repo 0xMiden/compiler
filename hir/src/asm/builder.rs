@@ -1257,7 +1257,7 @@ pub struct IfTrueBlockBuilder<'a> {
     block: MasmBlockId,
     branch: IfBranch,
 }
-impl<'f> IfTrueBlockBuilder<'f> {
+impl IfTrueBlockBuilder<'_> {
     /// Construct a MASM instruction in this block
     pub fn ins<'a, 'b: 'a>(&'b mut self) -> MasmOpBuilder<'a> {
         MasmOpBuilder {
@@ -1271,7 +1271,7 @@ impl<'f> IfTrueBlockBuilder<'f> {
     /// Finalize this block, and release the builder
     pub fn end(self) {}
 }
-impl<'a> Drop for IfTrueBlockBuilder<'a> {
+impl Drop for IfTrueBlockBuilder<'_> {
     fn drop(&mut self) {
         match self.branch {
             IfBranch::Then => {
@@ -1424,7 +1424,7 @@ pub struct LoopBuilder<'a> {
     /// The type of loop we're building
     style: LoopType,
 }
-impl<'f> LoopBuilder<'f> {
+impl LoopBuilder<'_> {
     /// Get a builder for a single MASM instruction
     pub fn ins<'a, 'b: 'a>(&'b mut self) -> MasmOpBuilder<'a> {
         MasmOpBuilder {

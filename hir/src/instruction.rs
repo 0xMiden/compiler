@@ -229,7 +229,7 @@ impl Instruction {
         }
     }
 
-    pub fn arguments<'a>(&'a self, pool: &'a ValueListPool) -> &[Value] {
+    pub fn arguments<'a>(&'a self, pool: &'a ValueListPool) -> &'a [Value] {
         match self {
             Self::BinaryOp(BinaryOp { ref args, .. }) => args.as_slice(),
             Self::BinaryOpImm(BinaryOpImm { ref arg, .. }) => core::slice::from_ref(arg),
@@ -248,7 +248,7 @@ impl Instruction {
         }
     }
 
-    pub fn arguments_mut<'a>(&'a mut self, pool: &'a mut ValueListPool) -> &mut [Value] {
+    pub fn arguments_mut<'a>(&'a mut self, pool: &'a mut ValueListPool) -> &'a mut [Value] {
         match self {
             Self::BinaryOp(BinaryOp { ref mut args, .. }) => args.as_mut_slice(),
             Self::BinaryOpImm(BinaryOpImm { ref mut arg, .. }) => core::slice::from_mut(arg),
@@ -1073,7 +1073,7 @@ impl<'a> SuccessorInfo<'a> {
         }
     }
 }
-impl<'a> formatter::PrettyPrint for SuccessorInfo<'a> {
+impl formatter::PrettyPrint for SuccessorInfo<'_> {
     fn render(&self) -> miden_core::prettier::Document {
         use crate::formatter::*;
 
@@ -1170,7 +1170,7 @@ pub struct InstructionWithValueListPool<'a> {
     pub inst: &'a Instruction,
     pub value_lists: &'a ValueListPool,
 }
-impl<'a> PartialEq for InstructionWithValueListPool<'a> {
+impl PartialEq for InstructionWithValueListPool<'_> {
     fn eq(&self, other: &Self) -> bool {
         if core::mem::discriminant(self.inst) != core::mem::discriminant(other.inst) {
             return false;
@@ -1255,12 +1255,12 @@ pub struct InstPrettyPrinter<'a> {
     pub id: Inst,
     pub dfg: &'a DataFlowGraph,
 }
-impl<'a> fmt::Display for InstPrettyPrinter<'a> {
+impl fmt::Display for InstPrettyPrinter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
 }
-impl<'a> formatter::PrettyPrint for InstPrettyPrinter<'a> {
+impl formatter::PrettyPrint for InstPrettyPrinter<'_> {
     fn render(&self) -> formatter::Document {
         use crate::formatter::*;
 

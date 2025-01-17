@@ -34,6 +34,7 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
 use clap::ValueEnum;
+pub use miden_assembly;
 use midenc_hir_symbol::Symbol;
 
 pub use self::{
@@ -43,7 +44,9 @@ pub use self::{
     emit::Emit,
     flags::{CompileFlag, CompileFlags, FlagAction},
     inputs::{FileType, InputFile, InputType, InvalidInputError},
-    libs::{LibraryKind, LinkLibrary, BASE, STDLIB},
+    libs::{
+        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
+    },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
     statistics::Statistics,

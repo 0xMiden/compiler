@@ -322,7 +322,7 @@ struct BlockScheduler<'a> {
     inst_infos: SparseMap<hir::Inst, Rc<InstInfo>>,
     worklist: SmallVec<[Plan; 4]>,
 }
-impl<'a> BlockScheduler<'a> {
+impl BlockScheduler<'_> {
     pub fn schedule(mut self, scheduled_ops: &mut Vec<ScheduleOp>) {
         // Planning tasks are added to the worklist in reverse, e.g. we push
         // Plan::Finish before Plan::Start. So by popping tasks off the stack

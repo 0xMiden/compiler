@@ -88,3 +88,7 @@ treeify = { value = "treeify" }
 
 [attributes]
 entrypoint = {}
+
+[dialects]
+builtin = {}
+hir = {}

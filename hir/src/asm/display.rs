@@ -20,7 +20,7 @@ impl<'a> DisplayInlineAsm<'a> {
         Self { function, asm, dfg }
     }
 }
-impl<'a> PrettyPrint for DisplayInlineAsm<'a> {
+impl PrettyPrint for DisplayInlineAsm<'_> {
     fn render(&self) -> Document {
         use crate::formatter::*;
 
@@ -52,7 +52,7 @@ impl<'a> PrettyPrint for DisplayInlineAsm<'a> {
             + const_text(")")
     }
 }
-impl<'a> fmt::Display for DisplayInlineAsm<'a> {
+impl fmt::Display for DisplayInlineAsm<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
@@ -79,7 +79,7 @@ impl<'a> DisplayMasmBlock<'a> {
         }
     }
 }
-impl<'a> PrettyPrint for DisplayMasmBlock<'a> {
+impl PrettyPrint for DisplayMasmBlock<'_> {
     fn render(&self) -> Document {
         use crate::formatter::*;
 
@@ -120,7 +120,7 @@ impl<'a> PrettyPrint for DisplayMasmBlock<'a> {
         }
     }
 }
-impl<'a> fmt::Display for DisplayMasmBlock<'a> {
+impl fmt::Display for DisplayMasmBlock<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
@@ -132,7 +132,7 @@ struct DisplayOp<'a> {
     blocks: &'a PrimaryMap<MasmBlockId, MasmBlock>,
     op: &'a MasmOp,
 }
-impl<'a> DisplayOp<'a> {
+impl DisplayOp<'_> {
     #[inline(always)]
     pub fn is_local_module(&self, id: &Ident) -> bool {
         match self.function {
@@ -150,7 +150,7 @@ impl<'a> DisplayOp<'a> {
             .as_symbol()
     }
 }
-impl<'a> PrettyPrint for DisplayOp<'a> {
+impl PrettyPrint for DisplayOp<'_> {
     fn render(&self) -> Document {
         use crate::formatter::*;
 
@@ -325,7 +325,7 @@ impl<'a> PrettyPrint for DisplayOp<'a> {
         }
     }
 }
-impl<'a> fmt::Display for DisplayOp<'a> {
+impl fmt::Display for DisplayOp<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }

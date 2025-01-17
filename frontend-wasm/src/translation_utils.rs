@@ -5,13 +5,10 @@ use midenc_hir::{
     AbiParam, CallConv, Felt, FieldElement, InstBuilder, Linkage, Signature, Value,
 };
 use midenc_hir_type::{FunctionType, Type};
-use rustc_hash::FxHasher;
 
 use crate::{
     error::WasmResult, module::function_builder_ext::FunctionBuilderExt, unsupported_diag,
 };
-
-pub type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
 
 /// Represents the possible sizes in bytes of the discriminant of a variant type in the component
 /// model
@@ -101,7 +98,7 @@ impl FlagsSize {
 
 /// Divide `n` by `d`, rounding up in the case of a non-zero remainder.
 const fn ceiling_divide(n: usize, d: usize) -> usize {
-    (n + d - 1) / d
+    n.div_ceil(d)
 }
 
 /// Emit instructions to produce a zero value in the given type.

@@ -103,7 +103,7 @@ impl ValueData {
 pub struct Values<'a> {
     pub(super) inner: entity::Iter<'a, Value, ValueData>,
 }
-impl<'a> Iterator for Values<'a> {
+impl Iterator for Values<'_> {
     type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {

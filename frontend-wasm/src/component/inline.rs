@@ -46,12 +46,11 @@
 
 // Based on wasmtime v16.0 Wasm component translation
 
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 use anyhow::{bail, Result};
 use indexmap::IndexMap;
-use midenc_hir::cranelift_entity::PrimaryMap;
-use rustc_hash::FxHashMap;
+use midenc_hir::{cranelift_entity::PrimaryMap, FxBuildHasher, FxHashMap};
 use wasmparser::types::{ComponentAnyTypeId, ComponentEntityType, ComponentInstanceTypeId};
 
 use super::{
@@ -61,7 +60,6 @@ use super::{
 use crate::{
     component::{dfg, LocalInitializer},
     module::{module_env::ParsedModule, types::*, ModuleImport},
-    translation_utils::BuildFxHasher,
 };
 
 pub fn run(
@@ -87,8 +85,7 @@ pub fn run(
     //
     // Note that this is represents the abstract state of a host import of an
     // item since we don't know the precise structure of the host import.
-    let mut args =
-        HashMap::with_capacity_and_hasher(root_component.exports.len(), BuildFxHasher::default());
+    let mut args = FxHashMap::with_capacity_and_hasher(root_component.exports.len(), FxBuildHasher);
     let mut path = Vec::new();
     types.resources_mut().set_current_instance(index);
     let types_ref = root_component.types_ref();

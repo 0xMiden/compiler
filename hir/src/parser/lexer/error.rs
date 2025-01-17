@@ -99,7 +99,7 @@ impl PartialEq for LexicalError {
 }
 
 struct DisplayIntErrorKind<'a>(&'a IntErrorKind);
-impl<'a> fmt::Display for DisplayIntErrorKind<'a> {
+impl fmt::Display for DisplayIntErrorKind<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             IntErrorKind::Empty => write!(f, "unable to parse empty string as integer"),

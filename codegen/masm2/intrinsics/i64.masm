@@ -1,0 +1,377 @@
+const.SIGN_BIT=2147483648 # 1 << 31
+const.MIN_HI=SIGN_BIT
+const.MIN_LO=0
+const.MAX_HI=2147483647 # (1 << 31) - 1
+const.MAX_LO=4294967295 # u32::MAX
+const.NEG1_HI=MAX_LO
+const.NEG1_LO=MAX_LO
+
+# Returns `1` if `a` has its sign bit set, else `0`
+#
+# This function consumes `a`.
+export.is_signed # [a_hi, a_lo]
+    swap.1 drop
+    push.SIGN_BIT u32and push.SIGN_BIT eq
+end
+
+# Get the negation of `a`
+#
+# This operation is unchecked, so if the input is not a valid i64 the behavior is undefined
+export.unchecked_neg # [a_hi, a_lo]
+    # !a - 1
+    swap.1 u32not swap.1 u32not
+    push.1.0
+    exec.::std::math::u64::wrapping_add
+end
+
+# Get the negation of `a`
+#
+# This operation is checked, so if the input is not a valid i64,
+# or if the negation is not a valid i64, execution traps
+export.checked_neg # [a_hi, a_lo]
+    # assert input is valid i64
+    u32assert2
+    # assert that the negation is representable
+    dup.1 dup.1 push.MIN_LO.MIN_HI
+    exec.::std::math::u64::eq assertz
+    exec.unchecked_neg
+end
+
+# Adds `b` to `a`, asserting that both inputs are valid i32.
+#
+# Returns the result modulo 2^32, plus a boolean indicating whether or not the subtraction underflowed.
+export.overflowing_add # [b_hi, b_lo, a_hi, a_lo]
+    u32assertw
+
+    # is `b` signed?
+    dup.1 dup.1 exec.is_signed # [is_b_signed, b_hi, b_lo, a_hi, a_lo]
+
+    # is `a` signed?
+    dup.4 dup.4 u32assertw
+    exec.is_signed # [is_a_signed, is_b_signed, b, a]
+
+    # do both operands have the same sign?
+    #
+    # NOTE: We refer to `is_b_signed` as `is_signed` after this,
+    # because if `is_same_sign` is true, then `is_signed` reflects
+    # whether both `a` and `b` are signed. If `is_same_sign` is false,
+    # then overflow is not possible, and the value of `is_b_signed`
+    # will have no effect on the result
+    dup.1 eq # [is_same_sign, is_signed, b_hi, b_lo, a_hi, a_lo]
+
+    # compute result
+    movdn.5 movdn.5 exec.::std::math::u64::wrapping_add
+
+    # is `result` signed?
+    dup.1 dup.1 exec.is_signed # [is_result_signed, result_hi, result_lo, is_same_sign, is_signed]
+
+    # if both operands have the same sign, and the result differs, overflow has occurred
+    movup.4 neq # [signs_differ, result_hi, result_lo, is_same_sign]
+    movup.3 and # [overflowed, result_hi, result_lo]
+end
+
+# Adds `b` to `a`, wrapping around on overflow.
+export.::std::math::u64::wrapping_add
+
+# Adds `b` to `a`, asserting on overflow.
+export.checked_add # [b_hi, b_lo, a_hi, a_lo]
+    exec.overflowing_add # [overflowed, result_hi, result_lo]
+    assertz
+end
+
+# Subtracts `b` from `a`, asserting that both inputs are valid i64.
+#
+# Returns the result modulo 2^64, plus a boolean indicating whether or not the subtraction underflowed.
+export.overflowing_sub # [b_hi, b_lo, a_hi, a_lo]
+    u32assertw
+
+    # Subtraction is equivalent to addition if we negate the right-hand operand
+    #
+    # However, we must account for the edge case where `i64::MIN` is given, as that
+    # cannot be negated. In our case, the negation doesn't need to be realized immediately,
+    # so as long as the result is in range, we don't need to assert.
+    dup.1 dup.1 push.MIN_LO.MIN_HI exec.::std::math::u64::eq  # [is_b_min, b_hi, b_lo, a_hi, a_lo]
+    if.true
+        # The following is effectively identical to the implementation for `overflowing_add`,
+        # but inlined here as we know the value of `b` statically in this branch, and we need
+        # special handling to account for the fact that `b` was `i64::MIN`
+
+        # NOTE: We treat `b` as unsigned, since we're supposed to be negating it
+        drop drop push.MAX_LO.MAX_HI # [i64::MAX_HI, i64::MAX_LO, a_hi, a_lo]
+        dup.2 push.SIGN_BIT u32and push.SIGN_BIT eq  # [is_a_signed, i64::MAX_HI, i64::MAX_LO, a_hi, a_lo]
+        dup.0 eq.0 # [is_same_sign, is_a_signed, i64::MAX_HI, i64::MAX_LO, a_hi, a_lo]
+
+        # compute result
+        movdn.5 movdn.5 exec.::std::math::u64::wrapping_add # [a + i64::MAX, .., is_same_sign, is_a_signed]
+        push.1.0 exec.::std::math::u64::wrapping_add        # [a + i64::MAX + 1, .., is_same_sign, is_a_signed]
+
+        # is `result` signed?
+        dup.0 push.SIGN_BIT u32and push.SIGN_BIT eq # [is_result_signed, result_hi, result_lo, is_same_sign, is_a_signed]
+
+        # if both operands have the same sign, and the result differs, overflow has occurred
+        movup.4 neq # [signs_differ, result_hi, result_lo, is_same_sign]
+        movup.3 and # [overflowed, result_hi, result_lo]
+    else
+        exec.unchecked_neg
+        exec.overflowing_add
+    end
+end
+
+# Subtracts `b` from `a`
+#
+# This operation will fail if `b` is not a valid i64, or if `result` is not a valid i64
+export.wrapping_sub # [b_hi, b_lo, a_hi, a_lo]
+    exec.overflowing_sub # [overflowed, result]
+    drop
+end
+
+# Subtracts `b` from `a`, asserting on underflow/overflow
+export.checked_sub # [b_hi, b_lo, a_hi, a_lo]
+    exec.overflowing_sub # [overflowed, result]
+    assertz # [result]
+end
+
+# Multiplies `a` by `b`, asserting that both inputs are valid i64.
+#
+# Returns the result modulo 2^64, plus a boolean indicating whether or not the multiplication overflowed.
+export.overflowing_mul # [b, a]
+    u32assertw
+
+    # is `b` i64::MIN?
+    dup.1 dup.1 push.MIN_LO.MIN_HI exec.::std::math::u64::eq # [is_b_MIN, b_hi, b_lo, a_hi, a_lo]
+
+    # is `a` i64::MIN?
+    dup.4 dup.4 push.MIN_LO.MIN_HI exec.::std::math::u64::eq # [is_a_MIN, is_b_MIN, b_hi, b_lo, a_hi, a_lo]
+
+    # are either `a` or `b` i64::MIN?
+    or                   # [is_either_MIN, b_hi, b_lo, a_hi, a_lo]
+
+    # if either operand are MIN, then the following rules apply
+    #
+    # 1. If the other operand is 1, then there is no overflow and the result is MIN
+    # 2. If the other operand is -1, then there is overflow and the result is MIN
+    # 3. For any other value, there is overflow, and the result is zero
+    if.true
+        # if either are 1, rule 1 applies
+        dup.1 dup.1 push.1.0 exec.::std::math::u64::eq  # [is_b_1, b_hi, b_lo, a_hi, a_lo]
+        dup.4 dup.4 push.1.0 exec.::std::math::u64::eq  # [is_a_1, is_b_1, b_hi, b_lo, a_hi, a_lo]
+        or          # [is_either_1, b_hi, b_lo, a_hi, a_lo]
+        # either are -1, rule 2 applies
+        movup.4 movup.4 push.NEG1_LO.NEG1_HI exec.::std::math::u64::eq # [is_a_neg1, is_either_1, b_hi, b_lo]
+        movup.3 movup.3 push.NEG1_LO.NEG1_HI exec.::std::math::u64::eq # [is_b_neg1, is_a_neg1, is_either_1]
+        or                   # [is_either_neg1, is_either_1]
+        # choose between rule 1/2 or rule 3 result
+        dup.1 or           # [result_is_MIN, is_either_1]
+        dup.0              # [result_is_MIN, result_is_MIN, is_either_1]
+        push.MIN_LO push.0 # [0, MIN_LO, result_is_MIN, result_is_MIN, is_either_1]
+        swap.2 cdrop       # [result_lo, result_is_MIN, is_either_1]
+        swap.1
+        push.MIN_HI push.0 # [0, MIN_HI, result_is_MIN, result_lo, is_either_1]
+        swap.2 cdrop       # [result_hi, result_lo, is_either_1]
+        # overflow occurred if neither operand was 1
+        movup.2 not        # [overflowed, result]
+    else
+        # determine what sign the result should have
+        #
+        # 1. If only one operand is negative, the result is negative
+        # 2. If both operands are positive or negative, the result is positive
+        dup.0 push.SIGN_BIT u32and push.SIGN_BIT eq # [is_b_signed, b_hi, b_lo, a_hi, a_lo]
+        dup.3 push.SIGN_BIT u32and push.SIGN_BIT eq # [is_a_signed, is_b_signed, b_hi, b_lo, a_hi, a_lo]
+        dup.1 dup.1 neq      # [negate_result, is_a_signed, is_b_signed, b_hi, b_lo, a_hi, a_lo]
+        movdn.6              # [is_a_signed, is_b_signed, b_hi, b_lo, a_hi, a_lo, negate_result]
+
+        # negate negative operands, use standard unsigned wrapping multiplication,
+        # then negate the result if the result should be negative
+        movup.5 movup.5 dup.1 dup.1 exec.unchecked_neg  # [-a_hi, -a_lo, a_hi, a_lo, is_a_signed, is_b_signed, b_hi, b_lo, negate_result]
+        movup.2 swap.1 dup.4 cdrop # [-a or a hi, -a_lo, a_lo, is_a_signed, is_b_signed, b_hi, b_lo, negate_result]
+        swap.3 cdrop        # [-a or a lo, -a or a hi, is_b_signed, b_hi, b_lo, negate_result]
+        swap                # [-a or a hi, -a or a lo, is_b_signed, b_hi, b_lo, negate_result]
+        movup.4 movup.4
+        dup.1 dup.1 exec.unchecked_neg    # [-b_hi, -b_lo, b_hi, b_lo, -a or a hi, -a or a lo, is_b_signed, negate_result]
+        movup.2 swap.1 dup.6 cdrop        # [-b or b hi, -b_lo, b_lo, -a or a hi, -a or a lo, is_b_signed, negate_result]
+        movdn.2 movup.5 cdrop swap.1      # [-b or b hi, -b or b lo, -a or a hi, -a or a lo, negate_result]
+        exec.::std::math::u64::overflowing_mul
+        exec.::std::math::u64::eqz        # [overflowed, result_hi, result_lo, negate_result]
+
+        # if the unsigned op overflowed, we definitely overflowed, but overflow
+        # also occurred if the supposedly unsigned result has its sign bit set,
+        # which could only happen if we overflowed the positive i32 range
+        dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq or  # [overflowed, result_hi, result_lo, negate_result]
+        movdn.2 dup.1 dup.1 exec.unchecked_neg # [-result_hi, -result_lo, result_hi, result_lo, overflowed, negate_result]
+        movup.2 swap.1 dup.5 cdrop # [-result or result hi, -result_lo, result_lo, overflowed, negate_result]
+        movdn.2 movup.4 cdrop swap.1 # [-result or result hi, -result or result lo, overflowed]
+        movup.2 # [overflowed, -result or result hi, -result or result lo]
+    end
+end
+
+# Multiplies `a` by `b`, wrapping on overflow.
+export.wrapping_mul # [b_hi, b_lo, a_hi, a_lo]
+    exec.overflowing_mul # [overflowed, result_hi, result_lo]
+    drop
+end
+
+# Multiplies `a` by `b`, asserting on overflow
+export.checked_mul # [b_hi, b_lo, a_hi, a_lo]
+    exec.overflowing_mul # [overflowed, result_hi, result_lo]
+    assertz # [result]
+end
+
+# Divides `a` by `b`, asserting that both inputs are valid i64
+export.checked_div # [b_hi, b_lo, a_hi, a_lo]
+    u32assertw
+
+    # get positive dividend
+    dup.3 dup.3 exec.unchecked_neg     # [-a, -a, b, b, a, a]
+    dup.5 dup.5 movup.3 movup.3        # [-a, -a, a, a, b, b, a, a]
+    movup.7 movup.7 exec.is_signed     # [is_a_signed, -a, -a, a, a, b, b]
+    movup.3 movup.2 dup.2 cdrop        # [|a hi|, is_a_signed, -a lo, a lo, b, b]
+    movdn.4 dup.0 movdn.6 cdrop swap.1 # [|a|, |a|, b, b, is_a_signed]
+
+    # get positive divisor
+    dup.3 dup.3 exec.unchecked_neg     # [-b, -b, |a|, |a|, b, b, is_a_signed]
+    dup.5 dup.5 exec.is_signed         # [is_b_signed, -b, -b, |a|, |a|, b, b, is_a_signed]
+    dup.0 movdn.9                      # [is_b_signed, -b, -b, |a|, |a|, b, b, is_a_signed, is_b_signed]
+    movup.6 movup.2 dup.2 cdrop        # [|b hi|, is_b_signed, -b lo, |a|, |a|, b lo, is_a_signed, is_b_signed]
+    swap.2 movup.5 # [b lo, -b lo, is_b_signed, |b hi|, |a|, |a|, is_a_signed, is_b_signed]
+    swap.2 cdrop swap.1  # [|b hi|, |b lo|, |a hi|, |a lo|, is_a_signed, is_b_signed]
+
+    # divide
+    exec.::std::math::u64::div # [|a / b|, |a / b|, is_a_signed, is_b_signed]
+
+    # if the signs differ, negate the result
+    movdn.3 movdn.3 neq         # [signs_differ, |a / b|, |a / b|]
+    dup.2 dup.2 exec.unchecked_neg # [-|a / b|, -|a / b|, signs_differ, |a / b|, |a / b|]
+    swap.2 # [signs_differ, -|a / b| lo, -|a / b| hi, |a / b| hi, |a / b| lo]
+    dup.0 movdn.2 # [signs_differ, -|a / b| lo, signs_differ, -|a / b| hi, |a / b| hi, |a / b| lo]
+    movup.5       # [|a / b| lo, signs_differ, -|a / b| lo, signs_differ, -|a / b| hi, |a / b| hi]
+    swap.2 swap.1 # [signs_differ, -|a / b| lo, |a / b| lo, signs_differ, -|a / b| hi, |a / b| hi]
+    cdrop         # [result_lo, signs_differ, -|a / b| hi, |a / b| hi]
+    movdn.3 cdrop # [result_hi, result_lo]
+end
+
+# Given two i64 values in two's complement representation, compare them,
+# returning -1 if `a` < `b`, 0 if equal, and 1 if `a` > `b`.
+export.icmp # [b_hi, b_lo, a_hi, a_lo]
+    dup.2 # [a_hi, b_hi, b_lo, a_hi, a_lo]
+    dup.1 # [b_hi, a_hi, b_hi, b_lo, a_hi, a_lo]
+
+    # get the most-significant bit of `b`
+    push.SIGN_BIT u32and  # [b_msb, a_hi, b_hi, b_lo, a_hi, a_lo]
+
+    # get the most-significant bit of `a`
+    swap.1 push.SIGN_BIT u32and # [a_msb, b_msb, b_hi, b_lo, a_hi, a_lo]
+
+    eq.0             # [a_msb == 0, b_msb, b_hi, b_lo, a_hi, a_lo]
+    swap.1 eq.0      # [b_msb == 0, a_msb == 0, b_hi, b_lo, a_hi, a_lo]
+    swap.1 dup.1 neq # [a_msb != b_msb, b_msb == 0, b_hi, b_lo, a_hi, a_lo]
+
+    # if a_msb != b_msb, then a > b (if a_msb == 0), or a < b (if a_msb == 1)
+    if.true # [b_msb == 0, b_hi, b_lo, a_hi, a_lo]
+        movdn.4 dropw             # [b_msb == 0]
+        push.NEG1_LO push.1       # [1, -1, b_msb == 0]
+        swap.2                    # [b_msb == 0, -1 lo, 1 lo, b_msb == 0]
+        cdrop                     # [1 or -1 lo, b_msb == 0]
+    else    # [b_msb == 0, b_hi, b_lo, a_hi, a_lo]
+        # a_msb == b_msb, so we can compare the remaining bits lexicographically,
+        # which we get for free via the lt/gt ops
+        drop                      # [b_hi, b_lo, a_hi, a_lo]
+        dupw                      # [b_hi, b_lo, a_hi, a_lo, b_hi, b_lo, a_hi, a_lo]
+        exec.::std::math::u64::gt
+        movdn.4                   # [b_hi, b_lo, a_hi, a_lo, a > b]
+        exec.::std::math::u64::lt # [a < b, a > b]
+        push.0 push.NEG1_LO push.1
+        swap.3                    # [a < b, -1, 0, 1, a > b]
+        cdrop                     # [-1 or 0, 1, a > b]
+        swap.2                    # [a > b, 1, -1 or 0]
+        cdrop                     # [1 or -1 or 0]
+    end
+end
+
+# Given two i64 values in two's complement representation, return 1 if `a < b`, else 0
+export.lt # [b, a]
+    exec.icmp push.NEG1_LO eq
+end
+
+# Given two i64 values in two's complement representation, return 1 if `a <= b`, else 0
+export.lte # [b, a]
+    exec.icmp neq.1
+end
+
+# Given two i64 values in two's complement representation, return 1 if `a > b`, else 0
+export.gt # [b, a]
+    exec.icmp eq.1
+end
+
+# Given two i64 values in two's complement representation, return 1 if `a >= b`, else 0
+export.gte # [b, a]
+    exec.icmp push.NEG1_LO neq
+end
+
+# Compute 2^n, where `n` must be less than 63, or the result will overflow i64::MAX
+export.pow2 # [n_hi, n_lo]
+    dup.0
+    push.63
+    u32lt          # [n < 63, n]
+    assert         # [n]
+    push.1.0 movup.2 push.0  # [0, n, 0, 1]
+    exec.::std::math::u64::shl # [1 << n hi, 1 << n lo]
+end
+
+# Arithmetic shift-right, i.e. `a >> b` preserves the signedness of the value
+#
+# This function will assert if `b` is > 63.
+#
+# This implementation is checked, so it will assert if the inputs are invalid
+export.checked_shr # [b, a_hi, a_lo]
+    # validate the shift is valid
+    dup.0 push.64
+    u32lt          # [b < 64, b, a_hi, a_lo]
+    assert
+
+    # if the input is zero, the output is always zero,
+    # and if the shift is zero, the input is returned unchanged
+    dup.0 eq.0   # [b == 0, b, a_hi, a_lo]
+    dup.3 dup.3  # [a_hi, a_lo, b == 0, b]
+    u32assert2
+    exec.::std::math::u64::eqz # [a == 0, b == 0, b, a_hi, a_lo]
+    or           # [a == 0 || b == 0, b, a_hi, a_lo]
+    if.true
+        # return `a` if `b == 0`, otherwise `a == 0` so return 0
+        eq.0            # [b == 0, a_hi, a_lo]
+        dup.0           # [b == 0, b == 0, a_hi, a_lo]
+        swap.2          # [a_hi, b == 0, b == 0, a_lo]
+        push.0 swap.2   # [b == 0, a_hi, 0, b == 0, a_lo]
+        push.0 movdn.5  # [b == 0, a_hi, 0, b == 0, a_lo, 0]
+        cdrop movdn.3   # [b == 0, a_lo, 0, a or 0 hi]
+        cdrop swap.1    # [a or 0 hi, a or 0 lo]
+    else  # [b, a]
+        # get the signedness of the value
+        dup.1                           # [a_hi, b, a_hi, a_lo]
+        push.SIGN_BIT                   # [1<<31, a, b, a_hi, a_lo]
+        u32and push.SIGN_BIT eq         # [is_signed, b, a_hi, a_lo]
+
+        # if the value is signed, we must sign-extend the result,
+        # otherwise we can treat it as an unsigned shift
+        if.true  # [b, a_hi, a_lo]
+            movdn.2            # [a_hi, a_lo, b]
+            dup.2              # [b, a_hi, a_lo, b]
+            exec.::std::math::u64::shr # [shifted_hi, shifted_lo, b]
+
+            # compute the extension mask
+            push.1.0 dup.4 # [b, 1u64, 1u64, shifted_hi, shifted_lo, b]
+            exec.::std::math::u64::shl
+            push.1.0
+            exec.::std::math::u64::wrapping_sub # [(1 << b) - 1, .., shifted_hi, shifted_lo, b]
+
+            # shift the mask into place
+            push.64 movup.5    # [b, 64, mask_hi, mask_lo, shifted_hi, shifted_lo]
+            sub                # [64 - b, mask_hi, mask_lo, shifted_hi, shifted_lo]
+            exec.::std::math::u64::shl # [mask << (64 - b), .., shifted_hi, shifted_lo]
+            exec.::std::math::u64::or  # [shifted | mask, ..]
+            u32assert2
+        else
+            exec.::std::math::u64::shr # [shifted_hi, shifted_lo]
+            u32assert2
+        end
+    end
+end

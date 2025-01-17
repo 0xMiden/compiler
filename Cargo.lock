@@ -525,6 +525,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitvec"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+dependencies = [
+ "funty",
+ "radium",
+ "tap",
+ "wyz",
+]
+
+[[package]]
 name = "blake3"
 version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -535,6 +547,15 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
+]
+
+[[package]]
+name = "blink-alloc"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e669f146bb8b2327006ed94c69cf78c8ec81c100192564654230a40b4f091d82"
+dependencies = [
+ "allocator-api2",
 ]
 
 [[package]]
@@ -1648,6 +1669,12 @@ dependencies = [
  "nix 0.29.0",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "funty"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "futures"
@@ -3214,6 +3241,7 @@ dependencies = [
  "bitcode",
  "cranelift-entity",
  "env_logger 0.11.5",
+ "hashbrown 0.14.5",
  "intrusive-collections",
  "inventory",
  "log",
@@ -3230,7 +3258,32 @@ dependencies = [
  "paste",
  "petgraph",
  "proptest",
- "rustc-hash 1.1.0",
+ "serde 1.0.210",
+ "serde_bytes",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-codegen-masm2"
+version = "0.0.7"
+dependencies = [
+ "anyhow",
+ "bitcode",
+ "env_logger 0.11.5",
+ "hashbrown 0.14.5",
+ "inventory",
+ "log",
+ "miden-assembly",
+ "miden-core",
+ "miden-processor",
+ "miden-stdlib",
+ "miden-thiserror",
+ "midenc-dialect-hir",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "petgraph",
+ "proptest",
  "serde 1.0.210",
  "serde_bytes",
  "smallvec",
@@ -3288,6 +3341,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-dialect-hir"
+version = "0.0.7"
+dependencies = [
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
+]
+
+[[package]]
 name = "midenc-driver"
 version = "0.0.7"
 dependencies = [
@@ -3309,6 +3373,7 @@ dependencies = [
  "derive_more",
  "expect-test",
  "gimli",
+ "hashbrown 0.14.5",
  "indexmap 2.5.0",
  "log",
  "miden-core",
@@ -3316,7 +3381,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-type",
  "midenc-session",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "smallvec",
  "wasmparser 0.214.0",
  "wat",
@@ -3330,6 +3395,7 @@ dependencies = [
  "cranelift-entity",
  "derive_more",
  "either",
+ "hashbrown 0.14.5",
  "indexmap 2.5.0",
  "intrusive-collections",
  "inventory",
@@ -3349,7 +3415,7 @@ dependencies = [
  "petgraph",
  "pretty_assertions",
  "rustc-demangle",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde 1.0.210",
  "serde_bytes",
  "serde_repr",
@@ -3365,13 +3431,13 @@ dependencies = [
  "anyhow",
  "cranelift-bforest",
  "cranelift-entity",
+ "hashbrown 0.14.5",
  "intrusive-collections",
  "inventory",
  "miden-thiserror",
  "midenc-hir",
  "midenc-session",
  "pretty_assertions",
- "rustc-hash 1.1.0",
  "smallvec",
 ]
 
@@ -3380,6 +3446,7 @@ name = "midenc-hir-macros"
 version = "0.0.7"
 dependencies = [
  "Inflector",
+ "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.77",
@@ -3390,7 +3457,12 @@ name = "midenc-hir-symbol"
 version = "0.0.7"
 dependencies = [
  "Inflector",
- "rustc-hash 1.1.0",
+ "compact_str",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "miden-formatting",
+ "parking_lot",
+ "rustc-hash",
  "serde 1.0.210",
  "toml 0.8.19",
 ]
@@ -3406,7 +3478,6 @@ dependencies = [
  "midenc-hir-analysis",
  "midenc-session",
  "pretty_assertions",
- "rustc-hash 1.1.0",
  "smallvec",
 ]
 
@@ -3414,7 +3485,38 @@ dependencies = [
 name = "midenc-hir-type"
 version = "0.0.7"
 dependencies = [
+ "miden-formatting",
  "serde 1.0.210",
+ "serde_repr",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-hir2"
+version = "0.0.7"
+dependencies = [
+ "anyhow",
+ "bitflags 2.6.0",
+ "bitvec",
+ "blink-alloc",
+ "compact_str",
+ "env_logger 0.11.5",
+ "hashbrown 0.14.5",
+ "intrusive-collections",
+ "inventory",
+ "log",
+ "miden-core",
+ "miden-thiserror",
+ "midenc-hir-macros",
+ "midenc-hir-symbol",
+ "midenc-hir-type",
+ "midenc-session",
+ "pretty_assertions",
+ "rustc-demangle",
+ "rustc-hash",
+ "semver 1.0.23",
+ "serde 1.0.210",
+ "serde_bytes",
  "serde_repr",
  "smallvec",
 ]
@@ -4356,7 +4458,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash 2.0.0",
+ "rustc-hash",
  "rustls",
  "socket2 0.5.7",
  "thiserror",
@@ -4373,7 +4475,7 @@ dependencies = [
  "bytes",
  "rand",
  "ring",
- "rustc-hash 2.0.0",
+ "rustc-hash",
  "rustls",
  "slab",
  "thiserror",
@@ -4402,6 +4504,12 @@ checksum = "b5b9d34b8991d19d98081b46eacdd8eb58c6f2b201139f7c5f643cc155a633af"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "radium"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
@@ -4683,12 +4791,6 @@ name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
@@ -5455,6 +5557,12 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "tap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
@@ -7044,6 +7152,15 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser 0.216.0",
+]
+
+[[package]]
+name = "wyz"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
+dependencies = [
+ "tap",
 ]
 
 [[package]]

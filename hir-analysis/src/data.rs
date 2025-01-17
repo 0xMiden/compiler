@@ -1,9 +1,9 @@
 use midenc_hir::{
     pass::{Analysis, AnalysisManager, AnalysisResult},
-    Function, FunctionIdent, GlobalValue, GlobalValueData, GlobalVariableTable, Module, Program,
+    Function, FunctionIdent, FxHashMap, GlobalValue, GlobalValueData, GlobalVariableTable, Module,
+    Program,
 };
 use midenc_session::Session;
-use rustc_hash::FxHashMap;
 
 /// This analysis calculates the addresses/offsets of all global variables in a [Program] or
 /// [Module]

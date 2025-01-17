@@ -1,3 +1,5 @@
+cargo-features = ["trim-paths"]
+
 [package]
 name = "miden-sdk-account-test"
 rust-version = "1.71"
@@ -16,3 +18,4 @@ panic = "abort"
 # optimize for size
 opt-level = "z"
 debug = true
+trim-paths = ["diagnostics", "object"]

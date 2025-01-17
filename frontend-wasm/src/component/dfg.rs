@@ -35,8 +35,10 @@
 use std::{hash::Hash, ops::Index};
 
 use indexmap::IndexMap;
-use midenc_hir::cranelift_entity::{EntityRef, PrimaryMap};
-use rustc_hash::FxHashMap;
+use midenc_hir::{
+    cranelift_entity::{EntityRef, PrimaryMap},
+    FxHashMap,
+};
 
 use crate::{
     component::*,

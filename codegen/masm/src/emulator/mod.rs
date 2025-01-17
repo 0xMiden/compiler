@@ -8,8 +8,10 @@ use std::{cell::RefCell, cmp, rc::Rc, sync::Arc};
 
 use memory::Memory;
 use miden_assembly::{ast::ProcedureName, LibraryNamespace};
-use midenc_hir::{assert_matches, Felt, FieldElement, FunctionIdent, Ident, OperandStack, Stack};
-use rustc_hash::{FxHashMap, FxHashSet};
+use midenc_hir::{
+    assert_matches, Felt, FieldElement, FunctionIdent, FxHashMap, FxHashSet, Ident, OperandStack,
+    Stack,
+};
 
 use self::functions::{Activation, Stub};
 pub use self::{
@@ -313,7 +315,7 @@ impl Emulator {
     ///
     /// An error is returned if a module with the same name is already loaded.
     pub fn load_module(&mut self, module: Arc<Module>) -> Result<(), EmulationError> {
-        use std::collections::hash_map::Entry;
+        use hashbrown::hash_map::Entry;
 
         assert_matches!(
             self.status,

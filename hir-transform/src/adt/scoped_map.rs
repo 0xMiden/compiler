@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, fmt, hash::Hash, rc::Rc};
 
-use rustc_hash::FxHashMap;
+use midenc_hir::FxHashMap;
 
 #[derive(Clone)]
 pub struct ScopedMap<K, V>

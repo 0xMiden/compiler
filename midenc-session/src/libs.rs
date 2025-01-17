@@ -6,7 +6,9 @@ use std::{
     sync::LazyLock,
 };
 
-use miden_assembly::{Library as CompiledLibrary, LibraryNamespace};
+pub use miden_assembly::{
+    Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
+};
 use miden_base_sys::masl::tx::MidenTxKernelLibrary;
 use miden_stdlib::StdLibrary;
 
