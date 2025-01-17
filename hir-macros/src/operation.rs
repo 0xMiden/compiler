@@ -2652,7 +2652,7 @@ mod tests {
         };
 
         let mut child = Command::new("rustfmt")
-            .args(["+nightly", "--edition", "2024"])
+            .args(["--edition", "2024"])
             .args([
                 "--config",
                 "unstable_features=true,normalize_doc_attributes=true,\
