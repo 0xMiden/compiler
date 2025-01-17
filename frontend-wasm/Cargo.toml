@@ -24,6 +24,7 @@ log.workspace = true
 hashbrown.workspace = true
 miden-core.workspace = true
 midenc-hir.workspace = true
+midenc-hir2.workspace = true
 midenc-hir-type.workspace = true
 midenc-session.workspace = true
 rustc-hash.workspace = true

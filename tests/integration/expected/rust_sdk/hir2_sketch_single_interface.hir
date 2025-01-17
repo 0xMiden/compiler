@@ -1,26 +1,4 @@
 (world
-    (component miden:base/core-types@1.0.0
-        ;; Interfaces
-        (interface miden:base/core-types@1.0.0
-
-        )
-    )
-
-    (component miden:core-import/intrinsics-mem@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/intrinsics-mem@1.0.0
-            (synth_func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base (cc lift) (result i32) (inner (# #))
-        )
-    )
-
-    (component miden:core-import/intrinsics-felt@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/intrinsics-felt@1.0.0
-            (synth_func (#miden:core-import/intrinsics-felt@1.0.0 #add (cc lift) (param felt) (param felt) (result felt) (inner (# #))
-            (synth_func (#miden:core-import/intrinsics-felt@1.0.0 #from-u32 (cc lift) (param u32) (result felt) (inner (# #))
-        )
-    )
-
     (component root
         ;; Interfaces
         (interface miden:cross-ctx-account/foo@1.0.0

@@ -1086,11 +1086,10 @@ impl CompilerTest {
         let ir = midenc_frontend_wasm::translate_component2(
             &self.wasm_bytes(),
             &self.config,
-            &self.session,
+            self.session.clone(),
         )
         .expect("Failed to translate Wasm binary to IR component");
-        // let txt = ir_components.into_iter().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
-        let src = demangle(ir.to_string());
+        let src = demangle(ir.borrow().as_ref().as_operation_ref().to_string());
         expected_hir_file.assert_eq(&src);
     }
 
@@ -1254,7 +1253,10 @@ where
 {
     use midenc_hir::diagnostics::reporting::{self, ReportHandlerOpts};
 
-    let result = reporting::set_hook(Box::new(|_| Box::new(ReportHandlerOpts::new().build())));
+    let result = reporting::set_hook(Box::new(|_| {
+        let wrapping_width = 300; // avoid wrapped file paths in the backtrace
+        Box::new(ReportHandlerOpts::new().width(wrapping_width).build())
+    }));
     if result.is_ok() {
         reporting::set_panic_hook();
     }

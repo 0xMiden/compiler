@@ -8,7 +8,7 @@ mod segment;
 pub use self::{
     component::{
         Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentId,
-        ComponentInterface, ModuleExport, ModuleInterface,
+        ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
     },
     function::{Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, LocalId},
     global_variable::*,

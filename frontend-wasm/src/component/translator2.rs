@@ -1,12 +1,19 @@
-// TODO: remove after its completed
+// TODO:remove after its completed
 #![allow(unused)]
 
 // TODO: document
 
-use hir2_sketch::{Component, Interface, Module};
+use std::{borrow::BorrowMut, rc::Rc};
+
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent,
     FxHashMap, Ident, Linkage, Signature, SourceSpan, Symbol,
+};
+use midenc_hir2::{
+    self as hir2,
+    dialects::builtin::{Component, ComponentBuilder, ComponentRef},
+    version::Version,
+    BuilderExt, Context, EntityMut, OpBuilder,
 };
 use midenc_session::{DiagnosticsHandler, Session};
 use wasmparser::types::{ComponentEntityType, TypesRef};
@@ -51,9 +58,9 @@ pub struct ComponentTranslator2<'a> {
     /// `ComponentFrame` with the `ParsedComponent`s here.
     nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
 
-    result: hir2_sketch::WorldBuilder,
+    result: ComponentBuilder,
 
-    session: &'a Session,
+    context: Rc<Context>,
 }
 
 impl<'a> ComponentTranslator2<'a> {
@@ -61,15 +68,23 @@ impl<'a> ComponentTranslator2<'a> {
         nested_modules: &'a PrimaryMap<StaticModuleIndex, ParsedModule<'a>>,
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
         config: &'a WasmTranslationConfig,
-        session: &'a Session,
+        context: Rc<Context>,
     ) -> Self {
-        let builder = hir2_sketch::WorldBuilder::new("root".to_string());
+        let mut builder = context.clone().builder();
+        let component_builder =
+            builder.create::<Component, (hir2::Ident, hir2::Ident, Version)>(Default::default());
+        // TODO: get proper ns and name (from exported interfaces?)
+        let ns = hir2::Ident::from("root_ns");
+        let name = hir2::Ident::from("root");
+        let ver = Version::parse("1.0.0").unwrap();
+        let mut raw_entity_ref = component_builder(ns, name, ver).unwrap();
+        let result = ComponentBuilder::new(raw_entity_ref);
         Self {
             config,
-            session,
+            context,
             nested_modules,
             nested_components,
-            result: builder,
+            result,
         }
     }
 
@@ -77,15 +92,14 @@ impl<'a> ComponentTranslator2<'a> {
         mut self,
         root_component: &'a ParsedComponent,
         types: &mut ComponentTypesBuilder,
-        _diagnostics: &DiagnosticsHandler,
-    ) -> WasmResult<hir2_sketch::World> {
+    ) -> WasmResult<ComponentRef> {
         let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
 
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
 
-        Ok(self.result.build())
+        Ok(self.result.component)
     }
 
     fn initializer(
@@ -110,7 +124,7 @@ impl<'a> ComponentTranslator2<'a> {
                             }
                             _ => {
                                 unsupported_diag!(
-                                    &self.session.diagnostics,
+                                    &self.context.session.diagnostics,
                                     "Importing of {:?} is not yet supported",
                                     ty
                                 )
@@ -127,21 +141,27 @@ impl<'a> ComponentTranslator2<'a> {
             }
             LocalInitializer::Resource(..) => {
                 unsupported_diag!(
-                    &self.session.diagnostics,
+                    &self.context.session.diagnostics,
                     "Resource initializers are not supported"
                 )
             }
             LocalInitializer::ResourceNew(..) => {
-                unsupported_diag!(&self.session.diagnostics, "Resource creation is not supported")
+                unsupported_diag!(
+                    &self.context.session.diagnostics,
+                    "Resource creation is not supported"
+                )
             }
             LocalInitializer::ResourceRep(..) => {
                 unsupported_diag!(
-                    &self.session.diagnostics,
+                    &self.context.session.diagnostics,
                     "Resource representation is not supported"
                 )
             }
             LocalInitializer::ResourceDrop(..) => {
-                unsupported_diag!(&self.session.diagnostics, "Resource dropping is not supported")
+                unsupported_diag!(
+                    &self.context.session.diagnostics,
+                    "Resource dropping is not supported"
+                )
             }
             LocalInitializer::ModuleStatic(static_module_idx) => {
                 frame.modules.push(ModuleDef::Static(*static_module_idx));
@@ -195,7 +215,7 @@ impl<'a> ComponentTranslator2<'a> {
             }
             LocalInitializer::ComponentSynthetic(_) => {
                 unsupported_diag!(
-                    &self.session.diagnostics,
+                    &self.context.session.diagnostics,
                     "Synthetic components are not yet supported"
                 )
             }
@@ -203,10 +223,16 @@ impl<'a> ComponentTranslator2<'a> {
                 frame.funcs.push(CoreDef::Export(*module_instance_idx, name));
             }
             LocalInitializer::AliasExportTable(..) => {
-                unsupported_diag!(&self.session.diagnostics, "Table exports are not yet supported")
+                unsupported_diag!(
+                    &self.context.session.diagnostics,
+                    "Table exports are not yet supported"
+                )
             }
             LocalInitializer::AliasExportGlobal(..) => {
-                unsupported_diag!(&self.session.diagnostics, "Global exports are not yet supported")
+                unsupported_diag!(
+                    &self.context.session.diagnostics,
+                    "Global exports are not yet supported"
+                )
             }
             LocalInitializer::AliasExportMemory(..) => {
                 // Do nothing, assuming Rust compiled code having one memory instance.
@@ -221,11 +247,14 @@ impl<'a> ComponentTranslator2<'a> {
                 frame.push_item(def);
             }
             LocalInitializer::AliasModule(_) => {
-                unsupported_diag!(&self.session.diagnostics, "Module aliases are not yet supported")
+                unsupported_diag!(
+                    &self.context.session.diagnostics,
+                    "Module aliases are not yet supported"
+                )
             }
             LocalInitializer::AliasComponent(_) => {
                 unsupported_diag!(
-                    &self.session.diagnostics,
+                    &self.context.session.diagnostics,
                     "Component aliases are not yet supported"
                 )
             }
@@ -243,7 +272,7 @@ impl<'a> ComponentTranslator2<'a> {
                         // do nothing
                     }
                     _ => unsupported_diag!(
-                        &self.session.diagnostics,
+                        &self.context.session.diagnostics,
                         "Exporting of {:?} is not yet supported",
                         component_item
                     ),
@@ -264,30 +293,30 @@ impl<'a> ComponentTranslator2<'a> {
         let static_component_idx = frame.components[instance.component].index;
         let parsed_component = &self.nested_components[static_component_idx];
         let module = Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
-        let functions = parsed_component
-            .exports
-            .iter()
-            .flat_map(|(name, item)| {
-                if let ComponentItem::Func(f) = item {
-                    self.component_export_func(
-                        frame,
-                        types,
-                        component_instance_idx,
-                        module,
-                        name,
-                        f,
-                    )
-                } else {
-                    // we're only interested in exported functions
-                    vec![]
-                }
-            })
-            .collect();
-        let interface = Interface {
-            name: interface_name,
-            functions,
-        };
-        self.result.root_mut().interfaces.push(interface);
+        // let functions = parsed_component
+        //     .exports
+        //     .iter()
+        //     .flat_map(|(name, item)| {
+        //         if let ComponentItem::Func(f) = item {
+        //             self.component_export_func(
+        //                 frame,
+        //                 types,
+        //                 component_instance_idx,
+        //                 module,
+        //                 name,
+        //                 f,
+        //             )
+        //         } else {
+        //             // we're only interested in exported functions
+        //             vec![]
+        //         }
+        //     })
+        //     .collect();
+        // let interface = Interface {
+        //     name: interface_name,
+        //     functions,
+        // };
+        // self.result.root_mut().interfaces.push(interface);
         frame.component_instances.push(ComponentInstanceDef::Export);
         Ok(())
     }
@@ -380,10 +409,10 @@ impl<'a> ComponentTranslator2<'a> {
         match &frame.modules[*module_idx] {
             ModuleDef::Static(static_module_idx) => {
                 let parsed_module = &self.nested_modules[*static_module_idx];
-                let mut module = Module {
-                    name: parsed_module.module.name(),
-                    functions: vec![],
-                };
+                // let mut module = Module {
+                //     name: parsed_module.module.name(),
+                //     functions: vec![],
+                // };
                 for module_arg in args {
                     let arg_module_name = module_arg.0;
                     let module_ident =
@@ -395,7 +424,7 @@ impl<'a> ComponentTranslator2<'a> {
                             args: _,
                         } => {
                             unsupported_diag!(
-                                &self.session.diagnostics,
+                                &self.context.session.diagnostics,
                                 "Instantiated module as another module instantiation argument is \
                                  not supported yet"
                             )
@@ -431,19 +460,19 @@ impl<'a> ComponentTranslator2<'a> {
                     let import_canon_lower_func_sig =
                         &import_canon_lower_args.remove(&import_func_id).unwrap();
 
-                    let internal_func_id = FunctionIdent {
-                        module: module.name,
-                        function: Ident::new(internal_import_func_name, SourceSpan::default()),
-                    };
-                    let function = hir2_sketch::SyntheticFunction {
-                        id: internal_func_id,
-                        signature: import_canon_lower_func_sig.clone(),
-                        inner_function: import_func_id,
-                    };
-                    module.functions.push(function);
+                    // let internal_func_id = FunctionIdent {
+                    //     module: module.name,
+                    //     function: Ident::new(internal_import_func_name, SourceSpan::default()),
+                    // };
+                    // let function = hir2_sketch::SyntheticFunction {
+                    //     id: internal_func_id,
+                    //     signature: import_canon_lower_func_sig.clone(),
+                    //     inner_function: import_func_id,
+                    // };
+                    // module.functions.push(function);
                 }
 
-                self.result.root_mut().modules.push(module);
+                // self.result.root_mut().modules.push(module);
             }
             ModuleDef::Import(_) => {
                 panic!("Module import instantiation is not supported yet")
@@ -470,37 +499,42 @@ impl<'a> ComponentTranslator2<'a> {
                 name: name.0.to_string(),
                 ty,
             }));
-        let interface_name = name.0.to_string();
-        let module = Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
-        let inner_function_empty = FunctionIdent {
-            module: Ident::new(Symbol::intern(""), SourceSpan::default()),
-            function: Ident::new(Symbol::intern(""), SourceSpan::default()),
-        };
-        let component_types = types.resources_mut_and_types().1;
-        let instance_type = &component_types[ty];
-        let functions = instance_type
-            .exports
-            .iter()
-            .filter_map(|(name, ty)| {
-                import_component_export_func(
-                    module,
-                    inner_function_empty,
-                    component_types,
-                    name,
-                    ty,
-                )
-            })
-            .collect();
-        let interface = Interface {
-            name: interface_name.clone(),
-            functions,
-        };
-        let import_component = Component {
-            name: interface_name,
-            interfaces: vec![interface],
-            modules: Default::default(),
-        };
-        self.result.add_import(import_component);
+        // TODO: create World in hir2
+        //
+        // let interface_name = name.0.to_string();
+        // let module = Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
+        // let inner_function_empty = FunctionIdent {
+        //     module: Ident::new(Symbol::intern(""), SourceSpan::default()),
+        //     function: Ident::new(Symbol::intern(""), SourceSpan::default()),
+        // };
+        // let component_types = types.resources_mut_and_types().1;
+        // let instance_type = &component_types[ty];
+        // let functions = instance_type
+        //     // TODO: need `exports` to have a stable order or find a different source for the
+        //     // function list
+        //     //
+        //     .exports
+        //     .iter()
+        //     .filter_map(|(name, ty)| {
+        //         import_component_export_func(
+        //             module,
+        //             inner_function_empty,
+        //             component_types,
+        //             name,
+        //             ty,
+        //         )
+        //     })
+        //     .collect();
+        // let interface = Interface {
+        //     name: interface_name.clone(),
+        //     functions,
+        // };
+        // let import_component = Component {
+        //     name: interface_name,
+        //     interfaces: vec![interface],
+        //     modules: Default::default(),
+        // };
+        // self.result.add_import(import_component);
         Ok(())
     }
 }

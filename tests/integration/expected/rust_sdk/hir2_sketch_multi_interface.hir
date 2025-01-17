@@ -1,47 +1,4 @@
 (world
-    (component miden:base/core-types@1.0.0
-        ;; Interfaces
-        (interface miden:base/core-types@1.0.0
-
-        )
-    )
-
-    (component miden:core-import/intrinsics-mem@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/intrinsics-mem@1.0.0
-            (synth_func (#miden:core-import/intrinsics-mem@1.0.0 #heap-base (cc lift) (result i32) (inner (# #))
-        )
-    )
-
-    (component miden:core-import/intrinsics-felt@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/intrinsics-felt@1.0.0
-            (synth_func (#miden:core-import/intrinsics-felt@1.0.0 #add (cc lift) (param felt) (param felt) (result felt) (inner (# #))
-        )
-    )
-
-    (component miden:core-import/stdlib-crypto-hashes-blake3@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/stdlib-crypto-hashes-blake3@1.0.0
-            (synth_func (#miden:core-import/stdlib-crypto-hashes-blake3@1.0.0 #hash-one-to-one (cc lift) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (inner (# #))
-        )
-    )
-
-    (component miden:core-import/account@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/account@1.0.0
-            (synth_func (#miden:core-import/account@1.0.0 #add-asset (cc lift) (param felt) (param felt) (param felt) (param felt) (param i32) (inner (# #))
-            (synth_func (#miden:core-import/account@1.0.0 #remove-asset (cc lift) (param felt) (param felt) (param felt) (param felt) (param i32) (inner (# #))
-        )
-    )
-
-    (component miden:core-import/tx@1.0.0
-        ;; Interfaces
-        (interface miden:core-import/tx@1.0.0
-            (synth_func (#miden:core-import/tx@1.0.0 #create-note (cc lift) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt) (inner (# #))
-        )
-    )
-
     (component root
         ;; Interfaces
         (interface miden:basic-wallet/basic-wallet@1.0.0

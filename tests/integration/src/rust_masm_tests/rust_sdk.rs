@@ -236,7 +236,7 @@ fn rust_sdk_hir2_sketch_multiple_interface_exports() {
 }
 
 #[test]
-fn rust_sdk_hir2_sketch_single_interface_export() {
+fn rust_sdk_hir2_single_interface_export() {
     // Testing the new frontend's Wasm component translator producing HIR2(sketch)
     // from a Wasm component exporting one interface
     let _ = env_logger::builder().is_test(true).try_init();

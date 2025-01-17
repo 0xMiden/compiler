@@ -1,4 +1,7 @@
+use std::rc::Rc;
+
 use midenc_hir::diagnostics::Report;
+use midenc_hir2::{dialects::builtin::BuiltinDialect, Context};
 use midenc_session::Session;
 
 use super::{
@@ -66,18 +69,18 @@ fn inline(
 pub fn translate_component2(
     wasm: &[u8],
     config: &WasmTranslationConfig,
-    session: &Session,
-) -> WasmResult<super::translator2::hir2_sketch::World> {
-    let (mut component_types_builder, parsed_root_component) = parse(config, wasm, session)?;
+    session: Rc<Session>,
+) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
+    let (mut component_types_builder, parsed_root_component) = parse(config, wasm, &session)?;
+    let context = Rc::new(Context::new(session));
+    let dialect = context.get_or_register_dialect::<BuiltinDialect>();
+    dialect.expect_registered_name::<midenc_hir2::dialects::builtin::Component>();
+    // context.get_or_register_dialect::<HirDialect>();
     let translator = ComponentTranslator2::new(
         &parsed_root_component.static_modules,
         &parsed_root_component.static_components,
         config,
-        session,
+        context,
     );
-    translator.translate2(
-        &parsed_root_component.root_component,
-        &mut component_types_builder,
-        session.diagnostics.as_ref(),
-    )
+    translator.translate2(&parsed_root_component.root_component, &mut component_types_builder)
 }

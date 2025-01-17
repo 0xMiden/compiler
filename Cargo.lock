@@ -3380,6 +3380,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-hir",
  "midenc-hir-type",
+ "midenc-hir2",
  "midenc-session",
  "rustc-hash",
  "smallvec",
