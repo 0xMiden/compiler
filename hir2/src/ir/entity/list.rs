@@ -251,8 +251,9 @@ impl<'a, T> EntityCursor<'a, T> {
 
     /// Consume the cursor and convert it into a borrow of the current entity, or `None` if null.
     #[inline]
+    #[track_caller]
     pub fn into_borrow(self) -> Option<EntityRef<'a, T>> {
-        self.cursor.get().map(|item| item.borrow())
+        Some(self.cursor.get()?.borrow())
     }
 
     /// Moves the cursor to the next element of the [EntityList].
