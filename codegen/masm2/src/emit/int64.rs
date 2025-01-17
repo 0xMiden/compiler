@@ -4,7 +4,7 @@ use midenc_hir2::{Overflow, SourceSpan, Span};
 use super::{dup_from_offset, masm, movup_from_offset, OpEmitter, P};
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Convert a u64 value to felt.
     ///
     /// This operation will assert at runtime if the value is larger than the felt field.

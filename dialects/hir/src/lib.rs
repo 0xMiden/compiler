@@ -2,7 +2,6 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
-#![feature(is_none_or)]
 #![no_std]
 
 extern crate alloc;

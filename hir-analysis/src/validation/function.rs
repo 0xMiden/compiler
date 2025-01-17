@@ -87,8 +87,10 @@ impl Rule<Function> for CoherentSignature {
                 .with_message("invalid function signature")
                 .with_primary_label(
                     span,
-                    "the signature of this function specifies '{linkage}' linkage, but only \
-                     'external' or 'internal' are valid",
+                    format!(
+                        "the signature of this function specifies '{linkage}' linkage, but only \
+                         'external' or 'internal' are valid"
+                    ),
                 )
                 .into_report());
         }
@@ -280,7 +282,9 @@ impl Rule<Function> for CoherentSignature {
                             .with_message("invalid function signature")
                             .with_primary_label(
                                 span,
-                                "sret parameters must be pointer-typed, but got {param_ty}",
+                                format!(
+                                    "sret parameters must be pointer-typed, but got {param_ty}"
+                                ),
                             )
                             .with_help(format!(
                                 "Did you mean to define this parameter with type {}?",

@@ -43,7 +43,7 @@ where
 
 /// Render an `Option<T>` using the `Display` impl for `T`
 pub struct DisplayOptional<'a, T>(pub Option<&'a T>);
-impl<'a, T: fmt::Display> fmt::Display for DisplayOptional<'a, T> {
+impl<T: fmt::Display> fmt::Display for DisplayOptional<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             None => f.write_str("None"),
@@ -51,7 +51,7 @@ impl<'a, T: fmt::Display> fmt::Display for DisplayOptional<'a, T> {
         }
     }
 }
-impl<'a, T: fmt::Display> fmt::Debug for DisplayOptional<'a, T> {
+impl<T: fmt::Display> fmt::Debug for DisplayOptional<'_, T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, f)

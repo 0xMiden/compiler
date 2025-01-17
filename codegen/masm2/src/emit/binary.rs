@@ -5,7 +5,7 @@ use midenc_hir2::{Immediate, Overflow, SourceSpan, Type};
 
 use super::{masm, OpEmitter};
 
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     pub fn eq(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");

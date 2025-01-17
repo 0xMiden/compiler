@@ -127,13 +127,13 @@ impl<'a> Deref for InstOpEmitter<'a> {
         &self.emitter
     }
 }
-impl<'a> DerefMut for InstOpEmitter<'a> {
+impl DerefMut for InstOpEmitter<'_> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.emitter
     }
 }
-impl<'a> Drop for InstOpEmitter<'a> {
+impl Drop for InstOpEmitter<'_> {
     fn drop(&mut self) {
         for (i, result) in self.inst.results().iter().copied().enumerate() {
             self.emitter.stack.rename(i, result as ValueRef);

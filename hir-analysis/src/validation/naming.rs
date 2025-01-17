@@ -122,7 +122,7 @@ impl Rule<Module> for NamingConventions {
         if is_namespaced {
             let mut offset = 0u32;
             for component in name.split("::") {
-                let len = component.as_bytes().len() as u32;
+                let len = component.len() as u32;
                 let module_name_span = module.name.span();
                 let source_id = module_name_span.source_id();
                 let start = module_name_span.start() + offset;

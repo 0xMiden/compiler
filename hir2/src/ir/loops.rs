@@ -309,7 +309,7 @@ impl LoopForest {
         if parent.is_some_and(|parent| parent == sub_loop) {
             return false;
         }
-        return Self::is_not_already_contained_in(sub_loop.parent_loop().as_deref(), parent);
+        Self::is_not_already_contained_in(sub_loop.parent_loop().as_deref(), parent)
     }
 
     /// Analyze the given dominance tree to discover loops.
@@ -1311,7 +1311,7 @@ struct PrintLoop<'a> {
     verbose: bool,
 }
 
-impl<'a> crate::formatter::PrettyPrint for PrintLoop<'a> {
+impl crate::formatter::PrettyPrint for PrintLoop<'_> {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
 
@@ -1356,7 +1356,7 @@ impl<'a> crate::formatter::PrettyPrint for PrintLoop<'a> {
     }
 }
 
-impl<'a> fmt::Display for PrintLoop<'a> {
+impl fmt::Display for PrintLoop<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use crate::formatter::PrettyPrint;
         self.pretty_print(f)

@@ -68,7 +68,7 @@ impl<'a> ValueRange<'a> {
     }
 }
 
-impl<'a> From<SmallVec<[ValueRef; 2]>> for ValueRange<'a> {
+impl From<SmallVec<[ValueRef; 2]>> for ValueRange<'_> {
     fn from(values: SmallVec<[ValueRef; 2]>) -> Self {
         Self::Owned(values)
     }

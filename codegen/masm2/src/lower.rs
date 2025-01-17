@@ -110,7 +110,7 @@ struct MasmComponentBuilder<'a> {
     link_info: &'a LinkInfo,
 }
 
-impl<'a> MasmComponentBuilder<'a> {
+impl MasmComponentBuilder<'_> {
     /// Convert the component body to Miden Assembly
     pub fn build(mut self, component: &builtin::Component) -> Result<(), Report> {
         let region = component.body();
@@ -195,7 +195,7 @@ struct MasmModuleBuilder<'a> {
     link_info: &'a LinkInfo,
 }
 
-impl<'a> MasmModuleBuilder<'a> {
+impl MasmModuleBuilder<'_> {
     pub fn build(mut self, module: &builtin::Module) -> Result<(), Report> {
         let region = module.body();
         let block = region.entry();

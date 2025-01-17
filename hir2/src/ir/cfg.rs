@@ -51,7 +51,7 @@ pub trait Graph {
     fn edge_dest(edge: Self::Edge) -> Self::Node;
 }
 
-impl<'a, G: Graph> Graph for &'a G {
+impl<G: Graph> Graph for &G {
     type ChildEdgeIter = <G as Graph>::ChildEdgeIter;
     type ChildIter = <G as Graph>::ChildIter;
     type Edge = <G as Graph>::Edge;

@@ -126,7 +126,7 @@ impl<'a> SuccessorOperandRange<'a> {
         }
     }
 }
-impl<'a> SuccessorOperands for SuccessorOperandRange<'a> {
+impl SuccessorOperands for SuccessorOperandRange<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.num_produced + self.forwarded.len()
@@ -175,7 +175,7 @@ impl<'a> SuccessorOperandRangeMut<'a> {
         &mut self.forwarded
     }
 }
-impl<'a> SuccessorOperands for SuccessorOperandRangeMut<'a> {
+impl SuccessorOperands for SuccessorOperandRangeMut<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.num_produced + self.forwarded.len()

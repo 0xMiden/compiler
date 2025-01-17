@@ -354,12 +354,12 @@ pub enum Symbols<'a> {
     /// The symbol map is being borrowed (typically from the [SymbolTable] operation)
     Borrowed(&'a SymbolMap),
 }
-impl<'a> From<SymbolMap> for Symbols<'a> {
+impl From<SymbolMap> for Symbols<'_> {
     fn from(value: SymbolMap) -> Self {
         Self::Owned(value)
     }
 }
-impl<'a> core::ops::Deref for Symbols<'a> {
+impl core::ops::Deref for Symbols<'_> {
     type Target = SymbolMap;
 
     fn deref(&self) -> &Self::Target {
@@ -379,12 +379,12 @@ pub enum SymbolsMut<'a> {
     /// The symbol map is being borrowed (typically from the [SymbolTable] operation)
     Borrowed(&'a mut SymbolMap),
 }
-impl<'a> From<SymbolMap> for SymbolsMut<'a> {
+impl From<SymbolMap> for SymbolsMut<'_> {
     fn from(value: SymbolMap) -> Self {
         Self::Owned(value)
     }
 }
-impl<'a> core::ops::Deref for SymbolsMut<'a> {
+impl core::ops::Deref for SymbolsMut<'_> {
     type Target = SymbolMap;
 
     fn deref(&self) -> &Self::Target {
@@ -394,7 +394,7 @@ impl<'a> core::ops::Deref for SymbolsMut<'a> {
         }
     }
 }
-impl<'a> core::ops::DerefMut for SymbolsMut<'a> {
+impl core::ops::DerefMut for SymbolsMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Owned(symbols) => symbols,

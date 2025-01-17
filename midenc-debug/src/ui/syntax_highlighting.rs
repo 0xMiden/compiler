@@ -182,9 +182,9 @@ impl SyntectHighlighter {
             }
         }
         // finally, attempt to guess syntax based on first line
-        return self.syntax_set.find_syntax_by_first_line(
+        self.syntax_set.find_syntax_by_first_line(
             core::str::from_utf8(contents.data()).ok()?.split('\n').next()?,
-        );
+        )
     }
 }
 
@@ -198,7 +198,7 @@ pub(crate) struct SyntectHighlighterState<'h> {
     use_bg_color: bool,
 }
 
-impl<'h> HighlighterState for SyntectHighlighterState<'h> {
+impl HighlighterState for SyntectHighlighterState<'_> {
     fn highlight_line<'a>(&mut self, line: Cow<'a, str>) -> Vec<Span<'a>> {
         if let Ok(ops) = self.parse_state.parse_line(&line, &self.syntax_set) {
             let use_bg_color = self.use_bg_color;

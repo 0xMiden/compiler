@@ -270,8 +270,8 @@ impl<K, V, const N: usize> Iterator for SmallMapIntoIter<K, V, N> {
     }
 
     #[inline]
-    fn last(self) -> Option<(K, V)> {
-        self.iter.last().map(|pair| (pair.key, pair.value))
+    fn last(mut self) -> Option<(K, V)> {
+        self.iter.next_back().map(|pair| (pair.key, pair.value))
     }
 
     #[inline]

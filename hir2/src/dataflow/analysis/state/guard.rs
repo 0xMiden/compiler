@@ -115,13 +115,13 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
         }
     }
 }
-impl<'a, T: AnalysisState> AsRef<T> for AnalysisStateGuard<'a, T> {
+impl<T: AnalysisState> AsRef<T> for AnalysisStateGuard<'_, T> {
     #[inline(always)]
     fn as_ref(&self) -> &T {
         unsafe { self.state.as_ref() }
     }
 }
-impl<'a, T: AnalysisState> AsMut<T> for AnalysisStateGuard<'a, T> {
+impl<T: AnalysisState> AsMut<T> for AnalysisStateGuard<'_, T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
         // This is overly conservative, but we assume that a mutable borrow of the underlying state
@@ -135,7 +135,7 @@ impl<'a, T: AnalysisState> AsMut<T> for AnalysisStateGuard<'a, T> {
         unsafe { self.state.as_mut() }
     }
 }
-impl<'a, T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'a, T> {
+impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
     type Target = T;
 
     #[inline(always)]
@@ -143,7 +143,7 @@ impl<'a, T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'a, T> {
         self.as_ref()
     }
 }
-impl<'a, T: AnalysisState> core::ops::DerefMut for AnalysisStateGuard<'a, T> {
+impl<T: AnalysisState> core::ops::DerefMut for AnalysisStateGuard<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
@@ -154,7 +154,7 @@ impl<T: AnalysisState + 'static> Drop for AnalysisStateGuard<'_, T> {
         self.notify_if_changed();
     }
 }
-impl<'a, T: AnalysisState> AnalysisState for AnalysisStateGuard<'a, T> {
+impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
     }
@@ -163,7 +163,7 @@ impl<'a, T: AnalysisState> AnalysisState for AnalysisStateGuard<'a, T> {
         self.as_ref().anchor()
     }
 }
-impl<'a, T: DenseLattice> DenseLattice for AnalysisStateGuard<'a, T> {
+impl<T: DenseLattice> DenseLattice for AnalysisStateGuard<'_, T> {
     type Lattice = <T as DenseLattice>::Lattice;
 
     #[inline]
@@ -183,7 +183,7 @@ impl<'a, T: DenseLattice> DenseLattice for AnalysisStateGuard<'a, T> {
         result
     }
 }
-impl<'a, T: SparseLattice> SparseLattice for AnalysisStateGuard<'a, T> {
+impl<T: SparseLattice> SparseLattice for AnalysisStateGuard<'_, T> {
     type Lattice = <T as SparseLattice>::Lattice;
 
     #[inline]

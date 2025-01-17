@@ -161,7 +161,7 @@ impl<'a> RegionSuccessorIter<'a> {
     }
 }
 impl core::iter::FusedIterator for RegionSuccessorIter<'_> {}
-impl<'a> ExactSizeIterator for RegionSuccessorIter<'a> {
+impl ExactSizeIterator for RegionSuccessorIter<'_> {
     fn len(&self) -> usize {
         self.successors.len()
     }

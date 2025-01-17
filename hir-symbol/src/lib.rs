@@ -48,7 +48,7 @@ impl<'de> serde::Deserialize<'de> for Symbol {
         D: serde::Deserializer<'de>,
     {
         struct SymbolVisitor;
-        impl<'de> serde::de::Visitor<'de> for SymbolVisitor {
+        impl serde::de::Visitor<'_> for SymbolVisitor {
             type Value = Symbol;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

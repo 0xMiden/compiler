@@ -98,7 +98,7 @@ impl FlagsSize {
 
 /// Divide `n` by `d`, rounding up in the case of a non-zero remainder.
 const fn ceiling_divide(n: usize, d: usize) -> usize {
-    (n + d - 1) / d
+    n.div_ceil(d)
 }
 
 /// Emit instructions to produce a zero value in the given type.

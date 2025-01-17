@@ -198,7 +198,7 @@ impl ControlFlowGraph {
 /// Each predecessor is an instruction that branches to the block.
 pub struct PredIter<'a>(bforest::MapIter<'a, Inst, Block>);
 
-impl<'a> Iterator for PredIter<'a> {
+impl Iterator for PredIter<'_> {
     type Item = BlockPredecessor;
 
     fn next(&mut self) -> Option<BlockPredecessor> {

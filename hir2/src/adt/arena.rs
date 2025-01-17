@@ -303,7 +303,7 @@ impl<T> ChunkHeader<T> {
 
         unsafe {
             let ptr = self.data().add(index);
-            NonNull::from_raw_parts(ptr.cast(), len)
+            NonNull::slice_from_raw_parts(ptr.cast::<T>(), len)
         }
     }
 
@@ -351,8 +351,6 @@ impl<T> Drop for ChunkHeader<T> {
         }
     }
 }
-
-/// FromIterator
 
 trait SpecArenaExtend: IntoIterator {
     fn extend_arena(self, chunks: &mut ChunkList<Self::Item>) -> NonNull<[Self::Item]>;

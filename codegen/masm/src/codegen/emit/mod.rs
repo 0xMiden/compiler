@@ -153,13 +153,13 @@ impl<'a> Deref for InstOpEmitter<'a> {
         &self.emitter
     }
 }
-impl<'a> DerefMut for InstOpEmitter<'a> {
+impl DerefMut for InstOpEmitter<'_> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.emitter
     }
 }
-impl<'a> Drop for InstOpEmitter<'a> {
+impl Drop for InstOpEmitter<'_> {
     fn drop(&mut self) {
         let results = self.dfg.inst_results(self.inst);
         for (i, result) in results.iter().copied().enumerate() {

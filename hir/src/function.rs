@@ -685,7 +685,7 @@ impl midenc_session::Emit for Function {
 struct CfgPrinter<'a> {
     function: &'a Function,
 }
-impl<'a> fmt::Display for CfgPrinter<'a> {
+impl fmt::Display for CfgPrinter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use std::collections::{BTreeSet, VecDeque};
 

@@ -779,11 +779,11 @@ impl DeadCodeAnalysis {
         op: &Operation,
         solver: &mut DataFlowSolver,
     ) -> Option<MaybeConstOperands> {
-        return get_operand_values(op, |value: &ValueRef| {
+        get_operand_values(op, |value: &ValueRef| {
             let mut lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(*value);
             AnalysisStateGuard::subscribe(&mut lattice, self);
             lattice
-        });
+        })
     }
 
     /// Invoke a closure with the current analysis scope operation, or panic if no scope was set.

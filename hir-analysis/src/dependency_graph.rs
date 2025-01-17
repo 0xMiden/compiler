@@ -1067,7 +1067,7 @@ pub struct Successors<'a> {
     node: NodeId,
     iter: core::slice::Iter<'a, Edge>,
 }
-impl<'a> Iterator for Successors<'a> {
+impl Iterator for Successors<'_> {
     type Item = Dependency;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1080,7 +1080,7 @@ impl<'a> Iterator for Successors<'a> {
         None
     }
 }
-impl<'a> DoubleEndedIterator for Successors<'a> {
+impl DoubleEndedIterator for Successors<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some(Edge { node, direction }) = self.iter.next_back() {
             if matches!(direction, Direction::Dependent) {
@@ -1091,7 +1091,7 @@ impl<'a> DoubleEndedIterator for Successors<'a> {
         None
     }
 }
-impl<'a> ExactSizeIterator for Successors<'a> {
+impl ExactSizeIterator for Successors<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
@@ -1103,7 +1103,7 @@ pub struct Predecessors<'a> {
     node: NodeId,
     iter: core::slice::Iter<'a, Edge>,
 }
-impl<'a> Iterator for Predecessors<'a> {
+impl Iterator for Predecessors<'_> {
     type Item = Dependency;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1116,7 +1116,7 @@ impl<'a> Iterator for Predecessors<'a> {
         None
     }
 }
-impl<'a> DoubleEndedIterator for Predecessors<'a> {
+impl DoubleEndedIterator for Predecessors<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some(Edge { node, direction }) = self.iter.next_back() {
             if matches!(direction, Direction::Dependency) {
@@ -1127,7 +1127,7 @@ impl<'a> DoubleEndedIterator for Predecessors<'a> {
         None
     }
 }
-impl<'a> ExactSizeIterator for Predecessors<'a> {
+impl ExactSizeIterator for Predecessors<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
@@ -1135,14 +1135,14 @@ impl<'a> ExactSizeIterator for Predecessors<'a> {
 }
 
 struct DebugNodes<'a>(&'a DependencyGraph);
-impl<'a> fmt::Debug for DebugNodes<'a> {
+impl fmt::Debug for DebugNodes<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.0.nodes.iter()).finish()
     }
 }
 
 struct DebugEdges<'a>(&'a DependencyGraph);
-impl<'a> fmt::Debug for DebugEdges<'a> {
+impl fmt::Debug for DebugEdges<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut edges = f.debug_list();
         for node in self.0.nodes.iter().copied() {

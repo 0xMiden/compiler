@@ -269,7 +269,7 @@ impl<'a, T> EntityRange<'a, T> {
         self.as_slice().get(index)
     }
 }
-impl<'a, T> core::ops::Index<usize> for EntityRange<'a, T> {
+impl<T> core::ops::Index<usize> for EntityRange<'_, T> {
     type Output = T;
 
     #[inline]
@@ -298,7 +298,7 @@ pub struct EntityRangeMut<'a, T, const INLINE: usize = 1> {
     groups: &'a mut [EntityGroup],
     items: &'a mut SmallVec<[T; INLINE]>,
 }
-impl<'a, T, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
+impl<T, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
     /// Returns true if this range is empty
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -364,7 +364,7 @@ impl<'a, T, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
     }
 }
 
-impl<'a, T: StorableEntity, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
+impl<T: StorableEntity, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
     /// Append `item` to storage at the end of this range
     #[inline]
     pub fn push(&mut self, item: T) {
@@ -507,7 +507,7 @@ impl<'a, T: StorableEntity, const INLINE: usize> EntityRangeMut<'a, T, INLINE> {
         Some(removed)
     }
 }
-impl<'a, T, const INLINE: usize> core::ops::Index<usize> for EntityRangeMut<'a, T, INLINE> {
+impl<T, const INLINE: usize> core::ops::Index<usize> for EntityRangeMut<'_, T, INLINE> {
     type Output = T;
 
     #[inline]
@@ -515,7 +515,7 @@ impl<'a, T, const INLINE: usize> core::ops::Index<usize> for EntityRangeMut<'a, 
         &self.as_slice()[index]
     }
 }
-impl<'a, T, const INLINE: usize> core::ops::IndexMut<usize> for EntityRangeMut<'a, T, INLINE> {
+impl<T, const INLINE: usize> core::ops::IndexMut<usize> for EntityRangeMut<'_, T, INLINE> {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.as_slice_mut()[index]

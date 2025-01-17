@@ -5,7 +5,7 @@ use super::{masm, OpEmitter};
 use crate::lower::NativePtr;
 
 /// Allocation
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Return the base address of the heap
     #[allow(unused)]
     pub fn heap_base(&mut self, span: SourceSpan) {
@@ -36,7 +36,7 @@ impl<'a> OpEmitter<'a> {
 }
 
 /// Loads
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Load a value corresponding to the type of the given local, from the memory allocated for
     /// that local.
     ///
@@ -913,7 +913,7 @@ impl<'a> OpEmitter<'a> {
 }
 
 /// Stores
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Store a value of the type given by the specified [hir::LocalId], using the memory allocated
     /// for that local.
     ///

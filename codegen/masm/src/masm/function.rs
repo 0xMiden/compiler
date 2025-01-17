@@ -301,7 +301,7 @@ pub struct DisplayMasmFunction<'a> {
     function: &'a Function,
     imports: &'a ModuleImportInfo,
 }
-impl<'a> midenc_hir::formatter::PrettyPrint for DisplayMasmFunction<'a> {
+impl midenc_hir::formatter::PrettyPrint for DisplayMasmFunction<'_> {
     fn render(&self) -> midenc_hir::formatter::Document {
         use midenc_hir::formatter::*;
 
@@ -336,7 +336,7 @@ impl<'a> midenc_hir::formatter::PrettyPrint for DisplayMasmFunction<'a> {
         doc + indent(4, nl() + body.render()) + nl() + const_text("end") + nl() + nl()
     }
 }
-impl<'a> fmt::Display for DisplayMasmFunction<'a> {
+impl fmt::Display for DisplayMasmFunction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }

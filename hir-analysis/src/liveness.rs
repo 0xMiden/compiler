@@ -372,7 +372,7 @@ impl NextUseSet {
         self.0.pop_last()
     }
 }
-impl<'a, 'b> std::ops::BitOr<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> std::ops::BitOr<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]
@@ -380,7 +380,7 @@ impl<'a, 'b> std::ops::BitOr<&'b NextUseSet> for &'a NextUseSet {
         self.union(rhs)
     }
 }
-impl<'a, 'b> std::ops::BitAnd<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> std::ops::BitAnd<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]
@@ -388,7 +388,7 @@ impl<'a, 'b> std::ops::BitAnd<&'b NextUseSet> for &'a NextUseSet {
         self.intersection(rhs)
     }
 }
-impl<'a, 'b> std::ops::BitXor<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> std::ops::BitXor<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]
@@ -873,7 +873,10 @@ fn compute_liveness(
 }
 
 impl hir::Decorator for &LivenessAnalysis {
-    type Display<'a> = DisplayLiveness<'a> where Self: 'a;
+    type Display<'a>
+        = DisplayLiveness<'a>
+    where
+        Self: 'a;
 
     fn decorate_block<'a, 'l: 'a>(&'l self, block: BlockId) -> Self::Display<'a> {
         DisplayLiveness {
@@ -894,7 +897,7 @@ struct NextUse<'a> {
     value: &'a ValueId,
     distance: &'a u32,
 }
-impl<'a> core::fmt::Display for NextUse<'a> {
+impl core::fmt::Display for NextUse<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}:{}", self.value, self.distance)
     }
@@ -905,7 +908,7 @@ pub struct DisplayLiveness<'a> {
     pp: ProgramPoint,
     lr: &'a LivenessAnalysis,
 }
-impl<'a> core::fmt::Display for DisplayLiveness<'a> {
+impl core::fmt::Display for DisplayLiveness<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let live = self
             .lr

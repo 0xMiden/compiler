@@ -5,7 +5,7 @@ use midenc_hir2::{
 
 use super::{int64, masm, OpEmitter};
 
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 1
     ///
     /// This operation consumes the input value.

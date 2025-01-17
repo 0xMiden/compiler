@@ -311,7 +311,7 @@ impl<T, const N: usize> SmallDeque<T, N> {
         /// during unwinding).
         struct Dropper<'a, T>(&'a mut [T]);
 
-        impl<'a, T> Drop for Dropper<'a, T> {
+        impl<T> Drop for Dropper<'_, T> {
             fn drop(&mut self) {
                 unsafe {
                     ptr::drop_in_place(self.0);
@@ -1461,7 +1461,7 @@ impl<T, const N: usize> SmallDeque<T, N> {
             written: usize,
         }
 
-        impl<'a, T, const N: usize> Drop for Guard<'a, T, N> {
+        impl<T, const N: usize> Drop for Guard<'_, T, N> {
             fn drop(&mut self) {
                 self.deque.len += self.written;
             }
@@ -2206,7 +2206,7 @@ impl<T, const M: usize> Iterator for IntoIter<T, M> {
             consumed: usize,
         }
 
-        impl<'a, T, const M: usize> Drop for Guard<'a, T, M> {
+        impl<T, const M: usize> Drop for Guard<'_, T, M> {
             fn drop(&mut self) {
                 self.deque.len -= self.consumed;
                 self.deque.head = self.deque.to_physical_idx(self.consumed);
@@ -2332,7 +2332,7 @@ impl<T, const N: usize> DoubleEndedIterator for IntoIter<T, N> {
             consumed: usize,
         }
 
-        impl<'a, T, const N: usize> Drop for Guard<'a, T, N> {
+        impl<T, const N: usize> Drop for Guard<'_, T, N> {
             fn drop(&mut self) {
                 self.deque.len -= self.consumed;
             }
@@ -2480,7 +2480,7 @@ impl<T, const N: usize> Drop for Drain<'_, T, N> {
         }
 
         // Dropping `guard` handles moving the remaining elements into place.
-        impl<'r, 'a, T, const N: usize> Drop for DropGuard<'r, 'a, T, N> {
+        impl<T, const N: usize> Drop for DropGuard<'_, '_, T, N> {
             #[inline]
             fn drop(&mut self) {
                 if core::mem::needs_drop::<T>() && self.0.remaining != 0 {

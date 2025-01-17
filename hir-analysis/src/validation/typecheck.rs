@@ -67,7 +67,7 @@ impl<'a> TypeCheck<'a> {
         Self { signature, dfg }
     }
 }
-impl<'a> Rule<BlockData> for TypeCheck<'a> {
+impl Rule<BlockData> for TypeCheck<'_> {
     fn validate(
         &mut self,
         block_data: &BlockData,
@@ -196,8 +196,10 @@ impl<'a> Rule<BlockData> for TypeCheck<'a> {
                                     .with_message("invalid instruction")
                                     .with_primary_label(
                                         span,
-                                        "cannot load a value of type {local_ty} on the stack, as \
-                                         it is larger than 16 bytes",
+                                        format!(
+                                            "cannot load a value of type {local_ty} on the stack, \
+                                             as it is larger than 16 bytes"
+                                        ),
                                     )
                                     .into_report());
                             }

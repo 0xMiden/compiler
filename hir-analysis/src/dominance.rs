@@ -254,10 +254,7 @@ impl DominatorTree {
         // Run a finger up the dominator tree from b until we see a.
         // Do nothing if b is unreachable.
         while rpo_a < self.nodes[block_b].rpo_number {
-            let idom = match self.idom(block_b) {
-                Some(idom) => idom,
-                None => return None, // a is unreachable, so we climbed past the entry
-            };
+            let idom = self.idom(block_b)?;
             block_b = dfg
                 .inst_block(idom)
                 .expect("control flow graph has been modified since dominator tree was computed");
@@ -589,7 +586,7 @@ pub struct ChildIter<'a> {
     next: Option<Block>,
 }
 
-impl<'a> Iterator for ChildIter<'a> {
+impl Iterator for ChildIter<'_> {
     type Item = Block;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -785,9 +782,9 @@ impl DominanceFrontier {
 struct DominanceFrontierIter<I> {
     df: Option<I>,
 }
-impl<'a, I> Iterator for DominanceFrontierIter<I>
+impl<I> Iterator for DominanceFrontierIter<I>
 where
-    I: Iterator<Item = Block> + 'a,
+    I: Iterator<Item = Block>,
 {
     type Item = Block;
 

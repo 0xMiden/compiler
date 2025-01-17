@@ -10,7 +10,7 @@ pub const ZERO: Felt = Felt::ZERO;
 pub const U32_FIELD_MODULUS: Felt = Felt::new(2u64.pow(32));
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// This operation checks if the field element on top of the stack is zero.
     ///
     /// This operation does not consume the input, and pushes a boolean value on the stack.

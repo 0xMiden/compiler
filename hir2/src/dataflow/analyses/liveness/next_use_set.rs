@@ -93,11 +93,11 @@ impl PartialEq for NextUseSet {
         }
 
         for next_use in self.0.iter() {
-            if !other
+            if other
                 .0
                 .iter()
                 .find(|nu| nu.value == next_use.value)
-                .is_some_and(|nu| nu.distance == next_use.distance)
+                .is_none_or(|nu| nu.distance != next_use.distance)
             {
                 return false;
             }
@@ -323,7 +323,7 @@ impl NextUseSet {
         Some(self.0.swap_remove(index))
     }
 }
-impl<'a, 'b> core::ops::BitOr<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> core::ops::BitOr<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]
@@ -331,7 +331,7 @@ impl<'a, 'b> core::ops::BitOr<&'b NextUseSet> for &'a NextUseSet {
         self.union(rhs)
     }
 }
-impl<'a, 'b> core::ops::BitAnd<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> core::ops::BitAnd<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]
@@ -339,7 +339,7 @@ impl<'a, 'b> core::ops::BitAnd<&'b NextUseSet> for &'a NextUseSet {
         self.intersection(rhs)
     }
 }
-impl<'a, 'b> core::ops::BitXor<&'b NextUseSet> for &'a NextUseSet {
+impl<'b> core::ops::BitXor<&'b NextUseSet> for &NextUseSet {
     type Output = NextUseSet;
 
     #[inline]

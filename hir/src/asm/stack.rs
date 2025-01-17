@@ -459,14 +459,14 @@ impl<'a, E: StackElement, T: ?Sized + Stack<Element = E>> DebugStack<'a, T> {
         self
     }
 }
-impl<'a, E: StackElement, T: ?Sized + Stack<Element = E>> fmt::Debug for DebugStack<'a, T> {
+impl<E: StackElement, T: ?Sized + Stack<Element = E>> fmt::Debug for DebugStack<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         #[allow(unused)]
         struct StackEntry<'a, E: StackElement> {
             index: usize,
             value: &'a E,
         }
-        impl<'a, E: StackElement> fmt::Debug for StackEntry<'a, E> {
+        impl<E: StackElement> fmt::Debug for StackEntry<'_, E> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.debug_struct("StackEntry")
                     .field("index", &self.index)
@@ -488,8 +488,8 @@ impl<'a, E: StackElement, T: ?Sized + Stack<Element = E>> fmt::Debug for DebugSt
             .finish()
     }
 }
-impl<'a, E: StackElement + fmt::Debug, T: ?Sized + Stack<Element = E>> fmt::Display
-    for DebugStack<'a, T>
+impl<E: StackElement + fmt::Debug, T: ?Sized + Stack<Element = E>> fmt::Display
+    for DebugStack<'_, T>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list()

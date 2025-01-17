@@ -67,7 +67,7 @@ impl<'a> Scanner<'a> {
     }
 }
 
-impl<'a> Iterator for Scanner<'a> {
+impl Iterator for Scanner<'_> {
     type Item = (ByteIndex, char);
 
     #[inline]
@@ -82,4 +82,4 @@ impl<'a> Iterator for Scanner<'a> {
     }
 }
 
-impl<'a> FusedIterator for Scanner<'a> {}
+impl FusedIterator for Scanner<'_> {}

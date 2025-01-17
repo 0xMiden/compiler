@@ -495,7 +495,7 @@ impl<'a> StackTrace<'a> {
     }
 }
 
-impl<'a> fmt::Display for StackTrace<'a> {
+impl fmt::Display for StackTrace<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use std::fmt::Write;
 

@@ -11,7 +11,6 @@
 #![feature(debug_closure_helpers)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
-#![feature(is_none_or)]
 #![feature(try_trait_v2)]
 #![feature(try_trait_v2_residual)]
 #![feature(tuple_trait)]
@@ -21,10 +20,8 @@
 #![feature(const_type_id)]
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]
-#![feature(new_uninit)]
 #![feature(clone_to_uninit)]
 // The following are used in impls of custom collection types based on SmallVec
-#![feature(iter_repeat_n)]
 #![feature(std_internals)] // for ByRefSized
 #![feature(extend_one)]
 #![feature(extend_one_unchecked)]

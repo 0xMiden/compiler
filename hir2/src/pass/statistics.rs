@@ -75,9 +75,9 @@ where
 
     fn clone(&self) -> Box<dyn Statistic> {
         use core::clone::CloneToUninit;
-        let mut this = Box::new_uninit();
+        let mut this = Box::<Self>::new_uninit();
         unsafe {
-            self.clone_to_uninit(this.as_mut_ptr());
+            self.clone_to_uninit(this.as_mut_ptr().cast());
             this.assume_init()
         }
     }

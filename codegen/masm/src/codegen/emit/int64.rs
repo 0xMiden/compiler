@@ -4,7 +4,7 @@ use super::{OpEmitter, P};
 use crate::masm::{self as masm, Op};
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Convert a u64 value to felt.
     ///
     /// This operation will assert at runtime if the value is larger than the felt field.

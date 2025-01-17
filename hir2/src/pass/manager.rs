@@ -619,20 +619,20 @@ pub struct NestedOpPassManager<'parent> {
     nested: Option<Box<OpToOpPassAdaptor>>,
 }
 
-impl<'parent> core::ops::Deref for NestedOpPassManager<'parent> {
+impl core::ops::Deref for NestedOpPassManager<'_> {
     type Target = OpPassManager;
 
     fn deref(&self) -> &Self::Target {
         &self.nested.as_deref().unwrap().pass_managers()[0]
     }
 }
-impl<'parent> core::ops::DerefMut for NestedOpPassManager<'parent> {
+impl core::ops::DerefMut for NestedOpPassManager<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.nested.as_deref_mut().unwrap().pass_managers_mut()[0]
     }
 }
 
-impl<'parent> Drop for NestedOpPassManager<'parent> {
+impl Drop for NestedOpPassManager<'_> {
     fn drop(&mut self) {
         self.parent.add_pass(self.nested.take().unwrap() as Box<dyn OperationPass>);
     }

@@ -3,7 +3,7 @@ use midenc_hir2::Overflow;
 
 use super::*;
 
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Truncate an integral value of type `src` to type `dst`
     ///
     /// Truncation is defined in terms of the bitwise representation of the type.

@@ -36,7 +36,7 @@ impl DebugInfo<'_> {
         }
     }
 }
-impl<'a> fmt::Debug for DebugInfo<'a> {
+impl fmt::Debug for DebugInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use midenc_hir::Stack;
 

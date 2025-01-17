@@ -13,7 +13,7 @@ use midenc_hir2::{Overflow, SourceSpan};
 use super::{masm, OpEmitter};
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Check that a u32 value on the stack can fit in the unsigned N-bit integer range
     #[inline(always)]
     pub fn is_valid_uint(&mut self, n: u32, span: SourceSpan) {

@@ -6,7 +6,7 @@ use super::{dup_from_offset, felt, masm, movup_from_offset, OpEmitter};
 pub const SIGN_BIT: u32 = 1 << 31;
 
 #[allow(unused)]
-impl<'a> OpEmitter<'a> {
+impl OpEmitter<'_> {
     /// Emits code to apply a constant 32-bit mask, `mask`, to a u32 value on top of the stack.
     ///
     /// The value on top of the stack IS consumed.

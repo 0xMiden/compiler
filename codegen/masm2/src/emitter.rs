@@ -23,7 +23,7 @@ pub(crate) struct BlockEmitter<'b> {
     pub stack: OperandStack,
 }
 
-impl<'b> BlockEmitter<'b> {
+impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             function: self.function,

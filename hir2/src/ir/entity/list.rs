@@ -542,7 +542,7 @@ pub struct EntityIter<'a, T> {
     cursor: EntityCursor<'a, T>,
     started: bool,
 }
-impl<'a, T> core::iter::FusedIterator for EntityIter<'a, T> {}
+impl<T> core::iter::FusedIterator for EntityIter<'_, T> {}
 impl<'a, T> Iterator for EntityIter<'a, T> {
     type Item = EntityRef<'a, T>;
 
@@ -558,7 +558,7 @@ impl<'a, T> Iterator for EntityIter<'a, T> {
         Some(item)
     }
 }
-impl<'a, T> DoubleEndedIterator for EntityIter<'a, T> {
+impl<T> DoubleEndedIterator for EntityIter<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // If we haven't started iterating yet, then we're on the null cursor, so move to the
         // back of the list now that we have started iterating.
@@ -575,12 +575,12 @@ impl<'a, T> DoubleEndedIterator for EntityIter<'a, T> {
 pub struct MaybeDefaultEntityIter<'a, T> {
     iter: Option<EntityIter<'a, T>>,
 }
-impl<'a, T> Default for MaybeDefaultEntityIter<'a, T> {
+impl<T> Default for MaybeDefaultEntityIter<'_, T> {
     fn default() -> Self {
         Self { iter: None }
     }
 }
-impl<'a, T> core::iter::FusedIterator for MaybeDefaultEntityIter<'a, T> {}
+impl<T> core::iter::FusedIterator for MaybeDefaultEntityIter<'_, T> {}
 impl<'a, T> Iterator for MaybeDefaultEntityIter<'a, T> {
     type Item = EntityRef<'a, T>;
 
@@ -589,7 +589,7 @@ impl<'a, T> Iterator for MaybeDefaultEntityIter<'a, T> {
         self.iter.as_mut().and_then(|iter| iter.next())
     }
 }
-impl<'a, T> DoubleEndedIterator for MaybeDefaultEntityIter<'a, T> {
+impl<T> DoubleEndedIterator for MaybeDefaultEntityIter<'_, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.as_mut().and_then(|iter| iter.next_back())

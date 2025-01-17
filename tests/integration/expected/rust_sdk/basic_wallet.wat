@@ -70,7 +70,9 @@
     (type (;13;) (func (param i32 i32 i32) (result i32)))
     (type (;14;) (func (param i32 i32)))
     (type (;15;) (func (param i32 f32 f32 i32) (result f32)))
-    (type (;16;) (func (param i32 i32 i32 i32)))
+    (type (;16;) (func (param i32) (result i32)))
+    (type (;17;) (func (param i32 i32 i32 i32 i32)))
+    (type (;18;) (func (param i32 i32 i32 i32)))
     (import "miden:core-import/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;0;) (type 0)))
     (import "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0" "hash-one-to-one" (func $miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1 (;1;) (type 1)))
     (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
@@ -80,7 +82,7 @@
     (func $__wasm_call_ctors (;6;) (type 5))
     (func $basic_wallet::bindings::__link_custom_section_describing_imports (;7;) (type 5))
     (func $__rust_alloc (;8;) (type 6) (param i32 i32) (result i32)
-      i32.const 1048632
+      i32.const 1048812
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -88,7 +90,7 @@
     (func $__rust_dealloc (;9;) (type 7) (param i32 i32 i32))
     (func $__rust_realloc (;10;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048632
+        i32.const 1048812
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -109,7 +111,7 @@
     )
     (func $__rust_alloc_zeroed (;11;) (type 6) (param i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048632
+        i32.const 1048812
         local.get 1
         local.get 0
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -226,11 +228,14 @@
       local.tee 2
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
+      local.get 1
+      call $alloc::raw_vec::new_cap
+      local.set 4
       local.get 2
       local.get 0
       i32.store offset=24
       local.get 2
-      local.get 1
+      local.get 4
       i32.store offset=20
       block ;; label = @1
         block ;; label = @2
@@ -290,7 +295,9 @@
           i32.add
           i32.const 32
           i32.const 0
-          call $alloc::raw_vec::RawVec<T,A>::try_allocate_in
+          i32.const 1
+          i32.const 1
+          call $alloc::raw_vec::RawVecInner<A>::try_allocate_in
           local.get 2
           i32.load offset=88
           local.set 1
@@ -338,14 +345,15 @@
           local.get 2
           i32.const 84
           i32.add
+          i32.const 1048776
           call $alloc::vec::Vec<T,A>::into_boxed_slice
           i32.const 0
           local.get 2
           i64.load offset=8
-          i64.store offset=1048616 align=4
+          i64.store offset=1048796 align=4
           local.get 3
           global.set $__stack_pointer
-          i32.const 1048616
+          i32.const 1048796
           return
         end
         unreachable
@@ -353,6 +361,7 @@
       local.get 1
       local.get 2
       i32.load offset=92
+      i32.const 1048708
       call $alloc::raw_vec::handle_error
       unreachable
     )
@@ -382,7 +391,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048636
+            i32.load8_u offset=1048816
             drop
             local.get 3
             local.get 2
@@ -406,12 +415,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;21;) (type 5)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048637
+        i32.load8_u offset=1048817
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048637
+        i32.store8 offset=1048817
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;22;) (type 13) (param i32 i32 i32) (result i32)
@@ -423,21 +432,24 @@
         i32.const 32
         i32.gt_u
         select
-        local.tee 1
+        local.tee 3
         i32.popcnt
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         i32.const -2147483648
         local.get 1
+        local.get 3
+        call $core::ptr::alignment::Alignment::max
+        local.tee 1
         i32.sub
         local.get 2
         i32.lt_u
         br_if 0 (;@1;)
         i32.const 0
         local.set 3
-        local.get 1
         local.get 2
+        local.get 1
         i32.add
         i32.const -1
         i32.add
@@ -527,69 +539,7 @@
       f32.load offset=12
       call $miden_base_sys::bindings::tx::extern_tx_create_note
     )
-    (func $alloc::vec::Vec<T,A>::into_boxed_slice (;26;) (type 14) (param i32 i32)
-      (local i32 i32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 2
-      global.set $__stack_pointer
-      block ;; label = @1
-        block ;; label = @2
-          local.get 1
-          i32.load
-          local.get 1
-          i32.load offset=8
-          local.tee 3
-          i32.le_u
-          br_if 0 (;@2;)
-          local.get 2
-          i32.const 8
-          i32.add
-          local.get 1
-          local.get 3
-          call $alloc::raw_vec::RawVec<T,A>::shrink_unchecked
-          local.get 2
-          i32.load offset=8
-          i32.const -2147483647
-          i32.ne
-          br_if 1 (;@1;)
-          local.get 1
-          i32.load offset=8
-          local.set 3
-        end
-        local.get 0
-        local.get 3
-        i32.store offset=4
-        local.get 0
-        local.get 1
-        i32.load offset=4
-        i32.store
-        local.get 2
-        i32.const 16
-        i32.add
-        global.set $__stack_pointer
-        return
-      end
-      unreachable
-    )
-    (func $<alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop (;27;) (type 11) (param i32))
-    (func $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop (;28;) (type 11) (param i32)
-      (local i32)
-      block ;; label = @1
-        local.get 0
-        i32.load
-        local.tee 1
-        i32.eqz
-        br_if 0 (;@1;)
-        local.get 0
-        i32.load offset=4
-        i32.const 1
-        local.get 1
-        call $<alloc::alloc::Global as core::alloc::Allocator>::deallocate
-      end
-    )
-    (func $alloc::raw_vec::RawVec<T,A>::try_allocate_in (;29;) (type 7) (param i32 i32 i32)
+    (func $alloc::vec::Vec<T,A>::into_boxed_slice (;26;) (type 7) (param i32 i32 i32)
       (local i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -599,54 +549,162 @@
       block ;; label = @1
         block ;; label = @2
           local.get 1
+          i32.load
+          local.get 1
+          i32.load offset=8
+          local.tee 4
+          i32.le_u
           br_if 0 (;@2;)
-          local.get 0
-          i64.const 4294967296
-          i64.store offset=4 align=4
-          i32.const 0
-          local.set 1
-          br 1 (;@1;)
+          local.get 3
+          i32.const 8
+          i32.add
+          local.get 1
+          local.get 4
+          i32.const 1
+          i32.const 1
+          call $alloc::raw_vec::RawVecInner<A>::shrink_unchecked
+          local.get 3
+          i32.load offset=8
+          i32.const -2147483647
+          i32.ne
+          br_if 1 (;@1;)
+          local.get 1
+          i32.load offset=8
+          local.set 4
         end
+        local.get 0
+        local.get 4
+        i32.store offset=4
+        local.get 0
+        local.get 1
+        i32.load offset=4
+        i32.store
+        local.get 3
+        i32.const 16
+        i32.add
+        global.set $__stack_pointer
+        return
+      end
+      unreachable
+    )
+    (func $<alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop (;27;) (type 11) (param i32))
+    (func $alloc::raw_vec::new_cap (;28;) (type 16) (param i32) (result i32)
+      local.get 0
+    )
+    (func $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop (;29;) (type 11) (param i32)
+      local.get 0
+      i32.const 1
+      i32.const 1
+      call $alloc::raw_vec::RawVecInner<A>::deallocate
+    )
+    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;30;) (type 7) (param i32 i32 i32)
+      (local i32)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 3
+      global.set $__stack_pointer
+      local.get 3
+      i32.const 4
+      i32.add
+      local.get 0
+      local.get 1
+      local.get 2
+      call $alloc::raw_vec::RawVecInner<A>::current_memory
+      block ;; label = @1
+        local.get 3
+        i32.load offset=8
+        local.tee 2
+        i32.eqz
+        br_if 0 (;@1;)
+        local.get 3
+        i32.load offset=4
+        local.get 2
+        local.get 3
+        i32.load offset=12
+        call $<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+      end
+      local.get 3
+      i32.const 16
+      i32.add
+      global.set $__stack_pointer
+    )
+    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;31;) (type 17) (param i32 i32 i32 i32 i32)
+      (local i32 i64)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 5
+      global.set $__stack_pointer
+      block ;; label = @1
         block ;; label = @2
           block ;; label = @3
-            local.get 1
-            i32.const -1
-            i32.gt_s
-            local.tee 4
-            br_if 0 (;@3;)
-            local.get 0
-            i32.const 0
-            i32.store offset=4
-            br 1 (;@2;)
-          end
-          block ;; label = @3
-            block ;; label = @4
-              local.get 2
-              br_if 0 (;@4;)
-              local.get 3
-              i32.const 8
-              i32.add
-              local.get 4
-              local.get 1
-              call $<alloc::alloc::Global as core::alloc::Allocator>::allocate
-              local.get 3
-              i32.load offset=8
-              local.set 2
-              br 1 (;@3;)
-            end
             local.get 3
             local.get 4
-            local.get 1
-            i32.const 1
-            call $alloc::alloc::Global::alloc_impl
+            i32.add
+            i32.const -1
+            i32.add
+            i32.const 0
             local.get 3
-            i32.load
-            local.set 2
-          end
-          block ;; label = @3
+            i32.sub
+            i32.and
+            i64.extend_i32_u
+            local.get 1
+            i64.extend_i32_u
+            i64.mul
+            local.tee 6
+            i64.const 32
+            i64.shr_u
+            i32.wrap_i64
+            br_if 0 (;@3;)
+            i32.const -2147483648
+            local.get 3
+            i32.sub
+            local.get 6
+            i32.wrap_i64
+            local.tee 4
+            i32.lt_u
+            br_if 0 (;@3;)
+            block ;; label = @4
+              local.get 4
+              br_if 0 (;@4;)
+              local.get 0
+              local.get 3
+              i32.store offset=8
+              i32.const 0
+              local.set 3
+              local.get 0
+              i32.const 0
+              i32.store offset=4
+              br 3 (;@1;)
+            end
+            block ;; label = @4
+              block ;; label = @5
+                local.get 2
+                br_if 0 (;@5;)
+                local.get 5
+                i32.const 8
+                i32.add
+                local.get 3
+                local.get 4
+                call $<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                local.get 5
+                i32.load offset=8
+                local.set 2
+                br 1 (;@4;)
+              end
+              local.get 5
+              local.get 3
+              local.get 4
+              i32.const 1
+              call $alloc::alloc::Global::alloc_impl
+              local.get 5
+              i32.load
+              local.set 2
+            end
             local.get 2
             i32.eqz
-            br_if 0 (;@3;)
+            br_if 1 (;@2;)
             local.get 0
             local.get 2
             i32.store offset=8
@@ -654,28 +712,34 @@
             local.get 1
             i32.store offset=4
             i32.const 0
-            local.set 1
+            local.set 3
             br 2 (;@1;)
           end
           local.get 0
-          local.get 1
-          i32.store offset=8
-          local.get 0
-          local.get 4
+          i32.const 0
           i32.store offset=4
+          i32.const 1
+          local.set 3
+          br 1 (;@1;)
         end
+        local.get 0
+        local.get 4
+        i32.store offset=8
+        local.get 0
+        local.get 3
+        i32.store offset=4
         i32.const 1
-        local.set 1
+        local.set 3
       end
       local.get 0
-      local.get 1
-      i32.store
       local.get 3
+      i32.store
+      local.get 5
       i32.const 16
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;30;) (type 7) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;32;) (type 7) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -704,17 +768,17 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::alloc::Global::alloc_impl (;31;) (type 16) (param i32 i32 i32 i32)
+    (func $alloc::alloc::Global::alloc_impl (;33;) (type 18) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
         br_if 0 (;@1;)
+        i32.const 0
+        i32.load8_u offset=1048816
+        drop
         block ;; label = @2
           local.get 3
           br_if 0 (;@2;)
-          i32.const 0
-          i32.load8_u offset=1048636
-          drop
           local.get 2
           local.get 1
           call $__rust_alloc
@@ -733,59 +797,129 @@
       local.get 1
       i32.store
     )
-    (func $alloc::raw_vec::RawVec<T,A>::shrink_unchecked (;32;) (type 7) (param i32 i32 i32)
-      (local i32 i32 i32 i32)
-      i32.const -2147483647
-      local.set 3
+    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;34;) (type 18) (param i32 i32 i32 i32)
+      (local i32 i32 i32)
+      i32.const 0
+      local.set 4
+      i32.const 4
+      local.set 5
       block ;; label = @1
-        local.get 1
-        i32.load
-        local.tee 4
+        local.get 3
         i32.eqz
         br_if 0 (;@1;)
         local.get 1
+        i32.load
+        local.tee 6
+        i32.eqz
+        br_if 0 (;@1;)
+        local.get 0
+        local.get 2
+        i32.store offset=4
+        local.get 0
+        local.get 1
         i32.load offset=4
+        i32.store
+        local.get 6
+        local.get 3
+        i32.mul
+        local.set 4
+        i32.const 8
         local.set 5
+      end
+      local.get 0
+      local.get 5
+      i32.add
+      local.get 4
+      i32.store
+    )
+    (func $alloc::raw_vec::RawVecInner<A>::shrink_unchecked (;35;) (type 17) (param i32 i32 i32 i32 i32)
+      (local i32 i32 i32 i32)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 5
+      global.set $__stack_pointer
+      local.get 5
+      i32.const 4
+      i32.add
+      local.get 1
+      local.get 3
+      local.get 4
+      call $alloc::raw_vec::RawVecInner<A>::current_memory
+      block ;; label = @1
         block ;; label = @2
+          local.get 5
+          i32.load offset=8
+          local.tee 6
+          i32.eqz
+          br_if 0 (;@2;)
+          local.get 5
+          i32.load offset=12
+          local.set 7
+          local.get 5
+          i32.load offset=4
+          local.set 8
           block ;; label = @3
             local.get 2
             br_if 0 (;@3;)
-            i32.const 1
-            local.set 6
-            local.get 5
-            i32.const 1
-            local.get 4
+            local.get 8
+            local.get 6
+            local.get 7
             call $<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+            local.get 1
+            i32.const 0
+            i32.store
+            local.get 1
+            local.get 3
+            i32.store offset=4
             br 1 (;@2;)
           end
-          i32.const 1
-          local.set 3
-          local.get 5
-          local.get 4
-          i32.const 1
+          block ;; label = @3
+            block ;; label = @4
+              local.get 4
+              br_if 0 (;@4;)
+              local.get 8
+              local.get 6
+              local.get 7
+              call $<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+              local.get 6
+              local.set 3
+              br 1 (;@3;)
+            end
+            local.get 8
+            local.get 7
+            local.get 6
+            local.get 4
+            local.get 2
+            i32.mul
+            local.tee 4
+            call $__rust_realloc
+            local.tee 3
+            i32.eqz
+            br_if 2 (;@1;)
+          end
+          local.get 1
           local.get 2
-          call $__rust_realloc
-          local.tee 6
-          i32.eqz
-          br_if 1 (;@1;)
+          i32.store
+          local.get 1
+          local.get 3
+          i32.store offset=4
         end
-        local.get 1
-        local.get 2
-        i32.store
-        local.get 1
-        local.get 6
-        i32.store offset=4
         i32.const -2147483647
-        local.set 3
+        local.set 6
       end
       local.get 0
-      local.get 2
+      local.get 4
       i32.store offset=4
       local.get 0
-      local.get 3
+      local.get 6
       i32.store
+      local.get 5
+      i32.const 16
+      i32.add
+      global.set $__stack_pointer
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;33;) (type 7) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;36;) (type 7) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -796,10 +930,18 @@
         call $__rust_dealloc
       end
     )
-    (func $alloc::raw_vec::handle_error (;34;) (type 14) (param i32 i32)
+    (func $alloc::raw_vec::handle_error (;37;) (type 7) (param i32 i32 i32)
       unreachable
     )
-    (func $cabi_realloc (;35;) (type 8) (param i32 i32 i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;38;) (type 6) (param i32 i32) (result i32)
+      local.get 0
+      local.get 1
+      local.get 0
+      local.get 1
+      i32.gt_u
+      select
+    )
+    (func $cabi_realloc (;39;) (type 8) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
@@ -821,7 +963,7 @@
     (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
     (export "cabi_realloc" (func $cabi_realloc))
     (elem (;0;) (i32.const 1) func $basic_wallet::bindings::__link_custom_section_describing_imports $cabi_realloc)
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "/Users/paulschoenfelder/.rustup/toolchains/nightly-2025-01-16-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/slice.rs\00\00\00\00\10\00\82\00\00\00\a1\00\00\00\19\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00src/bindings.rs\00\b8\00\10\00\0f\00\00\00@\01\00\00*\00\00\00\02\00\00\00")
   )
   (alias export 2 "add" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))

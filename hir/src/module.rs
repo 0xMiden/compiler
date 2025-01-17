@@ -609,7 +609,7 @@ pub struct ModuleCursor<'a> {
     name: Ident,
     is_kernel: bool,
 }
-impl<'a> ModuleCursor<'a> {
+impl ModuleCursor<'_> {
     /// Returns true if this cursor is pointing to the null object
     #[inline(always)]
     pub fn is_null(&self) -> bool {
@@ -804,7 +804,7 @@ pub struct ModuleFunctionBuilder<'m> {
     function: Box<Function>,
     position: Block,
 }
-impl<'m> ModuleFunctionBuilder<'m> {
+impl ModuleFunctionBuilder<'_> {
     pub fn with_span(&mut self, span: SourceSpan) -> &mut Self {
         self.function.id.function = Ident::new(self.function.id.function.as_symbol(), span);
         self

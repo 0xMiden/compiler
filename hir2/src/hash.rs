@@ -24,7 +24,7 @@ impl<'a> DynHasher<'a> {
     }
 }
 
-impl<'a> Hasher for DynHasher<'a> {
+impl Hasher for DynHasher<'_> {
     #[inline]
     fn finish(&self) -> u64 {
         self.0.finish()

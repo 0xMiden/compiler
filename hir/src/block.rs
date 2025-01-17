@@ -157,7 +157,7 @@ impl BlockData {
 struct Insts<'f> {
     cursor: InstructionCursor<'f>,
 }
-impl<'f> Iterator for Insts<'f> {
+impl Iterator for Insts<'_> {
     type Item = Inst;
 
     fn next(&mut self) -> Option<Self::Item> {
