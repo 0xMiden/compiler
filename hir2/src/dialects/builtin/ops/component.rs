@@ -7,8 +7,8 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
-        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
-        NoTerminator, SingleBlock, SingleRegion,
+        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoTerminator, SingleBlock,
+        SingleRegion,
     },
     version::Version,
     Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,

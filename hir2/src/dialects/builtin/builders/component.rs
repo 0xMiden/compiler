@@ -10,16 +10,18 @@ pub struct ComponentBuilder {
     builder: OpBuilder,
 }
 impl ComponentBuilder {
-    pub fn new(mut component: ComponentRef) -> Self {
-        let component_ref = component.borrow_mut();
+    pub fn new(component: ComponentRef) -> Self {
+        let component_ref = component.borrow();
         let context = component_ref.as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
 
-        if component_ref.body().is_empty() {
-            builder.create_block(component_ref.body().as_region_ref(), None, &[]);
-        } else {
-            let current_block = component_ref.body().entry_block_ref().unwrap();
+        let body = component_ref.body();
+        if let Some(current_block) = body.entry_block_ref() {
             builder.set_insertion_point_to_end(current_block);
+        } else {
+            let body_ref = body.as_region_ref();
+            drop(body);
+            builder.create_block(body_ref, None, &[]);
         }
 
         Self { component, builder }
