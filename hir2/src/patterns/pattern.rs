@@ -373,12 +373,12 @@ mod tests {
         let func = function.borrow();
         let output = func.as_operation().to_string();
         let expected = "\
-hir.function public @test(v0: u32) -> u32 {
+builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v1 = hir.constant 1 : u32;
-    v3 = hir.constant 2 : u32;
-    v4 = hir.mul v0, v3 : u32 #[overflow = wrapping];
-    hir.ret v4;
+    v1 = test.constant 1 : u32;
+    v3 = test.constant 2 : u32;
+    v4 = test.mul v0, v3 : u32 #[overflow = wrapping];
+    test.ret v4;
 };";
         assert_str_eq!(output.as_str(), expected);
     }

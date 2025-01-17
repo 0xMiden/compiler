@@ -42,6 +42,7 @@ impl<'a> OpEmitter<'a> {
     ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
+    #[allow(unused)]
     pub fn load_local(&mut self, local: LocalId, span: SourceSpan) {
         let local_index = local.as_usize();
         let ty = self.locals[local_index].clone();
@@ -84,6 +85,7 @@ impl<'a> OpEmitter<'a> {
     /// Load a value of type `ty` from `addr`.
     ///
     /// NOTE: The address represented by `addr` is in the IR's byte-addressable address space.
+    #[allow(unused)]
     pub fn load_imm(&mut self, addr: u32, ty: Type, span: SourceSpan) {
         let ptr = NativePtr::from_ptr(addr);
         match &ty {
@@ -917,6 +919,7 @@ impl<'a> OpEmitter<'a> {
     ///
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
+    #[allow(unused)]
     pub fn store_local(&mut self, local: LocalId, span: SourceSpan) {
         let local_index = local.as_usize();
         let ty = self.locals[local_index].clone();
@@ -964,6 +967,7 @@ impl<'a> OpEmitter<'a> {
     /// Store a value of type `ty` to `addr`.
     ///
     /// NOTE: The address represented by `addr` is in the IR's byte-addressable address space.
+    #[allow(unused)]
     pub fn store_imm(&mut self, addr: u32, span: SourceSpan) {
         let value = self.stack.pop().expect("operand stack is empty");
         let value_ty = value.ty();
@@ -1037,8 +1041,7 @@ impl<'a> OpEmitter<'a> {
         );
 
         // Switch back to original block and emit loop header and 'while.true' instruction
-        drop(body_emitter);
-
+        //
         // Loop header - prepare to loop until `count` iterations have been performed
         self.emit_all(
             [
@@ -1160,8 +1163,7 @@ impl<'a> OpEmitter<'a> {
         );
 
         // Switch back to original block and emit loop header and 'while.true' instruction
-        drop(body_emitter);
-
+        //
         // Loop header - prepare to loop until `count` iterations have been performed
         self.emit_all(
             [

@@ -106,6 +106,7 @@ impl<'b> BlockEmitter<'b> {
     /// the current block.
     ///
     /// This is intended to be called before scheduling any instructions in the block.
+    #[allow(unused)]
     pub fn drop_unused_operands_at(&mut self, pp: midenc_hir2::ProgramPoint) {
         // We start by computing the set of unused operands on the stack at this point
         // in the program. We will use the resulting vectors to schedule instructions

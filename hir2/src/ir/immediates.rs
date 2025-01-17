@@ -331,7 +331,9 @@ impl Eq for Immediate {}
 impl PartialEq for Immediate {
     fn eq(&self, other: &Self) -> bool {
         match (*self, *other) {
+            (Self::I1(x), Self::I1(y)) => x == y,
             (Self::I8(x), Self::I8(y)) => x == y,
+            (Self::U8(x), Self::U8(y)) => x == y,
             (Self::U16(x), Self::U16(y)) => x == y,
             (Self::I16(x), Self::I16(y)) => x == y,
             (Self::U32(x), Self::U32(y)) => x == y,

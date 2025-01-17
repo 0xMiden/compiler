@@ -173,13 +173,9 @@ impl<'a> OpEmitter<'a> {
         self.stack.len()
     }
 
+    #[cfg(test)]
     #[inline(always)]
     pub fn stack<'c, 'b: 'c>(&'b self) -> &'c OperandStack {
-        self.stack
-    }
-
-    #[inline(always)]
-    pub fn stack_mut<'c, 'b: 'c>(&'b mut self) -> &'c mut OperandStack {
         self.stack
     }
 
@@ -592,6 +588,7 @@ impl<'a> OpEmitter<'a> {
     }
 
     /// Get mutable access to the current block we're emitting to
+    #[cfg(test)]
     #[inline(always)]
     pub fn current_block<'c, 'b: 'c>(&'b mut self) -> &'c mut Vec<masm::Op> {
         self.current_block
@@ -641,6 +638,7 @@ pub fn swap_from_offset(offset: usize) -> masm::Instruction {
     }
 }
 
+#[allow(unused)]
 pub fn swapw_from_offset(offset: usize) -> masm::Instruction {
     match offset {
         1 => masm::Instruction::SwapW1,
@@ -690,6 +688,7 @@ pub fn movdn_from_offset(offset: usize) -> masm::Instruction {
     }
 }
 
+#[allow(unused)]
 pub fn movupw_from_offset(offset: usize) -> masm::Instruction {
     match offset {
         2 => masm::Instruction::MovUpW2,
@@ -698,6 +697,7 @@ pub fn movupw_from_offset(offset: usize) -> masm::Instruction {
     }
 }
 
+#[allow(unused)]
 pub fn movdnw_from_offset(offset: usize) -> masm::Instruction {
     match offset {
         2 => masm::Instruction::MovDnW2,
@@ -807,9 +807,8 @@ mod tests {
 
         {
             let ops = emitter.current_block();
-            assert_eq!(ops.len(), 12);
-            assert_eq!(&ops[10], &Op::Inst(Span::new(span, masm::Instruction::Dup6)));
-            assert_eq!(&ops[11], &Op::Inst(Span::new(span, masm::Instruction::MovDn2)));
+            assert_eq!(ops.len(), 11);
+            assert_eq!(&ops[10], &Op::Inst(Span::new(span, masm::Instruction::MovDn2)));
         }
 
         assert_eq!(emitter.stack().effective_index(3), 5);
@@ -823,12 +822,12 @@ mod tests {
 
         {
             let ops = emitter.current_block();
-            assert_eq!(ops.len(), 16);
-            assert_eq!(&ops[11], &Op::Inst(Span::new(span, masm::Instruction::MovDn2))); // [five_a, five_b, three, five_c, five_d, four_a, four_b]
-            assert_eq!(&ops[12], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [five_b, three, five_c, five_d, four_a, four_b, five_a]
-            assert_eq!(&ops[13], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
-            assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[15], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
+            assert_eq!(ops.len(), 15);
+            assert_eq!(&ops[10], &Op::Inst(Span::new(span, masm::Instruction::MovDn2))); // [five_a, five_b, three, five_c, five_d, four_a, four_b]
+            assert_eq!(&ops[11], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [five_b, three, five_c, five_d, four_a, four_b, five_a]
+            assert_eq!(&ops[12], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
+            assert_eq!(&ops[13], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
+            assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
                                                                                          // five_d,
                                                                                          // five_a,
                                                                                          // five_b]
@@ -844,13 +843,12 @@ mod tests {
 
         {
             let ops = emitter.current_block();
-            assert_eq!(ops.len(), 18);
-            assert_eq!(&ops[12], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [five_b, three, five_c, five_d, four_a, four_b, five_a]
-            assert_eq!(&ops[13], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
-            assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[15], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c, five_d, five_a, five_b]
-            assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[17], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a,
+            assert_eq!(ops.len(), 17);
+            assert_eq!(&ops[12], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
+            assert_eq!(&ops[13], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
+            assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c, five_d, five_a, five_b]
+            assert_eq!(&ops[15], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
+            assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a,
                                                                                          // four_b,
                                                                                          // five_a,
                                                                                          // five_b]
@@ -866,11 +864,10 @@ mod tests {
 
         {
             let ops = emitter.current_block();
-            assert_eq!(ops.len(), 20);
-            assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[17], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
-            assert_eq!(&ops[18], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[19], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
+            assert_eq!(ops.len(), 19);
+            assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
+            assert_eq!(&ops[17], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
+            assert_eq!(&ops[18], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
                                                                                          // five_d,
                                                                                          // five_a,
                                                                                          // five_b]
@@ -886,11 +883,10 @@ mod tests {
 
         {
             let ops = emitter.current_block();
-            assert_eq!(ops.len(), 22);
-            assert_eq!(&ops[18], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
-            assert_eq!(&ops[19], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c, five_d, five_a, five_b]
-            assert_eq!(&ops[20], &Op::Inst(Span::new(span, masm::Instruction::Drop))); // [four_b, three, five_c, five_d, five_a, five_b]
-            assert_eq!(&ops[21], &Op::Inst(Span::new(span, masm::Instruction::Drop))); // [three, five_c, five_d, five_a, five_b]
+            assert_eq!(ops.len(), 21);
+            assert_eq!(&ops[18], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c, five_d, five_a, five_b]
+            assert_eq!(&ops[19], &Op::Inst(Span::new(span, masm::Instruction::Drop))); // [four_b, three, five_c, five_d, five_a, five_b]
+            assert_eq!(&ops[20], &Op::Inst(Span::new(span, masm::Instruction::Drop))); // [three, five_c, five_d, five_a, five_b]
         }
 
         emitter.copy_operand_to_position(5, 3, false, SourceSpan::default());
@@ -2004,17 +2000,5 @@ mod tests {
         assert_eq!(emitter.stack_len(), 2);
         assert_eq!(emitter.stack()[0], Type::I32);
         assert_eq!(emitter.stack()[1], Type::U32);
-    }
-
-    #[inline]
-    fn setup() -> masm::Procedure {
-        let name = masm::ProcedureName::new("test").unwrap();
-        masm::Procedure::new(
-            SourceSpan::default(),
-            masm::Visibility::Public,
-            name,
-            0,
-            masm::Block::new(SourceSpan::default(), Default::default()),
-        )
     }
 }

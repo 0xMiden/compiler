@@ -86,12 +86,15 @@ impl Context {
         }
 
         let mut info = DialectInfo::new::<T>();
+
         let dialect_hooks = self.dialect_hooks.borrow();
         if let Some(hooks) = dialect_hooks.get(&dialect_name) {
             for hook in hooks {
                 hook(&mut info, self);
             }
         }
+
+        <T as DialectRegistration>::register_operations(&mut info);
 
         let dialect = Rc::new(T::init(info)) as Rc<dyn Dialect>;
         self.registered_dialects.borrow_mut().insert(dialect_name, Rc::clone(&dialect));

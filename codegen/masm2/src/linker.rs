@@ -7,7 +7,9 @@ pub struct LinkInfo {
     component: builtin::ComponentId,
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
+    #[allow(unused)]
     reserved_memory_pages: u32,
+    #[allow(unused)]
     page_size: u32,
 }
 
@@ -25,19 +27,23 @@ impl LinkInfo {
         !self.segment_layout.is_empty()
     }
 
+    #[allow(unused)]
     pub fn globals_layout(&self) -> &GlobalVariableLayout {
         &self.globals_layout
     }
 
+    #[allow(unused)]
     pub fn segment_layout(&self) -> &builtin::DataSegmentLayout {
         &self.segment_layout
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn reserved_memory_pages(&self) -> u32 {
         self.reserved_memory_pages
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn page_size(&self) -> u32 {
         self.page_size
@@ -134,9 +140,6 @@ pub enum LinkerError {
     /// the actual definitions).
     #[error("invalid root component: expected definition, got declaration")]
     Undefined,
-    /// The provided component must have public visibility, but has private or internal visibility
-    #[error("invalid root component: must have public visibility")]
-    Visibility,
     /// Multiple segments were defined in the same component with the same offset
     #[error("invalid component: '{id}' has invalid data segment: {err}")]
     InvalidSegment {
@@ -154,6 +157,7 @@ pub struct GlobalVariableLayout {
     offsets: FxHashMap<builtin::GlobalVariableRef, u32>,
 }
 impl GlobalVariableLayout {
+    #[allow(unused)]
     fn new(global_table_offset: u32) -> Self {
         Self {
             global_table_offset,
@@ -163,6 +167,7 @@ impl GlobalVariableLayout {
     }
 
     /// Get the address/offset at which global variables will start being allocated
+    #[allow(unused)]
     pub fn global_table_offset(&self) -> u32 {
         self.global_table_offset
     }
@@ -170,6 +175,7 @@ impl GlobalVariableLayout {
     /// Get the statically-allocated address at which the global variable `gv` is to be placed.
     ///
     /// This function returns `None` if the given global variable is unresolvable.
+    #[allow(unused)]
     pub fn get_computed_addr(&self, gv: builtin::GlobalVariableRef) -> Option<u32> {
         self.offsets.get(&gv).copied()
     }

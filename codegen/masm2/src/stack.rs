@@ -719,10 +719,10 @@ mod tests {
         assert_eq!(stack[1], three);
 
         // padw
-        stack.push(Type::Felt);
-        stack.push(Type::Felt);
-        stack.push(Type::Felt);
-        stack.push(Type::Felt);
+        stack.push(Immediate::Felt(Felt::ZERO));
+        stack.push(Immediate::Felt(Felt::ZERO));
+        stack.push(Immediate::Felt(Felt::ZERO));
+        stack.push(Immediate::Felt(Felt::ZERO));
         assert_eq!(stack.find(&one), Some(7));
         assert_eq!(stack.find(&three), Some(4));
 
@@ -739,10 +739,10 @@ mod tests {
 
         // pop
         let top = stack.pop().unwrap();
-        assert_eq!((&top).try_into(), Ok(Immediate::U32(0)));
+        assert_eq!((&top).try_into(), Ok(Immediate::Felt(Felt::ZERO)));
         assert_eq!(stack.find(&four), Some(0));
-        assert_eq!(stack[1], Immediate::U32(0));
-        assert_eq!(stack[2], Immediate::U32(0));
+        assert_eq!(stack[1], Immediate::Felt(Felt::ZERO));
+        assert_eq!(stack[2], Immediate::Felt(Felt::ZERO));
         assert_eq!(stack.find(&three), Some(3));
 
         // dropn

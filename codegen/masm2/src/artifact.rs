@@ -25,6 +25,7 @@ pub struct MasmComponent {
     /// The address of the `__stack_pointer` global, if such a global has been defined
     pub stack_pointer: Option<u32>,
     /// The set of modules in this component
+    #[allow(clippy::vec_box)]
     pub modules: Vec<Box<masm::Module>>,
 }
 

@@ -490,6 +490,7 @@ mod tests {
     //    and treating duplicate samples as copies
     // 3. Generate the set of expected operands by mapping `constraints` to values
     struct ProblemInputs {
+        #[allow(dead_code)]
         context: Rc<hir::Context>,
         block: hir::BlockRef,
         stack: crate::OperandStack,
@@ -702,9 +703,8 @@ mod tests {
         for value in raw_stack.into_iter().rev() {
             stack.push(value);
         }
-        for id in 0..arity {
-            let value = block_args[id] as hir::ValueRef;
-            expected.push(value);
+        for (id, value) in block_args.iter().copied().enumerate() {
+            expected.push(value as hir::ValueRef);
             if copies.test(id) {
                 constraints.push(Constraint::Copy);
             } else {

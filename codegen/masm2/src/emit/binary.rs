@@ -34,6 +34,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn eq_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -87,6 +88,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn neq_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -140,6 +142,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn gt_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -147,10 +150,7 @@ impl<'a> OpEmitter<'a> {
         match &ty {
             Type::Felt => {
                 self.emit_all(
-                    [
-                        masm::Instruction::PushFelt(imm.as_felt().unwrap().into()),
-                        masm::Instruction::Gt,
-                    ],
+                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Gt],
                     span,
                 );
             }
@@ -201,6 +201,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn gte_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -208,10 +209,7 @@ impl<'a> OpEmitter<'a> {
         match &ty {
             Type::Felt => {
                 self.emit_all(
-                    [
-                        masm::Instruction::PushFelt(imm.as_felt().unwrap().into()),
-                        masm::Instruction::Gte,
-                    ],
+                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Gte],
                     span,
                 );
             }
@@ -262,6 +260,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn lt_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -269,10 +268,7 @@ impl<'a> OpEmitter<'a> {
         match &ty {
             Type::Felt => {
                 self.emit_all(
-                    [
-                        masm::Instruction::PushFelt(imm.as_felt().unwrap().into()),
-                        masm::Instruction::Lt,
-                    ],
+                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Lt],
                     span,
                 );
             }
@@ -323,6 +319,7 @@ impl<'a> OpEmitter<'a> {
         self.push(Type::I1);
     }
 
+    #[allow(unused)]
     pub fn lte_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -330,10 +327,7 @@ impl<'a> OpEmitter<'a> {
         match &ty {
             Type::Felt => {
                 self.emit_all(
-                    [
-                        masm::Instruction::PushFelt(imm.as_felt().unwrap().into()),
-                        masm::Instruction::Lte,
-                    ],
+                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Lte],
                     span,
                 );
             }
@@ -392,6 +386,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn add_imm(&mut self, imm: Immediate, overflow: Overflow, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -457,6 +452,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn sub_imm(&mut self, imm: Immediate, overflow: Overflow, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -537,6 +533,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn mul_imm(&mut self, imm: Immediate, overflow: Overflow, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -595,6 +592,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn checked_div_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -622,6 +620,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_div(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
@@ -643,6 +642,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_div_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -689,6 +689,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn checked_mod_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -711,6 +712,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_mod(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
@@ -730,6 +732,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_mod_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -772,6 +775,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn checked_divmod_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -795,6 +799,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_divmod(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
@@ -815,6 +820,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn unchecked_divmod_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -870,6 +876,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn exp_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -922,6 +929,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn and_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -944,6 +952,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn or_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -966,6 +975,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn xor_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1029,6 +1039,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn band_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1138,6 +1149,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn bor_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1249,6 +1261,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn bxor_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1374,6 +1387,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn shr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1410,6 +1424,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn rotl_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1443,6 +1458,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn rotr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1478,6 +1494,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn min_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1518,6 +1535,7 @@ impl<'a> OpEmitter<'a> {
         self.push(ty);
     }
 
+    #[allow(unused)]
     pub fn max_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();

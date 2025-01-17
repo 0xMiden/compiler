@@ -131,73 +131,13 @@ macro_rules! __derive_op_trait {
 #[cfg(test)]
 mod tests {
     use alloc::rc::Rc;
-    use core::fmt;
 
     use midenc_session::diagnostics::Severity;
 
-    use super::operation;
     use crate::{
-        define_attr_type, dialects::test::TestDialect, formatter, traits::*, Builder, BuilderExt,
-        Context, Op, Operation, Report, Spanned, Value,
+        attributes::Overflow, dialects::test::Add, Builder, BuilderExt, Context, Op, Operation,
+        Report, Spanned,
     };
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-    enum Overflow {
-        #[allow(unused)]
-        None,
-        Wrapping,
-        #[allow(unused)]
-        Overflowing,
-    }
-    impl fmt::Display for Overflow {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            fmt::Debug::fmt(self, f)
-        }
-    }
-    impl formatter::PrettyPrint for Overflow {
-        fn render(&self) -> formatter::Document {
-            use formatter::*;
-            display(self)
-        }
-    }
-    define_attr_type!(Overflow);
-
-    /// An example op implementation to make sure all of the type machinery works
-    #[operation(
-        dialect = TestDialect,
-        traits(ArithmeticOp, BinaryOp, Commutative, SingleBlock, SameTypeOperands),
-        implements(InferTypeOpInterface)
-    )]
-    struct AddOp {
-        #[attr]
-        overflow: Overflow,
-        #[operand]
-        #[order(0)]
-        lhs: AnyInteger,
-        #[operand]
-        #[order(1)]
-        rhs: AnyInteger,
-        #[result]
-        result: AnyInteger,
-    }
-
-    impl InferTypeOpInterface for AddOp {
-        fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-            let lhs = self.lhs().ty();
-            {
-                let rhs = self.rhs();
-                let rhs = rhs.value();
-                let rhs_ty = rhs.ty();
-                if &lhs != rhs_ty {
-                    return Err(Report::msg(format!(
-                        "lhs and rhs types do not match: expected '{lhs}', got '{rhs_ty}'"
-                    )));
-                }
-            }
-            self.result_mut().set_type(lhs);
-            Ok(())
-        }
-    }
 
     derive! {
         /// A marker trait for arithmetic ops
@@ -221,11 +161,16 @@ mod tests {
         }
     }
 
+    impl ArithmeticOp for Add {}
+
     #[test]
     fn derived_op_builder_test() {
         use crate::{SourceSpan, Type};
 
         let context = Rc::new(Context::default());
+        context.register_dialect_hook("test", |info, _ctx| {
+            info.register_operation_trait::<Add, dyn ArithmeticOp>();
+        });
         let block = context.create_block_with_params([Type::U32, Type::U32]);
         let (lhs, rhs) = {
             let block = block.borrow();
@@ -235,18 +180,18 @@ mod tests {
         };
         let mut builder = context.builder();
         builder.set_insertion_point_to_end(block);
-        let op_builder = builder.create::<AddOp, _>(SourceSpan::default());
+        let op_builder = builder.create::<Add, _>(SourceSpan::default());
         let op = op_builder(lhs, rhs, Overflow::Wrapping);
         let op = op.expect("failed to create AddOp");
         let op = op.borrow();
         assert!(op.as_operation().implements::<dyn ArithmeticOp>());
         assert!(core::hint::black_box(
-            !<AddOp as crate::verifier::Verifier<dyn ArithmeticOp>>::VACUOUS
+            !<Add as crate::verifier::Verifier<dyn ArithmeticOp>>::VACUOUS
         ));
     }
 
     #[test]
-    #[should_panic = "lhs and rhs types do not match: expected 'u32', got 'i64'"]
+    #[should_panic = "expected 'u32', got 'i64'"]
     fn derived_op_verifier_test() {
         use crate::{SourceSpan, Type};
 
@@ -261,7 +206,7 @@ mod tests {
         let mut builder = context.builder();
         builder.set_insertion_point_to_end(block);
         // Try to create instance of AddOp with mismatched operand types
-        let op_builder = builder.create::<AddOp, _>(SourceSpan::default());
+        let op_builder = builder.create::<Add, _>(SourceSpan::default());
         let op = op_builder(lhs, invalid_rhs, Overflow::Wrapping);
         let _op = op.unwrap();
     }
