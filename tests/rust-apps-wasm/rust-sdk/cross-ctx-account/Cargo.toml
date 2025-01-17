@@ -1,3 +1,5 @@
+cargo-features = ["trim-paths"]
+
 [package]
 name = "cross-ctx-account"
 version = "0.1.0"
@@ -23,6 +25,7 @@ opt-level = "z"
 # ensures that panics do not pull in a bunch of standard
 # library code unintentionally
 panic = "abort"
+trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
 # Explicitly disable panic infrastructure on Wasm, as
@@ -34,6 +37,7 @@ opt-level = 1
 debug-assertions = true
 overflow-checks = false
 debug = true
+trim-paths = ["diagnostics", "object"]
 
 # TODO: switch to miden table
 [package.metadata.component]
