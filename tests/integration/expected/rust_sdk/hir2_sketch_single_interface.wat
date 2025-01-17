@@ -128,21 +128,24 @@
         i32.const 32
         i32.gt_u
         select
-        local.tee 1
+        local.tee 3
         i32.popcnt
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         i32.const -2147483648
         local.get 1
+        local.get 3
+        call $core::ptr::alignment::Alignment::max
+        local.tee 1
         i32.sub
         local.get 2
         i32.lt_u
         br_if 0 (;@1;)
         i32.const 0
         local.set 3
-        local.get 1
         local.get 2
+        local.get 1
         i32.add
         i32.const -1
         i32.add
@@ -187,7 +190,15 @@
       end
       unreachable
     )
-    (func $cabi_realloc (;12;) (type 5) (param i32 i32 i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;12;) (type 4) (param i32 i32) (result i32)
+      local.get 0
+      local.get 1
+      local.get 0
+      local.get 1
+      i32.gt_u
+      select
+    )
+    (func $cabi_realloc (;13;) (type 5) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
