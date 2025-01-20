@@ -1083,10 +1083,11 @@ impl CompilerTest {
 
     /// Expect test that builds the IR2(sketch)
     pub fn expect_ir2(&mut self, expected_hir_file: expect_test::ExpectFile) {
+        let context = Rc::new(midenc_hir2::Context::new(self.session.clone()));
         let ir = midenc_frontend_wasm::translate_component2(
             &self.wasm_bytes(),
             &self.config,
-            self.session.clone(),
+            context.clone(),
         )
         .expect("Failed to translate Wasm binary to IR component");
         let src = demangle(ir.borrow().as_ref().as_operation_ref().to_string());

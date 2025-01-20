@@ -603,7 +603,7 @@ enum ComponentInstanceDef<'a> {
     Instantiated(ComponentInstantiation<'a>),
     Export,
 }
-impl<'a> ComponentInstanceDef<'a> {
+impl ComponentInstanceDef<'_> {
     fn unwrap_import(&self) -> ComponentInstanceImport {
         match self {
             ComponentInstanceDef::Import(import) => import.clone(),
@@ -633,7 +633,7 @@ enum ComponentFuncDef<'a> {
     /// A core wasm function was lifted into a component function.
     Lifted(CanonLift),
 }
-impl<'a> ComponentFuncDef<'a> {
+impl ComponentFuncDef<'_> {
     fn unwrap_canon_lift(&self) -> &CanonLift {
         match self {
             ComponentFuncDef::Lifted(lift) => lift,
@@ -678,7 +678,7 @@ pub enum CoreDef<'a> {
     Lower(CanonLower),
 }
 
-impl<'a> CoreDef<'a> {
+impl CoreDef<'_> {
     pub fn unwrap_canon_lower(&self) -> &CanonLower {
         match self {
             CoreDef::Lower(lower) => lower,

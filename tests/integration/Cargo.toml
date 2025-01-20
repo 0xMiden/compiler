@@ -27,6 +27,7 @@ miden-processor.workspace = true
 miden-stdlib.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-hir.workspace = true
+midenc-hir2.workspace = true
 midenc-hir-transform.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
