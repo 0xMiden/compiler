@@ -403,7 +403,7 @@ impl Emit for miden_package::Package {
                 }
             },
             OutputMode::Binary => {
-                let bytes = self.write_to_bytes().map_err(std::io::Error::other)?;
+                let bytes = self.to_bytes();
                 writer.write_all(bytes.as_slice())
             }
         }

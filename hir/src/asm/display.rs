@@ -293,13 +293,6 @@ impl PrettyPrint for DisplayOp<'_> {
             | MasmOp::U32ShrImm(imm)
             | MasmOp::U32RotlImm(imm)
             | MasmOp::U32RotrImm(imm)) => text(format!("{op}")) + const_text(".") + display(*imm),
-            op @ (MasmOp::AdvInjectPushMapValImm(offset)
-            | MasmOp::AdvInjectPushMapValNImm(offset)) => {
-                text(format!("{op}")) + const_text(".") + display(*offset)
-            }
-            op @ MasmOp::AdvInjectInsertHdwordImm(domain) => {
-                text(format!("{op}")) + const_text(".") + display(*domain)
-            }
             op @ MasmOp::DebugStackN(n) => text(format!("{op}")) + const_text(".") + display(*n),
             op @ MasmOp::DebugMemoryAt(start) => {
                 text(format!("{op}")) + const_text(".") + display(*start)

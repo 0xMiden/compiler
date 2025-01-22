@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use expect_test::expect_file;
-use miden_core::crypto::hash::RpoDigest;
+use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
 use miden_package::Package;
 use midenc_debug::Executor;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -211,7 +211,7 @@ fn rust_sdk_cross_ctx_note() {
 
     let mut exec = Executor::new(vec![]);
     let account_package =
-        Arc::new(Package::read_from_bytes(std::fs::read(masp_path).unwrap()).unwrap());
+        Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
 
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());

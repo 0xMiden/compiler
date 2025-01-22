@@ -1861,11 +1861,8 @@ fn apply_op_stack_effects(
         MasmOp::AdvInjectInsertMem
         | MasmOp::AdvInjectInsertHperm
         | MasmOp::AdvInjectInsertHdword
-        | MasmOp::AdvInjectInsertHdwordImm(_)
         | MasmOp::AdvInjectPushMapVal
-        | MasmOp::AdvInjectPushMapValImm(_)
         | MasmOp::AdvInjectPushMapValN
-        | MasmOp::AdvInjectPushMapValNImm(_)
         | MasmOp::AdvInjectPushU64Div
         | MasmOp::AdvInjectPushMTreeNode
         | MasmOp::AdvInjectPushSignature(_) => (),

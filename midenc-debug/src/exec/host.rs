@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use miden_core::crypto::hash::RpoDigest;
 use miden_processor::{
-    AdviceExtractor, AdviceInjector, AdviceProvider, ExecutionError, Host, HostResponse,
-    MastForest, MastForestStore, MemAdviceProvider, MemMastForestStore, ProcessState, RowIndex,
+    AdviceProvider, ExecutionError, Host, MastForest, MastForestStore, MemAdviceProvider,
+    MemMastForestStore, ProcessState, RowIndex,
 };
 
 use super::{TraceEvent, TraceHandler};
@@ -58,31 +58,11 @@ impl DebuggerHost {
 impl Host for DebuggerHost {
     type AdviceProvider = MemAdviceProvider;
 
-    fn get_advice(
-        &mut self,
-        process: ProcessState,
-        extractor: AdviceExtractor,
-    ) -> Result<HostResponse, ExecutionError> {
-        self.adv_provider.get_advice(process, &extractor)
-    }
-
-    fn set_advice(
-        &mut self,
-        process: ProcessState,
-        injector: AdviceInjector,
-    ) -> Result<HostResponse, ExecutionError> {
-        self.adv_provider.set_advice(process, &injector)
-    }
-
     fn get_mast_forest(&self, node_digest: &RpoDigest) -> Option<Arc<MastForest>> {
         self.store.get(node_digest)
     }
 
-    fn on_trace(
-        &mut self,
-        process: ProcessState,
-        trace_id: u32,
-    ) -> Result<HostResponse, ExecutionError> {
+    fn on_trace(&mut self, process: ProcessState, trace_id: u32) -> Result<(), ExecutionError> {
         let event = TraceEvent::from(trace_id);
         let clk = process.clk();
         if let Some(handlers) = self.tracing_callbacks.get_mut(&trace_id) {
@@ -90,7 +70,7 @@ impl Host for DebuggerHost {
                 handler(clk, event);
             }
         }
-        Ok(HostResponse::None)
+        Ok(())
     }
 
     fn on_assert_failed(&mut self, process: ProcessState, err_code: u32) -> ExecutionError {

@@ -268,11 +268,13 @@ fn load_package(session: &Session) -> Result<Arc<miden_package::Package>, Report
     let package = match &session.inputs[0].file {
         InputType::Real(ref path) => {
             let bytes = std::fs::read(path).into_diagnostic()?;
-            miden_package::Package::read_from_bytes(bytes).map(Arc::new)?
+            miden_package::Package::read_from_bytes(&bytes)
+                .map(Arc::new)
+                .into_diagnostic()?
         }
-        InputType::Stdin { input, .. } => {
-            miden_package::Package::read_from_bytes(input.as_slice()).map(Arc::new)?
-        }
+        InputType::Stdin { input, .. } => miden_package::Package::read_from_bytes(input.as_slice())
+            .map(Arc::new)
+            .into_diagnostic()?,
     };
 
     if let Some(entry) = session.options.entrypoint.as_ref() {
