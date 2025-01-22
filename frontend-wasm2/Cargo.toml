@@ -1,5 +1,5 @@
 [package]
-name = "midenc-frontend-wasm"
+name = "midenc-frontend-wasm2"
 description = "Wasm frontend for the Miden compiler"
 version.workspace = true
 rust-version.workspace = true
@@ -24,6 +24,8 @@ log.workspace = true
 hashbrown.workspace = true
 miden-core.workspace = true
 midenc-hir.workspace = true
+midenc-hir2.workspace = true
+midenc-dialect-hir.workspace = true
 midenc-hir-type.workspace = true
 midenc-session.workspace = true
 rustc-hash.workspace = true

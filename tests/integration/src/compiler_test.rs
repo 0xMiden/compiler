@@ -15,6 +15,7 @@ use std::{
 use miden_assembly::LibraryPath;
 use midenc_frontend_wasm::{translate, WasmTranslationConfig};
 use midenc_hir::{demangle, FunctionIdent, Ident, Symbol};
+use midenc_hir2::dialects::builtin::ComponentRef;
 use midenc_session::{InputFile, InputType, Session};
 
 use crate::cargo_proj::project;
@@ -1084,12 +1085,10 @@ impl CompilerTest {
     /// Expect test that builds the IR2(sketch)
     pub fn expect_ir2(&mut self, expected_hir_file: expect_test::ExpectFile) {
         let context = Rc::new(midenc_hir2::Context::new(self.session.clone()));
-        let ir = midenc_frontend_wasm::translate_component2(
-            &self.wasm_bytes(),
-            &self.config,
-            context.clone(),
-        )
-        .expect("Failed to translate Wasm binary to IR component");
+        // let ir =
+        //     midenc_frontend_wasm2::translate(&self.wasm_bytes(), &self.config, context.clone())
+        //         .expect("Failed to translate Wasm binary to IR component");
+        let ir: ComponentRef = todo!();
         let src = demangle(ir.borrow().as_ref().as_operation_ref().to_string());
         expected_hir_file.assert_eq(&src);
     }

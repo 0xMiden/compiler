@@ -7,7 +7,7 @@ use std::{borrow::BorrowMut, rc::Rc};
 
 use midenc_hir::{
     cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent,
-    FxHashMap, Ident, Linkage, Signature, SourceSpan, Symbol,
+    FunctionType, FxHashMap, Ident, Linkage, Signature, SourceSpan, Symbol,
 };
 use midenc_hir2::{
     self as hir2,
@@ -19,11 +19,10 @@ use midenc_session::{DiagnosticsHandler, Session};
 use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{
-    translator::convert_lifted_func_ty, CanonLift, CanonLower, ClosedOverComponent,
-    ClosedOverModule, ComponentFuncIndex, ComponentIndex, ComponentInstanceIndex,
-    ComponentInstantiation, ComponentTypesBuilder, ComponentUpvarIndex, ModuleIndex,
-    ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent, StaticModuleIndex,
-    TypeComponentInstanceIndex, TypeDef, TypeModuleIndex,
+    CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule, ComponentFuncIndex,
+    ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypesBuilder,
+    ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent,
+    StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex, TypeModuleIndex,
 };
 use crate::{
     component::{ComponentItem, LocalInitializer, StaticComponentIndex},
@@ -35,10 +34,10 @@ use crate::{
     unsupported_diag, WasmTranslationConfig,
 };
 
-pub mod hir2_sketch;
+mod hir2_sketch;
 
 /// A translator from the linearized Wasm component model to the Miden IR component
-pub struct ComponentTranslator2<'a> {
+pub struct ComponentTranslator<'a> {
     /// The translation configuration
     config: &'a WasmTranslationConfig,
 
@@ -63,7 +62,7 @@ pub struct ComponentTranslator2<'a> {
     context: Rc<Context>,
 }
 
-impl<'a> ComponentTranslator2<'a> {
+impl<'a> ComponentTranslator<'a> {
     pub fn new(
         nested_modules: &'a PrimaryMap<StaticModuleIndex, ParsedModule<'a>>,
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
@@ -537,6 +536,13 @@ impl<'a> ComponentTranslator2<'a> {
         // self.result.add_import(import_component);
         Ok(())
     }
+}
+
+fn convert_lifted_func_ty(
+    type_func_idx: &TypeFuncIndex,
+    component_types: &super::ComponentTypes,
+) -> FunctionType {
+    todo!("implement as in original frontend")
 }
 
 fn import_component_export_func(

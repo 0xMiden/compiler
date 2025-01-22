@@ -1,12 +1,9 @@
-use std::rc::Rc;
-
 use midenc_hir::diagnostics::Report;
-use midenc_hir2::{dialects::builtin::BuiltinDialect, Context};
 use midenc_session::Session;
 
 use super::{
-    inline, translator::ComponentTranslator, translator2::ComponentTranslator2,
-    ComponentTypesBuilder, LinearComponentTranslation, ParsedRootComponent,
+    inline, translator::ComponentTranslator, ComponentTypesBuilder, LinearComponentTranslation,
+    ParsedRootComponent,
 };
 use crate::{
     component::ComponentParser, error::WasmResult, supported_component_model_features,
@@ -63,24 +60,4 @@ fn inline(
     )
     .map_err(Report::msg)?;
     Ok(component_dfg.finish())
-}
-
-/// Translate a Wasm component binary into Miden IR component
-pub fn translate_component2(
-    wasm: &[u8],
-    config: &WasmTranslationConfig,
-    context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
-    let (mut component_types_builder, parsed_root_component) =
-        parse(config, wasm, &context.session)?;
-    let dialect = context.get_or_register_dialect::<BuiltinDialect>();
-    dialect.expect_registered_name::<midenc_hir2::dialects::builtin::Component>();
-    // context.get_or_register_dialect::<HirDialect>();
-    let translator = ComponentTranslator2::new(
-        &parsed_root_component.static_modules,
-        &parsed_root_component.static_components,
-        config,
-        context,
-    );
-    translator.translate2(&parsed_root_component.root_component, &mut component_types_builder)
 }

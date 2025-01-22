@@ -830,7 +830,7 @@ impl<'a> Inliner<'a> {
                 frame.components.push(frame.closed_over_component(idx));
             }
 
-            Export(_, item) => match item {
+            Export(_name, item) => match item {
                 ComponentItem::Func(i) => {
                     frame.component_funcs.push(frame.component_funcs[*i].clone());
                 }

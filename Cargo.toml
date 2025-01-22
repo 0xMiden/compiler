@@ -4,6 +4,7 @@ members = [
     "codegen/*",
     "dialects/*",
     "frontend-wasm",
+    "frontend-wasm2",
     "hir",
     "hir2",
     "hir-analysis",

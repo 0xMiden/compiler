@@ -4,6 +4,8 @@
 #![deny(warnings)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+// TODO: remove when completed
+#![allow(unused)]
 
 extern crate alloc;
 
@@ -20,9 +22,11 @@ mod translation_utils;
 #[cfg(test)]
 mod test_utils;
 
+use std::rc::Rc;
+
 use component::build_ir::translate_component;
 use error::WasmResult;
-use midenc_session::Session;
+use midenc_hir2::Context;
 use module::build_ir::translate_module_as_component;
 use wasmparser::WasmFeatures;
 
@@ -33,14 +37,14 @@ pub use self::{config::*, error::WasmError};
 pub fn translate(
     wasm: &[u8],
     config: &WasmTranslationConfig,
-    session: &Session,
-) -> WasmResult<midenc_hir::Component> {
+    context: Rc<Context>,
+) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
     if wasm[4..8] == [0x01, 0x00, 0x00, 0x00] {
         // Wasm core module
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
-        translate_module_as_component(wasm, config, session)
+        translate_module_as_component(wasm, config, context)
     } else {
-        translate_component(wasm, config, session)
+        translate_component(wasm, config, context)
     }
 }
 

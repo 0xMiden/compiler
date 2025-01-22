@@ -250,3 +250,14 @@ fn rust_sdk_hir2_single_interface_export() {
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
 }
+
+#[test]
+fn pure_rust_hir2() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
+    let artifact_name = test.artifact_name().to_string();
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+}

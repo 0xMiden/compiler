@@ -4,11 +4,8 @@
 //! translate the component model.
 
 pub mod build_ir;
-mod dfg;
-pub mod info;
-mod inline;
 mod parser;
 mod translator;
 mod types;
 
-pub use self::{info::*, parser::*, types::*};
+pub use self::{parser::*, types::*};

@@ -3381,6 +3381,30 @@ dependencies = [
  "miden-thiserror",
  "midenc-hir",
  "midenc-hir-type",
+ "midenc-session",
+ "rustc-hash",
+ "smallvec",
+ "wasmparser 0.214.0",
+ "wat",
+]
+
+[[package]]
+name = "midenc-frontend-wasm2"
+version = "0.0.7"
+dependencies = [
+ "addr2line",
+ "anyhow",
+ "derive_more",
+ "expect-test",
+ "gimli",
+ "hashbrown 0.14.5",
+ "indexmap 2.5.0",
+ "log",
+ "miden-core",
+ "miden-thiserror",
+ "midenc-dialect-hir",
+ "midenc-hir",
+ "midenc-hir-type",
  "midenc-hir2",
  "midenc-session",
  "rustc-hash",
