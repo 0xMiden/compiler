@@ -20,7 +20,7 @@ use midenc_hir2::{
 };
 
 pub use self::{
-    builders::{DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase},
+    builders::{FunctionBuilder, InstBuilder, InstBuilderBase},
     ops::*,
 };
 

@@ -4,6 +4,7 @@ pub mod mem;
 use std::{collections::HashSet, sync::OnceLock};
 
 use midenc_hir::{FunctionIdent, FunctionType, SourceSpan, Symbol, Value};
+use midenc_hir2::ValueRef;
 
 use crate::module::function_builder_ext::FunctionBuilderExt;
 
@@ -25,10 +26,10 @@ fn modules() -> &'static HashSet<&'static str> {
 /// Convert a call to a Miden intrinsic function into instruction(s)
 pub fn convert_intrinsics_call(
     func_id: FunctionIdent,
-    args: &[Value],
+    args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
-) -> Vec<Value> {
+) -> Vec<ValueRef> {
     match func_id.module.as_symbol().as_str() {
         mem::MODULE_ID => mem::convert_mem_intrinsics(func_id, args, builder, span),
         felt::MODULE_ID => felt::convert_felt_intrinsics(func_id, args, builder, span),

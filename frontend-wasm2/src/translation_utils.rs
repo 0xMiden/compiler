@@ -4,6 +4,7 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, SourceSpan},
     AbiParam, CallConv, Felt, FieldElement, InstBuilder, Linkage, Signature, Value,
 };
+use midenc_hir2::ValueRef;
 use midenc_hir_type::{FunctionType, Type};
 
 use crate::{
@@ -106,33 +107,34 @@ pub fn emit_zero(
     ty: &Type,
     builder: &mut FunctionBuilderExt,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<Value> {
-    Ok(match ty {
-        Type::I1 => builder.ins().i1(false, SourceSpan::default()),
-        Type::I8 => builder.ins().i8(0, SourceSpan::default()),
-        Type::I16 => builder.ins().i16(0, SourceSpan::default()),
-        Type::I32 => builder.ins().i32(0, SourceSpan::default()),
-        Type::I64 => builder.ins().i64(0, SourceSpan::default()),
-        Type::U8 => builder.ins().u8(0, SourceSpan::default()),
-        Type::U16 => builder.ins().u16(0, SourceSpan::default()),
-        Type::U32 => builder.ins().u32(0, SourceSpan::default()),
-        Type::U64 => builder.ins().u64(0, SourceSpan::default()),
-        Type::F64 => builder.ins().f64(0.0, SourceSpan::default()),
-        Type::Felt => builder.ins().felt(Felt::ZERO, SourceSpan::default()),
-        Type::I128
-        | Type::U128
-        | Type::U256
-        | Type::Ptr(_)
-        | Type::NativePtr(..)
-        | Type::Struct(_)
-        | Type::Array(..)
-        | Type::List(_)
-        | Type::Unknown
-        | Type::Unit
-        | Type::Never => {
-            unsupported_diag!(diagnostics, "cannot emit zero value for type: {:?}", ty);
-        }
-    })
+) -> WasmResult<ValueRef> {
+    todo!()
+    // Ok(match ty {
+    //     Type::I1 => builder.ins().i1(false, SourceSpan::default()),
+    //     Type::I8 => builder.ins().i8(0, SourceSpan::default()),
+    //     Type::I16 => builder.ins().i16(0, SourceSpan::default()),
+    //     Type::I32 => builder.ins().i32(0, SourceSpan::default()),
+    //     Type::I64 => builder.ins().i64(0, SourceSpan::default()),
+    //     Type::U8 => builder.ins().u8(0, SourceSpan::default()),
+    //     Type::U16 => builder.ins().u16(0, SourceSpan::default()),
+    //     Type::U32 => builder.ins().u32(0, SourceSpan::default()),
+    //     Type::U64 => builder.ins().u64(0, SourceSpan::default()),
+    //     Type::F64 => builder.ins().f64(0.0, SourceSpan::default()),
+    //     Type::Felt => builder.ins().felt(Felt::ZERO, SourceSpan::default()),
+    //     Type::I128
+    //     | Type::U128
+    //     | Type::U256
+    //     | Type::Ptr(_)
+    //     | Type::NativePtr(..)
+    //     | Type::Struct(_)
+    //     | Type::Array(..)
+    //     | Type::List(_)
+    //     | Type::Unknown
+    //     | Type::Unit
+    //     | Type::Never => {
+    //         unsupported_diag!(diagnostics, "cannot emit zero value for type: {:?}", ty);
+    //     }
+    // })
 }
 
 pub fn sig_from_func_type(

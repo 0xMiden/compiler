@@ -74,17 +74,13 @@ pub fn translate_module_as_component(
             .create::<Component, (Ident, Ident, Version)>(Default::default())(ns, name, ver)
         .unwrap();
     let mut cb = ComponentBuilder::new(component_ref);
-    let mut module_ref =
-        cb.define_module(Ident::from(parsed_module.module.name().as_str())).unwrap();
+    let mut module_ref = cb
+        .define_module(Ident::from(parsed_module.module.name().as_str()))
+        .unwrap()
+        .borrow_mut();
+    let module = module_ref.as_mut().downcast_mut::<Module>().unwrap();
 
-    build_ir_module(
-        &mut parsed_module,
-        &module_types,
-        &mut module_state,
-        config,
-        context,
-        module_ref,
-    )?;
+    build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context, module)?;
 
     // TODO: translate core module imports (create empty Components?)
     //
@@ -118,15 +114,14 @@ pub fn build_ir_module(
     module_state: &mut ModuleTranslationState,
     _config: &WasmTranslationConfig,
     context: Rc<Context>,
-    module_ref: ModuleRef,
+    module_ref: &mut Module,
 ) -> WasmResult<()> {
     let memory_size = parsed_module
         .module
         .memories
         .get(MemoryIndex::from_u32(0))
         .map(|mem| mem.minimum as u32);
-    let mut module_builder =
-        ModuleBuilder::new(module_ref.borrow_mut().as_mut().downcast_mut::<Module>().unwrap());
+    let mut module_builder = ModuleBuilder::new(module_ref);
     // if let Some(memory_size) = memory_size {
     // module_builder.with_reserved_memory_pages(memory_size);
     // }
@@ -169,17 +164,17 @@ pub fn build_ir_module(
             Linkage::Internal
         };
         let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, linkage);
-        let function_ref =
-            module_builder.define_function(Ident::from(func_name.as_str()), sig).unwrap();
-        let mut module_func_builder = FunctionBuilder::new(
-            function_ref.borrow_mut().as_mut().downcast_mut::<Function>().unwrap(),
-        );
+        let mut function_ref = module_builder
+            .define_function(Ident::from(func_name.as_str()), sig)
+            .unwrap()
+            .borrow_mut();
+        let func = function_ref.as_mut().downcast_mut::<Function>().unwrap();
         // let mut module_func_builder = module_builder.function(func_name.as_str(), sig.clone())?;
         let FunctionBodyData { validator, body } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
         func_translator.translate_body(
             &body,
-            &mut module_func_builder,
+            func,
             module_state,
             parsed_module,
             module_types,

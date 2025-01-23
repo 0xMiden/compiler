@@ -5,7 +5,9 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use midenc_hir::{diagnostics::SourceSpan, Block, Inst, InstBuilder, Signature, Value};
+use midenc_dialect_hir::InstBuilder;
+use midenc_hir::{diagnostics::SourceSpan, Block, Inst};
+use midenc_hir2::{BlockRef, Signature, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;
@@ -26,7 +28,7 @@ pub enum ElseData {
         branch_inst: Inst,
 
         /// The placeholder block we're replacing.
-        placeholder: Block,
+        placeholder: BlockRef,
     },
 
     /// We have already allocated an `else` block.
@@ -37,23 +39,23 @@ pub enum ElseData {
     /// these cases, we pre-allocate the `else` block.
     WithElse {
         /// This is the `else` block.
-        else_block: Block,
+        else_block: BlockRef,
     },
 }
 
 /// A control stack frame can be an `if`, a `block` or a `loop`, each one having the following
 /// fields:
 ///
-/// - `destination`: reference to the `Block` that will hold the code after the control block;
+/// - `destination`: reference to the `BlockRef` that will hold the code after the control block;
 /// - `num_return_values`: number of values returned by the control block;
 /// - `original_stack_size`: size of the value stack at the beginning of the control block.
 ///
-/// The `loop` frame has a `header` field that references the `Block` that contains the beginning
+/// The `loop` frame has a `header` field that references the `BlockRef` that contains the beginning
 /// of the body of the loop.
 #[derive(Debug)]
 pub enum ControlStackFrame {
     If {
-        destination: Block,
+        destination: BlockRef,
         else_data: ElseData,
         num_param_values: usize,
         num_return_values: usize,
@@ -73,15 +75,15 @@ pub enum ControlStackFrame {
         // `state.reachable` when we hit the `end` in the `if .. else .. end`.
     },
     Block {
-        destination: Block,
+        destination: BlockRef,
         num_param_values: usize,
         num_return_values: usize,
         original_stack_size: usize,
         exit_is_branched_to: bool,
     },
     Loop {
-        destination: Block,
-        header: Block,
+        destination: BlockRef,
+        header: BlockRef,
         num_param_values: usize,
         num_return_values: usize,
         original_stack_size: usize,
@@ -118,7 +120,7 @@ impl ControlStackFrame {
         }
     }
 
-    pub fn following_code(&self) -> Block {
+    pub fn following_code(&self) -> BlockRef {
         match *self {
             Self::If { destination, .. }
             | Self::Block { destination, .. }
@@ -126,7 +128,7 @@ impl ControlStackFrame {
         }
     }
 
-    pub fn br_destination(&self) -> Block {
+    pub fn br_destination(&self) -> BlockRef {
         match *self {
             Self::If { destination, .. } | Self::Block { destination, .. } => destination,
             Self::Loop { header, .. } => header,
@@ -189,14 +191,14 @@ impl ControlStackFrame {
 
     /// Pop values from the value stack so that it is left at the
     /// input-parameters to an else-block.
-    pub fn truncate_value_stack_to_else_params(&self, stack: &mut Vec<Value>) {
+    pub fn truncate_value_stack_to_else_params(&self, stack: &mut Vec<ValueRef>) {
         debug_assert!(matches!(self, &ControlStackFrame::If { .. }));
         stack.truncate(self.original_stack_size());
     }
 
     /// Pop values from the value stack so that it is left at the state it was
     /// before this control-flow frame.
-    pub fn truncate_value_stack_to_original_size(&self, stack: &mut Vec<Value>) {
+    pub fn truncate_value_stack_to_original_size(&self, stack: &mut Vec<ValueRef>) {
         // The "If" frame pushes its parameters twice, so they're available to the else block
         // (see also `FuncTranslationState::push_if`).
         // Yet, the original_stack_size member accounts for them only once, so that the else
@@ -223,7 +225,7 @@ impl ControlStackFrame {
 pub struct FuncTranslationState {
     /// A stack of values corresponding to the active values in the input wasm function at this
     /// point.
-    pub(crate) stack: Vec<Value>,
+    pub(crate) stack: Vec<ValueRef>,
     /// A stack of active control flow operations at this point in the input wasm function.
     pub(crate) control_stack: Vec<ControlStackFrame>,
     /// Is the current translation state still reachable? This is false when translating operators
@@ -251,23 +253,23 @@ impl FuncTranslationState {
     ///
     /// This resets the state to containing only a single block representing the whole function.
     /// The exit block is the last block in the function which will contain the return instruction.
-    pub(crate) fn initialize(&mut self, sig: &Signature, exit_block: Block) {
+    pub(crate) fn initialize(&mut self, sig: &Signature, exit_block: BlockRef) {
         self.clear();
         self.push_block(exit_block, 0, sig.results().len());
     }
 
     /// Push a value.
-    pub(crate) fn push1(&mut self, val: Value) {
+    pub(crate) fn push1(&mut self, val: ValueRef) {
         self.stack.push(val);
     }
 
     /// Push multiple values.
-    pub(crate) fn pushn(&mut self, vals: &[Value]) {
+    pub(crate) fn pushn(&mut self, vals: &[ValueRef]) {
         self.stack.extend_from_slice(vals);
     }
 
     /// Pop one value.
-    pub(crate) fn pop1(&mut self) -> Value {
+    pub(crate) fn pop1(&mut self) -> ValueRef {
         self.stack.pop().expect("attempted to pop a value from an empty stack")
     }
 
@@ -277,13 +279,14 @@ impl FuncTranslationState {
         ty: Type,
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
-    ) -> Value {
-        let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
-        if builder.data_flow_graph().value_type(val) != &ty {
-            builder.ins().cast(val, ty, span)
-        } else {
-            val
-        }
+    ) -> ValueRef {
+        todo!()
+        // let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
+        // if builder.data_flow_graph().value_type(val) != &ty {
+        //     builder.ins().cast(val, ty, span)
+        // } else {
+        //     val
+        // }
     }
 
     /// Pop one value and bitcast it to the specified type.
@@ -292,22 +295,23 @@ impl FuncTranslationState {
         ty: Type,
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
-    ) -> Value {
-        let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
-        if builder.data_flow_graph().value_type(val) != &ty {
-            builder.ins().bitcast(val, ty, span)
-        } else {
-            val
-        }
+    ) -> ValueRef {
+        todo!()
+        // let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
+        // if builder.data_flow_graph().value_type(val) != &ty {
+        //     builder.ins().bitcast(val, ty, span)
+        // } else {
+        //     val
+        // }
     }
 
     /// Peek at the top of the stack without popping it.
-    pub(crate) fn peek1(&self) -> Value {
+    pub(crate) fn peek1(&self) -> ValueRef {
         *self.stack.last().expect("attempted to peek at a value on an empty stack")
     }
 
     /// Pop two values. Return them in the order they were pushed.
-    pub(crate) fn pop2(&mut self) -> (Value, Value) {
+    pub(crate) fn pop2(&mut self) -> (ValueRef, ValueRef) {
         let v2 = self.stack.pop().unwrap();
         let v1 = self.stack.pop().unwrap();
         (v1, v2)
@@ -319,20 +323,21 @@ impl FuncTranslationState {
         ty: Type,
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
-    ) -> (Value, Value) {
-        let v2 = self.stack.pop().unwrap();
-        let v1 = self.stack.pop().unwrap();
-        let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
-            builder.ins().cast(v1, ty.clone(), span)
-        } else {
-            v1
-        };
-        let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
-            builder.ins().cast(v2, ty, span)
-        } else {
-            v2
-        };
-        (v1, v2)
+    ) -> (ValueRef, ValueRef) {
+        todo!()
+        // let v2 = self.stack.pop().unwrap();
+        // let v1 = self.stack.pop().unwrap();
+        // let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
+        //     builder.ins().cast(v1, ty.clone(), span)
+        // } else {
+        //     v1
+        // };
+        // let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
+        //     builder.ins().cast(v2, ty, span)
+        // } else {
+        //     v2
+        // };
+        // (v1, v2)
     }
 
     /// Pop two values. Bitcast them to the specified type. Return them in the order they were
@@ -342,24 +347,25 @@ impl FuncTranslationState {
         ty: Type,
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
-    ) -> (Value, Value) {
-        let v2 = self.stack.pop().unwrap();
-        let v1 = self.stack.pop().unwrap();
-        let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
-            builder.ins().bitcast(v1, ty.clone(), span)
-        } else {
-            v1
-        };
-        let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
-            builder.ins().bitcast(v2, ty, span)
-        } else {
-            v2
-        };
-        (v1, v2)
+    ) -> (ValueRef, ValueRef) {
+        todo!()
+        // let v2 = self.stack.pop().unwrap();
+        // let v1 = self.stack.pop().unwrap();
+        // let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
+        //     builder.ins().bitcast(v1, ty.clone(), span)
+        // } else {
+        //     v1
+        // };
+        // let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
+        //     builder.ins().bitcast(v2, ty, span)
+        // } else {
+        //     v2
+        // };
+        // (v1, v2)
     }
 
     /// Pop three values. Return them in the order they were pushed.
-    pub(crate) fn pop3(&mut self) -> (Value, Value, Value) {
+    pub(crate) fn pop3(&mut self) -> (ValueRef, ValueRef, ValueRef) {
         let v3 = self.stack.pop().unwrap();
         let v2 = self.stack.pop().unwrap();
         let v1 = self.stack.pop().unwrap();
@@ -388,13 +394,13 @@ impl FuncTranslationState {
     }
 
     /// Peek at the top `n` values on the stack in the order they were pushed.
-    pub(crate) fn peekn(&self, n: usize) -> &[Value] {
+    pub(crate) fn peekn(&self, n: usize) -> &[ValueRef] {
         self.ensure_length_is_at_least(n);
         &self.stack[self.stack.len() - n..]
     }
 
     /// Peek at the top `n` values on the stack in the order they were pushed.
-    pub(crate) fn peekn_mut(&mut self, n: usize) -> &mut [Value] {
+    pub(crate) fn peekn_mut(&mut self, n: usize) -> &mut [ValueRef] {
         self.ensure_length_is_at_least(n);
         let len = self.stack.len();
         &mut self.stack[len - n..]
@@ -403,7 +409,7 @@ impl FuncTranslationState {
     /// Push a block on the control stack.
     pub(crate) fn push_block(
         &mut self,
-        following_code: Block,
+        following_code: BlockRef,
         num_param_types: usize,
         num_result_types: usize,
     ) {
@@ -420,8 +426,8 @@ impl FuncTranslationState {
     /// Push a loop on the control stack.
     pub(crate) fn push_loop(
         &mut self,
-        header: Block,
-        following_code: Block,
+        header: BlockRef,
+        following_code: BlockRef,
         num_param_types: usize,
         num_result_types: usize,
     ) {
@@ -438,7 +444,7 @@ impl FuncTranslationState {
     /// Push an if on the control stack.
     pub(crate) fn push_if(
         &mut self,
-        destination: Block,
+        destination: BlockRef,
         else_data: ElseData,
         num_param_types: usize,
         num_result_types: usize,

@@ -2,8 +2,8 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, SourceSpan},
     FunctionIdent, Immediate, InstBuilder,
     Type::*,
-    Value,
 };
+use midenc_hir2::ValueRef;
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;
@@ -64,11 +64,11 @@ fn get_transform_strategy(module_id: &str, function_id: &str) -> TransformStrate
 /// Transform a function call based on the transformation strategy
 pub fn transform_miden_abi_call(
     func_id: FunctionIdent,
-    args: &[Value],
+    args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
     diagnostics: &DiagnosticsHandler,
-) -> Vec<Value> {
+) -> Vec<ValueRef> {
     use TransformStrategy::*;
     match get_transform_strategy(func_id.module.as_str(), func_id.function.as_str()) {
         ListReturn => list_return(func_id, args, builder, span, diagnostics),
@@ -81,11 +81,11 @@ pub fn transform_miden_abi_call(
 #[inline(always)]
 pub fn no_transform(
     func_id: FunctionIdent,
-    args: &[Value],
+    args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
-) -> Vec<Value> {
+) -> Vec<ValueRef> {
     let call = builder.ins().exec(func_id, args, span);
     let results = builder.inst_results(call);
     results.to_vec()
@@ -94,11 +94,11 @@ pub fn no_transform(
 /// The Miden ABI function returns a length and a pointer and we only want the length
 pub fn list_return(
     func_id: FunctionIdent,
-    args: &[Value],
+    args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
-) -> Vec<Value> {
+) -> Vec<ValueRef> {
     let call = builder.ins().exec(func_id, args, span);
     let results = builder.inst_results(call);
     assert_eq!(results.len(), 2, "List return strategy expects 2 results: length and pointer");
@@ -109,11 +109,11 @@ pub fn list_return(
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
 pub fn return_via_pointer(
     func_id: FunctionIdent,
-    args: &[Value],
+    args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
-) -> Vec<Value> {
+) -> Vec<ValueRef> {
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
     let call = builder.ins().exec(func_id, args_wo_pointer, span);

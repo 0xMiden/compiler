@@ -13,35 +13,36 @@ use crate::{
 };
 
 fn check_unsupported(op: &Operator) {
-    let context = test_context();
-    let mod_name = "noname";
-    let module_info = Module::default();
-    let mut module_builder = ModuleBuilder::new(mod_name);
-    let sig = Signature {
-        params: vec![],
-        results: vec![],
-        cc: CallConv::SystemV,
-        linkage: Linkage::External,
-    };
-    let mut module_func_builder = module_builder.function("func_name", sig.clone()).unwrap();
-    let mut fb_ctx = FunctionBuilderContext::new();
-    let mod_types = Default::default();
-    let mut state = FuncTranslationState::new();
-    let mut builder_ext = FunctionBuilderExt::new(&mut module_func_builder, &mut fb_ctx);
-    let mut module_state =
-        ModuleTranslationState::new(&module_info, &mod_types, vec![], &context.session.diagnostics);
-    let result = translate_operator(
-        op,
-        &mut builder_ext,
-        &mut state,
-        &mut module_state,
-        &module_info,
-        &mod_types,
-        &context.session.diagnostics,
-        SourceSpan::default(),
-    );
-    assert!(result.is_err(), "Expected unsupported op error for {:?}", op);
-    assert_eq!(result.unwrap_err().to_string(), format!("Wasm op {:?} is not supported", op));
+    todo!()
+    // let context = test_context();
+    // let mod_name = "noname";
+    // let module_info = Module::default();
+    // let mut module_builder = ModuleBuilder::new(mod_name);
+    // let sig = Signature {
+    //     params: vec![],
+    //     results: vec![],
+    //     cc: CallConv::SystemV,
+    //     linkage: Linkage::External,
+    // };
+    // let mut module_func_builder = module_builder.function("func_name", sig.clone()).unwrap();
+    // let mut fb_ctx = FunctionBuilderContext::new();
+    // let mod_types = Default::default();
+    // let mut state = FuncTranslationState::new();
+    // let mut builder_ext = FunctionBuilderExt::new(&mut module_func_builder, &mut fb_ctx);
+    // let mut module_state =
+    //     ModuleTranslationState::new(&module_info, &mod_types, vec![], &context.session.diagnostics);
+    // let result = translate_operator(
+    //     op,
+    //     &mut builder_ext,
+    //     &mut state,
+    //     &mut module_state,
+    //     &module_info,
+    //     &mod_types,
+    //     &context.session.diagnostics,
+    //     SourceSpan::default(),
+    // );
+    // assert!(result.is_err(), "Expected unsupported op error for {:?}", op);
+    // assert_eq!(result.unwrap_err().to_string(), format!("Wasm op {:?} is not supported", op));
 }
 
 // Wasm Spec v1.0

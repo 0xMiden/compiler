@@ -6,11 +6,15 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
+use std::{cell::RefCell, rc::Rc};
+
+use midenc_dialect_hir::{FunctionBuilder, InstBuilder};
 use midenc_hir::{
     cranelift_entity::EntityRef,
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
-    Block, InstBuilder, ModuleFunctionBuilder,
+    Block, ModuleFunctionBuilder,
 };
+use midenc_hir2::{dialects::builtin::Function, BlockRef};
 use midenc_session::Session;
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
@@ -34,7 +38,7 @@ use crate::{
 /// by a `FuncEnvironment` object. A single translator instance can be reused to translate multiple
 /// functions which will reduce heap allocation traffic.
 pub struct FuncTranslator {
-    func_ctx: FunctionBuilderContext,
+    func_ctx: Rc<RefCell<FunctionBuilderContext>>,
     state: FuncTranslationState,
 }
 
@@ -42,7 +46,7 @@ impl FuncTranslator {
     /// Create a new translator.
     pub fn new() -> Self {
         Self {
-            func_ctx: FunctionBuilderContext::new(),
+            func_ctx: Rc::new(RefCell::new(FunctionBuilderContext::new())),
             state: FuncTranslationState::new(),
         }
     }
@@ -52,7 +56,8 @@ impl FuncTranslator {
     pub fn translate_body(
         &mut self,
         body: &FunctionBody<'_>,
-        mod_func_builder: &mut ModuleFunctionBuilder,
+        // mod_func_builder: &mut FunctionBuilder<'_>,
+        func: &mut Function,
         module_state: &mut ModuleTranslationState,
         module: &ParsedModule<'_>,
         mod_types: &ModuleTypes,
@@ -60,7 +65,7 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
     ) -> WasmResult<()> {
-        let mut builder = FunctionBuilderExt::new(mod_func_builder, &mut self.func_ctx);
+        let mut builder = FunctionBuilderExt::new(func, self.func_ctx.clone());
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.
 
@@ -103,7 +108,7 @@ impl FuncTranslator {
 /// Declare local variables for the signature parameters that correspond to WebAssembly locals.
 ///
 /// Return the number of local variables declared.
-fn declare_parameters(builder: &mut FunctionBuilderExt, entry_block: Block) -> usize {
+fn declare_parameters(builder: &mut FunctionBuilderExt, entry_block: BlockRef) -> usize {
     let sig_len = builder.signature().params().len();
     let mut next_local = 0;
     for i in 0..sig_len {
@@ -168,9 +173,9 @@ fn declare_locals(
 /// This assumes that the local variable declarations have already been parsed and function
 /// arguments and locals are declared in the builder.
 #[allow(clippy::too_many_arguments)]
-fn parse_function_body(
+fn parse_function_body<'a: 'b, 'b>(
     reader: &mut wasmparser::OperatorsReader<'_>,
-    builder: &mut FunctionBuilderExt,
+    builder: &'a mut FunctionBuilderExt<'b>,
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &ParsedModule<'_>,
@@ -204,14 +209,14 @@ fn parse_function_body(
                 } else {
                     log::debug!(
                         "failed to locate span for instruction at offset {offset} in function {}",
-                        builder.id()
+                        builder.name()
                     );
                 }
             }
         } else {
             log::debug!(
                 "failed to locate span for instruction at offset {offset} in function {}",
-                builder.id()
+                builder.name()
             );
         }
 
