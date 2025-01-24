@@ -17,10 +17,10 @@ use midenc_dialect_hir::InstBuilder;
 use midenc_hir::{
     cranelift_entity::packed_option::ReservedValue,
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan},
-    Block, FieldElement, Immediate, Inst, Type,
+    Block, FieldElement, Inst, Type,
     Type::*,
 };
-use midenc_hir2::{BlockRef, ValueRef};
+use midenc_hir2::{BlockRef, Immediate, ValueRef};
 use wasmparser::{MemArg, Operator};
 
 use crate::{
@@ -199,8 +199,8 @@ pub fn translate_operator(
                 let src_i32 = state.pop1();
                 let dst_i32 = state.pop1();
                 let count = builder.ins().bitcast(count_i32, Type::U32, span)?;
-                let dst = prepare_addr(dst_i32, &U8, None, builder, span);
-                let src = prepare_addr(src_i32, &U8, None, builder, span);
+                let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
+                let src = prepare_addr(src_i32, &U8, None, builder, span)?;
                 builder.ins().memcpy(src, dst, count, span);
             } else {
                 unsupported_diag!(diagnostics, "MemoryCopy: only single memory is supported");
@@ -216,7 +216,7 @@ pub fn translate_operator(
             let dst_i32 = state.pop1();
             let value = builder.ins().trunc(value, Type::U8, span)?;
             let num_bytes = builder.ins().bitcast(num_bytes, Type::U32, span)?;
-            let dst = prepare_addr(dst_i32, &U8, None, builder, span);
+            let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
             builder.ins().memset(dst, num_bytes, value, span);
         }
         /******************************* Load instructions ***********************************/
@@ -250,9 +250,9 @@ pub fn translate_operator(
         Operator::I64Load32U { memarg } => {
             translate_load_zext(U32, I64, memarg, state, builder, span)?;
         }
-        Operator::I32Load { memarg } => translate_load(I32, memarg, state, builder, span),
-        Operator::I64Load { memarg } => translate_load(I64, memarg, state, builder, span),
-        Operator::F32Load { memarg } => translate_load(Felt, memarg, state, builder, span),
+        Operator::I32Load { memarg } => translate_load(I32, memarg, state, builder, span)?,
+        Operator::I64Load { memarg } => translate_load(I64, memarg, state, builder, span)?,
+        Operator::F32Load { memarg } => translate_load(Felt, memarg, state, builder, span)?,
         /****************************** Store instructions ***********************************/
         Operator::I32Store { memarg } => translate_store(I32, memarg, state, builder, span)?,
         Operator::I64Store { memarg } => translate_store(I64, memarg, state, builder, span)?,
@@ -410,7 +410,7 @@ pub fn translate_operator(
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();
-            state.push1(builder.ins().div_unchecked(arg1, arg2, span)?);
+            state.push1(builder.ins().div_unchecked(arg1, arg2, span));
         }
         Operator::I32DivU => {
             let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span);
@@ -555,10 +555,11 @@ fn translate_load(
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
-) {
+) -> WasmResult<()> {
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span);
+    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     state.push1(builder.ins().load(addr, span));
+    Ok(())
 }
 
 fn translate_load_sext(
@@ -570,7 +571,7 @@ fn translate_load_sext(
     span: SourceSpan,
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span);
+    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     let val = builder.ins().load(addr, span);
     let sext_val = builder.ins().sext(val, sext_ty, span)?;
     state.push1(sext_val);
@@ -587,7 +588,7 @@ fn translate_load_zext(
 ) -> WasmResult<()> {
     assert!(ptr_ty.is_unsigned_integer());
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span);
+    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     let val = builder.ins().load(addr, span);
     let sext_val = builder.ins().zext(val, zext_ty, span)?;
     state.push1(sext_val);
@@ -616,7 +617,7 @@ fn translate_store(
     } else {
         val
     };
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span);
+    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     builder.ins().store(addr, arg, span);
     Ok(())
 }

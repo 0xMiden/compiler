@@ -213,6 +213,14 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
     }
     */
 
+    fn i32(&self, value: i32, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
+    fn i64(&self, value: i64, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.
@@ -253,16 +261,19 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
             offset,
         })
     }
+    */
 
     /// Get the address of a global variable whose symbol is `name`
     ///
     /// The type of the pointer produced is given as `ty`. It is up to the caller
     /// to ensure that loading memory from that pointer is valid for the provided
     /// type.
-    fn symbol_addr<S: AsRef<str>>(self, name: S, ty: Type, span: SourceSpan) -> Value {
-        self.symbol_relative_addr(name, 0, ty, span)
+    fn symbol_addr<S: AsRef<str>>(self, name: S, ty: Type, span: SourceSpan) -> ValueRef {
+        todo!()
+        // self.symbol_relative_addr(name, 0, ty, span)
     }
 
+    /*
     /// Same semantics as `symbol_addr`, but applies a constant offset to the address of the given
     /// symbol.
     ///
@@ -281,16 +292,19 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         });
         into_first_result!(self.Global(gv, ty, span))
     }
+    */
 
     /// Loads a value of type `ty` from the global variable whose symbol is `name`.
     ///
     /// NOTE: There is no requirement that the memory contents at the given symbol
     /// contain a valid value of type `ty`. That is left entirely up the caller to
     /// guarantee at a higher level.
-    fn load_symbol<S: AsRef<str>>(self, name: S, ty: Type, span: SourceSpan) -> Value {
-        self.load_symbol_relative(name, ty, 0, span)
+    fn load_symbol<S: AsRef<str>>(self, name: S, ty: Type, span: SourceSpan) -> ValueRef {
+        todo!()
+        // self.load_symbol_relative(name, ty, 0, span)
     }
 
+    /*
     /// Same semantics as `load_symbol`, but a constant offset is applied to the address before
     /// issuing the load.
     fn load_symbol_relative<S: AsRef<str>>(
@@ -353,6 +367,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         }
     }
 
+
     /// Computes an address relative to the pointer produced by `base`, by applying an offset
     /// given by multiplying `offset` * the size in bytes of `unit_ty`.
     ///
@@ -401,19 +416,23 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         }
     }
 
+    */
+
     /// Loads a value of the type pointed to by the given pointer, on to the stack
     ///
     /// NOTE: This function will panic if `ptr` is not a pointer typed value
-    fn load(self, addr: Value, span: SourceSpan) -> Value {
-        let ty = require_pointee!(self, addr).clone();
-        let data = Instruction::Load(LoadOp {
-            op: Opcode::Load,
-            addr,
-            ty: ty.clone(),
-        });
-        into_first_result!(self.build(data, Type::Ptr(Box::new(ty)), span))
+    fn load(self, addr: ValueRef, span: SourceSpan) -> ValueRef {
+        todo!()
+        // let ty = require_pointee!(self, addr).clone();
+        // let data = Instruction::Load(LoadOp {
+        //     op: Opcode::Load,
+        //     addr,
+        //     ty: ty.clone(),
+        // });
+        // into_first_result!(self.build(data, Type::Ptr(Box::new(ty)), span))
     }
 
+    /*
     /// Loads a value from the given temporary (local variable), of the type associated with that
     /// local.
     fn load_local(self, local: LocalId, span: SourceSpan) -> Value {
@@ -425,21 +444,25 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         let ty = self.data_flow_graph().local_type(local).clone();
         into_first_result!(self.build(data, Type::Ptr(Box::new(ty)), span))
     }
+    */
 
     /// Stores `value` to the address given by `ptr`
     ///
     /// NOTE: This function will panic if the pointer and pointee types do not match
-    fn store(mut self, ptr: Value, value: Value, span: SourceSpan) -> Inst {
-        let pointee_ty = require_pointee!(self, ptr);
-        let value_ty = self.data_flow_graph().value_type(value);
-        assert_eq!(pointee_ty, value_ty, "expected value to be a {}, got {}", pointee_ty, value_ty);
-        let mut vlist = ValueList::default();
-        {
-            let dfg = self.data_flow_graph_mut();
-            vlist.extend([ptr, value], &mut dfg.value_lists);
-        }
-        self.PrimOp(Opcode::Store, Type::Unit, vlist, span).0
+    fn store(mut self, ptr: ValueRef, value: ValueRef, span: SourceSpan) -> ValueRef {
+        todo!()
+        // let pointee_ty = require_pointee!(self, ptr);
+        // let value_ty = self.data_flow_graph().value_type(value);
+        // assert_eq!(pointee_ty, value_ty, "expected value to be a {}, got {}", pointee_ty, value_ty);
+        // let mut vlist = ValueList::default();
+        // {
+        //     let dfg = self.data_flow_graph_mut();
+        //     vlist.extend([ptr, value], &mut dfg.value_lists);
+        // }
+        // self.PrimOp(Opcode::Store, Type::Unit, vlist, span).0
     }
+
+    /*
 
     /// Stores `value` to the given temporary (local variable).
     ///
@@ -461,6 +484,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         });
         self.build(data, Type::Unit, span).0
     }
+
     */
 
     /// Writes `count` copies of `value` to memory starting at address `dst`.
@@ -644,6 +668,10 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok((overflowed, result))
     }
 
+    fn add_imm_checked(&self, addr_u32: ValueRef, u32: Immediate, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
     /// Two's complement subtraction which traps on under/overflow
     fn sub(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Sub, _>(span);
@@ -747,11 +775,28 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn div_unchecked(&self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
     /// Integer Euclidean modulo. Traps if `rhs` is zero.
     fn r#mod(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Mod, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn r#mod_checked(&self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
+    fn mod_imm_unchecked(
+        &self,
+        full_addr_int: ValueRef,
+        u32: Immediate,
+        span: SourceSpan,
+    ) -> ValueRef {
+        todo!()
     }
 
     /// Combined integer Euclidean division and modulo. Traps if `rhs` is zero.
@@ -927,10 +972,18 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn eq_imm(&self, arg: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
+        todo!()
+    }
+
     fn neq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Neq, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn neq_imm(&self, cond: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
+        todo!()
     }
 
     /// Compares two integers and returns the minimum value
@@ -951,6 +1004,10 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         let op_builder = self.builder_mut().create::<crate::ops::Gt, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn gt_imm(&self, cond: ValueRef, zero: Immediate, span: SourceSpan) -> ValueRef {
+        todo!()
     }
 
     fn gte(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
@@ -1048,12 +1105,11 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         op_builder(cond, then_dest, then_args, else_dest, else_args)
     }
 
-    /*
     fn switch(self, arg: ValueRef, span: SourceSpan) -> SwitchBuilder<'f, Self> {
-        require_integer!(self, arg, Type::U32);
-        SwitchBuilder::new(self, arg, span)
+        todo!()
+        // require_integer!(self, arg, Type::U32);
+        // SwitchBuilder::new(self, arg, span)
     }
-     */
 
     fn ret(
         mut self,
