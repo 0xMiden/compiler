@@ -117,7 +117,7 @@ fn declare_parameters(builder: &mut FunctionBuilderExt, entry_block: BlockRef) -
         builder.declare_var(local, abi_param.ty.clone());
         next_local += 1;
 
-        let param_value = builder.block_params(entry_block)[i];
+        let param_value = entry_block.borrow().arguments()[i];
         builder.def_var(local, param_value);
     }
     next_local

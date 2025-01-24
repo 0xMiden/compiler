@@ -311,8 +311,8 @@ impl<'c> FunctionBuilderExt<'c> {
     /// Retrieves all the parameters for a `Block` currently inferred from the jump instructions
     /// inserted that target it and the SSA construction.
     pub fn block_params(&self, block: BlockRef) -> &[BlockArgumentRef] {
+        todo!("get via block.borrow().arguments()[i]")
         // block.borrow().arguments()
-        todo!()
     }
 
     /// Declares that all the predecessors of this block are known.
@@ -321,7 +321,7 @@ impl<'c> FunctionBuilderExt<'c> {
     /// created. Forgetting to call this method on every block will cause inconsistencies in the
     /// produced functions.
     pub fn seal_block(&mut self, block: BlockRef) {
-        todo!();
+        todo!()
         // let side_effects = self
         //     .func_ctx
         //     .borrow_mut()
@@ -399,12 +399,11 @@ impl<'c> FunctionBuilderExt<'c> {
     /// [`FunctionBuilderExt::use_var`]). This function will return an error if the variable
     /// has been previously declared.
     pub fn try_declare_var(&mut self, var: Variable, ty: Type) -> Result<(), DeclareVariableError> {
-        todo!()
-        // if self.func_ctx.types[var] != Type::Unknown {
-        //     return Err(DeclareVariableError::DeclaredMultipleTimes(var));
-        // }
-        // self.func_ctx.types[var] = ty;
-        // Ok(())
+        if self.func_ctx.borrow().types[var] != Type::Unknown {
+            return Err(DeclareVariableError::DeclaredMultipleTimes(var));
+        }
+        self.func_ctx.borrow_mut().types[var] = ty;
+        Ok(())
     }
 
     /// In order to use a variable (by calling [`FunctionBuilderExt::use_var`]), you need
@@ -458,38 +457,34 @@ impl<'c> FunctionBuilderExt<'c> {
     /// an error if the value supplied does not match the type the variable was
     /// declared to have.
     pub fn try_def_var(&mut self, var: Variable, val: ValueRef) -> Result<(), DefVariableError> {
-        todo!()
-        // let var_ty = self
-        //     .func_ctx
-        //     .types
-        //     .get(var)
-        //     .ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
-        // if var_ty != self.data_flow_graph().value_type(val) {
-        //     return Err(DefVariableError::TypeMismatch(var, val));
-        // }
-        //
-        // self.func_ctx.ssa.def_var(var, val, self.inner.current_block());
-        // Ok(())
+        let func_ctx = self.func_ctx.borrow();
+        let var_ty = func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
+        if var_ty != val.borrow().ty() {
+            return Err(DefVariableError::TypeMismatch(var, val));
+        }
+
+        todo!("ssa part below");
+        // self.func_ctx.borrow_mut().ssa.def_var(var, val, self.inner.current_block());
+        Ok(())
     }
 
     /// Register a new definition of a user variable. The type of the value must be
     /// the same as the type registered for the variable.
     pub fn def_var(&mut self, var: Variable, val: ValueRef) {
-        todo!()
-        // self.try_def_var(var, val).unwrap_or_else(|error| match error {
-        //     DefVariableError::TypeMismatch(var, val) => {
-        //         assert_eq!(
-        //             &self.func_ctx.types[var],
-        //             self.data_flow_graph().value_type(val),
-        //             "declared type of variable {:?} doesn't match type of value {}",
-        //             var,
-        //             val
-        //         );
-        //     }
-        //     DefVariableError::DefinedBeforeDeclared(var) => {
-        //         panic!("variable {:?} is used but its type has not been declared", var);
-        //     }
-        // })
+        self.try_def_var(var, val).unwrap_or_else(|error| match error {
+            DefVariableError::TypeMismatch(var, val) => {
+                assert_eq!(
+                    &self.func_ctx.borrow().types[var],
+                    val.borrow().ty(),
+                    "declared type of variable {:?} doesn't match type of value {}",
+                    var,
+                    val
+                );
+            }
+            DefVariableError::DefinedBeforeDeclared(var) => {
+                panic!("variable {:?} is used but its type has not been declared", var);
+            }
+        })
     }
 
     /// Returns `true` if and only if no instructions have been added since the last call to
