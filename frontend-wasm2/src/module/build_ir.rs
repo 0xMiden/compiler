@@ -7,12 +7,12 @@ use std::rc::Rc;
 use midenc_dialect_hir::FunctionBuilder;
 use midenc_hir::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
-    CallConv, ConstantData, Linkage, MidenAbiImport, Symbol,
+    ConstantData, MidenAbiImport, Symbol,
 };
 use midenc_hir2::{
     dialects::builtin::{Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef},
     version::Version,
-    BuilderExt, Context, Ident,
+    BuilderExt, CallConv, Context, Ident, Visibility,
 };
 use midenc_session::Session;
 use wasmparser::Validator;
@@ -20,7 +20,6 @@ use wasmparser::Validator;
 use super::{module_translation_state::ModuleTranslationState, MemoryIndex};
 use crate::{
     error::WasmResult,
-    intrinsics::is_miden_intrinsics_module,
     miden_abi::miden_abi_function_type,
     module::{
         func_translator::FuncTranslator,
@@ -158,12 +157,12 @@ pub fn build_ir_module(
         let func_name = &parsed_module.module.func_name(*func_index);
         let wasm_func_type = module_types[func_type.signature].clone();
         let ir_func_type = ir_func_type(&wasm_func_type, &context.session.diagnostics)?;
-        let linkage = if parsed_module.module.is_exported_function(func_index) {
-            Linkage::External
+        let visibility = if parsed_module.module.is_exported_function(func_index) {
+            Visibility::Public
         } else {
-            Linkage::Internal
+            Visibility::Internal
         };
-        let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, linkage);
+        let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, visibility);
         let mut function_ref = module_builder
             .define_function(Ident::from(func_name.as_str()), sig)
             .unwrap()

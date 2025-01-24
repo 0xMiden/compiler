@@ -2,8 +2,8 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
-        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
-        NoTerminator, SingleBlock, SingleRegion,
+        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoTerminator, SingleBlock,
+        SingleRegion,
     },
     Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
     SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
@@ -52,7 +52,7 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
     traits(
         SingleRegion,
         SingleBlock,
-        NoRegionArguments,
+        // NoRegionArguments,
         NoTerminator,
         HasOnlyGraphRegion,
         GraphRegionNoTerminator,

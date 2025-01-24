@@ -1,14 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
-use midenc_dialect_hir::{FunctionBuilder, InstBuilderBase};
+use midenc_dialect_hir::InstBuilderBase;
 use midenc_hir::{
     cranelift_entity::{EntitySet, SecondaryMap},
     diagnostics::SourceSpan,
     DefaultInstBuilder,
 };
 use midenc_hir2::{
-    dialects::builtin::Function, BlockArgumentRef, BlockRef, FxHashMap, Ident, Listener, Op,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, ValueRef,
+    dialects::builtin::Function, Block, BlockArgumentRef, BlockRef, Builder, FxHashMap, Ident,
+    Listener, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
+    ValueRef,
 };
 use midenc_hir_type::Type;
 
@@ -189,6 +190,7 @@ impl Listener for SSABuilderListener {
 /// A wrapper around Miden's `FunctionBuilder` and `SSABuilder` which provides
 /// additional API for dealing with variables and SSA construction.
 pub struct FunctionBuilderExt<'c, L: Listener = SSABuilderListener> {
+    // TODO: merge FunctionBuilder into Self
     inner: FunctionBuilder<'c, L>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
 }
@@ -216,19 +218,21 @@ impl<'c> FunctionBuilderExt<'c> {
     //     todo!()
     // }
 
-    pub fn name(&self) -> &Ident {
-        self.inner.func.name()
+    pub fn name(&self) -> Ident {
+        *self.inner.func.name()
     }
 
     pub fn signature(&self) -> &Signature {
         self.inner.func.signature()
     }
 
-    pub fn ins<'short>(&'short mut self) -> FuncInstBuilderExt<'short, 'c> {
+    pub fn ins<'b: 'a, 'a>(&'b mut self) -> FuncInstBuilderExt<'a> {
+        // pub fn ins(&mut self) -> &mut Self {
         // pub fn ins<'short>(&'short mut self) -> DefaultInstBuilder<'short, L> {
         // let block = self.inner.current_block();
         // self.inner.ins()
-        FuncInstBuilderExt::new(self)
+        FuncInstBuilderExt::new(self.inner.func, &mut self.inner.builder)
+        // self
     }
 
     // TODO: remove
@@ -592,25 +596,30 @@ pub enum DefVariableError {
     DefinedBeforeDeclared(Variable),
 }
 
-pub struct FuncInstBuilderExt<'a, 'b> {
-    builder: &'b mut FunctionBuilderExt<'a>,
+pub struct FuncInstBuilderExt<'a, L = SSABuilderListener> {
+    pub func: &'a mut Function,
+    builder: &'a mut OpBuilder<L>,
+    // builder: &'a mut FunctionBuilderExt<'b>,
 }
-impl<'a, 'b> FuncInstBuilderExt<'a, 'b> {
-    fn new(builder: &'b mut FunctionBuilderExt<'a>) -> Self {
+impl<'a> FuncInstBuilderExt<'a> {
+    pub(crate) fn new(
+        func: &'a mut Function,
+        builder: &'a mut OpBuilder<SSABuilderListener>,
+    ) -> Self {
         // assert!(builder.data_flow_graph().is_block_linked(block));
-        Self { builder }
+        Self { func, builder }
     }
 }
 
-impl<'a> InstBuilderBase<'a> for FuncInstBuilderExt<'a, '_> {
+impl InstBuilderBase for FuncInstBuilderExt<'_> {
     type L = SSABuilderListener;
 
     fn builder(&self) -> &OpBuilder<Self::L> {
-        self.builder.inner.builder() // as &OpBuilder<L>
+        self.builder
     }
 
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L> {
-        self.builder.inner.builder_mut()
+        self.builder
     }
 
     // fn builder_parts(
@@ -618,4 +627,89 @@ impl<'a> InstBuilderBase<'a> for FuncInstBuilderExt<'a, '_> {
     // ) -> (&mut midenc_hir2::dialects::builtin::Function, &mut OpBuilder<Self::L>) {
     //     (self.builder.inner.func, self.builder.inner.builder_mut())
     // }
+}
+
+pub struct FunctionBuilder<'f, L: Listener> {
+    pub func: &'f mut Function,
+    builder: OpBuilder<L>,
+}
+impl<'f, L: Listener> FunctionBuilder<'f, L> {
+    pub fn new(func: &'f mut Function, mut builder: OpBuilder<L>) -> Self {
+        let current_block = if func.body().is_empty() {
+            func.create_entry_block()
+        } else {
+            func.last_block()
+        };
+
+        builder.set_insertion_point_to_end(current_block);
+
+        Self { func, builder }
+    }
+
+    // pub fn at(func: &'f mut Function, ip: midenc_hir2::ProgramPoint) -> Self {
+    //     let context = func.as_operation().context_rc();
+    //     let mut builder = OpBuilder::new(context);
+    //     builder.set_insertion_point(ip);
+    //
+    //     Self { func, builder }
+    // }
+
+    pub fn body_region(&self) -> RegionRef {
+        unsafe { RegionRef::from_raw(&*self.func.body()) }
+    }
+
+    pub fn entry_block(&self) -> BlockRef {
+        self.func.entry_block()
+    }
+
+    #[inline]
+    pub fn current_block(&self) -> BlockRef {
+        self.builder.insertion_block().expect("builder has no insertion point set")
+    }
+
+    #[inline]
+    pub fn switch_to_block(&mut self, block: BlockRef) {
+        self.builder.set_insertion_point_to_end(block);
+    }
+
+    pub fn create_block(&mut self) -> BlockRef {
+        self.builder.create_block(self.body_region(), None, &[])
+    }
+
+    pub fn detach_block(&mut self, mut block: BlockRef) {
+        use midenc_hir2::EntityWithParent;
+
+        assert_ne!(
+            block,
+            self.current_block(),
+            "cannot remove block the builder is currently inserting in"
+        );
+        assert_eq!(
+            block.borrow().parent().map(|p| RegionRef::as_ptr(&p)),
+            Some(&*self.func.body() as *const Region),
+            "cannot detach a block that does not belong to this function"
+        );
+        let mut body = self.func.body_mut();
+        unsafe {
+            body.body_mut().cursor_mut_from_ptr(block).remove();
+        }
+        block.borrow_mut().uses_mut().clear();
+        Block::on_removed_from_parent(block, body.as_region_ref());
+    }
+
+    pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
+        self.builder.context().append_block_argument(block, ty, span)
+    }
+
+    // pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
+    //     DefaultInstBuilder::new(self.func, &mut self.builder)
+    // }
+
+    pub fn builder(&self) -> &OpBuilder<L> {
+        &self.builder
+    }
+
+    pub fn builder_mut(&mut self) -> &mut OpBuilder<L> {
+        &mut self.builder
+    }
 }

@@ -19,11 +19,16 @@ impl<'b> ModuleBuilder<'b> {
         let context = module.as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
 
-        if module.body().is_empty() {
-            builder.create_block(module.body().as_region_ref(), None, &[]);
-        } else {
-            let current_block = module.body().entry_block_ref().unwrap();
-            builder.set_insertion_point_to_end(current_block);
+        {
+            let body = module.body();
+
+            if let Some(current_block) = body.entry_block_ref() {
+                builder.set_insertion_point_to_end(current_block);
+            } else {
+                let body_ref = body.as_region_ref();
+                drop(body);
+                builder.create_block(body_ref, None, &[]);
+            }
         }
 
         Self { module, builder }

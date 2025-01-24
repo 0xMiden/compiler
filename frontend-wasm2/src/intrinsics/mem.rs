@@ -1,6 +1,7 @@
 use midenc_hir::{
     AbiParam, FunctionIdent, FunctionType, InstBuilder, Signature, SourceSpan, Type, Value,
 };
+use midenc_hir2::ValueRef;
 
 use crate::module::function_builder_ext::FunctionBuilderExt;
 
@@ -29,29 +30,30 @@ fn signature(func_id: &FunctionIdent) -> Signature {
 /// Convert a call to a memory intrinsic function
 pub(crate) fn convert_mem_intrinsics(
     func_id: FunctionIdent,
-    args: &[Value],
-    builder: &mut FunctionBuilderExt<'_, '_, '_>,
+    args: &[ValueRef],
+    builder: &mut FunctionBuilderExt,
     span: SourceSpan,
-) -> Vec<Value> {
-    match func_id.function.as_symbol().as_str() {
-        HEAP_BASE => {
-            assert_eq!(args.len(), 0, "{} takes no arguments", func_id);
-            if builder
-                .data_flow_graph()
-                .get_import_by_name(func_id.module, func_id.function)
-                .is_none()
-            {
-                let signature = signature(&func_id);
-                let _ = builder.data_flow_graph_mut().import_function(
-                    func_id.module,
-                    func_id.function,
-                    signature,
-                );
-            }
-            let call = builder.ins().exec(func_id, &[], span);
-            let value = builder.data_flow_graph().first_result(call);
-            vec![value]
-        }
-        _ => panic!("No allowed memory intrinsics found for {}", func_id),
-    }
+) -> Vec<ValueRef> {
+    todo!()
+    // match func_id.function.as_symbol().as_str() {
+    //     HEAP_BASE => {
+    //         assert_eq!(args.len(), 0, "{} takes no arguments", func_id);
+    //         if builder
+    //             .data_flow_graph()
+    //             .get_import_by_name(func_id.module, func_id.function)
+    //             .is_none()
+    //         {
+    //             let signature = signature(&func_id);
+    //             let _ = builder.data_flow_graph_mut().import_function(
+    //                 func_id.module,
+    //                 func_id.function,
+    //                 signature,
+    //             );
+    //         }
+    //         let call = builder.ins().exec(func_id, &[], span);
+    //         let value = builder.data_flow_graph().first_result(call);
+    //         vec![value]
+    //     }
+    //     _ => panic!("No allowed memory intrinsics found for {}", func_id),
+    // }
 }

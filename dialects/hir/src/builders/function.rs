@@ -114,20 +114,13 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
 //     }
 // }
 
-pub trait InstBuilderBase<'f>: Sized {
+pub trait InstBuilderBase: Sized {
     type L: Listener;
     fn builder(&self) -> &OpBuilder<Self::L>;
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
-    // fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>);
-    // /// Get a default instruction builder using the dataflow graph and insertion point of the
-    // /// current builder
-    // fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::L> {
-    //     let (func, builder) = self.builder_parts();
-    //     DefaultInstBuilder::new(func, builder)
-    // }
 }
 
-pub trait InstBuilder<'f>: InstBuilderBase<'f> {
+pub trait InstBuilder: InstBuilderBase {
     fn assert(
         mut self,
         value: ValueRef,
@@ -213,11 +206,11 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
     }
     */
 
-    fn i32(&self, value: i32, span: SourceSpan) -> ValueRef {
+    fn i32(mut self, value: i32, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
-    fn i64(&self, value: i64, span: SourceSpan) -> ValueRef {
+    fn i64(mut self, value: i64, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -568,7 +561,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
     ///
     /// The intention of bitcasts is to reinterpret a value with different semantics, with no
     /// validation that is typically implied by casting from one type to another.
-    fn bitcast(mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
+    fn bitcast(&mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Bitcast, _>(span);
         let op = op_builder(arg, ty)?;
         Ok(op.borrow().result().as_value_ref())
@@ -579,7 +572,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
     /// NOTE: This is only valid for numeric to numeric, or pointer to pointer casts.
     /// For numeric to pointer, or pointer to numeric casts, use `inttoptr` and `ptrtoint`
     /// respectively.
-    fn cast(mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
+    fn cast(&mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Cast, _>(span);
         let op = op_builder(arg, ty)?;
         Ok(op.borrow().result().as_value_ref())
@@ -668,7 +661,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok((overflowed, result))
     }
 
-    fn add_imm_checked(&self, addr_u32: ValueRef, u32: Immediate, span: SourceSpan) -> ValueRef {
+    fn add_imm_checked(mut self, addr_u32: ValueRef, u32: Immediate, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -775,7 +768,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn div_unchecked(&self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
+    fn div_unchecked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -786,12 +779,12 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn r#mod_checked(&self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
+    fn r#mod_checked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
     fn mod_imm_unchecked(
-        &self,
+        mut self,
         full_addr_int: ValueRef,
         u32: Immediate,
         span: SourceSpan,
@@ -972,7 +965,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn eq_imm(&self, arg: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
+    fn eq_imm(mut self, arg: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -982,7 +975,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn neq_imm(&self, cond: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
+    fn neq_imm(mut self, cond: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -1006,7 +999,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn gt_imm(&self, cond: ValueRef, zero: Immediate, span: SourceSpan) -> ValueRef {
+    fn gt_imm(mut self, cond: ValueRef, zero: Immediate, span: SourceSpan) -> ValueRef {
         todo!()
     }
 
@@ -1105,11 +1098,11 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
         op_builder(cond, then_dest, then_args, else_dest, else_args)
     }
 
-    fn switch(self, arg: ValueRef, span: SourceSpan) -> SwitchBuilder<'f, Self> {
-        todo!()
-        // require_integer!(self, arg, Type::U32);
-        // SwitchBuilder::new(self, arg, span)
-    }
+    // fn switch(self, arg: ValueRef, span: SourceSpan) -> SwitchBuilder<'f, Self> {
+    //     todo!()
+    //     // require_integer!(self, arg, Type::U32);
+    //     // SwitchBuilder::new(self, arg, span)
+    // }
 
     fn ret(
         mut self,
@@ -1151,7 +1144,7 @@ pub trait InstBuilder<'f>: InstBuilderBase<'f> {
      */
 }
 
-impl<'f, T: InstBuilderBase<'f>> InstBuilder<'f> for T {}
+impl<T: InstBuilderBase> InstBuilder for T {}
 
 /*
 /// An instruction builder for `switch`, to ensure it is validated during construction

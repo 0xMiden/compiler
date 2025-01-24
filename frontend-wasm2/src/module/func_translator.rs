@@ -173,9 +173,9 @@ fn declare_locals(
 /// This assumes that the local variable declarations have already been parsed and function
 /// arguments and locals are declared in the builder.
 #[allow(clippy::too_many_arguments)]
-fn parse_function_body<'a: 'b, 'b>(
+fn parse_function_body(
     reader: &mut wasmparser::OperatorsReader<'_>,
-    builder: &'a mut FunctionBuilderExt<'b>,
+    builder: &mut FunctionBuilderExt,
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &ParsedModule<'_>,
@@ -187,6 +187,7 @@ fn parse_function_body<'a: 'b, 'b>(
     // The control stack is initialized with a single block representing the whole function.
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
 
+    let func_name = builder.name();
     let mut end_span = SourceSpan::default();
     while !reader.eof() {
         let pos = reader.original_position();
@@ -209,14 +210,14 @@ fn parse_function_body<'a: 'b, 'b>(
                 } else {
                     log::debug!(
                         "failed to locate span for instruction at offset {offset} in function {}",
-                        builder.name()
+                        func_name
                     );
                 }
             }
         } else {
             log::debug!(
                 "failed to locate span for instruction at offset {offset} in function {}",
-                builder.name()
+                func_name
             );
         }
 

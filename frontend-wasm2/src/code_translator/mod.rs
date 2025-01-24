@@ -25,7 +25,6 @@ use wasmparser::{MemArg, Operator};
 
 use crate::{
     error::WasmResult,
-    intrinsics::{convert_intrinsics_call, is_miden_intrinsics_module},
     miden_abi::{is_miden_abi_module, transform::transform_miden_abi_call},
     module::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
@@ -76,16 +75,17 @@ pub fn translate_operator(
         Operator::LocalSet { local_index } => {
             let val = state.pop1();
             let var = Variable::from_u32(*local_index);
-            let expected_ty = builder.variable_type(var);
-            let value_ty = builder.data_flow_graph().value_type(val);
+            let expected_ty = builder.variable_type(var).clone();
+            let value_ty = val.borrow().ty().clone();
+            let mut ins = builder.ins();
             let val = if expected_ty != value_ty {
-                if expected_ty == &I32 && value_ty == &U32 {
-                    builder.ins().bitcast(val, I32, span)
-                } else if expected_ty == &I64 && value_ty == &U64 {
-                    builder.ins().bitcast(val, I64, span)
+                if expected_ty == I32 && value_ty == U32 {
+                    ins.bitcast(val, I32, span)?
+                } else if expected_ty == I64 && value_ty == U64 {
+                    ins.bitcast(val, I64, span)?
                 } else {
                     let expected_ty = expected_ty.clone();
-                    builder.ins().cast(val, expected_ty, span)
+                    ins.cast(val, expected_ty, span)?
                 }
             } else {
                 val
@@ -311,8 +311,9 @@ pub fn translate_operator(
             let (arg1, arg2) = state.pop2();
             // wrapping because the result is mod 2^N
             // https://www.w3.org/TR/wasm-core-1/#op-iadd
-            let value_type = builder.data_flow_graph().value_type(arg1);
-            let arg2 = if value_type != builder.data_flow_graph().value_type(arg2) {
+
+            let value_type = arg1.borrow().ty().clone();
+            let arg2 = if &value_type != arg2.borrow().ty() {
                 let value_type = value_type.clone();
                 builder.ins().bitcast(arg2, value_type, span)?
             } else {
@@ -603,8 +604,8 @@ fn translate_store(
     span: SourceSpan,
 ) -> WasmResult<()> {
     let (addr_int, val) = state.pop2();
-    let val_ty = builder.data_flow_graph().value_type(val);
-    let arg = if &ptr_ty != val_ty {
+    let val_ty = val.borrow().ty().clone();
+    let arg = if ptr_ty != val_ty {
         if ptr_ty.size_in_bits() == val_ty.size_in_bits() {
             builder.ins().bitcast(val, ptr_ty.clone(), span)?
         } else if ptr_ty.is_unsigned_integer() && val_ty.is_signed_integer() {
@@ -629,10 +630,10 @@ fn prepare_addr(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) -> WasmResult<ValueRef> {
-    let addr_int_ty = builder.data_flow_graph().value_type(addr_int);
-    let addr_u32 = if addr_int_ty == &U32 {
+    let addr_int_ty = addr_int.borrow().ty().clone();
+    let addr_u32 = if addr_int_ty == U32 {
         addr_int
-    } else if addr_int_ty == &I32 {
+    } else if addr_int_ty == I32 {
         builder.ins().bitcast(addr_int, U32, span)?
     } else if matches!(addr_int_ty, Ptr(_)) {
         builder.ins().ptrtoint(addr_int, U32, span)?
@@ -674,45 +675,43 @@ fn translate_call(
     span: SourceSpan,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let func_id =
-        module_state.get_direct_func(builder.data_flow_graph_mut(), function_index, diagnostics)?;
-    let wasm_sig = module_state.signature(function_index);
-    let num_wasm_args = wasm_sig.params().len();
-    let args = func_state.peekn(num_wasm_args);
-    if is_miden_intrinsics_module(func_id.module.as_symbol()) {
-        let results = convert_intrinsics_call(func_id, args, builder, span);
-        func_state.popn(num_wasm_args);
-        func_state.pushn(&results);
-    } else if is_miden_abi_module(func_id.module.as_symbol()) {
-        // Miden SDK function call, transform the call to the Miden ABI if needed
-        let results = transform_miden_abi_call(func_id, args, builder, span, diagnostics);
-        assert_eq!(
-            wasm_sig.results().len(),
-            results.len(),
-            "Adapted function call results quantity are not the same as the original Wasm \
-             function results quantity for function {}",
-            func_id
-        );
-        assert_eq!(
-            wasm_sig.results().iter().map(|p| &p.ty).collect::<Vec<&Type>>(),
-            results
-                .iter()
-                .map(|r| builder.data_flow_graph().value_type(*r))
-                .collect::<Vec<&Type>>(),
-            "Adapted function call result types are not the same as the original Wasm function \
-             result types for function {}",
-            func_id
-        );
-        func_state.popn(num_wasm_args);
-        func_state.pushn(&results);
-    } else {
-        // no transformation needed
-        let call = builder.ins().exec(func_id, args, span);
-        let results = builder.inst_results(call);
-        func_state.popn(num_wasm_args);
-        func_state.pushn(results);
-    };
-    Ok(())
+    todo!()
+    // let func_id =
+    //     module_state.get_direct_func(builder.data_flow_graph_mut(), function_index, diagnostics)?;
+    // let wasm_sig = module_state.signature(function_index);
+    // let num_wasm_args = wasm_sig.params().len();
+    // let args = func_state.peekn(num_wasm_args);
+    // if is_miden_intrinsics_module(func_id.module.as_symbol()) {
+    //     let results = convert_intrinsics_call(func_id, args, builder, span);
+    //     func_state.popn(num_wasm_args);
+    //     func_state.pushn(&results);
+    // } else if is_miden_abi_module(func_id.module.as_symbol()) {
+    //     // Miden SDK function call, transform the call to the Miden ABI if needed
+    //     let results = transform_miden_abi_call(func_id, args, builder, span, diagnostics);
+    //     assert_eq!(
+    //         wasm_sig.results().len(),
+    //         results.len(),
+    //         "Adapted function call results quantity are not the same as the original Wasm \
+    //          function results quantity for function {}",
+    //         func_id
+    //     );
+    //     assert_eq!(
+    //         wasm_sig.results().iter().map(|p| &p.ty).collect::<Vec<&Type>>(),
+    //         results.iter().map(|r| (*r).borrow().ty().clone()).collect::<Vec<&Type>>(),
+    //         "Adapted function call result types are not the same as the original Wasm function \
+    //          result types for function {}",
+    //         func_id
+    //     );
+    //     func_state.popn(num_wasm_args);
+    //     func_state.pushn(&results);
+    // } else {
+    //     // no transformation needed
+    //     let call = builder.ins().exec(func_id, args, span);
+    //     let results = builder.inst_results(call);
+    //     func_state.popn(num_wasm_args);
+    //     func_state.pushn(results);
+    // };
+    // Ok(())
 }
 
 fn translate_return(
@@ -721,24 +720,25 @@ fn translate_return(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let return_count = {
-        let frame = &mut state.control_stack[0];
-        frame.num_return_values()
-    };
-    {
-        let return_args = match return_count {
-            0 => None,
-            1 => Some(*state.peekn_mut(return_count).first().unwrap()),
-            _ => {
-                unsupported_diag!(diagnostics, "Multiple values are not supported");
-            }
-        };
-
-        builder.ins().ret(return_args, span);
-    }
-    state.popn(return_count);
-    state.reachable = false;
-    Ok(())
+    todo!()
+    // let return_count = {
+    //     let frame = &mut state.control_stack[0];
+    //     frame.num_return_values()
+    // };
+    // {
+    //     let return_args = match return_count {
+    //         0 => None,
+    //         1 => Some(*state.peekn_mut(return_count).first().unwrap()),
+    //         _ => {
+    //             unsupported_diag!(diagnostics, "Multiple values are not supported");
+    //         }
+    //     };
+    //
+    //     builder.ins().ret(return_args, span);
+    // }
+    // state.popn(return_count);
+    // state.reachable = false;
+    // Ok(())
 }
 
 fn translate_br(
@@ -747,22 +747,23 @@ fn translate_br(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) {
-    let i = state.control_stack.len() - 1 - (*relative_depth as usize);
-    let (return_count, br_destination) = {
-        let frame = &mut state.control_stack[i];
-        // We signal that all the code that follows until the next End is unreachable
-        frame.set_branched_to_exit();
-        let return_count = if frame.is_loop() {
-            frame.num_param_values()
-        } else {
-            frame.num_return_values()
-        };
-        (return_count, frame.br_destination())
-    };
-    let destination_args = state.peekn_mut(return_count);
-    builder.ins().br(br_destination, destination_args, span);
-    state.popn(return_count);
-    state.reachable = false;
+    todo!()
+    // let i = state.control_stack.len() - 1 - (*relative_depth as usize);
+    // let (return_count, br_destination) = {
+    //     let frame = &mut state.control_stack[i];
+    //     // We signal that all the code that follows until the next End is unreachable
+    //     frame.set_branched_to_exit();
+    //     let return_count = if frame.is_loop() {
+    //         frame.num_param_values()
+    //     } else {
+    //         frame.num_return_values()
+    //     };
+    //     (return_count, frame.br_destination())
+    // };
+    // let destination_args = state.peekn_mut(return_count);
+    // builder.ins().br(br_destination, destination_args, span);
+    // state.popn(return_count);
+    // state.reachable = false;
 }
 
 fn translate_br_if(
@@ -771,19 +772,20 @@ fn translate_br_if(
     state: &mut FuncTranslationState,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let cond = state.pop1_bitcasted(Type::I32, builder, span);
-    let (br_destination, inputs) = translate_br_if_args(relative_depth, state);
-    let next_block = builder.create_block();
-    let then_dest = br_destination;
-    let then_args = inputs;
-    let else_dest = next_block;
-    let else_args = &[];
-    // cond is expected to be a i32 value
-    let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
-    builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
-    builder.seal_block(next_block); // The only predecessor is the current block.
-    builder.switch_to_block(next_block);
-    Ok(())
+    todo!()
+    // let cond = state.pop1_bitcasted(Type::I32, builder, span);
+    // let (br_destination, inputs) = translate_br_if_args(relative_depth, state);
+    // let next_block = builder.create_block();
+    // let then_dest = br_destination;
+    // let then_args = inputs;
+    // let else_dest = next_block;
+    // let else_args = &[];
+    // // cond is expected to be a i32 value
+    // let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
+    // builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
+    // builder.seal_block(next_block); // The only predecessor is the current block.
+    // builder.switch_to_block(next_block);
+    // Ok(())
 }
 
 fn translate_br_if_args(
@@ -813,59 +815,60 @@ fn translate_br_table(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) -> Result<(), Report> {
-    let mut targets = Vec::default();
-    for depth in br_targets.targets() {
-        let depth = depth.into_diagnostic()?;
-
-        targets.push(depth);
-    }
-    targets.sort();
-
-    let default_depth = br_targets.default();
-    let min_depth =
-        core::cmp::min(targets.iter().copied().min().unwrap_or(default_depth), default_depth);
-
-    let argc = {
-        let i = state.control_stack.len() - 1 - (min_depth as usize);
-        let min_depth_frame = &state.control_stack[i];
-        if min_depth_frame.is_loop() {
-            min_depth_frame.num_param_values()
-        } else {
-            min_depth_frame.num_return_values()
-        }
-    };
-
-    let default_block = {
-        let i = state.control_stack.len() - 1 - (default_depth as usize);
-        let frame = &mut state.control_stack[i];
-        frame.set_branched_to_exit();
-        frame.br_destination()
-    };
-
-    let val = state.pop1();
-    let val = if builder.data_flow_graph().value_type(val) != &U32 {
-        builder.ins().cast(val, U32, span)?
-    } else {
-        val
-    };
-
-    let switch_builder = builder.ins().switch(val, span);
-    let switch_builder =
-        targets.into_iter().enumerate().fold(switch_builder, |acc, (label_idx, depth)| {
-            let block = {
-                let i = state.control_stack.len() - 1 - (depth as usize);
-                let frame = &mut state.control_stack[i];
-                frame.set_branched_to_exit();
-                frame.br_destination()
-            };
-            let args = state.peekn_mut(argc);
-            acc.case(label_idx as u32, block, args)
-        });
-    switch_builder.or_else(default_block, state.peekn_mut(argc));
-
-    state.popn(argc);
-    state.reachable = false;
-    Ok(())
+    todo!()
+    // let mut targets = Vec::default();
+    // for depth in br_targets.targets() {
+    //     let depth = depth.into_diagnostic()?;
+    //
+    //     targets.push(depth);
+    // }
+    // targets.sort();
+    //
+    // let default_depth = br_targets.default();
+    // let min_depth =
+    //     core::cmp::min(targets.iter().copied().min().unwrap_or(default_depth), default_depth);
+    //
+    // let argc = {
+    //     let i = state.control_stack.len() - 1 - (min_depth as usize);
+    //     let min_depth_frame = &state.control_stack[i];
+    //     if min_depth_frame.is_loop() {
+    //         min_depth_frame.num_param_values()
+    //     } else {
+    //         min_depth_frame.num_return_values()
+    //     }
+    // };
+    //
+    // let default_block = {
+    //     let i = state.control_stack.len() - 1 - (default_depth as usize);
+    //     let frame = &mut state.control_stack[i];
+    //     frame.set_branched_to_exit();
+    //     frame.br_destination()
+    // };
+    //
+    // let val = state.pop1();
+    // let val = if val.borrow().ty().clone() != &U32 {
+    //     builder.ins().cast(val, U32, span)?
+    // } else {
+    //     val
+    // };
+    //
+    // let switch_builder = builder.ins().switch(val, span);
+    // let switch_builder =
+    //     targets.into_iter().enumerate().fold(switch_builder, |acc, (label_idx, depth)| {
+    //         let block = {
+    //             let i = state.control_stack.len() - 1 - (depth as usize);
+    //             let frame = &mut state.control_stack[i];
+    //             frame.set_branched_to_exit();
+    //             frame.br_destination()
+    //         };
+    //         let args = state.peekn_mut(argc);
+    //         acc.case(label_idx as u32, block, args)
+    //     });
+    // switch_builder.or_else(default_block, state.peekn_mut(argc));
+    //
+    // state.popn(argc);
+    // state.reachable = false;
+    // Ok(())
 }
 
 fn translate_block(
@@ -887,34 +890,35 @@ fn translate_end(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) {
-    // The `End` instruction pops the last control frame from the control stack, seals
-    // the destination block (since `br` instructions targeting it only appear inside the
-    // block and have already been translated) and modify the value stack to use the
-    // possible `Block`'s arguments values.
-    let frame = state.control_stack.pop().unwrap();
-    let next_block = frame.following_code();
-    let return_count = frame.num_return_values();
-    let return_args = state.peekn_mut(return_count);
-
-    builder.ins().br(next_block, return_args, span);
-
-    // You might expect that if we just finished an `if` block that
-    // didn't have a corresponding `else` block, then we would clean
-    // up our duplicate set of parameters that we pushed earlier
-    // right here. However, we don't have to explicitly do that,
-    // since we truncate the stack back to the original height
-    // below.
-
-    builder.switch_to_block(next_block);
-    builder.seal_block(next_block);
-
-    // If it is a loop we also have to seal the body loop block
-    if let ControlStackFrame::Loop { header, .. } = frame {
-        builder.seal_block(header)
-    }
-
-    frame.truncate_value_stack_to_original_size(&mut state.stack);
-    state.stack.extend_from_slice(builder.block_params(next_block));
+    todo!()
+    // // The `End` instruction pops the last control frame from the control stack, seals
+    // // the destination block (since `br` instructions targeting it only appear inside the
+    // // block and have already been translated) and modify the value stack to use the
+    // // possible `Block`'s arguments values.
+    // let frame = state.control_stack.pop().unwrap();
+    // let next_block = frame.following_code();
+    // let return_count = frame.num_return_values();
+    // let return_args = state.peekn_mut(return_count);
+    //
+    // builder.ins().br(next_block, return_args, span);
+    //
+    // // You might expect that if we just finished an `if` block that
+    // // didn't have a corresponding `else` block, then we would clean
+    // // up our duplicate set of parameters that we pushed earlier
+    // // right here. However, we don't have to explicitly do that,
+    // // since we truncate the stack back to the original height
+    // // below.
+    //
+    // builder.switch_to_block(next_block);
+    // builder.seal_block(next_block);
+    //
+    // // If it is a loop we also have to seal the body loop block
+    // if let ControlStackFrame::Loop { header, .. } = frame {
+    //     builder.seal_block(header)
+    // }
+    //
+    // frame.truncate_value_stack_to_original_size(&mut state.stack);
+    // state.stack.extend_from_slice(builder.block_params(next_block));
 }
 
 fn translate_else(
@@ -922,70 +926,71 @@ fn translate_else(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let i = state.control_stack.len() - 1;
-    match state.control_stack[i] {
-        ControlStackFrame::If {
-            ref else_data,
-            head_is_reachable,
-            ref mut consequent_ends_reachable,
-            num_return_values,
-            ref blocktype,
-            destination,
-            ..
-        } => {
-            // We finished the consequent, so record its final
-            // reachability state.
-            debug_assert!(consequent_ends_reachable.is_none());
-            *consequent_ends_reachable = Some(state.reachable);
-
-            if head_is_reachable {
-                // We have a branch from the head of the `if` to the `else`.
-                state.reachable = true;
-
-                // Ensure we have a block for the `else` block (it may have
-                // already been pre-allocated, see `ElseData` for details).
-                let else_block = match *else_data {
-                    ElseData::NoElse {
-                        branch_inst,
-                        placeholder,
-                    } => {
-                        debug_assert_eq!(blocktype.params.len(), num_return_values);
-                        let else_block =
-                            builder.create_block_with_params(blocktype.params.clone(), span);
-                        let params_len = blocktype.params.len();
-                        builder.ins().br(destination, state.peekn(params_len), span);
-                        state.popn(params_len);
-
-                        builder.change_jump_destination(branch_inst, placeholder, else_block);
-                        builder.seal_block(else_block);
-                        else_block
-                    }
-                    ElseData::WithElse { else_block } => {
-                        builder.ins().br(destination, state.peekn(num_return_values), span);
-                        state.popn(num_return_values);
-                        else_block
-                    }
-                };
-
-                // You might be expecting that we push the parameters for this
-                // `else` block here, something like this:
-                //
-                //     state.pushn(&control_stack_frame.params);
-                //
-                // We don't do that because they are already on the top of the stack
-                // for us: we pushed the parameters twice when we saw the initial
-                // `if` so that we wouldn't have to save the parameters in the
-                // `ControlStackFrame` as another `Vec` allocation.
-
-                builder.switch_to_block(else_block);
-
-                // We don't bother updating the control frame's `ElseData`
-                // to `WithElse` because nothing else will read it.
-            }
-        }
-        _ => unreachable!(),
-    };
-    Ok(())
+    todo!()
+    // let i = state.control_stack.len() - 1;
+    // match state.control_stack[i] {
+    //     ControlStackFrame::If {
+    //         ref else_data,
+    //         head_is_reachable,
+    //         ref mut consequent_ends_reachable,
+    //         num_return_values,
+    //         ref blocktype,
+    //         destination,
+    //         ..
+    //     } => {
+    //         // We finished the consequent, so record its final
+    //         // reachability state.
+    //         debug_assert!(consequent_ends_reachable.is_none());
+    //         *consequent_ends_reachable = Some(state.reachable);
+    //
+    //         if head_is_reachable {
+    //             // We have a branch from the head of the `if` to the `else`.
+    //             state.reachable = true;
+    //
+    //             // Ensure we have a block for the `else` block (it may have
+    //             // already been pre-allocated, see `ElseData` for details).
+    //             let else_block = match *else_data {
+    //                 ElseData::NoElse {
+    //                     branch_inst,
+    //                     placeholder,
+    //                 } => {
+    //                     debug_assert_eq!(blocktype.params.len(), num_return_values);
+    //                     let else_block =
+    //                         builder.create_block_with_params(blocktype.params.clone(), span);
+    //                     let params_len = blocktype.params.len();
+    //                     builder.ins().br(destination, state.peekn(params_len), span);
+    //                     state.popn(params_len);
+    //
+    //                     builder.change_jump_destination(branch_inst, placeholder, else_block);
+    //                     builder.seal_block(else_block);
+    //                     else_block
+    //                 }
+    //                 ElseData::WithElse { else_block } => {
+    //                     builder.ins().br(destination, state.peekn(num_return_values), span);
+    //                     state.popn(num_return_values);
+    //                     else_block
+    //                 }
+    //             };
+    //
+    //             // You might be expecting that we push the parameters for this
+    //             // `else` block here, something like this:
+    //             //
+    //             //     state.pushn(&control_stack_frame.params);
+    //             //
+    //             // We don't do that because they are already on the top of the stack
+    //             // for us: we pushed the parameters twice when we saw the initial
+    //             // `if` so that we wouldn't have to save the parameters in the
+    //             // `ControlStackFrame` as another `Vec` allocation.
+    //
+    //             builder.switch_to_block(else_block);
+    //
+    //             // We don't bother updating the control frame's `ElseData`
+    //             // to `WithElse` because nothing else will read it.
+    //         }
+    //     }
+    //     _ => unreachable!(),
+    // };
+    // Ok(())
 }
 
 fn translate_if(
@@ -996,54 +1001,55 @@ fn translate_if(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
-    let cond = state.pop1();
-    // cond is expected to be a i32 value
-    let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
-    let next_block = builder.create_block();
-    let (destination, else_data) = if blockty.params.eq(&blockty.results) {
-        // It is possible there is no `else` block, so we will only
-        // allocate a block for it if/when we find the `else`. For now,
-        // we if the condition isn't true, then we jump directly to the
-        // destination block following the whole `if...end`. If we do end
-        // up discovering an `else`, then we will allocate a block for it
-        // and go back and patch the jump.
-        let destination = builder.create_block_with_params(blockty.results.clone(), span);
-        let branch_inst = builder.ins().cond_br(
-            cond_i1,
-            next_block,
-            &[],
-            destination,
-            state.peekn(blockty.params.len()),
-            span,
-        );
-        (
-            destination,
-            ElseData::NoElse {
-                branch_inst,
-                placeholder: destination,
-            },
-        )
-    } else {
-        // The `if` type signature is not valid without an `else` block,
-        // so we eagerly allocate the `else` block here.
-        let destination = builder.create_block_with_params(blockty.results.clone(), span);
-        let else_block = builder.create_block_with_params(blockty.params.clone(), span);
-        builder.ins().cond_br(
-            cond_i1,
-            next_block,
-            &[],
-            else_block,
-            state.peekn(blockty.params.len()),
-            span,
-        );
-        builder.seal_block(else_block);
-        (destination, ElseData::WithElse { else_block })
-    };
-    builder.seal_block(next_block);
-    builder.switch_to_block(next_block);
-    state.push_if(destination, else_data, blockty.params.len(), blockty.results.len(), blockty);
-    Ok(())
+    todo!()
+    // let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
+    // let cond = state.pop1();
+    // // cond is expected to be a i32 value
+    // let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
+    // let next_block = builder.create_block();
+    // let (destination, else_data) = if blockty.params.eq(&blockty.results) {
+    //     // It is possible there is no `else` block, so we will only
+    //     // allocate a block for it if/when we find the `else`. For now,
+    //     // we if the condition isn't true, then we jump directly to the
+    //     // destination block following the whole `if...end`. If we do end
+    //     // up discovering an `else`, then we will allocate a block for it
+    //     // and go back and patch the jump.
+    //     let destination = builder.create_block_with_params(blockty.results.clone(), span);
+    //     let branch_inst = builder.ins().cond_br(
+    //         cond_i1,
+    //         next_block,
+    //         &[],
+    //         destination,
+    //         state.peekn(blockty.params.len()),
+    //         span,
+    //     );
+    //     (
+    //         destination,
+    //         ElseData::NoElse {
+    //             branch_inst,
+    //             placeholder: destination,
+    //         },
+    //     )
+    // } else {
+    //     // The `if` type signature is not valid without an `else` block,
+    //     // so we eagerly allocate the `else` block here.
+    //     let destination = builder.create_block_with_params(blockty.results.clone(), span);
+    //     let else_block = builder.create_block_with_params(blockty.params.clone(), span);
+    //     builder.ins().cond_br(
+    //         cond_i1,
+    //         next_block,
+    //         &[],
+    //         else_block,
+    //         state.peekn(blockty.params.len()),
+    //         span,
+    //     );
+    //     builder.seal_block(else_block);
+    //     (destination, ElseData::WithElse { else_block })
+    // };
+    // builder.seal_block(next_block);
+    // builder.switch_to_block(next_block);
+    // state.push_if(destination, else_data, blockty.params.len(), blockty.results.len(), blockty);
+    // Ok(())
 }
 
 fn translate_loop(
@@ -1054,15 +1060,16 @@ fn translate_loop(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
-    let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
-    let next = builder.create_block_with_params(blockty.results.clone(), span);
-    builder.ins().br(loop_body, state.peekn(blockty.params.len()), span);
-    state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
-    state.popn(blockty.params.len());
-    state.stack.extend_from_slice(builder.block_params(loop_body));
-    builder.switch_to_block(loop_body);
-    Ok(())
+    todo!()
+    // let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
+    // let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
+    // let next = builder.create_block_with_params(blockty.results.clone(), span);
+    // builder.ins().br(loop_body, state.peekn(blockty.params.len()), span);
+    // state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
+    // state.popn(blockty.params.len());
+    // state.stack.extend_from_slice(builder.block_params(loop_body));
+    // builder.switch_to_block(loop_body);
+    // Ok(())
 }
 
 /// Deals with a Wasm instruction located in an unreachable portion of the code. Most of them
@@ -1076,131 +1083,132 @@ fn translate_unreachable_operator(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    debug_assert!(!state.reachable);
-    match *op {
-        Operator::If { blockty } => {
-            // Push a placeholder control stack entry. The if isn't reachable,
-            // so we don't have any branches anywhere.
-            let blockty = BlockType::from_wasm(&blockty, mod_types, diagnostics)?;
-            state.push_if(
-                Block::reserved_value(),
-                ElseData::NoElse {
-                    branch_inst: Inst::reserved_value(),
-                    placeholder: Block::reserved_value(),
-                },
-                0,
-                0,
-                blockty,
-            );
-        }
-        Operator::Loop { blockty: _ } | Operator::Block { blockty: _ } => {
-            state.push_block(Block::reserved_value(), 0, 0);
-        }
-        Operator::Else => {
-            let i = state.control_stack.len() - 1;
-            match state.control_stack[i] {
-                ControlStackFrame::If {
-                    ref else_data,
-                    head_is_reachable,
-                    ref mut consequent_ends_reachable,
-                    ref blocktype,
-                    ..
-                } => {
-                    debug_assert!(consequent_ends_reachable.is_none());
-                    *consequent_ends_reachable = Some(state.reachable);
-
-                    if head_is_reachable {
-                        // We have a branch from the head of the `if` to the `else`.
-                        state.reachable = true;
-
-                        let else_block = match *else_data {
-                            ElseData::NoElse {
-                                branch_inst,
-                                placeholder,
-                            } => {
-                                let else_block = builder
-                                    .create_block_with_params(blocktype.params.clone(), span);
-                                let frame = state.control_stack.last().unwrap();
-                                frame.truncate_value_stack_to_else_params(&mut state.stack);
-
-                                // We change the target of the branch instruction.
-                                builder.change_jump_destination(
-                                    branch_inst,
-                                    placeholder,
-                                    else_block,
-                                );
-                                builder.seal_block(else_block);
-                                else_block
-                            }
-                            ElseData::WithElse { else_block } => {
-                                let frame = state.control_stack.last().unwrap();
-                                frame.truncate_value_stack_to_else_params(&mut state.stack);
-                                else_block
-                            }
-                        };
-
-                        builder.switch_to_block(else_block);
-
-                        // Again, no need to push the parameters for the `else`,
-                        // since we already did when we saw the original `if`. See
-                        // the comment for translating `Operator::Else` in
-                        // `translate_operator` for details.
-                    }
-                }
-                _ => unreachable!(),
-            }
-        }
-        Operator::End => {
-            let stack = &mut state.stack;
-            let control_stack = &mut state.control_stack;
-            let frame = control_stack.pop().unwrap();
-
-            // Pop unused parameters from stack.
-            frame.truncate_value_stack_to_original_size(stack);
-
-            let reachable_anyway = match frame {
-                // If it is a loop we also have to seal the body loop block
-                ControlStackFrame::Loop { header, .. } => {
-                    builder.seal_block(header);
-                    // And loops can't have branches to the end.
-                    false
-                }
-                // If we never set `consequent_ends_reachable` then that means
-                // we are finishing the consequent now, and there was no
-                // `else`. Whether the following block is reachable depends only
-                // on if the head was reachable.
-                ControlStackFrame::If {
-                    head_is_reachable,
-                    consequent_ends_reachable: None,
-                    ..
-                } => head_is_reachable,
-                // Since we are only in this function when in unreachable code,
-                // we know that the alternative just ended unreachable. Whether
-                // the following block is reachable depends on if the consequent
-                // ended reachable or not.
-                ControlStackFrame::If {
-                    head_is_reachable,
-                    consequent_ends_reachable: Some(consequent_ends_reachable),
-                    ..
-                } => head_is_reachable && consequent_ends_reachable,
-                // All other control constructs are already handled.
-                _ => false,
-            };
-
-            if frame.exit_is_branched_to() || reachable_anyway {
-                builder.switch_to_block(frame.following_code());
-                builder.seal_block(frame.following_code());
-
-                // And add the return values of the block but only if the next block is reachable
-                // (which corresponds to testing if the stack depth is 1)
-                stack.extend_from_slice(builder.block_params(frame.following_code()));
-                state.reachable = true;
-            }
-        }
-        _ => {
-            // We don't translate because this is unreachable code
-        }
-    }
-
-    Ok(())
+    todo!()
+    // debug_assert!(!state.reachable);
+    // match *op {
+    //     Operator::If { blockty } => {
+    //         // Push a placeholder control stack entry. The if isn't reachable,
+    //         // so we don't have any branches anywhere.
+    //         let blockty = BlockType::from_wasm(&blockty, mod_types, diagnostics)?;
+    //         state.push_if(
+    //             Block::reserved_value(),
+    //             ElseData::NoElse {
+    //                 branch_inst: Inst::reserved_value(),
+    //                 placeholder: Block::reserved_value(),
+    //             },
+    //             0,
+    //             0,
+    //             blockty,
+    //         );
+    //     }
+    //     Operator::Loop { blockty: _ } | Operator::Block { blockty: _ } => {
+    //         state.push_block(Block::reserved_value(), 0, 0);
+    //     }
+    //     Operator::Else => {
+    //         let i = state.control_stack.len() - 1;
+    //         match state.control_stack[i] {
+    //             ControlStackFrame::If {
+    //                 ref else_data,
+    //                 head_is_reachable,
+    //                 ref mut consequent_ends_reachable,
+    //                 ref blocktype,
+    //                 ..
+    //             } => {
+    //                 debug_assert!(consequent_ends_reachable.is_none());
+    //                 *consequent_ends_reachable = Some(state.reachable);
+    //
+    //                 if head_is_reachable {
+    //                     // We have a branch from the head of the `if` to the `else`.
+    //                     state.reachable = true;
+    //
+    //                     let else_block = match *else_data {
+    //                         ElseData::NoElse {
+    //                             branch_inst,
+    //                             placeholder,
+    //                         } => {
+    //                             let else_block = builder
+    //                                 .create_block_with_params(blocktype.params.clone(), span);
+    //                             let frame = state.control_stack.last().unwrap();
+    //                             frame.truncate_value_stack_to_else_params(&mut state.stack);
+    //
+    //                             // We change the target of the branch instruction.
+    //                             builder.change_jump_destination(
+    //                                 branch_inst,
+    //                                 placeholder,
+    //                                 else_block,
+    //                             );
+    //                             builder.seal_block(else_block);
+    //                             else_block
+    //                         }
+    //                         ElseData::WithElse { else_block } => {
+    //                             let frame = state.control_stack.last().unwrap();
+    //                             frame.truncate_value_stack_to_else_params(&mut state.stack);
+    //                             else_block
+    //                         }
+    //                     };
+    //
+    //                     builder.switch_to_block(else_block);
+    //
+    //                     // Again, no need to push the parameters for the `else`,
+    //                     // since we already did when we saw the original `if`. See
+    //                     // the comment for translating `Operator::Else` in
+    //                     // `translate_operator` for details.
+    //                 }
+    //             }
+    //             _ => unreachable!(),
+    //         }
+    //     }
+    //     Operator::End => {
+    //         let stack = &mut state.stack;
+    //         let control_stack = &mut state.control_stack;
+    //         let frame = control_stack.pop().unwrap();
+    //
+    //         // Pop unused parameters from stack.
+    //         frame.truncate_value_stack_to_original_size(stack);
+    //
+    //         let reachable_anyway = match frame {
+    //             // If it is a loop we also have to seal the body loop block
+    //             ControlStackFrame::Loop { header, .. } => {
+    //                 builder.seal_block(header);
+    //                 // And loops can't have branches to the end.
+    //                 false
+    //             }
+    //             // If we never set `consequent_ends_reachable` then that means
+    //             // we are finishing the consequent now, and there was no
+    //             // `else`. Whether the following block is reachable depends only
+    //             // on if the head was reachable.
+    //             ControlStackFrame::If {
+    //                 head_is_reachable,
+    //                 consequent_ends_reachable: None,
+    //                 ..
+    //             } => head_is_reachable,
+    //             // Since we are only in this function when in unreachable code,
+    //             // we know that the alternative just ended unreachable. Whether
+    //             // the following block is reachable depends on if the consequent
+    //             // ended reachable or not.
+    //             ControlStackFrame::If {
+    //                 head_is_reachable,
+    //                 consequent_ends_reachable: Some(consequent_ends_reachable),
+    //                 ..
+    //             } => head_is_reachable && consequent_ends_reachable,
+    //             // All other control constructs are already handled.
+    //             _ => false,
+    //         };
+    //
+    //         if frame.exit_is_branched_to() || reachable_anyway {
+    //             builder.switch_to_block(frame.following_code());
+    //             builder.seal_block(frame.following_code());
+    //
+    //             // And add the return values of the block but only if the next block is reachable
+    //             // (which corresponds to testing if the stack depth is 1)
+    //             stack.extend_from_slice(builder.block_params(frame.following_code()));
+    //             state.reachable = true;
+    //         }
+    //     }
+    //     _ => {
+    //         // We don't translate because this is unreachable code
+    //     }
+    // }
+    //
+    // Ok(())
 }

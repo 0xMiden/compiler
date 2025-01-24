@@ -1,9 +1,6 @@
-use midenc_hir::{
-    diagnostics::{DiagnosticsHandler, SourceSpan},
-    FunctionIdent, Immediate, InstBuilder,
-    Type::*,
-};
-use midenc_hir2::ValueRef;
+use midenc_dialect_hir::InstBuilder;
+use midenc_hir::diagnostics::{DiagnosticsHandler, SourceSpan};
+use midenc_hir2::{FunctionIdent, ValueRef};
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;
@@ -86,9 +83,10 @@ pub fn no_transform(
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
 ) -> Vec<ValueRef> {
-    let call = builder.ins().exec(func_id, args, span);
-    let results = builder.inst_results(call);
-    results.to_vec()
+    todo!()
+    // let call = builder.ins().exec(func_id, args, span);
+    // let results = builder.inst_results(call);
+    // results.to_vec()
 }
 
 /// The Miden ABI function returns a length and a pointer and we only want the length
@@ -99,11 +97,12 @@ pub fn list_return(
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
 ) -> Vec<ValueRef> {
-    let call = builder.ins().exec(func_id, args, span);
-    let results = builder.inst_results(call);
-    assert_eq!(results.len(), 2, "List return strategy expects 2 results: length and pointer");
-    // Return the first result (length) only
-    results[0..1].to_vec()
+    todo!()
+    // let call = builder.ins().exec(func_id, args, span);
+    // let results = builder.inst_results(call);
+    // assert_eq!(results.len(), 2, "List return strategy expects 2 results: length and pointer");
+    // // Return the first result (length) only
+    // results[0..1].to_vec()
 }
 
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
@@ -114,28 +113,28 @@ pub fn return_via_pointer(
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
 ) -> Vec<ValueRef> {
-    // Omit the last argument (pointer)
-    let args_wo_pointer = &args[0..args.len() - 1];
-    let call = builder.ins().exec(func_id, args_wo_pointer, span);
-    let results = builder.inst_results(call).to_vec();
-    let ptr_arg = *args.last().unwrap();
-    let ptr_arg_ty = builder.data_flow_graph().value_type(ptr_arg).clone();
-    assert_eq!(ptr_arg_ty, I32);
-    let ptr_u32 = builder.ins().bitcast(ptr_arg, U32, span);
-    let result_ty = midenc_hir::StructType::new(
-        results.iter().map(|v| builder.data_flow_graph().value_type(*v).clone()),
-    );
-    for (idx, value) in results.iter().enumerate() {
-        let value_ty = builder.data_flow_graph().value_type(*value).clone();
-        let eff_ptr = if idx == 0 {
-            // We're assuming here that the base pointer is of the correct alignment
-            ptr_u32
-        } else {
-            let imm = Immediate::U32(result_ty.get(idx).offset);
-            builder.ins().add_imm_checked(ptr_u32, imm, span)
-        };
-        let addr = builder.ins().inttoptr(eff_ptr, Ptr(value_ty.into()), span);
-        builder.ins().store(addr, *value, span);
-    }
-    Vec::new()
+    todo!()
+    // // Omit the last argument (pointer)
+    // let args_wo_pointer = &args[0..args.len() - 1];
+    // let call = builder.ins().exec(func_id, args_wo_pointer, span);
+    // let results = builder.inst_results(call).to_vec();
+    // let ptr_arg = *args.last().unwrap();
+    // let ptr_arg_ty = ptr_arg.borrow().ty().clone().clone();
+    // assert_eq!(ptr_arg_ty, I32);
+    // let ptr_u32 = builder.ins().bitcast(ptr_arg, U32, span);
+    // let result_ty =
+    //     midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone().clone()));
+    // for (idx, value) in results.iter().enumerate() {
+    //     let value_ty = (*value).borrow().ty().clone().clone();
+    //     let eff_ptr = if idx == 0 {
+    //         // We're assuming here that the base pointer is of the correct alignment
+    //         ptr_u32
+    //     } else {
+    //         let imm = Immediate::U32(result_ty.get(idx).offset);
+    //         builder.ins().add_imm_checked(ptr_u32, imm, span)
+    //     };
+    //     let addr = builder.ins().inttoptr(eff_ptr, Ptr(value_ty.into()), span);
+    //     builder.ins().store(addr, *value, span);
+    // }
+    // Vec::new()
 }

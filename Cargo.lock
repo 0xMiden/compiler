@@ -3108,6 +3108,7 @@ dependencies = [
  "midenc-compile",
  "midenc-debug",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm2",
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-hir2",

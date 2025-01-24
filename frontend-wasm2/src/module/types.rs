@@ -6,9 +6,8 @@ use std::{collections::HashMap, ops::Index};
 use midenc_hir::{
     cranelift_entity::PrimaryMap,
     diagnostics::{DiagnosticsHandler, Severity},
-    CallConv, Linkage,
 };
-use midenc_hir2::Signature;
+use midenc_hir2::{AbiParam, CallConv, Signature, Visibility};
 use midenc_hir_type::{self as hir, Abi};
 use wasmparser::types::CoreTypeId;
 
@@ -595,9 +594,14 @@ pub fn ir_type(ty: WasmType, diagnostics: &DiagnosticsHandler) -> WasmResult<hir
 pub fn ir_func_sig(
     func_type: &hir::FunctionType,
     call_conv: CallConv,
-    linkage: Linkage,
+    visibility: Visibility,
 ) -> Signature {
-    todo!()
+    Signature {
+        params: func_type.params.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
+        results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
+        cc: call_conv,
+        visibility,
+    }
 }
 
 /// Converts a wasmparser table type
