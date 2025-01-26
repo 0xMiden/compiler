@@ -146,7 +146,7 @@ pub fn build_ir_module(
         ..Default::default()
     })
     .into_diagnostic()?;
-    let mut func_translator = FuncTranslator::new();
+    let mut func_translator = FuncTranslator::new(context.clone());
     // Although this renders this parsed module invalid(without functiong
     // bodies), we don't support multiple module instances. Thus, this
     // ParseModule will not be used again to make another module instance.

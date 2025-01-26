@@ -7,9 +7,9 @@ use midenc_hir::{
     DefaultInstBuilder,
 };
 use midenc_hir2::{
-    dialects::builtin::Function, Block, BlockArgumentRef, BlockRef, Builder, FxHashMap, Ident,
-    Listener, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
-    ValueRef,
+    dialects::builtin::Function, Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap,
+    Ident, Listener, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature,
+    Usable, ValueRef,
 };
 use midenc_hir_type::Type;
 
@@ -23,9 +23,9 @@ pub struct FunctionBuilderContext {
 }
 
 impl FunctionBuilderContext {
-    pub fn new() -> Self {
+    pub fn new(context: Rc<Context>) -> Self {
         Self {
-            ssa: SSABuilder::default(),
+            ssa: SSABuilder::new(context),
             status: Default::default(),
             types: SecondaryMap::with_default(Type::Unknown),
         }
@@ -247,8 +247,7 @@ impl<'c> FunctionBuilderExt<'c> {
 
     pub fn create_block(&mut self) -> BlockRef {
         let block = self.inner.create_block();
-        todo!("declare block");
-        // self.func_ctx.borrow_mut().ssa.declare_block(block);
+        self.func_ctx.borrow_mut().ssa.declare_block(block);
         block
     }
 
@@ -269,18 +268,17 @@ impl<'c> FunctionBuilderExt<'c> {
     /// return values. This can be used to set up the block parameters for a
     /// function exit block.
     pub fn append_block_params_for_function_returns(&mut self, block: BlockRef) {
-        todo!()
-        // // These parameters count as "user" parameters here because they aren't
-        // // inserted by the SSABuilder.
-        // debug_assert!(
-        //     self.is_pristine(block),
-        //     "You can't add block parameters after adding any instruction"
-        // );
-        //
-        // #[allow(clippy::unnecessary_to_owned)]
-        // for argtyp in self.signature().results().to_vec() {
-        //     self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
-        // }
+        // These parameters count as "user" parameters here because they aren't
+        // inserted by the SSABuilder.
+        debug_assert!(
+            self.is_pristine(&block),
+            "You can't add block parameters after adding any instruction"
+        );
+
+        #[allow(clippy::unnecessary_to_owned)]
+        for argtyp in self.signature().results().to_vec() {
+            self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
+        }
     }
 
     /// After the call to this function, new instructions will be inserted into the designated
@@ -321,13 +319,8 @@ impl<'c> FunctionBuilderExt<'c> {
     /// created. Forgetting to call this method on every block will cause inconsistencies in the
     /// produced functions.
     pub fn seal_block(&mut self, block: BlockRef) {
-        todo!()
-        // let side_effects = self
-        //     .func_ctx
-        //     .borrow_mut()
-        //     .ssa
-        //     .seal_block(block, self.inner.data_flow_graph_mut());
-        // self.handle_ssa_side_effects(side_effects);
+        let side_effects = self.func_ctx.borrow_mut().ssa.seal_block(block);
+        self.handle_ssa_side_effects(side_effects);
     }
 
     /// A Block is 'filled' when a terminator instruction is present.
@@ -337,26 +330,24 @@ impl<'c> FunctionBuilderExt<'c> {
     }
 
     fn handle_ssa_side_effects(&mut self, side_effects: SideEffects) {
-        todo!()
-        // for modified_block in side_effects.instructions_added_to_blocks {
-        //     if self.is_pristine(modified_block) {
-        //         self.func_ctx.status[modified_block] = BlockStatus::Partial;
-        //     }
-        // }
+        for modified_block in side_effects.instructions_added_to_blocks {
+            if self.is_pristine(&modified_block) {
+                self.func_ctx.borrow_mut().status.insert(modified_block, BlockStatus::Partial);
+            }
+        }
     }
 
     /// Make sure that the current block is inserted in the layout.
     pub fn ensure_inserted_block(&mut self) {
-        todo!()
-        // let block = self.inner.current_block();
-        // if self.is_pristine(block) {
-        //     self.func_ctx.status[block] = BlockStatus::Partial;
-        // } else {
-        //     debug_assert!(
-        //         !self.is_filled(block),
-        //         "you cannot add an instruction to a block already filled"
-        //     );
-        // }
+        let block = self.inner.current_block();
+        if self.is_pristine(&block) {
+            self.func_ctx.borrow_mut().status.insert(block, BlockStatus::Partial);
+        } else {
+            debug_assert!(
+                !self.is_filled(&block),
+                "you cannot add an instruction to a block already filled"
+            );
+        }
     }
 
     /// Declare that translation of the current function is complete.
@@ -416,33 +407,31 @@ impl<'c> FunctionBuilderExt<'c> {
     /// Returns the Miden IR necessary to use a previously defined user
     /// variable, returning an error if this is not possible.
     pub fn try_use_var(&mut self, var: Variable) -> Result<ValueRef, UseVariableError> {
-        todo!()
-        // // Assert that we're about to add instructions to this block using the definition of the
-        // // given variable. ssa.use_var is the only part of this crate which can add block parameters
-        // // behind the caller's back. If we disallow calling append_block_param as soon as use_var is
-        // // called, then we enforce a strict separation between user parameters and SSA parameters.
-        // self.ensure_inserted_block();
-        //
-        // let (val, side_effects) = {
-        //     let ty = self
-        //         .func_ctx
-        //         .types
-        //         .get(var)
-        //         .cloned()
-        //         .ok_or(UseVariableError::UsedBeforeDeclared(var))?;
-        //     debug_assert_ne!(
-        //         ty,
-        //         Type::Unknown,
-        //         "variable {:?} is used but its type has not been declared",
-        //         var
-        //     );
-        //     let current_block = self.inner.current_block();
-        //     self.func_ctx
-        //         .ssa
-        //         .use_var(self.inner.data_flow_graph_mut(), var, ty, current_block)
-        // };
-        // self.handle_ssa_side_effects(side_effects);
-        // Ok(val)
+        // Assert that we're about to add instructions to this block using the definition of the
+        // given variable. ssa.use_var is the only part of this crate which can add block parameters
+        // behind the caller's back. If we disallow calling append_block_param as soon as use_var is
+        // called, then we enforce a strict separation between user parameters and SSA parameters.
+        self.ensure_inserted_block();
+
+        let (val, side_effects) = {
+            let ty = self
+                .func_ctx
+                .borrow()
+                .types
+                .get(var)
+                .cloned()
+                .ok_or(UseVariableError::UsedBeforeDeclared(var))?;
+            debug_assert_ne!(
+                ty,
+                Type::Unknown,
+                "variable {:?} is used but its type has not been declared",
+                var
+            );
+            let current_block = self.inner.current_block();
+            self.func_ctx.borrow_mut().ssa.use_var(var, ty, current_block)
+        };
+        self.handle_ssa_side_effects(side_effects);
+        Ok(val)
     }
 
     /// Returns the Miden IR value corresponding to the utilization at the current program
@@ -457,14 +446,12 @@ impl<'c> FunctionBuilderExt<'c> {
     /// an error if the value supplied does not match the type the variable was
     /// declared to have.
     pub fn try_def_var(&mut self, var: Variable, val: ValueRef) -> Result<(), DefVariableError> {
-        let func_ctx = self.func_ctx.borrow();
+        let mut func_ctx = self.func_ctx.borrow_mut();
         let var_ty = func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
         if var_ty != val.borrow().ty() {
             return Err(DefVariableError::TypeMismatch(var, val));
         }
-
-        todo!("ssa part below");
-        // self.func_ctx.borrow_mut().ssa.def_var(var, val, self.inner.current_block());
+        func_ctx.ssa.def_var(var, val, self.inner.current_block());
         Ok(())
     }
 
@@ -490,13 +477,13 @@ impl<'c> FunctionBuilderExt<'c> {
     /// Returns `true` if and only if no instructions have been added since the last call to
     /// `switch_to_block`.
     fn is_pristine(&self, block: &BlockRef) -> bool {
-        self.func_ctx.borrow().status[block] == BlockStatus::Empty
+        self.func_ctx.borrow_mut().status.entry(*block).or_default() == &BlockStatus::Empty
     }
 
     /// Returns `true` if and only if a terminator instruction has been inserted since the
     /// last call to `switch_to_block`.
     fn is_filled(&self, block: &BlockRef) -> bool {
-        self.func_ctx.borrow_mut().status[block] == BlockStatus::Filled
+        self.func_ctx.borrow_mut().status.entry(*block).or_default() == &BlockStatus::Filled
     }
 
     /// Returns `true` if and only if the current `Block` is sealed and has no predecessors
@@ -504,11 +491,11 @@ impl<'c> FunctionBuilderExt<'c> {
     ///
     /// The entry block of a function is never unreachable.
     pub fn is_unreachable(&self) -> bool {
-        todo!()
-        // let is_entry = self.inner.current_block() == self.data_flow_graph().entry_block();
-        // !is_entry
-        //     && self.func_ctx.ssa.is_sealed(self.inner.current_block())
-        //     && !self.func_ctx.ssa.has_any_predecessors(self.inner.current_block())
+        let is_entry = self.inner.current_block() == self.inner.entry_block();
+        let func_ctx = self.func_ctx.borrow();
+        !is_entry
+            && func_ctx.ssa.is_sealed(self.inner.current_block())
+            && !func_ctx.ssa.has_any_predecessors(self.inner.current_block())
     }
 
     /// Changes the destination of a jump instruction after creation.

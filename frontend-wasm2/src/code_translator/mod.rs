@@ -696,8 +696,8 @@ fn translate_call(
     //         func_id
     //     );
     //     assert_eq!(
-    //         wasm_sig.results().iter().map(|p| &p.ty).collect::<Vec<&Type>>(),
-    //         results.iter().map(|r| (*r).borrow().ty().clone()).collect::<Vec<&Type>>(),
+    //         wasm_sig.results().iter().map(|p| p.ty).collect::<Vec<Type>>(),
+    //         results.iter().map(|r| (*r).borrow().ty().clone()).collect::<Vec<Type>>(),
     //         "Adapted function call result types are not the same as the original Wasm function \
     //          result types for function {}",
     //         func_id
@@ -706,7 +706,7 @@ fn translate_call(
     //     func_state.pushn(&results);
     // } else {
     //     // no transformation needed
-    //     let call = builder.ins().exec(func_id, args, span);
+    //     let call = builder.ins().exec(func_id, args, span)?;
     //     let results = builder.inst_results(call);
     //     func_state.popn(num_wasm_args);
     //     func_state.pushn(results);

@@ -14,7 +14,7 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
     Block, ModuleFunctionBuilder,
 };
-use midenc_hir2::{dialects::builtin::Function, BlockRef};
+use midenc_hir2::{dialects::builtin::Function, BlockRef, Context};
 use midenc_session::Session;
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
@@ -44,9 +44,9 @@ pub struct FuncTranslator {
 
 impl FuncTranslator {
     /// Create a new translator.
-    pub fn new() -> Self {
+    pub fn new(context: Rc<Context>) -> Self {
         Self {
-            func_ctx: Rc::new(RefCell::new(FunctionBuilderContext::new())),
+            func_ctx: Rc::new(RefCell::new(FunctionBuilderContext::new(context))),
             state: FuncTranslationState::new(),
         }
     }
