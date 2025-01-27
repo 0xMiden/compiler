@@ -73,10 +73,9 @@ pub fn translate_module_as_component(
             .create::<Component, (Ident, Ident, Version)>(Default::default())(ns, name, ver)
         .unwrap();
     let mut cb = ComponentBuilder::new(component_ref);
-    let mut module_ref = cb
-        .define_module(Ident::from(parsed_module.module.name().as_str()))
-        .unwrap()
-        .borrow_mut();
+    let module_name = parsed_module.module.name().as_str();
+    dbg!(&module_name);
+    let mut module_ref = cb.define_module(Ident::from(module_name)).unwrap().borrow_mut();
     let module = module_ref.as_mut().downcast_mut::<Module>().unwrap();
 
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context, module)?;
@@ -154,7 +153,7 @@ pub fn build_ir_module(
     for (defined_func_idx, body_data) in func_body_inputs {
         let func_index = &parsed_module.module.func_index(defined_func_idx);
         let func_type = &parsed_module.module.functions[*func_index];
-        let func_name = &parsed_module.module.func_name(*func_index);
+        let func_name = parsed_module.module.func_name(*func_index).as_str();
         let wasm_func_type = module_types[func_type.signature].clone();
         let ir_func_type = ir_func_type(&wasm_func_type, &context.session.diagnostics)?;
         let visibility = if parsed_module.module.is_exported_function(func_index) {
@@ -163,8 +162,9 @@ pub fn build_ir_module(
             Visibility::Internal
         };
         let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, visibility);
+        dbg!(&func_name);
         let mut function_ref = module_builder
-            .define_function(Ident::from(func_name.as_str()), sig)
+            .define_function(Ident::from(func_name), sig)
             .unwrap()
             .borrow_mut();
         let func = function_ref.as_mut().downcast_mut::<Function>().unwrap();

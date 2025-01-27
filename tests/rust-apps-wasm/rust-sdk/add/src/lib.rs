@@ -11,9 +11,9 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use miden::Felt;
+// use miden::Felt;
 
 #[no_mangle]
-pub fn entrypoint(a: Felt, b: Felt) -> Felt {
+pub fn entrypoint(a: i32, b: i32) -> i32 {
     a + b
 }

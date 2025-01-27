@@ -259,5 +259,7 @@ fn pure_rust_hir2() {
         CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}_old.hir")]);
     test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+    panic!("fail");
 }

@@ -1090,7 +1090,7 @@ impl CompilerTest {
             context.clone(),
         )
         .expect("Failed to translate Wasm binary to IR component");
-        let src = demangle(ir.borrow().as_ref().as_operation_ref().to_string());
+        let src = demangle(ir.borrow().as_ref().to_string());
         expected_hir_file.assert_eq(&src);
     }
 

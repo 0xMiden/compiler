@@ -890,35 +890,41 @@ fn translate_end(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) {
-    todo!()
-    // // The `End` instruction pops the last control frame from the control stack, seals
-    // // the destination block (since `br` instructions targeting it only appear inside the
-    // // block and have already been translated) and modify the value stack to use the
-    // // possible `Block`'s arguments values.
-    // let frame = state.control_stack.pop().unwrap();
-    // let next_block = frame.following_code();
-    // let return_count = frame.num_return_values();
-    // let return_args = state.peekn_mut(return_count);
-    //
-    // builder.ins().br(next_block, return_args, span);
-    //
-    // // You might expect that if we just finished an `if` block that
-    // // didn't have a corresponding `else` block, then we would clean
-    // // up our duplicate set of parameters that we pushed earlier
-    // // right here. However, we don't have to explicitly do that,
-    // // since we truncate the stack back to the original height
-    // // below.
-    //
-    // builder.switch_to_block(next_block);
-    // builder.seal_block(next_block);
-    //
-    // // If it is a loop we also have to seal the body loop block
-    // if let ControlStackFrame::Loop { header, .. } = frame {
-    //     builder.seal_block(header)
-    // }
-    //
-    // frame.truncate_value_stack_to_original_size(&mut state.stack);
-    // state.stack.extend_from_slice(builder.block_params(next_block));
+    // The `End` instruction pops the last control frame from the control stack, seals
+    // the destination block (since `br` instructions targeting it only appear inside the
+    // block and have already been translated) and modify the value stack to use the
+    // possible `Block`'s arguments values.
+    let frame = state.control_stack.pop().unwrap();
+    // dbg!(&frame);
+    let next_block = frame.following_code();
+    let return_count = frame.num_return_values();
+    let return_args = state.peekn_mut(return_count);
+
+    builder.ins().br(next_block, return_args.iter().cloned(), span);
+
+    // You might expect that if we just finished an `if` block that
+    // didn't have a corresponding `else` block, then we would clean
+    // up our duplicate set of parameters that we pushed earlier
+    // right here. However, we don't have to explicitly do that,
+    // since we truncate the stack back to the original height
+    // below.
+
+    builder.switch_to_block(next_block);
+    builder.seal_block(next_block);
+
+    // If it is a loop we also have to seal the body loop block
+    if let ControlStackFrame::Loop { header, .. } = frame {
+        builder.seal_block(header)
+    }
+
+    frame.truncate_value_stack_to_original_size(&mut state.stack);
+    let next_block_args: Vec<ValueRef> = next_block
+        .borrow()
+        .arguments()
+        .iter()
+        .map(|ba| ba.borrow().as_value_ref())
+        .collect();
+    state.stack.extend_from_slice(&next_block_args);
 }
 
 fn translate_else(

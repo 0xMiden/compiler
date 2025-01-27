@@ -210,12 +210,16 @@ impl SSABuilder {
     ///
     /// This function sets up state for `run_state_machine()` but does not execute it.
     fn use_var_nonlocal(&mut self, var: Variable, ty: Type, mut block: BlockRef) {
+        dbg!(var);
         // First, try Local Value Numbering (Algorithm 1 in the paper).
         // If the variable already has a known Value in this block, use that.
+        dbg!(&block);
+        // dbg!(&self.variables);
         if let Some(val) = self.variables.entry(var).or_default().entry(block).or_default() {
             self.results.push(*val);
             return;
         }
+        // dbg!(&self.variables);
 
         // Otherwise, use Global Value Numbering (Algorithm 2 in the paper).
         // This resolves the Value with respect to its predecessors.
@@ -289,6 +293,7 @@ impl SSABuilder {
         // We've promised to return the most recent block where `var` was defined, but we didn't
         // find a usable definition. So create one.
 
+        dbg!(&var, &block, &ty);
         let val = self.context.append_block_argument(block, ty, SourceSpan::default());
         var_defs.insert(block, Some(val));
 
@@ -472,11 +477,9 @@ impl SSABuilder {
                 "you have declared a non-branch instruction as a predecessor to a block!"
             );
 
-            self.context.append_block_argument(
-                dest_block,
-                val.borrow().ty().clone(),
-                val.borrow().span(),
-            );
+            let ty = val.borrow().ty().clone();
+            dbg!(&dest_block, &ty);
+            self.context.append_block_argument(dest_block, ty, val.borrow().span());
         }
         sentinel
     }

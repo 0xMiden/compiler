@@ -197,8 +197,10 @@ impl SSABuilder {
         ty: Type,
         mut block: Block,
     ) {
+        dbg!(var);
         // First, try Local Value Numbering (Algorithm 1 in the paper).
         // If the variable already has a known Value in this block, use that.
+        // dbg!(&self.variables);
         if let Some(val) = self.variables[var][block].expand() {
             self.results.push(val);
             return;
@@ -281,6 +283,7 @@ impl SSABuilder {
 
         // We've promised to return the most recent block where `var` was defined, but we didn't
         // find a usable definition. So create one.
+        dbg!(&var, &block, &ty);
         let val = dfg.append_block_param(block, ty, SourceSpan::default());
         var_defs[block] = PackedOption::from(val);
 

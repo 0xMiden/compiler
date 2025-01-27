@@ -7,9 +7,10 @@ use midenc_hir::{
     DefaultInstBuilder,
 };
 use midenc_hir2::{
-    dialects::builtin::Function, Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap,
-    Ident, Listener, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature,
-    Usable, ValueRef,
+    dialects::builtin::Function,
+    traits::{BranchOpInterface, Terminator},
+    Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, Op,
+    OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable, ValueRef,
 };
 use midenc_hir_type::Type;
 
@@ -40,9 +41,19 @@ impl FunctionBuilderContext {
         self.status.clear();
         self.types.clear();
     }
+
+    /// Returns `true` if and only if no instructions have been added and the block is empty.
+    fn is_pristine(&mut self, block: &BlockRef) -> bool {
+        self.status.entry(*block).or_default() == &BlockStatus::Empty
+    }
+
+    /// Returns `true` if and the block has been filled.
+    fn is_filled(&mut self, block: &BlockRef) -> bool {
+        self.status.entry(*block).or_default() == &BlockStatus::Filled
+    }
 }
 
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq, Debug)]
 enum BlockStatus {
     /// No instructions have been added.
     #[default]
@@ -63,14 +74,39 @@ impl Listener for SSABuilderListener {
     }
 
     fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
-        // TODO: implement
+        let borrow = op.borrow();
+        let op = borrow.as_ref().as_operation();
+        let mut builder = self.builder.borrow_mut();
+        // We only insert the Block in the layout when an instruction is added to it
 
-        // let builder = self.builder.borrow_mut();
-        // // We only insert the Block in the layout when an instruction is added to it
-        // builder.ensure_inserted_block();
-        // let opcode = data.opcode();
-        // // let inst = self.builder.data_flow_graph_mut().insert_inst(self.ip, data, ty, span);
-        //
+        // self.builder.ensure_inserted_block();
+
+        let current_block = match prev {
+            ProgramPoint::Invalid => todo!(),
+            ProgramPoint::Block { block, point } => block,
+            ProgramPoint::Op { block, op, point } => todo!(),
+        };
+
+        let block = current_block;
+        dbg!(block);
+        dbg!(op);
+        if builder.is_pristine(&block) {
+            builder.status.insert(block, BlockStatus::Partial);
+        } else {
+            let is_filled = builder.is_filled(&block);
+            debug_assert!(!is_filled, "you cannot add an instruction to a block already filled");
+        }
+
+        if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
+            let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
+            for succ in op.successors().iter() {
+                if !unique.insert(succ.block.borrow().block) {
+                    continue;
+                }
+                builder.ssa.declare_block_predecessor(block, op.as_operation_ref());
+            }
+        }
+
         // match self.builder.inner.data_flow_graph().insts[inst].data.inner() {
         //     Instruction::Br(Br { successor, .. }) => {
         //         // If the user has supplied jump arguments we must adapt the arguments of
@@ -111,10 +147,10 @@ impl Listener for SSABuilderListener {
         //     }
         //     inst => debug_assert!(!inst.opcode().is_branch()),
         // }
-        //
-        // if opcode.is_terminator() {
-        //     builder.fill_current_block()
-        // }
+
+        if op.implements::<dyn Terminator>() {
+            builder.status.insert(current_block, BlockStatus::Filled);
+        }
     }
 
     fn notify_block_inserted(
@@ -125,67 +161,6 @@ impl Listener for SSABuilderListener {
     ) {
     }
 }
-
-// TODO: implement in SSABuilderListener
-
-// This implementation is richer than `InsertBuilder` because we use the data of the
-// instruction being inserted to add related info to the DFG and the SSA building system,
-// and perform debug sanity checks.
-// fn build(self, data: Instruction, ty: Type, span: SourceSpan) -> (Inst, &'a mut DataFlowGraph) {
-//     // We only insert the Block in the layout when an instruction is added to it
-//     self.builder.ensure_inserted_block();
-//     let opcode = data.opcode();
-//     let inst = self.builder.data_flow_graph_mut().insert_inst(self.ip, data, ty, span);
-//
-//     match self.builder.inner.data_flow_graph().insts[inst].data.inner() {
-//         Instruction::Br(Br { successor, .. }) => {
-//             // If the user has supplied jump arguments we must adapt the arguments of
-//             // the destination block
-//             self.builder.func_ctx.ssa.declare_block_predecessor(successor.destination, inst);
-//         }
-//
-//         Instruction::CondBr(CondBr {
-//             then_dest,
-//             else_dest,
-//             ..
-//         }) => {
-//             self.builder.func_ctx.ssa.declare_block_predecessor(then_dest.destination, inst);
-//             if then_dest.destination != else_dest.destination {
-//                 self.builder
-//                     .func_ctx
-//                     .ssa
-//                     .declare_block_predecessor(else_dest.destination, inst);
-//             }
-//         }
-//         Instruction::Switch(Switch {
-//             op: _,
-//             arg: _,
-//             ref arms,
-//             default: default_successor,
-//         }) => {
-//             // Unlike all other jumps/branches, arms are
-//             // capable of having the same successor appear
-//             // multiple times, so we must deduplicate.
-//             let mut unique = EntitySet::<Block>::new();
-//             let blocks = arms
-//                 .iter()
-//                 .map(|arm| arm.successor.destination)
-//                 .chain([default_successor.destination]);
-//             for block in blocks {
-//                 if !unique.insert(block) {
-//                     continue;
-//                 }
-//                 self.builder.func_ctx.ssa.declare_block_predecessor(block, inst);
-//             }
-//         }
-//         inst => debug_assert!(!inst.opcode().is_branch()),
-//     }
-//
-//     if opcode.is_terminator() {
-//         self.builder.fill_current_block()
-//     }
-//     (inst, self.builder.data_flow_graph_mut())
-// }
 
 /// A wrapper around Miden's `FunctionBuilder` and `SSABuilder` which provides
 /// additional API for dealing with variables and SSA construction.
@@ -277,6 +252,7 @@ impl<'c> FunctionBuilderExt<'c> {
 
         #[allow(clippy::unnecessary_to_owned)]
         for argtyp in self.signature().results().to_vec() {
+            dbg!(&argtyp.ty);
             self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
         }
     }
@@ -289,21 +265,26 @@ impl<'c> FunctionBuilderExt<'c> {
     /// successor), the block will be declared filled and it will not be possible to append
     /// instructions to it.
     pub fn switch_to_block(&mut self, block: BlockRef) {
-        todo!()
-        // // First we check that the previous block has been filled.
-        // debug_assert!(
-        //     self.is_unreachable()
-        //         || self.is_pristine(self.inner.current_block())
-        //         || self.is_filled(self.inner.current_block()),
-        //     "you have to fill your block before switching"
-        // );
-        // // We cannot switch to a filled block
-        // debug_assert!(
-        //     !self.is_filled(block),
-        //     "you cannot switch to a block which is already filled"
-        // );
-        // // Then we change the cursor position.
-        // self.inner.switch_to_block(block);
+        // First we check that the previous block has been filled.
+        let is_unreachable = self.is_unreachable();
+        dbg!(self.inner.current_block());
+        dbg!(block);
+        dbg!(is_unreachable);
+        dbg!(self.is_pristine(&self.inner.current_block()));
+        dbg!(self.is_filled(&self.inner.current_block()));
+        debug_assert!(
+            is_unreachable
+                || self.is_pristine(&self.inner.current_block())
+                || self.is_filled(&self.inner.current_block()),
+            "you have to fill your block before switching"
+        );
+        // We cannot switch to a filled block
+        debug_assert!(
+            !self.is_filled(&block),
+            "you cannot switch to a block which is already filled"
+        );
+        // Then we change the cursor position.
+        self.inner.switch_to_block(block);
     }
 
     /// Retrieves all the parameters for a `Block` currently inferred from the jump instructions
@@ -325,8 +306,10 @@ impl<'c> FunctionBuilderExt<'c> {
 
     /// A Block is 'filled' when a terminator instruction is present.
     fn fill_current_block(&mut self) {
-        todo!()
-        // self.func_ctx.borrow_mut().status[&self.inner.current_block()] = BlockStatus::Filled;
+        self.func_ctx
+            .borrow_mut()
+            .status
+            .insert(self.inner.current_block(), BlockStatus::Filled);
     }
 
     fn handle_ssa_side_effects(&mut self, side_effects: SideEffects) {
@@ -355,29 +338,30 @@ impl<'c> FunctionBuilderExt<'c> {
     /// This resets the state of the `FunctionBuilderContext` in preparation to
     /// be used for another function.
     pub fn finalize(self) {
-        todo!()
-        // // Check that all the `Block`s are filled and sealed.
-        // #[cfg(debug_assertions)]
-        // {
-        //     for block in self.func_ctx.status.keys() {
-        //         if !self.is_pristine(block) {
-        //             assert!(
-        //                 self.func_ctx.ssa.is_sealed(block),
-        //                 "FunctionBuilderExt finalized, but block {} is not sealed",
-        //                 block,
-        //             );
-        //             assert!(
-        //                 self.is_filled(block),
-        //                 "FunctionBuilderExt finalized, but block {} is not filled",
-        //                 block,
-        //             );
-        //         }
-        //     }
-        // }
-        //
-        // // Clear the state (but preserve the allocated buffers) in preparation
-        // // for translation another function.
-        // self.func_ctx.clear();
+        // Check that all the `Block`s are filled and sealed.
+        #[cfg(debug_assertions)]
+        {
+            let keys: Vec<BlockRef> = self.func_ctx.borrow().status.keys().cloned().collect();
+            for block in keys {
+                if !self.is_pristine(&block) {
+                    let func_ctx = self.func_ctx.borrow();
+                    assert!(
+                        func_ctx.ssa.is_sealed(block),
+                        "FunctionBuilderExt finalized, but block {} is not sealed",
+                        block,
+                    );
+                    assert!(
+                        self.is_filled(&block),
+                        "FunctionBuilderExt finalized, but block {} is not filled",
+                        block,
+                    );
+                }
+            }
+        }
+
+        // Clear the state (but preserve the allocated buffers) in preparation
+        // for translation another function.
+        self.func_ctx.borrow_mut().clear();
     }
 
     #[inline]
@@ -477,13 +461,13 @@ impl<'c> FunctionBuilderExt<'c> {
     /// Returns `true` if and only if no instructions have been added since the last call to
     /// `switch_to_block`.
     fn is_pristine(&self, block: &BlockRef) -> bool {
-        self.func_ctx.borrow_mut().status.entry(*block).or_default() == &BlockStatus::Empty
+        self.func_ctx.borrow_mut().is_pristine(block)
     }
 
     /// Returns `true` if and only if a terminator instruction has been inserted since the
     /// last call to `switch_to_block`.
     fn is_filled(&self, block: &BlockRef) -> bool {
-        self.func_ctx.borrow_mut().status.entry(*block).or_default() == &BlockStatus::Filled
+        self.func_ctx.borrow_mut().is_filled(block)
     }
 
     /// Returns `true` if and only if the current `Block` is sealed and has no predecessors
@@ -492,10 +476,13 @@ impl<'c> FunctionBuilderExt<'c> {
     /// The entry block of a function is never unreachable.
     pub fn is_unreachable(&self) -> bool {
         let is_entry = self.inner.current_block() == self.inner.entry_block();
+        dbg!(is_entry);
         let func_ctx = self.func_ctx.borrow();
-        !is_entry
-            && func_ctx.ssa.is_sealed(self.inner.current_block())
-            && !func_ctx.ssa.has_any_predecessors(self.inner.current_block())
+        let is_sealed = func_ctx.ssa.is_sealed(self.inner.current_block());
+        dbg!(is_sealed);
+        let has_no_predecessors = !func_ctx.ssa.has_any_predecessors(self.inner.current_block());
+        dbg!(has_no_predecessors);
+        !is_entry && is_sealed && has_no_predecessors
     }
 
     /// Changes the destination of a jump instruction after creation.
@@ -618,11 +605,13 @@ pub struct FunctionBuilder<'f, L: Listener> {
 impl<'f, L: Listener> FunctionBuilder<'f, L> {
     pub fn new(func: &'f mut Function, mut builder: OpBuilder<L>) -> Self {
         let current_block = if func.body().is_empty() {
+            dbg!("empty");
             func.create_entry_block()
         } else {
             func.last_block()
         };
 
+        dbg!(&current_block);
         builder.set_insertion_point_to_end(current_block);
 
         Self { func, builder }
@@ -655,7 +644,11 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 
     pub fn create_block(&mut self) -> BlockRef {
-        self.builder.create_block(self.body_region(), None, &[])
+        let ip = *self.builder.insertion_point();
+        let block = self.builder.create_block(self.body_region(), None, &[]);
+        // TODO: too ugly?
+        self.builder.set_insertion_point(ip);
+        block
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
