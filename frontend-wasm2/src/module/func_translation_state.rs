@@ -296,13 +296,15 @@ impl FuncTranslationState {
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
     ) -> ValueRef {
-        todo!()
-        // let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
-        // if builder.data_flow_graph().value_type(val) != &ty {
-        //     builder.ins().bitcast(val, ty, span)
-        // } else {
-        //     val
-        // }
+        let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
+        if val.borrow().ty() != &ty {
+            builder
+                .ins()
+                .bitcast(val, ty.clone(), span)
+                .unwrap_or_else(|_| panic!("failed to bitcast {:?} to {:?}", val, ty))
+        } else {
+            val
+        }
     }
 
     /// Peek at the top of the stack without popping it.

@@ -776,20 +776,19 @@ fn translate_br_if(
     state: &mut FuncTranslationState,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // let cond = state.pop1_bitcasted(Type::I32, builder, span);
-    // let (br_destination, inputs) = translate_br_if_args(relative_depth, state);
-    // let next_block = builder.create_block();
-    // let then_dest = br_destination;
-    // let then_args = inputs;
-    // let else_dest = next_block;
-    // let else_args = &[];
-    // // cond is expected to be a i32 value
-    // let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
-    // builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
-    // builder.seal_block(next_block); // The only predecessor is the current block.
-    // builder.switch_to_block(next_block);
-    // Ok(())
+    let cond = state.pop1_bitcasted(Type::I32, builder, span);
+    let (br_destination, inputs) = translate_br_if_args(relative_depth, state);
+    let next_block = builder.create_block();
+    let then_dest = br_destination;
+    let then_args = inputs.to_vec();
+    let else_dest = next_block;
+    let else_args = vec![];
+    // cond is expected to be a i32 value
+    let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
+    builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
+    builder.seal_block(next_block); // The only predecessor is the current block.
+    builder.switch_to_block(next_block);
+    Ok(())
 }
 
 fn translate_br_if_args(
@@ -1070,16 +1069,22 @@ fn translate_loop(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
-    // let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
-    // let next = builder.create_block_with_params(blockty.results.clone(), span);
-    // builder.ins().br(loop_body, state.peekn(blockty.params.len()), span);
-    // state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
-    // state.popn(blockty.params.len());
-    // state.stack.extend_from_slice(builder.block_params(loop_body));
-    // builder.switch_to_block(loop_body);
-    // Ok(())
+    let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
+    let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
+    let next = builder.create_block_with_params(blockty.results.clone(), span);
+    let args = state.peekn(blockty.params.len()).to_vec();
+    builder.ins().br(loop_body, args, span);
+    state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
+    state.popn(blockty.params.len());
+    let loop_body_args: Vec<ValueRef> = loop_body
+        .borrow()
+        .arguments()
+        .iter()
+        .map(|ba| ba.borrow().as_value_ref())
+        .collect();
+    state.stack.extend_from_slice(&loop_body_args);
+    builder.switch_to_block(loop_body);
+    Ok(())
 }
 
 /// Deals with a Wasm instruction located in an unreachable portion of the code. Most of them
