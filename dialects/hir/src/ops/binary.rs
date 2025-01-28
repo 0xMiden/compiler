@@ -573,6 +573,22 @@ pub struct Neq {
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
 
+/// Inequality comparison with immediate
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface)
+)]
+pub struct NeqImm {
+    #[operand]
+    lhs: AnyInteger,
+    #[attr]
+    rhs: i32,
+    #[result]
+    result: Bool,
+}
+
+infer_return_ty_for_binary_op!(NeqImm as Type::I1);
+
 /// Greater-than comparison
 #[operation(
     dialect = HirDialect,

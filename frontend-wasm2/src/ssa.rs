@@ -244,7 +244,7 @@ impl SSABuilder {
         // any of the blocks before `from`.
         //
         // So in either case there is no definition in these blocks yet and we can blindly set one.
-        let var_defs = self.variables.get_mut(&var).unwrap();
+        let var_defs = self.variables.entry(var).or_default();
         while block != from {
             debug_assert!(var_defs[&block].is_none());
             var_defs.insert(block, Some(val));
@@ -284,9 +284,9 @@ impl SSABuilder {
                 break;
             }
             block = pred;
-            if let Some(val) = var_defs[&block] {
-                self.results.push(val);
-                return (val, block);
+            if let Some(val) = var_defs.entry(block).or_default() {
+                self.results.push(*val);
+                return (*val, block);
             }
         }
 

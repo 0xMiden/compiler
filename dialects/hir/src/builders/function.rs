@@ -1027,8 +1027,10 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn neq_imm(mut self, cond: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
+    fn neq_imm(mut self, cond: ValueRef, imm: i32, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::NeqImm, _>(span);
+        let op = op_builder(cond, imm)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     /// Compares two integers and returns the minimum value
