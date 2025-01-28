@@ -120,6 +120,8 @@ pub trait InstBuilderBase: Sized {
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
 }
 
+// TODO: remove when the missing instructions are implemented
+#[allow(unused_variables, unused_mut)]
 pub trait InstBuilder: InstBuilderBase {
     fn assert(
         mut self,
@@ -292,7 +294,7 @@ pub trait InstBuilder: InstBuilderBase {
     /// NOTE: There is no requirement that the memory contents at the given symbol
     /// contain a valid value of type `ty`. That is left entirely up the caller to
     /// guarantee at a higher level.
-    fn load_symbol<S: AsRef<str>>(self, name: S, ty: Type, span: SourceSpan) -> ValueRef {
+    fn load_symbol<S: AsRef<str>>(&self, name: S, ty: Type, span: SourceSpan) -> ValueRef {
         todo!()
         // self.load_symbol_relative(name, ty, 0, span)
     }
