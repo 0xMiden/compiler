@@ -84,7 +84,7 @@ impl SideEffects {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Sealed {
     No {
         // List of current Block arguments for which an earlier def has not been found yet.
@@ -101,7 +101,7 @@ impl Default for Sealed {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 struct SSABlockData {
     // The predecessors of the Block with the block and branch instruction.
     // predecessors: EntityList<OperationRef>,
@@ -335,7 +335,10 @@ impl SSABuilder {
     /// Callers are expected to avoid adding the same predecessor more than once in the case
     /// of a jump table.
     pub fn declare_block_predecessor(&mut self, block: BlockRef, inst: OperationRef) {
-        debug_assert!(!self.is_sealed(block), "you cannot add a predecessor to a sealed block");
+        debug_assert!(
+            !self.is_sealed(block),
+            "you cannot add a predecessor {inst} to a sealed block {block}"
+        );
         debug_assert!(
             self.ssa_blocks[&block].predecessors.iter().all(|&branch| branch != inst),
             "you have declared the same predecessor twice!"
@@ -379,6 +382,7 @@ impl SSABuilder {
     fn seal_one_block(&mut self, block: BlockRef) {
         // For each undef var we look up values in the predecessors and create a block parameter
         // only if necessary.
+        // TODO: ugly
         let mut undef_variables = match self.ssa_blocks.entry_ref(&block) {
             EntryRef::Occupied(mut entry) => {
                 let old = entry.get().sealed.clone();
@@ -390,6 +394,7 @@ impl SSABuilder {
             }
             EntryRef::Vacant(_) => {
                 self.ssa_blocks.insert(block, SSABlockData::default());
+                self.ssa_blocks.get_mut(&block).unwrap().sealed = Sealed::Yes;
                 EntityList::new()
             }
         };

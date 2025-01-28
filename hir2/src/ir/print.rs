@@ -4,7 +4,7 @@ use super::{Context, Operation};
 use crate::{
     formatter::{Document, PrettyPrint},
     matchers::Matcher,
-    traits::{SingleBlock, SingleRegion},
+    traits::{BranchOpInterface, SingleBlock, SingleRegion},
     AttributeValue, CallableOpInterface, EntityWithId, Op, Value,
 };
 
@@ -199,6 +199,16 @@ impl PrettyPrint for OperationPrinter<'_> {
                 is_constant = true;
                 doc + value.print(self.flags, self.context)
             } else {
+                if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
+                    doc = branch.successors().iter().enumerate().fold(doc, |doc, (i, succ)| {
+                        if i > 0 {
+                            doc + const_text(", ") + display(succ.block.borrow().block)
+                        } else {
+                            doc + display(succ.block.borrow().block) + const_text(" ")
+                        }
+                    });
+                }
+
                 let operands = self.op.operands();
                 if !operands.is_empty() {
                     operands.iter().enumerate().fold(doc, |doc, (i, operand)| {

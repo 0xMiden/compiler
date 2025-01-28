@@ -88,8 +88,6 @@ impl Listener for SSABuilderListener {
         };
 
         let block = current_block;
-        dbg!(block);
-        dbg!(op);
         if builder.is_pristine(&block) {
             builder.status.insert(block, BlockStatus::Partial);
         } else {
@@ -103,7 +101,9 @@ impl Listener for SSABuilderListener {
                 if !unique.insert(succ.block.borrow().block) {
                     continue;
                 }
-                builder.ssa.declare_block_predecessor(block, op.as_operation_ref());
+                builder
+                    .ssa
+                    .declare_block_predecessor(succ.block.borrow().block, op.as_operation_ref());
             }
         }
 
@@ -344,9 +344,8 @@ impl<'c> FunctionBuilderExt<'c> {
             let keys: Vec<BlockRef> = self.func_ctx.borrow().status.keys().cloned().collect();
             for block in keys {
                 if !self.is_pristine(&block) {
-                    let func_ctx = self.func_ctx.borrow();
                     assert!(
-                        func_ctx.ssa.is_sealed(block),
+                        self.func_ctx.borrow().ssa.is_sealed(block),
                         "FunctionBuilderExt finalized, but block {} is not sealed",
                         block,
                     );

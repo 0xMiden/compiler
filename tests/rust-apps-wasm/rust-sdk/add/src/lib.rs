@@ -14,6 +14,6 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 // use miden::Felt;
 
 #[no_mangle]
-pub fn entrypoint(a: i32, b: i32) -> i32 {
+pub fn entrypoint(a: u32, b: u32) -> u32 {
     a + b
 }

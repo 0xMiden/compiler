@@ -261,5 +261,4 @@ fn pure_rust_hir2() {
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}_old.hir")]);
     test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
-    panic!("fail");
 }
