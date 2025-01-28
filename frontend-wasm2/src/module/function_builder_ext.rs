@@ -9,8 +9,9 @@ use midenc_hir::{
 use midenc_hir2::{
     dialects::builtin::Function,
     traits::{BranchOpInterface, Terminator},
-    Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, Op,
-    OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable, ValueRef,
+    Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener,
+    ListenerType, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
+    ValueRef,
 };
 use midenc_hir_type::Type;
 
@@ -69,22 +70,19 @@ pub struct SSABuilderListener {
 }
 
 impl Listener for SSABuilderListener {
-    fn kind(&self) -> midenc_hir2::ListenerType {
-        todo!()
+    fn kind(&self) -> ListenerType {
+        ListenerType::Builder
     }
 
     fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
         let borrow = op.borrow();
         let op = borrow.as_ref().as_operation();
         let mut builder = self.builder.borrow_mut();
-        // We only insert the Block in the layout when an instruction is added to it
-
-        // self.builder.ensure_inserted_block();
 
         let current_block = match prev {
-            ProgramPoint::Invalid => todo!(),
+            ProgramPoint::Invalid => panic!("invalid program point"),
             ProgramPoint::Block { block, point } => block,
-            ProgramPoint::Op { block, op, point } => todo!(),
+            ProgramPoint::Op { block, op, point } => block.expect("no block in ProgramPoint::Op"),
         };
 
         let block = current_block;
@@ -106,47 +104,6 @@ impl Listener for SSABuilderListener {
                     .declare_block_predecessor(succ.block.borrow().block, op.as_operation_ref());
             }
         }
-
-        // match self.builder.inner.data_flow_graph().insts[inst].data.inner() {
-        //     Instruction::Br(Br { successor, .. }) => {
-        //         // If the user has supplied jump arguments we must adapt the arguments of
-        //         // the destination block
-        //         builder.func_ctx.ssa.declare_block_predecessor(successor.destination, inst);
-        //     }
-        //
-        //     Instruction::CondBr(CondBr {
-        //         then_dest,
-        //         else_dest,
-        //         ..
-        //     }) => {
-        //         builder.func_ctx.ssa.declare_block_predecessor(then_dest.destination, inst);
-        //         if then_dest.destination != else_dest.destination {
-        //             builder.func_ctx.ssa.declare_block_predecessor(else_dest.destination, inst);
-        //         }
-        //     }
-        //     Instruction::Switch(Switch {
-        //         op: _,
-        //         arg: _,
-        //         ref arms,
-        //         default: default_successor,
-        //     }) => {
-        //         // Unlike all other jumps/branches, arms are
-        //         // capable of having the same successor appear
-        //         // multiple times, so we must deduplicate.
-        //         let mut unique = EntitySet::<Block>::new();
-        //         let blocks = arms
-        //             .iter()
-        //             .map(|arm| arm.successor.destination)
-        //             .chain([default_successor.destination]);
-        //         for block in blocks {
-        //             if !unique.insert(block) {
-        //                 continue;
-        //             }
-        //             builder.func_ctx.ssa.declare_block_predecessor(block, inst);
-        //         }
-        //     }
-        //     inst => debug_assert!(!inst.opcode().is_branch()),
-        // }
 
         if op.implements::<dyn Terminator>() {
             builder.status.insert(current_block, BlockStatus::Filled);
