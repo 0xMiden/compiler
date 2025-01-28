@@ -220,6 +220,7 @@ impl<'c> FunctionBuilderExt<'c> {
     //     inst.borrow().results()
     // }
 
+    /// Create a new `Block` in the function and declare it in the SSA context.
     pub fn create_block(&mut self) -> BlockRef {
         let block = self.inner.create_block();
         self.func_ctx.borrow_mut().ssa.declare_block(block);
@@ -642,11 +643,13 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
         self.builder.set_insertion_point_to_end(block);
     }
 
+    /// Create a new block in the function without changing the insertion point.
     pub fn create_block(&mut self) -> BlockRef {
-        let ip = *self.builder.insertion_point();
+        // save the current insertion point
+        let old_ip = *self.builder.insertion_point();
         let block = self.builder.create_block(self.body_region(), None, &[]);
-        // TODO: too ugly?
-        self.builder.set_insertion_point(ip);
+        // restore the insertion point to the previous block
+        self.builder.set_insertion_point(old_ip);
         block
     }
 
