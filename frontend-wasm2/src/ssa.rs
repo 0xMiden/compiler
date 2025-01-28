@@ -382,19 +382,23 @@ impl SSABuilder {
     fn seal_one_block(&mut self, block: BlockRef) {
         // For each undef var we look up values in the predecessors and create a block parameter
         // only if necessary.
-        // TODO: ugly
         let mut undef_variables = match self.ssa_blocks.entry_ref(&block) {
             EntryRef::Occupied(mut entry) => {
-                let old = entry.get().sealed.clone();
-                entry.get_mut().sealed = Sealed::Yes;
-                match old {
+                let undef_variables = match entry.get().sealed {
                     Sealed::No { undef_variables } => undef_variables,
                     Sealed::Yes => return,
-                }
+                };
+                entry.get_mut().sealed = Sealed::Yes;
+                undef_variables
             }
             EntryRef::Vacant(_) => {
-                self.ssa_blocks.insert(block, SSABlockData::default());
-                self.ssa_blocks.get_mut(&block).unwrap().sealed = Sealed::Yes;
+                self.ssa_blocks.insert(
+                    block,
+                    SSABlockData {
+                        sealed: Sealed::Yes,
+                        ..Default::default()
+                    },
+                );
                 EntityList::new()
             }
         };
