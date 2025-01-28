@@ -31,6 +31,10 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     //     Self { func, builder }
     // }
 
+    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut OpBuilder<L>) {
+        (&mut self.func, &mut self.builder)
+    }
+
     pub fn body_region(&self) -> RegionRef {
         unsafe { RegionRef::from_raw(&*self.func.body()) }
     }
@@ -78,9 +82,9 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
         self.builder.context().append_block_argument(block, ty, span)
     }
 
-    // pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
-    //     DefaultInstBuilder::new(self.func, &mut self.builder)
-    // }
+    pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
+        DefaultInstBuilder::new(self.func, &mut self.builder)
+    }
 
     pub fn builder(&self) -> &OpBuilder<L> {
         &self.builder
@@ -91,33 +95,42 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 }
 
-// pub struct DefaultInstBuilder<'f, L: Listener> {
-//     func: &'f mut Function,
-//     builder: &'f mut OpBuilder<L>,
-// }
-// impl<'f, L: Listener> DefaultInstBuilder<'f, L> {
-//     pub(crate) fn new(func: &'f mut Function, builder: &'f mut OpBuilder<L>) -> Self {
-//         Self { func, builder }
-//     }
-// }
-// impl<'f, L: Listener> InstBuilderBase<'f> for DefaultInstBuilder<'f, L> {
-//     fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<L>) {
-//         (self.func, self.builder)
-//     }
-//
-//     fn builder(&self) -> &OpBuilder<L> {
-//         self.builder
-//     }
-//
-//     fn builder_mut(&mut self) -> &mut OpBuilder<L> {
-//         self.builder
-//     }
-// }
+pub struct DefaultInstBuilder<'f, L: Listener> {
+    func: &'f mut Function,
+    builder: &'f mut OpBuilder<L>,
+}
+impl<'f, L: Listener> DefaultInstBuilder<'f, L> {
+    pub(crate) fn new(func: &'f mut Function, builder: &'f mut OpBuilder<L>) -> Self {
+        Self { func, builder }
+    }
+}
+impl<L: Listener> InstBuilderBase for DefaultInstBuilder<'_, L> {
+    type L = L;
+
+    fn builder(&self) -> &OpBuilder<L> {
+        self.builder
+    }
+
+    fn builder_mut(&mut self) -> &mut OpBuilder<L> {
+        self.builder
+    }
+
+    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
+        (self.func, self.builder)
+    }
+}
 
 pub trait InstBuilderBase: Sized {
     type L: Listener;
     fn builder(&self) -> &OpBuilder<Self::L>;
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
+    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>);
+    /// Get a default instruction builder using the dataflow graph and insertion point of the
+    /// current builder
+    fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::L> {
+        let (func, builder) = self.builder_parts();
+        DefaultInstBuilder::new(func, builder)
+    }
 }
 
 // TODO: remove when the missing instructions are implemented

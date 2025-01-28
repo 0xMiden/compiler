@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use midenc_dialect_hir::InstBuilderBase;
+use midenc_dialect_hir::{FunctionBuilder, InstBuilderBase};
 use midenc_hir::{
     cranelift_entity::{EntitySet, SecondaryMap},
     diagnostics::SourceSpan,
@@ -122,7 +122,6 @@ impl Listener for SSABuilderListener {
 /// A wrapper around Miden's `FunctionBuilder` and `SSABuilder` which provides
 /// additional API for dealing with variables and SSA construction.
 pub struct FunctionBuilderExt<'c, L: Listener = SSABuilderListener> {
-    // TODO: merge FunctionBuilder into Self
     inner: FunctionBuilder<'c, L>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
 }
@@ -140,16 +139,6 @@ impl<'c> FunctionBuilderExt<'c> {
         Self { inner, func_ctx }
     }
 
-    // pub fn data_flow_graph(&self) -> &DataFlowGraph {
-    //     todo!()
-    //     // self.inner.data_flow_graph()
-    // }
-
-    // pub fn data_flow_graph_mut(&mut self) -> &mut DataFlowGraph {
-    //     // self.inner.data_flow_graph_mut()
-    //     todo!()
-    // }
-
     pub fn name(&self) -> Ident {
         *self.inner.func.name()
     }
@@ -159,27 +148,24 @@ impl<'c> FunctionBuilderExt<'c> {
     }
 
     pub fn ins<'b: 'a, 'a>(&'b mut self) -> FuncInstBuilderExt<'a> {
-        // pub fn ins(&mut self) -> &mut Self {
-        // pub fn ins<'short>(&'short mut self) -> DefaultInstBuilder<'short, L> {
-        // let block = self.inner.current_block();
-        // self.inner.ins()
-        FuncInstBuilderExt::new(self.inner.func, &mut self.inner.builder)
-        // self
+        let (func, builder) = self.inner.as_parts_mut();
+        FuncInstBuilderExt::new(func, builder)
     }
 
-    // TODO: remove
     #[inline]
     pub fn current_block(&self) -> BlockRef {
         self.inner.current_block()
     }
 
-    // pub fn inst_results(&self, inst: OperationRef) -> &[ValueRef] {
-    //     inst.borrow().results()
-    // }
-
-    /// Create a new `Block` in the function and declare it in the SSA context.
+    /// Create a new `Block` in the function preserving the current insertion point and declare it
+    /// in the SSA context.
     pub fn create_block(&mut self) -> BlockRef {
-        let block = self.inner.create_block();
+        // save the current insertion point
+        let old_ip = *self.inner.builder().insertion_point();
+        let region = self.inner.body_region();
+        let block = self.inner.builder_mut().create_block(region, None, &[]);
+        // restore the insertion point to the previous block
+        self.inner.builder_mut().set_insertion_point(old_ip);
         self.func_ctx.borrow_mut().ssa.declare_block(block);
         block
     }
@@ -243,13 +229,6 @@ impl<'c> FunctionBuilderExt<'c> {
         );
         // Then we change the cursor position.
         self.inner.switch_to_block(block);
-    }
-
-    /// Retrieves all the parameters for a `Block` currently inferred from the jump instructions
-    /// inserted that target it and the SSA construction.
-    pub fn block_params(&self, block: BlockRef) -> &[BlockArgumentRef] {
-        todo!("get via block.borrow().arguments()[i]")
-        // block.borrow().arguments()
     }
 
     /// Declares that all the predecessors of this block are known.
@@ -322,9 +301,8 @@ impl<'c> FunctionBuilderExt<'c> {
     }
 
     #[inline]
-    pub fn variable_type(&self, var: Variable) -> &Type {
-        todo!()
-        // &self.func_ctx.types[var]
+    pub fn variable_type(&self, var: Variable) -> Type {
+        self.func_ctx.borrow().types[var].clone()
     }
 
     /// Declares the type of a variable, so that it can be used later (by calling
@@ -525,14 +503,12 @@ pub enum DefVariableError {
 pub struct FuncInstBuilderExt<'a, L = SSABuilderListener> {
     pub func: &'a mut Function,
     builder: &'a mut OpBuilder<L>,
-    // builder: &'a mut FunctionBuilderExt<'b>,
 }
 impl<'a> FuncInstBuilderExt<'a> {
     pub(crate) fn new(
         func: &'a mut Function,
         builder: &'a mut OpBuilder<SSABuilderListener>,
     ) -> Self {
-        // assert!(builder.data_flow_graph().is_block_linked(block));
         Self { func, builder }
     }
 }
@@ -548,102 +524,7 @@ impl InstBuilderBase for FuncInstBuilderExt<'_> {
         self.builder
     }
 
-    // fn builder_parts(
-    //     &mut self,
-    // ) -> (&mut midenc_hir2::dialects::builtin::Function, &mut OpBuilder<Self::L>) {
-    //     (self.builder.inner.func, self.builder.inner.builder_mut())
-    // }
-}
-
-pub struct FunctionBuilder<'f, L: Listener> {
-    pub func: &'f mut Function,
-    builder: OpBuilder<L>,
-}
-impl<'f, L: Listener> FunctionBuilder<'f, L> {
-    pub fn new(func: &'f mut Function, mut builder: OpBuilder<L>) -> Self {
-        let current_block = if func.body().is_empty() {
-            dbg!("empty");
-            func.create_entry_block()
-        } else {
-            func.last_block()
-        };
-
-        dbg!(&current_block);
-        builder.set_insertion_point_to_end(current_block);
-
-        Self { func, builder }
-    }
-
-    // pub fn at(func: &'f mut Function, ip: midenc_hir2::ProgramPoint) -> Self {
-    //     let context = func.as_operation().context_rc();
-    //     let mut builder = OpBuilder::new(context);
-    //     builder.set_insertion_point(ip);
-    //
-    //     Self { func, builder }
-    // }
-
-    pub fn body_region(&self) -> RegionRef {
-        unsafe { RegionRef::from_raw(&*self.func.body()) }
-    }
-
-    pub fn entry_block(&self) -> BlockRef {
-        self.func.entry_block()
-    }
-
-    #[inline]
-    pub fn current_block(&self) -> BlockRef {
-        self.builder.insertion_block().expect("builder has no insertion point set")
-    }
-
-    #[inline]
-    pub fn switch_to_block(&mut self, block: BlockRef) {
-        self.builder.set_insertion_point_to_end(block);
-    }
-
-    /// Create a new block in the function without changing the insertion point.
-    pub fn create_block(&mut self) -> BlockRef {
-        // save the current insertion point
-        let old_ip = *self.builder.insertion_point();
-        let block = self.builder.create_block(self.body_region(), None, &[]);
-        // restore the insertion point to the previous block
-        self.builder.set_insertion_point(old_ip);
-        block
-    }
-
-    pub fn detach_block(&mut self, mut block: BlockRef) {
-        use midenc_hir2::EntityWithParent;
-
-        assert_ne!(
-            block,
-            self.current_block(),
-            "cannot remove block the builder is currently inserting in"
-        );
-        assert_eq!(
-            block.borrow().parent().map(|p| RegionRef::as_ptr(&p)),
-            Some(&*self.func.body() as *const Region),
-            "cannot detach a block that does not belong to this function"
-        );
-        let mut body = self.func.body_mut();
-        unsafe {
-            body.body_mut().cursor_mut_from_ptr(block).remove();
-        }
-        block.borrow_mut().uses_mut().clear();
-        Block::on_removed_from_parent(block, body.as_region_ref());
-    }
-
-    pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
-        self.builder.context().append_block_argument(block, ty, span)
-    }
-
-    // pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
-    //     DefaultInstBuilder::new(self.func, &mut self.builder)
-    // }
-
-    pub fn builder(&self) -> &OpBuilder<L> {
-        &self.builder
-    }
-
-    pub fn builder_mut(&mut self) -> &mut OpBuilder<L> {
-        &mut self.builder
+    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
+        (self.func, self.builder)
     }
 }
