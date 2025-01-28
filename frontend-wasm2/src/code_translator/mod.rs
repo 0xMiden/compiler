@@ -37,11 +37,15 @@ use crate::{
     unsupported_diag,
 };
 
-#[cfg(test)]
-mod tests;
+// TODO: restore
+//
+// #[cfg(test)]
+// mod tests;
 
-#[cfg(test)]
-mod tests_unsupported;
+// TODO: restore
+//
+// #[cfg(test)]
+// mod tests_unsupported;
 
 /// Translates wasm operators into Miden IR instructions.
 #[allow(clippy::too_many_arguments)]

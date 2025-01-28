@@ -13,16 +13,17 @@ use midenc_hir2::{
     self as hir2,
     dialects::builtin::{Component, ComponentBuilder, ComponentRef},
     version::Version,
-    BuilderExt, Context, EntityMut, OpBuilder,
+    Abi, BuilderExt, Context, EntityMut, OpBuilder,
 };
 use midenc_session::{DiagnosticsHandler, Session};
 use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{
-    CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule, ComponentFuncIndex,
-    ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypesBuilder,
-    ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent,
-    StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex, TypeModuleIndex,
+    interface_type_to_ir, CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule,
+    ComponentFuncIndex, ComponentIndex, ComponentInstanceIndex, ComponentInstantiation,
+    ComponentTypesBuilder, ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex,
+    ParsedComponent, StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex,
+    TypeModuleIndex,
 };
 use crate::{
     component::{ComponentItem, LocalInitializer, StaticComponentIndex},
@@ -539,10 +540,25 @@ impl<'a> ComponentTranslator<'a> {
 }
 
 fn convert_lifted_func_ty(
-    type_func_idx: &TypeFuncIndex,
+    ty: &TypeFuncIndex,
     component_types: &super::ComponentTypes,
 ) -> FunctionType {
-    todo!("implement as in original frontend")
+    let type_func = component_types[*ty].clone();
+    let params_types = component_types[type_func.params].clone().types;
+    let results_types = component_types[type_func.results].clone().types;
+    let params = params_types
+        .iter()
+        .map(|ty| interface_type_to_ir(ty, component_types))
+        .collect();
+    let results = results_types
+        .iter()
+        .map(|ty| interface_type_to_ir(ty, component_types))
+        .collect();
+    FunctionType {
+        params,
+        results,
+        abi: Abi::Wasm,
+    }
 }
 
 fn import_component_export_func(
