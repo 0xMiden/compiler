@@ -183,6 +183,10 @@ impl<'c> FunctionBuilderExt<'c> {
         block
     }
 
+    pub fn create_detached_block(&mut self) -> BlockRef {
+        self.inner.builder().context().create_block()
+    }
+
     /// Append parameters to the given `Block` corresponding to the function
     /// return values. This can be used to set up the block parameters for a
     /// function exit block.

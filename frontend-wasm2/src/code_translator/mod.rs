@@ -725,25 +725,24 @@ fn translate_return(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // let return_count = {
-    //     let frame = &mut state.control_stack[0];
-    //     frame.num_return_values()
-    // };
-    // {
-    //     let return_args = match return_count {
-    //         0 => None,
-    //         1 => Some(*state.peekn_mut(return_count).first().unwrap()),
-    //         _ => {
-    //             unsupported_diag!(diagnostics, "Multiple values are not supported");
-    //         }
-    //     };
-    //
-    //     builder.ins().ret(return_args, span);
-    // }
-    // state.popn(return_count);
-    // state.reachable = false;
-    // Ok(())
+    let return_count = {
+        let frame = &mut state.control_stack[0];
+        frame.num_return_values()
+    };
+    {
+        let return_args = match return_count {
+            0 => None,
+            1 => Some(*state.peekn_mut(return_count).first().unwrap()),
+            _ => {
+                unsupported_diag!(diagnostics, "Multiple values are not supported");
+            }
+        };
+
+        builder.ins().ret(return_args, span);
+    }
+    state.popn(return_count);
+    state.reachable = false;
+    Ok(())
 }
 
 fn translate_br(
@@ -1099,132 +1098,145 @@ fn translate_unreachable_operator(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // debug_assert!(!state.reachable);
-    // match *op {
-    //     Operator::If { blockty } => {
-    //         // Push a placeholder control stack entry. The if isn't reachable,
-    //         // so we don't have any branches anywhere.
-    //         let blockty = BlockType::from_wasm(&blockty, mod_types, diagnostics)?;
-    //         state.push_if(
-    //             Block::reserved_value(),
-    //             ElseData::NoElse {
-    //                 branch_inst: Inst::reserved_value(),
-    //                 placeholder: Block::reserved_value(),
-    //             },
-    //             0,
-    //             0,
-    //             blockty,
-    //         );
-    //     }
-    //     Operator::Loop { blockty: _ } | Operator::Block { blockty: _ } => {
-    //         state.push_block(Block::reserved_value(), 0, 0);
-    //     }
-    //     Operator::Else => {
-    //         let i = state.control_stack.len() - 1;
-    //         match state.control_stack[i] {
-    //             ControlStackFrame::If {
-    //                 ref else_data,
-    //                 head_is_reachable,
-    //                 ref mut consequent_ends_reachable,
-    //                 ref blocktype,
-    //                 ..
-    //             } => {
-    //                 debug_assert!(consequent_ends_reachable.is_none());
-    //                 *consequent_ends_reachable = Some(state.reachable);
-    //
-    //                 if head_is_reachable {
-    //                     // We have a branch from the head of the `if` to the `else`.
-    //                     state.reachable = true;
-    //
-    //                     let else_block = match *else_data {
-    //                         ElseData::NoElse {
-    //                             branch_inst,
-    //                             placeholder,
-    //                         } => {
-    //                             let else_block = builder
-    //                                 .create_block_with_params(blocktype.params.clone(), span);
-    //                             let frame = state.control_stack.last().unwrap();
-    //                             frame.truncate_value_stack_to_else_params(&mut state.stack);
-    //
-    //                             // We change the target of the branch instruction.
-    //                             builder.change_jump_destination(
-    //                                 branch_inst,
-    //                                 placeholder,
-    //                                 else_block,
-    //                             );
-    //                             builder.seal_block(else_block);
-    //                             else_block
-    //                         }
-    //                         ElseData::WithElse { else_block } => {
-    //                             let frame = state.control_stack.last().unwrap();
-    //                             frame.truncate_value_stack_to_else_params(&mut state.stack);
-    //                             else_block
-    //                         }
-    //                     };
-    //
-    //                     builder.switch_to_block(else_block);
-    //
-    //                     // Again, no need to push the parameters for the `else`,
-    //                     // since we already did when we saw the original `if`. See
-    //                     // the comment for translating `Operator::Else` in
-    //                     // `translate_operator` for details.
-    //                 }
-    //             }
-    //             _ => unreachable!(),
-    //         }
-    //     }
-    //     Operator::End => {
-    //         let stack = &mut state.stack;
-    //         let control_stack = &mut state.control_stack;
-    //         let frame = control_stack.pop().unwrap();
-    //
-    //         // Pop unused parameters from stack.
-    //         frame.truncate_value_stack_to_original_size(stack);
-    //
-    //         let reachable_anyway = match frame {
-    //             // If it is a loop we also have to seal the body loop block
-    //             ControlStackFrame::Loop { header, .. } => {
-    //                 builder.seal_block(header);
-    //                 // And loops can't have branches to the end.
-    //                 false
-    //             }
-    //             // If we never set `consequent_ends_reachable` then that means
-    //             // we are finishing the consequent now, and there was no
-    //             // `else`. Whether the following block is reachable depends only
-    //             // on if the head was reachable.
-    //             ControlStackFrame::If {
-    //                 head_is_reachable,
-    //                 consequent_ends_reachable: None,
-    //                 ..
-    //             } => head_is_reachable,
-    //             // Since we are only in this function when in unreachable code,
-    //             // we know that the alternative just ended unreachable. Whether
-    //             // the following block is reachable depends on if the consequent
-    //             // ended reachable or not.
-    //             ControlStackFrame::If {
-    //                 head_is_reachable,
-    //                 consequent_ends_reachable: Some(consequent_ends_reachable),
-    //                 ..
-    //             } => head_is_reachable && consequent_ends_reachable,
-    //             // All other control constructs are already handled.
-    //             _ => false,
-    //         };
-    //
-    //         if frame.exit_is_branched_to() || reachable_anyway {
-    //             builder.switch_to_block(frame.following_code());
-    //             builder.seal_block(frame.following_code());
-    //
-    //             // And add the return values of the block but only if the next block is reachable
-    //             // (which corresponds to testing if the stack depth is 1)
-    //             stack.extend_from_slice(builder.block_params(frame.following_code()));
-    //             state.reachable = true;
-    //         }
-    //     }
-    //     _ => {
-    //         // We don't translate because this is unreachable code
-    //     }
-    // }
-    //
-    // Ok(())
+    debug_assert!(!state.reachable);
+    match *op {
+        Operator::If { blockty } => {
+            // Push a placeholder control stack entry. The if isn't reachable,
+            // so we don't have any branches anywhere.
+            let blockty = BlockType::from_wasm(&blockty, mod_types, diagnostics)?;
+            let detached_block = builder.create_detached_block();
+            state.push_if(
+                detached_block,
+                ElseData::NoElse {
+                    branch_inst: builder
+                        .ins()
+                        .unreachable(span)
+                        .unwrap()
+                        .borrow()
+                        .as_ref()
+                        .as_operation_ref(),
+                    placeholder: detached_block,
+                },
+                0,
+                0,
+                blockty,
+            );
+        }
+        Operator::Loop { blockty: _ } | Operator::Block { blockty: _ } => {
+            state.push_block(builder.create_detached_block(), 0, 0);
+        }
+        Operator::Else => {
+            let i = state.control_stack.len() - 1;
+            match state.control_stack[i] {
+                ControlStackFrame::If {
+                    ref else_data,
+                    head_is_reachable,
+                    ref mut consequent_ends_reachable,
+                    ref blocktype,
+                    ..
+                } => {
+                    debug_assert!(consequent_ends_reachable.is_none());
+                    *consequent_ends_reachable = Some(state.reachable);
+
+                    if head_is_reachable {
+                        // We have a branch from the head of the `if` to the `else`.
+                        state.reachable = true;
+
+                        let else_block = match *else_data {
+                            ElseData::NoElse {
+                                branch_inst,
+                                placeholder,
+                            } => {
+                                let else_block = builder
+                                    .create_block_with_params(blocktype.params.clone(), span);
+                                let frame = state.control_stack.last().unwrap();
+                                frame.truncate_value_stack_to_else_params(&mut state.stack);
+
+                                // We change the target of the branch instruction.
+                                builder.change_jump_destination(
+                                    branch_inst,
+                                    placeholder,
+                                    else_block,
+                                );
+                                builder.seal_block(else_block);
+                                else_block
+                            }
+                            ElseData::WithElse { else_block } => {
+                                let frame = state.control_stack.last().unwrap();
+                                frame.truncate_value_stack_to_else_params(&mut state.stack);
+                                else_block
+                            }
+                        };
+
+                        builder.switch_to_block(else_block);
+
+                        // Again, no need to push the parameters for the `else`,
+                        // since we already did when we saw the original `if`. See
+                        // the comment for translating `Operator::Else` in
+                        // `translate_operator` for details.
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        Operator::End => {
+            let stack = &mut state.stack;
+            let control_stack = &mut state.control_stack;
+            let frame = control_stack.pop().unwrap();
+
+            // Pop unused parameters from stack.
+            frame.truncate_value_stack_to_original_size(stack);
+
+            let reachable_anyway = match frame {
+                // If it is a loop we also have to seal the body loop block
+                ControlStackFrame::Loop { header, .. } => {
+                    builder.seal_block(header);
+                    // And loops can't have branches to the end.
+                    false
+                }
+                // If we never set `consequent_ends_reachable` then that means
+                // we are finishing the consequent now, and there was no
+                // `else`. Whether the following block is reachable depends only
+                // on if the head was reachable.
+                ControlStackFrame::If {
+                    head_is_reachable,
+                    consequent_ends_reachable: None,
+                    ..
+                } => head_is_reachable,
+                // Since we are only in this function when in unreachable code,
+                // we know that the alternative just ended unreachable. Whether
+                // the following block is reachable depends on if the consequent
+                // ended reachable or not.
+                ControlStackFrame::If {
+                    head_is_reachable,
+                    consequent_ends_reachable: Some(consequent_ends_reachable),
+                    ..
+                } => head_is_reachable && consequent_ends_reachable,
+                // All other control constructs are already handled.
+                _ => false,
+            };
+
+            if frame.exit_is_branched_to() || reachable_anyway {
+                builder.switch_to_block(frame.following_code());
+                builder.seal_block(frame.following_code());
+
+                // And add the return values of the block but only if the next block is reachable
+                // (which corresponds to testing if the stack depth is 1)
+                let next_block_args: Vec<ValueRef> = frame
+                    .following_code()
+                    .borrow()
+                    .arguments()
+                    .iter()
+                    .map(|ba| ba.borrow().as_value_ref())
+                    .collect();
+                stack.extend_from_slice(&next_block_args);
+                state.reachable = true;
+            }
+        }
+        _ => {
+            // We don't translate because this is unreachable code
+        }
+    }
+
+    Ok(())
 }

@@ -7,7 +7,7 @@
 
 use midenc_dialect_hir::InstBuilder;
 use midenc_hir::{diagnostics::SourceSpan, Block, Inst};
-use midenc_hir2::{BlockRef, Signature, ValueRef};
+use midenc_hir2::{BlockRef, OperationRef, Signature, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;
@@ -25,7 +25,7 @@ pub enum ElseData {
         /// If we discover that we need an `else` block, this is the jump
         /// instruction that needs to be fixed up to point to the new `else`
         /// block rather than the destination block after the `if...end`.
-        branch_inst: Inst,
+        branch_inst: OperationRef,
 
         /// The placeholder block we're replacing.
         placeholder: BlockRef,
