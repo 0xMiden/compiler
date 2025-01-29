@@ -1,5 +1,5 @@
 use midenc_hir2::{
-    dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Immediate, Listener,
+    dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Felt, Immediate, Listener,
     OpBuilder, Overflow, Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef,
     Usable, ValueRef,
 };
@@ -194,39 +194,76 @@ pub trait InstBuilder: InstBuilderBase {
         op_builder(lhs, rhs)
     }
 
-    fn u32(mut self, value: u32, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
-        let constant = op_builder(Immediate::U32(value))?;
-        Ok(constant.borrow().result().as_value_ref())
-    }
-
-    //signed_integer_literal!(1, bool);
-    //integer_literal!(8);
-    //integer_literal!(16);
-    //integer_literal!(32);
-    //integer_literal!(64);
-    //integer_literal!(128);
-
     /*
-    fn felt(self, i: Felt, span: SourceSpan) -> Value {
-        into_first_result!(self.UnaryImm(Opcode::ImmFelt, Type::Felt, Immediate::Felt(i), span))
-    }
-
-    fn f64(self, f: f64, span: SourceSpan) -> Value {
-        into_first_result!(self.UnaryImm(Opcode::ImmF64, Type::F64, Immediate::F64(f), span))
-    }
-
     fn character(self, c: char, span: SourceSpan) -> Value {
         self.i32((c as u32) as i32, span)
     }
     */
 
+    fn i1(mut self, value: bool, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::I1(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn i8(mut self, value: i8, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::I8(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn i16(mut self, value: i16, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::I16(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
     fn i32(mut self, value: i32, span: SourceSpan) -> ValueRef {
-        todo!()
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::I32(value)).unwrap();
+        constant.borrow().result().as_value_ref()
     }
 
     fn i64(mut self, value: i64, span: SourceSpan) -> ValueRef {
-        todo!()
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::I64(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn u8(mut self, value: u8, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::U8(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn u16(mut self, value: u16, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::U16(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn u32(mut self, value: u32, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::U32(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn u64(mut self, value: u64, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::U64(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn f64(mut self, value: f64, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::F64(value)).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
+    fn felt(mut self, value: Felt, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(Immediate::Felt(value)).unwrap();
+        constant.borrow().result().as_value_ref()
     }
 
     /// Grow the global heap by `num_pages` pages, in 64kb units.
@@ -990,8 +1027,10 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn neq_imm(mut self, cond: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
+    fn neq_imm(mut self, cond: ValueRef, imm: i32, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::NeqImm, _>(span);
+        let op = op_builder(cond, imm)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     /// Compares two integers and returns the minimum value

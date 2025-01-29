@@ -161,6 +161,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Rotr>();
         info.register_operation::<ops::Eq>();
         info.register_operation::<ops::Neq>();
+        info.register_operation::<ops::NeqImm>();
         info.register_operation::<ops::Gt>();
         info.register_operation::<ops::Gte>();
         info.register_operation::<ops::Lt>();

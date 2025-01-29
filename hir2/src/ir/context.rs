@@ -6,6 +6,7 @@ use core::{
 
 use blink_alloc::Blink;
 use midenc_session::Session;
+use traits::BranchOpInterface;
 
 use super::*;
 use crate::{
@@ -224,6 +225,39 @@ impl Context {
     ) -> OpResultRef {
         let id = self.alloc_value_id();
         self.alloc(OpResult::new(span, id, ty, owner, index))
+    }
+
+    /// Appends `value` as an argument to the `branch_inst` instruction arguments list if the
+    /// destination block of the `branch_inst` is `dest`.
+    ///
+    /// NOTE: Panics if `branch_inst` is not a branch instruction.
+    pub fn append_branch_destination_argument(
+        &self,
+        mut branch_inst: OperationRef,
+        dest: BlockRef,
+        value: ValueRef,
+    ) {
+        let mut borrow = branch_inst.borrow_mut();
+        let op = borrow.as_mut().as_operation_mut();
+        assert!(
+            op.as_trait::<dyn BranchOpInterface>().is_some(),
+            "expected branch instruction, got {branch_inst:?}"
+        );
+        let dest_operand_groups: Vec<usize> = op
+            .successors()
+            .iter()
+            .filter(|succ| succ.block.borrow().block == dest)
+            .map(|succ| succ.operand_group as usize)
+            .collect();
+        for dest_group in dest_operand_groups {
+            let current_dest_operands_len = op.operands.group(dest_group).len();
+            let operand = self.make_operand(
+                value,
+                op.as_operation_ref(),
+                (current_dest_operands_len + 1) as u8,
+            );
+            op.operands_mut().extend_group(dest_group, vec![operand]);
+        }
     }
 
     /// Allocate a new uninitialized entity of type `T`

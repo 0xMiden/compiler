@@ -7,7 +7,7 @@
 
 use midenc_dialect_hir::InstBuilder;
 use midenc_hir::{diagnostics::SourceSpan, Block, Inst};
-use midenc_hir2::{BlockRef, Signature, ValueRef};
+use midenc_hir2::{BlockRef, OperationRef, Signature, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;
@@ -25,7 +25,7 @@ pub enum ElseData {
         /// If we discover that we need an `else` block, this is the jump
         /// instruction that needs to be fixed up to point to the new `else`
         /// block rather than the destination block after the `if...end`.
-        branch_inst: Inst,
+        branch_inst: OperationRef,
 
         /// The placeholder block we're replacing.
         placeholder: BlockRef,
@@ -296,13 +296,15 @@ impl FuncTranslationState {
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
     ) -> ValueRef {
-        todo!()
-        // let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
-        // if builder.data_flow_graph().value_type(val) != &ty {
-        //     builder.ins().bitcast(val, ty, span)
-        // } else {
-        //     val
-        // }
+        let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
+        if val.borrow().ty() != &ty {
+            builder
+                .ins()
+                .bitcast(val, ty.clone(), span)
+                .unwrap_or_else(|_| panic!("failed to bitcast {:?} to {:?}", val, ty))
+        } else {
+            val
+        }
     }
 
     /// Peek at the top of the stack without popping it.
@@ -414,7 +416,6 @@ impl FuncTranslationState {
         num_result_types: usize,
     ) {
         debug_assert!(num_param_types <= self.stack.len());
-        dbg!(&following_code);
         self.control_stack.push(ControlStackFrame::Block {
             destination: following_code,
             original_stack_size: self.stack.len() - num_param_types,

@@ -204,9 +204,10 @@ impl PrettyPrint for OperationPrinter<'_> {
                         if i > 0 {
                             doc + const_text(", ") + display(succ.block.borrow().block)
                         } else {
-                            doc + display(succ.block.borrow().block) + const_text(" ")
+                            doc + display(succ.block.borrow().block)
                         }
                     });
+                    doc += const_text(" ");
                 }
 
                 let operands = self.op.operands();

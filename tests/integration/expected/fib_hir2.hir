@@ -1,0 +1,27 @@
+builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+
+    builtin.module  #[name = #miden_integration_tests_rust_fib_wasm] #[visibility = public] {
+
+        builtin.function public @fib(v0: i32) -> i32 {
+        ^block2(v0: i32):
+            v2 = hir.constant 0 : i32;
+            v3 = hir.constant 0 : i32;
+            v4 = hir.constant 1 : i32;
+            hir.br block4 v4, v0, v3;
+        ^block3(v1: i32):
+
+        ^block4(v6: i32, v7: i32, v9: i32):
+            v8 = hir.neq_imm v7 : i1 #[rhs = 0];
+            hir.cond_br block6, block7 v8;
+        ^block5(v5: i32):
+
+        ^block6:
+            v10 = hir.constant -1 : i32;
+            v11 = hir.add v7, v10 : i32 #[overflow = wrapping];
+            v12 = hir.add v9, v6 : i32 #[overflow = wrapping];
+            hir.br block4 v12, v11, v6;
+        ^block7:
+            hir.ret v9;
+        };
+    };
+};

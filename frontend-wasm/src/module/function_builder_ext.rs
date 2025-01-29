@@ -139,11 +139,6 @@ impl<'a, 'b, 'c> FunctionBuilderExt<'a, 'b, 'c> {
         // First we check that the previous block has been filled.
 
         let is_unreachable = self.is_unreachable();
-        dbg!(self.inner.current_block());
-        dbg!(block);
-        dbg!(is_unreachable);
-        dbg!(self.is_pristine(self.inner.current_block()));
-        dbg!(self.is_filled(self.inner.current_block()));
         debug_assert!(
             is_unreachable
                 || self.is_pristine(self.inner.current_block())
@@ -343,8 +338,6 @@ impl<'a, 'b, 'c> FunctionBuilderExt<'a, 'b, 'c> {
     /// Returns `true` if and only if a terminator instruction has been inserted since the
     /// last call to `switch_to_block`.
     fn is_filled(&self, block: Block) -> bool {
-        dbg!(block);
-        dbg!(&self.func_ctx.status);
         self.func_ctx.status[block] == BlockStatus::Filled
     }
 

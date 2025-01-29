@@ -70,7 +70,6 @@ impl Function {
             .as_operation()
             .context()
             .create_block_with_params(signature.params().iter().map(|p| p.ty.clone()));
-        dbg!(&block);
         let mut body = self.body_mut();
         body.push_back(block);
         Block::on_inserted_into_parent(block, body.as_region_ref());

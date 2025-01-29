@@ -74,7 +74,6 @@ pub fn translate_module_as_component(
         .unwrap();
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();
-    dbg!(&module_name);
     let mut module_ref = cb.define_module(Ident::from(module_name)).unwrap().borrow_mut();
     let module = module_ref.as_mut().downcast_mut::<Module>().unwrap();
 
@@ -162,7 +161,6 @@ pub fn build_ir_module(
             Visibility::Internal
         };
         let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, visibility);
-        dbg!(&func_name);
         let mut function_ref = module_builder
             .define_function(Ident::from(func_name), sig)
             .unwrap()

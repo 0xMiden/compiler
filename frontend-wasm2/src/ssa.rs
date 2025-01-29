@@ -210,16 +210,12 @@ impl SSABuilder {
     ///
     /// This function sets up state for `run_state_machine()` but does not execute it.
     fn use_var_nonlocal(&mut self, var: Variable, ty: Type, mut block: BlockRef) {
-        dbg!(var);
         // First, try Local Value Numbering (Algorithm 1 in the paper).
         // If the variable already has a known Value in this block, use that.
-        dbg!(&block);
-        // dbg!(&self.variables);
         if let Some(val) = self.variables.entry(var).or_default().entry(block).or_default() {
             self.results.push(*val);
             return;
         }
-        // dbg!(&self.variables);
 
         // Otherwise, use Global Value Numbering (Algorithm 2 in the paper).
         // This resolves the Value with respect to its predecessors.
@@ -244,7 +240,7 @@ impl SSABuilder {
         // any of the blocks before `from`.
         //
         // So in either case there is no definition in these blocks yet and we can blindly set one.
-        let var_defs = self.variables.get_mut(&var).unwrap();
+        let var_defs = self.variables.entry(var).or_default();
         while block != from {
             debug_assert!(var_defs[&block].is_none());
             var_defs.insert(block, Some(val));
@@ -284,16 +280,15 @@ impl SSABuilder {
                 break;
             }
             block = pred;
-            if let Some(val) = var_defs[&block] {
-                self.results.push(val);
-                return (val, block);
+            if let Some(val) = var_defs.entry(block).or_default() {
+                self.results.push(*val);
+                return (*val, block);
             }
         }
 
         // We've promised to return the most recent block where `var` was defined, but we didn't
         // find a usable definition. So create one.
 
-        dbg!(&var, &block, &ty);
         let val = self.context.append_block_argument(block, ty, SourceSpan::default());
         var_defs.insert(block, Some(val));
 
@@ -302,13 +297,11 @@ impl SSABuilder {
         // problems with doing that. First, we need to keep a fixed bound on stack depth, so we
         // can't actually recurse; instead we defer to `run_state_machine`. Second, if we don't
         // know all our predecessors yet, we have to defer this work until the block gets sealed.
-        match self.ssa_blocks.get_mut(&block).unwrap().sealed {
+        match &mut self.ssa_blocks.get_mut(&block).unwrap().sealed {
             // Once all the `calls` added here complete, this leaves either `val` or an equivalent
             // definition on the `results` stack.
             Sealed::Yes => self.begin_predecessors_lookup(val, block),
-            Sealed::No {
-                mut undef_variables,
-            } => {
+            Sealed::No { undef_variables } => {
                 undef_variables.push(var, &mut self.variable_pool);
                 self.results.push(val);
             }
@@ -384,12 +377,12 @@ impl SSABuilder {
         // only if necessary.
         let mut undef_variables = match self.ssa_blocks.entry_ref(&block) {
             EntryRef::Occupied(mut entry) => {
-                let undef_variables = match entry.get().sealed {
+                let old_sealed = entry.get().sealed.clone();
+                entry.get_mut().sealed = Sealed::Yes;
+                match old_sealed {
                     Sealed::No { undef_variables } => undef_variables,
                     Sealed::Yes => return,
-                };
-                entry.get_mut().sealed = Sealed::Yes;
-                undef_variables
+                }
             }
             EntryRef::Vacant(_) => {
                 self.ssa_blocks.insert(
@@ -486,9 +479,7 @@ impl SSABuilder {
                 "you have declared a non-branch instruction as a predecessor to a block!"
             );
 
-            let ty = val.borrow().ty().clone();
-            dbg!(&dest_block, &ty);
-            self.context.append_block_argument(dest_block, ty, val.borrow().span());
+            self.context.append_branch_destination_argument(branch, dest_block, val);
         }
         sentinel
     }
