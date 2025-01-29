@@ -200,7 +200,6 @@ impl<'c> FunctionBuilderExt<'c> {
 
         #[allow(clippy::unnecessary_to_owned)]
         for argtyp in self.signature().results().to_vec() {
-            dbg!(&argtyp.ty);
             self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
         }
     }
@@ -215,11 +214,6 @@ impl<'c> FunctionBuilderExt<'c> {
     pub fn switch_to_block(&mut self, block: BlockRef) {
         // First we check that the previous block has been filled.
         let is_unreachable = self.is_unreachable();
-        dbg!(self.inner.current_block());
-        dbg!(block);
-        dbg!(is_unreachable);
-        dbg!(self.is_pristine(&self.inner.current_block()));
-        dbg!(self.is_filled(&self.inner.current_block()));
         debug_assert!(
             is_unreachable
                 || self.is_pristine(&self.inner.current_block())
@@ -415,12 +409,9 @@ impl<'c> FunctionBuilderExt<'c> {
     /// The entry block of a function is never unreachable.
     pub fn is_unreachable(&self) -> bool {
         let is_entry = self.inner.current_block() == self.inner.entry_block();
-        dbg!(is_entry);
         let func_ctx = self.func_ctx.borrow();
         let is_sealed = func_ctx.ssa.is_sealed(self.inner.current_block());
-        dbg!(is_sealed);
         let has_no_predecessors = !func_ctx.ssa.has_any_predecessors(self.inner.current_block());
-        dbg!(has_no_predecessors);
         !is_entry && is_sealed && has_no_predecessors
     }
 

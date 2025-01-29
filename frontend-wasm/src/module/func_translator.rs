@@ -68,10 +68,7 @@ impl FuncTranslator {
 
         // Set up the translation state with a single pushed control block representing the whole
         // function and its return values.
-        dbg!(builder.current_block());
         let exit_block = builder.create_block();
-        dbg!(&exit_block);
-        dbg!(builder.current_block());
         builder.append_block_params_for_function_returns(exit_block);
         self.state.initialize(builder.signature(), exit_block);
 

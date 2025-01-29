@@ -416,7 +416,6 @@ impl FuncTranslationState {
         num_result_types: usize,
     ) {
         debug_assert!(num_param_types <= self.stack.len());
-        dbg!(&following_code);
         self.control_stack.push(ControlStackFrame::Block {
             destination: following_code,
             original_stack_size: self.stack.len() - num_param_types,
