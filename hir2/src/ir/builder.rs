@@ -145,7 +145,7 @@ pub trait Builder: Listener {
             },
             ProgramPoint::Invalid => panic!("insertion point is invalid/unset"),
         }
-        self.notify_operation_inserted(op, ProgramPoint::Invalid);
+        self.notify_operation_inserted(op, *self.insertion_point());
     }
 }
 

@@ -7,13 +7,16 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
-        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
-        NoTerminator, SingleBlock, SingleRegion,
+        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoTerminator, SingleBlock,
+        SingleRegion,
     },
     version::Version,
     Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, Usable, Visibility,
+    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    Visibility,
 };
+
+pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 
 /// A [Component] is a modular abstraction operation, i.e. it is designed to model shared-nothing
 /// boundaries between groups of shared-everything modules in a system.
@@ -61,7 +64,7 @@ use crate::{
     traits(
         SingleRegion,
         SingleBlock,
-        NoRegionArguments,
+        // NoRegionArguments,
         NoTerminator,
         HasOnlyGraphRegion,
         GraphRegionNoTerminator,

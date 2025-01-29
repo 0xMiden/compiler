@@ -1,7 +1,6 @@
 use midenc_hir::{
-    cranelift_entity::PrimaryMap, diagnostics::Severity, CanonAbiImport, ComponentBuilder,
-    ComponentExport, FunctionIdent, FunctionType, FxHashMap, Ident, InterfaceFunctionIdent,
-    InterfaceIdent, MidenAbiImport, Symbol,
+    cranelift_entity::PrimaryMap, CanonAbiImport, ComponentBuilder, ComponentExport, FunctionIdent,
+    FunctionType, FxHashMap, Ident, InterfaceFunctionIdent, InterfaceIdent, MidenAbiImport, Symbol,
 };
 use midenc_hir_type::Abi;
 use midenc_session::{DiagnosticsHandler, Session};
@@ -487,7 +486,10 @@ fn function_id_from_export(exporting_module: &Module, func_idx: FuncIndex) -> Fu
 }
 
 /// Convert the given Wasm component function type to the Miden IR lifted function type
-fn convert_lifted_func_ty(ty: &TypeFuncIndex, component_types: &ComponentTypes) -> FunctionType {
+pub fn convert_lifted_func_ty(
+    ty: &TypeFuncIndex,
+    component_types: &ComponentTypes,
+) -> FunctionType {
     let type_func = component_types[*ty].clone();
     let params_types = component_types[type_func.params].clone().types;
     let results_types = component_types[type_func.results].clone().types;

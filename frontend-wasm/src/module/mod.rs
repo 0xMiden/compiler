@@ -8,7 +8,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 use indexmap::IndexMap;
 use midenc_hir::{
     cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap},
-    diagnostics::{DiagnosticsHandler, Severity},
+    diagnostics::DiagnosticsHandler,
     FxHashMap, Ident, Symbol,
 };
 

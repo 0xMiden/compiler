@@ -15,7 +15,7 @@
 
 use midenc_hir::{
     cranelift_entity::packed_option::ReservedValue,
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity, SourceSpan},
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan},
     Block, FieldElement, Immediate, Inst, InstBuilder, Type,
     Type::*,
     Value,

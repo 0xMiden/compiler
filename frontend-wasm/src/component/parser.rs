@@ -7,9 +7,7 @@ use std::mem;
 
 use indexmap::IndexMap;
 use midenc_hir::{
-    cranelift_entity::PrimaryMap,
-    diagnostics::{IntoDiagnostic, Severity},
-    FxBuildHasher, FxHashMap,
+    cranelift_entity::PrimaryMap, diagnostics::IntoDiagnostic, FxBuildHasher, FxHashMap,
 };
 use midenc_session::Session;
 use wasmparser::{
@@ -183,23 +181,42 @@ pub struct ParsedComponent<'data> {
     pub types: Option<Types>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CanonLower {
+    pub func: ComponentFuncIndex,
+    pub lower_ty: ComponentFuncTypeId,
+    pub canonical_abi: SignatureIndex,
+    pub options: LocalCanonicalOptions,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonLift {
+    pub ty: ComponentFuncTypeId,
+    pub func: FuncIndex,
+    pub options: LocalCanonicalOptions,
+}
+
+#[derive(Debug, Clone)]
+// component instances
+pub struct ComponentInstantiation<'data> {
+    pub component: ComponentIndex,
+    pub args: FxHashMap<&'data str, ComponentItem>,
+    pub ty: ComponentInstanceTypeId,
+}
+
 // NB: the type information contained in `LocalInitializer` should always point
 // to `wasmparser`'s type information, not ours. Component types cannot be
 // fully determined due to resources until instantiations are known which is
 // tracked during the inlining phase. This means that all type information below
 // is straight from `wasmparser`'s passes.
+#[derive(Debug)]
 pub enum LocalInitializer<'data> {
     // imports
     Import(ComponentImportName<'data>, ComponentEntityType),
 
     // canonical function sections
-    Lower {
-        func: ComponentFuncIndex,
-        lower_ty: ComponentFuncTypeId,
-        canonical_abi: SignatureIndex,
-        options: LocalCanonicalOptions,
-    },
-    Lift(ComponentFuncTypeId, FuncIndex, LocalCanonicalOptions),
+    Lower(CanonLower),
+    Lift(CanonLift),
 
     // resources
     Resource(AliasableResourceId, WasmType, Option<FuncIndex>),
@@ -217,12 +234,7 @@ pub enum LocalInitializer<'data> {
     // components
     ComponentStatic(StaticComponentIndex, ClosedOverVars),
 
-    // component instances
-    ComponentInstantiate(
-        ComponentIndex,
-        FxHashMap<&'data str, ComponentItem>,
-        ComponentInstanceTypeId,
-    ),
+    ComponentInstantiate(ComponentInstantiation<'data>),
     ComponentSynthetic(FxHashMap<&'data str, ComponentItem>),
 
     // alias section
@@ -235,13 +247,13 @@ pub enum LocalInitializer<'data> {
     AliasComponent(ClosedOverComponent),
 
     // export section
-    Export(ComponentItem),
+    Export(&'data str, ComponentItem),
 }
 
 /// The "closure environment" of components themselves.
 ///
 /// For more information see `LexicalScope`.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ClosedOverVars {
     pub components: PrimaryMap<ComponentUpvarIndex, ClosedOverComponent>,
     pub modules: PrimaryMap<ModuleUpvarIndex, ClosedOverModule>,
@@ -251,6 +263,7 @@ pub struct ClosedOverVars {
 /// a component are being created.
 ///
 /// For more information see `LexicalScope`.
+#[derive(Debug)]
 pub enum ClosedOverComponent {
     /// A closed over component is coming from the local component's index
     /// space, meaning a previously defined component is being captured.
@@ -263,12 +276,14 @@ pub enum ClosedOverComponent {
 }
 
 /// Same as `ClosedOverComponent`, but for modules.
+#[derive(Debug)]
 pub enum ClosedOverModule {
     Local(ModuleIndex),
     Upvar(ModuleUpvarIndex),
 }
 
 /// Representation of canonical ABI options.
+#[derive(Debug, Clone)]
 pub struct LocalCanonicalOptions {
     pub string_encoding: StringEncoding,
     pub memory: Option<MemoryIndex>,
@@ -349,6 +364,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             } => {
                 self.validator.version(num, encoding, &range).into_diagnostic()?;
 
+                // dbg!(&encoding);
                 match encoding {
                     Encoding::Component => {}
                     Encoding::Module => {
@@ -470,6 +486,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             let import = import.into_diagnostic()?;
             let types = self.validator.types(0).unwrap();
             let ty = types.component_entity_type_of_import(import.name.0).unwrap();
+            // dbg!(&import.name, &ty);
             self.result.initializers.push(LocalInitializer::Import(import.name, ty));
         }
         Ok(())
@@ -494,7 +511,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     let ty = types.component_any_type_at(type_index).unwrap_func();
                     let func = FuncIndex::from_u32(core_func_index);
                     let options = canonical_options(&options);
-                    LocalInitializer::Lift(ty, func, options)
+                    LocalInitializer::Lift(CanonLift { ty, func, options })
                 }
                 wasmparser::CanonicalFunction::Lower {
                     func_index,
@@ -506,12 +523,12 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     let canonical_abi = self.core_func_signature(core_func_index);
 
                     core_func_index += 1;
-                    LocalInitializer::Lower {
+                    LocalInitializer::Lower(CanonLower {
                         func,
                         options,
                         canonical_abi,
                         lower_ty,
-                    }
+                    })
                 }
                 wasmparser::CanonicalFunction::ResourceNew { resource } => {
                     let resource = types.component_any_type_at(resource).unwrap_resource();
@@ -532,6 +549,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     LocalInitializer::ResourceRep(resource, ty)
                 }
             };
+            // dbg!(&init);
             self.result.initializers.push(init);
         }
         Ok(())
@@ -611,6 +629,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     instantiate_module_from_exports(&exports)
                 }
             };
+            // dbg!(&init);
             self.result.initializers.push(init);
         }
         Ok(())
@@ -637,6 +656,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     self.instantiate_component_from_exports(&exports)?
                 }
             };
+            // dbg!(&init);
             self.result.initializers.push(init);
             index += 1;
         }
@@ -655,10 +675,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         self.validator.component_export_section(&s).into_diagnostic()?;
         for export in s {
             let export = export.into_diagnostic()?;
+            // dbg!(&export);
             let item = self.kind_to_item(export.kind, export.index)?;
             let prev = self.result.exports.insert(export.name.0, item);
             assert!(prev.is_none());
-            self.result.initializers.push(LocalInitializer::Export(item));
+            self.result.initializers.push(LocalInitializer::Export(export.name.0, item));
         }
         Ok(())
     }
@@ -694,6 +715,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     alias_module_instance_export(kind, instance, name)
                 }
             };
+            // dbg!(&init);
             self.result.initializers.push(init);
         }
         Ok(())
@@ -712,7 +734,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             args.insert(arg.name, idx);
         }
 
-        Ok(LocalInitializer::ComponentInstantiate(component, args, ty))
+        Ok(LocalInitializer::ComponentInstantiate(ComponentInstantiation {
+            component,
+            args,
+            ty,
+        }))
     }
 
     /// Creates a synthetic module from the list of items currently in the
@@ -727,6 +753,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             map.insert(export.name.0, idx);
         }
 
+        // dbg!(&map);
         Ok(LocalInitializer::ComponentSynthetic(map))
     }
 

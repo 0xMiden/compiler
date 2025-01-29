@@ -1132,11 +1132,13 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
     }
 }
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
+    #[track_caller]
     pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
         let ptr = self as *const Self;
         unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
     }
 
+    #[track_caller]
     pub(crate) fn borrow_mut(&self) -> EntityMut<'_, T> {
         let ptr = (self as *const Self).cast_mut();
         unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() }

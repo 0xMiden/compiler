@@ -4,6 +4,7 @@ members = [
     "codegen/*",
     "dialects/*",
     "frontend-wasm",
+    "frontend-wasm2",
     "hir",
     "hir2",
     "hir-analysis",
@@ -122,6 +123,7 @@ midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.0.7", path = "hir-transform" }
 midenc-hir-type = { version = "0.0.7", path = "hir-type" }
 midenc-frontend-wasm = { version = "0.0.7", path = "frontend-wasm" }
+midenc-frontend-wasm2 = { version = "0.0.7", path = "frontend-wasm2" }
 midenc-compile = { version = "0.0.7", path = "midenc-compile" }
 midenc-driver = { version = "0.0.7", path = "midenc-driver" }
 midenc-debug = { version = "0.0.7", path = "midenc-debug" }

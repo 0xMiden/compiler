@@ -624,6 +624,7 @@ impl Block {
     /// Insert this block after `after` in its containing region.
     ///
     /// Panics if this block is already attached to a region, or if `after` is not attached.
+    #[track_caller]
     pub fn insert_after(&mut self, after: BlockRef) {
         assert!(
             self.region.is_none(),
@@ -643,6 +644,7 @@ impl Block {
     /// Insert this block before `before` in its containing region.
     ///
     /// Panics if this block is already attached to a region, or if `before` is not attached.
+    #[track_caller]
     pub fn insert_before(&mut self, before: BlockRef) {
         assert!(
             self.region.is_none(),
@@ -662,6 +664,7 @@ impl Block {
     /// Insert this block at the end of `region`.
     ///
     /// Panics if this block is already attached to a region.
+    #[track_caller]
     pub fn insert_at_end(&mut self, mut region: RegionRef) {
         assert!(
             self.region.is_none(),
@@ -675,6 +678,7 @@ impl Block {
     }
 
     /// Unlink this block from its current region and insert it right before `before`
+    #[track_caller]
     pub fn move_before(&mut self, before: BlockRef) {
         self.unlink();
         self.insert_before(before);
