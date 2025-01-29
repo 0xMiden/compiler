@@ -751,23 +751,22 @@ fn translate_br(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) {
-    todo!()
-    // let i = state.control_stack.len() - 1 - (*relative_depth as usize);
-    // let (return_count, br_destination) = {
-    //     let frame = &mut state.control_stack[i];
-    //     // We signal that all the code that follows until the next End is unreachable
-    //     frame.set_branched_to_exit();
-    //     let return_count = if frame.is_loop() {
-    //         frame.num_param_values()
-    //     } else {
-    //         frame.num_return_values()
-    //     };
-    //     (return_count, frame.br_destination())
-    // };
-    // let destination_args = state.peekn_mut(return_count);
-    // builder.ins().br(br_destination, destination_args, span);
-    // state.popn(return_count);
-    // state.reachable = false;
+    let i = state.control_stack.len() - 1 - (*relative_depth as usize);
+    let (return_count, br_destination) = {
+        let frame = &mut state.control_stack[i];
+        // We signal that all the code that follows until the next End is unreachable
+        frame.set_branched_to_exit();
+        let return_count = if frame.is_loop() {
+            frame.num_param_values()
+        } else {
+            frame.num_return_values()
+        };
+        (return_count, frame.br_destination())
+    };
+    let destination_args = state.peekn_mut(return_count).to_vec();
+    builder.ins().br(br_destination, destination_args, span);
+    state.popn(return_count);
+    state.reachable = false;
 }
 
 fn translate_br_if(
@@ -898,7 +897,6 @@ fn translate_end(
     // block and have already been translated) and modify the value stack to use the
     // possible `Block`'s arguments values.
     let frame = state.control_stack.pop().unwrap();
-    // dbg!(&frame);
     let next_block = frame.following_code();
     let return_count = frame.num_return_values();
     let return_args = state.peekn_mut(return_count);
