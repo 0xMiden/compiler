@@ -115,7 +115,8 @@ pub fn translate_operator(
             // if cond is not 0, return arg1, else return arg2
             // https://www.w3.org/TR/wasm-core-1/#-hrefsyntax-instr-parametricmathsfselect%E2%91%A0
             // cond is expected to be an i32
-            let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
+            let imm = builder.ins().imm(Immediate::I32(0), span);
+            let cond_i1 = builder.ins().neq(cond, imm, span)?;
             state.push1(builder.ins().select(cond_i1, arg1, arg2, span)?);
         }
         Operator::TypedSelect { ty } => {
@@ -127,7 +128,8 @@ pub fn translate_operator(
                     state.push1(builder.ins().select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I32 => {
-                    let cond = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
+                    let imm = builder.ins().imm(Immediate::I32(0), span);
+                    let cond = builder.ins().neq(cond, imm, span)?;
                     state.push1(builder.ins().select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I64 => {
@@ -409,31 +411,31 @@ pub fn translate_operator(
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();
-            state.push1(builder.ins().div_unchecked(arg1, arg2, span));
+            state.push1(builder.ins().div(arg1, arg2, span)?);
         }
         Operator::I32DivU => {
             let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
-            let val = builder.ins().div_unchecked(arg1, arg2, span);
+            let val = builder.ins().div(arg1, arg2, span)?;
             state.push1(builder.ins().bitcast(val, I32, span)?);
         }
         Operator::I64DivU => {
             let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span)?;
-            let val = builder.ins().div_unchecked(arg1, arg2, span);
+            let val = builder.ins().div(arg1, arg2, span)?;
             state.push1(builder.ins().bitcast(val, I64, span)?);
         }
         Operator::I32RemU => {
             let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
-            let val = builder.ins().r#mod_checked(arg1, arg2, span);
+            let val = builder.ins().r#mod(arg1, arg2, span)?;
             state.push1(builder.ins().bitcast(val, I32, span)?);
         }
         Operator::I64RemU => {
             let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span)?;
-            let val = builder.ins().r#mod_checked(arg1, arg2, span);
+            let val = builder.ins().r#mod(arg1, arg2, span)?;
             state.push1(builder.ins().bitcast(val, I64, span)?);
         }
         Operator::I32RemS | Operator::I64RemS => {
             let (arg1, arg2) = state.pop2();
-            state.push1(builder.ins().r#mod_checked(arg1, arg2, span));
+            state.push1(builder.ins().r#mod(arg1, arg2, span)?);
         }
         /**************************** Comparison Operators **********************************/
         Operator::I32LtU => {
@@ -513,12 +515,14 @@ pub fn translate_operator(
         }
         Operator::I32Eqz => {
             let arg = state.pop1();
-            let val = builder.ins().eq_imm(arg, Immediate::I32(0), span)?;
+            let imm = builder.ins().imm(Immediate::I32(0), span);
+            let val = builder.ins().eq(arg, imm, span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I64Eqz => {
             let arg = state.pop1();
-            let val = builder.ins().eq_imm(arg, Immediate::I64(0), span)?;
+            let imm = builder.ins().imm(Immediate::I64(0), span);
+            let val = builder.ins().eq(arg, imm, span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I32Eq => {
@@ -641,20 +645,15 @@ fn prepare_addr(
     let mut full_addr_int = addr_u32;
     if let Some(memarg) = memarg {
         if memarg.offset != 0 {
-            full_addr_int =
-                builder
-                    .ins()
-                    .add_imm_checked(addr_u32, Immediate::U32(memarg.offset as u32), span);
+            let imm = builder.ins().imm(Immediate::U32(memarg.offset as u32), span);
+            full_addr_int = builder.ins().add(addr_u32, imm, span)?;
         }
         // TODO(pauls): For now, asserting alignment helps us catch mistakes/bugs, but we should
         // probably make this something that can be disabled to avoid the overhead in release builds
         if memarg.align > 0 {
             // Generate alignment assertion - aligned addresses should always produce 0 here
-            let align_offset = builder.ins().mod_imm_unchecked(
-                full_addr_int,
-                Immediate::U32(2u32.pow(memarg.align as u32)),
-                span,
-            );
+            let imm = builder.ins().imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
+            let align_offset = builder.ins().r#mod(full_addr_int, imm, span)?;
             builder.ins().assertz_with_error(
                 align_offset,
                 midenc_hir::ASSERT_FAILED_ALIGNMENT,
@@ -776,7 +775,8 @@ fn translate_br_if(
     let else_dest = next_block;
     let else_args = vec![];
     // cond is expected to be a i32 value
-    let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
+    let imm = builder.ins().imm(Immediate::I32(0), span);
+    let cond_i1 = builder.ins().neq(cond, imm, span)?;
     builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
     builder.seal_block(next_block); // The only predecessor is the current block.
     builder.switch_to_block(next_block);

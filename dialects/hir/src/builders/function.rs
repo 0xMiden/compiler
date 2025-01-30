@@ -266,7 +266,7 @@ pub trait InstBuilder: InstBuilderBase {
         constant.borrow().result().as_value_ref()
     }
 
-    fn imm(&mut self, value: Immediate, span: SourceSpan) -> ValueRef {
+    fn imm(mut self, value: Immediate, span: SourceSpan) -> ValueRef {
         let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
         let constant = op_builder(value).unwrap();
         constant.borrow().result().as_value_ref()
@@ -719,10 +719,6 @@ pub trait InstBuilder: InstBuilderBase {
         Ok((overflowed, result))
     }
 
-    fn add_imm_checked(mut self, addr_u32: ValueRef, u32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
     /// Two's complement subtraction which traps on under/overflow
     fn sub(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Sub, _>(span);
@@ -826,28 +822,11 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn div_unchecked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
     /// Integer Euclidean modulo. Traps if `rhs` is zero.
     fn r#mod(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Mod, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
-    }
-
-    fn r#mod_checked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
-    fn mod_imm_unchecked(
-        mut self,
-        full_addr_int: ValueRef,
-        u32: Immediate,
-        span: SourceSpan,
-    ) -> ValueRef {
-        todo!()
     }
 
     /// Combined integer Euclidean division and modulo. Traps if `rhs` is zero.
@@ -1023,33 +1002,9 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn eq_imm(
-        mut self,
-        arg: ValueRef,
-        imm: Immediate,
-        span: SourceSpan,
-    ) -> Result<ValueRef, Report> {
-        let rhs = self.imm(imm, span);
-        let op_builder = self.builder_mut().create::<crate::ops::Eq, _>(span);
-        let op = op_builder(arg, rhs)?;
-        Ok(op.borrow().result().as_value_ref())
-    }
-
     fn neq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Neq, _>(span);
         let op = op_builder(lhs, rhs)?;
-        Ok(op.borrow().result().as_value_ref())
-    }
-
-    fn neq_imm(
-        mut self,
-        cond: ValueRef,
-        imm: Immediate,
-        span: SourceSpan,
-    ) -> Result<ValueRef, Report> {
-        let rhs = self.imm(imm, span);
-        let op_builder = self.builder_mut().create::<crate::ops::Neq, _>(span);
-        let op = op_builder(cond, rhs)?;
         Ok(op.borrow().result().as_value_ref())
     }
 

@@ -1210,12 +1210,18 @@ fn i32_div_u() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i32) (const.i32 2))
-            (let (v1 i32) (const.i32 1))
-            (let (v2 u32) (bitcast v0))
-            (let (v3 u32) (bitcast v1))
-            (let (v4 u32) (div.unchecked v2 v3))
-            (let (v5 i32) (bitcast v4))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 1 : i32;
+                v2 = hir.bitcast v0 : ? #[ty = u32];
+                v3 = hir.bitcast v1 : ? #[ty = u32];
+                v4 = hir.div v2, v3 : ?;
+                v5 = hir.bitcast v4 : ? #[ty = i32];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1230,12 +1236,18 @@ fn i64_div_u() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i64) (const.i64 2))
-            (let (v1 i64) (const.i64 1))
-            (let (v2 u64) (bitcast v0))
-            (let (v3 u64) (bitcast v1))
-            (let (v4 u64) (div.unchecked v2 v3))
-            (let (v5 i64) (bitcast v4))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i64;
+                v1 = hir.constant 1 : i64;
+                v2 = hir.bitcast v0 : ? #[ty = u64];
+                v3 = hir.bitcast v1 : ? #[ty = u64];
+                v4 = hir.div v2, v3 : ?;
+                v5 = hir.bitcast v4 : ? #[ty = i64];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1250,9 +1262,15 @@ fn i32_div_s() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i32) (const.i32 2))
-            (let (v1 i32) (const.i32 1))
-            (let (v2 i32) (div.unchecked v0 v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 1 : i32;
+                v2 = hir.div v0, v1 : i32;
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1267,9 +1285,15 @@ fn i64_div_s() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i64) (const.i64 2))
-            (let (v1 i64) (const.i64 1))
-            (let (v2 i64) (div.unchecked v0 v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i64;
+                v1 = hir.constant 1 : i64;
+                v2 = hir.div v0, v1 : i64;
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1284,12 +1308,18 @@ fn i32_rem_u() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i32) (const.i32 2))
-            (let (v1 i32) (const.i32 1))
-            (let (v2 u32) (bitcast v0))
-            (let (v3 u32) (bitcast v1))
-            (let (v4 u32) (mod.checked v2 v3))
-            (let (v5 i32) (bitcast v4))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 1 : i32;
+                v2 = hir.bitcast v0 : ? #[ty = u32];
+                v3 = hir.bitcast v1 : ? #[ty = u32];
+                v4 = hir.mod v2, v3 : ?;
+                v5 = hir.bitcast v4 : ? #[ty = i32];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1304,12 +1334,18 @@ fn i64_rem_u() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i64) (const.i64 2))
-            (let (v1 i64) (const.i64 1))
-            (let (v2 u64) (bitcast v0))
-            (let (v3 u64) (bitcast v1))
-            (let (v4 u64) (mod.checked v2 v3))
-            (let (v5 i64) (bitcast v4))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i64;
+                v1 = hir.constant 1 : i64;
+                v2 = hir.bitcast v0 : ? #[ty = u64];
+                v3 = hir.bitcast v1 : ? #[ty = u64];
+                v4 = hir.mod v2, v3 : ?;
+                v5 = hir.bitcast v4 : ? #[ty = i64];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1324,9 +1360,15 @@ fn i32_rem_s() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i32) (const.i32 2))
-            (let (v1 i32) (const.i32 1))
-            (let (v2 i32) (mod.checked v0 v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 1 : i32;
+                v2 = hir.mod v0, v1 : i32;
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1341,9 +1383,15 @@ fn i64_rem_s() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i64) (const.i64 2))
-            (let (v1 i64) (const.i64 1))
-            (let (v2 i64) (mod.checked v0 v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i64;
+                v1 = hir.constant 1 : i64;
+                v2 = hir.mod v0, v1 : i64;
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
