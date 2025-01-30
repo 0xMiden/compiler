@@ -1906,8 +1906,9 @@ fn select_i32() {
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 7 : i64;
                 v2 = hir.constant 1 : i32;
-                v3 = hir.neq_imm v2 : i1 #[rhs = 0];
-                v4 = hir.select v3, v0, v1 : i64;
+                v3 = hir.constant 0 : i32;
+                v4 = hir.neq v2, v3 : i1;
+                v5 = hir.select v4, v0, v1 : i64;
                 hir.br block3 ;
             ^block3:
                 hir.ret ;

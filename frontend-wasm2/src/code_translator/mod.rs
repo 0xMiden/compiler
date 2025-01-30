@@ -115,7 +115,7 @@ pub fn translate_operator(
             // if cond is not 0, return arg1, else return arg2
             // https://www.w3.org/TR/wasm-core-1/#-hrefsyntax-instr-parametricmathsfselect%E2%91%A0
             // cond is expected to be an i32
-            let cond_i1 = builder.ins().neq_imm(cond, 0, span)?;
+            let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
             state.push1(builder.ins().select(cond_i1, arg1, arg2, span)?);
         }
         Operator::TypedSelect { ty } => {
@@ -127,7 +127,7 @@ pub fn translate_operator(
                     state.push1(builder.ins().select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I32 => {
-                    let cond = builder.ins().neq_imm(cond, 0, span)?;
+                    let cond = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
                     state.push1(builder.ins().select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I64 => {
@@ -776,7 +776,7 @@ fn translate_br_if(
     let else_dest = next_block;
     let else_args = vec![];
     // cond is expected to be a i32 value
-    let cond_i1 = builder.ins().neq_imm(cond, 0, span)?;
+    let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span)?;
     builder.ins().cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
     builder.seal_block(next_block); // The only predecessor is the current block.
     builder.switch_to_block(next_block);

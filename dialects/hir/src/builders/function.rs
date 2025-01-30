@@ -1041,9 +1041,15 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn neq_imm(mut self, cond: ValueRef, imm: i32, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::NeqImm, _>(span);
-        let op = op_builder(cond, imm)?;
+    fn neq_imm(
+        mut self,
+        cond: ValueRef,
+        imm: Immediate,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let rhs = self.imm(imm, span);
+        let op_builder = self.builder_mut().create::<crate::ops::Neq, _>(span);
+        let op = op_builder(cond, rhs)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
