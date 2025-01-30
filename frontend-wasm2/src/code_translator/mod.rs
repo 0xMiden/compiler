@@ -346,7 +346,7 @@ pub fn translate_operator(
             state.push1(builder.ins().shl(arg1, arg2, span)?);
         }
         Operator::I32ShrU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span);
+            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
             let val = builder.ins().shr(arg1, arg2, span)?;
@@ -412,22 +412,22 @@ pub fn translate_operator(
             state.push1(builder.ins().div_unchecked(arg1, arg2, span));
         }
         Operator::I32DivU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span);
+            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().div_unchecked(arg1, arg2, span);
             state.push1(builder.ins().bitcast(val, I32, span)?);
         }
         Operator::I64DivU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span);
+            let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().div_unchecked(arg1, arg2, span);
             state.push1(builder.ins().bitcast(val, I64, span)?);
         }
         Operator::I32RemU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span);
+            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().r#mod_checked(arg1, arg2, span);
             state.push1(builder.ins().bitcast(val, I32, span)?);
         }
         Operator::I64RemU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span);
+            let (arg1, arg2) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().r#mod_checked(arg1, arg2, span);
             state.push1(builder.ins().bitcast(val, I64, span)?);
         }
@@ -437,12 +437,12 @@ pub fn translate_operator(
         }
         /**************************** Comparison Operators **********************************/
         Operator::I32LtU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().lt(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
         Operator::I64LtU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().lt(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
@@ -457,12 +457,12 @@ pub fn translate_operator(
             state.push1(builder.ins().sext(val, I32, span)?);
         }
         Operator::I32LeU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().lte(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
         Operator::I64LeU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().lte(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
@@ -477,12 +477,12 @@ pub fn translate_operator(
             state.push1(builder.ins().sext(val, I32, span)?);
         }
         Operator::I32GtU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().gt(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
         Operator::I64GtU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().gt(arg0, arg1, span)?;
             state.push1(builder.ins().sext(val, I32, span)?);
         }
@@ -492,12 +492,12 @@ pub fn translate_operator(
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I32GeU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().gte(arg0, arg1, span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I64GeU => {
-            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span);
+            let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().gte(arg0, arg1, span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }

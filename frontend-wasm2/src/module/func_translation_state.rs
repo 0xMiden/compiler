@@ -11,7 +11,7 @@ use midenc_hir2::{BlockRef, OperationRef, Signature, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;
-use crate::module::types::BlockType;
+use crate::{error::WasmResult, module::types::BlockType};
 
 /// Information about the presence of an associated `else` for an `if`, or the
 /// lack thereof.
@@ -349,21 +349,20 @@ impl FuncTranslationState {
         ty: Type,
         builder: &mut FunctionBuilderExt,
         span: SourceSpan,
-    ) -> (ValueRef, ValueRef) {
-        todo!()
-        // let v2 = self.stack.pop().unwrap();
-        // let v1 = self.stack.pop().unwrap();
-        // let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
-        //     builder.ins().bitcast(v1, ty.clone(), span)
-        // } else {
-        //     v1
-        // };
-        // let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
-        //     builder.ins().bitcast(v2, ty, span)
-        // } else {
-        //     v2
-        // };
-        // (v1, v2)
+    ) -> WasmResult<(ValueRef, ValueRef)> {
+        let v2 = self.stack.pop().unwrap();
+        let v1 = self.stack.pop().unwrap();
+        let v1 = if v1.borrow().ty() != &ty {
+            builder.ins().bitcast(v1, ty.clone(), span)?
+        } else {
+            v1
+        };
+        let v2 = if v2.borrow().ty() != &ty {
+            builder.ins().bitcast(v2, ty, span)?
+        } else {
+            v2
+        };
+        Ok((v1, v2))
     }
 
     /// Pop three values. Return them in the order they were pushed.
