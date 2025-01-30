@@ -427,8 +427,8 @@ impl quote::ToTokens for WithOperands<'_> {
                         operands[0].name.span(),
                     ));
                     let operand_name = operands.iter().map(|o| &o.name).collect::<Vec<_>>();
-                    let operand_constraint = operands.iter().map(|o| &o.constraint);
-                    let constraint_violation = operands.iter().map(|o| {
+                    let _operand_constraint = operands.iter().map(|o| &o.constraint);
+                    let _constraint_violation = operands.iter().map(|o| {
                         syn::Lit::Str(syn::LitStr::new(
                             &format!("type constraint violation for '{}'", &o.name),
                             o.name.span(),
@@ -455,12 +455,12 @@ impl quote::ToTokens for WithOperands<'_> {
                         op_builder.with_operands_in_group(#group_index, [#(#operand_name),*]);
                     });
                 }
-                OpOperandGroup::Named(group_name, group_constraint) => {
+                OpOperandGroup::Named(group_name, _group_constraint) => {
                     let group_index = syn::Lit::Int(syn::LitInt::new(
                         &format!("{group_index}usize"),
                         group_name.span(),
                     ));
-                    let constraint_violation = syn::Lit::Str(syn::LitStr::new(
+                    let _constraint_violation = syn::Lit::Str(syn::LitStr::new(
                         &format!("type constraint violation for operand in '{group_name}'"),
                         group_name.span(),
                     ));
@@ -567,8 +567,8 @@ impl quote::ToTokens for BuildOp<'_> {
                     OpResultGroup::Unnamed(results) => {
                         let verify_result = results.iter().map(|result| {
                             let result_name = &result.name;
-                            let result_constraint = &result.constraint;
-                            let constraint_violation = syn::Lit::Str(syn::LitStr::new(
+                            let _result_constraint = &result.constraint;
+                            let _constraint_violation = syn::Lit::Str(syn::LitStr::new(
                                 &format!("type constraint violation for result '{result_name}'"),
                                 result_name.span(),
                             ));
