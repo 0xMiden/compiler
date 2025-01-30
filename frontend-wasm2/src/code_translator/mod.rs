@@ -513,12 +513,12 @@ pub fn translate_operator(
         }
         Operator::I32Eqz => {
             let arg = state.pop1();
-            let val = builder.ins().eq_imm(arg, Immediate::I32(0), span);
+            let val = builder.ins().eq_imm(arg, Immediate::I32(0), span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I64Eqz => {
             let arg = state.pop1();
-            let val = builder.ins().eq_imm(arg, Immediate::I64(0), span);
+            let val = builder.ins().eq_imm(arg, Immediate::I64(0), span)?;
             state.push1(builder.ins().zext(val, I32, span)?);
         }
         Operator::I32Eq => {

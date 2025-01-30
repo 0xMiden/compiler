@@ -266,6 +266,12 @@ pub trait InstBuilder: InstBuilderBase {
         constant.borrow().result().as_value_ref()
     }
 
+    fn imm(&mut self, value: Immediate, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(value).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.
@@ -1017,8 +1023,16 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn eq_imm(mut self, arg: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
+    fn eq_imm(
+        mut self,
+        arg: ValueRef,
+        imm: Immediate,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let rhs = self.imm(imm, span);
+        let op_builder = self.builder_mut().create::<crate::ops::Eq, _>(span);
+        let op = op_builder(arg, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn neq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {

@@ -1757,9 +1757,16 @@ fn i32_eqz() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i32) (const.i32 2))
-            (let (v1 i1) (eq v0 0))
-            (let (v2 i32) (zext v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 0 : i32;
+                v2 = hir.eq v0, v1 : i1;
+                v3 = hir.zext v2 : ? #[ty = i32];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
@@ -1773,9 +1780,16 @@ fn i64_eqz() {
             drop
         "#,
         expect![[r#"
-            (let (v0 i64) (const.i64 2))
-            (let (v1 i1) (eq v0 0))
-            (let (v2 i32) (zext v1))
+            builtin.function internal @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i64;
+                v1 = hir.constant 0 : i64;
+                v2 = hir.eq v0, v1 : i1;
+                v3 = hir.zext v2 : ? #[ty = i32];
+                hir.br block3 ;
+            ^block3:
+                hir.ret ;
+            };
         "#]],
     )
 }
