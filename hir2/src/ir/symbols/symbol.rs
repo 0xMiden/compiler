@@ -261,7 +261,7 @@ fn verify_symbol(symbol: &dyn Symbol, context: &crate::Context) -> Result<(), Re
             .session
             .diagnostics
             .diagnostic(Severity::Error)
-            .with_message("invalid operation")
+            .with_message(::alloc::format!("invalid operation {}", op.name()))
             .with_primary_label(op.span(), "expected parent of this operation to be a symbol table")
             .with_help("required due to this operation implementing the 'Symbol' trait")
             .into_report());

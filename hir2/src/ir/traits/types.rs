@@ -40,7 +40,7 @@ derive! {
                             .session
                             .diagnostics
                             .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
+                            .with_message(::alloc::format!("invalid operation {}", op.name()))
                             .with_primary_label(
                                 op.span(),
                                 "this operation expects all operands to be of the same type"
