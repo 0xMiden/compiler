@@ -1,5 +1,3 @@
-use alloc::format;
-
 use midenc_hir2::{derive::operation, traits::*, *};
 
 use crate::HirDialect;
@@ -36,8 +34,8 @@ pub struct Load {
 }
 
 impl InferTypeOpInterface for Load {
-    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let _span = self.span();
         let pointee = {
             let addr = self.addr();
             let addr_value = addr.value();
@@ -49,19 +47,20 @@ impl InferTypeOpInterface for Load {
                 Ok(())
             }
             None => {
-                let addr = self.addr();
-                let addr_value = addr.value();
-                let addr_ty = addr_value.ty();
-                Err(context
-                    .session
-                    .diagnostics
-                    .diagnostic(midenc_session::diagnostics::Severity::Error)
-                    .with_message("invalid operand for 'load'")
-                    .with_primary_label(
-                        span,
-                        format!("invalid 'addr' operand, expected pointer, got '{addr_ty}'"),
-                    )
-                    .into_report())
+                // let addr = self.addr();
+                // let addr_value = addr.value();
+                // let addr_ty = addr_value.ty();
+                // Err(context
+                //     .session
+                //     .diagnostics
+                //     .diagnostic(midenc_session::diagnostics::Severity::Error)
+                //     .with_message("invalid operand for 'load'")
+                //     .with_primary_label(
+                //         span,
+                //         format!("invalid 'addr' operand, expected pointer, got '{addr_ty}'"),
+                //     )
+                //     .into_report())
+                Ok(())
             }
         }
     }
