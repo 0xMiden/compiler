@@ -472,15 +472,10 @@ pub trait InstBuilder: InstBuilderBase {
     /// Loads a value of the type pointed to by the given pointer, on to the stack
     ///
     /// NOTE: This function will panic if `ptr` is not a pointer typed value
-    fn load(self, addr: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-        // let ty = require_pointee!(self, addr).clone();
-        // let data = Instruction::Load(LoadOp {
-        //     op: Opcode::Load,
-        //     addr,
-        //     ty: ty.clone(),
-        // });
-        // into_first_result!(self.build(data, Type::Ptr(Box::new(ty)), span))
+    fn load(mut self, addr: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Load, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     /*
@@ -500,17 +495,14 @@ pub trait InstBuilder: InstBuilderBase {
     /// Stores `value` to the address given by `ptr`
     ///
     /// NOTE: This function will panic if the pointer and pointee types do not match
-    fn store(mut self, ptr: ValueRef, value: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-        // let pointee_ty = require_pointee!(self, ptr);
-        // let value_ty = self.data_flow_graph().value_type(value);
-        // assert_eq!(pointee_ty, value_ty, "expected value to be a {}, got {}", pointee_ty, value_ty);
-        // let mut vlist = ValueList::default();
-        // {
-        //     let dfg = self.data_flow_graph_mut();
-        //     vlist.extend([ptr, value], &mut dfg.value_lists);
-        // }
-        // self.PrimOp(Opcode::Store, Type::Unit, vlist, span).0
+    fn store(
+        mut self,
+        ptr: ValueRef,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Store>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Store, _>(span);
+        op_builder(ptr, value)
     }
 
     /*

@@ -106,7 +106,7 @@ pub fn translate_operator(
             let ty = ir_type(module.globals[global_index].ty, diagnostics)?;
             let ptr = builder.ins().symbol_addr(name.as_str(), Ptr(ty.clone().into()), span);
             let val = state.pop1();
-            builder.ins().store(ptr, val, span);
+            builder.ins().store(ptr, val, span)?;
         }
         /********************************* Stack misc **************************************/
         Operator::Drop => _ = state.pop1(),
@@ -561,7 +561,7 @@ fn translate_load(
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
-    state.push1(builder.ins().load(addr, span));
+    state.push1(builder.ins().load(addr, span)?);
     Ok(())
 }
 
@@ -575,7 +575,7 @@ fn translate_load_sext(
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
-    let val = builder.ins().load(addr, span);
+    let val = builder.ins().load(addr, span)?;
     let sext_val = builder.ins().sext(val, sext_ty, span)?;
     state.push1(sext_val);
     Ok(())
@@ -592,7 +592,7 @@ fn translate_load_zext(
     assert!(ptr_ty.is_unsigned_integer());
     let addr_int = state.pop1();
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
-    let val = builder.ins().load(addr, span);
+    let val = builder.ins().load(addr, span)?;
     let sext_val = builder.ins().zext(val, zext_ty, span)?;
     state.push1(sext_val);
     Ok(())
@@ -621,7 +621,7 @@ fn translate_store(
         val
     };
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
-    builder.ins().store(addr, arg, span);
+    builder.ins().store(addr, arg, span)?;
     Ok(())
 }
 
