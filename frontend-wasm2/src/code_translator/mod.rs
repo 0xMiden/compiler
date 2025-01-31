@@ -20,7 +20,10 @@ use midenc_hir::{
     Block, FieldElement, Inst, Type,
     Type::*,
 };
-use midenc_hir2::{BlockRef, Immediate, ValueRef};
+use midenc_hir2::{
+    dialects::builtin::Function, BlockRef, CallableOpInterface, Immediate,
+    UnsafeIntrusiveEntityRef, ValueRef,
+};
 use wasmparser::{MemArg, Operator};
 
 use crate::{
@@ -672,12 +675,9 @@ fn translate_call(
     span: SourceSpan,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    todo!()
-    // let func_id =
-    //     module_state.get_direct_func(builder.data_flow_graph_mut(), function_index, diagnostics)?;
-    // let wasm_sig = module_state.signature(function_index);
-    // let num_wasm_args = wasm_sig.params().len();
-    // let args = func_state.peekn(num_wasm_args);
+    let func_ref = module_state.get_direct_func(function_index, diagnostics)?;
+    let num_args = func_ref.borrow().signature().params().len();
+    let args = func_state.peekn(num_args);
     // if is_miden_intrinsics_module(func_id.module.as_symbol()) {
     //     let results = convert_intrinsics_call(func_id, args, builder, span);
     //     func_state.popn(num_wasm_args);
@@ -702,13 +702,20 @@ fn translate_call(
     //     func_state.popn(num_wasm_args);
     //     func_state.pushn(&results);
     // } else {
-    //     // no transformation needed
-    //     let call = builder.ins().exec(func_id, args, span)?;
-    //     let results = builder.inst_results(call);
-    //     func_state.popn(num_wasm_args);
-    //     func_state.pushn(results);
+    // no transformation needed
+    // let callee = func_id.downcast_ref::<Function>();
+
+    let exec = builder.ins().exec(func_ref, args.to_vec(), span)?;
+    let borrow = exec.borrow();
+    let results = borrow.as_ref().results();
+    dbg!(&results);
+    func_state.popn(num_args);
+    let result_vals: Vec<ValueRef> =
+        results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    dbg!(&result_vals);
+    func_state.pushn(&result_vals);
     // };
-    // Ok(())
+    Ok(())
 }
 
 fn translate_return(

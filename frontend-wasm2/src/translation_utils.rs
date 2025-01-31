@@ -1,12 +1,11 @@
 //! Helper functions and structures for the translation.
 
+use miden_core::{Felt, FieldElement};
 use midenc_dialect_hir::InstBuilder;
-use midenc_hir::{
-    diagnostics::{DiagnosticsHandler, SourceSpan},
-    AbiParam, CallConv, Felt, FieldElement, Linkage, Signature, Value,
-};
-use midenc_hir2::ValueRef;
+use midenc_hir::SourceSpan;
+use midenc_hir2::{AbiParam, CallConv, Signature, ValueRef, Visibility};
 use midenc_hir_type::{FunctionType, Type};
+use midenc_session::DiagnosticsHandler;
 
 use crate::{
     error::WasmResult, module::function_builder_ext::FunctionBuilderExt, unsupported_diag,
@@ -140,12 +139,12 @@ pub fn emit_zero(
 pub fn sig_from_func_type(
     func_type: &FunctionType,
     call_conv: CallConv,
-    linkage: Linkage,
+    visibility: Visibility,
 ) -> Signature {
     Signature {
         params: func_type.params.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         cc: call_conv,
-        linkage,
+        visibility,
     }
 }

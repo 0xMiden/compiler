@@ -1,26 +1,27 @@
 use crate::{
     constants::ConstantData,
     dialects::builtin::{
-        FunctionRef, GlobalVariable, GlobalVariableBuilder, Module, PrimFunctionBuilder, Segment,
-        SegmentBuilder,
+        Function, FunctionRef, GlobalVariable, GlobalVariableBuilder, ModuleRef,
+        PrimFunctionBuilder, Segment, SegmentBuilder,
     },
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
-    UnsafeIntrusiveEntityRef, Visibility,
+    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
+    Type, UnsafeIntrusiveEntityRef, Visibility,
 };
 
 /// A specialized builder for constructing/modifying [crate::dialects::hir::Module]
-pub struct ModuleBuilder<'f> {
-    pub module: &'f mut Module,
+pub struct ModuleBuilder {
+    pub module: ModuleRef,
     builder: OpBuilder,
 }
-impl<'b> ModuleBuilder<'b> {
+impl ModuleBuilder {
     /// Create a builder over `module`
-    pub fn new(module: &'b mut Module) -> Self {
-        let context = module.as_operation().context_rc();
+    pub fn new(module: ModuleRef) -> Self {
+        let module_ref = module.borrow();
+        let context = module_ref.as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
 
         {
-            let body = module.body();
+            let body = module_ref.body();
 
             if let Some(current_block) = body.entry_block_ref() {
                 builder.set_insertion_point_to_end(current_block);
@@ -50,7 +51,14 @@ impl<'b> ModuleBuilder<'b> {
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
         let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
-        builder(name, signature)
+        let function_ref = builder(name, signature)?;
+        let is_new = self
+            .module
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(function_ref, crate::ProgramPoint::Invalid);
+        assert!(is_new, "function with the name {name} already exists");
+        Ok(function_ref)
     }
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
@@ -76,5 +84,19 @@ impl<'b> ModuleBuilder<'b> {
         let data = self.builder.context().create_constant(data);
         let builder = SegmentBuilder::new(&mut self.builder, span);
         builder(offset, data, /*readonly= */ false)
+    }
+
+    pub fn get_function(&self, name: &str) -> Option<FunctionRef> {
+        let symbol = SymbolName::intern(name);
+        match self.module.borrow().get(symbol) {
+            Some(symbol_ref) => {
+                let op = symbol_ref.borrow();
+                match op.as_symbol_operation().downcast_ref::<Function>() {
+                    Some(function) => Some(function.as_function_ref()),
+                    None => panic!("expected {name} to be a function"),
+                }
+            }
+            None => None,
+        }
     }
 }

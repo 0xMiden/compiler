@@ -111,6 +111,11 @@ impl Function {
         self.locals.push(ty);
         LocalId::new(id)
     }
+
+    #[inline(always)]
+    pub fn as_function_ref(&self) -> FunctionRef {
+        unsafe { FunctionRef::from_raw(self) }
+    }
 }
 
 impl RegionKindInterface for Function {
