@@ -30,7 +30,6 @@ fn check_op(wat_op: &str, expected_ir: expect_test::Expect) {
     let wasm = wat::parse_str(wat).unwrap();
     let component_ref = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
         .map_err(|e| {
-            let labels = e.labels().unwrap().collect::<Vec<midenc_hir::diagnostics::LabeledSpan>>();
             if let Some(labels) = e.labels() {
                 for label in labels {
                     eprintln!("{}", label.label().unwrap());

@@ -4,7 +4,8 @@ use core::panic;
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt, fs,
+    fmt::{self, Write},
+    fs,
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -1097,7 +1098,8 @@ impl CompilerTest {
             &midenc_frontend_wasm2::WasmTranslationConfig::default(),
             context.clone(),
         )
-        .expect("Failed to translate Wasm binary to IR component");
+        .map_err(format_report)
+        .unwrap_or_else(|err| panic!("Failed to translate Wasm to IR:\n{err}"));
         let src = demangle(ir.borrow().as_ref().to_string());
         expected_hir_file.assert_eq(&src);
     }
@@ -1182,7 +1184,19 @@ impl CompilerTest {
 fn format_report(report: miden_assembly::diagnostics::Report) -> String {
     use miden_assembly::diagnostics::reporting::PrintDiagnostic;
 
-    PrintDiagnostic::new(report).to_string()
+    let mut labels_str = String::new();
+    if let Some(labels) = report.labels() {
+        for label in labels {
+            if let Some(label) = label.label() {
+                writeln!(&mut labels_str, "{}", label).unwrap();
+            }
+        }
+    }
+
+    let mut str = PrintDiagnostic::new(report).to_string();
+    writeln!(&mut str, "{labels_str}").unwrap();
+
+    str
 }
 
 fn stdlib_sys_crate_path() -> PathBuf {
