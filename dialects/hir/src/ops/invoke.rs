@@ -4,7 +4,7 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface)
 )]
 pub struct Exec {
     #[symbol(callable)]
