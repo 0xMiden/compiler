@@ -266,6 +266,12 @@ pub trait InstBuilder: InstBuilderBase {
         constant.borrow().result().as_value_ref()
     }
 
+    fn imm(mut self, value: Immediate, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Constant, _>(span);
+        let constant = op_builder(value).unwrap();
+        constant.borrow().result().as_value_ref()
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.
@@ -466,15 +472,10 @@ pub trait InstBuilder: InstBuilderBase {
     /// Loads a value of the type pointed to by the given pointer, on to the stack
     ///
     /// NOTE: This function will panic if `ptr` is not a pointer typed value
-    fn load(self, addr: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-        // let ty = require_pointee!(self, addr).clone();
-        // let data = Instruction::Load(LoadOp {
-        //     op: Opcode::Load,
-        //     addr,
-        //     ty: ty.clone(),
-        // });
-        // into_first_result!(self.build(data, Type::Ptr(Box::new(ty)), span))
+    fn load(mut self, addr: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Load, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     /*
@@ -494,17 +495,14 @@ pub trait InstBuilder: InstBuilderBase {
     /// Stores `value` to the address given by `ptr`
     ///
     /// NOTE: This function will panic if the pointer and pointee types do not match
-    fn store(mut self, ptr: ValueRef, value: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-        // let pointee_ty = require_pointee!(self, ptr);
-        // let value_ty = self.data_flow_graph().value_type(value);
-        // assert_eq!(pointee_ty, value_ty, "expected value to be a {}, got {}", pointee_ty, value_ty);
-        // let mut vlist = ValueList::default();
-        // {
-        //     let dfg = self.data_flow_graph_mut();
-        //     vlist.extend([ptr, value], &mut dfg.value_lists);
-        // }
-        // self.PrimOp(Opcode::Store, Type::Unit, vlist, span).0
+    fn store(
+        mut self,
+        ptr: ValueRef,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Store>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Store, _>(span);
+        op_builder(ptr, value)
     }
 
     /*
@@ -713,10 +711,6 @@ pub trait InstBuilder: InstBuilderBase {
         Ok((overflowed, result))
     }
 
-    fn add_imm_checked(mut self, addr_u32: ValueRef, u32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
     /// Two's complement subtraction which traps on under/overflow
     fn sub(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Sub, _>(span);
@@ -820,28 +814,11 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn div_unchecked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
     /// Integer Euclidean modulo. Traps if `rhs` is zero.
     fn r#mod(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Mod, _>(span);
         let op = op_builder(lhs, rhs)?;
         Ok(op.borrow().result().as_value_ref())
-    }
-
-    fn r#mod_checked(mut self, arg1: ValueRef, arg2: ValueRef, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
-    fn mod_imm_unchecked(
-        mut self,
-        full_addr_int: ValueRef,
-        u32: Immediate,
-        span: SourceSpan,
-    ) -> ValueRef {
-        todo!()
     }
 
     /// Combined integer Euclidean division and modulo. Traps if `rhs` is zero.
@@ -1017,19 +994,9 @@ pub trait InstBuilder: InstBuilderBase {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn eq_imm(mut self, arg: ValueRef, i32: Immediate, span: SourceSpan) -> ValueRef {
-        todo!()
-    }
-
     fn neq(mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Neq, _>(span);
         let op = op_builder(lhs, rhs)?;
-        Ok(op.borrow().result().as_value_ref())
-    }
-
-    fn neq_imm(mut self, cond: ValueRef, imm: i32, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::NeqImm, _>(span);
-        let op = op_builder(cond, imm)?;
         Ok(op.borrow().result().as_value_ref())
     }
 

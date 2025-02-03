@@ -192,7 +192,7 @@ derive! {
                 Err(
                     context.session.diagnostics
                         .diagnostic(Severity::Error)
-                        .with_message("invalid operation")
+                        .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(op.span(), format!("incorrect number of operands, expected 1, got {}", op.num_operands()))
                         .with_help("this operator implements 'UnaryOp', which requires it to have exactly one operand")
                         .into_report()
@@ -214,7 +214,7 @@ derive! {
                 Err(
                     context.session.diagnostics
                         .diagnostic(Severity::Error)
-                        .with_message("invalid operation")
+                        .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))
                         .with_help("this operator implements 'BinaryOp', which requires it to have exactly two operands")
                         .into_report()
@@ -236,7 +236,7 @@ derive! {
                         .session
                         .diagnostics
                         .diagnostic(Severity::Error)
-                        .with_message("invalid operation")
+                        .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(
                             op.span(),
                             "this operation does not permit regions with arguments, but one was found"
@@ -262,7 +262,7 @@ derive! {
                         .session
                         .diagnostics
                         .diagnostic(Severity::Error)
-                        .with_message("invalid operation")
+                        .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(
                             op.span(),
                             "this operation requires single-block regions, but regions with multiple \
@@ -291,7 +291,7 @@ derive! {
                     .session
                     .diagnostics
                     .diagnostic(Severity::Error)
-                    .with_message("invalid operation")
+                        .with_message(::alloc::format!("invalid operation {}", op.name()))
                     .with_primary_label(
                         op.span(),
                         format!("this operation requires exactly one region, but got {num_regions}")

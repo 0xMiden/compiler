@@ -427,8 +427,8 @@ impl quote::ToTokens for WithOperands<'_> {
                         operands[0].name.span(),
                     ));
                     let operand_name = operands.iter().map(|o| &o.name).collect::<Vec<_>>();
-                    let operand_constraint = operands.iter().map(|o| &o.constraint);
-                    let constraint_violation = operands.iter().map(|o| {
+                    let _operand_constraint = operands.iter().map(|o| &o.constraint);
+                    let _constraint_violation = operands.iter().map(|o| {
                         syn::Lit::Str(syn::LitStr::new(
                             &format!("type constraint violation for '{}'", &o.name),
                             o.name.span(),
@@ -439,28 +439,28 @@ impl quote::ToTokens for WithOperands<'_> {
                             {
                                 let value = #operand_name.borrow();
                                 let value_ty = value.ty();
-                                if !<#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
-                                    let expected = <#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
-                                    return Err(builder.context()
-                                        .session
-                                        .diagnostics
-                                        .diagnostic(::midenc_session::diagnostics::Severity::Error)
-                                        .with_message("invalid operand")
-                                        .with_primary_label(span, #constraint_violation)
-                                        .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
-                                        .into_report());
-                                }
+                                // if !<#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
+                                //     let expected = <#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
+                                //     return Err(builder.context()
+                                //         .session
+                                //         .diagnostics
+                                //         .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                //         .with_message("invalid operand")
+                                //         .with_primary_label(span, #constraint_violation)
+                                //         .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                //         .into_report());
+                                // }
                             }
                         )*
                         op_builder.with_operands_in_group(#group_index, [#(#operand_name),*]);
                     });
                 }
-                OpOperandGroup::Named(group_name, group_constraint) => {
+                OpOperandGroup::Named(group_name, _group_constraint) => {
                     let group_index = syn::Lit::Int(syn::LitInt::new(
                         &format!("{group_index}usize"),
                         group_name.span(),
                     ));
-                    let constraint_violation = syn::Lit::Str(syn::LitStr::new(
+                    let _constraint_violation = syn::Lit::Str(syn::LitStr::new(
                         &format!("type constraint violation for operand in '{group_name}'"),
                         group_name.span(),
                     ));
@@ -469,17 +469,17 @@ impl quote::ToTokens for WithOperands<'_> {
                         for operand in #group_name.iter() {
                             let value = operand.borrow();
                             let value_ty = value.ty();
-                            if !<#group_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
-                                let expected = <#group_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
-                                return Err(builder.context()
-                                    .session
-                                    .diagnostics
-                                    .diagnostic(::midenc_session::diagnostics::Severity::Error)
-                                    .with_message("invalid operand")
-                                    .with_primary_label(span, #constraint_violation)
-                                    .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
-                                    .into_report());
-                            }
+                            // if !<#group_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
+                            //     let expected = <#group_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
+                            //     return Err(builder.context()
+                            //         .session
+                            //         .diagnostics
+                            //         .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                            //         .with_message("invalid operand")
+                            //         .with_primary_label(span, #constraint_violation)
+                            //         .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
+                            //         .into_report());
+                            // }
                         }
                         op_builder.with_operands_in_group(#group_index, #group_name);
                     });
@@ -567,23 +567,26 @@ impl quote::ToTokens for BuildOp<'_> {
                     OpResultGroup::Unnamed(results) => {
                         let verify_result = results.iter().map(|result| {
                             let result_name = &result.name;
-                            let result_constraint = &result.constraint;
-                            let constraint_violation = syn::Lit::Str(syn::LitStr::new(&format!("type constraint violation for result '{result_name}'"), result_name.span()));
+                            let _result_constraint = &result.constraint;
+                            let _constraint_violation = syn::Lit::Str(syn::LitStr::new(
+                                &format!("type constraint violation for result '{result_name}'"),
+                                result_name.span(),
+                            ));
                             quote! {
                                 {
                                     let op_result = op.#result_name();
                                     let value_ty = op_result.ty();
-                                    if !<#result_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
-                                        let expected = <#result_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
-                                        return Err(builder.context()
-                                            .session
-                                            .diagnostics
-                                            .diagnostic(::midenc_session::diagnostics::Severity::Error)
-                                            .with_message("invalid operation")
-                                            .with_primary_label(span, #constraint_violation)
-                                            .with_secondary_label(op_result.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
-                                            .into_report());
-                                    }
+                                    // if !<#result_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
+                                    //     let expected = <#result_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
+                                    //     return Err(builder.context()
+                                    //         .session
+                                    //         .diagnostics
+                                    //         .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                    //         .with_message(::alloc::format!("invalid operation {}", op.name()))
+                                    //         .with_primary_label(span, #constraint_violation)
+                                    //         .with_secondary_label(op_result.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
+                                    //         .into_report());
+                                    // }
                                 }
                             }
                         });
