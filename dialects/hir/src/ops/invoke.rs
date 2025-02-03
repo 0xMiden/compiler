@@ -111,7 +111,7 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface)
 )]
 pub struct Call {
     #[symbol(callable)]
