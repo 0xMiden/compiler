@@ -418,22 +418,30 @@ impl CompilerTestBuilder {
 
         // Build test
         match self.source {
-            CompilerTestInputType::CargoMiden(_) => {
-                let mut args = vec![command.get_program().to_str().unwrap().to_string()];
-                let cmd_args: Vec<String> = command
-                    .get_args()
-                    .collect::<Vec<&OsStr>>()
-                    .iter()
-                    .map(|s| s.to_str().unwrap().to_string())
-                    .collect();
-                args.extend(cmd_args);
-                let wasm_artifacts =
-                    cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
-                assert_eq!(wasm_artifacts.len(), 1);
-                let wasm_comp_path = &wasm_artifacts.first().unwrap();
+            CompilerTestInputType::CargoMiden(config) => {
+                let expected_wasm_artifact_path = config.wasm_artifact_path();
+                let skip_rust_compilation =
+                    std::env::var("SKIP_RUST").is_ok() && expected_wasm_artifact_path.exists();
+                let wasm_artifact_path = if !skip_rust_compilation {
+                    let mut args = vec![command.get_program().to_str().unwrap().to_string()];
+                    let cmd_args: Vec<String> = command
+                        .get_args()
+                        .collect::<Vec<&OsStr>>()
+                        .iter()
+                        .map(|s| s.to_str().unwrap().to_string())
+                        .collect();
+                    args.extend(cmd_args);
+                    let wasm_artifacts =
+                        cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
+                    assert_eq!(wasm_artifacts.len(), 1);
+                    wasm_artifacts.first().unwrap().clone()
+                } else {
+                    drop(command);
+                    expected_wasm_artifact_path
+                };
                 let artifact_name =
-                    wasm_comp_path.file_stem().unwrap().to_str().unwrap().to_string();
-                let input_file = InputFile::from_path(wasm_comp_path).unwrap();
+                    wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
+                let input_file = InputFile::from_path(wasm_artifact_path).unwrap();
                 let mut inputs = vec![input_file];
                 inputs.extend(self.link_masm_modules.into_iter().map(|(path, content)| {
                     let path = path.to_string();
