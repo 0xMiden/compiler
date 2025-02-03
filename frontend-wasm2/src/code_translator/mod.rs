@@ -21,8 +21,8 @@ use midenc_hir::{
     Type::*,
 };
 use midenc_hir2::{
-    dialects::builtin::Function, BlockRef, CallableOpInterface, Immediate,
-    UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::builtin::Function, traits::InferTypeOpInterface, BlockRef, CallableOpInterface,
+    Immediate, UnsafeIntrusiveEntityRef, ValueRef,
 };
 use wasmparser::{MemArg, Operator};
 
@@ -701,9 +701,7 @@ fn translate_call(
     //     );
     //     func_state.popn(num_wasm_args);
     //     func_state.pushn(&results);
-    // } else {
-    // no transformation needed
-    // let callee = func_id.downcast_ref::<Function>();
+    // } else { code below }
 
     let exec = builder.ins().exec(func_ref, args.to_vec(), span)?;
     let borrow = exec.borrow();
@@ -712,9 +710,7 @@ fn translate_call(
     func_state.popn(num_args);
     let result_vals: Vec<ValueRef> =
         results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    dbg!(&result_vals);
     func_state.pushn(&result_vals);
-    // };
     Ok(())
 }
 
