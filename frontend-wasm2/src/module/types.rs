@@ -7,7 +7,7 @@ use midenc_hir::{
     cranelift_entity::PrimaryMap,
     diagnostics::{DiagnosticsHandler, Severity},
 };
-use midenc_hir2::{AbiParam, CallConv, Signature, Visibility};
+use midenc_hir2::{AbiParam, CallConv, Immediate, Signature, Visibility};
 use midenc_hir_type::{self as hir, Abi};
 use wasmparser::types::CoreTypeId;
 
@@ -218,7 +218,7 @@ impl WasmFuncType {
 }
 
 /// An index of an entity.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, derive_more::From)]
 pub enum EntityIndex {
     /// Function index.
     Function(FuncIndex),
@@ -316,20 +316,20 @@ pub enum GlobalInit {
 
 impl GlobalInit {
     /// Serialize the initializer constant expression into bytes (little-endian order).
-    pub fn to_le_bytes(
+    pub fn to_imm(
         self,
         module: &Module,
         diagnostics: &DiagnosticsHandler,
-    ) -> WasmResult<Vec<u8>> {
+    ) -> WasmResult<Immediate> {
         Ok(match self {
-            GlobalInit::I32Const(x) => x.to_le_bytes().to_vec(),
-            GlobalInit::I64Const(x) => x.to_le_bytes().to_vec(),
-            GlobalInit::F32Const(x) => x.to_le_bytes().to_vec(),
-            GlobalInit::F64Const(x) => x.to_le_bytes().to_vec(),
-            GlobalInit::V128Const(x) => x.to_le_bytes().to_vec(),
+            GlobalInit::I32Const(x) => x.into(),
+            GlobalInit::I64Const(x) => x.into(),
+            GlobalInit::F32Const(x) => x.into(),
+            GlobalInit::F64Const(x) => x.into(),
+            GlobalInit::V128Const(x) => x.into(),
             GlobalInit::GetGlobal(global_idx) => {
                 let global_init = module.try_global_initializer(global_idx, diagnostics)?;
-                global_init.to_le_bytes(module, diagnostics)?
+                global_init.to_imm(module, diagnostics)?
             }
         })
     }
