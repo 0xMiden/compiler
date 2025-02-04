@@ -4,7 +4,7 @@
 use core::mem;
 use std::rc::Rc;
 
-use midenc_dialect_hir::FunctionBuilder;
+use midenc_dialect_hir::{Constant, FunctionBuilder};
 use midenc_hir::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
     ConstantData, MidenAbiImport, Symbol,
@@ -12,7 +12,7 @@ use midenc_hir::{
 use midenc_hir2::{
     dialects::builtin::{Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef},
     version::Version,
-    BuilderExt, CallConv, Context, Ident, Visibility,
+    Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
 };
 use midenc_session::Session;
 use wasmparser::Validator;
@@ -121,9 +121,13 @@ pub fn build_ir_module(
     // module_builder.with_reserved_memory_pages(memory_size);
     // }
 
-    // TODO: globals and data segments
+    build_globals(
+        &parsed_module.module,
+        module_state.module_builder,
+        &context.session.diagnostics,
+    )?;
+    // TODO: data segments
     //
-    // build_globals(&parsed_module.module, &mut module_builder, &context.session.diagnostics)?;
     // build_data_segments(parsed_module, &mut module_builder, &context.session.diagnostics)?;
     let addr2line = addr2line::Context::from_dwarf(gimli::Dwarf {
         debug_abbrev: parsed_module.debuginfo.dwarf.debug_abbrev,
@@ -148,12 +152,12 @@ pub fn build_ir_module(
     // ParseModule will not be used again to make another module instance.
     let func_body_inputs = mem::take(&mut parsed_module.function_body_inputs);
     for (defined_func_idx, body_data) in func_body_inputs {
-        let func_index = &parsed_module.module.func_index(defined_func_idx);
-        let func_type = &parsed_module.module.functions[*func_index];
-        let func_name = parsed_module.module.func_name(*func_index).as_str();
+        let func_index = parsed_module.module.func_index(defined_func_idx);
+        let func_type = &parsed_module.module.functions[func_index];
+        let func_name = parsed_module.module.func_name(func_index).as_str();
         let wasm_func_type = module_types[func_type.signature].clone();
         let ir_func_type = ir_func_type(&wasm_func_type, &context.session.diagnostics)?;
-        let visibility = if parsed_module.module.is_exported_function(func_index) {
+        let visibility = if parsed_module.module.is_exported(func_index.into()) {
             Visibility::Public
         } else {
             Visibility::Internal
@@ -186,41 +190,58 @@ pub fn build_ir_module(
     Ok(())
 }
 
-// fn build_globals(
-//     wasm_module: &Module,
-//     module_builder: &mut ModuleBuilder,
-//     diagnostics: &DiagnosticsHandler,
-// ) -> WasmResult<()> {
-//     for (global_idx, global) in &wasm_module.globals {
-//         let global_name = wasm_module
-//             .name_section
-//             .globals_names
-//             .get(&global_idx)
-//             .cloned()
-//             .unwrap_or(Symbol::intern(format!("gv{}", global_idx.as_u32())));
-//         let global_init = wasm_module.try_global_initializer(global_idx, diagnostics)?;
-//         let init = ConstantData::from(global_init.to_le_bytes(wasm_module, diagnostics)?);
-//         if let Err(e) = module_builder.declare_global_variable(
-//             global_name.as_str(),
-//             ir_type(global.ty, diagnostics)?,
-//             Linkage::External,
-//             Some(init.clone()),
-//             SourceSpan::default(),
-//         ) {
-//             let message = format!(
-//                 "Failed to declare global variable '{global_name}' with initializer '{init}' with \
-//                  error: {:?}",
-//                 e
-//             );
-//             return Err(diagnostics
-//                 .diagnostic(Severity::Error)
-//                 .with_message(message.clone())
-//                 .into_report());
-//         }
-//     }
-//     Ok(())
-// }
-//
+fn build_globals(
+    wasm_module: &crate::module::Module,
+    module_builder: &mut ModuleBuilder,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    let span = SourceSpan::default();
+    for (global_idx, global) in &wasm_module.globals {
+        let global_name = wasm_module
+            .name_section
+            .globals_names
+            .get(&global_idx)
+            .cloned()
+            .unwrap_or(Symbol::intern(format!("gv{}", global_idx.as_u32())));
+        let global_init = wasm_module.try_global_initializer(global_idx, diagnostics)?;
+        let visibility = if wasm_module.is_exported(global_idx.into()) {
+            Visibility::Public
+        } else {
+            Visibility::Private
+        };
+        let mut global_var_ref = module_builder
+            .define_global_variable(
+                global_name.into(),
+                visibility,
+                ir_type(global.ty, diagnostics)?,
+            )
+            .map_err(|e| {
+                diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(
+                        (format!(
+                            "Failed to declare global variable '{global_name}' with error: {:?}",
+                            e
+                        ))
+                        .clone(),
+                    )
+                    .into_report()
+            })?;
+        let context = global_var_ref.borrow().as_operation().context_rc().clone();
+        let mut init_region_ref = {
+            let mut global_var = global_var_ref.borrow_mut();
+            let region_ref = global_var.initializer_mut().as_region_ref();
+            region_ref
+        };
+        let mut op_builder = OpBuilder::new(context);
+        op_builder.create_block(init_region_ref, None, &[]);
+        op_builder.create::<midenc_dialect_hir::RetImm, _>(span)(
+            global_init.to_imm(wasm_module, diagnostics)?,
+        );
+    }
+    Ok(())
+}
+
 // fn build_data_segments(
 //     translation: &ParsedModule,
 //     module_builder: &mut ModuleBuilder,
