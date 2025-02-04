@@ -676,7 +676,8 @@ fn translate_call(
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let func_ref = module_state.get_direct_func(function_index, diagnostics)?;
-    let num_args = func_ref.borrow().signature().params().len();
+    let sig = func_ref.borrow().signature().clone();
+    let num_args = sig.params().len();
     let args = func_state.peekn(num_args);
     // if is_miden_intrinsics_module(func_id.module.as_symbol()) {
     //     let results = convert_intrinsics_call(func_id, args, builder, span);
@@ -703,10 +704,9 @@ fn translate_call(
     //     func_state.pushn(&results);
     // } else { code below }
 
-    let exec = builder.ins().exec(func_ref, args.to_vec(), span)?;
+    let exec = builder.ins().exec(func_ref, sig, args.to_vec(), span)?;
     let borrow = exec.borrow();
     let results = borrow.as_ref().results();
-    dbg!(&results);
     func_state.popn(num_args);
     let result_vals: Vec<ValueRef> =
         results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
