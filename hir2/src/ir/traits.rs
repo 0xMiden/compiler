@@ -231,6 +231,9 @@ derive! {
     verify {
         fn no_region_arguments(op: &Operation, context: &Context) -> Result<(), Report> {
             for region in op.regions().iter() {
+                if region.is_empty() {
+                    continue
+                }
                 if region.entry().has_arguments() {
                     return Err(context
                         .session
