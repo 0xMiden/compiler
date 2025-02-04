@@ -30,7 +30,6 @@ fn check_op(wat_op: &str, expected_ir: expect_test::Expect) {
     let wasm = wat::parse_str(wat).unwrap();
     let component_ref = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
         .map_err(|e| {
-            let labels = e.labels().unwrap().collect::<Vec<midenc_hir::diagnostics::LabeledSpan>>();
             if let Some(labels) = e.labels() {
                 for label in labels {
                     eprintln!("{}", label.label().unwrap());
@@ -70,7 +69,7 @@ fn memory_grow() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -91,7 +90,7 @@ fn memory_size() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.mem_size  : ?;
                 hir.br block3 ;
@@ -112,7 +111,7 @@ fn memory_copy() {
             memory.copy
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 20 : i32;
                 v1 = hir.constant 10 : i32;
@@ -140,7 +139,7 @@ fn i32_load8_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -164,7 +163,7 @@ fn i32_load16_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -191,7 +190,7 @@ fn i32_load8_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -215,7 +214,7 @@ fn i32_load16_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -242,7 +241,7 @@ fn i64_load8_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -266,7 +265,7 @@ fn i64_load16_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -293,7 +292,7 @@ fn i64_load8_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -317,7 +316,7 @@ fn i64_load16_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -344,7 +343,7 @@ fn i64_load32_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -371,7 +370,7 @@ fn i64_load32_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -398,7 +397,7 @@ fn i32_load() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -424,7 +423,7 @@ fn i64_load() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -450,7 +449,7 @@ fn i32_store() {
             i32.store
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.constant 1 : i32;
@@ -477,7 +476,7 @@ fn i64_store() {
             i64.store
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.constant 1 : i64;
@@ -504,7 +503,7 @@ fn i32_store8() {
             i32.store8
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.constant 1 : i32;
@@ -530,7 +529,7 @@ fn i32_store16() {
             i32.store16
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.constant 1 : i32;
@@ -559,7 +558,7 @@ fn i64_store32() {
             i64.store32
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1024 : i32;
                 v1 = hir.constant 1 : i64;
@@ -587,7 +586,7 @@ fn i32_const() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 hir.br block3 ;
@@ -606,7 +605,7 @@ fn i64_const() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i64;
                 hir.br block3 ;
@@ -626,7 +625,7 @@ fn i32_popcnt() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.popcnt v0 : ?;
@@ -648,7 +647,7 @@ fn i32_clz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.clz v0 : ?;
@@ -670,7 +669,7 @@ fn i64_clz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i64;
                 v1 = hir.clz v0 : ?;
@@ -692,7 +691,7 @@ fn i32_ctz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.ctz v0 : ?;
@@ -714,7 +713,7 @@ fn i64_ctz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i64;
                 v1 = hir.ctz v0 : ?;
@@ -736,7 +735,7 @@ fn i64_extend_i32_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.sext v0 : ? #[ty = i64];
@@ -757,7 +756,7 @@ fn i64_extend_i32_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.bitcast v0 : ? #[ty = u32];
@@ -780,7 +779,7 @@ fn i32_wrap_i64() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 1 : i64;
                 v1 = hir.trunc v0 : ? #[ty = i32];
@@ -802,7 +801,7 @@ fn i32_add() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 3 : i32;
                 v1 = hir.constant 1 : i32;
@@ -825,7 +824,7 @@ fn i64_add() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 1 : i64;
@@ -848,7 +847,7 @@ fn i32_and() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -871,7 +870,7 @@ fn i64_and() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -894,7 +893,7 @@ fn i32_or() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -917,7 +916,7 @@ fn i64_or() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -940,7 +939,7 @@ fn i32_sub() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 3 : i32;
                 v1 = hir.constant 1 : i32;
@@ -963,7 +962,7 @@ fn i64_sub() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 1 : i64;
@@ -986,7 +985,7 @@ fn i32_xor() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1009,7 +1008,7 @@ fn i64_xor() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1032,7 +1031,7 @@ fn i32_shl() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1056,7 +1055,7 @@ fn i64_shl() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1080,7 +1079,7 @@ fn i32_shr_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1106,7 +1105,7 @@ fn i64_shr_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1132,7 +1131,7 @@ fn i32_shr_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1156,7 +1155,7 @@ fn i64_shr_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1180,7 +1179,7 @@ fn i32_rotl() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1204,7 +1203,7 @@ fn i64_rotl() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1228,7 +1227,7 @@ fn i32_rotr() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1252,7 +1251,7 @@ fn i64_rotr() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1276,7 +1275,7 @@ fn i32_mul() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1299,7 +1298,7 @@ fn i64_mul() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1322,7 +1321,7 @@ fn i32_div_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1348,7 +1347,7 @@ fn i64_div_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1374,7 +1373,7 @@ fn i32_div_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1397,7 +1396,7 @@ fn i64_div_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1420,7 +1419,7 @@ fn i32_rem_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1446,7 +1445,7 @@ fn i64_rem_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1472,7 +1471,7 @@ fn i32_rem_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1495,7 +1494,7 @@ fn i64_rem_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1518,7 +1517,7 @@ fn i32_lt_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1544,7 +1543,7 @@ fn i64_lt_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1570,7 +1569,7 @@ fn i32_lt_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1594,7 +1593,7 @@ fn i64_lt_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1618,7 +1617,7 @@ fn i32_le_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1644,7 +1643,7 @@ fn i64_le_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1670,7 +1669,7 @@ fn i32_le_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1694,7 +1693,7 @@ fn i64_le_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1718,7 +1717,7 @@ fn i32_gt_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1744,7 +1743,7 @@ fn i64_gt_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1770,7 +1769,7 @@ fn i32_gt_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1794,7 +1793,7 @@ fn i64_gt_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1818,7 +1817,7 @@ fn i32_ge_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1844,7 +1843,7 @@ fn i64_ge_u() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1870,7 +1869,7 @@ fn i32_ge_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1894,7 +1893,7 @@ fn i64_ge_s() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -1917,7 +1916,7 @@ fn i32_eqz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 0 : i32;
@@ -1940,7 +1939,7 @@ fn i64_eqz() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 0 : i64;
@@ -1964,7 +1963,7 @@ fn i32_eq() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -1988,7 +1987,7 @@ fn i64_eq() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -2012,7 +2011,7 @@ fn i32_ne() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
@@ -2036,7 +2035,7 @@ fn i64_ne() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
@@ -2061,7 +2060,7 @@ fn select_i32() {
             drop
         "#,
         expect![[r#"
-            builtin.function internal @test_wrapper() {
+            builtin.function public @test_wrapper() {
             ^block2:
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 7 : i64;

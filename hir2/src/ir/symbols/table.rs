@@ -292,7 +292,7 @@ impl SymbolMap {
     /// NOTE: If `symbol` is already in the map with `name`, this is a no-op.
     pub fn insert(&mut self, name: SymbolName, mut symbol: SymbolRef) -> SymbolName {
         // Add the symbol to the symbol map
-        let sym = symbol.borrow();
+        // let sym = symbol.borrow();
         match self.symbols.try_insert(name, symbol) {
             Ok(_) => {
                 symbol.borrow_mut().set_name(name);
@@ -313,7 +313,7 @@ impl SymbolMap {
                 let uniqued = generate_symbol_name(name, &mut self.uniquing_count, |name| {
                     !self.symbols.contains_key(name)
                 });
-                drop(sym);
+                // drop(sym);
                 symbol.borrow_mut().set_name(uniqued);
                 // TODO: visit uses? symbol should be unused AFAICT
                 self.symbols.insert(uniqued, symbol);

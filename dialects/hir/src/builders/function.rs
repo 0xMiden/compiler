@@ -1,7 +1,7 @@
 use midenc_hir2::{
     dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Felt, Immediate, Listener,
-    OpBuilder, Overflow, Region, RegionRef, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef,
-    Usable, ValueRef,
+    OpBuilder, Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type,
+    UnsafeIntrusiveEntityRef, Usable, ValueRef,
 };
 
 use crate::*;
@@ -1052,6 +1052,7 @@ pub trait InstBuilder: InstBuilderBase {
     fn exec<C, A>(
         mut self,
         callee: C,
+        signature: Signature,
         args: A,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Exec>, Report>
@@ -1059,13 +1060,14 @@ pub trait InstBuilder: InstBuilderBase {
         C: AsCallableSymbolRef,
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::Exec, (C, A)>(span);
-        op_builder(callee, args)
+        let op_builder = self.builder_mut().create::<crate::ops::Exec, (C, Signature, A)>(span);
+        op_builder(callee, signature, args)
     }
 
     fn call<C, A>(
         mut self,
         callee: C,
+        signature: Signature,
         args: A,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Call>, Report>
@@ -1073,8 +1075,8 @@ pub trait InstBuilder: InstBuilderBase {
         C: AsCallableSymbolRef,
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::Call, (C, A)>(span);
-        op_builder(callee, args)
+        let op_builder = self.builder_mut().create::<crate::ops::Call, (C, Signature, A)>(span);
+        op_builder(callee, signature, args)
     }
 
     fn select(

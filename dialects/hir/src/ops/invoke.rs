@@ -4,58 +4,27 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface)
 )]
 pub struct Exec {
     #[symbol(callable)]
     callee: SymbolPath,
+    #[attr]
+    signature: Signature,
     #[operands]
     arguments: AnyType,
 }
 
 impl InferTypeOpInterface for Exec {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        use midenc_session::diagnostics::Severity;
-
         let span = self.span();
         let owner = self.as_operation().as_operation_ref();
-        if let Some(symbol) = self.resolve() {
-            let symbol = symbol.borrow();
-            if let Some(callable) =
-                symbol.as_symbol_operation().as_trait::<dyn CallableOpInterface>()
-            {
-                let signature = callable.signature();
-                for (i, result) in signature.results().iter().enumerate() {
-                    let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-                    self.op.results.push(value);
-                }
-
-                Ok(())
-            } else {
-                Err(context
-                    .session
-                    .diagnostics
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid operation")
-                    .with_primary_label(
-                        span,
-                        "invalid callee: does not implement CallableOpInterface",
-                    )
-                    .with_secondary_label(
-                        symbol.as_symbol_operation().span,
-                        "symbol refers to this definition",
-                    )
-                    .into_report())
-            }
-        } else {
-            Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid operation")
-                .with_primary_label(span, "invalid callee: symbol is undefined")
-                .into_report())
+        let signature = self.signature().clone();
+        for (i, result) in signature.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
         }
+        Ok(())
     }
 }
 
@@ -111,58 +80,27 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface)
 )]
 pub struct Call {
     #[symbol(callable)]
     callee: SymbolPath,
+    #[attr]
+    signature: Signature,
     #[operands]
     arguments: AnyType,
 }
 
 impl InferTypeOpInterface for Call {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        use midenc_session::diagnostics::Severity;
-
         let span = self.span();
         let owner = self.as_operation().as_operation_ref();
-        if let Some(symbol) = self.resolve() {
-            let symbol = symbol.borrow();
-            if let Some(callable) =
-                symbol.as_symbol_operation().as_trait::<dyn CallableOpInterface>()
-            {
-                let signature = callable.signature();
-                for (i, result) in signature.results().iter().enumerate() {
-                    let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-                    self.op.results.push(value);
-                }
-
-                Ok(())
-            } else {
-                Err(context
-                    .session
-                    .diagnostics
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid operation")
-                    .with_primary_label(
-                        span,
-                        "invalid callee: does not implement CallableOpInterface",
-                    )
-                    .with_secondary_label(
-                        symbol.as_symbol_operation().span,
-                        "symbol refers to this definition",
-                    )
-                    .into_report())
-            }
-        } else {
-            Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid operation")
-                .with_primary_label(span, "invalid callee: symbol is undefined")
-                .into_report())
+        let signature = self.signature().clone();
+        for (i, result) in signature.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
         }
+        Ok(())
     }
 }
 

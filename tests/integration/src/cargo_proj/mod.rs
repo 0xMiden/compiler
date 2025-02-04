@@ -251,14 +251,23 @@ impl ProjectBuilder {
     }
 
     fn skip_rust_compilation(&self, artifact_name: &str) -> bool {
-        let computed_artifact_path = self
+        let computed_artifact_path_wuu = self
             .root()
             .join("target")
             .join("wasm32-unknown-unknown")
             .join("release")
             .join(artifact_name)
             .with_extension("wasm");
-        if std::env::var("SKIP_RUST").is_ok() && computed_artifact_path.exists() {
+        let computed_artifact_path_ww = self
+            .root()
+            .join("target")
+            .join("wasm32-wasip1")
+            .join("release")
+            .join(artifact_name)
+            .with_extension("wasm");
+        if std::env::var("SKIP_RUST").is_ok()
+            && (computed_artifact_path_wuu.exists() || computed_artifact_path_ww.exists())
+        {
             eprintln!("Skipping Rust compilation");
             true
         } else {

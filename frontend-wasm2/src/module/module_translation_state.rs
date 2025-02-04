@@ -1,6 +1,8 @@
-use midenc_hir::{
-    diagnostics::{DiagnosticsHandler, Severity},
-    AbiParam, CallConv, DataFlowGraph, FunctionIdent, FxHashMap, Ident, Linkage, Signature,
+use midenc_hir::diagnostics::{DiagnosticsHandler, Severity};
+use midenc_hir2::{
+    dialects::builtin::{Function, FunctionRef, ModuleBuilder},
+    CallConv, FunctionIdent, FxHashMap, Ident, Signature, Symbol, SymbolName, SymbolRef,
+    SymbolTable, UnsafeIntrusiveEntityRef, Visibility,
 };
 
 use super::{instance::ModuleArgument, ir_func_type, EntityIndex, FuncIndex, Module, ModuleTypes};
@@ -11,18 +13,17 @@ use crate::{
     translation_utils::sig_from_func_type,
 };
 
-pub struct ModuleTranslationState {
+pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     /// Stores both the function reference and its signature
     functions: FxHashMap<FuncIndex, (FunctionIdent, Signature)>,
-    /// Number of imported or aliased functions in the module.
-    pub num_imported_funcs: usize,
-    // stable_imported_miden_abi_functions: FxHashMap<FunctionIdent, String>,
+    pub module_builder: &'a mut ModuleBuilder,
 }
 
-impl ModuleTranslationState {
+impl<'a> ModuleTranslationState<'a> {
     pub fn new(
         module: &Module,
+        module_builder: &'a mut ModuleBuilder,
         mod_types: &ModuleTypes,
         module_args: Vec<ModuleArgument>,
         diagnostics: &DiagnosticsHandler,
@@ -53,34 +54,34 @@ impl ModuleTranslationState {
         for (index, func_type) in &module.functions {
             let wasm_func_type = mod_types[func_type.signature].clone();
             let ir_func_type = ir_func_type(&wasm_func_type, diagnostics).unwrap();
-            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, Linkage::External);
+            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, Visibility::Public);
             if let Some(subst) = function_import_subst.get(&index) {
                 functions.insert(index, (*subst, sig));
+                todo!("define the import in some symbol table");
             } else if module.is_imported_function(index) {
-                assert!((index.as_u32() as usize) < module.num_imported_funcs);
-                let import = &module.imports[index.as_u32() as usize];
-                let func_id =
-                    recover_imported_masm_function_id(import.module.as_str(), &import.field);
-                functions.insert(index, (func_id, sig));
+                todo!("define the import in some symbol table");
+                todo!("below");
+                // assert!((index.as_u32() as usize) < module.num_imported_funcs);
+                // let import = &module.imports[index.as_u32() as usize];
+                // let func_id =
+                //     recover_imported_masm_function_id(import.module.as_str(), &import.field);
+                // functions.insert(index, (func_id, sig));
             } else {
                 let func_name = module.func_name(index);
                 let func_id = FunctionIdent {
-                    module: module.name(),
+                    module: Ident::from(module.name().as_str()),
                     function: Ident::from(func_name.as_str()),
                 };
-                functions.insert(index, (func_id, sig));
+                functions.insert(index, (func_id, sig.clone()));
+                module_builder
+                    .define_function(func_id.function, sig)
+                    .expect("adding new function failed");
             };
         }
         Self {
             functions,
-            num_imported_funcs: module.num_imported_funcs,
+            module_builder,
         }
-    }
-
-    /// Returns an IR function signature converted from Wasm function signature
-    /// for the given function index.
-    pub fn signature(&self, index: FuncIndex) -> &Signature {
-        &self.functions[&index].1
     }
 
     /// Get the `FunctionIdent` that should be used to make a direct call to function
@@ -89,45 +90,65 @@ impl ModuleTranslationState {
     /// Import the callee into `func`'s DFG if it is not already present.
     pub(crate) fn get_direct_func(
         &mut self,
-        dfg: &mut DataFlowGraph,
         index: FuncIndex,
         diagnostics: &DiagnosticsHandler,
-    ) -> WasmResult<FunctionIdent> {
+    ) -> WasmResult<FunctionRef> {
+        // TODO: add error handling
         let (func_id, wasm_sig) = self.functions[&index].clone();
-        let (func_id, sig) = if is_miden_abi_module(func_id.module.as_symbol()) {
-            let func_id = FunctionIdent {
-                module: func_id.module,
-                function: Ident::from(func_id.function.as_str().replace("-", "_").as_str()),
-            };
-            let ft =
-                miden_abi_function_type(func_id.module.as_symbol(), func_id.function.as_symbol());
-            (
-                func_id,
-                Signature::new(
-                    ft.params.into_iter().map(AbiParam::new),
-                    ft.results.into_iter().map(AbiParam::new),
-                ),
-            )
-        } else {
-            (func_id, wasm_sig.clone())
-        };
+        assert_eq!(self.module_builder.module.borrow().name(), &func_id.module);
+        let symbol_ref = self
+            .module_builder
+            .module
+            .borrow()
+            .get(func_id.function.as_symbol())
+            .unwrap_or_else(|| {
+                panic!(
+                    "Function with name {} in module {} is not found",
+                    func_id.function, func_id.module
+                );
+            });
 
-        if is_miden_intrinsics_module(func_id.module.as_symbol()) {
-            // Exit and do not import intrinsics functions into the DFG
-            return Ok(func_id);
-        }
+        let op = symbol_ref.borrow();
+        let func = op.as_symbol_operation().downcast_ref::<Function>().unwrap();
+        let func_ref = func.as_function_ref();
+        Ok(func_ref)
 
-        if dfg.get_import(&func_id).is_none() {
-            dfg.import_function(func_id.module, func_id.function, sig.clone())
-                .map_err(|_e| {
-                    let message = format!(
-                        "Function with name {} in module {} with signature {sig:?} is already \
-                         imported (function call) with a different signature",
-                        func_id.function, func_id.module
-                    );
-                    diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
-                })?;
-        }
-        Ok(func_id)
+        // let function = symbol_ref.borrow().downcast_ref::<Function>().unwrap().as_symbol_ref();
+        // let (func_id, wasm_sig) = self.functions[&index].clone();
+        // let (func_id, sig) = if is_miden_abi_module(func_id.module.as_symbol()) {
+        //     let func_id = FunctionIdent {
+        //         module: func_id.module,
+        //         function: Ident::from(func_id.function.as_str().replace("-", "_").as_str()),
+        //     };
+        //     let ft =
+        //         miden_abi_function_type(func_id.module.as_symbol(), func_id.function.as_symbol());
+        //     (
+        //         func_id,
+        //         Signature::new(
+        //             ft.params.into_iter().map(AbiParam::new),
+        //             ft.results.into_iter().map(AbiParam::new),
+        //         ),
+        //     )
+        // } else {
+        //     (func_id, wasm_sig.clone())
+        // };
+        //
+        // if is_miden_intrinsics_module(func_id.module.as_symbol()) {
+        //     // Exit and do not import intrinsics functions into the DFG
+        //     return Ok(func_id);
+        // }
+        //
+        // if dfg.get_import(&func_id).is_none() {
+        //     dfg.import_function(func_id.module, func_id.function, sig.clone())
+        //         .map_err(|_e| {
+        //             let message = format!(
+        //                 "Function with name {} in module {} with signature {sig:?} is already \
+        //                  imported (function call) with a different signature",
+        //                 func_id.function, func_id.module
+        //             );
+        //             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+        //         })?;
+        // }
+        // Ok(func_id)
     }
 }

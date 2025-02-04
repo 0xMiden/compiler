@@ -4,7 +4,8 @@ use core::panic;
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt, fs,
+    fmt::{self, Write},
+    fs,
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -418,22 +419,30 @@ impl CompilerTestBuilder {
 
         // Build test
         match self.source {
-            CompilerTestInputType::CargoMiden(_) => {
-                let mut args = vec![command.get_program().to_str().unwrap().to_string()];
-                let cmd_args: Vec<String> = command
-                    .get_args()
-                    .collect::<Vec<&OsStr>>()
-                    .iter()
-                    .map(|s| s.to_str().unwrap().to_string())
-                    .collect();
-                args.extend(cmd_args);
-                let wasm_artifacts =
-                    cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
-                assert_eq!(wasm_artifacts.len(), 1);
-                let wasm_comp_path = &wasm_artifacts.first().unwrap();
+            CompilerTestInputType::CargoMiden(config) => {
+                let expected_wasm_artifact_path = config.wasm_artifact_path();
+                let skip_rust_compilation =
+                    std::env::var("SKIP_RUST").is_ok() && expected_wasm_artifact_path.exists();
+                let wasm_artifact_path = if !skip_rust_compilation {
+                    let mut args = vec![command.get_program().to_str().unwrap().to_string()];
+                    let cmd_args: Vec<String> = command
+                        .get_args()
+                        .collect::<Vec<&OsStr>>()
+                        .iter()
+                        .map(|s| s.to_str().unwrap().to_string())
+                        .collect();
+                    args.extend(cmd_args);
+                    let wasm_artifacts =
+                        cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
+                    assert_eq!(wasm_artifacts.len(), 1);
+                    wasm_artifacts.first().unwrap().clone()
+                } else {
+                    drop(command);
+                    expected_wasm_artifact_path
+                };
                 let artifact_name =
-                    wasm_comp_path.file_stem().unwrap().to_str().unwrap().to_string();
-                let input_file = InputFile::from_path(wasm_comp_path).unwrap();
+                    wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
+                let input_file = InputFile::from_path(wasm_artifact_path).unwrap();
                 let mut inputs = vec![input_file];
                 inputs.extend(self.link_masm_modules.into_iter().map(|(path, content)| {
                     let path = path.to_string();
@@ -1089,7 +1098,8 @@ impl CompilerTest {
             &midenc_frontend_wasm2::WasmTranslationConfig::default(),
             context.clone(),
         )
-        .expect("Failed to translate Wasm binary to IR component");
+        .map_err(format_report)
+        .unwrap_or_else(|err| panic!("Failed to translate Wasm to IR:\n{err}"));
         let src = demangle(ir.borrow().as_ref().to_string());
         expected_hir_file.assert_eq(&src);
     }
@@ -1174,7 +1184,19 @@ impl CompilerTest {
 fn format_report(report: miden_assembly::diagnostics::Report) -> String {
     use miden_assembly::diagnostics::reporting::PrintDiagnostic;
 
-    PrintDiagnostic::new(report).to_string()
+    let mut labels_str = String::new();
+    if let Some(labels) = report.labels() {
+        for label in labels {
+            if let Some(label) = label.label() {
+                writeln!(&mut labels_str, "{}", label).unwrap();
+            }
+        }
+    }
+
+    let mut str = PrintDiagnostic::new(report).to_string();
+    writeln!(&mut str, "{labels_str}").unwrap();
+
+    str
 }
 
 fn stdlib_sys_crate_path() -> PathBuf {
