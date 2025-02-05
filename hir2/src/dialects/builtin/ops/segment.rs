@@ -34,7 +34,6 @@ pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 #[operation(
     dialect = BuiltinDialect,
     traits(
-        SingleRegion,
         SingleBlock,
         NoRegionArguments,
         IsolatedFromAbove,

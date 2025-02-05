@@ -7,9 +7,10 @@ use std::rc::Rc;
 use midenc_dialect_hir::{Constant, FunctionBuilder};
 use midenc_hir::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
-    ConstantData, MidenAbiImport, Symbol,
+    MidenAbiImport, Symbol,
 };
 use midenc_hir2::{
+    constants::ConstantData,
     dialects::builtin::{Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef},
     version::Version,
     Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
@@ -126,9 +127,7 @@ pub fn build_ir_module(
         module_state.module_builder,
         &context.session.diagnostics,
     )?;
-    // TODO: data segments
-    //
-    // build_data_segments(parsed_module, &mut module_builder, &context.session.diagnostics)?;
+    build_data_segments(parsed_module, module_state.module_builder, &context.session.diagnostics)?;
     let addr2line = addr2line::Context::from_dwarf(gimli::Dwarf {
         debug_abbrev: parsed_module.debuginfo.dwarf.debug_abbrev,
         debug_addr: parsed_module.debuginfo.dwarf.debug_addr,
@@ -242,29 +241,25 @@ fn build_globals(
     Ok(())
 }
 
-// fn build_data_segments(
-//     translation: &ParsedModule,
-//     module_builder: &mut ModuleBuilder,
-//     diagnostics: &DiagnosticsHandler,
-// ) -> WasmResult<()> {
-//     for (data_segment_idx, data_segment) in &translation.data_segments {
-//         let data_segment_name =
-//             translation.module.name_section.data_segment_names[&data_segment_idx];
-//         let readonly = data_segment_name.as_str().contains(".rodata");
-//         let init = ConstantData::from(data_segment.data);
-//         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
-//         let size = init.len() as u32;
-//         if let Err(e) = module_builder.declare_data_segment(offset, size, init, readonly) {
-//             let message = format!(
-//                 "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
-//                  '{offset}' with error: {:?}",
-//                 e
-//             );
-//             return Err(diagnostics
-//                 .diagnostic(Severity::Error)
-//                 .with_message(message.clone())
-//                 .into_report());
-//         }
-//     }
-//     Ok(())
-// }
+fn build_data_segments(
+    translation: &ParsedModule,
+    module_builder: &mut ModuleBuilder,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    for (data_segment_idx, data_segment) in &translation.data_segments {
+        let data_segment_name =
+            translation.module.name_section.data_segment_names[&data_segment_idx];
+        let readonly = data_segment_name.as_str().contains(".rodata");
+        let init = ConstantData::from(data_segment.data);
+        let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
+        let size = init.len() as u32;
+        if let Err(e) = module_builder.define_data_segment(offset, init, SourceSpan::default()) {
+            let message = format!(
+                "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
+                 '{offset}'",
+            );
+            return Err(e.wrap_err(message));
+        }
+    }
+    Ok(())
+}

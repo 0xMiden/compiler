@@ -15,7 +15,7 @@ fn test_enum() {
 fn test_array() {
     let mut test = CompilerTest::rust_source_program(include_str!("types_src/array.rs"));
     test.expect_wasm(expect_file!["../../expected/types/array.wat"]);
-    test.expect_ir(expect_file!["../../expected/types/array.hir"]);
+    test.expect_ir2(expect_file!["../../expected/types/array.hir"]);
     test.expect_masm(expect_file!["../../expected/types/array.masm"]);
 
     assert!(
