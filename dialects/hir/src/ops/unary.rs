@@ -28,7 +28,8 @@ macro_rules! infer_return_ty_for_unary_op {
 /// Increment
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Incr {
     #[operand]
@@ -42,7 +43,8 @@ infer_return_ty_for_unary_op!(Incr);
 /// Negation
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Neg {
     #[operand]
@@ -56,7 +58,8 @@ infer_return_ty_for_unary_op!(Neg);
 /// Modular inverse
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Inv {
     #[operand]
@@ -70,7 +73,8 @@ infer_return_ty_for_unary_op!(Inv);
 /// log2(operand)
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Ilog2 {
     #[operand]
@@ -84,7 +88,8 @@ infer_return_ty_for_unary_op!(Ilog2);
 /// pow2(operand)
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Pow2 {
     #[operand]
@@ -98,7 +103,9 @@ infer_return_ty_for_unary_op!(Pow2);
 /// Logical NOT
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
+
     )]
 pub struct Not {
     #[operand]
@@ -112,7 +119,8 @@ infer_return_ty_for_unary_op!(Not);
 /// Bitwise NOT
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp, SameOperandsAndResultType)
+        traits(UnaryOp, SameOperandsAndResultType),
+        implements(InferTypeOpInterface)
     )]
 pub struct Bnot {
     #[operand]
@@ -126,7 +134,8 @@ infer_return_ty_for_unary_op!(Bnot);
 /// is_odd(operand)
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct IsOdd {
     #[operand]
@@ -140,7 +149,8 @@ infer_return_ty_for_unary_op!(IsOdd as Type::I1);
 /// Count of non-zero bits (population count)
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct Popcnt {
     #[operand]
@@ -154,7 +164,8 @@ infer_return_ty_for_unary_op!(Popcnt as Type::U32);
 /// Count Leading Zeros
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct Clz {
     #[operand]
@@ -168,7 +179,8 @@ infer_return_ty_for_unary_op!(Clz as Type::U32);
 /// Count Trailing Zeros
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct Ctz {
     #[operand]
@@ -182,7 +194,8 @@ infer_return_ty_for_unary_op!(Ctz as Type::U32);
 /// Count Leading Ones
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct Clo {
     #[operand]
@@ -196,7 +209,8 @@ infer_return_ty_for_unary_op!(Clo as Type::U32);
 /// Count Trailing Ones
 #[operation (
         dialect = HirDialect,
-        traits(UnaryOp)
+        traits(UnaryOp),
+        implements(InferTypeOpInterface)
     )]
 pub struct Cto {
     #[operand]

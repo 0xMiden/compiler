@@ -32,8 +32,9 @@ pub enum CastKind {
  */
 
 #[operation(
-     dialect = HirDialect,
-     traits(UnaryOp)
+    dialect = HirDialect,
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
  )]
 pub struct PtrToInt {
     #[operand]
@@ -54,7 +55,8 @@ impl InferTypeOpInterface for PtrToInt {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct IntToPtr {
     #[operand]
@@ -75,7 +77,8 @@ impl InferTypeOpInterface for IntToPtr {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct Cast {
     #[operand]
@@ -96,7 +99,8 @@ impl InferTypeOpInterface for Cast {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct Bitcast {
     #[operand]
@@ -117,7 +121,8 @@ impl InferTypeOpInterface for Bitcast {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct Trunc {
     #[operand]
@@ -138,7 +143,8 @@ impl InferTypeOpInterface for Trunc {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct Zext {
     #[operand]
@@ -159,7 +165,8 @@ impl InferTypeOpInterface for Zext {
 
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp)
+    traits(UnaryOp),
+    implements(InferTypeOpInterface)
 )]
 pub struct Sext {
     #[operand]
