@@ -224,10 +224,10 @@ pub fn translate_operator(
         }
         /******************************* Load instructions ***********************************/
         Operator::I32Load8U { memarg } => {
-            translate_load_zext(U8, I32, memarg, state, builder, span)?;
+            translate_load_zext(U8, U32, memarg, state, builder, span)?;
         }
         Operator::I32Load16U { memarg } => {
-            translate_load_zext(U16, I32, memarg, state, builder, span)?;
+            translate_load_zext(U16, U32, memarg, state, builder, span)?;
         }
         Operator::I32Load8S { memarg } => {
             translate_load_sext(I8, I32, memarg, state, builder, span)?;
@@ -236,10 +236,10 @@ pub fn translate_operator(
             translate_load_sext(I16, I32, memarg, state, builder, span)?;
         }
         Operator::I64Load8U { memarg } => {
-            translate_load_zext(U8, I64, memarg, state, builder, span)?;
+            translate_load_zext(U8, U64, memarg, state, builder, span)?;
         }
         Operator::I64Load16U { memarg } => {
-            translate_load_zext(U16, I64, memarg, state, builder, span)?;
+            translate_load_zext(U16, U64, memarg, state, builder, span)?;
         }
         Operator::I64Load8S { memarg } => {
             translate_load_sext(I8, I64, memarg, state, builder, span)?;
@@ -251,7 +251,7 @@ pub fn translate_operator(
             translate_load_sext(I32, I64, memarg, state, builder, span)?;
         }
         Operator::I64Load32U { memarg } => {
-            translate_load_zext(U32, I64, memarg, state, builder, span)?;
+            translate_load_zext(U32, U64, memarg, state, builder, span)?;
         }
         Operator::I32Load { memarg } => translate_load(I32, memarg, state, builder, span)?,
         Operator::I64Load { memarg } => translate_load(I64, memarg, state, builder, span)?,
@@ -444,109 +444,109 @@ pub fn translate_operator(
         Operator::I32LtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().lt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64LtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().lt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32LtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().lt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64LtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().lt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32LeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().lte(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64LeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().lte(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32LeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().lte(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64LeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().lte(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32GtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().gt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64GtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().gt(arg0, arg1, span)?;
-            state.push1(builder.ins().sext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32GtS | Operator::I64GtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().gt(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32GeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.ins().gte(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64GeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.ins().gte(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32GeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().gte(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64GeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().gte(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32Eqz => {
             let arg = state.pop1();
             let imm = builder.ins().imm(Immediate::I32(0), span);
             let val = builder.ins().eq(arg, imm, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64Eqz => {
             let arg = state.pop1();
             let imm = builder.ins().imm(Immediate::I64(0), span);
             let val = builder.ins().eq(arg, imm, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32Eq => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().eq(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64Eq => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().eq(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I32Ne => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().neq(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         Operator::I64Ne => {
             let (arg0, arg1) = state.pop2();
             let val = builder.ins().neq(arg0, arg1, span)?;
-            state.push1(builder.ins().zext(val, I32, span)?);
+            state.push1(builder.ins().zext(val, U32, span)?);
         }
         op => {
             unsupported_diag!(diagnostics, "Wasm op {:?} is not supported", op);
@@ -596,8 +596,8 @@ fn translate_load_zext(
     let addr_int = state.pop1();
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     let val = builder.ins().load(addr, span)?;
-    let sext_val = builder.ins().zext(val, zext_ty, span)?;
-    state.push1(sext_val);
+    let zext_val = builder.ins().zext(val, zext_ty, span)?;
+    state.push1(zext_val);
     Ok(())
 }
 

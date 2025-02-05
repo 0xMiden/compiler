@@ -2,8 +2,8 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
-        ConstantLike, InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, SingleBlock,
-        SingleRegion,
+        ConstantLike, InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf,
+        SingleBlock, SingleRegion, UInt8,
     },
     AsSymbolRef, Context, Ident, Operation, Report, Spanned, Symbol, SymbolName, SymbolRef,
     SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,

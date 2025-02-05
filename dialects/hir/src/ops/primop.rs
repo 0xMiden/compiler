@@ -4,7 +4,8 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryRead, MemoryWrite, SameOperandsAndResultType)
+    traits(HasSideEffects, MemoryRead, MemoryWrite, SameOperandsAndResultType),
+    implements(InferTypeOpInterface)
 )]
 pub struct MemGrow {
     #[operand]
@@ -15,14 +16,15 @@ pub struct MemGrow {
 
 impl InferTypeOpInterface for MemGrow {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.result_mut().set_type(Type::I32);
+        self.result_mut().set_type(Type::U32);
         Ok(())
     }
 }
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryRead)
+    traits(HasSideEffects, MemoryRead),
+    implements(InferTypeOpInterface)
 )]
 pub struct MemSize {
     #[result]
@@ -31,7 +33,7 @@ pub struct MemSize {
 
 impl InferTypeOpInterface for MemSize {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.result_mut().set_type(Type::I32);
+        self.result_mut().set_type(Type::U32);
         Ok(())
     }
 }
