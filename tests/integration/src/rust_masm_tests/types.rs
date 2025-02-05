@@ -6,7 +6,7 @@ use crate::CompilerTest;
 fn test_enum() {
     let mut test = CompilerTest::rust_source_program(include_str!("types_src/enum.rs"));
     test.expect_wasm(expect_file!["../../expected/types/enum.wat"]);
-    test.expect_ir(expect_file!["../../expected/types/enum.hir"]);
+    test.expect_ir2(expect_file!["../../expected/types/enum.hir"]);
     // uncomment when https://github.com/0xPolygonMiden/compiler/issues/281 is fixed
     // test.expect_masm(expect_file!["../../expected/types/enum.masm"]);
 }
