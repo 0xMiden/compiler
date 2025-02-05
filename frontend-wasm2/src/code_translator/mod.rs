@@ -13,7 +13,7 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use midenc_dialect_hir::InstBuilder;
+use midenc_dialect_hir::{InstBuilder, SwitchCase};
 use midenc_hir::{
     cranelift_entity::packed_option::ReservedValue,
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan},
@@ -813,60 +813,64 @@ fn translate_br_table(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) -> Result<(), Report> {
-    todo!()
-    // let mut targets = Vec::default();
-    // for depth in br_targets.targets() {
-    //     let depth = depth.into_diagnostic()?;
-    //
-    //     targets.push(depth);
-    // }
-    // targets.sort();
-    //
-    // let default_depth = br_targets.default();
-    // let min_depth =
-    //     core::cmp::min(targets.iter().copied().min().unwrap_or(default_depth), default_depth);
-    //
-    // let argc = {
-    //     let i = state.control_stack.len() - 1 - (min_depth as usize);
-    //     let min_depth_frame = &state.control_stack[i];
-    //     if min_depth_frame.is_loop() {
-    //         min_depth_frame.num_param_values()
-    //     } else {
-    //         min_depth_frame.num_return_values()
-    //     }
-    // };
-    //
-    // let default_block = {
-    //     let i = state.control_stack.len() - 1 - (default_depth as usize);
-    //     let frame = &mut state.control_stack[i];
-    //     frame.set_branched_to_exit();
-    //     frame.br_destination()
-    // };
-    //
-    // let val = state.pop1();
-    // let val = if val.borrow().ty().clone() != &U32 {
-    //     builder.ins().cast(val, U32, span)?
-    // } else {
-    //     val
-    // };
-    //
-    // let switch_builder = builder.ins().switch(val, span);
-    // let switch_builder =
-    //     targets.into_iter().enumerate().fold(switch_builder, |acc, (label_idx, depth)| {
-    //         let block = {
-    //             let i = state.control_stack.len() - 1 - (depth as usize);
-    //             let frame = &mut state.control_stack[i];
-    //             frame.set_branched_to_exit();
-    //             frame.br_destination()
-    //         };
-    //         let args = state.peekn_mut(argc);
-    //         acc.case(label_idx as u32, block, args)
-    //     });
-    // switch_builder.or_else(default_block, state.peekn_mut(argc));
-    //
-    // state.popn(argc);
-    // state.reachable = false;
-    // Ok(())
+    let mut targets = Vec::default();
+    for depth in br_targets.targets() {
+        let depth = depth.into_diagnostic()?;
+
+        targets.push(depth);
+    }
+    targets.sort();
+
+    let default_depth = br_targets.default();
+    let min_depth =
+        core::cmp::min(targets.iter().copied().min().unwrap_or(default_depth), default_depth);
+
+    let argc = {
+        let i = state.control_stack.len() - 1 - (min_depth as usize);
+        let min_depth_frame = &state.control_stack[i];
+        if min_depth_frame.is_loop() {
+            min_depth_frame.num_param_values()
+        } else {
+            min_depth_frame.num_return_values()
+        }
+    };
+
+    let default_block = {
+        let i = state.control_stack.len() - 1 - (default_depth as usize);
+        let frame = &mut state.control_stack[i];
+        frame.set_branched_to_exit();
+        frame.br_destination()
+    };
+
+    let selector = state.pop1();
+    let selector = if selector.borrow().ty().clone() != U32 {
+        builder.ins().cast(selector, U32, span)?
+    } else {
+        selector
+    };
+
+    let mut cases = Vec::new();
+    for (label_idx, depth) in targets.into_iter().enumerate() {
+        let block = {
+            let i = state.control_stack.len() - 1 - (depth as usize);
+            let frame = &mut state.control_stack[i];
+            frame.set_branched_to_exit();
+            frame.br_destination()
+        };
+        let args = state.peekn_mut(argc).to_vec();
+        let case = SwitchCase {
+            value: label_idx as u32,
+            successor: block,
+            arguments: args,
+        };
+        cases.push(case);
+    }
+
+    let default_args = state.peekn_mut(argc).to_vec();
+    state.popn(argc);
+    builder.ins().switch(selector, cases, default_block, default_args, span)?;
+    state.reachable = false;
+    Ok(())
 }
 
 fn translate_block(

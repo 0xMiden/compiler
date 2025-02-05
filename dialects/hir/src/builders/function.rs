@@ -1121,11 +1121,23 @@ pub trait InstBuilder: InstBuilderBase {
         op_builder(cond, then_dest, then_args, else_dest, else_args)
     }
 
-    // fn switch(self, arg: ValueRef, span: SourceSpan) -> SwitchBuilder<'f, Self> {
-    //     todo!()
-    //     // require_integer!(self, arg, Type::U32);
-    //     // SwitchBuilder::new(self, arg, span)
-    // }
+    fn switch<TCases, TFallbackArgs>(
+        mut self,
+        selector: ValueRef,
+        cases: TCases,
+        fallback: BlockRef,
+        fallback_args: TFallbackArgs,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Switch>, Report>
+    where
+        TCases: IntoIterator<Item = SwitchCase>,
+        TFallbackArgs: IntoIterator<Item = ::midenc_hir2::ValueRef>,
+    {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Switch, (_, TCases, _, TFallbackArgs)>(span);
+        op_builder(selector, cases, fallback, fallback_args)
+    }
 
     fn ret(
         mut self,
