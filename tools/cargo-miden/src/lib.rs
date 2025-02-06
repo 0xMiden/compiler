@@ -104,7 +104,8 @@ pub fn run<T>(args: T, build_output_type: OutputType) -> anyhow::Result<Vec<Path
 where
     T: Iterator<Item = String>,
 {
-    let args = args.skip_while(|arg| arg == "cargo").collect::<Vec<_>>();
+    // The first argument is the cargo-miden binary path
+    let args = args.skip_while(|arg| arg != "miden").collect::<Vec<_>>();
     let subcommand = detect_subcommand(args.clone());
 
     let outputs = match subcommand.as_deref() {

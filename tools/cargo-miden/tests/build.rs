@@ -1,20 +1,23 @@
-use std::{env, fs, vec};
+#![allow(unused)]
+
+use std::{env, fs};
 
 use cargo_miden::{run, OutputType};
+
+fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
+    let args: Vec<String> = ["cargo", "miden", "new", template, project_name]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    args
+}
 
 // NOTE: This test sets the current working directory so don't run it in parallel with tests
 // that depend on the current directory
 
-fn new_project_args(project_name: &str, template_path: Option<&str>) -> Vec<String> {
-    let mut args = vec!["cargo", "miden", "new", project_name];
-    if let Some(template_path) = template_path {
-        args.extend(["--template-path", template_path]);
-    };
-    args.into_iter().map(|s| s.to_string()).collect()
-}
-
 #[test]
-fn build_new_project_from_template() {
+fn test_templates() {
     // let _ = env_logger::builder().is_test(true).try_init();
     // Signal to `cargo-miden` that we're running in a test harness.
     //
@@ -22,6 +25,20 @@ fn build_new_project_from_template() {
     // to use an out-of-band signal like this instead
     env::set_var("TEST", "1");
 
+    // empty template means no template option is passing, thus using the default project template
+    build_new_project_from_template("");
+    build_new_project_from_template("--account");
+    build_new_project_from_template("--program");
+
+    // build_new_project_from_template(
+    //     &(format!(
+    //         "--template-path={}/../../../rust-templates/program",
+    //         std::env::var("CARGO_MANIFEST_DIR").unwrap()
+    //     )),
+    // );
+}
+
+fn build_new_project_from_template(template: &str) {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir();
     env::set_current_dir(&temp_dir).unwrap();
@@ -32,16 +49,7 @@ fn build_new_project_from_template() {
         fs::remove_dir_all(expected_new_project_dir).unwrap();
     }
 
-    let args = new_project_args(project_name, None);
-    // let args = new_project_args(
-    //     project_name,
-    //     Some(
-    //         &(format!(
-    //             "{}/../../../rust-templates/account",
-    //             std::env::var("CARGO_MANIFEST_DIR").unwrap()
-    //         )),
-    //     ),
-    // );
+    let args = new_project_args(project_name, template);
 
     let outputs = run(args.into_iter(), OutputType::Masm).expect("Failed to create new project");
     let new_project_path = outputs.first().unwrap().canonicalize().unwrap();
