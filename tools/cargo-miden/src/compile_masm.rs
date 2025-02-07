@@ -37,7 +37,7 @@ pub fn wasm_to_masm(
         output_folder.join(masm_file_name).with_extension(OutputType::Masp.extension());
     let project_type = if is_bin { "--exe" } else { "--lib" };
     let entrypoint_opt = format!("--entrypoint={masm_file_name}::entrypoint");
-    let args: Vec<&std::ffi::OsStr> = vec![
+    let mut args: Vec<&std::ffi::OsStr> = vec![
         "--output-dir".as_ref(),
         output_folder.as_os_str(),
         "-o".as_ref(),
@@ -46,8 +46,12 @@ pub fn wasm_to_masm(
         "--verbose".as_ref(),
         "--target".as_ref(),
         "rollup".as_ref(),
-        entrypoint_opt.as_ref(),
     ];
+
+    if is_bin {
+        args.push(entrypoint_opt.as_ref());
+    }
+
     let session = Rc::new(Compiler::new_session([input], None, args));
     midenc_compile::compile(session.clone())?;
     Ok(output_file)

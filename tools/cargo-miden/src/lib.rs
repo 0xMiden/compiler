@@ -205,7 +205,7 @@ where
                 .collect();
             }
 
-            let mut spawn_args: Vec<_> = args.into_iter().collect();
+            let mut spawn_args: Vec<_> = args.clone().into_iter().collect();
             spawn_args.extend_from_slice(
                 &[
                     "-Z",
@@ -270,8 +270,9 @@ where
 
                     let mut outputs = Vec::new();
                     for wasm in wasm_outputs {
-                        // so far, we only support the Miden VM programs
-                        let is_bin = true;
+                        // so far, we only support the Miden VM programs, unless `--lib` is
+                        // specified (in our integration tests)
+                        let is_bin = !args.contains(&"--lib".to_string());
                         let output = wasm_to_masm(&wasm, miden_out_dir.as_std_path(), is_bin)
                             .map_err(|e| anyhow::anyhow!("{e}"))?;
                         outputs.push(output);
