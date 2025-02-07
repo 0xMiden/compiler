@@ -11,26 +11,32 @@ hands dirty.
 
 ## Installation
 
-First, you'll need to have Rust installed, with the nightly toolchain (currently we're building
-against the `nightly-2025-01-16` toolchain, but we regularly update this).
 
-Then, simply install `midenc` using Cargo in one of the following ways:
+!!! warning
 
-    # From crates.io:
-    cargo +nightly install midenc
+    Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
+    make sure you have it installed first:
 
-    # If you have cloned the git repo, and are in the project root:
-    cargo make install
+    ```bash
+    rustup toolchain install nightly-2025-01-16
+    ```
 
-    # If you have Rust installed, but have not cloned the git repo:
-    cargo install --git https://github.com/0xpolygonmiden/compiler midenc
+    NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
+    work.
 
 
-!!! advice
+To install the `midenc`, clone the compiler repo first:
 
-    This installation method relies on Cargo-managed binaries being in your shell `PATH`,
-    which is almost always the case, but if you have disabled this functionality, you'll need
-    to add `midenc` to your `PATH` manually.
+```bash
+git clone https://github.com/0xpolygonmiden/compiler
+```
+
+Then, run the following in your shell in the cloned repo folder:
+
+```bash
+cargo install --path midenc --locked
+```
+
 
 ## Usage
 

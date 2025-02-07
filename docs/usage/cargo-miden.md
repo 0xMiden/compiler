@@ -18,10 +18,16 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
     NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
     work.
 
-To install the extension, simply run the following in your shell:
+To install the extension, clone the compiler repo first:
 
 ```bash
-cargo +nightly-2025-01-16 install cargo-miden
+git clone https://github.com/0xpolygonmiden/compiler
+```
+
+Then, run the following in your shell in the cloned repo folder:
+
+```bash
+cargo install --path tools/cargo-miden --locked
 ```
 
 This will take a minute to compile, but once complete, you can run `cargo help miden` or just
@@ -42,7 +48,7 @@ crate named `foo`, generated from our Miden project template.
 
 The template we use sets things up so that you can pretty much just build and run. Since the
 toolchain depends on Rust's native WebAssembly target, it is set up just like a minimal WebAssembly
-crate, with some additional tweaks for Miden specfically.
+crate, with some additional tweaks for Miden specifically.
 
 Out of the box, you will get a Rust crate that depends on the Miden SDK, and sets the global
 allocator to a simple bump allocator we provide as part of the SDK, and is well suited for most
@@ -52,13 +58,32 @@ As there is no panic infrastructure, `panic = "abort"` is set, and the panic han
 to use the native WebAssembly `unreachable` intrinsic, so the compiler will strip out all of the
 usual panic formatting code.
 
-### Compiling to Miden Assembly
+### Compiling to Miden package
 
-Now that you've created your project, compiling it to Miden Assembly is as easy as running the
+Now that you've created your project, compiling it to Miden package is as easy as running the
 following command from the root of the project directory:
 
 ```bash
 cargo miden build --release
 ```
 
-This will emit the compiled artifacts to `target/miden`.
+This will emit the compiled artifacts to `target/miden/release/foo.masp`.
+
+
+### Running a compiled Miden VM program
+
+
+!!! warning
+
+    To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](/docs/usage/midenc.md) for the installation instructions.
+
+
+The compiled Miden VM program can be run from the Miden package with the following:
+
+```bash
+midenc run target/miden/release/foo.masp
+```
+
+
+
+
