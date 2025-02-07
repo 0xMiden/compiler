@@ -12,7 +12,7 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
     make sure you have it installed first:
 
     ```bash
-    rustup toolchain install nightly-2024-08-06
+    rustup toolchain install nightly-2025-01-16
     ```
 
     NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
@@ -21,7 +21,7 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
 To install the extension, simply run the following in your shell:
 
 ```bash
-cargo +nightly-2024-08-06 install cargo-miden
+cargo +nightly-2025-01-16 install cargo-miden
 ```
 
 This will take a minute to compile, but once complete, you can run `cargo help miden` or just

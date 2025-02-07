@@ -12,7 +12,7 @@ hands dirty.
 ## Installation
 
 First, you'll need to have Rust installed, with the nightly toolchain (currently we're building
-against the `nightly-2024-08-06` toolchain, but we regularly update this).
+against the `nightly-2025-01-16` toolchain, but we regularly update this).
 
 Then, simply install `midenc` using Cargo in one of the following ways:
 
