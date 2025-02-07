@@ -81,8 +81,10 @@ This will emit the compiled artifacts to `target/miden/release/foo.masp`.
 The compiled Miden VM program can be run from the Miden package with the following:
 
 ```bash
-midenc run target/miden/release/foo.masp
+midenc run target/miden/release/foo.masp --inputs some_inputs.toml
 ```
+
+See `midenc run --help` for the inputs file format.
 
 
 
