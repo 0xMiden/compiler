@@ -159,6 +159,7 @@ fn rust_sdk_cross_ctx_note() {
         "build",
         "--manifest-path",
         "../rust-apps-wasm/rust-sdk/cross-ctx-account/Cargo.toml",
+        "--lib",
         "--release",
         // Use the target dir of this test's cargo project to avoid issues running tests in parallel
         // i.e. avoid using the same target dir as the basic-wallet test (see above)

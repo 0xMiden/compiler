@@ -104,7 +104,8 @@ pub fn run<T>(args: T, build_output_type: OutputType) -> anyhow::Result<Vec<Path
 where
     T: Iterator<Item = String>,
 {
-    let args = args.skip_while(|arg| arg == "cargo").collect::<Vec<_>>();
+    // The first argument is the cargo-miden binary path
+    let args = args.skip_while(|arg| arg != "miden").collect::<Vec<_>>();
     let subcommand = detect_subcommand(args.clone());
 
     let outputs = match subcommand.as_deref() {
@@ -204,7 +205,7 @@ where
                 .collect();
             }
 
-            let mut spawn_args: Vec<_> = args.into_iter().collect();
+            let mut spawn_args: Vec<_> = args.clone().into_iter().collect();
             spawn_args.extend_from_slice(
                 &[
                     "-Z",
@@ -269,7 +270,9 @@ where
 
                     let mut outputs = Vec::new();
                     for wasm in wasm_outputs {
-                        let is_bin = false;
+                        // so far, we only support the Miden VM programs, unless `--lib` is
+                        // specified (in our integration tests)
+                        let is_bin = !args.contains(&"--lib".to_string());
                         let output = wasm_to_masm(&wasm, miden_out_dir.as_std_path(), is_bin)
                             .map_err(|e| anyhow::anyhow!("{e}"))?;
                         outputs.push(output);

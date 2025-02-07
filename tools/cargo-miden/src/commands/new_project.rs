@@ -1,27 +1,94 @@
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
 
+const TEMPLATES_REPO_TAG: &str = "v0.6.0";
+
+// This should have been an enum but I could not bend `clap` to expose variants as flags
+/// Project template
+#[derive(Clone, Args)]
+pub struct ProjectTemplate {
+    /// Rust program
+    #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
+    program: bool,
+    /// Miden rollup account
+    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "note"]))]
+    account: bool,
+    /// Miden rollup note script
+    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "account"]))]
+    note: bool,
+}
+
+#[allow(unused)]
+impl ProjectTemplate {
+    pub fn program() -> Self {
+        Self {
+            program: true,
+            account: false,
+            note: false,
+        }
+    }
+
+    pub fn account() -> Self {
+        Self {
+            program: false,
+            account: true,
+            note: false,
+        }
+    }
+
+    pub fn note() -> Self {
+        Self {
+            program: false,
+            account: false,
+            note: true,
+        }
+    }
+}
+
+impl Default for ProjectTemplate {
+    fn default() -> Self {
+        Self::program()
+    }
+}
+
+impl fmt::Display for ProjectTemplate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.program {
+            write!(f, "program")
+        } else if self.account {
+            write!(f, "account")
+        } else if self.note {
+            write!(f, "note")
+        } else {
+            panic!("Invalid project template, at least one variant must be set")
+        }
+    }
+}
+
 /// Create a new Miden project at <path>
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
 pub struct NewCommand {
-    /// The path for the generated package.
+    /// The path for the generated package (the directory name is used for project name)
     #[clap()]
     pub path: PathBuf,
+    /// The template name to use to generate the package
+    #[clap(flatten)]
+    pub template: Option<ProjectTemplate>,
     /// The path to the template to use to generate the package
-    #[clap(long, hide(true))]
+    #[clap(long, conflicts_with("template"))]
     pub template_path: Option<PathBuf>,
     /// Use a locally cloned compiler in the generated package
-    #[clap(long, conflicts_with_all(["compiler_rev", "compiler_branch"]))]
+    #[clap(long, hide(true), conflicts_with_all(["compiler_rev", "compiler_branch"]))]
     pub compiler_path: Option<PathBuf>,
     /// Use a specific revision of the compiler in the generated package
-    #[clap(long, conflicts_with("compiler_branch"))]
+    #[clap(long, hide(true), conflicts_with("compiler_branch"))]
     pub compiler_rev: Option<String>,
     /// Use a specific branch of the compiler in the generated package
-    #[clap(long)]
+    #[clap(long, hide(true))]
     pub compiler_branch: Option<String>,
 }
 
@@ -69,15 +136,20 @@ impl NewCommand {
         let template_path = match self.template_path.as_ref() {
             Some(template_path) => TemplatePath {
                 path: Some(template_path.display().to_string()),
-                subfolder: Some("account".into()),
                 ..Default::default()
             },
-            None => TemplatePath {
-                git: Some("https://github.com/0xPolygonMiden/rust-templates".into()),
-                tag: Some("v0.5.0".into()),
-                auto_path: Some("account".into()),
-                ..Default::default()
-            },
+            None => {
+                let project_kind_str = match self.template {
+                    Some(kind) => kind.to_string(),
+                    None => ProjectTemplate::default().to_string(),
+                };
+                TemplatePath {
+                    git: Some("https://github.com/0xPolygonMiden/rust-templates".into()),
+                    tag: Some(TEMPLATES_REPO_TAG.into()),
+                    auto_path: Some(project_kind_str),
+                    ..Default::default()
+                }
+            }
         };
 
         let destination = self

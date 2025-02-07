@@ -47,6 +47,13 @@ enum Commands {
         /// Program inputs are stack and advice provider values which the program can
         /// access during execution. The inputs file is a TOML file which describes
         /// what the inputs are, or where to source them from.
+        ///
+        /// Example:
+        ///
+        /// [inputs]
+        ///
+        /// stack = [1, 2, 0x3]
+        ///
         #[arg(long, value_name = "FILE")]
         inputs: Option<debugger::DebuggerConfig>,
         /// Number of outputs on the operand stack to print
