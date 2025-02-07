@@ -351,9 +351,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#compiling-to-miden-assembly" class="md-nav__link">
+  <a href="#compiling-to-miden-package" class="md-nav__link">
     <span class="md-ellipsis">
-      Compiling to Miden Assembly
+      Compiling to Miden package
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-a-compiled-miden-vm-program" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running a compiled Miden VM program
     </span>
   </a>
   
@@ -788,9 +797,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#compiling-to-miden-assembly" class="md-nav__link">
+  <a href="#compiling-to-miden-package" class="md-nav__link">
     <span class="md-ellipsis">
-      Compiling to Miden Assembly
+      Compiling to Miden package
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-a-compiled-miden-vm-program" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running a compiled Miden VM program
     </span>
   </a>
   
@@ -825,13 +843,16 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
 <p class="admonition-title">Warning</p>
 <p>Currently, <code>midenc</code> (and as a result, <code>cargo-miden</code>), requires the nightly Rust toolchain, so
 make sure you have it installed first:</p>
-<div class="highlight"><pre><span></span><code>rustup<span class="w"> </span>toolchain<span class="w"> </span>install<span class="w"> </span>nightly-2024-08-06
+<div class="highlight"><pre><span></span><code>rustup<span class="w"> </span>toolchain<span class="w"> </span>install<span class="w"> </span>nightly-2025-01-16
 </code></pre></div>
 <p>NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
 work.</p>
 </div>
-<p>To install the extension, simply run the following in your shell:</p>
-<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>+nightly-2024-08-06<span class="w"> </span>install<span class="w"> </span>cargo-miden
+<p>To install the extension, clone the compiler repo first:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/0xpolygonmiden/compiler
+</code></pre></div>
+<p>Then, run the following in your shell in the cloned repo folder:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>--path<span class="w"> </span>tools/cargo-miden<span class="w"> </span>--locked
 </code></pre></div>
 <p>This will take a minute to compile, but once complete, you can run <code>cargo help miden</code> or just
 <code>cargo miden</code> to see the set of available commands and options.</p>
@@ -844,19 +865,28 @@ work.</p>
 crate named <code>foo</code>, generated from our Miden project template.</p>
 <p>The template we use sets things up so that you can pretty much just build and run. Since the
 toolchain depends on Rust&rsquo;s native WebAssembly target, it is set up just like a minimal WebAssembly
-crate, with some additional tweaks for Miden specfically.</p>
+crate, with some additional tweaks for Miden specifically.</p>
 <p>Out of the box, you will get a Rust crate that depends on the Miden SDK, and sets the global
 allocator to a simple bump allocator we provide as part of the SDK, and is well suited for most
 Miden use cases, avoiding the overhead of more complex allocators.</p>
 <p>As there is no panic infrastructure, <code>panic = "abort"</code> is set, and the panic handler is configured
 to use the native WebAssembly <code>unreachable</code> intrinsic, so the compiler will strip out all of the
 usual panic formatting code.</p>
-<h3 id="compiling-to-miden-assembly">Compiling to Miden Assembly<a class="headerlink" href="#compiling-to-miden-assembly" title="Link to this section">&para;</a></h3>
-<p>Now that you&rsquo;ve created your project, compiling it to Miden Assembly is as easy as running the
+<h3 id="compiling-to-miden-package">Compiling to Miden package<a class="headerlink" href="#compiling-to-miden-package" title="Link to this section">&para;</a></h3>
+<p>Now that you&rsquo;ve created your project, compiling it to Miden package is as easy as running the
 following command from the root of the project directory:</p>
 <div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>miden<span class="w"> </span>build<span class="w"> </span>--release
 </code></pre></div>
-<p>This will emit the compiled artifacts to <code>target/miden</code>.</p>
+<p>This will emit the compiled artifacts to <code>target/miden/release/foo.masp</code>.</p>
+<h3 id="running-a-compiled-miden-vm-program">Running a compiled Miden VM program<a class="headerlink" href="#running-a-compiled-miden-vm-program" title="Link to this section">&para;</a></h3>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>To run the compiled Miden VM program you need to have <code>midenc</code> installed. See <a href="/docs/usage/midenc.md"><code>midenc</code> docs</a> for the installation instructions.</p>
+</div>
+<p>The compiled Miden VM program can be run from the Miden package with the following:</p>
+<div class="highlight"><pre><span></span><code>midenc<span class="w"> </span>run<span class="w"> </span>target/miden/release/foo.masp<span class="w"> </span>--inputs<span class="w"> </span>some_inputs.toml
+</code></pre></div>
+<p>See <code>midenc run --help</code> for the inputs file format.</p>
 
 
 

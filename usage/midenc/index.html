@@ -849,25 +849,21 @@ the output of the compiler, and configuring the compilation pipeline. Most users
 <code>cargo-miden</code>, but understanding <code>midenc</code> is helpful for those times where you need to get your
 hands dirty.</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Link to this section">&para;</a></h2>
-<p>First, you&rsquo;ll need to have Rust installed, with the nightly toolchain (currently we&rsquo;re building
-against the <code>nightly-2024-08-06</code> toolchain, but we regularly update this).</p>
-<p>Then, simply install <code>midenc</code> using Cargo in one of the following ways:</p>
-<div class="codehilite"><pre><span></span><code>#<span class="w"> </span><span class="nv">From</span><span class="w"> </span><span class="nv">crates</span>.<span class="nv">io</span>:
-<span class="nv">cargo</span><span class="w"> </span><span class="o">+</span><span class="nv">nightly</span><span class="w"> </span><span class="nv">install</span><span class="w"> </span><span class="nv">midenc</span>
-
-#<span class="w"> </span><span class="k">If</span><span class="w"> </span><span class="nv">you</span><span class="w"> </span><span class="nv">have</span><span class="w"> </span><span class="nv">cloned</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">git</span><span class="w"> </span><span class="nv">repo</span>,<span class="w"> </span><span class="nv">and</span><span class="w"> </span><span class="nv">are</span><span class="w"> </span><span class="nv">in</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">project</span><span class="w"> </span><span class="nv">root</span>:
-<span class="nv">cargo</span><span class="w"> </span><span class="nv">make</span><span class="w"> </span><span class="nv">install</span>
-
-#<span class="w"> </span><span class="k">If</span><span class="w"> </span><span class="nv">you</span><span class="w"> </span><span class="nv">have</span><span class="w"> </span><span class="nv">Rust</span><span class="w"> </span><span class="nv">installed</span>,<span class="w"> </span><span class="nv">but</span><span class="w"> </span><span class="nv">have</span><span class="w"> </span><span class="nv">not</span><span class="w"> </span><span class="nv">cloned</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">git</span><span class="w"> </span><span class="nv">repo</span>:
-<span class="nv">cargo</span><span class="w"> </span><span class="nv">install</span><span class="w"> </span><span class="o">--</span><span class="nv">git</span><span class="w"> </span><span class="nv">https</span>:<span class="o">//</span><span class="nv">github</span>.<span class="nv">com</span><span class="o">/</span><span class="mi">0</span><span class="nv">xpolygonmiden</span><span class="o">/</span><span class="nv">compiler</span><span class="w"> </span><span class="nv">midenc</span>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Currently, <code>midenc</code> (and as a result, <code>cargo-miden</code>), requires the nightly Rust toolchain, so
+make sure you have it installed first:</p>
+<div class="highlight"><pre><span></span><code>rustup<span class="w"> </span>toolchain<span class="w"> </span>install<span class="w"> </span>nightly-2025-01-16
 </code></pre></div>
-
-<div class="admonition advice">
-<p class="admonition-title">Advice</p>
-<p>This installation method relies on Cargo-managed binaries being in your shell <code>PATH</code>,
-which is almost always the case, but if you have disabled this functionality, you&rsquo;ll need
-to add <code>midenc</code> to your <code>PATH</code> manually.</p>
+<p>NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
+work.</p>
 </div>
+<p>To install the <code>midenc</code>, clone the compiler repo first:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/0xpolygonmiden/compiler
+</code></pre></div>
+<p>Then, run the following in your shell in the cloned repo folder:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>--path<span class="w"> </span>midenc<span class="w"> </span>--locked
+</code></pre></div>
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Link to this section">&para;</a></h2>
 <p>Once installed, you should be able to invoke the compiler, you should see output similar to this:</p>
 <div class="codehilite"><pre><span></span><code><span class="n">midenc</span><span class="w"> </span><span class="n">help</span><span class="w"> </span><span class="n">compile</span>
