@@ -28,10 +28,15 @@ pub fn wasm_to_masm(
     let input = InputFile::from_path(wasm_file_path)
         .into_diagnostic()
         .wrap_err("Invalid input file")?;
-    let output_file = output_folder
-        .join(wasm_file_path.file_stem().expect("invalid wasm file path: no file stem"))
-        .with_extension(OutputType::Masp.extension());
+    let masm_file_name = wasm_file_path
+        .file_stem()
+        .expect("invalid wasm file path: no file stem")
+        .to_str()
+        .unwrap();
+    let output_file =
+        output_folder.join(masm_file_name).with_extension(OutputType::Masp.extension());
     let project_type = if is_bin { "--exe" } else { "--lib" };
+    let entrypoint_opt = format!("--entrypoint={masm_file_name}::entrypoint");
     let args: Vec<&std::ffi::OsStr> = vec![
         "--output-dir".as_ref(),
         output_folder.as_os_str(),
@@ -41,6 +46,7 @@ pub fn wasm_to_masm(
         "--verbose".as_ref(),
         "--target".as_ref(),
         "rollup".as_ref(),
+        entrypoint_opt.as_ref(),
     ];
     let session = Rc::new(Compiler::new_session([input], None, args));
     midenc_compile::compile(session.clone())?;

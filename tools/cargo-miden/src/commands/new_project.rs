@@ -4,6 +4,8 @@ use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
 
+const TEMPLATES_REPO_TAG: &str = "v0.6.0";
+
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
 #[derive(Clone, Args)]
@@ -12,10 +14,10 @@ pub struct ProjectTemplate {
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
     program: bool,
     /// Miden rollup account
-    #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
+    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "note"]))]
     account: bool,
     /// Miden rollup note script
-    #[clap(long, group = "template", conflicts_with_all(["program", "account"]))]
+    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "account"]))]
     note: bool,
 }
 
@@ -48,11 +50,7 @@ impl ProjectTemplate {
 
 impl Default for ProjectTemplate {
     fn default() -> Self {
-        Self {
-            program: false,
-            account: true,
-            note: false,
-        }
+        Self::program()
     }
 }
 
@@ -65,7 +63,7 @@ impl fmt::Display for ProjectTemplate {
         } else if self.note {
             write!(f, "note")
         } else {
-            write!(f, "account")
+            panic!("Invalid project template, at least one variant must be set")
         }
     }
 }
@@ -147,7 +145,7 @@ impl NewCommand {
                 };
                 TemplatePath {
                     git: Some("https://github.com/0xPolygonMiden/rust-templates".into()),
-                    tag: Some("v0.6.0".into()),
+                    tag: Some(TEMPLATES_REPO_TAG.into()),
                     auto_path: Some(project_kind_str),
                     ..Default::default()
                 }

@@ -270,7 +270,8 @@ where
 
                     let mut outputs = Vec::new();
                     for wasm in wasm_outputs {
-                        let is_bin = false;
+                        // so far, we only support the Miden VM programs
+                        let is_bin = true;
                         let output = wasm_to_masm(&wasm, miden_out_dir.as_std_path(), is_bin)
                             .map_err(|e| anyhow::anyhow!("{e}"))?;
                         outputs.push(output);

@@ -3,9 +3,11 @@
 use std::{env, fs};
 
 use cargo_miden::{run, OutputType};
+use miden_package::Package;
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let args: Vec<String> = ["cargo", "miden", "new", template, project_name]
+    // let args: Vec<String> = ["cargo", "miden", "new", template, project_name]
+    let args: Vec<String> = ["cargo", "miden", "new", project_name, template]
         .into_iter()
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
@@ -26,19 +28,24 @@ fn test_templates() {
     env::set_var("TEST", "1");
 
     // empty template means no template option is passing, thus using the default project template
-    build_new_project_from_template("");
-    build_new_project_from_template("--account");
-    build_new_project_from_template("--program");
+    let default = build_new_project_from_template("");
+    assert!(default.is_program());
+    let program = build_new_project_from_template("--program");
+    assert!(program.is_program());
 
-    // build_new_project_from_template(
+    // let account = build_new_project_from_template("--account");
+    // assert!(account.is_library());
+
+    // let package = build_new_project_from_template(
     //     &(format!(
     //         "--template-path={}/../../../rust-templates/program",
     //         std::env::var("CARGO_MANIFEST_DIR").unwrap()
     //     )),
     // );
+    // assert!(package.is_program());
 }
 
-fn build_new_project_from_template(template: &str) {
+fn build_new_project_from_template(template: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir();
     env::set_current_dir(&temp_dir).unwrap();
@@ -80,7 +87,10 @@ fn build_new_project_from_template(template: &str) {
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.to_str().unwrap().contains("/release/"));
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
+    let package_bytes = fs::read(expected_masm_path).unwrap();
+    let package = Package::read_from_bytes(package_bytes).unwrap();
 
     env::set_current_dir(restore_dir).unwrap();
     fs::remove_dir_all(new_project_path).unwrap();
+    package
 }
