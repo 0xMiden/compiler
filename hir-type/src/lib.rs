@@ -76,7 +76,7 @@ pub enum Type {
     /// A dynamically sized list of values of the given type
     ///
     /// NOTE: Currently this only exists to support the Wasm Canonical ABI,
-    /// but it has no defined represenation yet, so in practice cannot be
+    /// but it has no defined representation yet, so in practice cannot be
     /// used in most places except during initial translation in the Wasm frontend.
     List(Box<Type>),
 }
