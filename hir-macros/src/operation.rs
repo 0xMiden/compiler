@@ -147,7 +147,7 @@ impl OpDefinition {
         // * By default, the ordering is implied by the order of field declarations in the struct
         // * A field can be decorated with #[order(N)], where `N` is an absolute index
         // * If all fields have an explicit order, then the sort following that order is used
-        // * If a mix of fields have explicit ordering, so as to acheive a particular struct layout,
+        // * If a mix of fields have explicit ordering, so as to achieve a particular struct layout,
         //   then the implicit order given to a field ensures that it appears after the highest
         //   ordered field which comes before it in the struct. For example, if I have the following
         //   pseudo-struct definition: `{ #[order(2)] a, b, #[order(1)] c, d }`, then the actual
