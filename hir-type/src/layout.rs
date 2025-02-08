@@ -302,7 +302,7 @@ impl Type {
                     needed -= padding;
                     current_offset += padding;
                     let field_size = field.ty.size_in_bytes() as u32;
-                    // If the field fully satisifies the remainder of the request, then
+                    // If the field fully satisfies the remainder of the request, then
                     // finalize the `split` struct, and place remaining fields in a trailing
                     // struct with an appropriate repr
                     if field_size == needed {
