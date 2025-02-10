@@ -347,10 +347,9 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Creating a new project">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
+</li>
+      
+        <li class="md-nav__item">
   <a href="#compiling-to-miden-package" class="md-nav__link">
     <span class="md-ellipsis">
       Compiling to Miden package
@@ -358,8 +357,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#running-a-compiled-miden-vm-program" class="md-nav__link">
     <span class="md-ellipsis">
       Running a compiled Miden VM program
@@ -367,9 +366,13 @@
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
   
 </li>
       
@@ -793,10 +796,9 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Creating a new project">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
+</li>
+      
+        <li class="md-nav__item">
   <a href="#compiling-to-miden-package" class="md-nav__link">
     <span class="md-ellipsis">
       Compiling to Miden package
@@ -804,8 +806,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#running-a-compiled-miden-vm-program" class="md-nav__link">
     <span class="md-ellipsis">
       Running a compiled Miden VM program
@@ -813,9 +815,13 @@
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
   
 </li>
       
@@ -872,13 +878,13 @@ Miden use cases, avoiding the overhead of more complex allocators.</p>
 <p>As there is no panic infrastructure, <code>panic = "abort"</code> is set, and the panic handler is configured
 to use the native WebAssembly <code>unreachable</code> intrinsic, so the compiler will strip out all of the
 usual panic formatting code.</p>
-<h3 id="compiling-to-miden-package">Compiling to Miden package<a class="headerlink" href="#compiling-to-miden-package" title="Link to this section">&para;</a></h3>
+<h2 id="compiling-to-miden-package">Compiling to Miden package<a class="headerlink" href="#compiling-to-miden-package" title="Link to this section">&para;</a></h2>
 <p>Now that you&rsquo;ve created your project, compiling it to Miden package is as easy as running the
 following command from the root of the project directory:</p>
 <div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>miden<span class="w"> </span>build<span class="w"> </span>--release
 </code></pre></div>
 <p>This will emit the compiled artifacts to <code>target/miden/release/foo.masp</code>.</p>
-<h3 id="running-a-compiled-miden-vm-program">Running a compiled Miden VM program<a class="headerlink" href="#running-a-compiled-miden-vm-program" title="Link to this section">&para;</a></h3>
+<h2 id="running-a-compiled-miden-vm-program">Running a compiled Miden VM program<a class="headerlink" href="#running-a-compiled-miden-vm-program" title="Link to this section">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p>To run the compiled Miden VM program you need to have <code>midenc</code> installed. See <a href="/docs/usage/midenc.md"><code>midenc</code> docs</a> for the installation instructions.</p>
@@ -887,6 +893,8 @@ following command from the root of the project directory:</p>
 <div class="highlight"><pre><span></span><code>midenc<span class="w"> </span>run<span class="w"> </span>target/miden/release/foo.masp<span class="w"> </span>--inputs<span class="w"> </span>some_inputs.toml
 </code></pre></div>
 <p>See <code>midenc run --help</code> for the inputs file format.</p>
+<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Link to this section">&para;</a></h2>
+<p>Check out the <a href="https://github.com/0xPolygonMiden/compiler/tree/next/examples">examples</a> for some <code>cargo-miden</code> project examples.</p>
 
 
 
