@@ -58,7 +58,7 @@ As there is no panic infrastructure, `panic = "abort"` is set, and the panic han
 to use the native WebAssembly `unreachable` intrinsic, so the compiler will strip out all of the
 usual panic formatting code.
 
-### Compiling to Miden package
+## Compiling to Miden package
 
 Now that you've created your project, compiling it to Miden package is as easy as running the
 following command from the root of the project directory:
@@ -70,7 +70,7 @@ cargo miden build --release
 This will emit the compiled artifacts to `target/miden/release/foo.masp`.
 
 
-### Running a compiled Miden VM program
+## Running a compiled Miden VM program
 
 
 !!! warning
@@ -88,4 +88,6 @@ See `midenc run --help` for the inputs file format.
 
 
 
+## Examples
 
+Check out the [examples](https://github.com/0xPolygonMiden/compiler/tree/next/examples) for some `cargo-miden` project examples.
