@@ -3101,7 +3101,6 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-core",
- "miden-integration-tests-rust-fib",
  "miden-package",
  "miden-processor",
  "miden-stdlib",
@@ -3119,10 +3118,6 @@ dependencies = [
  "walkdir",
  "wasmprinter",
 ]
-
-[[package]]
-name = "miden-integration-tests-rust-fib"
-version = "0.0.0"
 
 [[package]]
 name = "miden-miette"

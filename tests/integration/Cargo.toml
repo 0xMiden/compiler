@@ -45,4 +45,3 @@ blake3.workspace = true
 concat-idents = "1.1"
 env_logger.workspace = true
 miden-core.workspace = true
-miden-integration-tests-rust-fib = { path = "../rust-apps/fib" }

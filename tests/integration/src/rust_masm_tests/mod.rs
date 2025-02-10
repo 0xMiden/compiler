@@ -12,6 +12,7 @@ use crate::execute_emulator;
 
 mod abi_transform;
 mod apps;
+mod examples;
 mod instructions;
 mod intrinsics;
 mod rust_sdk;
