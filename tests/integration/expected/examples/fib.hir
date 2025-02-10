@@ -1,0 +1,32 @@
+builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+
+    builtin.module  #[name = #fibonacci] #[visibility = public] {
+
+        builtin.function public @entrypoint(v0: i32) -> i32 {
+        ^block3(v0: i32):
+            v2 = hir.constant 0 : i32;
+            v3 = hir.constant 0 : i32;
+            v4 = hir.constant 1 : i32;
+            hir.br block5 v4, v0, v3;
+        ^block4(v1: i32):
+
+        ^block5(v6: i32, v7: i32, v10: i32):
+            v8 = hir.constant 0 : i32;
+            v9 = hir.neq v7, v8 : i1;
+            hir.cond_br block7, block8 v9;
+        ^block6(v5: i32):
+
+        ^block7:
+            v11 = hir.constant -1 : i32;
+            v12 = hir.add v7, v11 : i32 #[overflow = wrapping];
+            v13 = hir.add v10, v6 : i32 #[overflow = wrapping];
+            hir.br block5 v13, v12, v6;
+        ^block8:
+            hir.ret v10;
+        };
+        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+
+            hir.ret_imm  #[value = 1048576];
+        };
+    };
+};

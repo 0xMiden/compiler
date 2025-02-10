@@ -26,6 +26,7 @@ exclude = [
     "tests/rust-apps/fib",
     "tests/rust-apps-wasm",
     "cargo-ext/tests/data",
+    "examples",
 ]
 
 [workspace.package]

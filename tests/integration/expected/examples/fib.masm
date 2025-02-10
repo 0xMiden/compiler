@@ -1,6 +1,6 @@
-# mod miden_integration_tests_rust_fib_wasm
+# mod fibonacci
 
-export.fib
+export.entrypoint
     push.0
     push.1
     movup.2

@@ -1,8 +1,0 @@
-[package]
-name = "miden-integration-tests-rust-fib"
-version = "0.0.0"
-edition = "2021"
-publish = false
-
-[profile.release]
-debug = true

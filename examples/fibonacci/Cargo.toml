@@ -1,0 +1,36 @@
+[package]
+name = "fibonacci"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
+# and transaction kernel API for the Miden rollup
+
+miden = { git = "https://github.com/0xPolygonMiden/compiler" }
+
+
+[profile.release]
+# optimize the output for size
+opt-level = "z"
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+
+[profile.dev]
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+opt-level = 1
+debug-assertions = false
+overflow-checks = false
+debug = true
