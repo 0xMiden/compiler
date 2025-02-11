@@ -7,7 +7,7 @@ use std::{
 
 use miden_assembly::Library as CompiledLibrary;
 use miden_core::{Program, StackInputs, Word};
-use miden_package::{
+use miden_mast_package::{
     Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
     MemDependencyResolverByDigest, ResolvedDependency,
 };
@@ -53,7 +53,7 @@ impl Executor {
 
     /// Construct the executor with the given inputs and adds dependencies from the given package
     pub fn for_package(
-        package: &miden_package::Package,
+        package: &miden_mast_package::Package,
         args: Vec<Felt>,
         session: &Session,
     ) -> Result<Self, Report> {

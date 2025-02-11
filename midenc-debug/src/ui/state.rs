@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub struct State {
-    pub package: Arc<miden_package::Package>,
+    pub package: Arc<miden_mast_package::Package>,
     pub inputs: DebuggerConfig,
     pub executor: DebugExecutor,
     pub execution_trace: ExecutionTrace,
@@ -264,17 +264,19 @@ impl State {
     }
 }
 
-fn load_package(session: &Session) -> Result<Arc<miden_package::Package>, Report> {
+fn load_package(session: &Session) -> Result<Arc<miden_mast_package::Package>, Report> {
     let package = match &session.inputs[0].file {
         InputType::Real(ref path) => {
             let bytes = std::fs::read(path).into_diagnostic()?;
-            miden_package::Package::read_from_bytes(&bytes)
+            miden_mast_package::Package::read_from_bytes(&bytes)
                 .map(Arc::new)
                 .into_diagnostic()?
         }
-        InputType::Stdin { input, .. } => miden_package::Package::read_from_bytes(input.as_slice())
-            .map(Arc::new)
-            .into_diagnostic()?,
+        InputType::Stdin { input, .. } => {
+            miden_mast_package::Package::read_from_bytes(input.as_slice())
+                .map(Arc::new)
+                .into_diagnostic()?
+        }
     };
 
     if let Some(entry) = session.options.entrypoint.as_ref() {

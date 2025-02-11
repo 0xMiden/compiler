@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use expect_test::expect_file;
 use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
-use miden_package::Package;
+use miden_mast_package::Package;
 use midenc_debug::Executor;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{

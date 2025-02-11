@@ -3,7 +3,8 @@
 use std::{env, fs};
 
 use cargo_miden::{run, OutputType};
-use miden_package::Package;
+use miden_mast_package::Package;
+use midenc_session::miden_assembly::utils::Deserializable;
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
     // let args: Vec<String> = ["cargo", "miden", "new", template, project_name]
@@ -88,7 +89,7 @@ fn build_new_project_from_template(template: &str) -> Package {
     assert!(expected_masm_path.to_str().unwrap().contains("/release/"));
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
     let package_bytes = fs::read(expected_masm_path).unwrap();
-    let package = Package::read_from_bytes(package_bytes).unwrap();
+    let package = Package::read_from_bytes(&package_bytes).unwrap();
 
     env::set_current_dir(restore_dir).unwrap();
     fs::remove_dir_all(new_project_path).unwrap();

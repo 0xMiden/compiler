@@ -111,15 +111,16 @@ impl LinkLibrary {
             }),
             LibraryKind::Masp => {
                 let bytes = std::fs::read(path).into_diagnostic()?;
-                let package = miden_package::Package::read_from_bytes(&bytes).into_diagnostic()?;
+                let package =
+                    miden_mast_package::Package::read_from_bytes(&bytes).into_diagnostic()?;
                 let lib = match package.mast {
-                    miden_package::MastArtifact::Executable(_) => {
+                    miden_mast_package::MastArtifact::Executable(_) => {
                         return Err(Report::msg(format!(
                             "Expected Miden package to contain a Library, got Program: '{}'",
                             path.display()
                         )))
                     }
-                    miden_package::MastArtifact::Library(lib) => lib.clone(),
+                    miden_mast_package::MastArtifact::Library(lib) => lib.clone(),
                 };
                 Ok((*lib).clone())
             }

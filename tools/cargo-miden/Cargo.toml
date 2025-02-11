@@ -41,4 +41,4 @@ tokio.workspace = true
 cargo-config2 = "0.1.24"
 
 [dev-dependencies]
-miden-package.workspace = true
+miden-mast-package.workspace = true

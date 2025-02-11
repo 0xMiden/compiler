@@ -1,5 +1,5 @@
 use miden_assembly::ast::QualifiedProcedureName;
-use miden_package::{Dependency, MastArtifact, Package};
+use miden_mast_package::{Dependency, MastArtifact, Package};
 use midenc_codegen_masm::MasmArtifact;
 
 use super::*;
@@ -92,7 +92,7 @@ fn build_package(mast: MastArtifact, masm: &MasmArtifact, session: &Session) -> 
         dependencies.push(dependency);
     }
 
-    let mut manifest = miden_package::PackageManifest {
+    let mut manifest = miden_mast_package::PackageManifest {
         exports: Default::default(),
         dependencies,
     };
@@ -107,12 +107,12 @@ fn build_package(mast: MastArtifact, masm: &MasmArtifact, session: &Session) -> 
                 let name =
                     QualifiedProcedureName::new(module_info.path().clone(), proc_info.name.clone());
                 let digest = proc_info.digest;
-                manifest.exports.insert(miden_package::PackageExport { name, digest });
+                manifest.exports.insert(miden_mast_package::PackageExport { name, digest });
             }
         }
     }
 
-    miden_package::Package {
+    miden_mast_package::Package {
         name,
         mast,
         manifest,

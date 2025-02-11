@@ -1,5 +1,5 @@
 use miden_assembly::Library as CompiledLibrary;
-use miden_package::MastArtifact;
+use miden_mast_package::MastArtifact;
 use midenc_hir::Symbol;
 use midenc_session::{diagnostics::Report, Emit, OutputMode, OutputType, Session};
 
