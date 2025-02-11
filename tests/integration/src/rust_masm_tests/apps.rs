@@ -6,16 +6,14 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
-use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
+use crate::{
+    cargo_proj::project, compiler_test::sdk_alloc_crate_path, CompilerTest, CompilerTestBuilder,
+};
 
-#[test]
-fn function_call_hir2() {
-    let name = "function_call_hir2";
-    let cargo_proj = project(name)
-        .file(
-            "Cargo.toml",
-            format!(
-                r#"
+fn cargo_toml(name: &str) -> String {
+    let sdk_alloc_path = sdk_alloc_crate_path();
+    format!(
+        r#"
                 [package]
                 name = "{name}"
                 version = "0.0.1"
@@ -24,6 +22,9 @@ fn function_call_hir2() {
 
                 [lib]
                 crate-type = ["cdylib"]
+
+                [dependencies]
+                miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
 
                 [profile.release]
                 # optimize the output for size
@@ -37,9 +38,15 @@ fn function_call_hir2() {
                 overflow-checks = false
                 debug = true
             "#,
-            )
-            .as_str(),
-        )
+        sdk_alloc_path = sdk_alloc_path.display()
+    )
+}
+
+#[test]
+fn function_call_hir2() {
+    let name = "function_call_hir2";
+    let cargo_proj = project(name)
+        .file("Cargo.toml", &cargo_toml(name))
         .file(
             "src/lib.rs",
             r#"
@@ -66,6 +73,48 @@ fn function_call_hir2() {
                 #[no_mangle]
                 pub fn entrypoint(a: u32, b: u32) -> u32 {
                     add(a, b)
+                }
+            "#,
+        )
+        .build();
+    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    )
+    .build();
+
+    let artifact_name = name;
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+}
+
+#[test]
+fn mem_intrinsics_heap_base() {
+    let name = "mem_intrinsics_heap_base";
+    let cargo_proj = project(name)
+        .file("Cargo.toml", &cargo_toml(name))
+        .file(
+            "src/lib.rs",
+            r#"
+                #![no_std]
+
+                // Global allocator to use heap memory in no-std environment
+                #[global_allocator]
+                static ALLOC: miden_sdk_alloc::BumpAlloc = miden_sdk_alloc::BumpAlloc::new();
+
+                // Required for no-std crates
+                #[panic_handler]
+                fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                extern crate alloc;
+                use alloc::{vec, vec::Vec};
+
+                #[no_mangle]
+                pub fn entrypoint(a: u32) -> Vec<u32> {
+                    vec![a*2]
                 }
             "#,
         )

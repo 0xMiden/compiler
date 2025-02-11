@@ -1,8 +1,9 @@
+use super::ModuleBuilder;
 use crate::{
     dialects::builtin::{
         ComponentRef, InterfaceRef, ModuleRef, PrimInterfaceBuilder, PrimModuleBuilder,
     },
-    Builder, Ident, Op, OpBuilder, Report, Spanned,
+    Builder, FunctionIdent, Ident, Op, OpBuilder, Report, Signature, Spanned, SymbolTable,
 };
 
 pub struct ComponentBuilder {
@@ -34,6 +35,25 @@ impl ComponentBuilder {
 
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
         let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
-        builder(name)
+        let module_ref = builder(name)?;
+        let is_new = self
+            .component
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(module_ref, crate::ProgramPoint::Invalid);
+        assert!(
+            is_new,
+            "module with the name {name} already exists in component {}",
+            self.component.borrow().name()
+        );
+        Ok(module_ref)
+    }
+
+    pub fn define_import(&mut self, func_id: FunctionIdent, sig: Signature) {
+        let module_ref = self.define_module(func_id.module).expect("failed to define module");
+        let mut module_builder = ModuleBuilder::new(module_ref);
+        module_builder
+            .define_function(func_id.function, sig)
+            .expect("failed to define function");
     }
 }

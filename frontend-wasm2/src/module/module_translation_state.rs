@@ -1,8 +1,8 @@
 use midenc_hir::diagnostics::{DiagnosticsHandler, Severity};
 use midenc_hir2::{
-    dialects::builtin::{Function, FunctionRef, ModuleBuilder},
-    CallConv, FunctionIdent, FxHashMap, Ident, Signature, Symbol, SymbolName, SymbolRef,
-    SymbolTable, UnsafeIntrusiveEntityRef, Visibility,
+    dialects::builtin::{ComponentBuilder, Function, FunctionRef, ModuleBuilder},
+    CallConv, FunctionIdent, FxHashMap, Ident, Signature, Symbol, SymbolName, SymbolNameComponent,
+    SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef, Visibility,
 };
 
 use super::{instance::ModuleArgument, ir_func_type, EntityIndex, FuncIndex, Module, ModuleTypes};
@@ -13,10 +13,17 @@ use crate::{
     translation_utils::sig_from_func_type,
 };
 
+#[derive(Clone, Debug)]
+struct DefinedFunction {
+    wasm_id: FunctionIdent,
+    symbol_path: SymbolPath,
+    signature: Signature,
+}
+
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     /// Stores both the function reference and its signature
-    functions: FxHashMap<FuncIndex, (FunctionIdent, Signature)>,
+    functions: FxHashMap<FuncIndex, DefinedFunction>,
     pub module_builder: &'a mut ModuleBuilder,
 }
 
@@ -24,6 +31,7 @@ impl<'a> ModuleTranslationState<'a> {
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
+        component_builder: &'a mut ComponentBuilder,
         mod_types: &ModuleTypes,
         module_args: Vec<ModuleArgument>,
         diagnostics: &DiagnosticsHandler,
@@ -56,23 +64,37 @@ impl<'a> ModuleTranslationState<'a> {
             let ir_func_type = ir_func_type(&wasm_func_type, diagnostics).unwrap();
             let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, Visibility::Public);
             if let Some(subst) = function_import_subst.get(&index) {
-                functions.insert(index, (*subst, sig));
+                // functions.insert(index, (*subst, sig));
                 todo!("define the import in some symbol table");
             } else if module.is_imported_function(index) {
-                todo!("define the import in some symbol table");
-                todo!("below");
-                // assert!((index.as_u32() as usize) < module.num_imported_funcs);
-                // let import = &module.imports[index.as_u32() as usize];
-                // let func_id =
-                //     recover_imported_masm_function_id(import.module.as_str(), &import.field);
-                // functions.insert(index, (func_id, sig));
+                assert!((index.as_u32() as usize) < module.num_imported_funcs);
+                let import = &module.imports[index.as_u32() as usize];
+                let func_id =
+                    recover_imported_masm_function_id(import.module.as_str(), &import.field);
+                component_builder.define_import(func_id, sig.clone());
+
+                let root_component = component_builder.component.borrow().name().as_symbol();
+                let path = function_ident_to_sympol_path(root_component, &func_id);
+                let defined_function = DefinedFunction {
+                    wasm_id: func_id,
+                    symbol_path: path,
+                    signature: sig,
+                };
+                functions.insert(index, defined_function);
             } else {
                 let func_name = module.func_name(index);
                 let func_id = FunctionIdent {
                     module: Ident::from(module.name().as_str()),
                     function: Ident::from(func_name.as_str()),
                 };
-                functions.insert(index, (func_id, sig.clone()));
+                let root_component = component_builder.component.borrow().name().as_symbol();
+                let path = function_ident_to_sympol_path(root_component, &func_id);
+                let defined_function = DefinedFunction {
+                    wasm_id: func_id,
+                    symbol_path: path,
+                    signature: sig.clone(),
+                };
+                functions.insert(index, defined_function);
                 module_builder
                     .define_function(func_id.function, sig)
                     .expect("adding new function failed");
@@ -93,23 +115,21 @@ impl<'a> ModuleTranslationState<'a> {
         index: FuncIndex,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<FunctionRef> {
-        // TODO: add error handling
-        let (func_id, wasm_sig) = self.functions[&index].clone();
-        assert_eq!(self.module_builder.module.borrow().name(), &func_id.module);
+        let defined_func = self.functions[&index].clone();
         let symbol_ref = self
             .module_builder
             .module
             .borrow()
-            .get(func_id.function.as_symbol())
+            .resolve(&defined_func.symbol_path)
             .unwrap_or_else(|| {
-                panic!(
-                    "Function with name {} in module {} is not found",
-                    func_id.function, func_id.module
-                );
+                panic!("Failed to resolve function {:?}", defined_func);
             });
 
         let op = symbol_ref.borrow();
-        let func = op.as_symbol_operation().downcast_ref::<Function>().unwrap();
+        let func = op
+            .as_symbol_operation()
+            .downcast_ref::<Function>()
+            .expect("expected resolved symbol to be a Function");
         let func_ref = func.as_function_ref();
         Ok(func_ref)
 
@@ -151,4 +171,17 @@ impl<'a> ModuleTranslationState<'a> {
         // }
         // Ok(func_id)
     }
+}
+
+fn function_ident_to_sympol_path(
+    root_component: SymbolName,
+    func_id: &FunctionIdent,
+) -> SymbolPath {
+    SymbolPath::new(vec![
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component(root_component),
+        SymbolNameComponent::Component(func_id.module.as_symbol()),
+        SymbolNameComponent::Leaf(func_id.function.as_symbol()),
+    ])
+    .unwrap()
 }

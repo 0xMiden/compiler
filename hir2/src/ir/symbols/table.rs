@@ -118,7 +118,7 @@ impl dyn SymbolTable {
 /// In most circumstances, you will want to interact with this via [SymbolManager] or
 /// [SymbolManagerMut], as the operations provided here are mostly low-level plumbing, and thus
 /// incomplete without functionality provided by higher-level abstractions.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SymbolMap {
     /// A low-level mapping of symbols to operations found in this table
     symbols: FxHashMap<SymbolName, SymbolRef>,
