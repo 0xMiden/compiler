@@ -1204,7 +1204,7 @@ fn stdlib_sys_crate_path() -> PathBuf {
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("stdlib-sys")
 }
 
-fn sdk_alloc_crate_path() -> PathBuf {
+pub fn sdk_alloc_crate_path() -> PathBuf {
     let cwd = std::env::current_dir().unwrap();
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("alloc")
 }

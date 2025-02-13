@@ -74,6 +74,7 @@ pub fn translate_module_as_component(
     let mut module_state = ModuleTranslationState::new(
         &parsed_module.module,
         &mut module_builder,
+        &mut cb,
         &module_types,
         vec![],
         &context.session.diagnostics,
