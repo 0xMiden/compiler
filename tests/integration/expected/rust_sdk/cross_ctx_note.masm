@@ -2,8 +2,8 @@
 
 use.miden:cross-ctx-account/foo@1.0.0
 
-export."process-felt"
-    call.::miden:cross-ctx-account/foo@1.0.0::"process-felt"
+export.process-felt
+    call.::miden:cross-ctx-account/foo@1.0.0::process-felt
 end
 
 
@@ -443,7 +443,7 @@ end
 export."miden:base/note-script@1.0.0#note-script"
     exec."wit_bindgen_rt::run_ctors_once"
     push.7
-    exec.::lower-imports-miden:cross-ctx-account/foo@1.0.0::"process-felt"
+    exec.::lower-imports-miden:cross-ctx-account/foo@1.0.0::process-felt
     push.10
     assert_eq
 end

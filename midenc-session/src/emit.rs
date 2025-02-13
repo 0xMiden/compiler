@@ -2,7 +2,7 @@ use alloc::{boxed::Box, fmt, format, string::ToString, sync::Arc, vec};
 use std::{fs::File, io::Write, path::Path};
 
 use miden_core::{prettier::PrettyPrint, utils::Serializable};
-use miden_package::MastArtifact;
+use miden_mast_package::MastArtifact;
 use midenc_hir_symbol::Symbol;
 
 use crate::{OutputMode, OutputType, Session};
@@ -375,7 +375,7 @@ impl Emit for miden_core::Program {
     }
 }
 
-impl Emit for miden_package::Package {
+impl Emit for miden_mast_package::Package {
     fn name(&self) -> Option<Symbol> {
         Some(Symbol::intern(&self.name))
     }
@@ -395,15 +395,15 @@ impl Emit for miden_package::Package {
     ) -> std::io::Result<()> {
         match mode {
             OutputMode::Text => match self.mast {
-                miden_package::MastArtifact::Executable(ref prog) => {
+                miden_mast_package::MastArtifact::Executable(ref prog) => {
                     prog.write_to(writer, mode, session)
                 }
-                miden_package::MastArtifact::Library(ref lib) => {
+                miden_mast_package::MastArtifact::Library(ref lib) => {
                     lib.write_to(writer, mode, session)
                 }
             },
             OutputMode::Binary => {
-                let bytes = self.write_to_bytes().map_err(std::io::Error::other)?;
+                let bytes = self.to_bytes();
                 writer.write_all(bytes.as_slice())
             }
         }

@@ -7,9 +7,9 @@ use std::{
 
 use miden_assembly::Library as CompiledLibrary;
 use miden_core::{Program, StackInputs, Word};
-use miden_package::{
-    Dependency, DependencyName, DependencyResolution, DependencyResolver, LocalResolution,
-    MastArtifact, MemDependencyResolverByDigest, SystemLibraryId,
+use miden_mast_package::{
+    Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
+    MemDependencyResolverByDigest, ResolvedDependency,
 };
 use miden_processor::{
     AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
@@ -53,7 +53,7 @@ impl Executor {
 
     /// Construct the executor with the given inputs and adds dependencies from the given package
     pub fn for_package(
-        package: &miden_package::Package,
+        package: &miden_mast_package::Package,
         args: Vec<Felt>,
         session: &Session,
     ) -> Result<Self, Report> {
@@ -79,11 +79,11 @@ impl Executor {
                     log::debug!("dependency {:?} resolved to {:?}", dep, resolution);
                     log::debug!("loading library from package dependency: {:?}", dep);
                     match resolution {
-                        DependencyResolution::Local(LocalResolution::Library(lib)) => {
+                        ResolvedDependency::Local(LocalResolvedDependency::Library(lib)) => {
                             let library = lib.as_ref();
                             self.with_mast_forest(lib.mast_forest().clone());
                         }
-                        DependencyResolution::Local(LocalResolution::Package(pkg)) => {
+                        ResolvedDependency::Local(LocalResolvedDependency::Package(pkg)) => {
                             if let MastArtifact::Library(lib) = &pkg.mast {
                                 self.with_mast_forest(lib.mast_forest().clone());
                             } else {
@@ -151,11 +151,13 @@ impl Executor {
         let process_state: ProcessState = (&process).into();
         let root_context = process_state.ctx();
         let result = process.execute(program, &mut host);
-        let mut iter = VmStateIterator::new(process, result.clone());
+        #[allow(clippy::useless_asref)]
+        let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
+        let mut iter = VmStateIterator::new(process, result);
         let mut callstack = CallStack::new(trace_events);
         DebugExecutor {
             iter,
-            result,
+            stack_outputs,
             contexts: Default::default(),
             root_context,
             current_context: root_context,

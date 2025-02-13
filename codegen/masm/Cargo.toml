@@ -31,7 +31,7 @@ midenc-hir = { workspace = true, features = ["serde"] }
 midenc-hir-analysis.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session = { workspace = true }
-miden-package.workspace = true
+miden-mast-package.workspace = true
 paste.workspace = true
 petgraph.workspace = true
 serde.workspace = true

@@ -20,7 +20,7 @@ mod types;
 
 pub fn run_masm_vs_rust<T>(
     rust_out: T,
-    package: &miden_package::Package,
+    package: &miden_mast_package::Package,
     args: &[Felt],
     session: &Session,
 ) -> Result<(), TestCaseError>

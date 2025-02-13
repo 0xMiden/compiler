@@ -1418,12 +1418,9 @@ impl Emulator {
                 Op::AdvInjectInsertMem
                 | Op::AdvInjectInsertHperm
                 | Op::AdvInjectInsertHdword
-                | Op::AdvInjectInsertHdwordImm(_)
                 | Op::AdvInjectPushMTreeNode
                 | Op::AdvInjectPushMapVal
-                | Op::AdvInjectPushMapValImm(_)
-                | Op::AdvInjectPushMapValN
-                | Op::AdvInjectPushMapValNImm(_) => unimplemented!(),
+                | Op::AdvInjectPushMapValN => unimplemented!(),
                 Op::Assert => {
                     let cond = pop_bool!(self);
                     assert!(cond, "assertion failed: expected true, got false");

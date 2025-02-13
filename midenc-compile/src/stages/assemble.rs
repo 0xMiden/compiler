@@ -1,4 +1,5 @@
-use miden_package::{Dependency, MastArtifact, Package};
+use miden_assembly::ast::QualifiedProcedureName;
+use miden_mast_package::{Dependency, MastArtifact, Package};
 use midenc_codegen_masm::MasmArtifact;
 
 use super::*;
@@ -91,7 +92,7 @@ fn build_package(mast: MastArtifact, masm: &MasmArtifact, session: &Session) -> 
         dependencies.push(dependency);
     }
 
-    let mut manifest = miden_package::PackageManifest {
+    let mut manifest = miden_mast_package::PackageManifest {
         exports: Default::default(),
         dependencies,
     };
@@ -102,17 +103,16 @@ fn build_package(mast: MastArtifact, masm: &MasmArtifact, session: &Session) -> 
             unreachable!("expected MasmArtifact to be a library");
         };
         for module_info in lib.module_infos() {
-            let module_path = module_info.path().path();
             for (_, proc_info) in module_info.procedures() {
-                let proc_name = proc_info.name.as_str();
-                let name = format!("{module_path}::{proc_name}");
+                let name =
+                    QualifiedProcedureName::new(module_info.path().clone(), proc_info.name.clone());
                 let digest = proc_info.digest;
-                manifest.exports.insert(miden_package::PackageExport { name, digest });
+                manifest.exports.insert(miden_mast_package::PackageExport { name, digest });
             }
         }
     }
 
-    miden_package::Package {
+    miden_mast_package::Package {
         name,
         mast,
         manifest,

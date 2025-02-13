@@ -18,7 +18,7 @@ pub struct DebugExecutor {
     /// The underlying [VmStateIterator] being driven
     pub iter: VmStateIterator,
     /// The final outcome of the program being executed
-    pub result: Result<StackOutputs, ExecutionError>,
+    pub stack_outputs: StackOutputs,
     /// The set of contexts allocated during execution so far
     pub contexts: BTreeSet<ContextId>,
     /// The root context
@@ -46,7 +46,7 @@ impl DebugExecutor {
     /// Returns the call frame exited this cycle, if any
     pub fn step(&mut self) -> Result<Option<CallFrame>, ExecutionError> {
         if self.stopped {
-            return self.result.as_ref().map(|_| None).map_err(|err| err.clone());
+            return Ok(None);
         }
         match self.iter.next() {
             Some(Ok(state)) => {
@@ -85,12 +85,11 @@ impl DebugExecutor {
         let last_cycle = self.cycle;
         let trace_len_summary = *self.iter.trace_len_summary();
         let (_, _, _, chiplets, _) = self.iter.into_parts();
-        let outputs = self.result.unwrap_or_default();
         ExecutionTrace {
             root_context: self.root_context,
             last_cycle: RowIndex::from(last_cycle),
             chiplets: Chiplets::new(move |context, clk| chiplets.get_mem_state_at(context, clk)),
-            outputs,
+            outputs: self.stack_outputs,
             trace_len_summary,
         }
     }

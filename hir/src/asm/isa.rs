@@ -1,7 +1,8 @@
 use std::{collections::BTreeSet, fmt};
 
 use cranelift_entity::entity_impl;
-pub use miden_assembly::ast::{AdviceInjectorNode, DebugOptions};
+pub use miden_assembly::ast::DebugOptions;
+use miden_assembly::ast::SystemEventNode;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -264,15 +265,6 @@ pub enum MasmOp {
     /// [K]
     /// ```
     AdvInjectPushMapVal,
-    /// Pushes a list of field elements on the advice stack.
-    ///
-    /// The list is looked up in the advice map using the word starting at `index` on the operand
-    /// stack.
-    ///
-    /// ```text,ignore
-    /// [K]
-    /// ```
-    AdvInjectPushMapValImm(u8),
     /// Pushes a list of field elements, along with the number of elements on the advice stack.
     ///
     /// The list is looked up in the advice map using the word on top of the operand stack.
@@ -281,15 +273,6 @@ pub enum MasmOp {
     /// [K]
     /// ```
     AdvInjectPushMapValN,
-    /// Pushes a list of field elements, along with the number of elements on the advice stack.
-    ///
-    /// The list is looked up in the advice map using the word starting at `index` on the operand
-    /// stack.
-    ///
-    /// ```text,ignore
-    /// [K]
-    /// ```
-    AdvInjectPushMapValNImm(u8),
     /// Pushes a node of a Merkle tree with root `R` at depth `d` and index `i` from the Merkle
     /// store onto the advice stack
     ///
@@ -311,16 +294,6 @@ pub enum MasmOp {
     /// [B, A]
     /// ```
     AdvInjectInsertHdword,
-    /// Reads the top two words from the stack, and computes a key `K` as `hash(A || B, d)`.
-    ///
-    /// `d` is a domain value which can be in the range 0..=255
-    ///
-    /// The two words that were hashed are then saved into the advice map under `K` as `[A, B]`.
-    ///
-    /// ```text,ignore
-    /// [B, A]
-    /// ```
-    AdvInjectInsertHdwordImm(u8),
     /// Reads the top three words from the stack, and computes a key `K` as `permute(C, A,
     /// B).digest`.
     ///
@@ -1119,13 +1092,10 @@ impl MasmOp {
             | Self::Trace(_)
             | Self::AdvInjectPushU64Div
             | Self::AdvInjectPushMapVal
-            | Self::AdvInjectPushMapValImm(_)
             | Self::AdvInjectPushMapValN
-            | Self::AdvInjectPushMapValNImm(_)
             | Self::AdvInjectPushMTreeNode
             | Self::AdvInjectInsertMem
             | Self::AdvInjectInsertHdword
-            | Self::AdvInjectInsertHdwordImm(_)
             | Self::AdvInjectInsertHperm
             | Self::AdvInjectPushSignature(_)
             | Self::DebugStack
@@ -1369,26 +1339,17 @@ impl MasmOp {
             Instruction::AdvPipe => Self::AdvPipe,
             Instruction::AdvPush(byte) => Self::AdvPush(unwrap_u8!(byte)),
             Instruction::AdvLoadW => Self::AdvLoadw,
-            Instruction::AdvInject(AdviceInjectorNode::InsertMem) => Self::AdvInjectInsertMem,
-            Instruction::AdvInject(AdviceInjectorNode::InsertHperm) => Self::AdvInjectInsertHperm,
-            Instruction::AdvInject(AdviceInjectorNode::InsertHdword) => Self::AdvInjectInsertHdword,
-            Instruction::AdvInject(AdviceInjectorNode::InsertHdwordImm { domain }) => {
-                Self::AdvInjectInsertHdwordImm(unwrap_u8!(domain))
-            }
-            Instruction::AdvInject(AdviceInjectorNode::PushU64Div) => Self::AdvInjectPushU64Div,
-            Instruction::AdvInject(AdviceInjectorNode::PushMtNode) => Self::AdvInjectPushMTreeNode,
-            Instruction::AdvInject(AdviceInjectorNode::PushMapVal) => Self::AdvInjectPushMapVal,
-            Instruction::AdvInject(AdviceInjectorNode::PushMapValImm { offset }) => {
-                Self::AdvInjectPushMapValImm(unwrap_u8!(offset))
-            }
-            Instruction::AdvInject(AdviceInjectorNode::PushMapValN) => Self::AdvInjectPushMapValN,
-            Instruction::AdvInject(AdviceInjectorNode::PushMapValNImm { offset }) => {
-                Self::AdvInjectPushMapValNImm(unwrap_u8!(offset))
-            }
-            Instruction::AdvInject(AdviceInjectorNode::PushSignature { kind }) => {
+            Instruction::SysEvent(SystemEventNode::InsertMem) => Self::AdvInjectInsertMem,
+            Instruction::SysEvent(SystemEventNode::InsertHperm) => Self::AdvInjectInsertHperm,
+            Instruction::SysEvent(SystemEventNode::InsertHdword) => Self::AdvInjectInsertHdword,
+            Instruction::SysEvent(SystemEventNode::PushU64Div) => Self::AdvInjectPushU64Div,
+            Instruction::SysEvent(SystemEventNode::PushMtNode) => Self::AdvInjectPushMTreeNode,
+            Instruction::SysEvent(SystemEventNode::PushMapVal) => Self::AdvInjectPushMapVal,
+            Instruction::SysEvent(SystemEventNode::PushMapValN) => Self::AdvInjectPushMapValN,
+            Instruction::SysEvent(SystemEventNode::PushSignature { kind }) => {
                 Self::AdvInjectPushSignature(kind)
             }
-            Instruction::AdvInject(injector) => {
+            Instruction::SysEvent(injector) => {
                 unimplemented!("unsupported advice injector: {injector:?}")
             }
             ref ix @ (Instruction::Exec(ref target)
@@ -1596,26 +1557,15 @@ impl MasmOp {
             Self::AdvPipe => Instruction::AdvPipe,
             Self::AdvPush(n) => Instruction::AdvPush(n.into()),
             Self::AdvLoadw => Instruction::AdvLoadW,
-            Self::AdvInjectPushU64Div => Instruction::AdvInject(AdviceInjectorNode::PushU64Div),
-            Self::AdvInjectPushMTreeNode => Instruction::AdvInject(AdviceInjectorNode::PushMtNode),
-            Self::AdvInjectPushMapVal => Instruction::AdvInject(AdviceInjectorNode::PushMapVal),
-            Self::AdvInjectPushMapValImm(n) => {
-                Instruction::AdvInject(AdviceInjectorNode::PushMapValImm { offset: n.into() })
-            }
-            Self::AdvInjectPushMapValN => Instruction::AdvInject(AdviceInjectorNode::PushMapValN),
-            Self::AdvInjectPushMapValNImm(n) => {
-                Instruction::AdvInject(AdviceInjectorNode::PushMapValNImm { offset: n.into() })
-            }
-            Self::AdvInjectInsertMem => Instruction::AdvInject(AdviceInjectorNode::InsertMem),
-            Self::AdvInjectInsertHperm => Instruction::AdvInject(AdviceInjectorNode::InsertHperm),
-            Self::AdvInjectInsertHdword => Instruction::AdvInject(AdviceInjectorNode::InsertHdword),
-            Self::AdvInjectInsertHdwordImm(domain) => {
-                Instruction::AdvInject(AdviceInjectorNode::InsertHdwordImm {
-                    domain: domain.into(),
-                })
-            }
+            Self::AdvInjectPushU64Div => Instruction::SysEvent(SystemEventNode::PushU64Div),
+            Self::AdvInjectPushMTreeNode => Instruction::SysEvent(SystemEventNode::PushMtNode),
+            Self::AdvInjectPushMapVal => Instruction::SysEvent(SystemEventNode::PushMapVal),
+            Self::AdvInjectPushMapValN => Instruction::SysEvent(SystemEventNode::PushMapValN),
+            Self::AdvInjectInsertMem => Instruction::SysEvent(SystemEventNode::InsertMem),
+            Self::AdvInjectInsertHperm => Instruction::SysEvent(SystemEventNode::InsertHperm),
+            Self::AdvInjectInsertHdword => Instruction::SysEvent(SystemEventNode::InsertHdword),
             Self::AdvInjectPushSignature(kind) => {
-                Instruction::AdvInject(AdviceInjectorNode::PushSignature { kind })
+                Instruction::SysEvent(SystemEventNode::PushSignature { kind })
             }
             Self::If(..) | Self::While(_) | Self::Repeat(..) => {
                 panic!("control flow instructions are meant to be handled specially by the caller")
@@ -1871,17 +1821,11 @@ impl fmt::Display for MasmOp {
             Self::AdvLoadw => f.write_str("adv_loadw"),
             Self::AdvInjectPushU64Div => f.write_str("adv.push_u64div"),
             Self::AdvInjectPushMTreeNode => f.write_str("adv.push_mtnode"),
-            Self::AdvInjectPushMapVal | Self::AdvInjectPushMapValImm(_) => {
-                f.write_str("adv.push_mapval")
-            }
-            Self::AdvInjectPushMapValN | Self::AdvInjectPushMapValNImm(_) => {
-                f.write_str("adv.push_mapvaln")
-            }
+            Self::AdvInjectPushMapVal => f.write_str("adv.push_mapval"),
+            Self::AdvInjectPushMapValN => f.write_str("adv.push_mapvaln"),
             Self::AdvInjectInsertMem => f.write_str("adv.insert_mem"),
             Self::AdvInjectInsertHperm => f.write_str("adv.insert_hperm"),
-            Self::AdvInjectInsertHdword | Self::AdvInjectInsertHdwordImm(_) => {
-                f.write_str("adv.insert_hdword")
-            }
+            Self::AdvInjectInsertHdword => f.write_str("adv.insert_hdword"),
             Self::AdvInjectPushSignature(kind) => write!(f, "adv.push_sig.{kind}"),
             Self::If(..) => f.write_str("if.true"),
             Self::While(_) => f.write_str("while.true"),

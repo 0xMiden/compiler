@@ -2,7 +2,7 @@
 
 use.cross_ctx_account
 
-export."process-felt"
+export.process-felt
     exec.::cross_ctx_account::"miden:cross-ctx-account/foo@1.0.0#process-felt"
 end
 
