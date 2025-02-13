@@ -11,6 +11,7 @@ extern crate std;
 
 mod builders;
 mod ops;
+pub mod transforms;
 
 use alloc::boxed::Box;
 
@@ -134,6 +135,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::AssertEq>();
         info.register_operation::<ops::AssertEqImm>();
         info.register_operation::<ops::Unreachable>();
+        info.register_operation::<ops::Poison>();
         info.register_operation::<ops::Add>();
         info.register_operation::<ops::AddOverflowing>();
         info.register_operation::<ops::Sub>();

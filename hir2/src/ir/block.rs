@@ -617,6 +617,15 @@ impl Block {
             keep
         });
     }
+
+    pub fn erase(&mut self) {
+        if let Some(mut region) = self.region.take() {
+            let mut region = region.borrow_mut();
+            let body = region.body_mut();
+            let mut cursor = unsafe { body.cursor_mut_from_ptr(self.as_block_ref()) };
+            cursor.remove();
+        }
+    }
 }
 
 /// Placement
@@ -987,6 +996,21 @@ impl Block {
         self.uses_mut().clear();
     }
 
+    pub fn replace_all_uses_with(&mut self, mut replacement: BlockRef) {
+        if BlockRef::ptr_eq(&self.as_block_ref(), &replacement) {
+            return;
+        }
+
+        let mut replacement_block = replacement.borrow_mut();
+
+        let mut cursor = self.uses_mut().front_mut();
+        while let Some(mut user_ref) = cursor.remove() {
+            let mut user = user_ref.borrow_mut();
+            user.block = replacement;
+            replacement_block.insert_use(user_ref);
+        }
+    }
+
     #[inline(always)]
     pub(super) const fn is_op_order_valid(&self) -> bool {
         self.valid_op_ordering
@@ -1088,6 +1112,11 @@ impl BlockOperand {
 
     pub fn block_id(&self) -> BlockId {
         self.block.borrow().id
+    }
+
+    /// Get the block from which this block operand originates, i.e. the predecessor block
+    pub fn predecessor(&self) -> BlockRef {
+        self.owner.borrow().parent().expect("operation is not attached to a block")
     }
 }
 impl fmt::Debug for BlockOperand {

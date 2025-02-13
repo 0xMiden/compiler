@@ -1,4 +1,5 @@
 mod builder;
+pub mod equivalence;
 mod name;
 
 use alloc::rc::Rc;
@@ -11,7 +12,10 @@ use core::{
 use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
-use super::*;
+use super::{
+    traits::{HasRecursiveMemoryEffects, MemoryAlloc, MemoryFree, MemoryRead, MemoryWrite},
+    *,
+};
 use crate::{AttributeSet, AttributeValue, ProgramPoint};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
@@ -274,11 +278,7 @@ impl Operation {
     /// The verification is performed in post-order, so that when the verifier(s) for `self` are
     /// run, it is known that all of its children have successfully verified.
     pub fn recursively_verify(&self) -> Result<(), Report> {
-        self.postwalk_interruptible(|op: OperationRef| {
-            let op = op.borrow();
-            op.verify().into()
-        })
-        .into_result()
+        self.postwalk_interruptible(|op: &Operation| op.verify().into()).into_result()
     }
 }
 
@@ -892,6 +892,45 @@ impl Operation {
 
         // If we get here, none of the operations had effects that prevented marking this operation
         // as dead.
+        true
+    }
+
+    /// Returns true if the given operation is free of memory effects.
+    ///
+    /// An operation is free of memory effects if its implementation of `MemoryEffectOpInterface`
+    /// indicates that it has no memory effects. For example, it may implement `NoMemoryEffect`.
+    /// Alternatively, if the operation has the `HasRecursiveMemoryEffects` trait, then it is free
+    /// of memory effects if all of its nested operations are free of memory effects.
+    ///
+    /// If the operation has both, then it is free of memory effects if both conditions are
+    /// satisfied.
+    pub fn is_memory_effect_free(&self) -> bool {
+        let has_effects = self.implements::<dyn MemoryRead>()
+            || self.implements::<dyn MemoryWrite>()
+            || self.implements::<dyn MemoryAlloc>()
+            || self.implements::<dyn MemoryFree>();
+        if has_effects {
+            return false;
+        } else if !self.implements::<dyn HasRecursiveMemoryEffects>() {
+            // Otherwise, if the op does not implement the memory effect interface and it does not
+            // have recursive side effects, then it cannot be known that the op is moveable.
+            return false;
+        }
+
+        // Recurse into the regions and ensure that all nested ops are memory effect free.
+        for region in self.regions() {
+            let walk_result = region.prewalk_interruptible(|op| {
+                if !op.is_memory_effect_free() {
+                    WalkResult::Break(())
+                } else {
+                    WalkResult::Continue(())
+                }
+            });
+            if walk_result.was_interrupted() {
+                return false;
+            }
+        }
+
         true
     }
 }

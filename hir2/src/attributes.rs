@@ -22,7 +22,7 @@ pub mod markers {
 }
 
 /// An [AttributeSet] is a uniqued collection of attributes associated with some IR entity
-#[derive(Debug, Default, Hash)]
+#[derive(Debug, Default)]
 pub struct AttributeSet(Vec<Attribute>);
 impl FromIterator<Attribute> for AttributeSet {
     fn from_iter<T>(attrs: T) -> Self
@@ -136,6 +136,38 @@ impl AttributeSet {
     /// Iterate over each [Attribute] in this set
     pub fn iter(&self) -> impl Iterator<Item = &Attribute> + '_ {
         self.0.iter()
+    }
+}
+
+impl Eq for AttributeSet {}
+impl PartialEq for AttributeSet {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+
+        for attr in self.0.iter() {
+            if !other.has(attr.name) {
+                return false;
+            }
+
+            let other_value = other.get_any(attr.name);
+            if attr.value() != other_value {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl core::hash::Hash for AttributeSet {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.len().hash(state);
+
+        for attr in self.0.iter() {
+            attr.hash(state);
+        }
     }
 }
 

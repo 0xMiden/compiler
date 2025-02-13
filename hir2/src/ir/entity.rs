@@ -821,6 +821,17 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
         )
     }
 
+    /// Convert this mutable borrow into an immutable borrow
+    pub fn into_entity_ref(self) -> EntityRef<'b, T> {
+        let value = self.value;
+        let borrow = self.into_borrow_ref_mut();
+
+        EntityRef {
+            value,
+            borrow: borrow.into_borrow_ref(),
+        }
+    }
+
     #[doc(hidden)]
     pub(crate) fn into_borrow_ref_mut(self) -> BorrowRefMut<'b> {
         self.borrow

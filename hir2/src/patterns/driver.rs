@@ -10,8 +10,8 @@ use super::{
 use crate::{
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttrPrinter, BlockRef, Builder, Context, InsertionGuard, Listener, OpFoldResult,
-    OperationFolder, OperationRef, ProgramPoint, Region, RegionRef, Report, RewritePattern,
-    SourceSpan, Spanned, Value, ValueRef, WalkResult, Walkable,
+    OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report,
+    RewritePattern, SourceSpan, Spanned, Value, ValueRef, WalkResult,
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
@@ -822,12 +822,11 @@ impl RegionPatternRewriteDriver {
         config: GreedyRewriteConfig,
         region: RegionRef,
     ) -> Self {
-        use crate::Walkable;
         let mut driver = GreedyPatternRewriteDriver::new(context, patterns, config);
         // Populate strict mode ops, if applicable
         if driver.config.restrict != GreedyRewriteStrictness::Any {
             let filtered_ops = driver.filtered_ops.get_mut();
-            region.borrow().postwalk(|op| {
+            region.raw_postwalk(|op| {
                 filtered_ops.insert(op);
             });
         }
@@ -872,7 +871,7 @@ impl RegionPatternRewriteDriver {
             if !self.driver.config.use_top_down_traversal {
                 // Add operations to the worklist in postorder.
                 log::trace!("adding operations in postorder");
-                self.region.borrow().postwalk(|op| {
+                self.region.raw_postwalk(|op| {
                     if !insert_known_constant(op) {
                         self.driver.add_to_worklist(op);
                     }
@@ -881,8 +880,7 @@ impl RegionPatternRewriteDriver {
                 // Add all nested operations to the worklist in preorder.
                 log::trace!("adding operations in preorder");
                 self.region
-                    .borrow()
-                    .prewalk_interruptible(|op| {
+                    .raw_prewalk_interruptible(|op| {
                         if !insert_known_constant(op) {
                             self.driver.add_to_worklist(op);
                             WalkResult::<Report>::Continue(())

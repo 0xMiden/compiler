@@ -1,7 +1,6 @@
 use alloc::{boxed::Box, vec::Vec};
 
 use midenc_hir2::{derive::operation, traits::*, *};
-use midenc_session::diagnostics::Severity;
 
 use crate::HirDialect;
 
@@ -207,7 +206,7 @@ impl KeyedSuccessor for SwitchCase {
 #[operation(
     dialect = HirDialect,
     traits(SingleBlock, NoRegionArguments),
-    implements(RegionBranchOpInterface, InferTypeOpInterface)
+    implements(RegionBranchOpInterface)
 )]
 pub struct If {
     #[operand]
@@ -216,76 +215,6 @@ pub struct If {
     then_body: Region,
     #[region]
     else_body: Region,
-}
-
-impl InferTypeOpInterface for If {
-    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let then_region = self.then_body();
-        if then_region.is_empty() {
-            return Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
-                .into_report());
-        }
-
-        let then_block = then_region.entry();
-        if then_block.body().is_empty() {
-            return Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
-                .into_report());
-        }
-
-        if let Some(terminator) = then_block.terminator() {
-            drop(then_block);
-            drop(then_region);
-            let terminator = terminator.borrow();
-            if let Some(yield_op) = terminator.downcast_ref::<Yield>() {
-                let types = yield_op
-                    .yielded()
-                    .iter()
-                    .map(|operand| operand.borrow().ty())
-                    .collect::<SmallVec<[_; 2]>>();
-
-                let span = self.span();
-                let owner = self.as_operation().as_operation_ref();
-                self.results_mut().extend(types.into_iter().enumerate().map(|(index, ty)| {
-                    context.make_result(
-                        span,
-                        ty,
-                        owner,
-                        index.try_into().expect("too many results"),
-                    )
-                }));
-
-                Ok(())
-            } else {
-                Err(context
-                    .session
-                    .diagnostics
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid `if` operation")
-                    .with_primary_label(terminator.span(), "expected `yield` op here")
-                    .with_help("The `if` operation blocks must be terminated by a `yield`")
-                    .into_report())
-            }
-        } else {
-            Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "`if` blocks require a terminator")
-                .with_help("The `if` operation blocks must be terminated by a `yield`")
-                .into_report())
-        }
-    }
 }
 
 impl RegionBranchOpInterface for If {
@@ -388,6 +317,8 @@ impl RegionBranchOpInterface for If {
     implements(RegionBranchOpInterface, LoopLikeOpInterface)
 )]
 pub struct While {
+    #[operands]
+    inits: AnyType,
     #[region]
     before: Region,
     #[region]
@@ -409,7 +340,7 @@ impl LoopLikeOpInterface for While {
     }
 
     fn get_inits_mut(&mut self) -> OpOperandRangeMut<'_> {
-        self.operands_mut().group_mut(0)
+        self.inits_mut()
     }
 
     fn get_yielded_values_mut(&mut self) -> Option<EntityProjectionMut<'_, OpOperandRangeMut<'_>>> {

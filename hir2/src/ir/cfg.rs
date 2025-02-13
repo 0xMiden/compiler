@@ -1,8 +1,10 @@
 mod diff;
+mod scc;
 mod visit;
 
 pub use self::{
     diff::{CfgDiff, CfgUpdate, CfgUpdateKind, GraphDiff},
+    scc::StronglyConnectedComponents,
     visit::{DefaultGraphVisitor, GraphVisitor, LazyDfsVisitor, PostOrderIter, PreOrderIter},
 };
 

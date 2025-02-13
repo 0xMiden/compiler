@@ -53,7 +53,8 @@ pub use self::{
         OpOperandStorage,
     },
     operation::{
-        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
+        equivalence, OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName,
+        OperationRef,
     },
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
@@ -79,7 +80,7 @@ pub use self::{
     },
     verifier::{OpVerifier, Verify},
     visit::{
-        OpVisitor, OperationVisitor, Searcher, SymbolVisitor, Visitor, WalkOrder, WalkResult,
-        WalkStage, Walkable,
+        OpVisitor, OperationVisitor, RawWalk, Searcher, SymbolVisitor, Visitor, Walk, WalkMut,
+        WalkOrder, WalkResult, WalkStage,
     },
 };

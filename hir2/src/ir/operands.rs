@@ -62,6 +62,19 @@ impl OpOperandImpl {
             .expect("broken operand reference!");
         group_index as u8
     }
+
+    /// Set the operand value to `value`, removing the operand from the use list of the previous
+    /// value, and adding it to the use list of `value`.
+    pub fn set(&mut self, value: ValueRef) {
+        let this = self.as_operand_ref();
+        let mut prev = self.value;
+        unsafe {
+            let mut prev = prev.borrow_mut();
+            prev.uses_mut().cursor_mut_from_ptr(this).remove();
+        }
+        self.value = value;
+        self.value.borrow_mut().insert_use(this);
+    }
 }
 impl fmt::Debug for OpOperandImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

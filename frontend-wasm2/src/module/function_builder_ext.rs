@@ -518,8 +518,4 @@ impl InstBuilderBase for FuncInstBuilderExt<'_> {
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L> {
         self.builder
     }
-
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
-        (self.func, self.builder)
-    }
 }

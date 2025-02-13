@@ -83,7 +83,7 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 
     pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
-        DefaultInstBuilder::new(self.func, &mut self.builder)
+        DefaultInstBuilder::new(&mut self.builder)
     }
 
     pub fn builder(&self) -> &OpBuilder<L> {
@@ -96,12 +96,11 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
 }
 
 pub struct DefaultInstBuilder<'f, L: Listener> {
-    func: &'f mut Function,
     builder: &'f mut OpBuilder<L>,
 }
 impl<'f, L: Listener> DefaultInstBuilder<'f, L> {
-    pub(crate) fn new(func: &'f mut Function, builder: &'f mut OpBuilder<L>) -> Self {
-        Self { func, builder }
+    pub(crate) fn new(builder: &'f mut OpBuilder<L>) -> Self {
+        Self { builder }
     }
 }
 impl<L: Listener> InstBuilderBase for DefaultInstBuilder<'_, L> {
@@ -114,22 +113,17 @@ impl<L: Listener> InstBuilderBase for DefaultInstBuilder<'_, L> {
     fn builder_mut(&mut self) -> &mut OpBuilder<L> {
         self.builder
     }
-
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
-        (self.func, self.builder)
-    }
 }
 
 pub trait InstBuilderBase: Sized {
     type L: Listener;
+
     fn builder(&self) -> &OpBuilder<Self::L>;
     fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>);
     /// Get a default instruction builder using the dataflow graph and insertion point of the
     /// current builder
     fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::L> {
-        let (func, builder) = self.builder_parts();
-        DefaultInstBuilder::new(func, builder)
+        DefaultInstBuilder::new(self.builder_mut())
     }
 }
 
@@ -1124,6 +1118,27 @@ pub trait InstBuilder: InstBuilderBase {
         op_builder(cond, then_dest, then_args, else_dest, else_args)
     }
 
+    fn r#if(
+        mut self,
+        cond: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::If>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::If, (_,)>(span);
+        op_builder(cond)
+    }
+
+    fn r#while<T>(
+        mut self,
+        loop_init_variables: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::While>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::While, (T,)>(span);
+        op_builder(loop_init_variables)
+    }
+
     fn switch<TCases, TFallbackArgs>(
         mut self,
         selector: ValueRef,
@@ -1140,6 +1155,31 @@ pub trait InstBuilder: InstBuilderBase {
             .builder_mut()
             .create::<crate::ops::Switch, (_, TCases, _, TFallbackArgs)>(span);
         op_builder(selector, cases, fallback, fallback_args)
+    }
+
+    fn r#condition<T>(
+        mut self,
+        cond: ValueRef,
+        forwarded: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Condition>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Condition, (_, T)>(span);
+        op_builder(cond, forwarded)
+    }
+
+    fn r#yield<T>(
+        mut self,
+        yielded: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Yield>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Yield, (T,)>(span);
+        op_builder(yielded)
     }
 
     fn ret(
@@ -1168,6 +1208,12 @@ pub trait InstBuilder: InstBuilderBase {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Unreachable>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Unreachable, _>(span);
         op_builder()
+    }
+
+    fn poison(mut self, ty: Type, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Poison, _>(span);
+        let op = op_builder(ty).unwrap();
+        op.borrow().result().as_value_ref()
     }
 
     /*

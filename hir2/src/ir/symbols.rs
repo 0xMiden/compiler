@@ -17,7 +17,7 @@ pub use self::{
     table::*,
 };
 use super::{Region, RegionRef, WalkResult};
-use crate::{Operation, OperationRef, UnsafeIntrusiveEntityRef, Walkable};
+use crate::{Operation, OperationRef, UnsafeIntrusiveEntityRef, Walk};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidSymbolRefError {
@@ -181,8 +181,7 @@ impl Operation {
     where
         F: FnMut(&dyn SymbolTable, bool),
     {
-        self.prewalk(|op: OperationRef| {
-            let op = op.borrow();
+        self.prewalk(|op: &Operation| {
             if let Some(sym) = op.as_symbol_table() {
                 callback(sym, all_symbol_uses_visible);
             }

@@ -13,7 +13,7 @@ use crate::{
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DominanceInfo {
     info: DominanceInfoBase<false>,
 }
@@ -54,6 +54,12 @@ impl DominanceInfo {
     #[inline(always)]
     pub(crate) fn info(&self) -> &DominanceInfoBase<false> {
         &self.info
+    }
+
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) fn info_mut(&mut self) -> &mut DominanceInfoBase<false> {
+        &mut self.info
     }
 
     /// Returns true if `a` dominates `b`.
@@ -141,7 +147,7 @@ impl DominanceInfo {
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PostDominanceInfo {
     info: DominanceInfoBase<true>,
 }
@@ -220,6 +226,16 @@ pub struct RegionDominanceInfo<const IS_POST_DOM: bool> {
     has_ssa_dominance: bool,
 }
 
+impl<const IS_POST_DOM: bool> Clone for RegionDominanceInfo<IS_POST_DOM> {
+    fn clone(&self) -> Self {
+        let domtree = self.domtree.clone();
+        Self {
+            domtree: LazyCell::new(RegionDomTreeCtor::Clone(domtree)),
+            has_ssa_dominance: self.has_ssa_dominance,
+        }
+    }
+}
+
 impl<const IS_POST_DOM: bool> RegionDominanceInfo<IS_POST_DOM> {
     /// Construct a new [RegionDominanceInfo] for `region`
     pub fn new(region: RegionRef) -> Self {
@@ -240,12 +256,12 @@ impl<const IS_POST_DOM: bool> RegionDominanceInfo<IS_POST_DOM> {
         // We only create a dominator tree for multi-block regions
         if has_one_block {
             Self {
-                domtree: LazyCell::new(RegionDomTreeCtor(None)),
+                domtree: LazyCell::new(RegionDomTreeCtor::Compute(None)),
                 has_ssa_dominance,
             }
         } else {
             Self {
-                domtree: LazyCell::new(RegionDomTreeCtor(Some(region))),
+                domtree: LazyCell::new(RegionDomTreeCtor::Compute(Some(region))),
                 has_ssa_dominance,
             }
         }
@@ -268,6 +284,15 @@ pub(crate) struct DominanceInfoBase<const IS_POST_DOM: bool> {
     /// This map does not contain dominator trees for empty or single block regions, however we
     /// still compute whether or not they have SSA dominance regardless.
     dominance_infos: RefCell<BTreeMap<RegionRef, RegionDominanceInfo<IS_POST_DOM>>>,
+}
+
+impl<const IS_POST_DOM: bool> Clone for DominanceInfoBase<IS_POST_DOM> {
+    fn clone(&self) -> Self {
+        let infos = self.dominance_infos.borrow();
+        Self {
+            dominance_infos: RefCell::new(infos.clone()),
+        }
+    }
 }
 
 #[allow(unused)]
@@ -476,21 +501,36 @@ impl DominanceInfoBase<true> {
 }
 
 /// A faux-constructor for [RegionDominanceInfo] for use with [LazyCell] without boxing.
-struct RegionDomTreeCtor<const IS_POST_DOM: bool>(Option<RegionRef>);
+enum RegionDomTreeCtor<const IS_POST_DOM: bool> {
+    Compute(Option<RegionRef>),
+    Clone(Option<Rc<DomTreeBase<IS_POST_DOM>>>),
+}
 impl<const IS_POST_DOM: bool> FnOnce<()> for RegionDomTreeCtor<IS_POST_DOM> {
     type Output = Option<Rc<DomTreeBase<IS_POST_DOM>>>;
 
     extern "rust-call" fn call_once(self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree,
+        }
     }
 }
 impl<const IS_POST_DOM: bool> FnMut<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call_mut(&mut self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(*region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree.clone(),
+        }
     }
 }
 impl<const IS_POST_DOM: bool> Fn<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call(&self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(*region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree.clone(),
+        }
     }
 }

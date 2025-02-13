@@ -53,3 +53,23 @@ pub struct AssertEqImm {
     traits(HasSideEffects, Terminator)
 )]
 pub struct Unreachable {}
+
+#[operation(
+    dialect = HirDialect,
+    traits(ConstantLike),
+    implements(InferTypeOpInterface)
+)]
+pub struct Poison {
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyType,
+}
+
+impl InferTypeOpInterface for Poison {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let poison_ty = self.ty().clone();
+        self.result_mut().set_type(poison_ty);
+        Ok(())
+    }
+}

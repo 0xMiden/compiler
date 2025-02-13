@@ -417,8 +417,26 @@ impl Region {
         self.body.push_back(block);
     }
 
-    /// Drop any references to blocks in this region - this is used to break cycles when cleaning
-    /// up regions.
+    pub fn take_body(&mut self, mut from_region: RegionRef) {
+        self.drop_all_references();
+        self.body.clear();
+
+        // Take blocks from `from_region`, update the parent of all the blocks, then splice to the
+        // end of this region's body
+        let mut from = from_region.borrow_mut();
+        let blocks = from.body_mut().take();
+        let mut cursor = blocks.front();
+        while let Some(block) = cursor.as_pointer() {
+            cursor.move_next();
+
+            Block::on_inserted_into_parent(block, self.as_region_ref());
+        }
+
+        self.body.back_mut().splice_after(blocks);
+    }
+
+    /// Drop all operand uses from operations within this region, which is an essential step
+    /// in breaking cyclic dependencies between references when they are to be deleted.
     pub fn drop_all_references(&mut self) {
         let mut cursor = self.body_mut().front_mut();
         while let Some(mut op) = cursor.as_pointer() {
