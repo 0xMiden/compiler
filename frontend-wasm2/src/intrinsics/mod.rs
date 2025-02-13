@@ -3,10 +3,15 @@ pub mod mem;
 
 use std::{collections::HashSet, sync::OnceLock};
 
-use midenc_hir::{FunctionIdent, FunctionType, SourceSpan, Symbol, Value};
-use midenc_hir2::ValueRef;
+use midenc_hir::{FunctionType, SourceSpan, Symbol, Value};
+use midenc_hir2::{FunctionIdent, ValueRef};
 
-use crate::module::function_builder_ext::FunctionBuilderExt;
+use crate::{
+    error::WasmResult,
+    module::{
+        function_builder_ext::FunctionBuilderExt, module_translation_state::CallableFunction,
+    },
+};
 
 /// Check if the given module is a Miden module that contains intrinsics
 pub fn is_miden_intrinsics_module(module_id: Symbol) -> bool {
@@ -25,15 +30,15 @@ fn modules() -> &'static HashSet<&'static str> {
 
 /// Convert a call to a Miden intrinsic function into instruction(s)
 pub fn convert_intrinsics_call(
-    func_id: FunctionIdent,
+    def_func: &CallableFunction,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
-) -> Vec<ValueRef> {
-    match func_id.module.as_symbol().as_str() {
-        mem::MODULE_ID => mem::convert_mem_intrinsics(func_id, args, builder, span),
-        felt::MODULE_ID => felt::convert_felt_intrinsics(func_id, args, builder, span),
-        _ => panic!("No intrinsics found for {}", func_id),
+) -> WasmResult<Vec<ValueRef>> {
+    match def_func.wasm_id.module.as_symbol().as_str() {
+        mem::MODULE_ID => mem::convert_mem_intrinsics(def_func, args, builder, span),
+        felt::MODULE_ID => felt::convert_felt_intrinsics(def_func.wasm_id, args, builder, span),
+        _ => panic!("No intrinsics found for {}", def_func.wasm_id),
     }
 }
 
@@ -47,6 +52,16 @@ fn intrinsic_function_type(func_id: &FunctionIdent) -> FunctionType {
 pub enum IntrinsicsConversionResult {
     FunctionType(FunctionType),
     MidenVmOp,
+}
+
+impl IntrinsicsConversionResult {
+    pub fn is_function(&self) -> bool {
+        matches!(self, IntrinsicsConversionResult::FunctionType(_))
+    }
+
+    pub fn is_operation(&self) -> bool {
+        matches!(self, IntrinsicsConversionResult::MidenVmOp)
+    }
 }
 
 pub fn intrinsics_conversion_result(func_id: &FunctionIdent) -> IntrinsicsConversionResult {

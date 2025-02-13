@@ -1,9 +1,12 @@
-use midenc_hir::{
-    AbiParam, FunctionIdent, FunctionType, InstBuilder, Signature, SourceSpan, Type, Value,
-};
-use midenc_hir2::ValueRef;
+use midenc_dialect_hir::InstBuilder;
+use midenc_hir2::{AbiParam, FunctionIdent, FunctionType, Signature, SourceSpan, Type, ValueRef};
 
-use crate::module::function_builder_ext::FunctionBuilderExt;
+use crate::{
+    error::WasmResult,
+    module::{
+        function_builder_ext::FunctionBuilderExt, module_translation_state::CallableFunction,
+    },
+};
 
 pub const MODULE_ID: &str = "intrinsics::mem";
 
@@ -29,31 +32,26 @@ fn signature(func_id: &FunctionIdent) -> Signature {
 
 /// Convert a call to a memory intrinsic function
 pub(crate) fn convert_mem_intrinsics(
-    func_id: FunctionIdent,
+    def_func: &CallableFunction,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
-) -> Vec<ValueRef> {
-    todo!()
-    // match func_id.function.as_symbol().as_str() {
-    //     HEAP_BASE => {
-    //         assert_eq!(args.len(), 0, "{} takes no arguments", func_id);
-    //         if builder
-    //             .data_flow_graph()
-    //             .get_import_by_name(func_id.module, func_id.function)
-    //             .is_none()
-    //         {
-    //             let signature = signature(&func_id);
-    //             let _ = builder.data_flow_graph_mut().import_function(
-    //                 func_id.module,
-    //                 func_id.function,
-    //                 signature,
-    //             );
-    //         }
-    //         let call = builder.ins().exec(func_id, &[], span);
-    //         let value = builder.data_flow_graph().first_result(call);
-    //         vec![value]
-    //     }
-    //     _ => panic!("No allowed memory intrinsics found for {}", func_id),
-    // }
+) -> WasmResult<Vec<ValueRef>> {
+    match def_func.wasm_id.function.as_symbol().as_str() {
+        HEAP_BASE => {
+            assert_eq!(args.len(), 0, "{} takes no arguments", def_func.wasm_id);
+
+            let func_ref = def_func.function_ref.unwrap_or_else(|| {
+                panic!("expected DefinedFunction::function_ref to be set for {}", def_func.wasm_id)
+            });
+            let exec =
+                builder.ins().exec(func_ref, def_func.signature.clone(), args.to_vec(), span)?;
+            let borrow = exec.borrow();
+            let results = borrow.as_ref().results();
+            let result_vals: Vec<ValueRef> =
+                results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+            Ok(result_vals)
+        }
+        _ => panic!("No allowed memory intrinsics found for {}", def_func.wasm_id),
+    }
 }

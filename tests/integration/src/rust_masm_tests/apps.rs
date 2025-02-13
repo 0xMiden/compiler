@@ -7,11 +7,14 @@ use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
 use crate::{
-    cargo_proj::project, compiler_test::sdk_alloc_crate_path, CompilerTest, CompilerTestBuilder,
+    cargo_proj::project,
+    compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    CompilerTest, CompilerTestBuilder,
 };
 
 fn cargo_toml(name: &str) -> String {
     let sdk_alloc_path = sdk_alloc_crate_path();
+    let sdk_path = sdk_crate_path();
     format!(
         r#"
                 [package]
@@ -25,6 +28,7 @@ fn cargo_toml(name: &str) -> String {
 
                 [dependencies]
                 miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
+                miden = {{ path = "{sdk_path}" }}
 
                 [profile.release]
                 # optimize the output for size
@@ -38,7 +42,8 @@ fn cargo_toml(name: &str) -> String {
                 overflow-checks = false
                 debug = true
             "#,
-        sdk_alloc_path = sdk_alloc_path.display()
+        sdk_alloc_path = sdk_alloc_path.display(),
+        sdk_path = sdk_path.display()
     )
 }
 
@@ -115,6 +120,47 @@ fn mem_intrinsics_heap_base() {
                 #[no_mangle]
                 pub fn entrypoint(a: u32) -> Vec<u32> {
                     vec![a*2]
+                }
+            "#,
+        )
+        .build();
+    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    )
+    .build();
+
+    let artifact_name = name;
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+}
+
+#[test]
+fn felt_intrinsics() {
+    let name = "felt_intrinsics";
+    let cargo_proj = project(name)
+        .file("Cargo.toml", &cargo_toml(name))
+        .file(
+            "src/lib.rs",
+            r#"
+                #![no_std]
+
+                // Required for no-std crates
+                #[panic_handler]
+                fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                // Global allocator to use heap memory in no-std environment
+                #[global_allocator]
+                static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+
+                use miden::*;
+
+                #[no_mangle]
+                pub fn entrypoint(a: Felt, b: Felt) -> Felt {
+                   a / (a * b - a + b)
                 }
             "#,
         )

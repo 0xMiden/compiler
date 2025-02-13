@@ -28,6 +28,7 @@ use wasmparser::{MemArg, Operator};
 
 use crate::{
     error::WasmResult,
+    intrinsics::{convert_intrinsics_call, is_miden_intrinsics_module},
     miden_abi::{is_miden_abi_module, transform::transform_miden_abi_call},
     module::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
@@ -675,15 +676,16 @@ fn translate_call(
     span: SourceSpan,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let func_ref = module_state.get_direct_func(function_index, diagnostics)?;
-    let sig = func_ref.borrow().signature().clone();
-    let num_args = sig.params().len();
-    let args = func_state.peekn(num_args);
-    // if is_miden_intrinsics_module(func_id.module.as_symbol()) {
-    //     let results = convert_intrinsics_call(func_id, args, builder, span);
-    //     func_state.popn(num_wasm_args);
-    //     func_state.pushn(&results);
-    // } else if is_miden_abi_module(func_id.module.as_symbol()) {
+    let defined_func = module_state.get_direct_func(function_index, diagnostics)?;
+    let wasm_sig = defined_func.signature.clone();
+    let num_wasm_args = wasm_sig.params().len();
+    let args = func_state.peekn(num_wasm_args);
+    if is_miden_intrinsics_module(defined_func.wasm_id.module.as_symbol()) {
+        let results = convert_intrinsics_call(&defined_func, args, builder, span)?;
+        func_state.popn(num_wasm_args);
+        func_state.pushn(&results);
+    }
+    // else if is_miden_abi_module(func_id.module.as_symbol()) {
     //     // Miden SDK function call, transform the call to the Miden ABI if needed
     //     let results = transform_miden_abi_call(func_id, args, builder, span, diagnostics);
     //     assert_eq!(
@@ -702,15 +704,18 @@ fn translate_call(
     //     );
     //     func_state.popn(num_wasm_args);
     //     func_state.pushn(&results);
-    // } else { code below }
-
-    let exec = builder.ins().exec(func_ref, sig, args.to_vec(), span)?;
-    let borrow = exec.borrow();
-    let results = borrow.as_ref().results();
-    func_state.popn(num_args);
-    let result_vals: Vec<ValueRef> =
-        results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    func_state.pushn(&result_vals);
+    else {
+        let func_ref = defined_func
+            .function_ref
+            .expect("expected DefinedFunction::function_ref to be set");
+        let exec = builder.ins().exec(func_ref, wasm_sig, args.to_vec(), span)?;
+        let borrow = exec.borrow();
+        let results = borrow.as_ref().results();
+        func_state.popn(num_wasm_args);
+        let result_vals: Vec<ValueRef> =
+            results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+        func_state.pushn(&result_vals);
+    }
     Ok(())
 }
 

@@ -1,9 +1,8 @@
-use super::ModuleBuilder;
 use crate::{
     dialects::builtin::{
-        ComponentRef, InterfaceRef, ModuleRef, PrimInterfaceBuilder, PrimModuleBuilder,
+        ComponentRef, InterfaceRef, Module, ModuleRef, PrimInterfaceBuilder, PrimModuleBuilder,
     },
-    Builder, FunctionIdent, Ident, Op, OpBuilder, Report, Signature, Spanned, SymbolTable,
+    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolTable,
 };
 
 pub struct ComponentBuilder {
@@ -49,11 +48,10 @@ impl ComponentBuilder {
         Ok(module_ref)
     }
 
-    pub fn define_import(&mut self, func_id: FunctionIdent, sig: Signature) {
-        let module_ref = self.define_module(func_id.module).expect("failed to define module");
-        let mut module_builder = ModuleBuilder::new(module_ref);
-        module_builder
-            .define_function(func_id.function, sig)
-            .expect("failed to define function");
+    pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
+        self.component.borrow().get(name).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+        })
     }
 }
