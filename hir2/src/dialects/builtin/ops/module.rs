@@ -74,6 +74,13 @@ pub struct Module {
     uses: SymbolUseList,
 }
 
+impl Module {
+    #[inline(always)]
+    pub fn as_module_ref(&self) -> ModuleRef {
+        unsafe { ModuleRef::from_raw(self) }
+    }
+}
+
 impl RegionKindInterface for Module {
     #[inline(always)]
     fn kind(&self) -> RegionKind {
