@@ -184,7 +184,7 @@ pub fn translate_operator(
             type_index: _,
             table_index: _,
         } => {
-            // TODO:
+            todo!("CallIndirect is not supported yet");
         }
         /******************************* Memory management *********************************/
         Operator::MemoryGrow { .. } => {
@@ -938,71 +938,78 @@ fn translate_else(
     builder: &mut FunctionBuilderExt,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // let i = state.control_stack.len() - 1;
-    // match state.control_stack[i] {
-    //     ControlStackFrame::If {
-    //         ref else_data,
-    //         head_is_reachable,
-    //         ref mut consequent_ends_reachable,
-    //         num_return_values,
-    //         ref blocktype,
-    //         destination,
-    //         ..
-    //     } => {
-    //         // We finished the consequent, so record its final
-    //         // reachability state.
-    //         debug_assert!(consequent_ends_reachable.is_none());
-    //         *consequent_ends_reachable = Some(state.reachable);
-    //
-    //         if head_is_reachable {
-    //             // We have a branch from the head of the `if` to the `else`.
-    //             state.reachable = true;
-    //
-    //             // Ensure we have a block for the `else` block (it may have
-    //             // already been pre-allocated, see `ElseData` for details).
-    //             let else_block = match *else_data {
-    //                 ElseData::NoElse {
-    //                     branch_inst,
-    //                     placeholder,
-    //                 } => {
-    //                     debug_assert_eq!(blocktype.params.len(), num_return_values);
-    //                     let else_block =
-    //                         builder.create_block_with_params(blocktype.params.clone(), span);
-    //                     let params_len = blocktype.params.len();
-    //                     builder.ins().br(destination, state.peekn(params_len), span);
-    //                     state.popn(params_len);
-    //
-    //                     builder.change_jump_destination(branch_inst, placeholder, else_block);
-    //                     builder.seal_block(else_block);
-    //                     else_block
-    //                 }
-    //                 ElseData::WithElse { else_block } => {
-    //                     builder.ins().br(destination, state.peekn(num_return_values), span);
-    //                     state.popn(num_return_values);
-    //                     else_block
-    //                 }
-    //             };
-    //
-    //             // You might be expecting that we push the parameters for this
-    //             // `else` block here, something like this:
-    //             //
-    //             //     state.pushn(&control_stack_frame.params);
-    //             //
-    //             // We don't do that because they are already on the top of the stack
-    //             // for us: we pushed the parameters twice when we saw the initial
-    //             // `if` so that we wouldn't have to save the parameters in the
-    //             // `ControlStackFrame` as another `Vec` allocation.
-    //
-    //             builder.switch_to_block(else_block);
-    //
-    //             // We don't bother updating the control frame's `ElseData`
-    //             // to `WithElse` because nothing else will read it.
-    //         }
-    //     }
-    //     _ => unreachable!(),
-    // };
-    // Ok(())
+    let i = state.control_stack.len() - 1;
+    match state.control_stack[i] {
+        ControlStackFrame::If {
+            ref else_data,
+            head_is_reachable,
+            ref mut consequent_ends_reachable,
+            num_return_values,
+            ref blocktype,
+            destination,
+            ..
+        } => {
+            // We finished the consequent, so record its final
+            // reachability state.
+            debug_assert!(consequent_ends_reachable.is_none());
+            *consequent_ends_reachable = Some(state.reachable);
+
+            if head_is_reachable {
+                // We have a branch from the head of the `if` to the `else`.
+                state.reachable = true;
+
+                // Ensure we have a block for the `else` block (it may have
+                // already been pre-allocated, see `ElseData` for details).
+                let else_block = match *else_data {
+                    ElseData::NoElse {
+                        branch_inst,
+                        placeholder,
+                    } => {
+                        debug_assert_eq!(blocktype.params.len(), num_return_values);
+                        let else_block =
+                            builder.create_block_with_params(blocktype.params.clone(), span);
+                        let params_len = blocktype.params.len();
+                        builder.ins().br(
+                            destination,
+                            state.peekn(params_len).iter().copied(),
+                            span,
+                        );
+                        state.popn(params_len);
+
+                        builder.change_jump_destination(branch_inst, placeholder, else_block);
+                        builder.seal_block(else_block);
+                        else_block
+                    }
+                    ElseData::WithElse { else_block } => {
+                        builder.ins().br(
+                            destination,
+                            state.peekn(num_return_values).iter().copied(),
+                            span,
+                        );
+                        state.popn(num_return_values);
+                        else_block
+                    }
+                };
+
+                // You might be expecting that we push the parameters for this
+                // `else` block here, something like this:
+                //
+                //     state.pushn(&control_stack_frame.params);
+                //
+                // We don't do that because they are already on the top of the stack
+                // for us: we pushed the parameters twice when we saw the initial
+                // `if` so that we wouldn't have to save the parameters in the
+                // `ControlStackFrame` as another `Vec` allocation.
+
+                builder.switch_to_block(else_block);
+
+                // We don't bother updating the control frame's `ElseData`
+                // to `WithElse` because nothing else will read it.
+            }
+        }
+        _ => unreachable!(),
+    };
+    Ok(())
 }
 
 fn translate_if(
@@ -1013,55 +1020,60 @@ fn translate_if(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    todo!()
-    // let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
-    // let cond = state.pop1();
-    // // cond is expected to be a i32 value
-    // let cond_i1 = builder.ins().neq_imm(cond, Immediate::I32(0), span);
-    // let next_block = builder.create_block();
-    // let (destination, else_data) = if blockty.params.eq(&blockty.results) {
-    //     // It is possible there is no `else` block, so we will only
-    //     // allocate a block for it if/when we find the `else`. For now,
-    //     // we if the condition isn't true, then we jump directly to the
-    //     // destination block following the whole `if...end`. If we do end
-    //     // up discovering an `else`, then we will allocate a block for it
-    //     // and go back and patch the jump.
-    //     let destination = builder.create_block_with_params(blockty.results.clone(), span);
-    //     let branch_inst = builder.ins().cond_br(
-    //         cond_i1,
-    //         next_block,
-    //         &[],
-    //         destination,
-    //         state.peekn(blockty.params.len()),
-    //         span,
-    //     );
-    //     (
-    //         destination,
-    //         ElseData::NoElse {
-    //             branch_inst,
-    //             placeholder: destination,
-    //         },
-    //     )
-    // } else {
-    //     // The `if` type signature is not valid without an `else` block,
-    //     // so we eagerly allocate the `else` block here.
-    //     let destination = builder.create_block_with_params(blockty.results.clone(), span);
-    //     let else_block = builder.create_block_with_params(blockty.params.clone(), span);
-    //     builder.ins().cond_br(
-    //         cond_i1,
-    //         next_block,
-    //         &[],
-    //         else_block,
-    //         state.peekn(blockty.params.len()),
-    //         span,
-    //     );
-    //     builder.seal_block(else_block);
-    //     (destination, ElseData::WithElse { else_block })
-    // };
-    // builder.seal_block(next_block);
-    // builder.switch_to_block(next_block);
-    // state.push_if(destination, else_data, blockty.params.len(), blockty.results.len(), blockty);
-    // Ok(())
+    let blockty = BlockType::from_wasm(blockty, mod_types, diagnostics)?;
+    let cond = state.pop1();
+    // cond is expected to be a i32 value
+    let imm = builder.ins().imm(Immediate::I32(0), span);
+    let cond_i1 = builder.ins().neq(cond, imm, span)?;
+    let next_block = builder.create_block();
+    let (destination, else_data) = if blockty.params.eq(&blockty.results) {
+        // It is possible there is no `else` block, so we will only
+        // allocate a block for it if/when we find the `else`. For now,
+        // we if the condition isn't true, then we jump directly to the
+        // destination block following the whole `if...end`. If we do end
+        // up discovering an `else`, then we will allocate a block for it
+        // and go back and patch the jump.
+        let destination = builder.create_block_with_params(blockty.results.clone(), span);
+        let branch_inst = builder
+            .ins()
+            .cond_br(
+                cond_i1,
+                next_block,
+                [],
+                destination,
+                state.peekn(blockty.params.len()).iter().copied(),
+                span,
+            )?
+            .borrow()
+            .as_ref()
+            .as_operation_ref();
+        (
+            destination,
+            ElseData::NoElse {
+                branch_inst,
+                placeholder: destination,
+            },
+        )
+    } else {
+        // The `if` type signature is not valid without an `else` block,
+        // so we eagerly allocate the `else` block here.
+        let destination = builder.create_block_with_params(blockty.results.clone(), span);
+        let else_block = builder.create_block_with_params(blockty.params.clone(), span);
+        builder.ins().cond_br(
+            cond_i1,
+            next_block,
+            [],
+            else_block,
+            state.peekn(blockty.params.len()).iter().copied(),
+            span,
+        )?;
+        builder.seal_block(else_block);
+        (destination, ElseData::WithElse { else_block })
+    };
+    builder.seal_block(next_block);
+    builder.switch_to_block(next_block);
+    state.push_if(destination, else_data, blockty.params.len(), blockty.results.len(), blockty);
+    Ok(())
 }
 
 fn translate_loop(

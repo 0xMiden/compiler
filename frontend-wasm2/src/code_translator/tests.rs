@@ -1,6 +1,3 @@
-// TODO: remove when completed
-#![allow(unused)]
-
 use core::fmt::Write;
 use std::{any::Any, rc::Rc};
 
@@ -2071,6 +2068,40 @@ fn select_i32() {
                 hir.br block3 ;
             ^block3:
                 hir.ret ;
+            };
+        "#]],
+    )
+}
+
+#[test]
+fn if_else() {
+    check_op(
+        r#"
+        i32.const 2
+        if (result i32)
+            i32.const 3
+        else
+            i32.const 5
+        end
+        drop
+    "#,
+        expect![[r#"
+            builtin.function public @test_wrapper() {
+            ^block2:
+                v0 = hir.constant 2 : i32;
+                v1 = hir.constant 0 : i32;
+                v2 = hir.neq v0, v1 : i1;
+                hir.cond_br block4, block6 v2;
+            ^block3:
+                hir.ret ;
+            ^block4:
+                v4 = hir.constant 3 : i32;
+                hir.br block5 v4;
+            ^block5(v3: i32):
+                hir.br block3 ;
+            ^block6:
+                v5 = hir.constant 5 : i32;
+                hir.br block5 v5;
             };
         "#]],
     )

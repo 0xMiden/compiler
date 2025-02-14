@@ -1,8 +1,5 @@
 //! Data structures for representing parsed Wasm modules.
 
-// TODO: remove this once Wasm CM support is complete
-#![allow(dead_code)]
-
 use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 
 use indexmap::IndexMap;
