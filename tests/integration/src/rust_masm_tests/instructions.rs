@@ -26,7 +26,7 @@ macro_rules! test_bin_op {
                 // Test expected compilation artifacts
                 let artifact_name = format!("{}_{}", stringify!($name), stringify!($a_ty));
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
                 let package = test.compiled_package();
 
@@ -66,7 +66,7 @@ macro_rules! test_unary_op {
                 // Test expected compilation artifacts
                 let artifact_name = format!("{}_{}", stringify!($name), stringify!($op_ty));
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
                 let package = test.compiled_package();
 
@@ -105,7 +105,7 @@ macro_rules! test_func_two_arg {
                 // Test expected compilation artifacts
                 let artifact_name = format!("{}_{}_{}", stringify!($func), stringify!($a_ty), stringify!($b_ty));
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
                 let package = test.compiled_package();
 
