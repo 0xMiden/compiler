@@ -24,7 +24,7 @@ macro_rules! test_bin_op {
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, false, None);
                 // Test expected compilation artifacts
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
                 let package = test.compiled_package();
 
@@ -65,7 +65,7 @@ macro_rules! test_compile_comparison_op {
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, false, None);
                 // Test expected compilation artifacts
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
             }
         });

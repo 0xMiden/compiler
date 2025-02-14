@@ -1,21 +1,17 @@
-(component 
-    ;; Modules
-    (module #neg_felt
-        ;; Constants
-        (const (id 0) 0x00100000)
+builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
+    builtin.module  #[name = #neg_felt] #[visibility = public] {
 
-        ;; Functions
-        (func (export #entrypoint) (param felt) (param felt) (result felt)
-            (block 0 (param v0 felt) (param v1 felt)
-                (let (v3 felt) (sub.unchecked v0 v1))
-                (br (block 1 v3)))
+        builtin.function public @entrypoint(v0: felt, v1: felt) -> felt {
+        ^block3(v0: felt, v1: felt):
+            v3 = hir.sub v0, v1 : felt #[overflow = unchecked];
+            hir.br block4 v3;
+        ^block4(v2: felt):
+            hir.ret v2;
+        };
+        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            (block 1 (param v2 felt)
-                (ret v2))
-        )
-    )
-
-)
+            hir.ret_imm  #[value = 1048576];
+        };
+    };
+};

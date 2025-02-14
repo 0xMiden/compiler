@@ -1,24 +1,27 @@
-(component 
-    ;; Modules
-    (module #test_rust_c284c5e58a865bc45e93bf2024b2c204ef39187b90a2cf9cc04c023ea2f4fe6d
-        ;; Constants
-        (const (id 0) 0x00100000)
+builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-        (global (export #gv1) (id 1) (type i32) (const 0))
-        (global (export #gv2) (id 2) (type i32) (const 0))
+    builtin.module  #[name = #test_rust_c284c5e58a865bc45e93bf2024b2c204ef39187b90a2cf9cc04c023ea2f4fe6d] #[visibility = public] {
 
-        ;; Functions
-        (func (export #entrypoint) (param i32) (result i32)
-            (block 0 (param v0 i32)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (sub.wrapping v2 v0))
-                (br (block 1 v3)))
+        builtin.function public @entrypoint(v0: i32) -> i32 {
+        ^block5(v0: i32):
+            v2 = hir.constant 0 : i32;
+            v3 = hir.sub v2, v0 : i32 #[overflow = wrapping];
+            v4 = hir.sext v3 : i32 #[ty = i32];
+            hir.br block6 v4;
+        ^block6(v1: i32):
+            hir.ret v1;
+        };
+        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            (block 1 (param v1 i32)
-                (ret v1))
-        )
-    )
+            hir.ret_imm  #[value = 1048576];
+        };
+        builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
 
-)
+            hir.ret_imm  #[value = 1048576];
+        };
+        builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
+
+            hir.ret_imm  #[value = 1048576];
+        };
+    };
+};
