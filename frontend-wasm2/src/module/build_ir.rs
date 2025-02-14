@@ -1,6 +1,3 @@
-// TODO: remove when completed
-#![allow(unused)]
-
 use core::mem;
 use std::rc::Rc;
 
@@ -56,7 +53,6 @@ pub fn translate_module_as_component(
     }
     let module_types = module_types_builder.finish();
 
-    // TODO: get proper ns and name (from exported interfaces?)
     let ns = Ident::from("root_ns");
     let name = Ident::from("root");
     let ver = Version::parse("1.0.0").unwrap();
@@ -80,30 +76,6 @@ pub fn translate_module_as_component(
         &context.session.diagnostics,
     );
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
-
-    // TODO: translate core module imports (create empty Components?)
-    //
-    // let mut cb = midenc_hir::ComponentBuilder::new(&context.session.diagnostics);
-    // let module_imports = module.imports();
-    // for import_module_id in module_imports.iter_module_names() {
-    //     if let Some(imports) = module_imports.imported(import_module_id) {
-    //         for ext_func in imports {
-    //             if is_miden_intrinsics_module(ext_func.module.as_symbol()) {
-    //                 // ignore intrinsics imports
-    //                 continue;
-    //             }
-    //             let function_ty = miden_abi_function_type(
-    //                 ext_func.module.as_symbol(),
-    //                 ext_func.function.as_symbol(),
-    //             );
-    //             let component_import =
-    //                 midenc_hir::ComponentImport::MidenAbiImport(MidenAbiImport::new(function_ty));
-    //             cb.add_import(*ext_func, component_import);
-    //         }
-    //     }
-    // }
-    // cb.add_module(module.into()).expect("module is already added");
-
     Ok(component_ref)
 }
 

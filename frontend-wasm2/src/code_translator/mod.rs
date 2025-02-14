@@ -184,7 +184,7 @@ pub fn translate_operator(
             type_index: _,
             table_index: _,
         } => {
-            // TODO:
+            todo!("CallIndirect is not supported yet");
         }
         /******************************* Memory management *********************************/
         Operator::MemoryGrow { .. } => {
