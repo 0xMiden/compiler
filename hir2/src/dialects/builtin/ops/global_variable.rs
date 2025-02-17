@@ -2,8 +2,8 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
-        ConstantLike, InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf,
-        SingleBlock, SingleRegion, UInt8,
+        InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
+        SingleRegion, UInt8,
     },
     AsSymbolRef, Context, Ident, Operation, Report, Spanned, Symbol, SymbolName, SymbolRef,
     SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,
@@ -41,6 +41,13 @@ pub struct GlobalVariable {
     initializer: RegionRef,
     #[default]
     uses: SymbolUseList,
+}
+
+impl GlobalVariable {
+    #[inline(always)]
+    pub fn as_global_var_ref(&self) -> GlobalVariableRef {
+        unsafe { GlobalVariableRef::from_raw(self) }
+    }
 }
 
 impl Usable for GlobalVariable {
@@ -108,7 +115,6 @@ impl AsSymbolRef for GlobalVariable {
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
 #[operation(
     dialect = BuiltinDialect,
-    traits(ConstantLike),
     implements(InferTypeOpInterface)
 )]
 pub struct GlobalSymbol {

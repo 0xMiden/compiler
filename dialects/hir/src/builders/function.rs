@@ -1,6 +1,6 @@
 use midenc_hir2::{
     dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Felt, Immediate, Listener,
-    OpBuilder, Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type,
+    Op, OpBuilder, Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type,
     UnsafeIntrusiveEntityRef, Usable, ValueRef,
 };
 
@@ -312,7 +312,6 @@ pub trait InstBuilder: InstBuilderBase {
             offset,
         })
     }
-    */
 
     /// Get the address of a global variable whose symbol is `name`
     ///
@@ -324,7 +323,6 @@ pub trait InstBuilder: InstBuilderBase {
         // self.symbol_relative_addr(name, 0, ty, span)
     }
 
-    /*
     /// Same semantics as `symbol_addr`, but applies a constant offset to the address of the given
     /// symbol.
     ///
@@ -343,19 +341,21 @@ pub trait InstBuilder: InstBuilderBase {
         });
         into_first_result!(self.Global(gv, ty, span))
     }
-    */
 
     /// Loads a value of type `ty` from the global variable whose symbol is `name`.
     ///
     /// NOTE: There is no requirement that the memory contents at the given symbol
     /// contain a valid value of type `ty`. That is left entirely up the caller to
     /// guarantee at a higher level.
-    fn load_symbol<S: AsRef<str>>(&self, name: S, ty: Type, span: SourceSpan) -> ValueRef {
-        todo!()
-        // self.load_symbol_relative(name, ty, 0, span)
+    fn load_symbol<S: AsRef<str>>(
+        mut self,
+        name: S,
+        ty: Type,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        self.load_symbol_relative(name, ty, 0, span)
     }
 
-    /*
     /// Same semantics as `load_symbol`, but a constant offset is applied to the address before
     /// issuing the load.
     fn load_symbol_relative<S: AsRef<str>>(
@@ -364,7 +364,7 @@ pub trait InstBuilder: InstBuilderBase {
         ty: Type,
         offset: i32,
         span: SourceSpan,
-    ) -> Value {
+    ) -> Result<ValueRef, Report> {
         let base = self.data_flow_graph_mut().create_global_value(GlobalValueData::Symbol {
             name: Ident::new(Symbol::intern(name.as_ref()), span),
             offset: 0,
@@ -372,52 +372,55 @@ pub trait InstBuilder: InstBuilderBase {
         self.load_global_relative(base, ty, offset, span)
     }
 
+    */
+
     /// Loads a value of type `ty` from the address represented by `addr`
     ///
     /// NOTE: There is no requirement that the memory contents at the given symbol
     /// contain a valid value of type `ty`. That is left entirely up the caller to
     /// guarantee at a higher level.
-    fn load_global(self, addr: GlobalValue, ty: Type, span: SourceSpan) -> Value {
-        self.load_global_relative(addr, ty, 0, span)
+    fn load_global(
+        mut self,
+        addr: GlobalVariableRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        self.load_global_relative(addr, 0, span)
     }
 
-    /// Same semantics as `load_global_relative`, but a constant offset is applied to the address
-    /// before issuing the load.
+    /// Loads a value from a global variable.
+    ///
+    /// A constant offset is applied to the address before issuing the load.
     fn load_global_relative(
         mut self,
-        base: GlobalValue,
-        ty: Type,
+        base: GlobalVariableRef,
         offset: i32,
         span: SourceSpan,
-    ) -> Value {
-        if let GlobalValueData::Load {
-            ty: ref base_ty, ..
-        } = self.data_flow_graph().global_value(base)
-        {
-            // If the base global is a load, the target address cannot be computed until runtime,
-            // so expand this to the appropriate sequence of instructions to do so in that case
-            assert!(base_ty.is_pointer(), "expected global value to have pointer type");
-            let base_ty = base_ty.clone();
-            let base = self.ins().load_global(base, base_ty.clone(), span);
-            let addr = self.ins().ptrtoint(base, Type::U32, span);
-            let offset_addr = if offset >= 0 {
-                self.ins().add_imm_checked(addr, Immediate::U32(offset as u32), span)
-            } else {
-                self.ins().sub_imm_checked(addr, Immediate::U32(offset.unsigned_abs()), span)
-            };
-            let ptr = self.ins().inttoptr(offset_addr, base_ty, span);
-            self.load(ptr, span)
-        } else {
-            // The global address can be computed statically
-            let gv = self.data_flow_graph_mut().create_global_value(GlobalValueData::Load {
-                base,
-                offset,
-                ty: ty.clone(),
-            });
-            into_first_result!(self.Global(gv, ty, span))
-        }
+    ) -> Result<ValueRef, Report> {
+        // let base = &base.borrow();
+        let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
+        let global_sym = gs_builder(base, offset)?;
+        let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
+        let ty = base.borrow().ty().clone();
+        let typed_addr = self.ins().bitcast(addr, Type::Ptr(ty.into()), span)?;
+        self.load(typed_addr, span)
     }
 
+    /// Stores `value` to the global variable
+    fn store_global(
+        mut self,
+        global_var: GlobalVariableRef,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Store>, Report> {
+        let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
+        let global_sym = gs_builder(global_var, 0)?;
+        let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
+        let ty = global_var.borrow().ty().clone();
+        let typed_addr = self.ins().bitcast(addr, Type::Ptr(ty.into()), span)?;
+        self.store(typed_addr, value, span)
+    }
+
+    /*
 
     /// Computes an address relative to the pointer produced by `base`, by applying an offset
     /// given by multiplying `offset` * the size in bytes of `unit_ty`.
@@ -432,7 +435,7 @@ pub trait InstBuilder: InstBuilderBase {
         offset: i32,
         unit_ty: Type,
         span: SourceSpan,
-    ) -> Value {
+    ) -> Result<ValueRef, Report> {
         if let GlobalValueData::Load {
             ty: ref base_ty, ..
         } = self.data_flow_graph().global_value(base)
@@ -619,7 +622,7 @@ pub trait InstBuilder: InstBuilderBase {
 
     /// Cast `arg` to a value of type `ty`
     ///
-    /// NOTE: This is only valid for numeric to numeric, or pointer to pointer casts.
+    /// NOTE: This is only valid for numeric to numeric.
     /// For numeric to pointer, or pointer to numeric casts, use `inttoptr` and `ptrtoint`
     /// respectively.
     fn cast(&mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
