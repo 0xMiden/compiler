@@ -54,7 +54,10 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 
     pub fn create_block(&mut self) -> BlockRef {
-        self.builder.create_block(self.body_region(), None, &[])
+        let ip = *self.builder.insertion_point();
+        let block = self.builder.create_block(self.body_region(), None, &[]);
+        self.builder.restore_insertion_point(ip);
+        block
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
