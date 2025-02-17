@@ -1,7 +1,7 @@
 use crate::{
     constants::ConstantData,
     dialects::builtin::{
-        Function, FunctionRef, GlobalVariable, GlobalVariableBuilder, ModuleRef,
+        Function, FunctionRef, GlobalVariable, GlobalVariableBuilder, GlobalVariableRef, ModuleRef,
         PrimFunctionBuilder, Segment, SegmentBuilder,
     },
     Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
@@ -72,7 +72,14 @@ impl ModuleBuilder {
         ty: Type,
     ) -> Result<UnsafeIntrusiveEntityRef<GlobalVariable>, Report> {
         let builder = GlobalVariableBuilder::new(&mut self.builder, name.span());
-        builder(name, visibility, ty)
+        let global_var_ref = builder(name, visibility, ty)?;
+        let is_new = self
+            .module
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(global_var_ref, crate::ProgramPoint::Invalid);
+        assert!(is_new, "global variable with the name {name} already exists");
+        Ok(global_var_ref)
     }
 
     pub fn define_data_segment(
@@ -98,5 +105,15 @@ impl ModuleBuilder {
             }
             None => None,
         }
+    }
+
+    pub fn get_global_var(&self, name: SymbolName) -> Option<GlobalVariableRef> {
+        self.module.borrow().get(name).and_then(|gv_symbol| {
+            let op_ref = gv_symbol.borrow().as_operation_ref();
+            op_ref
+                .borrow()
+                .downcast_ref::<GlobalVariable>()
+                .map(|gv| gv.as_global_var_ref())
+        })
     }
 }

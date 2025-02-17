@@ -416,7 +416,7 @@ impl Operation {
         symbol: impl AsSymbolRef,
     ) {
         let attr_name = attr_name.into();
-        let mut symbol = symbol.as_symbol_ref();
+        let symbol = symbol.as_symbol_ref();
 
         // Do not allow self-references
         //
@@ -458,7 +458,10 @@ impl Operation {
             self.set_attribute(attr_name, Some(attr));
         }
 
-        symbol.borrow_mut().insert_use(user);
+        // TODO: restore after https://github.com/0xPolygonMiden/compiler/issues/403
+        // is fixed
+        //
+        // symbol.borrow_mut().insert_use(user);
     }
 }
 

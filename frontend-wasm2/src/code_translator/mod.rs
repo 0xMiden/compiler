@@ -13,7 +13,7 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use midenc_dialect_hir::{InstBuilder, SwitchCase};
+use midenc_dialect_hir::{InstBuilder, InstBuilderBase, SwitchCase};
 use midenc_hir::{
     cranelift_entity::packed_option::ReservedValue,
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan},
@@ -21,8 +21,9 @@ use midenc_hir::{
     Type::*,
 };
 use midenc_hir2::{
-    dialects::builtin::Function, traits::InferTypeOpInterface, BlockRef, CallableOpInterface,
-    Immediate, UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::builtin::{Function, GlobalSymbolBuilder, GlobalVariable},
+    traits::InferTypeOpInterface,
+    BlockRef, CallableOpInterface, Immediate, Op, SymbolTable, UnsafeIntrusiveEntityRef, ValueRef,
 };
 use wasmparser::{MemArg, Operator};
 
@@ -101,16 +102,20 @@ pub fn translate_operator(
         Operator::GlobalGet { global_index } => {
             let global_index = GlobalIndex::from_u32(*global_index);
             let name = module.global_name(global_index);
-            let ty = ir_type(module.globals[global_index].ty, diagnostics)?;
-            state.push1(builder.ins().load_symbol(name.as_str(), ty, span));
+            let gv = module_state.module_builder.get_global_var(name).unwrap_or_else(|| {
+                panic!("global var not found: index={}, name={}", global_index.as_u32(), name)
+            });
+            let val = builder.ins().load_global(gv, span)?;
+            state.push1(val);
         }
         Operator::GlobalSet { global_index } => {
             let global_index = GlobalIndex::from_u32(*global_index);
             let name = module.global_name(global_index);
-            let ty = ir_type(module.globals[global_index].ty, diagnostics)?;
-            let ptr = builder.ins().symbol_addr(name.as_str(), Ptr(ty.clone().into()), span);
-            let val = state.pop1();
-            builder.ins().store(ptr, val, span)?;
+            let gv = module_state.module_builder.get_global_var(name).unwrap_or_else(|| {
+                panic!("global var not found: index={}, name={}", global_index.as_u32(), name)
+            });
+            let arg = state.pop1();
+            builder.ins().store_global(gv, arg, span)?;
         }
         /********************************* Stack misc **************************************/
         Operator::Drop => _ = state.pop1(),
