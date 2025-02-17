@@ -704,6 +704,22 @@ impl Block {
         }
     }
 
+    /// Splice the body of `block` to the end of `self`, updating the parent of all spliced ops.
+    ///
+    /// It is up to the caller to ensure that this operation produces valid IR.
+    pub fn splice_block(&mut self, block: &mut Self) {
+        let mut ops = block.body_mut().take();
+        let this = self.as_block_ref();
+        {
+            let mut cursor = ops.front_mut();
+            while let Some(op) = cursor.as_pointer() {
+                cursor.move_next();
+                Operation::on_inserted_into_parent(op, this);
+            }
+        }
+        self.body.back_mut().splice_after(ops);
+    }
+
     /// Split this block into two blocks before the specified operation
     ///
     /// Note that all operations in the block prior to `before` stay as part of the original block,
