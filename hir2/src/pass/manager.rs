@@ -184,6 +184,28 @@ impl PassManager {
     fn dump_statistics(&mut self, out: &mut dyn core::fmt::Write) -> core::fmt::Result {
         self.pm.print_statistics(out, self.statistics.unwrap_or_default())
     }
+
+    pub fn nest(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
+        self.pm.nest(nested)
+    }
+
+    /// Nest a new op-specific pass manager (for the op with the given name), under this pass manager.
+    pub fn nest_with_type(&mut self, nested_name: &str) -> NestedOpPassManager<'_> {
+        self.pm.nest_with_type(nested_name)
+    }
+
+    /// Nest a new op-agnostic ("any") pass manager under this pass manager.
+    pub fn nest_any(&mut self) -> NestedOpPassManager<'_> {
+        self.pm.nest_any()
+    }
+
+    pub fn add_pass(&mut self, pass: Box<dyn OperationPass>) {
+        self.pm.add_pass(pass)
+    }
+
+    pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
+        self.pm.add_nested_pass::<T>(pass)
+    }
 }
 
 /// This class represents a pass manager that runs passes on either a specific
