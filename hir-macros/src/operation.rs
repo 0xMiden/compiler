@@ -6,7 +6,7 @@ use darling::{
 };
 use inflector::Inflector;
 use quote::{format_ident, quote, ToTokens};
-use syn::{spanned::Spanned, Ident, Token};
+use syn::{parse_quote, spanned::Spanned, Ident, Token};
 
 pub fn derive_operation(input: syn::DeriveInput) -> darling::Result<proc_macro2::TokenStream> {
     let op = OpDefinition::from_derive_input(&input)?;
@@ -2355,12 +2355,9 @@ impl OpCreateParam {
                 SymbolType::Any | SymbolType::Callable | SymbolType::Trait(_) => {
                     vec![make_type(format!("T{}", name.to_string().to_pascal_case()))]
                 }
-                SymbolType::Concrete(ty) => vec![syn::Type::Reference(syn::TypeReference {
-                    and_token: Default::default(),
-                    lifetime: None,
-                    mutability: None,
-                    elem: Box::new(ty.clone()),
-                })],
+                SymbolType::Concrete(ty) => {
+                    vec![parse_quote! { ::midenc_hir2::UnsafeIntrusiveEntityRef<#ty> }]
+                }
             },
         }
     }

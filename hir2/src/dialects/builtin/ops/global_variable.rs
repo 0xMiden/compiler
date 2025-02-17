@@ -115,7 +115,6 @@ impl AsSymbolRef for GlobalVariable {
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
 #[operation(
     dialect = BuiltinDialect,
-    // traits(ConstantLike),
     implements(InferTypeOpInterface)
 )]
 pub struct GlobalSymbol {

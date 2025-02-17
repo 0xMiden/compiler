@@ -396,11 +396,11 @@ pub trait InstBuilder: InstBuilderBase {
         offset: i32,
         span: SourceSpan,
     ) -> Result<ValueRef, Report> {
-        let base = &base.borrow();
+        // let base = &base.borrow();
         let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
         let global_sym = gs_builder(base, offset)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
-        let ty = base.ty().clone();
+        let ty = base.borrow().ty().clone();
         let typed_addr = self.ins().bitcast(addr, Type::Ptr(ty.into()), span)?;
         self.load(typed_addr, span)
     }
@@ -412,11 +412,10 @@ pub trait InstBuilder: InstBuilderBase {
         value: ValueRef,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Store>, Report> {
-        let global_var = &global_var.borrow();
         let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
         let global_sym = gs_builder(global_var, 0)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
-        let ty = global_var.ty().clone();
+        let ty = global_var.borrow().ty().clone();
         let typed_addr = self.ins().bitcast(addr, Type::Ptr(ty.into()), span)?;
         self.store(typed_addr, value, span)
     }
