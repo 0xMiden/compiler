@@ -1,13 +1,13 @@
 use alloc::{collections::BTreeMap, rc::Rc};
 use core::cell::{Cell, Ref, RefCell};
 
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 use super::{DomTreeBase, DomTreeNode, DomTreeRoots};
 use crate::{
     cfg::{self, Graph, GraphDiff, Inverse},
     formatter::{DisplayOptional, DisplayValues},
-    BlockRef, EntityWithId, Region,
+    BlockRef, EntityId, EntityWithId, Region,
 };
 
 /// [SemiNCAInfo] provides functionality for constructing a dominator tree for a control-flow graph
@@ -33,8 +33,7 @@ use crate::{
 ///   https://arxiv.org/pdf/1604.02711.pdf
 pub struct SemiNCA<const IS_POST_DOM: bool> {
     /// Number to node mapping is 1-based.
-    virtual_node: RefCell<NodeInfo>,
-    num_to_node: SmallVec<[BlockRef; 64]>,
+    num_to_node: SmallVec<[Option<BlockRef>; 64]>,
     /// Infos are mapped to nodes using block indices
     node_infos: RefCell<SmallVec<[NodeInfo; 64]>>,
     batch_updates: Option<BatchUpdateInfo<IS_POST_DOM>>,
@@ -153,8 +152,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     /// Obtain a fresh [SemiNCA] instance, using the provided set of [BatchUpdateInfo].
     pub fn new(batch_updates: Option<BatchUpdateInfo<IS_POST_DOM>>) -> Self {
         Self {
-            virtual_node: Default::default(),
-            num_to_node: Default::default(),
+            num_to_node: smallvec![None],
             node_infos: Default::default(),
             batch_updates,
         }
@@ -164,18 +162,19 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     pub fn clear(&mut self) {
         // Don't reset the pointer to BatchUpdateInfo here -- if there's an update in progress,
         // we need this information to continue it.
-        self.virtual_node = Default::default();
         self.num_to_node.clear();
+        self.num_to_node.push(None);
         self.node_infos.get_mut().clear();
     }
 
     /// Look up information about a block in the Semi-NCA state
     pub fn node_info(&self, block: Option<BlockRef>) -> Ref<'_, NodeInfo> {
         match block {
-            None => self.virtual_node.borrow(),
+            None => Ref::map(self.node_infos.borrow(), |ni| {
+                ni.first().expect("no virtual node present")
+            }),
             Some(block) => {
-                let id = block.borrow().id();
-                let index = id.as_u32() as usize;
+                let index = block.borrow().id().as_usize() + 1;
 
                 if index >= self.node_infos.borrow().len() {
                     self.node_infos.borrow_mut().resize_with(index + 1, NodeInfo::default);
@@ -189,10 +188,9 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     /// Get a mutable reference to the stored informaton for `block`
     pub fn node_info_mut(&mut self, block: Option<BlockRef>) -> &mut NodeInfo {
         match block {
-            None => self.virtual_node.get_mut(),
+            None => self.node_infos.get_mut().get_mut(0).expect("no virtual node present"),
             Some(block) => {
-                let id = block.borrow().id();
-                let index = id.as_u32() as usize;
+                let index = block.borrow().id().as_usize() + 1;
 
                 let node_infos = self.node_infos.get_mut();
                 if index >= node_infos.len() {
@@ -277,7 +275,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
             block_info.num.set(last_num);
             block_info.semi.set(last_num);
             block_info.label.set(last_num);
-            self.num_to_node.push(block);
+            self.num_to_node.push(Some(block));
 
             let mut successors = if const { REVERSE != IS_POST_DOM } {
                 get_children_with_batch_updates::<true, IS_POST_DOM>(
@@ -321,9 +319,9 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         v: u32,
         last_linked: u32,
         eval_stack: &mut SmallVec<[&'a NodeInfo; 32]>,
-        num_to_info: &'b [Ref<'b, NodeInfo>],
+        num_to_info: &'b [Option<Ref<'b, NodeInfo>>],
     ) -> u32 {
-        let mut v_info = &*num_to_info[v as usize];
+        let mut v_info = &**num_to_info[v as usize].as_ref().unwrap();
         if v_info.parent.get() < last_linked {
             return v_info.label.get();
         }
@@ -331,7 +329,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         // Store ancestors except the last (root of a virtual tree) into a stack.
         eval_stack.clear();
         loop {
-            let parent = &num_to_info[v_info.parent.get() as usize];
+            let parent = &**num_to_info[v_info.parent.get() as usize].as_ref().unwrap();
             eval_stack.push(v_info);
             v_info = parent;
             if v_info.parent.get() < last_linked {
@@ -342,11 +340,11 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         // Path compression. Point each vertex's `parent` to the root and update its `label` if any
         // of its ancestors `label` has a smaller `semi`
         let mut p_info = v_info;
-        let mut p_label_info = &*num_to_info[p_info.label.get() as usize];
+        let mut p_label_info = &**num_to_info[p_info.label.get() as usize].as_ref().unwrap();
         while let Some(info) = eval_stack.pop() {
             v_info = info;
             v_info.parent.set(p_info.parent.get());
-            let v_label_info = &*num_to_info[v_info.label.get() as usize];
+            let v_label_info = &**num_to_info[v_info.label.get() as usize].as_ref().unwrap();
             if p_label_info.semi.get() < v_label_info.semi.get() {
                 v_info.label.set(p_info.label.get());
             } else {
@@ -361,27 +359,31 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     /// This function requires DFS to be run before calling it.
     pub fn run(&mut self) {
         let next_num = self.num_to_node.len();
-        let mut num_to_info = SmallVec::<[Ref<'_, NodeInfo>; 8]>::default();
+        let mut num_to_info = SmallVec::<[Option<Ref<'_, NodeInfo>>; 8]>::default();
         num_to_info.reserve(next_num);
+        num_to_info.push(None);
 
         // Initialize idoms to spanning tree parents
-        for i in 0..next_num {
-            let v = self.num_to_node[i];
+        for i in 1..next_num {
+            let v = self.num_to_node[i].unwrap();
             let v_info = self.node_info(Some(v));
-            v_info.idom.set(Some(self.num_to_node[v_info.parent.get() as usize]));
-            num_to_info.push(v_info);
+            v_info.idom.set(self.num_to_node[v_info.parent() as usize]);
+            assert_eq!(i, num_to_info.len());
+            num_to_info.push(Some(v_info));
         }
 
         // Step 1: Calculate the semi-dominators of all vertices
         let mut eval_stack = SmallVec::<[&NodeInfo; 32]>::default();
-        for i in (2..(next_num - 1)).rev() {
-            let w_info = &num_to_info[i];
+        for i in (2..next_num).rev() {
+            let w_info = num_to_info[i].as_ref().unwrap();
 
             // Initialize the semi-dominator to point to the parent node.
-            w_info.semi.set(w_info.parent.get());
+            w_info.semi.set(w_info.parent());
             for n in w_info.reverse_children.iter().copied() {
                 let semi_u = num_to_info
                     [Self::eval(n, i as u32 + 1, &mut eval_stack, &num_to_info) as usize]
+                    .as_ref()
+                    .unwrap()
                     .semi
                     .get();
                 if semi_u < w_info.semi.get() {
@@ -397,9 +399,9 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         // Note that the parents were stored in IDoms and later got invalidated during path
         // compression in `eval`
         for i in 2..next_num {
-            let w_info = &num_to_info[i];
+            let w_info = num_to_info[i].as_ref().unwrap();
             assert_ne!(w_info.semi.get(), 0);
-            let s_dom_num = num_to_info[w_info.semi.get() as usize].num.get();
+            let s_dom_num = num_to_info[w_info.semi.get() as usize].as_ref().unwrap().num.get();
             let mut w_idom_candidate = w_info.idom();
             loop {
                 let w_idom_candidate_info = self.node_info(w_idom_candidate);
@@ -422,14 +424,15 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     /// This function maps a null CFG node to the virtual root tree node.
     fn add_virtual_root(&mut self) {
         if const { IS_POST_DOM } {
-            assert!(self.num_to_node.is_empty(), "SemiNCAInfo must be freshly constructed");
+            assert_eq!(self.num_to_node.len(), 1, "SemiNCAInfo must be freshly constructed");
 
-            let info = self.virtual_node.get_mut();
+            let info = self.node_info_mut(None);
             info.num.set(1);
             info.semi.set(1);
             info.label.set(1);
 
             // num_to_node[1] = None
+            self.num_to_node.push(None);
         }
     }
 
@@ -490,7 +493,10 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
                 log::trace!("found a new trivial root: {}", n.borrow().id());
                 match snca.num_to_node.get(num as usize) {
                     None => log::trace!("last visited node: None"),
-                    Some(last_visited) => {
+                    Some(None) => {
+                        log::trace!("last visited virtual node")
+                    }
+                    Some(Some(last_visited)) => {
                         log::trace!("last visited node: {}", last_visited.borrow().id())
                     }
                 }
@@ -591,24 +597,34 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
                         Some(succ_order),
                     );
                     let furthest_away = snca.num_to_node[new_num as usize];
-                    log::trace!(
-                        "found a new furthest away node (non-trivial root): {furthest_away}",
-                    );
-                    roots.push(Some(furthest_away));
+                    match furthest_away {
+                        None => log::trace!(
+                            "found a new furthest away node (non-trivial root): virtual node"
+                        ),
+                        Some(furthest_away) => {
+                            log::trace!(
+                                "found a new furthest away node (non-trivial root): \
+                                 {furthest_away}"
+                            );
+                        }
+                    }
+                    roots.push(furthest_away);
                     log::trace!("previous `num`: {num}, new `num` {new_num}");
                     log::trace!("removing DFS info..");
                     for i in ((num + 1)..=new_num).rev() {
                         let n = snca.num_to_node[i as usize];
-                        log::trace!("removing DFS info for {n}");
-                        *snca.node_info_mut(Some(n)) = Default::default();
+                        match n {
+                            None => log::trace!("removing DFS info for virtual node"),
+                            Some(n) => log::trace!("removing DFS info for {n}"),
+                        }
+                        *snca.node_info_mut(n) = Default::default();
                         snca.num_to_node.pop();
                     }
                     let prev_num = num;
                     log::trace!("running reverse depth-first search");
-                    num =
-                        snca.run_dfs::<false, _>(Some(furthest_away), num, always_descend, 1, None);
+                    num = snca.run_dfs::<false, _>(furthest_away, num, always_descend, 1, None);
                     for i in (prev_num + 1)..num {
-                        match snca.num_to_node.get(i as usize) {
+                        match snca.num_to_node[i as usize] {
                             None => log::trace!("found virtual node"),
                             Some(n) => log::trace!("found node {n}"),
                         }
@@ -620,7 +636,10 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         log::trace!("total: {total}, num: {num}");
         log::trace!("discovered cfg nodes:");
         for i in 0..num {
-            log::trace!("    {i}: {}", &snca.num_to_node[i as usize]);
+            match &snca.num_to_node[i as usize] {
+                None => log::trace!("    {i}: virtual node"),
+                Some(n) => log::trace!("    {i}: {n}"),
+            }
         }
 
         assert_eq!(total + 1, num, "everything should have been visited");
@@ -672,11 +691,11 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
             let num = snca.run_dfs::<true, _>(root, 0, always_descend, 0, None);
             // Skip the start node and begin from the second one (note that DFS uses 1-based indexing)
             for x in 2..(num as usize) {
-                let n = &snca.num_to_node[x];
+                let n = snca.num_to_node[x].unwrap();
 
                 // If we found another root in a (forward) DFS walk, remove the current root from
                 // the set of roots, as it is reverse-reachable from the other one.
-                if roots.iter().any(|r| r.as_ref().is_some_and(|root| root == n)) {
+                if roots.iter().any(|r| r.as_ref().is_some_and(|root| root == &n)) {
                     log::trace!("forward DFS walk found another root {n}");
                     log::trace!("removing root {}", DisplayOptional(root.as_ref()));
                     roots.swap_remove(root_index);
@@ -714,21 +733,21 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         attach_to: Rc<DomTreeNode>,
     ) {
         // Attach the first unreachable block to `attach_to`
-        self.node_info(Some(self.num_to_node[0])).idom.set(attach_to.block());
+        self.node_info(self.num_to_node[1]).idom.set(attach_to.block());
         // Loop over all of the discovered blocks in the function...
-        for w in self.num_to_node.iter().copied() {
-            if tree.get(Some(w)).is_some() {
+        for w in self.num_to_node.iter().copied().skip(1) {
+            if tree.get(w).is_some() {
                 // Already computed the node before
                 continue;
             }
 
-            let idom = self.idom(Some(w));
+            let idom = self.idom(w);
 
             // Get or compute the node for the immediate dominator
             let idom_node = self.node_for_block(idom, tree);
 
             // Add a new tree node for this basic block, and link it as a child of idom_node
-            tree.create_node(Some(w), idom_node);
+            tree.create_node(w, idom_node);
         }
     }
 
@@ -737,10 +756,10 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         tree: &mut DomTreeBase<IS_POST_DOM>,
         attach_to: Rc<DomTreeNode>,
     ) {
-        self.node_info(Some(self.num_to_node[0])).idom.set(attach_to.block());
-        for n in self.num_to_node.iter().copied() {
-            let node = tree.get(Some(n)).unwrap();
-            let idom = tree.get(self.node_info(Some(n)).idom());
+        self.node_info(self.num_to_node[1]).idom.set(attach_to.block());
+        for n in self.num_to_node.iter().copied().skip(1) {
+            let node = tree.get(n).unwrap();
+            let idom = tree.get(self.node_info(n).idom());
             node.set_idom(idom);
         }
     }
@@ -1179,9 +1198,10 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         // Erase the unreachable subtree in reverse preorder to process all children before deleting
         // their parent.
         for i in (1..=(last_dfs_num as usize)).rev() {
-            let n = snca.num_to_node[i];
-            log::trace!("erasing node {n}");
-            tree.erase_node(n);
+            if let Some(n) = snca.num_to_node[i] {
+                log::trace!("erasing node {n}");
+                tree.erase_node(n);
+            }
         }
 
         // The affected subtree start at the `to` node -- there's no extra work to do.
