@@ -6,6 +6,18 @@ pub struct StronglyConnectedComponent<G: Graph> {
     nodes: Vec<<G as Graph>::Node>,
 }
 
+impl<G> core::fmt::Debug for StronglyConnectedComponent<G>
+where
+    G: Graph,
+    <G as Graph>::Node: Eq + Clone + core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StronglyConnectedComponent")
+            .field("nodes", &self.nodes)
+            .finish()
+    }
+}
+
 impl<G> Default for StronglyConnectedComponent<G>
 where
     G: Graph,
@@ -98,6 +110,22 @@ pub struct StronglyConnectedComponents<G: Graph> {
     visit_stack: Vec<StackElement<G>>,
 }
 
+impl<G> core::fmt::Debug for StronglyConnectedComponents<G>
+where
+    G: Graph,
+    <G as Graph>::Node: Eq + Clone + core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StronglyConnectedComponents")
+            .field("next_visit_num", &self.next_visit_num)
+            .field("visit_numbers", &self.visit_numbers)
+            .field("node_stack", &self.node_stack)
+            .field("current", &self.current)
+            .field("visit_stack", &self.visit_stack)
+            .finish()
+    }
+}
+
 struct StackElement<G: Graph> {
     // Current node pointer
     node: <G as Graph>::Node,
@@ -107,9 +135,22 @@ struct StackElement<G: Graph> {
     min_visited: usize,
 }
 
+impl<G> core::fmt::Debug for StackElement<G>
+where
+    G: Graph,
+    <G as Graph>::Node: Eq + Clone + core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StackElement")
+            .field("node", &self.node)
+            .field("min_visited", &self.min_visited)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<G, N> StronglyConnectedComponents<G>
 where
-    N: Clone + Eq + core::hash::Hash,
+    N: Clone + Eq + core::hash::Hash + core::fmt::Debug,
     G: Graph<Node = N>,
 {
     pub fn new(graph: &G) -> Self {
@@ -146,14 +187,15 @@ where
 
     /// A single "visit" within the non-recursive DFS traversal
     fn visit_one(&mut self, node: N) {
+        let visit_num = self.next_visit_num;
         self.next_visit_num += 1;
-        self.visit_numbers.insert(node.clone(), self.next_visit_num);
+        self.visit_numbers.insert(node.clone(), visit_num);
         self.node_stack.push(node.clone());
         let next_child = <G as Graph>::children(node.clone());
         self.visit_stack.push(StackElement {
             node,
             next_child,
-            min_visited: self.next_visit_num,
+            min_visited: visit_num,
         });
     }
 
@@ -171,9 +213,7 @@ where
                 }
                 Some(child_num) => {
                     let tos = self.visit_stack.last_mut().unwrap();
-                    if tos.min_visited > child_num {
-                        tos.min_visited = child_num;
-                    }
+                    tos.min_visited = core::cmp::min(tos.min_visited, child_num);
                 }
             }
         }
@@ -191,10 +231,8 @@ where
             assert!(visiting.next_child.next().is_none());
 
             // Propagate min_visited to parent so we can detect the SCC starting node
-            if !self.visit_stack.is_empty()
-                && self.visit_stack.last().unwrap().min_visited > visiting.min_visited
-            {
-                self.visit_stack.last_mut().unwrap().min_visited = visiting.min_visited;
+            if let Some(last) = self.visit_stack.last_mut() {
+                last.min_visited = core::cmp::min(last.min_visited, visiting.min_visited);
             }
 
             if visiting.min_visited != self.visit_numbers[&visiting.node] {
@@ -207,11 +245,11 @@ where
             loop {
                 let node = self.node_stack.pop().unwrap();
                 let should_continue = node != visiting.node;
-                *self.visit_numbers.get_mut(&node).unwrap() = 0;
+                *self.visit_numbers.get_mut(&node).unwrap() = usize::MAX;
                 self.current.push(node);
 
                 if !should_continue {
-                    break;
+                    return;
                 }
             }
         }
@@ -220,7 +258,7 @@ where
 
 impl<G, N> Iterator for StronglyConnectedComponents<G>
 where
-    N: Clone + Eq + core::hash::Hash,
+    N: Clone + Eq + core::hash::Hash + core::fmt::Debug,
     G: Graph<Node = N>,
 {
     type Item = StronglyConnectedComponent<G>;
