@@ -117,7 +117,7 @@ impl Pass for LiftControlFlowToSCF {
 
 /// Implementation of [CFGToSCFInterface] used to lift unstructured control flow operations into
 /// HIR's structured control flow operations.
-pub struct ControlFlowToSCFTransformation;
+struct ControlFlowToSCFTransformation;
 
 impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// Creates an `scf.if` op if `control_flow_cond_op` is a `cf.cond_br` op, or an
@@ -289,6 +289,43 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         Ok(())
     }
 
+    fn create_single_destination_branch(
+        &self,
+        span: midenc_hir2::SourceSpan,
+        builder: &mut midenc_hir2::OpBuilder,
+        _dummy_flag: midenc_hir2::ValueRef,
+        destination: midenc_hir2::BlockRef,
+        arguments: &[midenc_hir2::ValueRef],
+    ) -> Result<(), Report> {
+        let ins = DefaultInstBuilder::new(builder);
+        ins.br(destination, arguments.iter().copied(), span)?;
+
+        Ok(())
+    }
+
+    fn create_conditional_branch(
+        &self,
+        span: midenc_hir2::SourceSpan,
+        builder: &mut midenc_hir2::OpBuilder,
+        condition: midenc_hir2::ValueRef,
+        true_dest: midenc_hir2::BlockRef,
+        true_args: &[midenc_hir2::ValueRef],
+        false_dest: midenc_hir2::BlockRef,
+        false_args: &[midenc_hir2::ValueRef],
+    ) -> Result<(), Report> {
+        let ins = DefaultInstBuilder::new(builder);
+        ins.cond_br(
+            condition,
+            true_dest,
+            true_args.iter().copied(),
+            false_dest,
+            false_args.iter().copied(),
+            span,
+        )?;
+
+        Ok(())
+    }
+
     /// Creates a `ub.poison` op of the given type.
     fn get_undef_value(
         &self,
@@ -309,5 +346,111 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         let ins = DefaultInstBuilder::new(builder);
         let op = ins.unreachable(span)?;
         Ok(op.borrow().as_operation().as_operation_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, format, rc::Rc};
+
+    use midenc_hir2::{
+        dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, Report,
+        Signature, SourceSpan, Type,
+    };
+    use pretty_assertions::assert_str_eq;
+
+    use super::*;
+    use crate::builders::FunctionBuilder;
+
+    #[test]
+    fn cfg_to_scf_lift_simple_conditional() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+
+        let span = SourceSpan::default();
+        let mut function = {
+            let builder = builder.create::<builtin::Function, (_, _)>(span);
+            let name = Ident::new("test".into(), span);
+            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
+            builder(name, signature).unwrap()
+        };
+
+        // Define function body
+        let mut func = function.borrow_mut();
+        let mut builder = FunctionBuilder::new(&mut func, builder);
+
+        let if_is_zero = builder.create_block();
+        let if_is_nonzero = builder.create_block();
+        let exit_block = builder.create_block();
+        let return_val = builder.append_block_param(exit_block, Type::U32, span);
+
+        let block = builder.current_block();
+        let input = block.borrow().arguments()[0].upcast();
+
+        let zero = builder.ins().u32(0, span);
+        let is_zero = builder.ins().eq(input, zero, span)?;
+        builder.ins().cond_br(is_zero, if_is_zero, [], if_is_nonzero, [], span)?;
+
+        builder.switch_to_block(if_is_zero);
+        let a = builder.ins().incr(input, span)?;
+        builder.ins().br(exit_block, [a], span)?;
+
+        builder.switch_to_block(if_is_nonzero);
+        let b = builder.ins().mul(input, input, span)?;
+        builder.ins().br(exit_block, [b], span)?;
+
+        builder.switch_to_block(exit_block);
+        builder.ins().ret(Some(return_val), span)?;
+
+        drop(builder);
+
+        let operation = func.as_operation().as_operation_ref();
+        drop(func);
+
+        // Run transformation on function body
+        let expected_input = "\
+builtin.function public @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v2 = hir.constant 0 : u32;
+    v3 = hir.eq v0, v2 : i1;
+    hir.cond_br block1, block2 v3;
+^block1:
+    v4 = hir.incr v0 : u32;
+    hir.br block3 v4;
+^block2:
+    v5 = hir.mul v0, v0 : u32 #[overflow = checked];
+    hir.br block3 v5;
+^block3(v1: u32):
+    hir.ret v1;
+};";
+        let input = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_input, &input);
+
+        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
+        pm.add_pass(Box::new(LiftControlFlowToSCF));
+        pm.run(operation)?;
+
+        // Verify that the function body now consists of a single `hir.if` operation, followed by
+        // an `hir.return`.
+        let expected_output = "\
+builtin.function public @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v2 = hir.constant 0 : u32;
+    v3 = hir.eq v0, v2 : i1;
+    v8 = hir.if v3 : u32 {
+    ^block1:
+        v4 = hir.incr v0 : u32;
+        hir.yield v4;
+    } {
+    ^block2:
+        v5 = hir.mul v0, v0 : u32 #[overflow = checked];
+        hir.yield v5;
+    };
+    hir.ret v8;
+};";
+        let output = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_output, &output);
+
+        Ok(())
     }
 }

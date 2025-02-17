@@ -334,6 +334,13 @@ pub fn transform_cfg_to_scf(
         worklist.extend(new_regions);
     }
 
+    // Clean up garbage we may have created during the transformation
+    //
+    // NOTE: This is not guaranteed to clean up _everything_ that may be garbage, only things we
+    // have accounted for. Canonicalization and other optimization passes can take care of anything
+    // else that may remain
+    transform_ctx.garbage_collect();
+
     Ok(true)
 }
 

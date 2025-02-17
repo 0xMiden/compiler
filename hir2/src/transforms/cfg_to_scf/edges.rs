@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use super::*;
-use crate::{adt::SmallMap, Block, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
+use crate::{adt::SmallMap, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
 
 /// Type representing an edge in the CFG.
 ///
@@ -38,14 +38,14 @@ impl Edge {
 /// Utility-class for transforming a region to only have one single block for every return-like
 /// operation.
 /// Iterates over a range of all edges from `block` to each of its successors.
-pub struct SuccessorEdges<'a> {
-    block: &'a Block,
+pub struct SuccessorEdges {
+    block: BlockRef,
     num_successors: usize,
 }
 
-impl<'a> SuccessorEdges<'a> {
-    pub fn new(block: &'a Block) -> Self {
-        let num_successors = block.num_successors();
+impl SuccessorEdges {
+    pub fn new(block: BlockRef) -> Self {
+        let num_successors = block.borrow().num_successors();
         Self {
             block,
             num_successors,
@@ -53,14 +53,14 @@ impl<'a> SuccessorEdges<'a> {
     }
 }
 
-impl Iterator for SuccessorEdges<'_> {
+impl Iterator for SuccessorEdges {
     type Item = Edge;
 
     fn next(&mut self) -> Option<Self::Item> {
         let successor_index = self.num_successors.checked_sub(1)?;
         self.num_successors = successor_index;
         Some(Edge {
-            from_block: self.block.as_block_ref(),
+            from_block: self.block,
             successor_index,
         })
     }

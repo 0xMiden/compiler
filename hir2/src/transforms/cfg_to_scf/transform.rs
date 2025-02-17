@@ -9,8 +9,8 @@ use super::{
 use crate::{
     adt::{SmallMap, SmallSet},
     dominance::{DominanceInfo, PreOrderDomTreeIter},
-    Block, BlockRef, Builder, Context, EntityWithParent, FxHashMap, OpBuilder, Operation,
-    OperationRef, Region, RegionRef, Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
+    Block, BlockRef, Builder, Context, EntityWithParent, FxHashMap, OpBuilder, OperationRef,
+    Region, RegionRef, Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
 };
 
 /// This type represents the necessary context required for performing the control flow lifting
@@ -133,6 +133,21 @@ impl<'a> TransformationContext<'a> {
         result
     }
 
+    pub fn garbage_collect(&mut self) {
+        // If any of the temporary switch values we created are unused, remove them now
+        for value in self.switch_value_cache.drain(..).flatten() {
+            let mut defining_op = {
+                let val = value.borrow();
+                if val.is_used() {
+                    continue;
+                }
+                val.get_defining_op().unwrap()
+            };
+
+            defining_op.borrow_mut().erase();
+        }
+    }
+
     /// Transforms the region to only have a single block for every kind of return-like operation that
     /// all previous occurrences of the return-like op branch to.
     ///
@@ -151,6 +166,7 @@ impl<'a> TransformationContext<'a> {
             let block = block_ref.borrow();
             if block.num_successors() == 0 {
                 let terminator = block.terminator().unwrap();
+                drop(block);
                 self.combine_exit(terminator)?;
             }
 
@@ -173,13 +189,13 @@ impl<'a> TransformationContext<'a> {
         use hashbrown::hash_map::Entry;
 
         let key = ReturnLikeOpKey(return_like_op_ref);
-        let mut return_like_op = return_like_op_ref.borrow_mut();
-
         match self.return_like_to_combined_exit.entry(key) {
             Entry::Occupied(entry) => {
                 if OperationRef::ptr_eq(&entry.key().0, &return_like_op_ref) {
                     return Ok(());
                 }
+
+                let mut return_like_op = return_like_op_ref.borrow_mut();
 
                 let exit_block = *entry.get();
                 let mut builder = OpBuilder::new(self.context.clone());
@@ -200,6 +216,7 @@ impl<'a> TransformationContext<'a> {
                 return_like_op.erase();
             }
             Entry::Vacant(entry) => {
+                let mut return_like_op = return_like_op_ref.borrow_mut();
                 let operands = return_like_op.operands().all();
                 let args =
                     SmallVec::<[Type; 2]>::from_iter(operands.iter().map(|o| o.borrow().ty()));
@@ -221,9 +238,8 @@ impl<'a> TransformationContext<'a> {
                     &operands,
                 )?;
 
+                return_like_op.move_to(crate::ProgramPoint::at_end_of(exit_block));
                 let exit_block = exit_block.borrow();
-                let exit_terminator = exit_block.back().unwrap();
-                return_like_op.move_to(crate::ProgramPoint::before(exit_terminator));
                 return_like_op.set_operands(
                     exit_block.arguments().iter().copied().map(|arg| arg as ValueRef),
                 );
@@ -368,17 +384,7 @@ impl<'a> TransformationContext<'a> {
             loop_header.borrow_mut().replace_all_uses_with(new_loop_parent_block_ref);
 
             // Merge the exit block right after the loop operation.
-            let mut new_loop_parent_block = new_loop_parent_block_ref.borrow_mut();
-            let ops = new_loop_parent_block.body_mut();
-            let mut spliced_ops = exit_block.body_mut().take();
-            {
-                let mut cursor = spliced_ops.front_mut();
-                while let Some(op) = cursor.as_pointer() {
-                    cursor.move_next();
-                    Operation::on_inserted_into_parent(op, new_loop_parent_block_ref);
-                }
-            }
-            ops.back_mut().splice_after(spliced_ops);
+            new_loop_parent_block_ref.borrow_mut().splice_block(&mut exit_block);
 
             exit_block.erase();
         }
@@ -393,18 +399,20 @@ impl<'a> TransformationContext<'a> {
         &mut self,
         mut region_entry: BlockRef,
     ) -> Result<SmallVec<[BlockRef; 4]>, Report> {
-        let mut region_entry_block = region_entry.borrow_mut();
-        let num_successors = region_entry_block.num_arguments();
+        let num_successors = region_entry.borrow().num_successors();
 
         // Trivial region.
         if num_successors == 0 {
             return Ok(Default::default());
         }
 
+        // Single successor we can just splice on to the entry block.
         if num_successors == 1 {
-            // Single successor we can just splice together.
+            let region_entry_block = region_entry.borrow();
             let mut successor = region_entry_block.get_successor(0);
             let mut succ = successor.borrow_mut();
+            // Replace all uses of the successor block arguments (if any) with the operands of the
+            // block terminator
             let mut entry_terminator = region_entry_block.terminator().unwrap();
             let mut terminator = entry_terminator.borrow_mut();
             let terminator_succ = terminator.successor(0);
@@ -414,26 +422,24 @@ impl<'a> TransformationContext<'a> {
                 let mut old_value = old_value.borrow_mut();
                 old_value.replace_all_uses_with(new_value.borrow().as_value_ref());
             }
+
+            // Erase the original region entry block terminator, as it will be replaced with the
+            // contents of the successor block once spliced
+            //
+            // NOTE: In order to erase the terminator, we must not be borrowing its parent block
+            drop(region_entry_block);
             terminator.erase();
 
-            let region_entry_body = region_entry_block.body_mut();
-            let spliced_ops = {
-                let mut ops = succ.body_mut().take();
-                let mut cursor = ops.front_mut();
-                while let Some(op) = cursor.as_pointer() {
-                    cursor.move_next();
-                    Operation::on_inserted_into_parent(op, region_entry);
-                }
-                ops
-            };
-            region_entry_body.back_mut().splice_after(spliced_ops);
+            // Splice the operations of `succ` to `region_entry`
+            region_entry.borrow_mut().splice_block(&mut succ);
 
+            // Erase the successor block now that we have emptied it
             succ.erase();
 
             return Ok(smallvec![region_entry]);
         }
 
-        // Split the CFG into "#numSuccessor + 1" regions.
+        // Split the CFG into "#num_successors + 1" regions.
         //
         // For every edge to a successor, the blocks it solely dominates are determined and become
         // the region following that edge. The last region is the continuation that follows the
@@ -444,46 +450,48 @@ impl<'a> TransformationContext<'a> {
         let mut successor_branch_regions = SmallVec::<[SmallVec<[BlockRef; 2]>; 2]>::default();
         successor_branch_regions.resize_with(num_successors, Default::default);
 
-        let terminator = region_entry_block.terminator().unwrap();
-        let terminator = terminator.borrow();
-        for (block_list, succ) in
-            successor_branch_regions.iter_mut().zip(terminator.successor_iter())
+        let terminator = region_entry.borrow().terminator().unwrap();
         {
-            // If the region entry is not the only predecessor, then the edge does not dominate the
-            // block it leads to.
-            let succ_operand = succ.dest.borrow();
-            let dest = succ_operand.block.borrow();
-            if dest
-                .get_single_predecessor()
-                .is_none_or(|pred| !BlockRef::ptr_eq(&region_entry, &pred))
+            let terminator = terminator.borrow();
+            for (block_list, succ) in
+                successor_branch_regions.iter_mut().zip(terminator.successor_iter())
             {
-                continue;
-            }
+                let dest_operand = succ.dest.borrow();
+                let dest = dest_operand.block.borrow();
 
-            // Otherwise get all blocks it dominates in DFS/pre-order.
-            let node = self.dominance_info.info().node(succ_operand.block).unwrap();
-            for curr in PreOrderDomTreeIter::new(node) {
-                if let Some(block) = curr.block() {
-                    block_list.push(block);
-                    not_continuation.insert(block);
+                // If the region entry is not the only predecessor, then the edge does not dominate the
+                // block it leads to.
+                if dest.get_single_predecessor().is_none() {
+                    continue;
+                }
+
+                // Otherwise get all blocks it dominates in DFS/pre-order.
+                let node = self.dominance_info.info().node(dest_operand.block).unwrap();
+                for curr in PreOrderDomTreeIter::new(node) {
+                    if let Some(block) = curr.block() {
+                        block_list.push(block);
+                        not_continuation.insert(block);
+                    }
                 }
             }
         }
 
-        // Finds all relevant edges and checks the shape of the control flow graph at
-        // this point.
+        // Finds all relevant edges and checks the shape of the control flow graph at this point.
+        //
         // Branch regions may either:
+        //
         // * Be post-dominated by the continuation
         // * Be post-dominated by a return-like op
         // * Dominate a return-like op and have an edge to the continuation.
         //
         // The control flow graph may then be one of three cases:
-        // 1) All branch regions are post-dominated by the continuation. This is the
-        // usual case. If there are multiple entry blocks into the continuation a
-        // single entry block has to be created. A structured control flow op
-        // can then be created from the branch regions.
+        //
+        // 1) All branch regions are post-dominated by the continuation. This is the usual case. If
+        //    there are multiple entry blocks into the continuation a single entry block has to be
+        //    created. A structured control flow op can then be created from the branch regions.
         //
         // 2) No branch region has an edge to a continuation:
+        //
         //                                 +-----+
         //                           +-----+ bb0 +----+
         //                           v     +-----+    v
@@ -491,16 +499,16 @@ impl<'a> TransformationContext<'a> {
         //                         |ret1|            |ret2|
         //                         +----+            +----+
         //
-        // This can only occur if every region ends with a different kind of
-        // return-like op. In that case the control flow operation must stay as we are
-        // unable to create a single exit-block. We can nevertheless process all its
-        // successors as they single-entry, single-exit regions.
+        //   This can only occur if every region ends with a different kind of return-like op. In
+        //   that case the control flow operation must stay as we are unable to create a single
+        //   exit-block. We can nevertheless process all its successors as they single-entry,
+        //   single-exit regions.
         //
-        // 3) Only some branch regions are post-dominated by the continuation.
-        // The other branch regions may either be post-dominated by a return-like op
-        // or lead to either the continuation or return-like op.
-        // In this case we also create a single entry block like in 1) that also
-        // includes all edges to the return-like op:
+        // 3) Only some branch regions are post-dominated by the continuation. The other branch
+        //    regions may either be post-dominated by a return-like op or lead to either the
+        //    continuation or return-like op. In this case we also create a single entry block like
+        //    in Case 1 that also includes all edges to the return-like op:
+        //
         //                                 +-----+
         //                           +-----+ bb0 +----+
         //                           v     +-----+    v
@@ -530,15 +538,14 @@ impl<'a> TransformationContext<'a> {
         //                                 ++   ++ Region T
         //                                  +---+
         //
-        // bb0 to bbM is now a single-entry, single-exit region that applies to case
-        // 1). The control flow op at the end of bbM will trigger case 2.
-
+        // bb0 to bbM is now a single-entry, single-exit region that applies to Case 1. The control
+        // flow op at the end of bbM will trigger Case 2.
         let mut continuation_edges = SmallVec::<[Edge; 2]>::default();
         let mut continuation_post_dominates_all_regions = true;
         let mut no_successor_has_continuation_edge = true;
 
         for (entry_edge, branch_region) in
-            SuccessorEdges::new(&region_entry_block).zip(successor_branch_regions.iter_mut())
+            SuccessorEdges::new(region_entry).zip(successor_branch_regions.iter_mut())
         {
             // If the branch region is empty then the branch target itself is part of the
             // continuation.
@@ -564,7 +571,7 @@ impl<'a> TransformationContext<'a> {
                     continue;
                 }
 
-                for edge in SuccessorEdges::new(&block) {
+                for edge in SuccessorEdges::new(*block_ref) {
                     if not_continuation.contains(&edge.get_successor()) {
                         continue;
                     }
@@ -575,16 +582,26 @@ impl<'a> TransformationContext<'a> {
             }
         }
 
-        // case 2) Keep the control flow op but process its successors further.
+        // Case 2: Keep the control flow op but process its successors further.
         if no_successor_has_continuation_edge {
-            let term = region_entry_block.terminator().unwrap();
+            let term = region_entry.borrow().terminator().unwrap();
             let term = term.borrow();
             return Ok(term.successor_iter().map(|s| s.dest.borrow().block).collect());
         }
 
-        let mut continuation = continuation_edges.first().map(|e| e.get_successor());
+        // Collapse to a single continuation block, or None
+        let mut continuation = continuation_edges.iter().fold(None, |acc, e| match acc {
+            None => Some(e.get_successor()),
+            Some(prev) => {
+                if BlockRef::ptr_eq(&prev, &e.get_successor()) {
+                    Some(prev)
+                } else {
+                    None
+                }
+            }
+        });
 
-        // In case 3) or if not all continuation edges have the same entry block, create a single
+        // In Case 3, or if not all continuation edges have the same entry block, create a single
         // entry block as continuation for all branch regions.
         if continuation.is_none() || !continuation_post_dominates_all_regions {
             let term = continuation_edges[0].get_from_block().borrow().terminator().unwrap();
@@ -593,14 +610,13 @@ impl<'a> TransformationContext<'a> {
             continuation = Some(multiplexer.get_multiplexer_block());
         }
 
-        // Trigger reprocess of case 3) after creating the single entry block.
+        // Trigger reprocessing of Case 3 after creating the single entry block.
         if !continuation_post_dominates_all_regions {
             // Unlike in the general case, we are explicitly revisiting the same region entry again
             // after having changed its control flow edges and dominance. We have to therefore
             // explicitly invalidate the dominance tree.
-            self.dominance_info
-                .info_mut()
-                .invalidate_region(region_entry_block.parent().unwrap());
+            let region = region_entry.borrow().parent().unwrap();
+            self.dominance_info.info_mut().invalidate_region(region);
             return Ok(smallvec![region_entry]);
         }
 
@@ -613,9 +629,8 @@ impl<'a> TransformationContext<'a> {
 
         // Create the branch regions.
         let mut conditional_regions = SmallVec::<[RegionRef; 2]>::default();
-        for (branch_region, entry_edge) in successor_branch_regions
-            .iter_mut()
-            .zip(SuccessorEdges::new(&region_entry_block))
+        for (branch_region, entry_edge) in
+            successor_branch_regions.iter_mut().zip(SuccessorEdges::new(region_entry))
         {
             let mut conditional_region = self.context.alloc_tracked(Region::default());
             conditional_regions.push(conditional_region);
@@ -672,7 +687,7 @@ impl<'a> TransformationContext<'a> {
                 .iter()
                 .map(|arg| arg.borrow().ty().clone())
                 .collect::<SmallVec<[_; 2]>>();
-            let mut terminator = region_entry_block.terminator().unwrap();
+            let mut terminator = region_entry.borrow().terminator().unwrap();
             let op = self.interface.create_structured_branch_region_op(
                 &mut builder,
                 terminator,
@@ -732,24 +747,19 @@ impl<'a> TransformationContext<'a> {
         }
 
         let structured_cond = structured_cond_op.borrow();
-        for (mut old_value, new_value) in
-            cont.arguments().iter().copied().zip(structured_cond.results().iter())
+        for (mut old_value, new_value) in cont
+            .arguments()
+            .iter()
+            .copied()
+            .zip(structured_cond.results().iter().map(|r| r.borrow().as_value_ref()))
         {
-            old_value.borrow_mut().replace_all_uses_with(new_value.borrow().as_value_ref());
+            old_value.borrow_mut().replace_all_uses_with(new_value);
         }
 
         // Splice together the continuations operations with the region entry.
-        let region_body = region_entry_block.body_mut();
-        let mut spliced_ops = cont.body_mut().take();
-        {
-            let mut cursor = spliced_ops.front_mut();
-            while let Some(op) = cursor.as_pointer() {
-                cursor.move_next();
-                Operation::on_inserted_into_parent(op, region_entry);
-            }
-        }
-        region_body.back_mut().splice_after(spliced_ops);
+        region_entry.borrow_mut().splice_block(&mut cont);
 
+        // Remove the empty continuation block
         cont.erase();
 
         // After splicing the continuation, the region has to be reprocessed as it has new
@@ -942,7 +952,7 @@ impl<'a> TransformationContext<'a> {
                         }
 
                         loop_header_successor_operands.push(argument);
-                        for edge in SuccessorEdges::new(&latch_block) {
+                        for edge in SuccessorEdges::new(latch) {
                             let mut pred = edge.from_block.borrow().terminator().unwrap();
                             let operand = ctx.context.make_operand(argument, pred, 0);
                             let mut pred = pred.borrow_mut();
@@ -1045,8 +1055,7 @@ impl<'a> TransformationContext<'a> {
         let mut branch_region_parent = branch_region[0].borrow().parent().unwrap();
 
         for mut block_ref in branch_region.iter().copied() {
-            let block = block_ref.borrow();
-            for edge in SuccessorEdges::new(&block) {
+            for edge in SuccessorEdges::new(block_ref) {
                 if !BlockRef::ptr_eq(&edge.get_successor(), &continuation) {
                     continue;
                 }
@@ -1075,10 +1084,11 @@ impl<'a> TransformationContext<'a> {
                 edge.set_successor(single_exit_block.unwrap());
             }
 
-            let mut branch_region_parent = branch_region_parent.borrow_mut();
+            let mut brp = branch_region_parent.borrow_mut();
             unsafe {
-                let mut cursor = branch_region_parent.body_mut().cursor_mut_from_ptr(block_ref);
+                let mut cursor = brp.body_mut().cursor_mut_from_ptr(block_ref);
                 cursor.remove();
+                Block::on_removed_from_parent(block_ref, branch_region_parent);
             }
 
             block_ref.borrow_mut().insert_at_end(conditional_region);
