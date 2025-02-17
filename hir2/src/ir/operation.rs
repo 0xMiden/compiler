@@ -912,9 +912,14 @@ impl Operation {
         if has_effects {
             return false;
         } else if !self.implements::<dyn HasRecursiveMemoryEffects>() {
-            // Otherwise, if the op does not implement the memory effect interface and it does not
-            // have recursive side effects, then it cannot be known that the op is moveable.
-            return false;
+            // TODO(pauls): We should implement the effect interface at some point, in which case
+            // if the op does not implement the interface, and does not have recursive side effects,
+            // we would need to return `false` here instead, as it cannot be known that the op is
+            // moveable.
+            //
+            // For now, we can return true here as there are no known effects, and no recursive
+            // effects
+            return true;
         }
 
         // Recurse into the regions and ensure that all nested ops are memory effect free.
