@@ -755,6 +755,7 @@ impl quote::ToTokens for OpDefinition {
 
         // impl Op
         // impl OpRegistration
+        let dialect = &self.dialect;
         let opcode = &self.opcode;
         let opcode_str = syn::Lit::Str(syn::LitStr::new(&opcode.to_string(), opcode.span()));
         let traits = &self.traits;
@@ -778,6 +779,11 @@ impl quote::ToTokens for OpDefinition {
             }
 
             impl #impl_generics ::midenc_hir2::OpRegistration for #op_ident #ty_generics #where_clause {
+                fn dialect_name() -> ::midenc_hir_symbol::Symbol {
+                    let namespace = <#dialect as ::midenc_hir2::DialectRegistration>::NAMESPACE;
+                    ::midenc_hir_symbol::Symbol::intern(namespace)
+                }
+
                 fn name() -> ::midenc_hir_symbol::Symbol {
                     ::midenc_hir_symbol::Symbol::intern(#opcode_str)
                 }

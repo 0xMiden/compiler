@@ -74,7 +74,7 @@ impl PassManager {
     /// style. The created pass manager can schedule operations that match
     /// `OperationTy`.
     pub fn on<T: OpRegistration>(context: Rc<Context>, nesting: Nesting) -> Self {
-        Self::new(context, <T as OpRegistration>::name(), nesting)
+        Self::new(context, <T as OpRegistration>::full_name(), nesting)
     }
 
     /// Run the passes within this manager on the provided operation. The
@@ -147,7 +147,7 @@ impl PassManager {
             analysis_manager,
             self.verification,
             Some(self.instrumentor.clone()),
-            None,
+            Some(&PipelineParentInfo { pass: None }),
         )
     }
 
@@ -321,7 +321,7 @@ impl OpPassManager {
     }
 
     pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
-        let name = <T as OpRegistration>::name();
+        let name = <T as OpRegistration>::full_name();
         let mut nested = self.nest(Self::new(name.as_str(), self.nesting, self.context.clone()));
         nested.add_pass(pass);
     }

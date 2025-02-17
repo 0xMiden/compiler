@@ -2,7 +2,19 @@ use super::*;
 use crate::{any::AsAny, traits::TraitInfo, AttributeValue};
 
 pub trait OpRegistration: Op {
+    /// The name of the dialect this op is declared part of
+    fn dialect_name() -> ::midenc_hir_symbol::Symbol;
+    /// The name of the operation (i.e. its opcode)
     fn name() -> ::midenc_hir_symbol::Symbol;
+    /// The fully-qualified name of the operation (i.e. `<dialect>.<opcode>`)
+    fn full_name() -> ::midenc_hir_symbol::Symbol {
+        ::midenc_hir_symbol::Symbol::intern(format!(
+            "{}.{}",
+            Self::dialect_name(),
+            <Self as OpRegistration>::name()
+        ))
+    }
+    /// The set of statically known traits for this op
     fn traits() -> Box<[TraitInfo]>;
 }
 
