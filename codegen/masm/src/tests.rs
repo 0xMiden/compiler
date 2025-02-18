@@ -13,6 +13,7 @@ use proptest::prelude::*;
 use smallvec::{smallvec, SmallVec};
 
 use super::*;
+use crate::intrinsics::I32_INTRINSICS_MODULE_NAME;
 
 const MEMORY_SIZE_BYTES: u32 = 1048576 * 2; // Twice the size of the default Rust shadow stack size
 const MEMORY_SIZE_VM_WORDS: u32 = MEMORY_SIZE_BYTES / 16;
@@ -486,8 +487,11 @@ fn i32_checked_neg() {
         .emulator
         .load_module(
             Box::new(
-                intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
-                    .expect("undefined intrinsic module"),
+                intrinsics::load(
+                    I32_INTRINSICS_MODULE_NAME,
+                    &harness.context.session.source_manager,
+                )
+                .expect("undefined intrinsic module"),
             )
             .freeze(),
         )
@@ -978,7 +982,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsics module"),
                 )
                 .freeze(),
@@ -1038,7 +1042,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1062,7 +1066,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1094,7 +1098,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1126,7 +1130,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1160,7 +1164,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1185,7 +1189,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1211,7 +1215,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1236,7 +1240,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),
@@ -1262,7 +1266,7 @@ proptest! {
             .emulator
             .load_module(
                 Box::new(
-                    intrinsics::load("intrinsics::i32", &harness.context.session.source_manager)
+                    intrinsics::load(I32_INTRINSICS_MODULE_NAME, &harness.context.session.source_manager)
                         .expect("undefined intrinsic module"),
                 )
                 .freeze(),

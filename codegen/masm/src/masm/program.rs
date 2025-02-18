@@ -13,7 +13,7 @@ use midenc_hir::{
 use midenc_hir_analysis::GlobalVariableAnalysis;
 use midenc_session::{Emit, Session};
 
-use super::{module::Modules, *};
+use super::{intrinsics::INTRINSICS_MODULE_NAMES, module::Modules, *};
 
 inventory::submit! {
     midenc_session::CompileFlag::new("test_harness")
@@ -536,7 +536,7 @@ fn recover_wasm_cm_interfaces(
     let mut exports = BTreeMap::new();
     for export in lib.exports() {
         let export_node_id = lib.get_export_node_id(export);
-        if export.module.to_string().starts_with("intrinsics")
+        if INTRINSICS_MODULE_NAMES.contains(&export.module.to_string().as_str())
             || export.name.as_str().starts_with("cabi")
         {
             // Preserve intrinsics modules and internal Wasm CM `cabi_*` functions
@@ -569,15 +569,14 @@ fn recover_wasm_cm_interfaces(
 impl fmt::Display for Library {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for module in self.modules.iter() {
-            // Don't print intrinsic modules
-            if module.id.as_str().starts_with("intrinsics::") {
+            // Skip printing the standard library modules and intrinsics
+            // modules to focus on the user-defined modules and avoid the
+            // stack overflow error when printing large programs
+            // https://github.com/0xPolygonMiden/miden-formatting/issues/4
+            if INTRINSICS_MODULE_NAMES.contains(&module.id.as_str()) {
                 continue;
             }
-            if ["intrinsics", "std"].contains(&module.name.namespace().as_str()) {
-                // Skip printing the standard library modules and intrinsics
-                // modules to focus on the user-defined modules and avoid the
-                // stack overflow error when printing large programs
-                // https://github.com/0xPolygonMiden/miden-formatting/issues/4
+            if ["std"].contains(&module.name.namespace().as_str()) {
                 continue;
             } else {
                 writeln!(f, "# mod {}\n", &module.name)?;
