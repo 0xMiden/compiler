@@ -4,7 +4,8 @@ use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
-use proptest::{prelude::*, test_runner::TestRunner};
+use prop::test_runner::{Config, TestRunner};
+use proptest::prelude::*;
 
 use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
 
@@ -36,6 +37,52 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
+            let mut args = Vec::<Felt>::default();
+            PushToStack::try_push(&a, &mut args);
+
+            let exec = Executor::for_package(&package, args, &test.session)
+                .map_err(|err| TestCaseError::fail(err.to_string()))?;
+            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            dbg!(output);
+            prop_assert_eq!(rust_out, output);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn collatz() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    fn expected(mut n: u32) -> u32 {
+        let mut steps = 0;
+        while n != 1 {
+            if n % 2 == 0 {
+                n /= 2;
+            } else {
+                n = 3 * n + 1;
+            }
+            steps += 1;
+        }
+        steps
+    }
+
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../../examples/collatz",
+        config,
+        ["--entrypoint=collatz::entrypoint".into()],
+    );
+    let artifact_name = "collatz";
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+
+    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
+    TestRunner::new(Config::with_cases(4))
+        .run(&(1u32..30), move |a| {
+            let rust_out = expected(a);
             let mut args = Vec::<Felt>::default();
             PushToStack::try_push(&a, &mut args);
 
