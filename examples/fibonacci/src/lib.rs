@@ -13,6 +13,7 @@
 
 // Required for no-std crates
 #[panic_handler]
+#[cfg(not(test))]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
