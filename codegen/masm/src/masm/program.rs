@@ -262,7 +262,10 @@ impl Program {
         }
 
         // Assemble library
-        for module in self.library.modules.iter() {
+        let mut modules: Vec<&Module> = self.library.modules.iter().collect();
+        // Sort modules to ensure intrinsics are first since the target compiled module imports them
+        modules.sort_by_key(|m| (!INTRINSICS_MODULE_NAMES.contains(&m.id.as_str()), &m.id));
+        for module in modules.iter() {
             if lib_modules.contains(&module.id.as_str().to_string()) {
                 log::warn!(
                     "module '{}' is already registered with the assembler as library's module, \
