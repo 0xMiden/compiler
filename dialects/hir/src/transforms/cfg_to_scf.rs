@@ -246,7 +246,8 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         let ins = DefaultInstBuilder::new(builder);
         ins.condition(cond, loop_values_next_iter.iter().copied(), span)?;
 
-        let after_block = builder.create_block(op.after().as_region_ref(), None, &[]);
+        let after_region = { op.after().as_region_ref() };
+        let after_block = builder.create_block(after_region, None, &[]);
         let context = builder.context_rc();
         let yielded = loop_values_init.iter().map(|loop_var| {
             context.append_block_argument(after_block, loop_var.borrow().ty().clone(), span)
@@ -456,6 +457,113 @@ builtin.function public @test(v0: u32) -> u32 {
         hir.yield v5;
     };
     hir.ret v8;
+};";
+        let output = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_output, &output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn cfg_to_scf_lift_simple_while_loop() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+
+        let span = SourceSpan::default();
+        let mut function = {
+            let builder = builder.create::<builtin::Function, (_, _)>(span);
+            let name = Ident::new("test".into(), span);
+            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
+            builder(name, signature).unwrap()
+        };
+
+        // Define function body
+        let mut func = function.borrow_mut();
+        let mut builder = FunctionBuilder::new(&mut func, builder);
+
+        let loop_header = builder.create_block();
+        let n = builder.append_block_param(loop_header, Type::U32, span);
+        let counter = builder.append_block_param(loop_header, Type::U32, span);
+        let if_is_zero = builder.create_block();
+        let if_is_nonzero = builder.create_block();
+
+        let block = builder.current_block();
+        let input = block.borrow().arguments()[0].upcast();
+
+        let zero = builder.ins().u32(0, span);
+        let one = builder.ins().u32(1, span);
+        builder.ins().br(loop_header, [input, zero], span)?;
+
+        builder.switch_to_block(loop_header);
+        let is_zero = builder.ins().eq(n, zero, span)?;
+        builder.ins().cond_br(is_zero, if_is_zero, [], if_is_nonzero, [], span)?;
+
+        builder.switch_to_block(if_is_zero);
+        builder.ins().ret(Some(counter), span)?;
+
+        builder.switch_to_block(if_is_nonzero);
+        let n_prime = builder.ins().sub_unchecked(n, one, span)?;
+        let counter_prime = builder.ins().incr(counter, span)?;
+        builder.ins().br(loop_header, [n_prime, counter_prime], span)?;
+
+        drop(builder);
+
+        let operation = func.as_operation().as_operation_ref();
+        drop(func);
+
+        // Run transformation on function body
+        let expected_input = "\
+builtin.function public @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v3 = hir.constant 0 : u32;
+    v4 = hir.constant 1 : u32;
+    hir.br block1(v0, v3);
+^block1(v1: u32, v2: u32):
+    v5 = hir.eq v1, v3 : i1;
+    hir.cond_br v5 block2, block3;
+^block2:
+    hir.ret v2;
+^block3:
+    v6 = hir.sub v1, v4 : u32 #[overflow = unchecked];
+    v7 = hir.incr v2 : u32;
+    hir.br block1(v6, v7);
+};";
+        let input = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_input, &input);
+
+        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
+        pm.add_pass(Box::new(LiftControlFlowToSCF));
+        pm.run(operation)?;
+
+        // Verify that the function body now consists of a single `hir.if` operation, followed by
+        // an `hir.return`.
+        let expected_output = "\
+builtin.function public @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v15 = hir.poison  : u32 #[ty = u32];
+    v14 = hir.constant 1 : u32;
+    v9 = hir.constant 0 : u32;
+    v3 = hir.constant 0 : u32;
+    v4 = hir.constant 1 : u32;
+    v23, v24, v25 = hir.while v0, v3, v15 : u32, u32, u32 {
+    ^block1(v1: u32, v2: u32, v19: u32):
+        v5 = hir.eq v1, v3 : i1;
+        v30, v31, v32, v33 = hir.if v5 : u32, u32, u32, u32 {
+        ^block9:
+            hir.yield v15, v15, v14, v9;
+        } {
+        ^block3:
+            v6 = hir.sub v1, v4 : u32 #[overflow = unchecked];
+            v7 = hir.incr v2 : u32;
+            hir.yield v6, v7, v9, v14;
+        };
+        v26 = hir.trunc v33 : i1 #[ty = i1];
+        hir.condition v26, v30, v31, v2;
+    } {
+    ^block8(v27: u32, v28: u32, v29: u32):
+        hir.yield v27, v28, v29;
+    };
+    hir.ret v25;
 };";
         let output = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_output, &output);

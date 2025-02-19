@@ -146,6 +146,18 @@ impl<'a> TransformationContext<'a> {
 
             defining_op.borrow_mut().erase();
         }
+
+        for (_, value) in self.typed_undef_cache.drain() {
+            let mut defining_op = {
+                let val = value.borrow();
+                if val.is_used() {
+                    continue;
+                }
+                val.get_defining_op().unwrap()
+            };
+
+            defining_op.borrow_mut().erase();
+        }
     }
 
     /// Transforms the region to only have a single block for every kind of return-like operation that
@@ -262,9 +274,7 @@ impl<'a> TransformationContext<'a> {
 
         let mut new_sub_regions = SmallVec::<[BlockRef; 4]>::default();
 
-        let region_entry_block = region_entry.borrow();
-
-        let scc_iter = StronglyConnectedComponents::new(&*region_entry_block);
+        let scc_iter = StronglyConnectedComponents::new(&region_entry);
 
         for scc in scc_iter {
             if !scc.has_cycle() {
@@ -300,7 +310,6 @@ impl<'a> TransformationContext<'a> {
             let latch_block_ref = loop_properties.latch;
             let mut exit_block_ref = loop_properties.exit_block;
             cycle_block_set.insert(latch_block_ref);
-            cycle_block_set.insert(loop_header);
 
             // Finally, turn it into reduce form.
             let iteration_values = self.transform_to_reduce_loop(
@@ -312,41 +321,43 @@ impl<'a> TransformationContext<'a> {
             // Create a block acting as replacement for the loop header and insert the structured
             // loop into it.
             let mut new_loop_parent_block_ref = self.context.create_block();
+            new_loop_parent_block_ref.borrow_mut().insert_before(loop_header);
             self.add_block_arguments_from_other(new_loop_parent_block_ref, loop_header);
 
-            let mut region_ref = region_entry_block.parent().unwrap();
-            let mut region = region_ref.borrow_mut();
-
-            let blocks = region.body_mut();
+            let mut region_ref = region_entry.borrow().parent().unwrap();
 
             let mut loop_body_ref = self.context.alloc_tracked(Region::default());
-            let mut loop_body = loop_body_ref.borrow_mut();
+            {
+                let mut region = region_ref.borrow_mut();
+                let blocks = region.body_mut();
+                let mut loop_body = loop_body_ref.borrow_mut();
 
-            // Make sure the loop header is the entry block.
-            loop_body.push_back(unsafe {
-                let mut cursor = blocks.cursor_mut_from_ptr(loop_header);
-                cursor.remove().unwrap()
-            });
-            EntityWithParent::on_inserted_into_parent(loop_header, region_ref);
+                // Make sure the loop header is the entry block.
+                loop_body.push_back(unsafe {
+                    let mut cursor = blocks.cursor_mut_from_ptr(loop_header);
+                    cursor.remove().unwrap()
+                });
+                EntityWithParent::on_inserted_into_parent(loop_header, region_ref);
 
-            for block in cycle_block_set {
-                if !BlockRef::ptr_eq(&block, &latch_block_ref)
-                    && !BlockRef::ptr_eq(&block, &loop_header)
-                {
-                    loop_body.push_back(unsafe {
-                        let mut cursor = blocks.cursor_mut_from_ptr(block);
-                        cursor.remove().unwrap()
-                    });
-                    EntityWithParent::on_inserted_into_parent(block, region_ref);
+                for block in cycle_block_set {
+                    if !BlockRef::ptr_eq(&block, &latch_block_ref)
+                        && !BlockRef::ptr_eq(&block, &loop_header)
+                    {
+                        loop_body.push_back(unsafe {
+                            let mut cursor = blocks.cursor_mut_from_ptr(block);
+                            cursor.remove().unwrap()
+                        });
+                        EntityWithParent::on_inserted_into_parent(block, region_ref);
+                    }
                 }
-            }
 
-            // And the latch is the last block.
-            loop_body.push_back(unsafe {
-                let mut cursor = blocks.cursor_mut_from_ptr(latch_block_ref);
-                cursor.remove().unwrap()
-            });
-            EntityWithParent::on_inserted_into_parent(latch_block_ref, region_ref);
+                // And the latch is the last block.
+                loop_body.push_back(unsafe {
+                    let mut cursor = blocks.cursor_mut_from_ptr(latch_block_ref);
+                    cursor.remove().unwrap()
+                });
+                EntityWithParent::on_inserted_into_parent(latch_block_ref, region_ref);
+            }
 
             let mut old_terminator = latch_block_ref.borrow().terminator().unwrap();
             old_terminator.borrow_mut().remove();
@@ -410,7 +421,7 @@ impl<'a> TransformationContext<'a> {
         if num_successors == 1 {
             let region_entry_block = region_entry.borrow();
             let mut successor = region_entry_block.get_successor(0);
-            let mut succ = successor.borrow_mut();
+            let succ = successor.borrow();
             // Replace all uses of the successor block arguments (if any) with the operands of the
             // block terminator
             let mut entry_terminator = region_entry_block.terminator().unwrap();
@@ -428,7 +439,11 @@ impl<'a> TransformationContext<'a> {
             //
             // NOTE: In order to erase the terminator, we must not be borrowing its parent block
             drop(region_entry_block);
+            drop(succ);
+            terminator.drop_all_references();
             terminator.erase();
+
+            let mut succ = successor.borrow_mut();
 
             // Splice the operations of `succ` to `region_entry`
             region_entry.borrow_mut().splice_block(&mut succ);
@@ -680,12 +695,13 @@ impl<'a> TransformationContext<'a> {
             let mut builder = OpBuilder::new(self.context.clone());
             builder.set_insertion_point_to_end(region_entry);
 
-            let cont = continuation.borrow();
-            let arg_types = cont
-                .arguments()
-                .iter()
-                .map(|arg| arg.borrow().ty().clone())
-                .collect::<SmallVec<[_; 2]>>();
+            let arg_types = {
+                let cont = continuation.borrow();
+                cont.arguments()
+                    .iter()
+                    .map(|arg| arg.borrow().ty().clone())
+                    .collect::<SmallVec<[_; 2]>>()
+            };
             let mut terminator = region_entry.borrow().terminator().unwrap();
             let op = self.interface.create_structured_branch_region_op(
                 &mut builder,
@@ -693,7 +709,9 @@ impl<'a> TransformationContext<'a> {
                 &arg_types,
                 &mut conditional_regions,
             )?;
-            terminator.borrow_mut().erase();
+            let mut term = terminator.borrow_mut();
+            term.drop_all_references();
+            term.erase();
             op
         };
 
@@ -815,7 +833,7 @@ impl<'a> TransformationContext<'a> {
         assert!(BlockRef::ptr_eq(&latch_block.get_successor(exit_block_index), &exit_block));
 
         let mut latch_terminator = latch_block.terminator().unwrap();
-        let mut latch_term = latch_terminator.borrow_mut();
+        let latch_term = latch_terminator.borrow();
         // Take a snapshot of the loop header successor operands as we cannot hold a reference to
         // them and mutate them at the same time
         let mut loop_header_successor_operands = latch_term
@@ -824,7 +842,7 @@ impl<'a> TransformationContext<'a> {
             .iter()
             .map(|arg| arg.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
-        let mut exit_block_successor_operands = latch_term.successor_mut(exit_block_index);
+        drop(latch_term);
 
         // Add all values used in the next iteration to the exit block. Replace any uses that are
         // outside the loop with the newly created exit block.
@@ -835,8 +853,13 @@ impl<'a> TransformationContext<'a> {
                 argument.ty().clone(),
                 argument.span(),
             );
+            drop(argument);
+
             let operand = self.context.make_operand(arg, latch_terminator, 0);
-            exit_block_successor_operands.arguments.push(operand);
+            {
+                let mut latch_term = latch_terminator.borrow_mut();
+                latch_term.successor_mut(exit_block_index).arguments.push(operand);
+            }
             arg.borrow_mut().replace_uses_with_if(exit_arg, |user| {
                 !loop_blocks.contains(&user.owner().parent().unwrap())
             });
@@ -872,9 +895,8 @@ impl<'a> TransformationContext<'a> {
             };
 
             let mut check_value = |ctx: &mut TransformationContext<'_>, value: ValueRef| {
-                let val = value.borrow();
                 let mut block_argument = None;
-                let mut next_use = val.uses().front().as_pointer();
+                let mut next_use = { value.borrow().uses().front().as_pointer() };
                 while let Some(mut user) = next_use.take() {
                     next_use = user.next();
 
@@ -900,16 +922,16 @@ impl<'a> TransformationContext<'a> {
 
                     // Block argument is only created the first time it is required.
                     if block_argument.is_none() {
+                        let (value_ty, span, value_block) = {
+                            let val = value.borrow();
+                            (val.ty().clone(), val.span(), val.parent_block().unwrap())
+                        };
                         block_argument = Some(ctx.context.append_block_argument(
                             exit_block,
-                            val.ty().clone(),
-                            val.span(),
+                            value_ty.clone(),
+                            span,
                         ));
-                        ctx.context.append_block_argument(
-                            loop_header,
-                            val.ty().clone(),
-                            val.span(),
-                        );
+                        ctx.context.append_block_argument(loop_header, value_ty.clone(), span);
 
                         // `value` might be defined in a block that does not dominate `latch` but
                         // previously dominated an exit block with a use. In this case, add a block
@@ -918,7 +940,7 @@ impl<'a> TransformationContext<'a> {
                         // otherwise pass undef. The above is unnecessary if the value is a block
                         // argument of the latch or if `value` dominates all predecessors.
                         let mut argument = value;
-                        if val.parent_block().unwrap() != latch
+                        if value_block != latch
                             && latch_block.predecessors().any(|pred| {
                                 !loop_block_dominates(
                                     pred.owner.borrow().parent().unwrap(),
@@ -926,18 +948,15 @@ impl<'a> TransformationContext<'a> {
                                 )
                             })
                         {
-                            argument = ctx.context.append_block_argument(
-                                latch,
-                                val.ty().clone(),
-                                val.span(),
-                            );
+                            argument =
+                                ctx.context.append_block_argument(latch, value_ty.clone(), span);
                             for pred in latch_block.predecessors() {
                                 let mut succ_operand = value;
                                 if !loop_block_dominates(
                                     pred.owner.borrow().parent().unwrap(),
                                     ctx.dominance_info,
                                 ) {
-                                    succ_operand = ctx.get_undef_value(val.ty());
+                                    succ_operand = ctx.get_undef_value(&value_ty);
                                 }
 
                                 let succ_operand =
@@ -965,24 +984,26 @@ impl<'a> TransformationContext<'a> {
             };
 
             if BlockRef::ptr_eq(loop_block_ref, &latch) {
-                for arg in latch_block_arguments_prior.iter() {
-                    check_value(self, arg.borrow().as_value_ref());
+                for arg in latch_block_arguments_prior.iter().map(|arg| arg.borrow().as_value_ref())
+                {
+                    check_value(self, arg);
                 }
             } else if BlockRef::ptr_eq(loop_block_ref, &loop_header) {
-                for arg in loop_header_arguments_prior.iter() {
-                    check_value(self, arg.borrow().as_value_ref());
+                for arg in loop_header_arguments_prior.iter().map(|arg| arg.borrow().as_value_ref())
+                {
+                    check_value(self, arg);
                 }
             } else {
                 let loop_block = loop_block_ref.borrow();
-                for arg in loop_block.arguments() {
-                    check_value(self, arg.borrow().as_value_ref());
+                for arg in loop_block.arguments().iter().map(|arg| arg.borrow().as_value_ref()) {
+                    check_value(self, arg);
                 }
             }
 
             let loop_block = loop_block_ref.borrow();
             for op in loop_block.body() {
-                for result in op.results().iter() {
-                    check_value(self, result.borrow().as_value_ref());
+                for result in op.results().iter().map(|res| res.borrow().as_value_ref()) {
+                    check_value(self, result);
                 }
             }
         }
@@ -1153,16 +1174,18 @@ impl<'a> TransformationContext<'a> {
         let should_repeat = should_repeat.borrow().as_value_ref();
         {
             let mut builder = OpBuilder::new(context.clone());
-            builder.set_insertion_point_to_start(latch_block);
+            builder.set_insertion_point_to_end(latch_block);
 
             let num_args = loop_header.borrow().num_arguments();
-            let latch_block = latch_block.borrow();
-            let latch_args = latch_block
-                .arguments()
-                .iter()
-                .take(num_args)
-                .map(|arg| arg.borrow().as_value_ref())
-                .collect::<SmallVec<[ValueRef; 4]>>();
+            let latch_args = {
+                let latch_block = latch_block.borrow();
+                latch_block
+                    .arguments()
+                    .iter()
+                    .take(num_args)
+                    .map(|arg| arg.borrow().as_value_ref())
+                    .collect::<SmallVec<[ValueRef; 4]>>()
+            };
             multiplexer.transform().interface_mut().create_conditional_branch(
                 span,
                 &mut builder,
@@ -1176,7 +1199,7 @@ impl<'a> TransformationContext<'a> {
 
         {
             let mut builder = OpBuilder::new(context);
-            builder.set_insertion_point_to_start(exit_block);
+            builder.set_insertion_point_to_end(exit_block);
 
             if exit_edges.is_empty() {
                 // A loop without an exit edge is a statically known infinite loop.
@@ -1243,6 +1266,7 @@ impl core::hash::Hash for ReturnLikeOpKey {
 ///
 /// * Has at most one entry, one exit and one back edge.
 /// * The back edge originates from the same block as the exit edge.
+#[derive(Debug)]
 struct StructuredLoopProperties {
     /// Block containing both the single exit edge and the single back edge.
     latch: BlockRef,

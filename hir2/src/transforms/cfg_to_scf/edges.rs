@@ -7,7 +7,7 @@ use crate::{adt::SmallMap, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueR
 ///
 /// Consists of a from-block, a successor and corresponding successor operands passed to the block
 /// arguments of the successor.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Edge {
     pub from_block: BlockRef,
     pub successor_index: usize,
@@ -80,7 +80,7 @@ impl Iterator for SuccessorEdges {
 ///
 /// A cycle is a generalization of a loop that may have multiple entry edges. See also
 /// https://llvm.org/docs/CycleTerminology.html.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CycleEdges {
     /// All edges from a block outside the cycle to a block inside the cycle.
     /// The targets of these edges are entry blocks.
@@ -337,10 +337,12 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         builder: &mut OpBuilder,
         excluded: &[BlockRef],
     ) -> Result<(), Report> {
-        let multiplexer_block = self.multiplexer_block.borrow();
-        let multiplexer_block_args = SmallVec::<[ValueRef; 4]>::from_iter(
-            multiplexer_block.arguments().iter().copied().map(|arg| arg as ValueRef),
-        );
+        let multiplexer_block_args = {
+            let multiplexer_block = self.multiplexer_block.borrow();
+            SmallVec::<[ValueRef; 4]>::from_iter(
+                multiplexer_block.arguments().iter().copied().map(|arg| arg as ValueRef),
+            )
+        };
 
         // We create the switch by creating a case for all entries and then splitting of the last
         // entry as a default case.
