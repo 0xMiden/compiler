@@ -278,7 +278,7 @@ impl Operation {
     /// The verification is performed in post-order, so that when the verifier(s) for `self` are
     /// run, it is known that all of its children have successfully verified.
     pub fn recursively_verify(&self) -> Result<(), Report> {
-        self.postwalk_interruptible(|op: &Operation| op.verify().into()).into_result()
+        self.postwalk(|op: &Operation| op.verify().into()).into_result()
     }
 }
 
@@ -924,7 +924,7 @@ impl Operation {
 
         // Recurse into the regions and ensure that all nested ops are memory effect free.
         for region in self.regions() {
-            let walk_result = region.prewalk_interruptible(|op| {
+            let walk_result = region.prewalk(|op| {
                 if !op.is_memory_effect_free() {
                     WalkResult::Break(())
                 } else {

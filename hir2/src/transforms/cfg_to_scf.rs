@@ -356,7 +356,7 @@ fn check_transformation_preconditions(region: &Region) -> Result<(), Report> {
         }
     }
 
-    let walk_result = region.prewalk_interruptible(|op: &Operation| {
+    let walk_result = region.prewalk(|op: &Operation| {
         if !op.has_successors() {
             return WalkResult::Skip;
         }

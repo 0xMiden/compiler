@@ -55,7 +55,7 @@ impl Pass for LiftControlFlowToSCF {
         let root = op.as_operation_ref();
         drop(op);
 
-        let result = root.raw_prewalk_interruptible(|operation: OperationRef| -> WalkResult {
+        let result = root.raw_postwalk(|operation: OperationRef| -> WalkResult {
             let op = operation.borrow();
             if op.is::<builtin::Function>() {
                 if op.regions().is_empty() {
@@ -80,9 +80,9 @@ impl Pass for LiftControlFlowToSCF {
                     while let Some(region) = next_region.take() {
                         next_region = region.next();
 
-                        let changed_func =
+                        let result =
                             transforms::transform_cfg_to_scf(region, &mut transformation, dominfo);
-                        match changed_func {
+                        match result {
                             Ok(did_change) => {
                                 changed |= did_change;
                             }
@@ -97,10 +97,10 @@ impl Pass for LiftControlFlowToSCF {
 
                 drop(op);
 
-                operation.raw_postwalk_interruptible(visitor)
-            } else {
-                WalkResult::Continue(())
+                operation.raw_postwalk(visitor)?;
             }
+
+            WalkResult::Continue(())
         });
 
         if result.was_interrupted() {

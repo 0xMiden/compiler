@@ -181,7 +181,7 @@ impl Operation {
     where
         F: FnMut(&dyn SymbolTable, bool),
     {
-        self.prewalk(|op: &Operation| {
+        self.prewalk_all(|op: &Operation| {
             if let Some(sym) = op.as_symbol_table() {
                 callback(sym, all_symbol_uses_visible);
             }

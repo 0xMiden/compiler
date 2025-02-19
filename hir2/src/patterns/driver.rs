@@ -826,7 +826,7 @@ impl RegionPatternRewriteDriver {
         // Populate strict mode ops, if applicable
         if driver.config.restrict != GreedyRewriteStrictness::Any {
             let filtered_ops = driver.filtered_ops.get_mut();
-            region.raw_postwalk(|op| {
+            region.raw_postwalk_all(|op| {
                 filtered_ops.insert(op);
             });
         }
@@ -871,7 +871,7 @@ impl RegionPatternRewriteDriver {
             if !self.driver.config.use_top_down_traversal {
                 // Add operations to the worklist in postorder.
                 log::trace!("adding operations in postorder");
-                self.region.raw_postwalk(|op| {
+                self.region.raw_postwalk_all(|op| {
                     if !insert_known_constant(op) {
                         self.driver.add_to_worklist(op);
                     }
@@ -880,7 +880,7 @@ impl RegionPatternRewriteDriver {
                 // Add all nested operations to the worklist in preorder.
                 log::trace!("adding operations in preorder");
                 self.region
-                    .raw_prewalk_interruptible(|op| {
+                    .raw_prewalk(|op| {
                         if !insert_known_constant(op) {
                             self.driver.add_to_worklist(op);
                             WalkResult::<Report>::Continue(())

@@ -57,6 +57,11 @@ impl<B> WalkResult<B, ()> {
         }
     }
 }
+impl<B> From<()> for WalkResult<B, ()> {
+    fn from(_value: ()) -> Self {
+        Self::Continue(())
+    }
+}
 impl<B> From<Result<(), B>> for WalkResult<B, ()> {
     fn from(value: Result<(), B>) -> Self {
         match value {

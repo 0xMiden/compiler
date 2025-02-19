@@ -27,15 +27,13 @@ impl<T: ?Sized, V: Visitor<T>> Searcher<V, T> {
 
 impl<V: OperationVisitor> Searcher<V, Operation> {
     pub fn visit(&mut self) -> WalkResult<<V as Visitor<Operation>>::Output> {
-        self.root
-            .borrow()
-            .prewalk_interruptible(|op: &Operation| self.visitor.visit(op))
+        self.root.borrow().prewalk(|op: &Operation| self.visitor.visit(op))
     }
 }
 
 impl<T: Op, V: OpVisitor<T>> Searcher<V, T> {
     pub fn visit(&mut self) -> WalkResult<<V as Visitor<T>>::Output> {
-        self.root.borrow().prewalk_interruptible(|op: &Operation| {
+        self.root.borrow().prewalk(|op: &Operation| {
             if let Some(op) = op.downcast_ref::<T>() {
                 self.visitor.visit(op)
             } else {
@@ -47,7 +45,7 @@ impl<T: Op, V: OpVisitor<T>> Searcher<V, T> {
 
 impl<V: SymbolVisitor> Searcher<V, dyn Symbol> {
     pub fn visit(&mut self) -> WalkResult<<V as Visitor<dyn Symbol>>::Output> {
-        self.root.borrow().prewalk_interruptible(|op: &Operation| {
+        self.root.borrow().prewalk(|op: &Operation| {
             if let Some(sym) = op.as_symbol() {
                 self.visitor.visit(sym)
             } else {
