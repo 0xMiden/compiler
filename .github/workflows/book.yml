@@ -5,10 +5,11 @@ on:
     branches:
       - main
       - next
+  pull_request:
 
 jobs:
-  publish_docs:
-    name: publish docs
+  build_docs:
+    name: build docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +23,3 @@ jobs:
       - name: Build
         run: |
           cargo make docs
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/docs/site

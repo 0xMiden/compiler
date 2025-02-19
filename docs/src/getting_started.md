@@ -2,11 +2,11 @@
 
 Welcome to the documentation for the Miden compiler toolchain.
 
-!!! warning
 
-    The compiler is currently in an experimental state, and has known bugs and limitations, it is
-    not yet ready for production usage. However, we'd encourage you to start experimenting with it
-    yourself, and give us feedback on any issues or sharp edges you encounter.
+> [!WARNING]
+> The compiler is currently in an experimental state, and has known bugs and limitations, it is
+> not yet ready for production usage. However, we'd encourage you to start experimenting with it
+> yourself, and give us feedback on any issues or sharp edges you encounter.
 
 The documentation found here should provide a good starting point for the current capabilities of
 the toolchain, however if you find something that is not covered, but is not listed as

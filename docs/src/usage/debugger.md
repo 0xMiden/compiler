@@ -3,10 +3,9 @@
 A very useful tool in the Miden compiler suite, is its TUI-based interactive debugger, accessible
 via the `midenc debug` command.
 
-!!! warning
-
-    The debugger is still quite new, and while very useful already, still has a fair number of
-    UX annoyances. Please report any bugs you encounter, and we'll try to get them patched ASAP!
+> [!WARNING]
+> The debugger is still quite new, and while very useful already, still has a fair number of
+> UX annoyances. Please report any bugs you encounter, and we'll try to get them patched ASAP!
 
 ## Getting started
 

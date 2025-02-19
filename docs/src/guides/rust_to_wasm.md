@@ -62,14 +62,13 @@ going to benefit from less code, even if conventionally that code would be less 
 to the difference in proving time accumulated due to extra instructions. That said, there are no hard
 and fast rules, but these defaults are good ones to start with.
 
-!!! tip
-
-    We reference a simple bump allocator provided by `miden-sdk-alloc` above, but any simple
-    allocator will do. The trade offs made by these small allocators are not generally suitable for
-    long-running, or allocation-heavy applications, as they "leak" memory (generally because they
-    make little to no attempt to recover freed allocations), however they are very useful for
-    one-shot programs that do minimal allocation, which is going to be the typical case for Miden
-    programs.
+> [!TIP]
+> We reference a simple bump allocator provided by `miden-sdk-alloc` above, but any simple
+> allocator will do. The trade offs made by these small allocators are not generally suitable for
+> long-running, or allocation-heavy applications, as they "leak" memory (generally because they
+> make little to no attempt to recover freed allocations), however they are very useful for
+> one-shot programs that do minimal allocation, which is going to be the typical case for Miden
+> programs.
 
 Next, edit `src/lib.rs` as shown below:
 

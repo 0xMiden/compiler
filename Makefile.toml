@@ -246,20 +246,36 @@ install_crate = { crate_name = "litcheck", test_arg = "--help" }
 [tasks.docs]
 category = "Build"
 description = "Builds the compiler documentation"
-command = "docs/mkdocs"
-args = ["build", "-d", "target/docs/site"]
+dependencies = ["mdbook", "mdbook-linkcheck", "mdbook-alerts", "mdbook-katex"]
+command = "mdbook"
+args = ["build", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs"]
+
+[tasks.mdbook]
+category = "Build"
+install_crate = { crate_name = "mdbook", binary = "mdbook", test_arg = [
+    "--help",
+] }
+
+[tasks.mdbook-linkcheck]
+category = "Build"
+install_crate = { crate_name = "mdbook-linkcheck" }
+
+[tasks.mdbook-alerts]
+category = "Build"
+install_crate = { crate_name = "mdbook-alerts" }
+
+[tasks.mdbook-katex]
+category = "Build"
+install_crate = { crate_name = "mdbook-katex" }
 
 [tasks.serve-docs]
 category = "Build"
 description = "Opens the compiler documentation"
-command = "docs/mkdocs"
-args = ["serve"]
-
-[tasks.mkdocs]
-category = "Documentation"
-description = "Run the mkdocs command-line tool"
-command = "docs/mkdocs"
-args = ["${@}"]
+install_crate = { crate_name = "mdbook", binary = "mdbook", test_arg = [
+    "--help",
+] }
+command = "mdbook"
+args = ["serve", "--open", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs"]
 
 [tasks.clippy]
 description = "Runs clippy on the workspace"

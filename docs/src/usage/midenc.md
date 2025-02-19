@@ -12,17 +12,16 @@ hands dirty.
 ## Installation
 
 
-!!! warning
-
-    Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
-    make sure you have it installed first:
-
-    ```bash
-    rustup toolchain install nightly-2025-01-16
-    ```
-
-    NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
-    work.
+> [!WARNING]
+> Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
+> make sure you have it installed first:
+>
+> ```bash
+> rustup toolchain install nightly-2025-01-16
+> ```
+>
+> NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
+> work.
 
 
 To install the `midenc`, clone the compiler repo first:

@@ -1,10 +1,11 @@
 # Canonical ABI vs Miden ABI incompatibility
 
-This document describes an issue that arises when trying to map the ad-hoc calling convention/ABI
-used by various Miden Assembly procedures, such as those comprising the transaction kernel, and
-the "canonical" ABI(s) representable in Rust. It proposes a solution to this problem in the form
-of _adapter functions_, where the details of a given adapter are one of a closed set of known
-ABI _transformation strategies_.
+> [!NOTE]
+> This document describes an issue that arises when trying to map the ad-hoc calling convention/ABI
+> used by various Miden Assembly procedures, such as those comprising the transaction kernel, and
+> the "canonical" ABI(s) representable in Rust. It proposes a solution to this problem in the form
+> of _adapter functions_, where the details of a given adapter are one of a closed set of known
+> ABI _transformation strategies_.
 
 ## Summary
 
@@ -41,10 +42,9 @@ above which inserts an implicit pointer to the caller's stack frame for the call
 value to, rather than doing so in a register (or in our case, on the operand stack). This seems to
 happen for any type that is larger than 8 bytes (i64).
 
-!!! tip
-
-    For a complete list of the transaction kernel functions, in WIT format, see
-    [miden.wit](https://github.com/0xPolygonMiden/compiler/blob/main/tests/rust-apps-wasm/wit-sdk/sdk/wit/miden.wit).
+> [!TIP]
+> For a complete list of the transaction kernel functions, in WIT format, see
+> [miden.wit](https://github.com/0xPolygonMiden/compiler/blob/main/tests/rust-apps-wasm/wit-sdk/sdk/wit/miden.wit).
 
 For most transaction kernel functions, the adapter function can be generated automatically using the
 pattern recognition and adapter functions described below.
@@ -240,12 +240,11 @@ func wasm_core_get_assets(asset_count: u32, ptr_ptr: i32) {
 }
 ```
 
-!!! note
-
-    Since the `get_assets` tx kernel function in the current form can trash the provided memory if
-    the actual assets count differs from the returned by `get_assets_count`, we can introduce the
-    asset count parameter to the `get_assets` tx kernel function and check that it the same as the
-    actual assets count written to memory.
+> [!NOTE]
+> Since the `get_assets` tx kernel function in the current form can trash the provided memory if
+> the actual assets count differs from the returned by `get_assets_count`, we can introduce the
+> asset count parameter to the `get_assets` tx kernel function and check that it the same as the
+> actual assets count written to memory.
 
 
 ## The example of some functions signatures
