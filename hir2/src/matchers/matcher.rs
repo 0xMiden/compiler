@@ -310,7 +310,9 @@ impl Matcher<Operation> for ConstantOpBinder {
         }
 
         let mut out = SmallVec::default();
-        entity.fold(&mut out).expect("expected constant-like op to be foldable");
+        entity.fold(&mut out).unwrap_or_else(|| {
+            panic!("expected constant-like op '{}' to be foldable", entity.name())
+        });
         let Some(OpFoldResult::Attribute(value)) = out.pop() else {
             return None;
         };
