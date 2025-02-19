@@ -5,7 +5,7 @@ use crate::{
     formatter::{Document, PrettyPrint},
     matchers::Matcher,
     traits::{BranchOpInterface, SingleBlock, SingleRegion},
-    AttributeValue, CallableOpInterface, EntityWithId, Op, Value,
+    AttributeValue, CallableOpInterface, EntityWithId, Op, SuccessorOperands, Value,
 };
 
 #[derive(Default)]
@@ -198,18 +198,47 @@ impl PrettyPrint for OperationPrinter<'_> {
             let doc = if let Some(value) = crate::matchers::constant().matches(self.op) {
                 is_constant = true;
                 doc + value.print(self.flags, self.context)
-            } else {
-                if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
-                    doc = branch.successors().iter().enumerate().fold(doc, |doc, (i, succ)| {
+            } else if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
+                // Print non-successor operands
+                let operands = branch.operands().group(0);
+                let doc = if !operands.is_empty() {
+                    operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
+                        let operand = operand.borrow();
+                        let value = operand.value();
                         if i > 0 {
-                            doc + const_text(", ") + display(succ.block.borrow().block)
+                            doc + const_text(", ") + display(value.id())
                         } else {
-                            doc + display(succ.block.borrow().block)
+                            doc + display(value.id())
                         }
-                    });
-                    doc += const_text(" ");
-                }
+                    }) + const_text(" ")
+                } else {
+                    doc
+                };
+                // Print successors
+                branch.successors().iter().enumerate().fold(doc, |doc, (i, succ)| {
+                    let doc = if i > 0 {
+                        doc + const_text(", ") + display(succ.block.borrow().successor())
+                    } else {
+                        doc + display(succ.block.borrow().successor())
+                    };
 
+                    let operands = branch.get_successor_operands(i);
+                    if !operands.is_empty() {
+                        let doc = doc + const_text("(");
+                        operands.forwarded().iter().enumerate().fold(doc, |doc, (i, operand)| {
+                            let operand = operand.borrow();
+                            let value = operand.value();
+                            if i > 0 {
+                                doc + const_text(", ") + display(value.id())
+                            } else {
+                                doc + display(value.id())
+                            }
+                        }) + const_text(")")
+                    } else {
+                        doc
+                    }
+                })
+            } else {
                 let operands = self.op.operands();
                 if !operands.is_empty() {
                     operands.iter().enumerate().fold(doc, |doc, (i, operand)| {

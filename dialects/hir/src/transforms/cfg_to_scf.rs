@@ -422,13 +422,13 @@ builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
     v2 = hir.constant 0 : u32;
     v3 = hir.eq v0, v2 : i1;
-    hir.cond_br block1, block2 v3;
+    hir.cond_br v3 block1, block2;
 ^block1:
     v4 = hir.incr v0 : u32;
-    hir.br block3 v4;
+    hir.br block3(v4);
 ^block2:
     v5 = hir.mul v0, v0 : u32 #[overflow = checked];
-    hir.br block3 v5;
+    hir.br block3(v5);
 ^block3(v1: u32):
     hir.ret v1;
 };";
