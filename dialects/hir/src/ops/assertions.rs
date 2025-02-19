@@ -57,13 +57,27 @@ pub struct Unreachable {}
 #[operation(
     dialect = HirDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, Foldable)
 )]
 pub struct Poison {
     #[attr]
     ty: Type,
     #[result]
     result: AnyType,
+}
+
+impl Foldable for Poison {
+    fn fold(&self, _results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        FoldResult::InPlace
+    }
+
+    fn fold_with(
+        &self,
+        _operands: &[Option<std::prelude::v1::Box<dyn AttributeValue>>],
+        _results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        FoldResult::InPlace
+    }
 }
 
 impl InferTypeOpInterface for Poison {
