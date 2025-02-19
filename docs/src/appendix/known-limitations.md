@@ -1,9 +1,8 @@
 # Known limitations
 
-!!! tip
-
-    See the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues) for information
-    on known bugs. This document focuses on missing/incomplete features, rather than bugs.
+> [!TIP]
+> See the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues) for information
+> on known bugs. This document focuses on missing/incomplete features, rather than bugs.
 
 The compiler is still in its early stages of development, so there are various features that are
 unimplemented, or only partially implemented, and the test suite is still limited in scope, so
@@ -46,13 +45,12 @@ Rust compiler is able to erase the indirection associated with certain abstracti
 in some cases, shown below. If Rust is unable to statically resolve all call targets, then `midenc`
 will raise an error when it encounters any use of `call_indirect`.
 
-!!! warning
-
-    The following examples rely on `rustc`/LLVM inlining enough code to be able to convert indirect
-    calls to direct calls. This may require you to enable link-time optimization with `lto = "fat"`
-    and compile all of the code in the crate together with `codegen-units = 1`, in order to maximize
-    the amount of inlining that can occur. Even then, it may not be possible to remove some forms of
-    indirection, in which case you will need to find another workaround.
+> [!WARNING]
+> The following examples rely on `rustc`/LLVM inlining enough code to be able to convert indirect
+> calls to direct calls. This may require you to enable link-time optimization with `lto = "fat"`
+> and compile all of the code in the crate together with `codegen-units = 1`, in order to maximize
+> the amount of inlining that can occur. Even then, it may not be possible to remove some forms of
+> indirection, in which case you will need to find another workaround.
 
 #### Iterator lowered to loop
 

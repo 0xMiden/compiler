@@ -14,12 +14,11 @@ In this chapter, we will be compiling Wasm to Masm using the `midenc` executable
 you have followed the instructions in the [Getting Started with `midenc`](../usage/midenc.md) guide
 and then return here.
 
-!!! note
-
-    While we are using `midenc` for this guide, the more common use case will be to use the
-    `cargo-miden` Cargo extension to handle the gritty details of compiling from Rust to Wasm
-    for you. However, the purpose of this guide is to show you what `cargo-miden` is handling
-    for you, and to give you a foundation for using `midenc` yourself if needed.
+> [!NOTE]
+> While we are using `midenc` for this guide, the more common use case will be to use the
+> `cargo-miden` Cargo extension to handle the gritty details of compiling from Rust to Wasm
+> for you. However, the purpose of this guide is to show you what `cargo-miden` is handling
+> for you, and to give you a foundation for using `midenc` yourself if needed.
 
 ## Compiling to Miden Assembly
 
@@ -82,26 +81,24 @@ end
 If you compare this to the WebAssembly text format, you can see that this is a fairly
 faithful translation, but there may be areas where we generate sub-optimal Miden Assembly.
 
-!!! note
-
-    At the moment the compiler does only minimal optimization, late in the pipeline during codegen,
-    and only in an effort to minimize operand stack management code. So if you see an instruction
-    sequence you think is bad, bring it to our attention, and if it is something that we can solve
-    as part of our overall optimization efforts, we will be sure to do so. There _are_ limits to
-    what we can generate compared to what one can write by hand, particularly because Rust's
-    memory model requires us to emulate byte-addressable memory on top of Miden's word-addressable
-    memory, however our goal is to keep this overhead within an acceptable bound in the general case,
-    and easily-recognized patterns that can be simplified using peephole optimization are precisely
-    the kind of thing we'd like to know about, as those kinds of optimizations are likely to produce
-    the most significant wins.
+> [!NOTE]
+> At the moment the compiler does only minimal optimization, late in the pipeline during codegen,
+> and only in an effort to minimize operand stack management code. So if you see an instruction
+> sequence you think is bad, bring it to our attention, and if it is something that we can solve
+> as part of our overall optimization efforts, we will be sure to do so. There _are_ limits to
+> what we can generate compared to what one can write by hand, particularly because Rust's
+> memory model requires us to emulate byte-addressable memory on top of Miden's word-addressable
+> memory, however our goal is to keep this overhead within an acceptable bound in the general case,
+> and easily-recognized patterns that can be simplified using peephole optimization are precisely
+> the kind of thing we'd like to know about, as those kinds of optimizations are likely to produce
+> the most significant wins.
 
 ## Testing with the Miden VM
 
-!!! note
-
-    Because the compiler ships with the VM embedded for `midenc debug`, you can run your program
-    without having to install the VM separately, though you should do that as well, as `midenc` only
-    exposes a limited set of commands for executing programs, intended for debugging.
+> [!NOTE]
+> Because the compiler ships with the VM embedded for `midenc debug`, you can run your program
+> without having to install the VM separately, though you should do that as well, as `midenc` only
+> exposes a limited set of commands for executing programs, intended for debugging.
 
 We can test our compiled program like so:
 

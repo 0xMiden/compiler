@@ -6,17 +6,16 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
 
 ## Installation
 
-!!! warning
-
-    Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
-    make sure you have it installed first:
-
-    ```bash
-    rustup toolchain install nightly-2025-01-16
-    ```
-
-    NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
-    work.
+> [!WARNING]
+> Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
+> make sure you have it installed first:
+>
+> ```bash
+> rustup toolchain install nightly-2025-01-16
+> ```
+>
+> NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
+> work.
 
 To install the extension, clone the compiler repo first:
 
@@ -73,9 +72,8 @@ This will emit the compiled artifacts to `target/miden/release/foo.masp`.
 ## Running a compiled Miden VM program
 
 
-!!! warning
-
-    To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](/docs/usage/midenc.md) for the installation instructions.
+> [!WARNING]
+> To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](/docs/usage/midenc.md) for the installation instructions.
 
 
 The compiled Miden VM program can be run from the Miden package with the following:

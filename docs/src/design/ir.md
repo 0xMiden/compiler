@@ -225,8 +225,7 @@ operation that produced them contains no side-effects, i.e. invoking the operati
 inputs must produce the same outputs. This forms the basis of one of the ways in which SSA IRs can
 optimize programs.
 
-!!! note
-
+> [!NOTE]
 > One way in which you can form an intuition for values in an SSA IR, is by thinking of them as
 > registers in a virtual machine with no limit to the number of machine registers. This corresponds
 > well to the fact that most values in an IR, are of a type which corresponds to something that can
