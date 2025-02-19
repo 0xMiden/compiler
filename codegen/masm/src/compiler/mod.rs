@@ -7,7 +7,12 @@ use midenc_hir::{
 use midenc_session::{diagnostics::Report, Session};
 
 pub use self::masm::MasmArtifact;
-use crate::{intrinsics, ConvertHirToMasm, Program};
+use crate::{
+    intrinsics::{
+        self, I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
+    },
+    ConvertHirToMasm, Program,
+};
 
 pub type CompilerResult<T> = Result<T, Report>;
 
@@ -49,15 +54,15 @@ impl<'a> MasmCompiler<'a> {
 
         // Ensure intrinsics modules are linked
         artifact.insert(Box::new(
-            intrinsics::load("intrinsics::mem", &self.session.source_manager)
+            intrinsics::load(MEM_INTRINSICS_MODULE_NAME, &self.session.source_manager)
                 .expect("undefined intrinsics module"),
         ));
         artifact.insert(Box::new(
-            intrinsics::load("intrinsics::i32", &self.session.source_manager)
+            intrinsics::load(I32_INTRINSICS_MODULE_NAME, &self.session.source_manager)
                 .expect("undefined intrinsics module"),
         ));
         artifact.insert(Box::new(
-            intrinsics::load("intrinsics::i64", &self.session.source_manager)
+            intrinsics::load(I64_INTRINSICS_MODULE_NAME, &self.session.source_manager)
                 .expect("undefined intrinsics module"),
         ));
 

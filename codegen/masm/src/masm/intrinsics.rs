@@ -3,6 +3,16 @@ use midenc_hir::diagnostics::{PrintDiagnostic, SourceManager};
 
 use super::Module;
 
+pub const I32_INTRINSICS_MODULE_NAME: &str = "intrinsics::i32";
+pub const I64_INTRINSICS_MODULE_NAME: &str = "intrinsics::i64";
+pub const MEM_INTRINSICS_MODULE_NAME: &str = "intrinsics::mem";
+
+pub const INTRINSICS_MODULE_NAMES: [&str; 3] = [
+    I32_INTRINSICS_MODULE_NAME,
+    I64_INTRINSICS_MODULE_NAME,
+    MEM_INTRINSICS_MODULE_NAME,
+];
+
 const I32_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"));
 const I64_INTRINSICS: &str =
@@ -13,17 +23,17 @@ const MEM_INTRINSICS: &str =
 /// This is a mapping of intrinsics module name to the raw MASM source for that module
 const INTRINSICS: [(&str, &str, &str); 3] = [
     (
-        "intrinsics::i32",
+        I32_INTRINSICS_MODULE_NAME,
         I32_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"),
     ),
     (
-        "intrinsics::i64",
+        I64_INTRINSICS_MODULE_NAME,
         I64_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"),
     ),
     (
-        "intrinsics::mem",
+        MEM_INTRINSICS_MODULE_NAME,
         MEM_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"),
     ),

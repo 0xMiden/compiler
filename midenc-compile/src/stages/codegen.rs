@@ -1,3 +1,6 @@
+use midenc_codegen_masm::intrinsics::{
+    I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
+};
 use midenc_session::OutputType;
 
 use super::*;
@@ -72,11 +75,11 @@ impl Stage for CodegenStage {
 
 fn required_intrinsics_modules(session: &Session) -> Vec<masm::Module> {
     vec![
-        masm::intrinsics::load("intrinsics::mem", &session.source_manager)
+        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, &session.source_manager)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load("intrinsics::i32", &session.source_manager)
+        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, &session.source_manager)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load("intrinsics::i64", &session.source_manager)
+        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, &session.source_manager)
             .expect("undefined intrinsics module"),
     ]
 }

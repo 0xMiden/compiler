@@ -1,0 +1,45 @@
+# mod collatz
+
+export.entrypoint
+    push.0
+    swap.1
+    push.1
+    dup.1
+    swap.1
+    neq
+    neq.0
+    push.1
+    while.true
+        if.true
+            push.1
+            movup.2
+            swap.1
+            u32wrapping_add
+            dup.1
+            push.1
+            u32shr
+            push.3
+            dup.3
+            swap.1
+            exec.::intrinsics::i32::wrapping_mul
+            push.1
+            u32wrapping_add
+            push.1
+            movup.4
+            swap.1
+            u32and
+            neq.0
+            cdrop
+            push.1
+            dup.1
+            swap.1
+            neq
+            neq.0
+            push.1
+        else
+            drop push.0
+        end
+    end
+end
+
+
