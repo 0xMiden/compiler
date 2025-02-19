@@ -72,7 +72,7 @@ fn memory_grow() {
                 v0 = hir.constant 1 : i32;
                 v1 = hir.bitcast v0 : u32 #[ty = u32];
                 v2 = hir.mem_grow v1 : u32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -91,7 +91,7 @@ fn memory_size() {
             builtin.function public @test_wrapper() {
             ^block3:
                 v0 = hir.mem_size  : u32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -120,7 +120,7 @@ fn memory_copy() {
                 v6 = hir.bitcast v1 : u32 #[ty = u32];
                 v7 = hir.int_to_ptr v6 : (ptr u8) #[ty = (ptr u8)];
                 hir.mem_cpy v7, v5, v3;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -144,7 +144,7 @@ fn i32_load8_u() {
                 v2 = hir.int_to_ptr v1 : (ptr u8) #[ty = (ptr u8)];
                 v3 = hir.load v2 : u8;
                 v4 = hir.zext v3 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -171,7 +171,7 @@ fn i32_load16_u() {
                 v4 = hir.int_to_ptr v1 : (ptr u16) #[ty = (ptr u16)];
                 v5 = hir.load v4 : u16;
                 v6 = hir.zext v5 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -195,7 +195,7 @@ fn i32_load8_s() {
                 v2 = hir.int_to_ptr v1 : (ptr i8) #[ty = (ptr i8)];
                 v3 = hir.load v2 : i8;
                 v4 = hir.sext v3 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -222,7 +222,7 @@ fn i32_load16_s() {
                 v4 = hir.int_to_ptr v1 : (ptr i16) #[ty = (ptr i16)];
                 v5 = hir.load v4 : i16;
                 v6 = hir.sext v5 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -246,7 +246,7 @@ fn i64_load8_u() {
                 v2 = hir.int_to_ptr v1 : (ptr u8) #[ty = (ptr u8)];
                 v3 = hir.load v2 : u8;
                 v4 = hir.zext v3 : u64 #[ty = u64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -273,7 +273,7 @@ fn i64_load16_u() {
                 v4 = hir.int_to_ptr v1 : (ptr u16) #[ty = (ptr u16)];
                 v5 = hir.load v4 : u16;
                 v6 = hir.zext v5 : u64 #[ty = u64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -297,7 +297,7 @@ fn i64_load8_s() {
                 v2 = hir.int_to_ptr v1 : (ptr i8) #[ty = (ptr i8)];
                 v3 = hir.load v2 : i8;
                 v4 = hir.sext v3 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -324,7 +324,7 @@ fn i64_load16_s() {
                 v4 = hir.int_to_ptr v1 : (ptr i16) #[ty = (ptr i16)];
                 v5 = hir.load v4 : i16;
                 v6 = hir.sext v5 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -351,7 +351,7 @@ fn i64_load32_s() {
                 v4 = hir.int_to_ptr v1 : (ptr i32) #[ty = (ptr i32)];
                 v5 = hir.load v4 : i32;
                 v6 = hir.sext v5 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -378,7 +378,7 @@ fn i64_load32_u() {
                 v4 = hir.int_to_ptr v1 : (ptr u32) #[ty = (ptr u32)];
                 v5 = hir.load v4 : u32;
                 v6 = hir.zext v5 : u64 #[ty = u64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -404,7 +404,7 @@ fn i32_load() {
                 hir.assertz v3 #[code = 250];
                 v4 = hir.int_to_ptr v1 : (ptr i32) #[ty = (ptr i32)];
                 v5 = hir.load v4 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -430,7 +430,7 @@ fn i64_load() {
                 hir.assertz v3 #[code = 250];
                 v4 = hir.int_to_ptr v1 : (ptr i64) #[ty = (ptr i64)];
                 v5 = hir.load v4 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -457,7 +457,7 @@ fn i32_store() {
                 hir.assertz v4 #[code = 250];
                 v5 = hir.int_to_ptr v2 : (ptr i32) #[ty = (ptr i32)];
                 hir.store v5, v1;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -484,7 +484,7 @@ fn i64_store() {
                 hir.assertz v4 #[code = 250];
                 v5 = hir.int_to_ptr v2 : (ptr i64) #[ty = (ptr i64)];
                 hir.store v5, v1;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -510,7 +510,7 @@ fn i32_store8() {
                 v4 = hir.bitcast v0 : u32 #[ty = u32];
                 v5 = hir.int_to_ptr v4 : (ptr u8) #[ty = (ptr u8)];
                 hir.store v5, v3;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -539,7 +539,7 @@ fn i32_store16() {
                 hir.assertz v6 #[code = 250];
                 v7 = hir.int_to_ptr v4 : (ptr u16) #[ty = (ptr u16)];
                 hir.store v7, v3;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -568,7 +568,7 @@ fn i64_store32() {
                 hir.assertz v6 #[code = 250];
                 v7 = hir.int_to_ptr v4 : (ptr u32) #[ty = (ptr u32)];
                 hir.store v7, v3;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -606,7 +606,7 @@ fn i64_const() {
             builtin.function public @test_wrapper() {
             ^block3:
                 v0 = hir.constant 1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -628,7 +628,7 @@ fn i32_popcnt() {
                 v0 = hir.constant 1 : i32;
                 v1 = hir.popcnt v0 : u32;
                 v2 = hir.bitcast v1 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -650,7 +650,7 @@ fn i32_clz() {
                 v0 = hir.constant 1 : i32;
                 v1 = hir.clz v0 : u32;
                 v2 = hir.bitcast v1 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -672,7 +672,7 @@ fn i64_clz() {
                 v0 = hir.constant 1 : i64;
                 v1 = hir.clz v0 : u32;
                 v2 = hir.bitcast v1 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -694,7 +694,7 @@ fn i32_ctz() {
                 v0 = hir.constant 1 : i32;
                 v1 = hir.ctz v0 : u32;
                 v2 = hir.bitcast v1 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -716,7 +716,7 @@ fn i64_ctz() {
                 v0 = hir.constant 1 : i64;
                 v1 = hir.ctz v0 : u32;
                 v2 = hir.bitcast v1 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -737,7 +737,7 @@ fn i64_extend_i32_s() {
             ^block3:
                 v0 = hir.constant 1 : i32;
                 v1 = hir.sext v0 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -760,7 +760,7 @@ fn i64_extend_i32_u() {
                 v1 = hir.bitcast v0 : u32 #[ty = u32];
                 v2 = hir.zext v1 : u64 #[ty = u64];
                 v3 = hir.bitcast v2 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -781,7 +781,7 @@ fn i32_wrap_i64() {
             ^block3:
                 v0 = hir.constant 1 : i64;
                 v1 = hir.trunc v0 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -827,7 +827,7 @@ fn i64_add() {
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.add v0, v1 : i64 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -850,7 +850,7 @@ fn i32_and() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.band v0, v1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -873,7 +873,7 @@ fn i64_and() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.band v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -896,7 +896,7 @@ fn i32_or() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bor v0, v1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -919,7 +919,7 @@ fn i64_or() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.bor v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -942,7 +942,7 @@ fn i32_sub() {
                 v0 = hir.constant 3 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.sub v0, v1 : i32 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -965,7 +965,7 @@ fn i64_sub() {
                 v0 = hir.constant 3 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.sub v0, v1 : i64 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -988,7 +988,7 @@ fn i32_xor() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bxor v0, v1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1011,7 +1011,7 @@ fn i64_xor() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.bxor v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1035,7 +1035,7 @@ fn i32_shl() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bitcast v1 : u32 #[ty = u32];
                 v3 = hir.shl v0, v2 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1059,7 +1059,7 @@ fn i64_shl() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.cast v1 : u32 #[ty = u32];
                 v3 = hir.shl v0, v2 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1085,7 +1085,7 @@ fn i32_shr_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.shr v2, v3 : u32;
                 v5 = hir.bitcast v4 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1111,7 +1111,7 @@ fn i64_shr_u() {
                 v3 = hir.cast v1 : u32 #[ty = u32];
                 v4 = hir.shr v2, v3 : u64;
                 v5 = hir.bitcast v4 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1135,7 +1135,7 @@ fn i32_shr_s() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bitcast v1 : u32 #[ty = u32];
                 v3 = hir.shr v0, v2 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1159,7 +1159,7 @@ fn i64_shr_s() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.cast v1 : u32 #[ty = u32];
                 v3 = hir.shr v0, v2 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1183,7 +1183,7 @@ fn i32_rotl() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bitcast v1 : u32 #[ty = u32];
                 v3 = hir.rotl v0, v2 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1207,7 +1207,7 @@ fn i64_rotl() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.cast v1 : u32 #[ty = u32];
                 v3 = hir.rotl v0, v2 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1231,7 +1231,7 @@ fn i32_rotr() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.bitcast v1 : u32 #[ty = u32];
                 v3 = hir.rotr v0, v2 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1255,7 +1255,7 @@ fn i64_rotr() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.cast v1 : u32 #[ty = u32];
                 v3 = hir.rotr v0, v2 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1278,7 +1278,7 @@ fn i32_mul() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.mul v0, v1 : i32 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1301,7 +1301,7 @@ fn i64_mul() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.mul v0, v1 : i64 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1327,7 +1327,7 @@ fn i32_div_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.div v2, v3 : u32;
                 v5 = hir.bitcast v4 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1353,7 +1353,7 @@ fn i64_div_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.div v2, v3 : u64;
                 v5 = hir.bitcast v4 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1376,7 +1376,7 @@ fn i32_div_s() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.div v0, v1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1399,7 +1399,7 @@ fn i64_div_s() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.div v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1425,7 +1425,7 @@ fn i32_rem_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.mod v2, v3 : u32;
                 v5 = hir.bitcast v4 : i32 #[ty = i32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1451,7 +1451,7 @@ fn i64_rem_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.mod v2, v3 : u64;
                 v5 = hir.bitcast v4 : i64 #[ty = i64];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1474,7 +1474,7 @@ fn i32_rem_s() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.mod v0, v1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1497,7 +1497,7 @@ fn i64_rem_s() {
                 v0 = hir.constant 2 : i64;
                 v1 = hir.constant 1 : i64;
                 v2 = hir.mod v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1523,7 +1523,7 @@ fn i32_lt_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.lt v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1549,7 +1549,7 @@ fn i64_lt_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.lt v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1573,7 +1573,7 @@ fn i32_lt_s() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.lt v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1597,7 +1597,7 @@ fn i64_lt_s() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.lt v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1623,7 +1623,7 @@ fn i32_le_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.lte v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1649,7 +1649,7 @@ fn i64_le_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.lte v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1673,7 +1673,7 @@ fn i32_le_s() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.lte v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1697,7 +1697,7 @@ fn i64_le_s() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.lte v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1723,7 +1723,7 @@ fn i32_gt_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.gt v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1749,7 +1749,7 @@ fn i64_gt_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.gt v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1773,7 +1773,7 @@ fn i32_gt_s() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.gt v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1797,7 +1797,7 @@ fn i64_gt_s() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.gt v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1823,7 +1823,7 @@ fn i32_ge_u() {
                 v3 = hir.bitcast v1 : u32 #[ty = u32];
                 v4 = hir.gte v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1849,7 +1849,7 @@ fn i64_ge_u() {
                 v3 = hir.bitcast v1 : u64 #[ty = u64];
                 v4 = hir.gte v2, v3 : i1;
                 v5 = hir.zext v4 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1873,7 +1873,7 @@ fn i32_ge_s() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.gte v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1897,7 +1897,7 @@ fn i64_ge_s() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.gte v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1943,7 +1943,7 @@ fn i64_eqz() {
                 v1 = hir.constant 0 : i64;
                 v2 = hir.eq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1967,7 +1967,7 @@ fn i32_eq() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.eq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1991,7 +1991,7 @@ fn i64_eq() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.eq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -2015,7 +2015,7 @@ fn i32_ne() {
                 v1 = hir.constant 1 : i32;
                 v2 = hir.neq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -2039,7 +2039,7 @@ fn i64_ne() {
                 v1 = hir.constant 1 : i64;
                 v2 = hir.neq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -2066,7 +2066,7 @@ fn select_i32() {
                 v3 = hir.constant 0 : i32;
                 v4 = hir.neq v2, v3 : i1;
                 v5 = hir.select v4, v0, v1 : i64;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -2092,17 +2092,17 @@ fn if_else() {
                 v0 = hir.constant 2 : i32;
                 v1 = hir.constant 0 : i32;
                 v2 = hir.neq v0, v1 : i1;
-                hir.cond_br block5, block7 v2;
+                hir.cond_br v2 block5, block7;
             ^block4:
                 hir.ret ;
             ^block5:
                 v4 = hir.constant 3 : i32;
-                hir.br block6 v4;
+                hir.br block6(v4);
             ^block6(v3: i32):
-                hir.br block4 ;
+                hir.br block4;
             ^block7:
                 v5 = hir.constant 5 : i32;
-                hir.br block6 v5;
+                hir.br block6(v5);
             };
         "#]],
     )
@@ -2129,7 +2129,7 @@ fn globals() {
                 v5 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root/noname/MyGlobalVal];
                 v6 = hir.bitcast v5 : (ptr i32) #[ty = (ptr i32)];
                 hir.store v6, v4;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
