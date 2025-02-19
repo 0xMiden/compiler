@@ -843,6 +843,7 @@ impl<'a> TransformationContext<'a> {
             .map(|arg| arg.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
         drop(latch_term);
+        drop(latch_block);
 
         // Add all values used in the next iteration to the exit block. Replace any uses that are
         // outside the loop with the newly created exit block.
@@ -868,7 +869,7 @@ impl<'a> TransformationContext<'a> {
         // Loop below might add block arguments to the latch and loop header. Save the block
         // arguments prior to the loop to not process these.
         let latch_block_arguments_prior =
-            latch_block.arguments().iter().copied().collect::<SmallVec<[_; 2]>>();
+            latch.borrow().arguments().iter().copied().collect::<SmallVec<[_; 2]>>();
         let loop_header_arguments_prior =
             loop_header.borrow().arguments().iter().copied().collect::<SmallVec<[_; 2]>>();
 
@@ -941,7 +942,7 @@ impl<'a> TransformationContext<'a> {
                         // argument of the latch or if `value` dominates all predecessors.
                         let mut argument = value;
                         if value_block != latch
-                            && latch_block.predecessors().any(|pred| {
+                            && latch.borrow().predecessors().any(|pred| {
                                 !loop_block_dominates(
                                     pred.owner.borrow().parent().unwrap(),
                                     ctx.dominance_info,
@@ -950,7 +951,7 @@ impl<'a> TransformationContext<'a> {
                         {
                             argument =
                                 ctx.context.append_block_argument(latch, value_ty.clone(), span);
-                            for pred in latch_block.predecessors() {
+                            for pred in latch.borrow().predecessors() {
                                 let mut succ_operand = value;
                                 if !loop_block_dominates(
                                     pred.owner.borrow().parent().unwrap(),
