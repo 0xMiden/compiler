@@ -73,7 +73,7 @@ This will emit the compiled artifacts to `target/miden/release/foo.masp`.
 
 
 > [!WARNING]
-> To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](/docs/usage/midenc.md) for the installation instructions.
+> To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](/usage/midenc.md) for the installation instructions.
 
 
 The compiled Miden VM program can be run from the Miden package with the following:
