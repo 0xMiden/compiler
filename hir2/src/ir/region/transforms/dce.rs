@@ -159,7 +159,7 @@ impl LiveMap {
             for succ_index in 0..num_successors {
                 let succ_operands = branch_op.get_successor_operands(succ_index);
                 for arg_index in 0..succ_operands.num_produced() {
-                    let succ = op.successors()[succ_index].block.borrow().block;
+                    let succ = op.successors()[succ_index].block.borrow().successor();
                     let succ_arg = succ.borrow().get_argument(arg_index).upcast();
                     self.set_proved_live(succ_arg);
                 }

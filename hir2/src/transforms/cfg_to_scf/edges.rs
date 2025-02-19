@@ -23,6 +23,11 @@ impl Edge {
         from_block.get_successor(self.successor_index)
     }
 
+    pub fn get_predecessor(&self) -> OperationRef {
+        let from_block = self.from_block.borrow();
+        from_block.terminator().unwrap()
+    }
+
     /// Sets the successor of the edge, adjusting the terminator in the from-block.
     pub fn set_successor(&self, block: BlockRef) {
         let mut terminator = {
@@ -41,6 +46,7 @@ impl Edge {
 pub struct SuccessorEdges {
     block: BlockRef,
     num_successors: usize,
+    current: usize,
 }
 
 impl SuccessorEdges {
@@ -49,6 +55,7 @@ impl SuccessorEdges {
         Self {
             block,
             num_successors,
+            current: 0,
         }
     }
 }
@@ -57,8 +64,11 @@ impl Iterator for SuccessorEdges {
     type Item = Edge;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let successor_index = self.num_successors.checked_sub(1)?;
-        self.num_successors = successor_index;
+        let successor_index = self.current;
+        if successor_index >= self.num_successors {
+            return None;
+        }
+        self.current += 1;
         Some(Edge {
             from_block: self.block,
             successor_index,
@@ -91,12 +101,13 @@ pub fn calculate_cycle_edges(cycles: &[BlockRef]) -> CycleEdges {
     for block_ref in cycles.iter().copied() {
         let block = block_ref.borrow();
         for pred in block.predecessors() {
-            if cycles.contains(&pred.block) {
+            let from_block = pred.predecessor();
+            if cycles.contains(&from_block) {
                 continue;
             }
 
             result.entry_edges.push(Edge {
-                from_block: pred.block,
+                from_block,
                 successor_index: pred.index as usize,
             });
             entry_blocks.insert(block_ref);
@@ -105,14 +116,14 @@ pub fn calculate_cycle_edges(cycles: &[BlockRef]) -> CycleEdges {
         let terminator = block.terminator().unwrap();
         let terminator = terminator.borrow();
         for succ in terminator.successor_iter() {
-            let succ = succ.dest.borrow();
-            if cycles.contains(&succ.block) {
+            let succ_operand = succ.dest.borrow();
+            if cycles.contains(&succ_operand.successor()) {
                 continue;
             }
 
             result.exit_edges.push(Edge {
                 from_block: block_ref,
-                successor_index: succ.index as usize,
+                successor_index: succ_operand.index as usize,
             });
         }
     }
@@ -243,14 +254,10 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
             .expect("edge was not originally passed to `create`");
 
         let succ_block = edge.get_successor();
-        let mut terminator_ref = {
-            let succ_block = succ_block.borrow();
-            succ_block.terminator().unwrap()
-        };
+        let mut terminator_ref = edge.get_predecessor();
         let mut terminator = terminator_ref.borrow_mut();
         let context = terminator.context_rc();
         let mut succ = terminator.successor_mut(edge.successor_index);
-        let succ_operands = &mut succ.arguments;
 
         // Extra arguments are always appended at the end of the block arguments.
         let multiplexer_block = self.multiplexer_block.borrow();
@@ -268,9 +275,9 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         for arg in multiplexer_block.arguments().iter() {
             let arg = arg.borrow();
             let index = arg.index();
-            if index >= result && index < result + succ_operands.len() {
+            if index >= result && index < result + succ.arguments.len() {
                 // Original block arguments to the entry block.
-                let mut operand = succ_operands[index - result];
+                let mut operand = succ.arguments[index - result];
                 // Update the operand index now
                 {
                     let mut operand = operand.borrow_mut();
@@ -305,15 +312,18 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
             new_succ_operands.push(operand);
         }
 
-        edge.set_successor(self.multiplexer_block);
+        drop(multiplexer_block);
 
-        let num_operands = succ_operands.len();
+        succ.set(self.multiplexer_block);
+
+        let num_operands = succ.arguments.len();
         for (index, new_operand) in new_succ_operands.into_iter().enumerate() {
-            if num_operands >= index {
-                succ_operands.push(new_operand);
+            if index < num_operands {
+                succ.arguments[index] = new_operand;
+                continue;
             }
 
-            succ_operands[index] = new_operand;
+            succ.arguments.push(new_operand);
         }
     }
 

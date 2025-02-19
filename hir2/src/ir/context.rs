@@ -246,7 +246,7 @@ impl Context {
         let dest_operand_groups: Vec<usize> = op
             .successors()
             .iter()
-            .filter(|succ| succ.block.borrow().block == dest)
+            .filter(|succ| succ.block.borrow().successor() == dest)
             .map(|succ| succ.operand_group as usize)
             .collect();
         for dest_group in dest_operand_groups {
@@ -256,7 +256,7 @@ impl Context {
                 op.as_operation_ref(),
                 (current_dest_operands_len + 1) as u8,
             );
-            op.operands_mut().extend_group(dest_group, vec![operand]);
+            op.operands_mut().extend_group(dest_group, [operand]);
         }
     }
 

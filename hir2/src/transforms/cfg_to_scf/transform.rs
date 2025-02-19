@@ -456,17 +456,16 @@ impl<'a> TransformationContext<'a> {
             for (block_list, succ) in
                 successor_branch_regions.iter_mut().zip(terminator.successor_iter())
             {
-                let dest_operand = succ.dest.borrow();
-                let dest = dest_operand.block.borrow();
+                let dest = succ.dest.borrow().successor();
 
                 // If the region entry is not the only predecessor, then the edge does not dominate the
                 // block it leads to.
-                if dest.get_single_predecessor().is_none() {
+                if dest.borrow().get_single_predecessor().is_none() {
                     continue;
                 }
 
                 // Otherwise get all blocks it dominates in DFS/pre-order.
-                let node = self.dominance_info.info().node(dest_operand.block).unwrap();
+                let node = self.dominance_info.info().node(dest).unwrap();
                 for curr in PreOrderDomTreeIter::new(node) {
                     if let Some(block) = curr.block() {
                         block_list.push(block);
@@ -564,7 +563,7 @@ impl<'a> TransformationContext<'a> {
                     continuation_post_dominates_all_regions = false;
                     for pred in block.predecessors() {
                         continuation_edges.push(Edge {
-                            from_block: pred.block,
+                            from_block: pred.predecessor(),
                             successor_index: pred.index as usize,
                         });
                     }
@@ -586,7 +585,7 @@ impl<'a> TransformationContext<'a> {
         if no_successor_has_continuation_edge {
             let term = region_entry.borrow().terminator().unwrap();
             let term = term.borrow();
-            return Ok(term.successor_iter().map(|s| s.dest.borrow().block).collect());
+            return Ok(term.successor_iter().map(|s| s.dest.borrow().successor()).collect());
         }
 
         // Collapse to a single continuation block, or None

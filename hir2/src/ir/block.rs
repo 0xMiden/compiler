@@ -176,7 +176,7 @@ impl cfg::Graph for Block {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block
+        edge.borrow().successor()
     }
 }
 
@@ -225,7 +225,7 @@ impl cfg::Graph for BlockRef {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block
+        edge.borrow().successor()
     }
 }
 
@@ -273,7 +273,7 @@ impl Iterator for BlockSuccessorIter {
     type Item = BlockRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|bo| bo.borrow().block)
+        self.iter.next().map(|bo| bo.borrow().successor())
     }
 
     #[inline]
@@ -289,7 +289,7 @@ impl Iterator for BlockSuccessorIter {
         B::from_iter(
             successors.all().as_slice()[self.iter.index..self.iter.num_successors]
                 .iter()
-                .map(|succ| succ.block.borrow().block),
+                .map(|succ| succ.block.borrow().successor()),
         )
     }
 
@@ -305,7 +305,7 @@ impl Iterator for BlockSuccessorIter {
         collection.extend(
             successors.all().as_slice()[self.iter.index..self.iter.num_successors]
                 .iter()
-                .map(|succ| succ.block.borrow().block),
+                .map(|succ| succ.block.borrow().successor()),
         );
         collection
     }
@@ -395,7 +395,7 @@ pub struct BlockPredecessorIter {
 }
 impl BlockPredecessorIter {
     pub fn new(child: BlockRef) -> Self {
-        let preds = child.borrow().predecessors().map(|bo| bo.block).collect();
+        let preds = child.borrow().predecessors().map(|bo| bo.predecessor()).collect();
         Self { preds, index: 0 }
     }
 
@@ -933,14 +933,10 @@ impl Block {
     /// as the destination for both true/false branches is _not_ considered a single predecessor by
     /// this function.
     pub fn get_single_predecessor(&self) -> Option<BlockRef> {
-        let front = self.uses.front();
-        if front.is_null() {
-            return None;
-        }
-        let front = front.as_pointer().unwrap();
+        let front = self.uses.front().as_pointer()?;
         let back = self.uses.back().as_pointer().unwrap();
         if BlockOperandRef::ptr_eq(&front, &back) {
-            Some(front.borrow().block)
+            Some(front.borrow().predecessor())
         } else {
             None
         }
@@ -951,11 +947,11 @@ impl Block {
     pub fn get_unique_predecessor(&self) -> Option<BlockRef> {
         let mut front = self.uses.front();
         let block_operand = front.get()?;
-        let block = block_operand.block;
+        let block = block_operand.predecessor();
         loop {
             front.move_next();
             if let Some(bo) = front.get() {
-                if !BlockRef::ptr_eq(&block, &bo.block) {
+                if !BlockRef::ptr_eq(&block, &bo.predecessor()) {
                     break None;
                 }
             } else {
@@ -976,9 +972,10 @@ impl Block {
     }
 
     /// Get the `index`th successor of this block's terminator operation
+    #[track_caller]
     pub fn get_successor(&self, index: usize) -> BlockRef {
         let op = self.terminator().expect("this block has no terminator");
-        op.borrow().successor(index).dest.borrow().block
+        op.borrow().successor(index).dest.borrow().successor()
     }
 
     /// This drops all operand uses from operations within this block, which is an essential step in
@@ -1133,6 +1130,12 @@ impl BlockOperand {
     /// Get the block from which this block operand originates, i.e. the predecessor block
     pub fn predecessor(&self) -> BlockRef {
         self.owner.borrow().parent().expect("operation is not attached to a block")
+    }
+
+    /// Get the block this operand references
+    #[inline]
+    pub const fn successor(&self) -> BlockRef {
+        self.block
     }
 }
 impl fmt::Debug for BlockOperand {

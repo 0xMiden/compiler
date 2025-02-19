@@ -289,7 +289,8 @@ where
     // Join the state with the state after the block's predecessors.
     for pred in block.predecessors() {
         // Skip control edges that aren't executable.
-        let anchor = CfgEdge::new(pred.block, block.as_block_ref(), block.span());
+        let predecessor = pred.predecessor();
+        let anchor = CfgEdge::new(predecessor, pred.successor(), block.span());
         if !solver.require::<Executable, _>(anchor, point).is_live() {
             continue;
         }
@@ -299,7 +300,13 @@ where
             point,
             ProgramPoint::after(pred.owner),
         );
-        analysis.visit_branch_control_flow_transfer(pred.block, block, &before, &mut after, solver);
+        analysis.visit_branch_control_flow_transfer(
+            predecessor,
+            block,
+            &before,
+            &mut after,
+            solver,
+        );
     }
 }
 

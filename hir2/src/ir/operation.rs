@@ -642,6 +642,7 @@ impl Operation {
 
     /// Get a reference to the successor at `index`
     #[inline]
+    #[track_caller]
     pub fn successor(&self, index: usize) -> OpSuccessor<'_> {
         let info = &self.successors[index];
         OpSuccessor {
@@ -652,6 +653,7 @@ impl Operation {
 
     /// Get a mutable reference to the successor at `index`
     #[inline]
+    #[track_caller]
     pub fn successor_mut(&mut self, index: usize) -> OpSuccessorMut<'_> {
         let info = self.successors[index];
         OpSuccessorMut {

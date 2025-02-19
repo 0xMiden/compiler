@@ -96,12 +96,11 @@ impl Listener for SSABuilderListener {
         if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
             let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
             for succ in op.successors().iter() {
-                if !unique.insert(succ.block.borrow().block) {
+                let successor = succ.block.borrow().successor();
+                if !unique.insert(successor) {
                     continue;
                 }
-                builder
-                    .ssa
-                    .declare_block_predecessor(succ.block.borrow().block, op.as_operation_ref());
+                builder.ssa.declare_block_predecessor(successor, op.as_operation_ref());
             }
         }
 

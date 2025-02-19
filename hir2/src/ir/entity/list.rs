@@ -237,8 +237,9 @@ impl<'a, T> EntityCursor<'a, T> {
     ///
     /// NOTE: This returns an [EntityRef] whose lifetime is bound to the underlying [EntityList],
     /// _not_ the [EntityCursor], since the cursor cannot mutate the list.
+    #[track_caller]
     pub fn get(&self) -> Option<EntityRef<'a, T>> {
-        self.cursor.get().map(|obj| obj.entity.borrow())
+        Some(self.cursor.get()?.entity.borrow())
     }
 
     /// Get the [TrackedEntityHandle] corresponding to the entity under the cursor.

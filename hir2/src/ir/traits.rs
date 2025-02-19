@@ -128,7 +128,14 @@ pub trait BranchOpInterface: crate::Op {
                 // We found the operand group, now map that to a successor
                 let succ_info =
                     op.successors().iter().find(|s| operand_group == s.operand_group as usize)?;
-                return succ_info.block.borrow().block.borrow().arguments().get(arg_index).cloned();
+                return succ_info
+                    .block
+                    .borrow()
+                    .successor()
+                    .borrow()
+                    .arguments()
+                    .get(arg_index)
+                    .cloned();
             }
 
             next_index += group_size;

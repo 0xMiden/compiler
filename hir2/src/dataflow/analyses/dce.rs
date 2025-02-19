@@ -443,8 +443,8 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
                 self.visit_branch_operation(branch, solver);
             } else {
                 for successor in op.successors().all() {
-                    let block_operand = successor.block.borrow();
-                    let successor_block = block_operand.block.borrow();
+                    let succ = successor.block.borrow().successor();
+                    let successor_block = succ.borrow();
                     let op_block = op.parent().unwrap();
                     self.mark_edge_live(&op_block.borrow(), &successor_block, solver);
                 }
@@ -647,19 +647,18 @@ impl DeadCodeAnalysis {
         };
 
         if let Some(successor) = branch.get_successor_for_operands(&operands) {
-            let to = successor.block.borrow().block;
-            self.mark_edge_live(
-                &branch.as_operation().parent().unwrap().borrow(),
-                &to.borrow(),
-                solver,
-            );
+            let (from, to) = {
+                let succ = successor.block.borrow();
+                (succ.predecessor(), succ.successor())
+            };
+            self.mark_edge_live(&from.borrow(), &to.borrow(), solver);
         } else {
             // Otherwise, mark all successors as executable and outgoing edges.
-            let branch_block = branch.as_operation().parent().unwrap();
-            let branch_block = branch_block.borrow();
             for successor in branch.successors().all() {
-                let successor = successor.block.borrow();
-                self.mark_edge_live(&branch_block, &successor.block.borrow(), solver);
+                let block_operand = successor.block.borrow();
+                let from = block_operand.predecessor();
+                let to = block_operand.successor();
+                self.mark_edge_live(&from.borrow(), &to.borrow(), solver);
             }
         }
     }

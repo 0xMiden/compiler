@@ -312,7 +312,7 @@ where
     // Iterate over the predecessors of the non-entry block.
     let current_analysis = solver.current_analysis().unwrap();
     for pred in block.predecessors() {
-        let predecessor = pred.block.borrow();
+        let predecessor = pred.predecessor().borrow();
 
         // If the edge from the predecessor block to the current block is not live, bail out.
         let mut edge_executable = {
@@ -329,11 +329,9 @@ where
         }
 
         // Check if we can reason about the data-flow from the predecessor.
-        let terminator = predecessor.terminator();
-        let terminator = terminator.as_ref().map(|t| t.borrow());
-        if let Some(branch) =
-            terminator.as_ref().and_then(|t| t.as_trait::<dyn BranchOpInterface>())
-        {
+        let terminator = pred.owner;
+        let terminator = terminator.borrow();
+        if let Some(branch) = terminator.as_trait::<dyn BranchOpInterface>() {
             let operands = branch.get_successor_operands(pred.index());
             for (idx, lattice) in arg_lattices.iter_mut().enumerate() {
                 if let Some(operand) =
