@@ -226,6 +226,15 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         let mut op = while_op.borrow_mut();
         let operation = op.as_operation().as_operation_ref();
 
+        // Results are derived from the forwarded values given to `hir.condition`
+        for (i, forwarded) in loop_values_next_iter.iter().enumerate() {
+            let fwd = forwarded.borrow();
+            let ty = fwd.ty().clone();
+            let span = fwd.span();
+            let result = builder.context().make_result(span, ty, operation, i as u8);
+            op.results_mut().push(result);
+        }
+
         op.before_mut().take_body(loop_body);
 
         builder.set_insertion_point_to_end(op.before().body().back().as_pointer().unwrap());
