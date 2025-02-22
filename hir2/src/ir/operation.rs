@@ -991,7 +991,14 @@ impl Operation {
     #[inline]
     pub fn erase(&mut self) {
         // We don't delete entities currently, so for now this is just an alias for `remove`
-        self.remove()
+        self.remove();
+
+        for succ in self.successors.iter_mut() {
+            succ.block.unlink();
+        }
+        for operand in self.operands.iter_mut() {
+            operand.unlink();
+        }
     }
 
     /// Remove the operation from its parent block, but don't delete it.
