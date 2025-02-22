@@ -1121,22 +1121,89 @@ pub trait InstBuilder: InstBuilderBase {
     fn r#if(
         mut self,
         cond: ValueRef,
+        results: &[Type],
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::If>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::If, (_,)>(span);
-        op_builder(cond)
+        let if_op = op_builder(cond)?;
+        {
+            let mut owner = if_op.as_operation_ref();
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+        Ok(if_op)
     }
 
     fn r#while<T>(
         mut self,
         loop_init_variables: T,
+        results: &[Type],
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::While>, Report>
     where
         T: IntoIterator<Item = ValueRef>,
     {
         let op_builder = self.builder_mut().create::<crate::ops::While, (T,)>(span);
-        op_builder(loop_init_variables)
+        let mut while_op = op_builder(loop_init_variables)?;
+        {
+            let mut owner = while_op.as_operation_ref();
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+        {
+            let mut while_op = while_op.borrow_mut();
+            let before_block = self
+                .builder()
+                .context()
+                .create_block_with_params(while_op.inits().iter().map(|v| v.borrow().ty()));
+            while_op.before_mut().body_mut().push_back(before_block);
+            let after_block =
+                self.builder().context().create_block_with_params(results.iter().cloned());
+            while_op.after_mut().body_mut().push_back(after_block);
+        }
+        Ok(while_op)
+    }
+
+    fn index_switch<T>(
+        mut self,
+        selector: ValueRef,
+        cases: T,
+        results: &[Type],
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::IndexSwitch>, Report>
+    where
+        T: IntoIterator<Item = u32>,
+    {
+        let cases = ArrayAttr::from_iter(cases);
+        let num_cases = cases.len();
+        let op_builder = self.builder_mut().create::<crate::ops::IndexSwitch, (_, _)>(span);
+        let switch_op = op_builder(selector, cases)?;
+        let mut owner = switch_op.as_operation_ref();
+
+        // Create results
+        {
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+
+        // Create regions for all cases
+        {
+            for i in 0..num_cases {
+                let region = self.builder().context().alloc_tracked(Region::default());
+                owner.borrow_mut().regions_mut().push_back(region);
+            }
+        }
+
+        Ok(switch_op)
     }
 
     fn switch<TCases, TFallbackArgs>(
@@ -1157,7 +1224,7 @@ pub trait InstBuilder: InstBuilderBase {
         op_builder(selector, cases, fallback, fallback_args)
     }
 
-    fn r#condition<T>(
+    fn condition<T>(
         mut self,
         cond: ValueRef,
         forwarded: T,

@@ -136,14 +136,9 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             assert_eq!(regions.len(), 2);
 
             let span = cond_br.span();
-            let mut if_op = ins.r#if(cond_br.condition().as_value_ref(), span)?;
+            let mut if_op = ins.r#if(cond_br.condition().as_value_ref(), result_types, span)?;
             let mut op = if_op.borrow_mut();
-            let operation = op.as_operation().as_operation_ref();
-            for (i, result) in result_types.iter().enumerate() {
-                let result =
-                    builder.context().make_result(span, result.clone(), operation, i as u8);
-                op.results_mut().push(result);
-            }
+            let operation = op.as_operation_ref();
 
             op.then_body_mut().take_body(regions[0]);
             op.else_body_mut().take_body(regions[1]);
@@ -151,32 +146,22 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             return Ok(operation);
         }
 
-        if let Some(_switch) = cf_op.downcast_ref::<crate::ops::Switch>() {
-            // `get_cfg_switch_value` returns a u32 that we need to convert to index first.
-            /*
-                auto cast = builder.create<arith::IndexCastUIOp>(
-                    controlFlowCondOp->getLoc(), builder.getIndexType(),
-                    switchOp.getFlag());
-                SmallVector<int64_t> cases;
-                if (auto caseValues = switchOp.getCaseValues())
-                    llvm::append_range(
-                        cases, llvm::map_range(*caseValues, [](const llvm::APInt &apInt) {
-                        return apInt.getZExtValue();
-                        }));
+        if let Some(switch) = cf_op.downcast_ref::<crate::ops::Switch>() {
+            let span = switch.span();
+            let cases = switch.cases();
+            let cases = cases.iter().map(|case| *case.key().unwrap());
+            let mut switch_op =
+                ins.index_switch(switch.selector().as_value_ref(), cases, result_types, span)?;
+            let mut op = switch_op.borrow_mut();
+            let operation = op.as_operation_ref();
 
-                assert(regions.size() == cases.size() + 1);
+            op.default_region_mut().take_body(regions[0]);
+            for (index, source_region) in regions.iter().copied().skip(1).enumerate() {
+                let mut case_region = op.get_case_region(index);
+                case_region.borrow_mut().take_body(source_region);
+            }
 
-                auto indexSwitchOp = builder.create<scf::IndexSwitchOp>(
-                    controlFlowCondOp->getLoc(), resultTypes, cast, cases, cases.size());
-
-                indexSwitchOp.getDefaultRegion().takeBody(regions[0]);
-                for (auto &&[targetRegion, sourceRegion] :
-                        llvm::zip(indexSwitchOp.getCaseRegions(), llvm::drop_begin(regions)))
-                    targetRegion.takeBody(sourceRegion);
-
-                return indexSwitchOp.getOperation();
-            */
-            unimplemented!("scf.index_switch has not yet been implemented")
+            return Ok(operation);
         }
 
         Err(builder
@@ -221,19 +206,15 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
         let span = replaced_op.span();
 
-        let ins = DefaultInstBuilder::new(builder);
-        let mut while_op = ins.r#while(loop_values_init.iter().copied(), span)?;
-        let mut op = while_op.borrow_mut();
-        let operation = op.as_operation().as_operation_ref();
-
         // Results are derived from the forwarded values given to `hir.condition`
-        for (i, forwarded) in loop_values_next_iter.iter().enumerate() {
-            let fwd = forwarded.borrow();
-            let ty = fwd.ty().clone();
-            let span = fwd.span();
-            let result = builder.context().make_result(span, ty, operation, i as u8);
-            op.results_mut().push(result);
-        }
+        let result_types = loop_values_next_iter
+            .iter()
+            .map(|v| v.borrow().ty().clone())
+            .collect::<SmallVec<[_; 2]>>();
+        let ins = DefaultInstBuilder::new(builder);
+        let mut while_op = ins.r#while(loop_values_init.iter().copied(), &result_types, span)?;
+        let mut op = while_op.borrow_mut();
+        let operation = op.as_operation_ref();
 
         op.before_mut().take_body(loop_body);
 
@@ -246,12 +227,15 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         let ins = DefaultInstBuilder::new(builder);
         ins.condition(cond, loop_values_next_iter.iter().copied(), span)?;
 
-        let after_region = { op.after().as_region_ref() };
-        let after_block = builder.create_block(after_region, None, &[]);
-        let context = builder.context_rc();
-        let yielded = loop_values_init.iter().map(|loop_var| {
-            context.append_block_argument(after_block, loop_var.borrow().ty().clone(), span)
-        });
+        let yielded = op
+            .after()
+            .entry()
+            .arguments()
+            .iter()
+            .map(|arg| arg.upcast())
+            .collect::<SmallVec<[ValueRef; 4]>>();
+
+        builder.set_insertion_point_to_end(op.after().entry().as_block_ref());
 
         let ins = DefaultInstBuilder::new(builder);
         ins.r#yield(yielded, span)?;
