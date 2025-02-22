@@ -4,6 +4,7 @@ use smallvec::SmallVec;
 
 use super::RegionTransformFailed;
 use crate::{
+    adt::SmallSet,
     traits::{BranchOpInterface, Terminator},
     OpOperandImpl, OpResult, Operation, OperationRef, PostOrderBlockIter, Region, RegionRef,
     Rewriter, SuccessorOperands, ValueRef,
@@ -98,7 +99,7 @@ impl LiveMap {
             // We process block arguments after the ops in the block, to promote faster convergence
             // to a fixed point (we try to visit uses before defs).
             let block = block.borrow();
-            for op in block.body() {
+            for op in block.body().iter().rev() {
                 self.propagate_liveness(&op);
             }
 
@@ -151,26 +152,23 @@ impl LiveMap {
         // Terminators are always live
         self.set_op_proved_live(op.as_operation_ref());
 
-        // Check to see if we can reason about the successor operands instead
+        // Check to see if we can reason about the successor operands
         //
         // If we can't reason about the operand to a successor, conservatively mark it as live
         if let Some(branch_op) = op.as_trait::<dyn BranchOpInterface>() {
-            let num_successors = op.num_successors();
-            for succ_index in 0..num_successors {
-                let succ_operands = branch_op.get_successor_operands(succ_index);
-                for arg_index in 0..succ_operands.num_produced() {
-                    let succ = op.successors()[succ_index].block.borrow().successor();
-                    let succ_arg = succ.borrow().get_argument(arg_index).upcast();
-                    self.set_proved_live(succ_arg);
+            let num_successors = branch_op.num_successors();
+            for successor_idx in 0..num_successors {
+                let operands = branch_op.get_successor_operands(successor_idx);
+                let succ = op.successor(successor_idx).dest.borrow().successor();
+                for arg in succ.borrow().arguments().iter().copied().take(operands.num_produced()) {
+                    self.set_proved_live(arg as ValueRef);
                 }
             }
         } else {
-            let num_successors = op.num_successors();
-            for succ_index in 0..num_successors {
-                let succ = op.successor(succ_index);
-                for arg in succ.arguments.iter() {
-                    let arg = arg.borrow().as_value_ref();
-                    self.set_proved_live(arg);
+            for successor in op.successors().iter() {
+                let successor = successor.block.borrow().successor();
+                for arg in successor.borrow().arguments().iter().copied() {
+                    self.set_proved_live(arg as ValueRef);
                 }
             }
         }
@@ -218,7 +216,7 @@ impl Region {
         rewriter: &mut dyn crate::Rewriter,
     ) -> Result<(), RegionTransformFailed> {
         let mut erased_dead_blocks = false;
-        let mut reachable = BTreeSet::default();
+        let mut reachable = SmallSet::<_, 8>::default();
         let mut worklist = VecDeque::from_iter(regions.iter().cloned());
         while let Some(mut region) = worklist.pop_front() {
             let mut current_region = region.borrow_mut();
@@ -244,6 +242,8 @@ impl Region {
             let mut cursor = blocks.front_mut();
             cursor.move_next();
             while let Some(mut block) = cursor.as_pointer() {
+                cursor.move_next();
+
                 if reachable.contains(&block) {
                     // Walk any regions within this block
                     for op in block.borrow().body() {
@@ -315,8 +315,10 @@ impl Region {
             // Delete block arguments.
             //
             // The entry block has an unknown contract with their enclosing block, so leave it alone.
+            drop(current_region);
             let mut current_region = region.borrow_mut();
             let mut blocks = current_region.body_mut().front_mut();
+            blocks.move_next();
             while let Some(mut block) = blocks.as_pointer() {
                 blocks.move_next();
                 block
