@@ -183,6 +183,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Switch>();
         info.register_operation::<ops::If>();
         info.register_operation::<ops::While>();
+        info.register_operation::<ops::IndexSwitch>();
         info.register_operation::<ops::Condition>();
         info.register_operation::<ops::Yield>();
         info.register_operation::<ops::Exec>();
