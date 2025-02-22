@@ -12,6 +12,7 @@ extern crate alloc;
 extern crate std;
 
 mod builders;
+mod canonicalization;
 mod ops;
 pub mod transforms;
 

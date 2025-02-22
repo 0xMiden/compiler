@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
 use midenc_hir2::{derive::operation, traits::*, *};
 
@@ -217,6 +217,35 @@ pub struct If {
     else_body: Region,
 }
 
+impl If {
+    pub fn then_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let terminator = self.then_body().entry().terminator().unwrap();
+        let term = terminator
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("invalid hir.if then terminator: expected yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
+    }
+
+    pub fn else_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let terminator = self.else_body().entry().terminator().unwrap();
+        let term = terminator
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("invalid hir.if else terminator: expected yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
+    }
+}
+
+impl Canonicalizable for If {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::ConvertTrivialIfToSelect::new(context.clone()));
+        rewrites.push(crate::canonicalization::IfRemoveUnusedResults::new(context));
+    }
+}
+
 impl RegionBranchOpInterface for If {
     fn get_entry_successor_regions(
         &self,
@@ -323,6 +352,50 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
+}
+
+impl While {
+    pub fn condition_op(&self) -> UnsafeIntrusiveEntityRef<Condition> {
+        let term = self
+            .before()
+            .entry()
+            .terminator()
+            .expect("expected before region to have a terminator");
+        let cond = term
+            .borrow()
+            .downcast_ref::<Condition>()
+            .expect("expected before region to terminate with hir.condition")
+            as *const Condition;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(cond) }
+    }
+
+    pub fn yield_op(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let term = self
+            .after()
+            .entry()
+            .terminator()
+            .expect("expected after region to have a terminator");
+        let yield_op = term
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("expected after region to terminate with hir.yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(yield_op) }
+    }
+}
+
+impl Canonicalizable for While {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::RemoveLoopInvariantArgsFromBeforeBlock::new(
+            context.clone(),
+        ));
+        //rewrites.push(crate::canonicalization::RemoveLoopInvariantValueYielded::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileConditionTruth::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileUnusedResult::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileRemoveDuplicatedResults::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileRemoveUnusedArgs::new(context.clone()));
+        //rewrites.push(crate::canonicalization::ConvertDoWhileToWhileTrue::new(context));
+    }
 }
 
 impl LoopLikeOpInterface for While {
