@@ -6,7 +6,7 @@ use midenc_hir2::{
     pass::{Pass, PassExecutionState},
     transforms::{self, CFGToSCFInterface},
     Builder, EntityMut, Op, Operation, OperationName, OperationRef, RawWalk, Report, SmallVec,
-    Spanned, Type, WalkResult,
+    Spanned, Type, ValueRef, WalkResult,
 };
 use midenc_session::diagnostics::Severity;
 
@@ -387,7 +387,7 @@ mod tests {
 
         // Define function body
         let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, builder);
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
 
         let if_is_zero = builder.create_block();
         let if_is_nonzero = builder.create_block();
@@ -477,7 +477,7 @@ builtin.function public @test(v0: u32) -> u32 {
 
         // Define function body
         let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, builder);
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
 
         let loop_header = builder.create_block();
         let n = builder.append_block_param(loop_header, Type::U32, span);
@@ -607,7 +607,7 @@ builtin.function public @test(v0: u32) -> u32 {
         // }
         //
         let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, builder);
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
 
         let outer_loop_header = builder.create_block();
         let inner_loop_header = builder.create_block();

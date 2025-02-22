@@ -518,7 +518,7 @@ impl GreedyPatternRewriteDriver {
                 rewriter.set_insertion_point(ProgramPoint::before(op_ref));
 
                 log::trace!("replacing op with fold results..");
-                let mut replacements = SmallVec::<[ValueRef; 2]>::default();
+                let mut replacements = SmallVec::<[Option<ValueRef>; 2]>::default();
                 let mut materialization_succeeded = true;
                 for (fold_result, result_ty) in results
                     .into_iter()
@@ -531,7 +531,7 @@ impl GreedyPatternRewriteDriver {
                                 &result_ty,
                                 "folder produced value of incorrect type"
                             );
-                            replacements.push(value);
+                            replacements.push(Some(value));
                         }
                         OpFoldResult::Attribute(attr) => {
                             // Materialize attributes as SSA values using a constant op
@@ -556,7 +556,8 @@ impl GreedyPatternRewriteDriver {
                                     // If materialization fails, clean up any operations generated for the previous results
                                     let mut replacement_ops =
                                         SmallVec::<[OperationRef; 2]>::default();
-                                    for replacement in replacements.iter() {
+                                    for replacement in replacements.iter().filter_map(|repl| *repl)
+                                    {
                                         let replacement = replacement.borrow();
                                         assert!(
                                             !replacement.is_used(),
@@ -592,7 +593,7 @@ impl GreedyPatternRewriteDriver {
                                         "successfully materialized constant as {}",
                                         result.borrow().id()
                                     );
-                                    replacements.push(result);
+                                    replacements.push(Some(result));
                                 }
                             }
                         }
@@ -798,7 +799,11 @@ impl RewriterListener for GreedyPatternRewriteDriver {
     /// Notify the driver that the specified operation was replaced.
     ///
     /// Update the worklist as needed: new users are enqueued
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         if let Some(listener) = self.config.listener.as_deref() {
             listener.notify_operation_replaced_with_values(op, replacement);
         }
@@ -860,7 +865,9 @@ impl RegionPatternRewriteDriver {
             let mut insert_known_constant = |op: OperationRef| {
                 // Check for existing constants when populating the worklist. This avoids
                 // accidentally reversing the constant order during processing.
-                if let Some(const_value) = crate::matchers::constant().matches(&op.borrow()) {
+                let operation = op.borrow();
+                if let Some(const_value) = crate::matchers::constant().matches(&operation) {
+                    drop(operation);
                     if !folder.insert_known_constant(op, Some(const_value)) {
                         return true;
                     }

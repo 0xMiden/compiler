@@ -145,7 +145,7 @@ impl OperationFolder {
         &mut self,
         op: OperationRef,
         fold_results: &[OpFoldResult],
-    ) -> FoldResult<SmallVec<[ValueRef; 2]>> {
+    ) -> FoldResult<SmallVec<[Option<ValueRef>; 2]>> {
         let borrowed_op = op.borrow();
         assert_eq!(fold_results.len(), borrowed_op.num_results());
 
@@ -161,7 +161,7 @@ impl OperationFolder {
             match fold_result {
                 // Check if the result was an SSA value.
                 OpFoldResult::Value(value) => {
-                    out.push(*value);
+                    out.push(Some(*value));
                     continue;
                 }
                 // Check to see if there is a canonicalized version of this constant.
@@ -183,7 +183,7 @@ impl OperationFolder {
                         {
                             const_op.borrow_mut().move_to(ProgramPoint::at_start_of(op_block));
                         }
-                        out.push(const_op.borrow().get_result(0).borrow().as_value_ref());
+                        out.push(Some(const_op.borrow().get_result(0).borrow().as_value_ref()));
                         continue;
                     }
 
