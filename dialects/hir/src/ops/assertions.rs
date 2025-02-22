@@ -4,7 +4,7 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct Assert {
     #[operand]
@@ -16,7 +16,7 @@ pub struct Assert {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct Assertz {
     #[operand]
@@ -28,7 +28,7 @@ pub struct Assertz {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, Commutative, SameTypeOperands)
+    traits(HasSideEffects, MemoryWrite, Commutative, SameTypeOperands)
 )]
 pub struct AssertEq {
     #[operand]
@@ -39,7 +39,7 @@ pub struct AssertEq {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct AssertEqImm {
     #[operand]

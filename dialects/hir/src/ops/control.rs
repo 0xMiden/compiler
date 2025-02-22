@@ -205,7 +205,7 @@ impl KeyedSuccessor for SwitchCase {
 /// * [Yield] to return from the enclosing [If]
 #[operation(
     dialect = HirDialect,
-    traits(SingleBlock, NoRegionArguments),
+    traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
     implements(RegionBranchOpInterface)
 )]
 pub struct If {
@@ -313,7 +313,7 @@ impl RegionBranchOpInterface for If {
 /// continue the loop.
 #[operation(
     dialect = HirDialect,
-    traits(SingleBlock),
+    traits(SingleBlock, HasRecursiveMemoryEffects),
     implements(RegionBranchOpInterface, LoopLikeOpInterface)
 )]
 pub struct While {
