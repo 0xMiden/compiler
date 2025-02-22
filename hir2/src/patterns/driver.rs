@@ -275,7 +275,7 @@ impl Default for GreedyRewriteConfig {
     }
 }
 impl GreedyRewriteConfig {
-    pub fn new_with_listener(listener: impl RewriterListener) -> Self {
+    pub fn new_with_listener(listener: impl RewriterListener + 'static) -> Self {
         Self {
             listener: Some(Rc::new(listener)),
             ..Default::default()

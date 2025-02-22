@@ -79,7 +79,7 @@ pub struct OperationFolder {
 impl OperationFolder {
     pub fn new<L>(context: Rc<Context>, listener: L) -> Self
     where
-        L: RewriterListener,
+        L: RewriterListener + 'static,
     {
         Self {
             rewriter: Box::new(RewriterImpl::<L>::new(context).with_listener(listener)),

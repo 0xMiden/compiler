@@ -2,6 +2,8 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
+#![feature(specialization)]
+#![allow(incomplete_features)]
 #![no_std]
 
 extern crate alloc;
@@ -21,7 +23,7 @@ use midenc_hir2::{
 };
 
 pub use self::{
-    builders::{FunctionBuilder, InstBuilder, InstBuilderBase},
+    builders::{DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase},
     ops::*,
 };
 
@@ -50,8 +52,6 @@ impl Dialect for HirDialect {
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
-        use midenc_hir2::Op;
-
         // Save the current insertion point
         let mut builder = midenc_hir2::InsertionGuard::new(builder);
 
@@ -67,9 +67,7 @@ impl Dialect for HirDialect {
             let imm_ty = imm.ty();
             if &imm_ty == ty {
                 let op_builder = builder.create::<Constant, _>(span);
-                return op_builder(imm)
-                    .ok()
-                    .map(|op| op.borrow().as_operation().as_operation_ref());
+                return op_builder(imm).ok().map(|op| op.as_operation_ref());
             }
 
             // The immediate value has a different type than expected, but we can coerce types, so
@@ -114,7 +112,7 @@ impl Dialect for HirDialect {
             };
 
             let op_builder = builder.create::<Constant, _>(span);
-            return op_builder(imm).ok().map(|op| op.borrow().as_operation().as_operation_ref());
+            return op_builder(imm).ok().map(|op| op.as_operation_ref());
         }
 
         None

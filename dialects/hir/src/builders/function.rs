@@ -1,17 +1,17 @@
 use midenc_hir2::{
-    dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Felt, Immediate, Listener,
-    Op, OpBuilder, Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type,
-    UnsafeIntrusiveEntityRef, Usable, ValueRef,
+    dialects::builtin::*, ArrayAttr, AsCallableSymbolRef, BlockRef, Builder, Felt, Immediate, Op,
+    Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef,
+    Usable, ValueRef,
 };
 
 use crate::*;
 
-pub struct FunctionBuilder<'f, L: Listener> {
+pub struct FunctionBuilder<'f, B: ?Sized> {
     pub func: &'f mut Function,
-    builder: OpBuilder<L>,
+    builder: &'f mut B,
 }
-impl<'f, L: Listener> FunctionBuilder<'f, L> {
-    pub fn new(func: &'f mut Function, mut builder: OpBuilder<L>) -> Self {
+impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
+    pub fn new(func: &'f mut Function, builder: &'f mut B) -> Self {
         let current_block = if func.body().is_empty() {
             func.create_entry_block()
         } else {
@@ -31,8 +31,8 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     //     Self { func, builder }
     // }
 
-    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut OpBuilder<L>) {
-        (&mut self.func, &mut self.builder)
+    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut B) {
+        (self.func, self.builder)
     }
 
     pub fn body_region(&self) -> RegionRef {
@@ -61,16 +61,14 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
-        use midenc_hir2::EntityWithParent;
-
         assert_ne!(
             block,
             self.current_block(),
             "cannot remove block the builder is currently inserting in"
         );
         assert_eq!(
-            block.borrow().parent().map(|p| RegionRef::as_ptr(&p)),
-            Some(&*self.func.body() as *const Region),
+            block.parent().map(|p| RegionRef::as_ptr(&p)),
+            Some(RegionRef::as_ptr(&self.func.body().as_region_ref())),
             "cannot detach a block that does not belong to this function"
         );
         let mut body = self.func.body_mut();
@@ -78,54 +76,53 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
             body.body_mut().cursor_mut_from_ptr(block).remove();
         }
         block.borrow_mut().uses_mut().clear();
-        Block::on_removed_from_parent(block, body.as_region_ref());
     }
 
     pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
         self.builder.context().append_block_argument(block, ty, span)
     }
 
-    pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
-        DefaultInstBuilder::new(&mut self.builder)
+    pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, B> {
+        DefaultInstBuilder::new(self.builder)
     }
 
-    pub fn builder(&self) -> &OpBuilder<L> {
-        &self.builder
-    }
-
-    pub fn builder_mut(&mut self) -> &mut OpBuilder<L> {
-        &mut self.builder
-    }
-}
-
-pub struct DefaultInstBuilder<'f, L: Listener> {
-    builder: &'f mut OpBuilder<L>,
-}
-impl<'f, L: Listener> DefaultInstBuilder<'f, L> {
-    pub(crate) fn new(builder: &'f mut OpBuilder<L>) -> Self {
-        Self { builder }
-    }
-}
-impl<L: Listener> InstBuilderBase for DefaultInstBuilder<'_, L> {
-    type L = L;
-
-    fn builder(&self) -> &OpBuilder<L> {
+    pub fn builder(&self) -> &B {
         self.builder
     }
 
-    fn builder_mut(&mut self) -> &mut OpBuilder<L> {
+    pub fn builder_mut(&mut self) -> &mut B {
+        self.builder
+    }
+}
+
+pub struct DefaultInstBuilder<'f, B: ?Sized> {
+    builder: &'f mut B,
+}
+impl<'f, B: ?Sized + Builder> DefaultInstBuilder<'f, B> {
+    pub fn new(builder: &'f mut B) -> Self {
+        Self { builder }
+    }
+}
+impl<B: ?Sized + Builder> InstBuilderBase for DefaultInstBuilder<'_, B> {
+    type Builder = B;
+
+    fn builder(&self) -> &Self::Builder {
+        self.builder
+    }
+
+    fn builder_mut(&mut self) -> &mut Self::Builder {
         self.builder
     }
 }
 
 pub trait InstBuilderBase: Sized {
-    type L: Listener;
+    type Builder: ?Sized + Builder;
 
-    fn builder(&self) -> &OpBuilder<Self::L>;
-    fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
+    fn builder(&self) -> &Self::Builder;
+    fn builder_mut(&mut self) -> &mut Self::Builder;
     /// Get a default instruction builder using the dataflow graph and insertion point of the
     /// current builder
-    fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::L> {
+    fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::Builder> {
         DefaultInstBuilder::new(self.builder_mut())
     }
 }
