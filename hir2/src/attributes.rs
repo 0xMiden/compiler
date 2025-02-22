@@ -456,7 +456,17 @@ where
     K: crate::formatter::PrettyPrint,
 {
     fn render(&self) -> crate::formatter::Document {
-        todo!()
+        use crate::formatter::*;
+
+        let entries = self.values.iter().fold(Document::Empty, |acc, k| match acc {
+            Document::Empty => k.render(),
+            _ => acc + const_text(", ") + k.render(),
+        });
+        if self.values.is_empty() {
+            const_text("{}")
+        } else {
+            const_text("{") + entries + const_text("}")
+        }
     }
 }
 impl<K> core::hash::Hash for SetAttr<K>
@@ -578,7 +588,17 @@ where
     V: crate::formatter::PrettyPrint,
 {
     fn render(&self) -> crate::formatter::Document {
-        todo!()
+        use crate::formatter::*;
+
+        let entries = self.values.iter().fold(Document::Empty, |acc, (k, v)| match acc {
+            Document::Empty => k.render() + const_text(" = ") + v.render(),
+            _ => acc + const_text(", ") + k.render() + const_text(" = ") + v.render(),
+        });
+        if self.values.is_empty() {
+            const_text("{}")
+        } else {
+            const_text("{") + entries + const_text("}")
+        }
     }
 }
 impl<K, V> core::hash::Hash for DictAttr<K, V>
