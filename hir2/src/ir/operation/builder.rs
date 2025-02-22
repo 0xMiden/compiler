@@ -105,11 +105,11 @@ where
         // Record SuccessorInfo for this successor in the op
         let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(dest, owner, succ_index);
-        op.successors.push_group([SuccessorInfo {
+        op.successors.push(SuccessorInfo {
             block: successor,
             key: None,
             operand_group: operand_group.try_into().expect("too many operand groups"),
-        }]);
+        });
     }
 
     pub fn with_successors<I>(&mut self, succs: I)
@@ -131,7 +131,13 @@ where
                 operand_group: operand_group.try_into().expect("too many operand groups"),
             });
         }
-        op.successors.push_group(group);
+        if op.successors.is_empty() {
+            // Extend the empty default group
+            op.successors.extend_group(0, group);
+        } else {
+            // Create new group
+            op.successors.push_group(group);
+        }
     }
 
     pub fn with_keyed_successors<I, S>(&mut self, succs: I)
@@ -157,7 +163,13 @@ where
                 operand_group: operand_group.try_into().expect("too many operand groups"),
             });
         }
-        op.successors.push_group(group);
+        if op.successors.is_empty() {
+            // Extend the empty default group
+            op.successors.extend_group(0, group);
+        } else {
+            // Create new group
+            op.successors.push_group(group);
+        }
     }
 
     /// Append operands to the set of operands given to this op so far.
