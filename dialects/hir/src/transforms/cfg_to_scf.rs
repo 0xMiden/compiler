@@ -938,14 +938,14 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
                     v18, v19 = hir.add_overflowing v207, v16 : i1, u32;
                     v187 = hir.select v18, v27, v17 : u32;
                     v188 = hir.select v18, v27, v19 : u32;
-                    v189 = hir.select v18, v28, v27 : u32;
+                    v189 = hir.select v18, v26, v27 : u32;
                     v190 = hir.select v18, v21, v27 : u32;
-                    v191 = hir.select v18, v28, v21 : u32;
+                    v191 = hir.select v18, v26, v21 : u32;
                     v192 = hir.select v18, v21, v26 : u32;
                     hir.yield v187, v188, v189, v190, v191, v192;
                 } {
                 ^block24:
-                    hir.yield v27, v27, v27, v27, v26, v21;
+                    hir.yield v27, v27, v27, v27, v28, v21;
                 };
                 v114 = hir.trunc v198 : i1 #[ty = i1];
                 hir.condition v114, v193, v194, v207, v27, v195, v196, v197;
@@ -955,17 +955,17 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
             };
             v125, v126, v127, v128, v129 = hir.index_switch v205 : u32, u32, u32, u32, u32 #[cases \
                                = [1]] {
+            ^block22:
+                hir.yield v202, v202, v203, v204, v202;
+            } {
             ^block6:
                 v11 = hir.incr v161 : u32;
                 hir.yield v11, v201, v21, v26, v27;
-            } {
-            ^block22:
-                hir.yield v202, v202, v203, v204, v202;
             };
             hir.yield v125, v126, v127, v128, v129;
         } {
         ^block21:
-            hir.yield v27, v27, v26, v21, v162;
+            hir.yield v27, v27, v28, v21, v162;
         };
         v52 = hir.trunc v123 : i1 #[ty = i1];
         hir.condition v52, v120, v121, v124, v122;
@@ -973,7 +973,7 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
     ^block28(v163: u32, v164: u32, v165: u32, v166: u32):
         hir.yield v163, v164;
     };
-    hir.switch v160 block4, block7;
+    hir.switch v160 block7, block4;
 ^block4:
     hir.ret v159;
 ^block7:

@@ -957,7 +957,7 @@ impl MultiOpPatternRewriteDriver {
         mut config: GreedyRewriteConfig,
         ops: &[OperationRef],
     ) -> Self {
-        let surviving_ops = BTreeSet::from_iter(ops.iter().cloned());
+        let surviving_ops = BTreeSet::from_iter(ops.iter().copied());
         let inner = Rc::new(MultiOpPatternRewriteDriverImpl {
             surviving_ops: RefCell::new(surviving_ops),
         });

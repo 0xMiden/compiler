@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use super::*;
-use crate::{adt::SmallMap, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
+use crate::{BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
 
 /// Type representing an edge in the CFG.
 ///
@@ -149,6 +149,39 @@ pub fn calculate_cycle_edges(cycles: &[BlockRef]) -> CycleEdges {
     result
 }
 
+struct SmallDenseMap<K, V>(SmallVec<[(K, V); 4]>);
+impl<K, V> Default for SmallDenseMap<K, V> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+impl<K, V> SmallDenseMap<K, V>
+where
+    K: Eq,
+{
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        match self.0.iter_mut().find(|(k, _)| k == &key) {
+            None => {
+                self.0.push((key, value));
+                None
+            }
+            Some((_, prev)) => Some(core::mem::replace(prev, value)),
+        }
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.0.iter().find_map(|(k, v)| if k == key { Some(v) } else { None })
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, (K, V)> {
+        self.0.iter()
+    }
+}
+
 /// Typed used to orchestrate creation of so-called edge multiplexers.
 ///
 /// This class creates a new basic block and routes all inputs edges to this basic block before
@@ -161,7 +194,7 @@ pub struct EdgeMultiplexer<'multiplexer, 'context: 'multiplexer> {
     /// Mapping of the block arguments of an entry block to the corresponding block arguments in the
     /// multiplexer block. Block arguments of an entry block are simply appended ot the multiplexer
     /// block. This map simply contains the offset to the range in the multiplexer block.
-    block_arg_mapping: SmallMap<BlockRef, usize, 4>,
+    block_arg_mapping: SmallDenseMap<BlockRef, usize>,
     /// Discriminator value used in the multiplexer block to dispatch to the correct entry block.
     /// `None` if not required due to only having one entry block.
     discriminator: Option<ValueRef>,
@@ -196,7 +229,7 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         // designated for blocks that aren't branched to will be assigned the `get_undef_value`. The
         // amount of block arguments and their offset is saved in the map for `redirect_edge` to
         // transform the edges.
-        let mut block_arg_mapping = SmallMap::<BlockRef, usize, 4>::new();
+        let mut block_arg_mapping = SmallDenseMap::default();
         for entry_block in entry_blocks.iter().copied() {
             let argc = multiplexer_block.borrow().num_arguments();
             if block_arg_mapping.insert(entry_block, argc).is_none() {
@@ -350,14 +383,15 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         let mut case_values = SmallVec::<[u32; 4]>::default();
         let mut case_destinations = SmallVec::<[BlockRef; 4]>::default();
 
-        for (index, (&succ, &offset)) in self.block_arg_mapping.iter().enumerate() {
-            if excluded.contains(&succ) {
+        for (index, (succ, offset)) in self.block_arg_mapping.iter().enumerate() {
+            if excluded.contains(succ) {
                 continue;
             }
 
             case_values.push(index as u32);
-            case_destinations.push(succ);
+            case_destinations.push(*succ);
             let succ = succ.borrow();
+            let offset = *offset;
             case_arguments.push(&multiplexer_block_args[offset..(offset + succ.num_arguments())]);
         }
 
