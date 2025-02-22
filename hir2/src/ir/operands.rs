@@ -130,3 +130,41 @@ impl crate::StorableEntity for OpOperandImpl {
 pub type OpOperandStorage = crate::EntityStorage<OpOperand, 1>;
 pub type OpOperandRange<'a> = crate::EntityRange<'a, OpOperand>;
 pub type OpOperandRangeMut<'a> = crate::EntityRangeMut<'a, OpOperand, 1>;
+
+impl OpOperandRangeMut<'_> {
+    pub fn set_operands<I>(&mut self, operands: I, owner: OperationRef)
+    where
+        I: IntoIterator<Item = ValueRef>,
+    {
+        let mut operands = operands.into_iter().enumerate();
+        let mut num_operands = 0;
+        let mut context = None;
+        while let Some((index, value)) = operands.next() {
+            num_operands += 1;
+            if let Some(operand) = self.get_mut(index) {
+                let mut operand = operand.borrow_mut();
+                // If the new operand value and the existing one are the same, no change is required
+                if operand.value.is_some_and(|v| v == value) {
+                    continue;
+                }
+                // Otherwise, set the operand value to the new value
+                operand.set(value);
+            } else {
+                // The operand group is being extended
+                let context = context.get_or_insert_with(|| owner.borrow().context_rc());
+                self.extend(operands.map(|(index, value)| {
+                    num_operands += 1;
+                    context.make_operand(value, owner, index as u8)
+                }));
+                break;
+            }
+        }
+
+        // Remove excess operands
+        if num_operands < self.len() {
+            for _ in 0..(self.len() - num_operands) {
+                let _ = self.pop();
+            }
+        }
+    }
+}
