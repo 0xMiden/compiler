@@ -84,7 +84,7 @@ pub trait Builder: Listener {
     fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
         let mut block = self.context().create_block_with_params(args.iter().cloned());
         if let Some(at) = ip {
-            let region = at.borrow().parent().unwrap();
+            let region = at.parent().unwrap();
             assert!(
                 RegionRef::ptr_eq(&parent, &region),
                 "insertion point region differs from 'parent'"

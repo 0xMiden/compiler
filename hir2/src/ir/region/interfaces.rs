@@ -188,8 +188,7 @@ pub trait RegionBranchTerminatorOpInterface: Op + Terminator {
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         let parent_region =
             self.parent_region().expect("expected operation to have a parent region");
-        let parent_op =
-            parent_region.borrow().parent().expect("expected operation to have a parent op");
+        let parent_op = parent_region.parent().expect("expected operation to have a parent op");
         parent_op
             .borrow()
             .as_trait::<dyn RegionBranchOpInterface>()
@@ -240,7 +239,7 @@ pub trait LoopLikeOpInterface: Op {
                 .downcast_ref::<BlockArgument>()
                 .expect("invalid value reference: defining op is orphaned");
             let defining_region = block_arg.parent_region().unwrap();
-            let defining_op = defining_region.borrow().parent().unwrap();
+            let defining_op = defining_region.parent().unwrap();
             self.as_operation().is_ancestor_of(&defining_op.borrow())
         }
     }

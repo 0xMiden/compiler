@@ -422,10 +422,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     #[inline]
     fn node_index(&self, block: Option<BlockRef>) -> usize {
         assert!(
-            block.is_none_or(|block| block
-                .borrow()
-                .parent()
-                .is_some_and(|parent| parent == self.parent)),
+            block.is_none_or(|block| block.parent().is_some_and(|parent| parent == self.parent)),
             "cannot get dominance info of block with different parent"
         );
         if let Some(block) = block {
@@ -568,12 +565,12 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
 
     /// Finds the nearest block which is a common dominator of both `a` and `b`
     pub fn find_nearest_common_dominator(&self, a: BlockRef, b: BlockRef) -> Option<BlockRef> {
-        assert!(a.borrow().parent() == b.borrow().parent(), "two blocks are not in same region");
+        assert!(a.parent() == b.parent(), "two blocks are not in same region");
 
         // If either A or B is an entry block then it is nearest common dominator (for forward
         // dominators).
         if !self.is_post_dominator() {
-            let parent = a.borrow().parent().unwrap();
+            let parent = a.parent().unwrap();
             let entry = parent.borrow().entry_block_ref().unwrap();
             if a == entry || b == entry {
                 return Some(entry);

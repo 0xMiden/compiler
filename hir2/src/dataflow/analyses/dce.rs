@@ -382,11 +382,11 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
             return Ok(());
         }
 
-        let op = point.prev_operation().unwrap();
-        let op = op.borrow();
+        let operation = point.prev_operation().unwrap();
+        let op = operation.borrow();
 
         // If the parent block is not executable, there is nothing to do.
-        if op.parent().is_none_or(|block| {
+        if operation.parent().is_none_or(|block| {
             !solver
                 .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
                 .is_live()
@@ -445,7 +445,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
                 for successor in op.successors().all() {
                     let succ = successor.block.borrow().successor();
                     let successor_block = succ.borrow();
-                    let op_block = op.parent().unwrap();
+                    let op_block = operation.parent().unwrap();
                     self.mark_edge_live(&op_block.borrow(), &successor_block, solver);
                 }
             }
@@ -629,7 +629,7 @@ impl DeadCodeAnalysis {
             let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_symbol_operation()),
             );
-            callsites.change(|ps| ps.join(call.as_operation().as_operation_ref()));
+            callsites.change(|ps| ps.join(call.as_operation_ref()));
         } else {
             // Mark this call op's predecessors as overdefined
             let mut predecessors = solver
@@ -689,10 +689,7 @@ impl DeadCodeAnalysis {
             // Add the parent op as a predecessor
             let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
             predecessors.change(|ps| {
-                ps.join_with_inputs(
-                    branch.as_operation().as_operation_ref(),
-                    successor.successor_inputs().iter(),
-                )
+                ps.join_with_inputs(branch.as_operation_ref(), successor.successor_inputs().iter())
             });
         }
     }

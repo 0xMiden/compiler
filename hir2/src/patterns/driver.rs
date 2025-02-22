@@ -40,7 +40,7 @@ pub fn apply_patterns_and_fold_region_greedily(
     // The top-level operation must be known to be isolated from above to prevent performing
     // canonicalizations on operations defined at or above the region containing 'op'.
     let context = {
-        let parent_op = region.borrow().parent().unwrap().borrow();
+        let parent_op = region.parent().unwrap().borrow();
         assert!(
             parent_op.implements::<dyn IsolatedFromAbove>(),
             "patterns can only be applied to operations which are isolated from above"
@@ -416,7 +416,7 @@ impl GreedyPatternRewriteDriver {
         let mut ancestors = SmallVec::<[OperationRef; 8]>::default();
         let mut op = Some(op);
         while let Some(ancestor_op) = op.take() {
-            let region = ancestor_op.borrow().parent_region();
+            let region = ancestor_op.grandparent();
             if self.config.scope.as_ref() == region.as_ref() {
                 ancestors.push(ancestor_op);
                 for op in ancestors {
@@ -431,7 +431,7 @@ impl GreedyPatternRewriteDriver {
                 ancestors.push(ancestor_op);
             }
             if let Some(region) = region {
-                op = region.borrow().parent();
+                op = region.parent();
             } else {
                 log::trace!("reached top level op while searching for ancestors");
             }
@@ -778,7 +778,7 @@ impl RewriterListener for GreedyPatternRewriteDriver {
         // that would break the worklist handling and some sanity checks.
         if let Some(scope) = self.config.scope.as_ref() {
             assert!(
-                scope.borrow().parent().is_some_and(|parent_op| parent_op != op),
+                scope.parent().is_some_and(|parent_op| parent_op != op),
                 "scope region must not be erased during greedy pattern rewrite"
             );
         }

@@ -424,7 +424,7 @@ pub fn visit_region_branch_operation<A>(
             predecessor.borrow().parent_region()
         };
         if point.is_at_block_start() {
-            let region_to = point.block().unwrap().borrow().parent().unwrap();
+            let region_to = point.block().unwrap().parent().unwrap();
             analysis.visit_region_branch_control_flow_transfer(
                 branch,
                 region_from,

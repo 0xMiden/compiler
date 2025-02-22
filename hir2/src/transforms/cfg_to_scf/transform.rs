@@ -9,8 +9,8 @@ use super::{
 use crate::{
     adt::{SmallMap, SmallSet},
     dominance::{DominanceInfo, PreOrderDomTreeIter},
-    Block, BlockRef, Builder, Context, EntityWithParent, FxHashMap, OpBuilder, OperationRef,
-    Region, RegionRef, Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
+    Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef, Region, RegionRef,
+    Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
 };
 
 /// This type represents the necessary context required for performing the control flow lifting
@@ -38,12 +38,8 @@ impl<'a> TransformationContext<'a> {
         interface: &'a mut dyn CFGToSCFInterface,
         dominance_info: &'a mut DominanceInfo,
     ) -> Result<Self, Report> {
-        let (parent, entry) = {
-            let region = region.borrow();
-            let parent = region.parent().unwrap();
-            let entry = region.entry_block_ref().unwrap();
-            (parent, entry)
-        };
+        let parent = region.parent().unwrap();
+        let entry = region.borrow().entry_block_ref().unwrap();
         let op = parent.borrow();
 
         let mut this = Self {
@@ -207,25 +203,25 @@ impl<'a> TransformationContext<'a> {
                     return Ok(());
                 }
 
-                let mut return_like_op = return_like_op_ref.borrow_mut();
-
                 let exit_block = *entry.get();
                 let mut builder = OpBuilder::new(self.context.clone());
-                builder.set_insertion_point_to_end(return_like_op.parent().unwrap());
+                builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
+                let return_like_op = return_like_op_ref.borrow();
                 let operands = return_like_op.operands().all();
                 let operands = SmallVec::<[ValueRef; 2]>::from_iter(
                     operands.iter().copied().map(|o| o.borrow().as_value_ref()),
                 );
+                let span = return_like_op.span();
                 self.interface.create_single_destination_branch(
-                    return_like_op.span(),
+                    span,
                     &mut builder,
                     dummy_value,
                     exit_block,
                     &operands,
                 )?;
 
-                return_like_op.erase();
+                return_like_op_ref.borrow_mut().erase();
             }
             Entry::Vacant(entry) => {
                 let mut return_like_op = return_like_op_ref.borrow_mut();
@@ -240,10 +236,11 @@ impl<'a> TransformationContext<'a> {
                 let exit_block = builder.create_block(self.region, None, &args);
                 entry.insert(exit_block);
 
-                builder.set_insertion_point_to_end(return_like_op.parent().unwrap());
+                builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
+                let span = return_like_op.span();
                 self.interface.create_single_destination_branch(
-                    return_like_op.span(),
+                    span,
                     &mut builder,
                     dummy_value,
                     exit_block,
@@ -270,7 +267,7 @@ impl<'a> TransformationContext<'a> {
         &mut self,
         region_entry: BlockRef,
     ) -> Result<SmallVec<[BlockRef; 4]>, Report> {
-        use crate::{cfg::StronglyConnectedComponents, EntityWithParent};
+        use crate::cfg::StronglyConnectedComponents;
 
         let mut new_sub_regions = SmallVec::<[BlockRef; 4]>::default();
 
@@ -324,7 +321,7 @@ impl<'a> TransformationContext<'a> {
             new_loop_parent_block_ref.borrow_mut().insert_before(loop_header);
             self.add_block_arguments_from_other(new_loop_parent_block_ref, loop_header);
 
-            let mut region_ref = region_entry.borrow().parent().unwrap();
+            let mut region_ref = region_entry.parent().unwrap();
 
             let mut loop_body_ref = self.context.alloc_tracked(Region::default());
             {
@@ -337,7 +334,6 @@ impl<'a> TransformationContext<'a> {
                     let mut cursor = blocks.cursor_mut_from_ptr(loop_header);
                     cursor.remove().unwrap()
                 });
-                EntityWithParent::on_inserted_into_parent(loop_header, region_ref);
 
                 for block in cycle_block_set {
                     if !BlockRef::ptr_eq(&block, &latch_block_ref)
@@ -347,7 +343,6 @@ impl<'a> TransformationContext<'a> {
                             let mut cursor = blocks.cursor_mut_from_ptr(block);
                             cursor.remove().unwrap()
                         });
-                        EntityWithParent::on_inserted_into_parent(block, region_ref);
                     }
                 }
 
@@ -356,7 +351,6 @@ impl<'a> TransformationContext<'a> {
                     let mut cursor = blocks.cursor_mut_from_ptr(latch_block_ref);
                     cursor.remove().unwrap()
                 });
-                EntityWithParent::on_inserted_into_parent(latch_block_ref, region_ref);
             }
 
             let mut old_terminator = latch_block_ref.borrow().terminator().unwrap();
@@ -629,7 +623,7 @@ impl<'a> TransformationContext<'a> {
             // Unlike in the general case, we are explicitly revisiting the same region entry again
             // after having changed its control flow edges and dominance. We have to therefore
             // explicitly invalidate the dominance tree.
-            let region = region_entry.borrow().parent().unwrap();
+            let region = region_entry.parent().unwrap();
             self.dominance_info.info_mut().invalidate_region(region);
             return Ok(smallvec![region_entry]);
         }
@@ -732,19 +726,18 @@ impl<'a> TransformationContext<'a> {
         // Any leftover users of the continuation must be from unconditional branches in a branch
         // region. There can only be at most one per branch region as all branch regions have been
         // made single-entry single-exit above. Replace them with the region terminator.
-        let mut cont = continuation.borrow_mut();
-        let uses = cont.uses_mut();
-        let mut current_user = uses.front_mut();
-        while let Some(mut user) = current_user.as_pointer() {
-            let mut user = user.borrow_mut();
+        let mut next_use = continuation.borrow().uses().front().as_pointer();
+        while let Some(user) = next_use.take() {
+            next_use = user.next();
 
-            assert_eq!(user.owner.borrow().num_successors(), 1);
+            let mut owner = user.borrow().owner;
+            assert_eq!(owner.borrow().num_successors(), 1);
 
             let mut builder = OpBuilder::new(self.context.clone());
-            builder.set_insertion_point_after(user.owner);
+            builder.set_insertion_point_after(owner);
 
             let args = {
-                let pred = user.owner.borrow();
+                let pred = owner.borrow();
                 pred.successor(0)
                     .arguments
                     .iter()
@@ -752,17 +745,18 @@ impl<'a> TransformationContext<'a> {
                     .collect::<SmallVec<[ValueRef; 2]>>()
             };
             self.interface.create_structured_branch_region_terminator_op(
-                user.owner.span(),
+                owner.span(),
                 &mut builder,
                 structured_cond_op,
-                Some(user.owner),
+                Some(owner),
                 &args,
             )?;
 
-            current_user.remove();
-            user.owner.borrow_mut().erase();
+            owner.borrow_mut().erase();
         }
+        assert!(continuation.borrow().uses().is_empty());
 
+        let mut cont = continuation.borrow_mut();
         let structured_cond = structured_cond_op.borrow();
         for (mut old_value, new_value) in cont
             .arguments()
@@ -862,7 +856,7 @@ impl<'a> TransformationContext<'a> {
                 latch_term.successor_mut(exit_block_index).arguments.push(operand);
             }
             arg.borrow_mut().replace_uses_with_if(exit_arg, |user| {
-                !loop_blocks.contains(&user.owner().parent().unwrap())
+                !loop_blocks.contains(&user.owner.parent().unwrap())
             });
         }
 
@@ -904,12 +898,13 @@ impl<'a> TransformationContext<'a> {
                     // Go through all the parent blocks and find the one part of the region of the
                     // loop. If the block is part of the loop, then the value does not escape the
                     // loop through this use.
-                    let mut curr_block = user.borrow().owner().parent();
+                    let mut curr_block = user.borrow().owner.parent();
                     while let Some(cb) = curr_block {
-                        if cb.borrow().parent().is_none_or(|p| {
-                            !RegionRef::ptr_eq(&loop_header.borrow().parent().unwrap(), &p)
-                        }) {
-                            curr_block = cb.borrow().parent_block();
+                        if cb
+                            .parent()
+                            .is_none_or(|p| !RegionRef::ptr_eq(&loop_header.parent().unwrap(), &p))
+                        {
+                            curr_block = cb.grandparent().and_then(|op| op.parent());
                             continue;
                         }
 
@@ -944,7 +939,7 @@ impl<'a> TransformationContext<'a> {
                         if value_block != latch
                             && latch.borrow().predecessors().any(|pred| {
                                 !loop_block_dominates(
-                                    pred.owner.borrow().parent().unwrap(),
+                                    pred.owner.parent().unwrap(),
                                     ctx.dominance_info,
                                 )
                             })
@@ -954,7 +949,7 @@ impl<'a> TransformationContext<'a> {
                             for pred in latch.borrow().predecessors() {
                                 let mut succ_operand = value;
                                 if !loop_block_dominates(
-                                    pred.owner.borrow().parent().unwrap(),
+                                    pred.owner.parent().unwrap(),
                                     ctx.dominance_info,
                                 ) {
                                     succ_operand = ctx.get_undef_value(&value_ty);
@@ -1073,7 +1068,7 @@ impl<'a> TransformationContext<'a> {
     ) {
         let mut single_exit_block = None;
         let mut previous_edge_to_continuation = None;
-        let mut branch_region_parent = branch_region[0].borrow().parent().unwrap();
+        let mut branch_region_parent = branch_region[0].parent().unwrap();
 
         for mut block_ref in branch_region.iter().copied() {
             for edge in SuccessorEdges::new(block_ref) {
@@ -1109,7 +1104,6 @@ impl<'a> TransformationContext<'a> {
             unsafe {
                 let mut cursor = brp.body_mut().cursor_mut_from_ptr(block_ref);
                 cursor.remove();
-                Block::on_removed_from_parent(block_ref, branch_region_parent);
             }
 
             block_ref.borrow_mut().insert_at_end(conditional_region);
@@ -1206,7 +1200,7 @@ impl<'a> TransformationContext<'a> {
                 // A loop without an exit edge is a statically known infinite loop.
                 // Since structured control flow ops are not terminator ops, the caller has to
                 // create a fitting return-like unreachable terminator operation.
-                let region = latch_block.borrow().parent().unwrap();
+                let region = latch_block.parent().unwrap();
                 let terminator = multiplexer
                     .transform()
                     .interface_mut()

@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use core::fmt;
 
 use super::{SymbolName, SymbolPathAttr};
-use crate::{EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
+use crate::{Entity, EntityListItem, EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
 
 pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
 pub type SymbolUseList = crate::EntityList<SymbolUse>;
@@ -10,7 +10,7 @@ pub type SymbolUseIter<'a> = crate::EntityIter<'a, SymbolUse>;
 pub type SymbolUseCursor<'a> = crate::EntityCursor<'a, SymbolUse>;
 pub type SymbolUseCursorMut<'a> = crate::EntityCursorMut<'a, SymbolUse>;
 
-/// An [OpOperand] represents a use of a [Value] by an [Operation]
+/// A [SymbolUse] represents a use of a [Symbol] by an [Operation]
 #[derive(Copy, Clone)]
 pub struct SymbolUse {
     /// The user of the symbol
@@ -43,6 +43,9 @@ impl fmt::Debug for SymbolUse {
             .finish_non_exhaustive()
     }
 }
+
+impl Entity for SymbolUse {}
+impl EntityListItem for SymbolUse {}
 
 /// An iterator over [SymbolUse] which owns the collection it iterates over.
 ///

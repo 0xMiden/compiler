@@ -36,6 +36,10 @@ pub trait Op: AsAny + OpVerifier {
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
 
+    #[inline]
+    fn as_operation_ref(&self) -> OperationRef {
+        self.as_operation().as_operation_ref()
+    }
     fn set_span(&mut self, span: SourceSpan) {
         self.as_operation_mut().set_span(span);
     }
@@ -80,6 +84,12 @@ pub trait Op: AsAny + OpVerifier {
     }
     fn operands_mut(&mut self) -> &mut OpOperandStorage {
         self.as_operation_mut().operands_mut()
+    }
+    fn has_results(&self) -> bool {
+        self.as_operation().has_results()
+    }
+    fn num_results(&self) -> usize {
+        self.as_operation().num_results()
     }
     fn results(&self) -> &OpResultStorage {
         self.as_operation().results()

@@ -153,8 +153,8 @@ impl PostDominates for Operation {
         }
 
         // If these ops are in different regions, then normalize one into the other.
-        let a_region = a_block.borrow().parent();
-        let b_region = b_block.borrow().parent();
+        let a_region = a_block.parent();
+        let b_region = b_block.parent();
         let a = self.as_operation_ref();
         let mut b = other.as_operation_ref();
         if a_region != b_region {
@@ -164,8 +164,8 @@ impl PostDominates for Operation {
                 return false;
             };
             b = found;
-            b_block = b.borrow().parent().unwrap();
-            assert!(b_block.borrow().parent() == a_region);
+            b_block = b.parent().unwrap();
+            assert!(b_block.parent() == a_region);
 
             // If `a` encloses `b`, then we consider it to post-dominate.
             if a == b {

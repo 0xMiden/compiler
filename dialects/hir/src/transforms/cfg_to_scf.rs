@@ -355,7 +355,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
         let ins = DefaultInstBuilder::new(builder);
         let op = ins.unreachable(span)?;
-        Ok(op.borrow().as_operation().as_operation_ref())
+        Ok(op.as_operation_ref())
     }
 }
 
@@ -412,9 +412,7 @@ mod tests {
         builder.switch_to_block(exit_block);
         builder.ins().ret(Some(return_val), span)?;
 
-        drop(builder);
-
-        let operation = func.as_operation().as_operation_ref();
+        let operation = func.as_operation_ref();
         drop(func);
 
         // Run transformation on function body
@@ -506,9 +504,7 @@ builtin.function public @test(v0: u32) -> u32 {
         let counter_prime = builder.ins().incr(counter, span)?;
         builder.ins().br(loop_header, [n_prime, counter_prime], span)?;
 
-        drop(builder);
-
-        let operation = func.as_operation().as_operation_ref();
+        let operation = func.as_operation_ref();
         drop(func);
 
         // Run transformation on function body
@@ -670,9 +666,7 @@ builtin.function public @test(v0: u32) -> u32 {
         let new_sum = builder.ins().add_unchecked(col_sum, cell, span)?;
         builder.ins().br(inner_loop_header, [new_col_offset, new_sum], span)?;
 
-        drop(builder);
-
-        let operation = func.as_operation().as_operation_ref();
+        let operation = func.as_operation_ref();
         drop(func);
 
         // Run transformation on function body

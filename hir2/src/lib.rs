@@ -80,8 +80,8 @@ pub mod version;
 
 pub use self::{
     attributes::{
-        markers::*, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr, Overflow, SetAttr,
-        Visibility,
+        markers::*, ArrayAttr, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr,
+        Overflow, SetAttr, Visibility,
     },
     dataflow::ProgramPoint,
     eq::DynPartialEq,
@@ -91,12 +91,3 @@ pub use self::{
     itertools::IteratorExt,
     patterns::*,
 };
-
-// TODO(pauls): The following is a rough list of what needs to be implemented for the IR
-// refactoring to be complete and usable in place of the old IR (some are optional):
-//
-// * canonicalization (optional)
-// * pattern matching/rewrites (needed for legalization/conversion, mostly complete, see below)
-// * linking/global symbol resolution (required to replace old linker, partially implemented via symbols/symbol tables already)
-// * legalization/dialect conversion (required to convert between unstructured and structured control flow dialects at minimum)
-// * lowering

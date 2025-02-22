@@ -2,7 +2,7 @@ use core::fmt;
 
 use smallvec::SmallVec;
 
-use super::*;
+use super::{entity::EntityParent, *};
 
 /// A pointer to a [Block]
 pub type BlockRef = UnsafeIntrusiveEntityRef<Block>;
@@ -69,10 +69,6 @@ pub struct Block {
     valid_op_ordering: bool,
     /// The set of uses of this block
     uses: BlockOperandList,
-    /// The region this block is attached to.
-    ///
-    /// This will always be set if this block is attached to a region
-    region: Option<RegionRef>,
     /// The list of [Operation]s that comprise this block
     body: OpList,
     /// The parameter list for this block
@@ -82,7 +78,7 @@ impl fmt::Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Block")
             .field("id", &self.id)
-            .field_with("region", |f| match self.region.as_ref() {
+            .field_with("region", |f| match self.parent() {
                 None => f.write_str("None"),
                 Some(r) => write!(f, "Some({r:p})"),
             })
@@ -115,23 +111,19 @@ impl EntityWithId for Block {
 
 impl EntityWithParent for Block {
     type Parent = Region;
+}
 
-    fn on_inserted_into_parent(mut this: BlockRef, parent: RegionRef) {
-        this.borrow_mut().region = Some(parent);
+impl EntityListItem for Block {}
+
+impl EntityParent<Operation> for Block {
+    fn offset() -> usize {
+        core::mem::offset_of!(Block, body)
     }
+}
 
-    fn on_removed_from_parent(mut this: BlockRef, _parent: RegionRef) {
-        this.borrow_mut().region = None;
-    }
-
-    fn on_transfered_to_new_parent(
-        _from: RegionRef,
-        to: RegionRef,
-        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
-    ) {
-        for mut transferred_block in transferred {
-            transferred_block.borrow_mut().region = Some(to);
-        }
+impl EntityParent<BlockOperand> for Block {
+    fn offset() -> usize {
+        core::mem::offset_of!(Block, uses)
     }
 }
 
@@ -505,7 +497,6 @@ impl Block {
             id,
             valid_op_ordering: true,
             uses: Default::default(),
-            region: None,
             body: Default::default(),
             arguments: Default::default(),
         }
@@ -518,23 +509,23 @@ impl Block {
 
     /// Get a handle to the containing [Region] of this block, if it is attached to one
     pub fn parent(&self) -> Option<RegionRef> {
-        self.region
+        self.as_block_ref().parent()
     }
 
     /// Get a handle to the containing [Operation] of this block, if it is attached to one
     pub fn parent_op(&self) -> Option<OperationRef> {
-        self.region.as_ref().and_then(|region| region.borrow().parent())
+        self.parent().and_then(|region| region.parent())
     }
 
     /// Get a handle to the ancestor [Block] of this block, if one is present
     pub fn parent_block(&self) -> Option<BlockRef> {
-        self.parent_op().and_then(|op| op.borrow().parent())
+        self.parent_op().and_then(|op| op.parent())
     }
 
     /// Returns true if this block is the entry block for its containing region
     pub fn is_entry_block(&self) -> bool {
-        if let Some(parent) = self.region.as_ref().map(|r| r.borrow()) {
-            core::ptr::addr_eq(&*parent.entry(), self)
+        if let Some(parent) = self.parent().map(|r| r.borrow()) {
+            parent.entry_block_ref().is_some_and(|entry| entry == self.as_block_ref())
         } else {
             false
         }
@@ -619,7 +610,7 @@ impl Block {
     }
 
     pub fn erase(&mut self) {
-        if let Some(mut region) = self.region.take() {
+        if let Some(mut region) = self.parent() {
             let mut region = region.borrow_mut();
             let body = region.body_mut();
             let mut cursor = unsafe { body.cursor_mut_from_ptr(self.as_block_ref()) };
@@ -636,18 +627,16 @@ impl Block {
     #[track_caller]
     pub fn insert_after(&mut self, after: BlockRef) {
         assert!(
-            self.region.is_none(),
+            self.parent().is_none(),
             "cannot insert block that is already attached to another region"
         );
-        let mut region =
-            after.borrow().parent().expect("'after' block is not attached to a region");
+        let mut region = after.parent().expect("'after' block is not attached to a region");
         {
             let mut region = region.borrow_mut();
             let region_body = region.body_mut();
             let mut cursor = unsafe { region_body.cursor_mut_from_ptr(after) };
             cursor.insert_after(self.as_block_ref());
         }
-        self.region = Some(region);
     }
 
     /// Insert this block before `before` in its containing region.
@@ -656,18 +645,16 @@ impl Block {
     #[track_caller]
     pub fn insert_before(&mut self, before: BlockRef) {
         assert!(
-            self.region.is_none(),
+            self.parent().is_none(),
             "cannot insert block that is already attached to another region"
         );
-        let mut region =
-            before.borrow().parent().expect("'before' block is not attached to a region");
+        let mut region = before.parent().expect("'before' block is not attached to a region");
         {
             let mut region = region.borrow_mut();
             let region_body = region.body_mut();
             let mut cursor = unsafe { region_body.cursor_mut_from_ptr(before) };
             cursor.insert_before(self.as_block_ref());
         }
-        self.region = Some(region);
     }
 
     /// Insert this block at the end of `region`.
@@ -676,14 +663,10 @@ impl Block {
     #[track_caller]
     pub fn insert_at_end(&mut self, mut region: RegionRef) {
         assert!(
-            self.region.is_none(),
+            self.parent().is_none(),
             "cannot insert block that is already attached to another region"
         );
-        {
-            let mut region = region.borrow_mut();
-            region.body_mut().push_back(self.as_block_ref());
-        }
-        self.region = Some(region);
+        region.borrow_mut().body_mut().push_back(self.as_block_ref());
     }
 
     /// Unlink this block from its current region and insert it right before `before`
@@ -695,7 +678,7 @@ impl Block {
 
     /// Remove this block from its containing region
     fn unlink(&mut self) {
-        if let Some(mut region) = self.region.take() {
+        if let Some(mut region) = self.parent() {
             let mut region = region.borrow_mut();
             unsafe {
                 let mut cursor = region.body_mut().cursor_mut_from_ptr(self.as_block_ref());
@@ -708,16 +691,30 @@ impl Block {
     ///
     /// It is up to the caller to ensure that this operation produces valid IR.
     pub fn splice_block(&mut self, block: &mut Self) {
-        let mut ops = block.body_mut().take();
-        let this = self.as_block_ref();
-        {
-            let mut cursor = ops.front_mut();
-            while let Some(op) = cursor.as_pointer() {
-                cursor.move_next();
-                Operation::on_inserted_into_parent(op, this);
-            }
-        }
+        let ops = block.body_mut().take();
         self.body.back_mut().splice_after(ops);
+    }
+
+    /// Splice the body of `block` to `self` before `ip`, updating the parent of all spliced ops.
+    ///
+    /// It is up to the caller to ensure that this operation produces valid IR.
+    pub fn splice_block_before(&mut self, block: &mut Self, ip: OperationRef) {
+        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+
+        let ops = block.body_mut().take();
+        let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
+        cursor.splice_before(ops);
+    }
+
+    /// Splice the body of `block` to `self` after `ip`, updating the parent of all spliced ops.
+    ///
+    /// It is up to the caller to ensure that this operation produces valid IR.
+    pub fn splice_block_after(&mut self, block: &mut Self, ip: OperationRef) {
+        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+
+        let ops = block.body_mut().take();
+        let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
+        cursor.splice_after(ops);
     }
 
     /// Split this block into two blocks before the specified operation
@@ -732,18 +729,18 @@ impl Block {
         assert!(
             BlockRef::ptr_eq(
                 &this,
-                &before.borrow().parent().expect("'before' op is not attached to a block")
+                &before.parent().expect("'before' op is not attached to a block")
             ),
             "cannot split block using an operation that does not belong to the block being split"
         );
 
         // We need the parent op so we can get access to the current Context, but this also tells us
         // that this block is attached to a region and operation.
-        let parent = self.parent_op().expect("block is not attached to an operation");
+        let mut region = self.parent().expect("block is not attached to a region");
+        let parent = region.parent().expect("parent region is not attached to an operation");
         // Create a new empty block
         let mut new_block = parent.borrow().context().create_block();
         // Insert the block in the same region as `self`, immediately after `self`
-        let region = self.region.as_mut().unwrap();
         {
             let mut region_mut = region.borrow_mut();
             let blocks = region_mut.body_mut();
@@ -752,18 +749,13 @@ impl Block {
         }
         // Split the body of `self` at `before`, and splice everything after `before`, including
         // `before` itself, into the new block we created.
-        let mut ops = {
+        let ops = {
             let mut cursor = unsafe { self.body.cursor_mut_from_ptr(before) };
-            cursor.split_before()
+            // Move the cursor before 'before' so that the split we get contains it
+            cursor.move_prev();
+            cursor.split_after()
         };
-        // The split_before method returns the list containing all of the ops before the cursor, but
-        // we want the inverse, so we just swap the two lists.
-        core::mem::swap(&mut self.body, &mut ops);
-        // Visit all of the ops and notify them of the move
-        for op in ops.iter() {
-            Operation::on_inserted_into_parent(op.as_operation_ref(), new_block);
-        }
-        new_block.borrow_mut().body = ops;
+        new_block.borrow_mut().body_mut().back_mut().splice_after(ops);
         new_block
     }
 
@@ -839,8 +831,8 @@ impl Block {
     pub fn get_blocks_in_same_region(a: BlockRef, b: BlockRef) -> Option<(BlockRef, BlockRef)> {
         // If both blocks do not live in the same region, we will have to check their parent
         // operations.
-        let a_region = a.borrow().parent().unwrap();
-        let b_region = b.borrow().parent().unwrap();
+        let a_region = a.parent().unwrap();
+        let b_region = b.parent().unwrap();
         if a_region == b_region {
             return Some((a, b));
         }
@@ -852,7 +844,7 @@ impl Block {
         let mut a_depth = 0;
         let result = Self::traverse_ancestors(a, |block| {
             a_depth += 1;
-            block.borrow().parent().is_some_and(|r| r == b_region)
+            block.parent().is_some_and(|r| r == b_region)
         });
         if let Some(a) = result {
             return Some((a, b));
@@ -865,7 +857,7 @@ impl Block {
         let mut b_depth = 0;
         let result = Self::traverse_ancestors(b, |block| {
             b_depth += 1;
-            block.borrow().parent().is_some_and(|r| r == a_region)
+            block.parent().is_some_and(|r| r == a_region)
         });
         if let Some(b) = result {
             return Some((a, b));
@@ -880,11 +872,11 @@ impl Block {
 
             match a_depth.cmp(&b_depth) {
                 Ordering::Greater => {
-                    a = a.and_then(|a| a.borrow().parent_block());
+                    a = a.and_then(|a| a.grandparent().and_then(|gp| gp.parent()));
                     a_depth -= 1;
                 }
                 Ordering::Less => {
-                    b = b.and_then(|b| b.borrow().parent_block());
+                    b = b.and_then(|b| b.grandparent().and_then(|gp| gp.parent()));
                     b_depth -= 1;
                 }
                 Ordering::Equal => break,
@@ -895,16 +887,14 @@ impl Block {
         // from here on out.
         while let Some(next_a) = a.take() {
             // If they are at the same level, and have the same parent region, then we succeeded.
-            let next_a_parent = next_a.borrow().parent();
-            let b_parent = b.as_ref().and_then(|b| b.borrow().parent());
+            let next_a_parent = next_a.parent();
+            let b_parent = b.as_ref().and_then(|b| b.parent());
             if next_a_parent == b_parent {
                 return Some((next_a, b.unwrap()));
             }
 
-            a = next_a_parent
-                .and_then(|r| r.borrow().parent())
-                .and_then(|op| op.borrow().parent());
-            b = b_parent.and_then(|r| r.borrow().parent()).and_then(|op| op.borrow().parent());
+            a = next_a_parent.and_then(|r| r.grandparent());
+            b = b_parent.and_then(|r| r.grandparent());
         }
 
         // They don't share a nearest common ancestor, perhaps they are in different modules or
@@ -991,14 +981,14 @@ impl Block {
     /// This drops all uses of values defined in this block or in the blocks of nested regions
     /// wherever the uses are located.
     pub fn drop_all_defined_value_uses(&mut self) {
+        let mut cursor = self.body.back_mut();
+        while let Some(mut op) = cursor.as_pointer() {
+            op.borrow_mut().drop_all_defined_value_uses();
+            cursor.move_prev();
+        }
         for arg in self.arguments.iter_mut() {
             let mut arg = arg.borrow_mut();
             arg.uses_mut().clear();
-        }
-        let mut cursor = self.body.front_mut();
-        while let Some(mut op) = cursor.as_pointer() {
-            op.borrow_mut().drop_all_defined_value_uses();
-            cursor.move_next();
         }
         self.drop_all_uses();
     }
@@ -1016,12 +1006,8 @@ impl Block {
 
         let mut replacement_block = replacement.borrow_mut();
 
-        let mut cursor = self.uses_mut().front_mut();
-        while let Some(mut user_ref) = cursor.remove() {
-            let mut user = user_ref.borrow_mut();
-            user.block = replacement;
-            replacement_block.insert_use(user_ref);
-        }
+        let uses = self.uses_mut().take();
+        replacement_block.uses_mut().back_mut().splice_after(uses);
     }
 
     #[inline(always)]
@@ -1106,42 +1092,60 @@ pub type BlockOperandIter<'a> = EntityIter<'a, BlockOperand>;
 
 /// A [BlockOperand] represents a use of a [Block] by an [Operation]
 pub struct BlockOperand {
-    /// The block value
-    pub block: BlockRef,
     /// The owner of this operand, i.e. the operation it is an operand of
     pub owner: OperationRef,
     /// The index of this operand in the set of block operands of the operation
     pub index: u8,
 }
+
+impl Entity for BlockOperand {}
+impl EntityWithParent for BlockOperand {
+    type Parent = Block;
+}
+impl EntityListItem for BlockOperand {
+    #[track_caller]
+    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, _cursor: &mut EntityCursorMut<'_, Self>) {
+        assert!(this.parent().is_some());
+    }
+}
+
 impl BlockOperand {
     #[inline]
-    pub fn new(block: BlockRef, owner: OperationRef, index: u8) -> Self {
-        Self {
-            block,
-            owner,
-            index,
-        }
+    pub fn new(owner: OperationRef, index: u8) -> Self {
+        Self { owner, index }
+    }
+
+    pub fn as_block_operand_ref(&self) -> BlockOperandRef {
+        unsafe { BlockOperandRef::from_raw(self) }
     }
 
     pub fn block_id(&self) -> BlockId {
-        self.block.borrow().id
+        self.successor().borrow().id
     }
 
     /// Get the block from which this block operand originates, i.e. the predecessor block
     pub fn predecessor(&self) -> BlockRef {
-        self.owner.borrow().parent().expect("operation is not attached to a block")
+        self.owner.parent().expect("owning operation is not attached to a block")
     }
 
     /// Get the block this operand references
     #[inline]
-    pub const fn successor(&self) -> BlockRef {
-        self.block
+    pub fn successor(&self) -> BlockRef {
+        //self.as_block_operand_ref().parent().expect("block operand is dead")
+        self.as_block_operand_ref().parent().unwrap_or_else(|| {
+            panic!(
+                "block operand is dead at index {} in {}",
+                self.index,
+                &self.owner.borrow().name()
+            )
+        })
     }
 }
+
 impl fmt::Debug for BlockOperand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockOperand")
-            .field("block", &self.block.borrow().id())
+            .field("block", &self.successor())
             .field_with("owner", |f| write!(f, "{:p}", &self.owner))
             .field("index", &self.index)
             .finish()
@@ -1164,11 +1168,15 @@ impl StorableEntity for BlockOperand {
 
     /// Remove this use of `block`
     fn unlink(&mut self) {
-        let owner = unsafe { BlockOperandRef::from_raw(self) };
-        let mut block = self.block.borrow_mut();
+        let this = self.as_block_operand_ref();
+        let Some(mut parent) = this.parent() else {
+            return;
+        };
+
+        let mut block = parent.borrow_mut();
         let uses = block.uses_mut();
         unsafe {
-            let mut cursor = uses.cursor_mut_from_ptr(owner);
+            let mut cursor = uses.cursor_mut_from_ptr(this);
             cursor.remove();
         }
     }

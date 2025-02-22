@@ -323,7 +323,6 @@ pub fn transform_cfg_to_scf(
         // Invalidate the dominance tree as blocks have been moved, created and added during the
         // cycle to structured loop transformation.
         if !new_regions.is_empty() {
-            let current = current.borrow();
             let parent_region = current.parent().unwrap();
             transform_ctx.invalidate_dominance_info_for_region(parent_region);
         }

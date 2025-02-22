@@ -421,7 +421,7 @@ fn visit_region_successors<A>(
                     let input = inputs[0].borrow();
                     first_index = input.downcast_ref::<BlockArgument>().unwrap().index();
                 }
-                let region = point.block().unwrap().borrow().parent().unwrap();
+                let region = point.block().unwrap().parent().unwrap();
                 let region_borrowed = region.borrow();
                 let entry = region_borrowed.entry();
                 let successor_arg_range = BlockArgumentRange::new(

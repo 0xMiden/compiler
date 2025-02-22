@@ -14,7 +14,7 @@ pub type OpOperandCursorMut<'a> = crate::EntityCursorMut<'a, OpOperandImpl>;
 /// An [OpOperand] represents a use of a [Value] by an [Operation]
 pub struct OpOperandImpl {
     /// The operand value
-    pub value: ValueRef,
+    pub value: Option<ValueRef>,
     /// The owner of this operand, i.e. the operation it is an operand of
     pub owner: OperationRef,
     /// The index of this operand in the operand list of an operation
@@ -24,19 +24,19 @@ impl OpOperandImpl {
     #[inline]
     pub fn new(value: ValueRef, owner: OperationRef, index: u8) -> Self {
         Self {
-            value,
+            value: Some(value),
             owner,
             index,
         }
     }
 
     pub fn value(&self) -> EntityRef<'_, dyn Value> {
-        self.value.borrow()
+        self.value.as_ref().unwrap().borrow()
     }
 
     #[inline]
     pub const fn as_value_ref(&self) -> ValueRef {
-        self.value
+        self.value.unwrap()
     }
 
     #[inline]
@@ -65,15 +65,16 @@ impl OpOperandImpl {
 
     /// Set the operand value to `value`, removing the operand from the use list of the previous
     /// value, and adding it to the use list of `value`.
-    pub fn set(&mut self, value: ValueRef) {
+    pub fn set(&mut self, mut value: ValueRef) {
         let this = self.as_operand_ref();
-        let mut prev = self.value;
-        unsafe {
-            let mut prev = prev.borrow_mut();
-            prev.uses_mut().cursor_mut_from_ptr(this).remove();
+        if let Some(mut prev) = self.value.take() {
+            unsafe {
+                let mut prev = prev.borrow_mut();
+                prev.uses_mut().cursor_mut_from_ptr(this).remove();
+            }
         }
-        self.value = value;
-        self.value.borrow_mut().insert_use(this);
+        self.value = Some(value);
+        value.borrow_mut().insert_use(this);
     }
 }
 impl fmt::Debug for OpOperandImpl {
@@ -85,21 +86,24 @@ impl fmt::Debug for OpOperandImpl {
             ty: &'a Type,
         }
 
-        let value = self.value.borrow();
-        let id = value.id();
-        let ty = value.ty();
+        let value = self.value.map(|value| value.borrow());
+        let value = value.as_ref().map(|value| ValueInfo {
+            id: value.id(),
+            ty: value.ty(),
+        });
         f.debug_struct("OpOperand")
             .field("index", &self.index)
-            .field("value", &ValueInfo { id, ty })
+            .field("value", &value)
             .finish_non_exhaustive()
     }
 }
 impl crate::Spanned for OpOperandImpl {
     fn span(&self) -> crate::SourceSpan {
-        self.value.borrow().span()
+        self.value().span()
     }
 }
 impl crate::Entity for OpOperandImpl {}
+impl crate::EntityListItem for OpOperandImpl {}
 impl crate::StorableEntity for OpOperandImpl {
     #[inline(always)]
     fn index(&self) -> usize {
@@ -111,12 +115,14 @@ impl crate::StorableEntity for OpOperandImpl {
     }
 
     fn unlink(&mut self) {
-        let ptr = self.as_operand_ref();
-        let mut value = self.value.borrow_mut();
-        let uses = value.uses_mut();
-        unsafe {
-            let mut cursor = uses.cursor_mut_from_ptr(ptr);
-            cursor.remove();
+        if let Some(mut value) = self.value.take() {
+            let ptr = self.as_operand_ref();
+            let mut value = value.borrow_mut();
+            let uses = value.uses_mut();
+            unsafe {
+                let mut cursor = uses.cursor_mut_from_ptr(ptr);
+                cursor.remove();
+            }
         }
     }
 }

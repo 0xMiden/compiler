@@ -400,7 +400,7 @@ impl SSABuilder {
 
         let predecessors = self.predecessors(block);
         if predecessors.len() == 1 {
-            let pred = predecessors[0].borrow().block.expect("no containing block found");
+            let pred = predecessors[0].parent().expect("no containing block found");
             self.ssa_blocks.get_mut(&block).unwrap().single_predecessor = Some(pred);
         }
 
@@ -509,7 +509,7 @@ impl SSABuilder {
         while let Some(call) = self.calls.pop() {
             match call {
                 Call::UseVar(branch) => {
-                    let block = branch.borrow().block.expect("no containing block is found");
+                    let block = branch.parent().expect("no containing block is found");
                     self.use_var_nonlocal(var, ty.clone(), block);
                 }
                 Call::FinishPredecessorsLookup(sentinel, dest_block) => {

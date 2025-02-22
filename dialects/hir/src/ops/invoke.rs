@@ -18,7 +18,7 @@ pub struct Exec {
 impl InferTypeOpInterface for Exec {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         let span = self.span();
-        let owner = self.as_operation().as_operation_ref();
+        let owner = self.as_operation_ref();
         let signature = self.signature().clone();
         for (i, result) in signature.results().iter().enumerate() {
             let value = context.make_result(span, result.ty.clone(), owner, i as u8);
@@ -94,7 +94,7 @@ pub struct Call {
 impl InferTypeOpInterface for Call {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         let span = self.span();
-        let owner = self.as_operation().as_operation_ref();
+        let owner = self.as_operation_ref();
         let signature = self.signature().clone();
         for (i, result) in signature.results().iter().enumerate() {
             let value = context.make_result(span, result.ty.clone(), owner, i as u8);

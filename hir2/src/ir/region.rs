@@ -46,10 +46,6 @@ pub type RegionCursorMut<'a> = EntityCursorMut<'a, Region>;
 /// i.e. an operation without a parent region is a top-level operation, e.g. `Module`.
 #[derive(Default)]
 pub struct Region {
-    /// The operation this region is attached to.
-    ///
-    /// If `link.is_linked() == true`, this will always be set to a valid pointer
-    owner: Option<OperationRef>,
     /// The list of [Block]s that comprise this region
     body: BlockList,
 }
@@ -58,29 +54,13 @@ impl Entity for Region {}
 
 impl EntityWithParent for Region {
     type Parent = Operation;
+}
 
-    fn on_inserted_into_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-        this.borrow_mut().owner = Some(parent);
-    }
+impl EntityListItem for Region {}
 
-    fn on_removed_from_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        _parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-        this.borrow_mut().owner = None;
-    }
-
-    fn on_transfered_to_new_parent(
-        _from: UnsafeIntrusiveEntityRef<Self::Parent>,
-        to: UnsafeIntrusiveEntityRef<Self::Parent>,
-        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
-    ) {
-        for mut transferred_region in transferred {
-            transferred_region.borrow_mut().owner = Some(to);
-        }
+impl EntityParent<Block> for Region {
+    fn offset() -> usize {
+        core::mem::offset_of!(Region, body)
     }
 }
 
@@ -107,7 +87,7 @@ impl cfg::Graph for Region {
     }
 
     fn edge_dest(edge: Self::Edge) -> Self::Node {
-        edge.borrow().block
+        edge.parent().unwrap()
     }
 
     fn entry_node(&self) -> Self::Node {
@@ -175,7 +155,7 @@ impl Region {
     }
 
     pub fn region_number(&self) -> usize {
-        let op = self.owner.as_ref().unwrap().borrow();
+        let op = self.parent().unwrap().borrow();
         op.regions()
             .iter()
             .position(|r| core::ptr::addr_eq(self, &*r))
@@ -218,7 +198,7 @@ impl Region {
 
     /// Returns true if this region may be a graph region without SSA dominance
     pub fn may_be_graph_region(&self) -> bool {
-        if let Some(owner) = self.owner.as_ref() {
+        if let Some(owner) = self.parent() {
             owner
                 .borrow()
                 .as_trait::<dyn RegionKindInterface>()
@@ -239,32 +219,12 @@ impl Region {
 
     /// Get the defining [Operation] for this region, if the region is attached to one.
     pub fn parent(&self) -> Option<OperationRef> {
-        self.owner
+        self.as_region_ref().parent()
     }
 
     /// Get the region which contains the parent operation of this region, if there is one.
     pub fn parent_region(&self) -> Option<RegionRef> {
-        self.owner.as_ref().and_then(|op| op.borrow().parent_region())
-    }
-
-    /// Set the owner of this region.
-    ///
-    /// Returns the previous owner.
-    ///
-    /// # Safety
-    ///
-    /// It is dangerous to set this field unless doing so as part of allocating the [Region] or
-    /// moving the [Region] from one op to another. If it is set to a different entity than actually
-    /// owns the region, it will result in undefined behavior or panics when we attempt to access
-    /// the owner via the region.
-    ///
-    /// You must ensure that the owner given _actually_ owns the region. Similarly, if you are
-    /// unsetting the owner, you must ensure that no entity _thinks_ it owns this region.
-    pub unsafe fn set_owner(&mut self, owner: Option<OperationRef>) -> Option<OperationRef> {
-        match owner {
-            None => self.owner.take(),
-            Some(owner) => self.owner.replace(owner),
-        }
+        self.parent().and_then(|op| op.grandparent())
     }
 }
 
@@ -423,15 +383,7 @@ impl Region {
 
         // Take blocks from `from_region`, update the parent of all the blocks, then splice to the
         // end of this region's body
-        let mut from = from_region.borrow_mut();
-        let blocks = from.body_mut().take();
-        let mut cursor = blocks.front();
-        while let Some(block) = cursor.as_pointer() {
-            cursor.move_next();
-
-            Block::on_inserted_into_parent(block, self.as_region_ref());
-        }
-
+        let blocks = from_region.borrow_mut().body_mut().take();
         self.body.back_mut().splice_after(blocks);
     }
 
@@ -562,12 +514,11 @@ impl Region {
         let this = self.as_region_ref();
         let mut current = Some(block);
         while let Some(current_block) = current.take() {
-            let parent = current_block.borrow().parent()?;
+            let parent = current_block.parent()?;
             if parent == this {
                 return Some(current_block);
             }
-            current =
-                parent.borrow().owner.as_ref().and_then(|parent_op| parent_op.borrow().parent());
+            current = parent.grandparent();
         }
         current
     }
@@ -584,7 +535,7 @@ impl Region {
             if parent == this {
                 return Some(current_op);
             }
-            current = parent.borrow().parent();
+            current = parent.parent();
         }
         current
     }

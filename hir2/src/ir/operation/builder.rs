@@ -38,7 +38,7 @@ where
     ///   will invoke verification at the end, and if `T` is not correctly initialized, it will
     ///   result in undefined behavior.
     pub fn new(builder: &'a mut B, op: UnsafeIntrusiveEntityRef<T>) -> Self {
-        let op = unsafe { UnsafeIntrusiveEntityRef::from_raw(op.borrow().as_operation()) };
+        let op = op.as_operation_ref();
         Self {
             builder,
             op,
@@ -82,10 +82,7 @@ where
     /// if the op implements the [traits::NoRegionArguments] trait. Otherwise, the inserted region
     /// may not be valid for this op.
     pub fn create_region(&mut self) {
-        let mut region = Region::default();
-        unsafe {
-            region.set_owner(Some(self.op));
-        }
+        let region = Region::default();
         let region = self.builder.context().alloc_tracked(region);
         let mut op = self.op.borrow_mut();
         op.regions.push_back(region);

@@ -1,5 +1,6 @@
 use super::{
-    entity::EntityIter, EntityCursor, EntityCursorMut, EntityList, UnsafeIntrusiveEntityRef,
+    entity::EntityIter, EntityCursor, EntityCursorMut, EntityList, EntityListItem,
+    UnsafeIntrusiveEntityRef,
 };
 
 /// The [Usable] trait is implemented for IR entities which are _defined_ and _used_, and as a
@@ -23,7 +24,7 @@ use super::{
 /// with each use is represented by `OpOperand`.
 pub trait Usable {
     /// The type associated with each unique use, e.g. `OpOperand`
-    type Use;
+    type Use: EntityListItem;
 
     /// Get a list of uses of this definition
     fn uses(&self) -> &EntityList<Self::Use>;

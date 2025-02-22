@@ -56,12 +56,7 @@ where
 impl From<&Operation> for ProgramPoint {
     #[inline]
     fn from(op: &Operation) -> Self {
-        let block = op.parent();
-        Self::Op {
-            block,
-            op: op.as_operation_ref(),
-            point: Insert::Before,
-        }
+        Self::from(op.as_operation_ref())
     }
 }
 
@@ -69,7 +64,12 @@ impl From<&Operation> for ProgramPoint {
 impl From<OperationRef> for ProgramPoint {
     #[inline]
     fn from(op: OperationRef) -> Self {
-        Self::from(op.borrow())
+        let block = op.parent();
+        Self::Op {
+            block,
+            op,
+            point: Insert::Before,
+        }
     }
 }
 

@@ -135,7 +135,7 @@ pub fn calculate_cycle_edges(cycles: &[BlockRef]) -> CycleEdges {
         let terminator = terminator.borrow();
         for succ in terminator.successor_iter() {
             let succ = succ.dest.borrow();
-            if !entry_blocks.contains(&succ.block) {
+            if !entry_blocks.contains(&succ.successor()) {
                 continue;
             }
 

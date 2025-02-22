@@ -4,9 +4,9 @@ use core::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    Block, BlockRef, Builder, Context, EntityWithParent, InsertionGuard, Listener, ListenerType,
-    OpBuilder, OpOperandImpl, Operation, OperationRef, Pattern, PostOrderBlockIter, ProgramPoint,
-    RegionRef, Report, SourceSpan, Usable, ValueRef,
+    BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
+    OperationRef, Pattern, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
+    ValueRef,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -325,7 +325,7 @@ pub trait Rewriter: Builder + RewriterListener {
         while let Some(mut operand) = cursor.remove() {
             let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().value = to;
+            operand.borrow_mut().value = Some(to);
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -338,10 +338,9 @@ pub trait Rewriter: Builder + RewriterListener {
         let mut from_block = from.borrow_mut();
         let from_uses = from_block.uses_mut();
         let mut cursor = from_uses.front_mut();
-        while let Some(mut operand) = cursor.remove() {
+        while let Some(operand) = cursor.remove() {
             let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().block = to;
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -412,7 +411,7 @@ pub trait Rewriter: Builder + RewriterListener {
         to: &[ValueRef],
         block: BlockRef,
     ) -> bool {
-        let parent_op = block.borrow().parent_op();
+        let parent_op = block.grandparent();
         self.maybe_replace_op_uses_with(from, to, |operand| {
             !parent_op
                 .as_ref()
@@ -462,10 +461,7 @@ pub trait RewriterExt: Rewriter {
             if should_replace(&user.borrow()) {
                 let owner = user.borrow().owner;
                 self.notify_operation_modification_started(&owner);
-                let mut operand = cursor.remove().unwrap();
-                {
-                    operand.borrow_mut().value = to;
-                }
+                let operand = cursor.remove().unwrap();
                 to.borrow_mut().insert_use(operand);
                 self.notify_operation_modified(owner);
             } else {

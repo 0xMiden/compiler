@@ -696,7 +696,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                             __op_ptr.write(::midenc_hir2::Operation::uninit::<Self>(__context, __operation_name, __offset));
                             #initialize_custom_fields
                         }
-                        let mut __this = ::midenc_hir2::UnsafeIntrusiveEntityRef::assume_init(__op);
+                        let mut __this = ::midenc_hir2::RawEntityRef::assume_init(__op);
                         __this.borrow_mut().set_span(span);
                         __this
                     }

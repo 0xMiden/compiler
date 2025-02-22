@@ -330,18 +330,18 @@ impl OpSuccessorMut<'_> {
         // Unlink from old destination
         {
             let mut dest = self.dest.borrow_mut();
-            if BlockRef::ptr_eq(&block, &dest.block) {
+            if BlockRef::ptr_eq(&block, &dest.successor()) {
                 return;
             }
             dest.unlink();
-            // Start linking new destination
-            dest.block = block;
         }
 
         // Link to new destination
         let mut block = block.borrow_mut();
         let uses = block.uses_mut();
         uses.push_back(self.dest);
+
+        debug_assert!(self.dest.parent().is_some());
     }
 }
 
