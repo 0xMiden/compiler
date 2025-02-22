@@ -528,8 +528,8 @@ builtin.function public @test(v0: u32) -> u32 {
     v23, v24, v25 = hir.while v0, v3, v15 : u32, u32, u32 {
     ^block1(v1: u32, v2: u32, v19: u32):
         v5 = hir.eq v1, v3 : i1;
-        v30, v31, v32, v33 = hir.if v5 : u32, u32, u32, u32 {
-        ^block9:
+        v33, v34, v35, v36 = hir.if v5 : u32, u32, u32, u32 {
+        ^block10:
             hir.yield v15, v15, v14, v9;
         } {
         ^block3:
@@ -537,11 +537,11 @@ builtin.function public @test(v0: u32) -> u32 {
             v7 = hir.incr v2 : u32;
             hir.yield v6, v7, v9, v14;
         };
-        v26 = hir.trunc v33 : i1 #[ty = i1];
-        hir.condition v26, v30, v31, v2;
+        v32 = hir.trunc v36 : i1 #[ty = i1];
+        hir.condition v32, v33, v34, v2;
     } {
-    ^block8(v27: u32, v28: u32, v29: u32):
-        hir.yield v27, v28, v29;
+    ^block9(v29: u32, v30: u32, v31: u32):
+        hir.yield v29, v30, v31;
     };
     hir.ret v25;
 };";
@@ -702,17 +702,17 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
     v35, v36, v37 = hir.while v7, v7, v26 : u32, u32, u32 {
     ^block1(v3: u32, v4: u32, v30: u32):
         v8 = hir.lt v3, v1 : i1;
-        v60, v61, v62, v63, v64 = hir.if v8 : u32, u32, u32, u32, u32 {
-        ^block16:
+        v66, v67, v68, v69, v70 = hir.if v8 : u32, u32, u32, u32, u32 {
+        ^block18:
             hir.yield v26, v26, v25, v20, v4;
         } {
         ^block3:
             v9 = hir.mul v3, v2 : u32 #[overflow = unchecked];
-            v53, v54, v55 = hir.while v7, v4, v26 : u32, u32, u32 {
-            ^block2(v5: u32, v6: u32, v49: u32):
+            v56, v57, v58 = hir.while v7, v4, v26 : u32, u32, u32 {
+            ^block2(v5: u32, v6: u32, v52: u32):
                 v10 = hir.lt v5, v2 : i1;
-                v65, v66, v67, v68 = hir.if v10 : u32, u32, u32, u32 {
-                ^block17:
+                v71, v72, v73, v74 = hir.if v10 : u32, u32, u32, u32 {
+                ^block19:
                     hir.yield v26, v26, v25, v20;
                 } {
                 ^block5:
@@ -725,20 +725,20 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
                     v18 = hir.add v6, v16 : u32 #[overflow = unchecked];
                     hir.yield v17, v18, v20, v25;
                 };
-                v56 = hir.trunc v68 : i1 #[ty = i1];
-                hir.condition v56, v65, v66, v6;
+                v65 = hir.trunc v74 : i1 #[ty = i1];
+                hir.condition v65, v71, v72, v6;
             } {
-            ^block15(v57: u32, v58: u32, v59: u32):
-                hir.yield v57, v58, v59;
+            ^block17(v62: u32, v63: u32, v64: u32):
+                hir.yield v62, v63, v64;
             };
             v11 = hir.incr v3 : u32;
-            hir.yield v11, v55, v20, v25, v26;
+            hir.yield v11, v58, v20, v25, v26;
         };
-        v38 = hir.trunc v63 : i1 #[ty = i1];
-        hir.condition v38, v60, v61, v64;
+        v44 = hir.trunc v69 : i1 #[ty = i1];
+        hir.condition v44, v66, v67, v70;
     } {
-    ^block11(v39: u32, v40: u32, v41: u32):
-        hir.yield v39, v40, v41;
+    ^block12(v41: u32, v42: u32, v43: u32):
+        hir.yield v41, v42, v43;
     };
     hir.ret v37;
 };";
