@@ -113,6 +113,9 @@ impl PassManager {
         // Before running, make sure to finalize the pipeline pass list.
         self.pm.finalize_pass_list()?;
 
+        // Run pass initialization
+        self.pm.initialize()?;
+
         // Construct a top level analysis manager for the pipeline.
         let analysis_manager = AnalysisManager::new(op, Some(self.instrumentor.clone()));
 
@@ -183,6 +186,10 @@ impl PassManager {
 
     fn dump_statistics(&mut self, out: &mut dyn core::fmt::Write) -> core::fmt::Result {
         self.pm.print_statistics(out, self.statistics.unwrap_or_default())
+    }
+
+    pub fn print_as_textual_pipeline(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.pm.print_as_textual_pipeline(f)
     }
 
     pub fn nest(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
