@@ -15,20 +15,20 @@ edition.workspace = true
 default = ["std"]
 std = ["rustc-demangle/std", "compact_str/std", "semver/std"]
 serde = [
-  "dep:serde",
-  "dep:serde_repr",
-  "dep:serde_bytes",
-  "midenc-hir-symbol/serde",
+    "dep:serde",
+    "dep:serde_repr",
+    "dep:serde_bytes",
+    "midenc-hir-symbol/serde",
 ]
 debug_refcell = []
 
 [dependencies]
 anyhow.workspace = true
 blink-alloc = { version = "0.3", default-features = false, features = [
-  "alloc",
-  "nightly",
+    "alloc",
+    "nightly",
 ] }
-bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+bitvec.workspace = true
 bitflags.workspace = true
 compact_str.workspace = true
 hashbrown.workspace = true

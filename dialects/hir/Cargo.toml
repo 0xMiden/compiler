@@ -20,6 +20,7 @@ midenc-hir2.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-session.workspace = true
 paste.workspace = true
+bitvec.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.0"
