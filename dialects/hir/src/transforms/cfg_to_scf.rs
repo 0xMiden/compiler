@@ -747,4 +747,241 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
 
         Ok(())
     }
+
+    #[test]
+    fn cfg_to_scf_lift_multiple_exit_nested_while_loop() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+
+        let span = SourceSpan::default();
+        let mut function = {
+            let builder = builder.create::<builtin::Function, (_, _)>(span);
+            let name = Ident::new("test".into(), span);
+            let signature = Signature::new(
+                [
+                    AbiParam::new(Type::Ptr(Box::new(Type::U32))),
+                    AbiParam::new(Type::U32),
+                    AbiParam::new(Type::U32),
+                ],
+                [AbiParam::new(Type::U32)],
+            );
+            builder(name, signature).unwrap()
+        };
+
+        // Define function body for the following pseudocode:
+        //
+        // function test(v0: *mut u32, rows: u32, cols: u32) -> u32 {
+        //     let row_offset = 0;
+        //     let sum = 0;
+        //     while row_offset < rows {
+        //         let offset = row_offset * cols;
+        //         let col_offset = 0;
+        //         while col_offset < cols {
+        //             let cell = *(v0 + offset + col_offset);
+        //             col_offset += 1;
+        //             let (sum_p, overflowed) = sum.add_overflowing(cell);
+        //             if overflowed {
+        //                 return u32::MAX;
+        //             }
+        //             sum += cell;
+        //         }
+        //         row_offset += 1;
+        //     }
+        //
+        //     return sum;
+        // }
+        //
+        let mut func = function.borrow_mut();
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+
+        let outer_loop_header = builder.create_block();
+        let inner_loop_header = builder.create_block();
+        let row_offset = builder.append_block_param(outer_loop_header, Type::U32, span);
+        let row_sum = builder.append_block_param(outer_loop_header, Type::U32, span);
+        let col_offset = builder.append_block_param(inner_loop_header, Type::U32, span);
+        let col_sum = builder.append_block_param(inner_loop_header, Type::U32, span);
+        let has_more_rows = builder.create_block();
+        let no_more_rows = builder.create_block();
+        let has_more_columns = builder.create_block();
+        let no_more_columns = builder.create_block();
+        let has_overflowed = builder.create_block();
+
+        let block = builder.current_block();
+        let ptr = block.borrow().arguments()[0].upcast();
+        let num_rows = block.borrow().arguments()[1].upcast();
+        let num_cols = block.borrow().arguments()[2].upcast();
+
+        let zero = builder.ins().u32(0, span);
+        builder.ins().br(outer_loop_header, [zero, zero], span)?;
+
+        builder.switch_to_block(outer_loop_header);
+        let more_rows = builder.ins().lt(row_offset, num_rows, span)?;
+        builder
+            .ins()
+            .cond_br(more_rows, has_more_rows, [row_sum], no_more_rows, [], span)?;
+
+        builder.switch_to_block(no_more_rows);
+        builder.ins().ret(Some(row_sum), span)?;
+
+        builder.switch_to_block(has_more_rows);
+        let offset = builder.ins().mul_unchecked(row_offset, num_cols, span)?;
+        builder.ins().br(inner_loop_header, [zero, row_sum], span)?;
+
+        builder.switch_to_block(inner_loop_header);
+        let more_cols = builder.ins().lt(col_offset, num_cols, span)?;
+        builder
+            .ins()
+            .cond_br(more_cols, has_more_columns, [col_sum], no_more_columns, [], span)?;
+
+        builder.switch_to_block(no_more_columns);
+        let new_row_offset = builder.ins().incr(row_offset, span)?;
+        builder.ins().br(outer_loop_header, [new_row_offset, col_sum], span)?;
+
+        builder.switch_to_block(has_more_columns);
+        let addr_offset = builder.ins().add_unchecked(offset, col_offset, span)?;
+        let addr = builder.ins().ptrtoint(ptr, Type::U32, span)?;
+        let cell_addr = builder.ins().add_unchecked(addr, addr_offset, span)?;
+        let cell_ptr = builder.ins().inttoptr(cell_addr, Type::Ptr(Box::new(Type::U32)), span)?;
+        let cell = builder.ins().load(cell_ptr, span)?;
+        let new_col_offset = builder.ins().incr(col_offset, span)?;
+        let (overflowed, new_sum) = builder.ins().add_overflowing(col_sum, cell, span)?;
+        builder.ins().cond_br(
+            overflowed,
+            has_overflowed,
+            [],
+            inner_loop_header,
+            [new_col_offset, new_sum],
+            span,
+        )?;
+
+        builder.switch_to_block(has_overflowed);
+        builder.ins().ret_imm(midenc_hir2::Immediate::U32(u32::MAX), span)?;
+
+        let operation = func.as_operation_ref();
+        drop(func);
+
+        // Run transformation on function body
+        let expected_input = "\
+builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
+^block0(v0: (ptr u32), v1: u32, v2: u32):
+    v7 = hir.constant 0 : u32;
+    hir.br block1(v7, v7);
+^block1(v3: u32, v4: u32):
+    v8 = hir.lt v3, v1 : i1;
+    hir.cond_br v8 block3(v4), block4;
+^block2(v5: u32, v6: u32):
+    v10 = hir.lt v5, v2 : i1;
+    hir.cond_br v10 block5(v6), block6;
+^block3:
+    v9 = hir.mul v3, v2 : u32 #[overflow = unchecked];
+    hir.br block2(v7, v4);
+^block4:
+    hir.ret v4;
+^block5:
+    v12 = hir.add v9, v5 : u32 #[overflow = unchecked];
+    v13 = hir.ptr_to_int v0 : u32 #[ty = u32];
+    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
+    v15 = hir.int_to_ptr v14 : (ptr u32) #[ty = (ptr u32)];
+    v16 = hir.load v15 : u32;
+    v17 = hir.incr v5 : u32;
+    v18, v19 = hir.add_overflowing v6, v16 : i1, u32;
+    hir.cond_br v18 block7, block2(v17, v19);
+^block6:
+    v11 = hir.incr v3 : u32;
+    hir.br block1(v11, v6);
+^block7:
+    hir.ret_imm  #[value = 4294967295];
+};";
+        let input = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_input, &input);
+
+        struct PrintPm<'a>(&'a midenc_hir2::pass::PassManager);
+        impl core::fmt::Display for PrintPm<'_> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                self.0.print_as_textual_pipeline(f)
+            }
+        }
+
+        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
+        pm.add_pass(Box::new(LiftControlFlowToSCF));
+        pm.add_pass(midenc_hir2::transforms::Canonicalizer::create());
+        std::println!("{}", PrintPm(&pm));
+        pm.run(operation)?;
+
+        // Verify that the function body now consists of a single `hir.if` operation, followed by
+        // an `hir.return`.
+        let expected_output = "\
+builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
+^block0(v0: (ptr u32), v1: u32, v2: u32):
+    v21 = hir.constant 0 : u32;
+    v26 = hir.constant 1 : u32;
+    v28 = hir.constant 2 : u32;
+    v27 = hir.poison  : u32 #[ty = u32];
+    v157, v158, v159, v160 = hir.while v21, v21 : u32, u32, u32, u32 {
+    ^block27(v161: u32, v162: u32):
+        v8 = hir.lt v161, v1 : i1;
+        v120, v121, v122, v123, v124 = hir.if v8 : u32, u32, u32, u32, u32 {
+        ^block3:
+            v9 = hir.mul v161, v2 : u32 #[overflow = unchecked];
+            v199, v200, v201, v202, v203, v204, v205 = hir.while v21, v162 : u32, u32, u32, u32, \
+                               u32, u32, u32 {
+            ^block31(v206: u32, v207: u32):
+                v10 = hir.lt v206, v2 : i1;
+                v193, v194, v195, v196, v197, v198 = hir.if v10 : u32, u32, u32, u32, u32, u32 {
+                ^block5:
+                    v12 = hir.add v9, v206 : u32 #[overflow = unchecked];
+                    v13 = hir.ptr_to_int v0 : u32 #[ty = u32];
+                    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
+                    v15 = hir.int_to_ptr v14 : (ptr u32) #[ty = (ptr u32)];
+                    v16 = hir.load v15 : u32;
+                    v17 = hir.incr v206 : u32;
+                    v18, v19 = hir.add_overflowing v207, v16 : i1, u32;
+                    v187 = hir.select v18, v27, v17 : u32;
+                    v188 = hir.select v18, v27, v19 : u32;
+                    v189 = hir.select v18, v28, v27 : u32;
+                    v190 = hir.select v18, v21, v27 : u32;
+                    v191 = hir.select v18, v28, v21 : u32;
+                    v192 = hir.select v18, v21, v26 : u32;
+                    hir.yield v187, v188, v189, v190, v191, v192;
+                } {
+                ^block24:
+                    hir.yield v27, v27, v27, v27, v26, v21;
+                };
+                v114 = hir.trunc v198 : i1 #[ty = i1];
+                hir.condition v114, v193, v194, v207, v27, v195, v196, v197;
+            } {
+            ^block32(v208: u32, v209: u32, v210: u32, v211: u32, v212: u32, v213: u32, v214: u32):
+                hir.yield v208, v209;
+            };
+            v125, v126, v127, v128, v129 = hir.index_switch v205 : u32, u32, u32, u32, u32 #[cases \
+                               = [1]] {
+            ^block6:
+                v11 = hir.incr v161 : u32;
+                hir.yield v11, v201, v21, v26, v27;
+            } {
+            ^block22:
+                hir.yield v202, v202, v203, v204, v202;
+            };
+            hir.yield v125, v126, v127, v128, v129;
+        } {
+        ^block21:
+            hir.yield v27, v27, v26, v21, v162;
+        };
+        v52 = hir.trunc v123 : i1 #[ty = i1];
+        hir.condition v52, v120, v121, v124, v122;
+    } {
+    ^block28(v163: u32, v164: u32, v165: u32, v166: u32):
+        hir.yield v163, v164;
+    };
+    hir.switch v160 block4, block7;
+^block4:
+    hir.ret v159;
+^block7:
+    hir.ret_imm  #[value = 4294967295];
+};";
+        let output = format!("{}", &operation.borrow());
+        assert_str_eq!(&expected_output, &output);
+
+        Ok(())
+    }
 }
