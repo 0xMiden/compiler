@@ -587,7 +587,7 @@ fn i32_const() {
             builtin.function public @test_wrapper() {
             ^block3:
                 v0 = hir.constant 1 : i32;
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -804,7 +804,7 @@ fn i32_add() {
                 v0 = hir.constant 3 : i32;
                 v1 = hir.constant 1 : i32;
                 v2 = hir.add v0, v1 : i32 #[overflow = wrapping];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };
@@ -1920,7 +1920,7 @@ fn i32_eqz() {
                 v1 = hir.constant 0 : i32;
                 v2 = hir.eq v0, v1 : i1;
                 v3 = hir.zext v2 : u32 #[ty = u32];
-                hir.br block4 ;
+                hir.br block4;
             ^block4:
                 hir.ret ;
             };

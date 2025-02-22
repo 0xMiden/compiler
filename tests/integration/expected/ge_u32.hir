@@ -8,7 +8,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v4 = hir.bitcast v1 : u32 #[ty = u32];
             v5 = hir.gte v3, v4 : i1;
             v6 = hir.zext v5 : u32 #[ty = u32];
-            hir.br block6 v6;
+            hir.br block6(v6);
         ^block6(v2: i32):
             hir.ret v2;
         };

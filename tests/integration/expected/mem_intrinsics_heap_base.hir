@@ -17,7 +17,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v12 = hir.exec v10, v11 : i32 #[callee = root/mem_intrinsics_heap_base/__rust_alloc] #[signature = (param i32) (param i32) (result i32)];
             v13 = hir.constant 0 : i32;
             v14 = hir.neq v12, v13 : i1;
-            hir.cond_br block6, block7 v14;
+            hir.cond_br v14 block6, block7;
         ^block5:
             hir.ret ;
         ^block6:
@@ -54,7 +54,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             hir.assertz v40 #[code = 250];
             v41 = hir.int_to_ptr v38 : (ptr i32) #[ty = (ptr i32)];
             hir.store v41, v37;
-            hir.br block5 ;
+            hir.br block5;
         ^block7:
             v15 = hir.constant 4 : i32;
             v16 = hir.constant 4 : i32;
@@ -65,7 +65,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         ^block8(v42: i32, v43: i32):
             v45 = hir.constant 1048576 : i32;
             v46 = hir.exec v45, v43, v42 : i32 #[callee = root/mem_intrinsics_heap_base/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc] #[signature = (param i32) (param i32) (param i32) (result i32)];
-            hir.br block9 v46;
+            hir.br block9(v46);
         ^block9(v44: i32):
             hir.ret v44;
         };
@@ -89,7 +89,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v66 = hir.bitcast v65 : i32 #[ty = i32];
             v67 = hir.constant 0 : i32;
             v68 = hir.neq v66, v67 : i1;
-            hir.cond_br block12, block13 v68;
+            hir.cond_br v68 block12, block13;
         ^block11(v50: i32):
 
         ^block12:
@@ -105,7 +105,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v76 = hir.bitcast v75 : i32 #[ty = i32];
             v77 = hir.constant 0 : i32;
             v78 = hir.neq v76, v77 : i1;
-            hir.cond_br block12, block14 v78;
+            hir.cond_br v78 block12, block14;
         ^block14:
             v79 = hir.constant 0 : i32;
             v80 = hir.add v49, v70 : i32 #[overflow = wrapping];
@@ -122,7 +122,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v90 = hir.load v89 : i32;
             v91 = hir.constant 0 : i32;
             v92 = hir.neq v90, v91 : i1;
-            hir.cond_br block15, block16 v92, v47, v85, v70, v79;
+            hir.cond_br v92 block15(v47, v85, v70, v79), block16;
         ^block15(v105: i32, v112: i32, v125: i32, v128: i32):
             v104 = hir.constant 268435456 : i32;
             v106 = hir.bitcast v105 : u32 #[ty = u32];
@@ -139,7 +139,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v117 = hir.bitcast v116 : i32 #[ty = i32];
             v118 = hir.constant 0 : i32;
             v119 = hir.neq v117, v118 : i1;
-            hir.cond_br block17, block18 v119, v128;
+            hir.cond_br v119 block17(v128), block18;
         ^block16:
             v93 = hir.exec  : i32 #[callee = root/intrinsics::mem/heap_base] #[signature = (result i32)];
             v94 = hir.mem_size  : u32;
@@ -154,7 +154,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             hir.assertz v102 #[code = 250];
             v103 = hir.int_to_ptr v100 : (ptr i32) #[ty = (ptr i32)];
             hir.store v103, v99;
-            hir.br block15 v47, v85, v70, v79;
+            hir.br block15(v47, v85, v70, v79);
         ^block17(v127: i32):
             hir.ret v127;
         ^block18:
@@ -166,7 +166,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v124 = hir.int_to_ptr v121 : (ptr i32) #[ty = (ptr i32)];
             hir.store v124, v120;
             v126 = hir.add v110, v125 : i32 #[overflow = wrapping];
-            hir.br block17 v126;
+            hir.br block17(v126);
         };
         builtin.function public @alloc::alloc::handle_alloc_error(v129: i32, v130: i32) {
         ^block19(v129: i32, v130: i32):
@@ -183,7 +183,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v138 = hir.constant 0 : i32;
             v139 = hir.neq v137, v138 : i1;
             v140 = hir.select v139, v131, v132 : i32;
-            hir.br block22 v140;
+            hir.br block22(v140);
         ^block22(v133: i32):
             hir.ret v133;
         };

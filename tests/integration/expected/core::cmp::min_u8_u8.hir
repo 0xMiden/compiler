@@ -11,7 +11,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v7 = hir.constant 0 : i32;
             v8 = hir.neq v6, v7 : i1;
             v9 = hir.select v8, v0, v1 : i32;
-            hir.br block6 v9;
+            hir.br block6(v9);
         ^block6(v2: i32):
             hir.ret v2;
         };

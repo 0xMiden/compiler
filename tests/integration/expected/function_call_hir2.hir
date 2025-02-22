@@ -5,14 +5,14 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         builtin.function public @add(v0: i32, v1: i32) -> i32 {
         ^block3(v0: i32, v1: i32):
             v3 = hir.add v1, v0 : i32 #[overflow = wrapping];
-            hir.br block4 v3;
+            hir.br block4(v3);
         ^block4(v2: i32):
             hir.ret v2;
         };
         builtin.function public @entrypoint(v4: i32, v5: i32) -> i32 {
         ^block5(v4: i32, v5: i32):
             v7 = hir.exec v4, v5 : i32 #[callee = root/function_call_hir2/add] #[signature = (param i32) (param i32) (result i32)];
-            hir.br block6 v7;
+            hir.br block6(v7);
         ^block6(v6: i32):
             hir.ret v6;
         };

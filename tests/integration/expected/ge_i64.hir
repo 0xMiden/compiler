@@ -6,7 +6,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         ^block5(v0: i64, v1: i64):
             v3 = hir.gte v0, v1 : i1;
             v4 = hir.zext v3 : u32 #[ty = u32];
-            hir.br block6 v4;
+            hir.br block6(v4);
         ^block6(v2: i32):
             hir.ret v2;
         };

@@ -7,12 +7,12 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v4 = hir.constant 255 : i32;
             v5 = hir.band v2, v4 : i32;
             v6 = hir.cast v5 : u32 #[ty = u32];
-            hir.switch block9, block8, block7, block9 v6;
+            hir.switch v6 block9, block8, block7, block9;
         ^block6(v3: i32):
             hir.ret v3;
         ^block7:
             v9 = hir.mul v1, v0 : i32 #[overflow = wrapping];
-            hir.br block6 v9;
+            hir.br block6(v9);
         ^block8:
             v8 = hir.sub v0, v1 : i32 #[overflow = wrapping];
             hir.ret v8;
@@ -36,7 +36,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v22 = hir.constant 2 : i32;
             v23 = hir.exec v20, v21, v22 : i32 #[callee = root/test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824/match_enum] #[signature = (param i32) (param i32) (param i32) (result i32)];
             v24 = hir.add v19, v23 : i32 #[overflow = wrapping];
-            hir.br block11 v24;
+            hir.br block11(v24);
         ^block11(v10: i32):
             hir.ret v10;
         };
