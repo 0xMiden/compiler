@@ -36,7 +36,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v38 = hir.add v17, v37 : u32 #[overflow = checked];
             v39 = hir.int_to_ptr v38 : (ptr i32) #[ty = (ptr i32)];
             hir.store v39, v16;
-            hir.br block4 ;
+            hir.br block4;
         ^block4:
             hir.ret ;
         };
@@ -143,7 +143,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v130 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root/abi_transform_stdlib_blake3_hash/__stack_pointer];
             v131 = hir.bitcast v130 : (ptr i32) #[ty = (ptr i32)];
             hir.store v131, v45;
-            hir.br block7 ;
+            hir.br block7;
         ^block7:
             hir.ret ;
         };
