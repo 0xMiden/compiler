@@ -1,26 +1,29 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+builtin.world  #[name = #world] {
 
-    builtin.module  #[name = #test_rust_dcf68bbd3d38962baca8bcc39895a74e9f927a15ae1af780f83843028d53154e] #[visibility = public] {
+    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
-        ^block5(v0: i32, v1: i32):
-            v3 = hir.gt v0, v1 : i1;
-            v4 = hir.zext v3 : u32 #[ty = u32];
-            hir.br block6(v4);
-        ^block6(v2: i32):
-            hir.ret v2;
-        };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+        builtin.module  #[name = #test_rust_dcf68bbd3d38962baca8bcc39895a74e9f927a15ae1af780f83843028d53154e] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
-        };
-        builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
+            builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
+            ^block6(v0: i32, v1: i32):
+                v3 = hir.gt v0, v1 : i1;
+                v4 = hir.zext v3 : u32 #[ty = u32];
+                hir.br block7(v4);
+            ^block7(v2: i32):
+                hir.ret v2;
+            };
+            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            hir.ret_imm  #[value = 1048576];
-        };
-        builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
+                hir.ret_imm  #[value = 1048576];
+            };
+            builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
+                hir.ret_imm  #[value = 1048576];
+            };
+            builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
+
+                hir.ret_imm  #[value = 1048576];
+            };
         };
     };
 };

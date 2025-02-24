@@ -1,37 +1,40 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+builtin.world  #[name = #world] {
 
-    builtin.module  #[name = #abi_transform_tx_kernel_get_id] #[visibility = public] {
+    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        builtin.function public @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
-        ^block2:
-            v0 = hir.exec  : felt #[callee = root/miden::account/get_id] #[signature = (result felt)];
-            hir.br block4(v0);
-        ^block4(v1: felt):
-            hir.ret ;
+        builtin.module  #[name = #abi_transform_tx_kernel_get_id] #[visibility = public] {
+
+            builtin.function public @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
+            ^block3:
+                v0 = hir.exec  : felt #[callee = world/root/miden::account/get_id] #[signature = (result felt)];
+                hir.br block5(v0);
+            ^block5(v1: felt):
+                hir.ret ;
+            };
+            builtin.function public @entrypoint() -> felt {
+            ^block7:
+                v3 = hir.exec  : felt #[callee = world/root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id] #[signature = (result felt)];
+                hir.br block8(v3);
+            ^block8(v2: felt):
+                hir.ret v2;
+            };
+            builtin.function public @miden_base_sys::bindings::account::get_id() -> felt {
+            ^block9:
+                v5 = hir.exec  : felt #[callee = world/root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id] #[signature = (result felt)];
+                hir.br block10(v5);
+            ^block10(v4: felt):
+                hir.ret v4;
+            };
+            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+
+                hir.ret_imm  #[value = 1048576];
+            };
         };
-        builtin.function public @entrypoint() -> felt {
-        ^block6:
-            v3 = hir.exec  : felt #[callee = root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id] #[signature = (result felt)];
-            hir.br block7(v3);
-        ^block7(v2: felt):
-            hir.ret v2;
-        };
-        builtin.function public @miden_base_sys::bindings::account::get_id() -> felt {
-        ^block8:
-            v5 = hir.exec  : felt #[callee = root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id] #[signature = (result felt)];
-            hir.br block9(v5);
-        ^block9(v4: felt):
-            hir.ret v4;
-        };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+        builtin.module  #[name = #miden::account] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
-        };
-    };
-    builtin.module  #[name = #miden::account] #[visibility = public] {
+            builtin.function public @get_id(result felt) {
 
-        builtin.function public @get_id(result felt) {
-
+            };
         };
     };
 };

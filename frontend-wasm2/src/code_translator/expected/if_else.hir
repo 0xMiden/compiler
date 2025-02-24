@@ -1,0 +1,17 @@
+builtin.function public @test_wrapper() {
+^block4:
+    v0 = hir.constant 2 : i32;
+    v1 = hir.constant 0 : i32;
+    v2 = hir.neq v0, v1 : i1;
+    hir.cond_br v2 block6, block8;
+^block5:
+    hir.ret ;
+^block6:
+    v4 = hir.constant 3 : i32;
+    hir.br block7(v4);
+^block7(v3: i32):
+    hir.br block5;
+^block8:
+    v5 = hir.constant 5 : i32;
+    hir.br block7(v5);
+};

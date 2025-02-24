@@ -1,0 +1,10 @@
+builtin.function public @test_wrapper() {
+^block4:
+    v0 = hir.constant 2 : i32;
+    v1 = hir.constant 1 : i32;
+    v2 = hir.lte v0, v1 : i1;
+    v3 = hir.zext v2 : u32 #[ty = u32];
+    hir.br block5;
+^block5:
+    hir.ret ;
+};

@@ -38,13 +38,14 @@ pub fn translate(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
+) -> WasmResult<midenc_hir2::dialects::builtin::WorldRef> {
     if wasm[4..8] == [0x01, 0x00, 0x00, 0x00] {
         // Wasm core module
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
         translate_module_as_component(wasm, config, context)
     } else {
-        translate_component(wasm, config, context)
+        todo!()
+        // translate_component(wasm, config, context)
     }
 }
 

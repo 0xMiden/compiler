@@ -1,25 +1,28 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+builtin.world  #[name = #world] {
 
-    builtin.module  #[name = #test_rust_4d8ea78f0f6f413d2e269f1030408eff2561031d16e66341c04b75f1a2e08afe] #[visibility = public] {
+    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
-        ^block5(v0: i32, v1: i32):
-            v3 = hir.bxor v1, v0 : i32;
-            hir.br block6(v3);
-        ^block6(v2: i32):
-            hir.ret v2;
-        };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+        builtin.module  #[name = #test_rust_4d8ea78f0f6f413d2e269f1030408eff2561031d16e66341c04b75f1a2e08afe] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
-        };
-        builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
+            builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
+            ^block6(v0: i32, v1: i32):
+                v3 = hir.bxor v1, v0 : i32;
+                hir.br block7(v3);
+            ^block7(v2: i32):
+                hir.ret v2;
+            };
+            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            hir.ret_imm  #[value = 1048576];
-        };
-        builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
+                hir.ret_imm  #[value = 1048576];
+            };
+            builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
+                hir.ret_imm  #[value = 1048576];
+            };
+            builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
+
+                hir.ret_imm  #[value = 1048576];
+            };
         };
     };
 };
