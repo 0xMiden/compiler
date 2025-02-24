@@ -1,21 +1,24 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+builtin.world  #[name = #world] {
 
-    builtin.module  #[name = #lt_felt] #[visibility = public] {
+    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        builtin.function public @entrypoint(v0: felt, v1: felt) -> i32 {
-        ^block3(v0: felt, v1: felt):
-            v3 = hir.lt v1, v0 : i1;
-            v4 = hir.cast v3 : i32 #[ty = i32];
-            v5 = hir.constant 0 : i32;
-            v6 = hir.neq v4, v5 : i1;
-            v7 = hir.zext v6 : u32 #[ty = u32];
-            hir.br block4(v7);
-        ^block4(v2: i32):
-            hir.ret v2;
-        };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+        builtin.module  #[name = #lt_felt] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
+            builtin.function public @entrypoint(v0: felt, v1: felt) -> i32 {
+            ^block4(v0: felt, v1: felt):
+                v3 = hir.lt v1, v0 : i1;
+                v4 = hir.cast v3 : i32 #[ty = i32];
+                v5 = hir.constant 0 : i32;
+                v6 = hir.neq v4, v5 : i1;
+                v7 = hir.zext v6 : u32 #[ty = u32];
+                hir.br block5(v7);
+            ^block5(v2: i32):
+                hir.ret v2;
+            };
+            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+
+                hir.ret_imm  #[value = 1048576];
+            };
         };
     };
 };

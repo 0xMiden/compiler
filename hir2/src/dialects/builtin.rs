@@ -2,7 +2,7 @@ mod builders;
 mod ops;
 
 pub use self::{
-    builders::{ComponentBuilder, ModuleBuilder},
+    builders::{ComponentBuilder, ModuleBuilder, WorldBuilder},
     ops::*,
 };
 use crate::{

@@ -1,20 +1,23 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+builtin.world  #[name = #world] {
 
-    builtin.module  #[name = #felt_intrinsics] #[visibility = public] {
+    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-        builtin.function public @entrypoint(v0: felt, v1: felt) -> felt {
-        ^block3(v0: felt, v1: felt):
-            v3 = hir.mul v0, v1 : felt #[overflow = unchecked];
-            v4 = hir.sub v3, v0 : felt #[overflow = unchecked];
-            v5 = hir.add v4, v1 : felt #[overflow = unchecked];
-            v6 = hir.div v0, v5 : felt;
-            hir.br block4(v6);
-        ^block4(v2: felt):
-            hir.ret v2;
-        };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+        builtin.module  #[name = #felt_intrinsics] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048576];
+            builtin.function public @entrypoint(v0: felt, v1: felt) -> felt {
+            ^block4(v0: felt, v1: felt):
+                v3 = hir.mul v0, v1 : felt #[overflow = unchecked];
+                v4 = hir.sub v3, v0 : felt #[overflow = unchecked];
+                v5 = hir.add v4, v1 : felt #[overflow = unchecked];
+                v6 = hir.div v0, v5 : felt;
+                hir.br block5(v6);
+            ^block5(v2: felt):
+                hir.ret v2;
+            };
+            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+
+                hir.ret_imm  #[value = 1048576];
+            };
         };
     };
 };

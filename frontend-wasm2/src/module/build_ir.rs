@@ -8,7 +8,10 @@ use midenc_hir::{
 };
 use midenc_hir2::{
     constants::ConstantData,
-    dialects::builtin::{Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef},
+    dialects::builtin::{
+        Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef, World,
+        WorldBuilder, WorldRef,
+    },
     version::Version,
     Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
 };
@@ -37,7 +40,7 @@ pub fn translate_module_as_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
+) -> WasmResult<midenc_hir2::dialects::builtin::WorldRef> {
     let mut validator = Validator::new_with_features(crate::supported_features());
     let parser = wasmparser::Parser::new(0);
     let mut module_types_builder = Default::default();
@@ -53,15 +56,16 @@ pub fn translate_module_as_component(
     }
     let module_types = module_types_builder.finish();
 
+    let world_name = Ident::from("world");
+
+    let world_ref =
+        context.clone().builder().create::<World, (Ident,)>(Default::default())(world_name)?;
+    let mut world_builder = WorldBuilder::new(world_ref);
+
     let ns = Ident::from("root_ns");
     let name = Ident::from("root");
     let ver = Version::parse("1.0.0").unwrap();
-    let mut component_ref =
-        context
-            .clone()
-            .builder()
-            .create::<Component, (Ident, Ident, Version)>(Default::default())(ns, name, ver)
-        .unwrap();
+    let component_ref = world_builder.define_component(ns, name, ver)?;
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();
     let mut module_ref = cb.define_module(Ident::from(module_name)).unwrap();
@@ -76,7 +80,7 @@ pub fn translate_module_as_component(
         &context.session.diagnostics,
     );
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
-    Ok(component_ref)
+    Ok(world_ref)
 }
 
 pub fn build_ir_module(
