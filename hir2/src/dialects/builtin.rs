@@ -31,6 +31,7 @@ impl DialectRegistration for BuiltinDialect {
     }
 
     fn register_operations(info: &mut DialectInfo) {
+        info.register_operation::<ops::World>();
         info.register_operation::<ops::Component>();
         info.register_operation::<ops::Module>();
         info.register_operation::<ops::Function>();
