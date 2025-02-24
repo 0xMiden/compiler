@@ -10,7 +10,7 @@ use midenc_hir2::{
 };
 
 use super::{
-    function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt},
+    function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
     instance::ModuleArgument,
     ir_func_type, EntityIndex, FuncIndex, Module, ModuleTypes,
 };
@@ -167,10 +167,12 @@ fn define_func_for_miden_abi_trans(
         .expect("failed to create an import function");
     let mut func = func_ref.borrow_mut();
     let span = func.name().span;
-    let context = func.as_operation().context_rc().clone();
+    let context = func.as_operation().context_rc();
     let func = func.as_mut().downcast_mut::<Function>().unwrap();
-    let mut func_builder =
-        FunctionBuilderExt::new(func, Rc::new(RefCell::new(FunctionBuilderContext::new(context))));
+    let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+    let mut op_builder =
+        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+    let mut func_builder = FunctionBuilderExt::new(func, &mut op_builder);
     let entry_block = func_builder.current_block();
     func_builder.seal_block(entry_block); // Declare all predecessors known.
     let args: Vec<ValueRef> = entry_block

@@ -5,21 +5,21 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         builtin.function public @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
         ^block2:
             v0 = hir.exec  : felt #[callee = root/miden::account/get_id] #[signature = (result felt)];
-            hir.br block4 v0;
+            hir.br block4(v0);
         ^block4(v1: felt):
             hir.ret ;
         };
         builtin.function public @entrypoint() -> felt {
         ^block6:
             v3 = hir.exec  : felt #[callee = root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id] #[signature = (result felt)];
-            hir.br block7 v3;
+            hir.br block7(v3);
         ^block7(v2: felt):
             hir.ret v2;
         };
         builtin.function public @miden_base_sys::bindings::account::get_id() -> felt {
         ^block8:
             v5 = hir.exec  : felt #[callee = root/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id] #[signature = (result felt)];
-            hir.br block9 v5;
+            hir.br block9(v5);
         ^block9(v4: felt):
             hir.ret v4;
         };
