@@ -4,9 +4,9 @@ use core::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    Block, BlockRef, Builder, Context, EntityWithParent, InsertionGuard, Listener, ListenerType,
-    OpBuilder, OpOperandImpl, Operation, OperationRef, Pattern, PostOrderBlockIter, ProgramPoint,
-    RegionRef, Report, SourceSpan, Usable, ValueRef,
+    BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
+    OperationRef, Pattern, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
+    ValueRef,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -23,7 +23,7 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Replace the results of the given operation with the specified list of values (replacements).
     ///
     /// The result types of the given op and the replacements must match. The original op is erased.
-    fn replace_op_with_values(&mut self, op: OperationRef, values: &[ValueRef]) {
+    fn replace_op_with_values(&mut self, op: OperationRef, values: &[Option<ValueRef>]) {
         assert_eq!(op.borrow().num_results(), values.len());
 
         // Replace all result uses, notifies listener of the modifications
@@ -149,39 +149,42 @@ pub trait Rewriter: Builder + RewriterListener {
     /// `ip`. The two regions must be different. The caller is responsible for creating or
     /// updating the operation transferring flow of control to the region, and passing it the
     /// correct block arguments.
-    fn inline_region_before(&mut self, mut region: RegionRef, ip: BlockRef) {
-        let mut parent = ip.borrow().parent().expect("invalid 'ip': must be attached to a region");
-        assert!(!RegionRef::ptr_eq(&region, &parent), "cannot inline a region into itself");
-        let mut region_body = region.borrow_mut().body_mut().take();
+    fn inline_region_before(&mut self, mut region: RegionRef, mut ip: RegionRef) {
+        assert!(!RegionRef::ptr_eq(&region, &ip), "cannot inline a region into itself");
+        let region_body = region.borrow_mut().body_mut().take();
         if !self.has_listener() {
-            {
-                let mut region_cursor = region_body.front_mut();
-                while let Some(block) = region_cursor.as_pointer() {
-                    Block::on_inserted_into_parent(block, parent);
-                    region_cursor.move_next();
-                }
-            }
-            let mut parent_region = parent.borrow_mut();
+            let mut parent_region = ip.borrow_mut();
             let parent_body = parent_region.body_mut();
-            let mut cursor = unsafe { parent_body.cursor_mut_from_ptr(ip) };
+            let mut cursor = parent_body.front_mut();
             cursor.splice_before(region_body);
         } else {
             // Move blocks from beginning of the region one-by-one
+            let ip = ip.borrow().entry_block_ref().unwrap();
             for block in region_body {
                 self.move_block_before(block, ip);
             }
         }
     }
 
-    /// Inline the operations of block `src` before the given insertion point.
+    /// Inline the operations of block `src` before the given insertion point in `dest`.
+    ///
+    /// If the insertion point is `None`, the block will be inlined at the end of the target block.
+    ///
     /// The source block will be deleted and must have no uses. The `args` values, if provided, are
-    /// used to replace the block arguments of `src`.
+    /// used to replace the block arguments of `src`, with `None` used to signal that an argument
+    /// should be ignored.
     ///
     /// If the source block is inserted at the end of the dest block, the dest block must have no
     /// successors. Similarly, if the source block is inserted somewhere in the middle (or
     /// beginning) of the dest block, the source block must have no successors. Otherwise, the
     /// resulting IR would have unreachable operations.
-    fn inline_block_before(&mut self, mut src: BlockRef, ip: OperationRef, args: &[ValueRef]) {
+    fn inline_block_before(
+        &mut self,
+        mut src: BlockRef,
+        mut dest: BlockRef,
+        ip: Option<OperationRef>,
+        args: &[Option<ValueRef>],
+    ) {
         assert!(
             args.len() == src.borrow().num_arguments(),
             "incorrect # of argument replacement values"
@@ -191,9 +194,15 @@ pub trait Rewriter: Builder + RewriterListener {
         // no predecessors).
         assert!(!src.borrow().has_predecessors(), "expected 'src' to have no predecessors");
 
-        let mut dest = ip.borrow().parent().expect("expected 'ip' to belong to a block");
-        let insert_at_block_end =
-            OperationRef::ptr_eq(&ip, &dest.borrow().body().back().as_pointer().unwrap());
+        // Ensure insertion point belongs to destination block if present
+        let insert_at_block_end = if let Some(ip) = ip {
+            let ip_block = ip.parent().expect("expected 'ip' to belong to a block");
+            assert_eq!(ip_block, dest, "invalid insertion point: must be an op in 'dest'");
+            ip.next().is_none()
+        } else {
+            true
+        };
+
         if insert_at_block_end {
             // The source block will be inserted at the end of the dest block, so the
             // dest block should have no successors. Otherwise, the inserted operations
@@ -209,30 +218,30 @@ pub trait Rewriter: Builder + RewriterListener {
         // Replace all of the successor arguments with the provided values.
         for (arg, replacement) in src.borrow().arguments().iter().copied().zip(args.iter().copied())
         {
-            self.replace_all_uses_of_value_with(arg.upcast(), replacement);
+            if let Some(replacement) = replacement {
+                self.replace_all_uses_of_value_with(arg.upcast(), replacement);
+            }
         }
 
         // Move operations from the source block to the dest block and erase the source block.
         if self.has_listener() {
-            let mut src_ops = src.borrow_mut().body_mut().take();
-            let mut src_cursor = src_ops.front_mut();
+            let mut src_mut = src.borrow_mut();
+            let mut src_cursor = src_mut.body_mut().front_mut();
             while let Some(op) = src_cursor.remove() {
-                self.move_op_before(op, ip);
+                if insert_at_block_end {
+                    self.insert_op_at_end(op, dest);
+                } else {
+                    self.insert_op_before(op, ip.unwrap());
+                }
             }
         } else {
             // Fast path: If no listener is attached, move all operations at once.
             let mut dest_block = dest.borrow_mut();
-            let dest_body = dest_block.body_mut();
-            let mut src_ops = src.borrow_mut().body_mut().take();
-            {
-                let mut src_cursor = src_ops.front_mut();
-                while let Some(op) = src_cursor.as_pointer() {
-                    Operation::on_inserted_into_parent(op, dest);
-                    src_cursor.move_next();
-                }
+            if let Some(ip) = ip {
+                dest_block.splice_block_before(&mut src.borrow_mut(), ip);
+            } else {
+                dest_block.splice_block(&mut src.borrow_mut());
             }
-            let mut cursor = unsafe { dest_body.cursor_mut_from_ptr(ip) };
-            cursor.splice_before(src_ops);
         }
 
         // Erase the source block.
@@ -242,13 +251,13 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// Inline the operations of block `src` into the end of block `dest`. The source block will be
     /// deleted and must have no uses. The `args` values, if present, are used to replace the block
-    /// arguments of `src`.
+    /// arguments of `src`, where any `None` values are ignored.
     ///
     /// The dest block must have no successors. Otherwise, the resulting IR will have unreachable
     /// operations.
-    fn merge_blocks(&mut self, src: BlockRef, dest: BlockRef, args: &[ValueRef]) {
-        let ip = dest.borrow().body().back().as_pointer().unwrap();
-        self.inline_block_before(src, ip, args);
+    fn merge_blocks(&mut self, src: BlockRef, dest: BlockRef, args: &[Option<ValueRef>]) {
+        let ip = dest.borrow().body().back().as_pointer();
+        self.inline_block_before(src, dest, ip, args);
     }
 
     /// Split the operations starting at `ip` (inclusive) out of the given block into a new block,
@@ -261,31 +270,30 @@ pub trait Rewriter: Builder + RewriterListener {
 
         assert_eq!(
             block,
-            ip.borrow().parent().expect("expected 'ip' to be attached to a block"),
+            ip.parent().expect("expected 'ip' to be attached to a block"),
             "expected 'ip' to be in 'block'"
         );
 
-        let region = block
-            .borrow()
-            .parent()
-            .expect("cannot split a block which is not attached to a region");
+        let region =
+            block.parent().expect("cannot split a block which is not attached to a region");
 
         // `create_block` sets the insertion point to the start of the new block
         let mut guard = InsertionGuard::new(self);
         let new_block = guard.create_block(region, Some(block), &[]);
 
         // If `ip` points to the end of the block, no ops should be moved
-        if OperationRef::ptr_eq(&ip, &block.borrow().body().back().as_pointer().unwrap()) {
+        if ip.next().is_none() {
             return new_block;
         }
 
         // Move ops one-by-one from the end of `block` to the start of `new_block`.
         // Stop when the operation pointed to by `ip` has been moved.
-        let mut block = block.borrow_mut();
-        let mut cursor = block.body_mut().back_mut();
+        let mut block_mut = block.borrow_mut();
+        let mut cursor = block_mut.body_mut().back_mut();
+        let ip = new_block.borrow().body().front().as_pointer().unwrap();
         while let Some(op) = cursor.remove() {
             let is_last_move = OperationRef::ptr_eq(&op, &ip);
-            guard.move_op_before(op, new_block.borrow().body().front().as_pointer().unwrap());
+            guard.insert_op_before(op, ip);
             if is_last_move {
                 break;
             }
@@ -296,23 +304,57 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// Unlink this block and insert it right before `ip`.
     fn move_block_before(&mut self, mut block: BlockRef, ip: BlockRef) {
-        let current_region = block.borrow().parent();
-        block.borrow_mut().move_before(ip);
+        let current_region = block.parent();
+        if current_region.is_none() {
+            block.borrow_mut().insert_before(ip);
+        } else {
+            block.borrow_mut().move_before(ip);
+        }
         self.notify_block_inserted(block, current_region, Some(ip));
     }
 
     /// Unlink this operation from its current block and insert it right before `ip`, which
     /// may be in the same or another block in the same function.
     fn move_op_before(&mut self, mut op: OperationRef, ip: OperationRef) {
+        let prev = ProgramPoint::before(op);
         op.borrow_mut().move_to(ProgramPoint::before(ip));
-        self.notify_operation_inserted(op, ProgramPoint::before(op));
+        self.notify_operation_inserted(op, prev);
     }
 
     /// Unlink this operation from its current block and insert it right after `ip`, which may be
     /// in the same or another block in the same function.
     fn move_op_after(&mut self, mut op: OperationRef, ip: OperationRef) {
+        let prev = ProgramPoint::before(op);
         op.borrow_mut().move_to(ProgramPoint::after(ip));
-        self.notify_operation_inserted(op, ProgramPoint::before(op));
+        self.notify_operation_inserted(op, prev);
+    }
+
+    /// Unlink this operation from its current block and insert it at the end of `ip`.
+    fn move_op_to_end(&mut self, mut op: OperationRef, ip: BlockRef) {
+        let prev = ProgramPoint::before(op);
+        op.borrow_mut().move_to(ProgramPoint::at_end_of(ip));
+        self.notify_operation_inserted(op, prev);
+    }
+
+    /// Insert an unlinked operation right before `ip`
+    fn insert_op_before(&mut self, mut op: OperationRef, ip: OperationRef) {
+        let prev = ProgramPoint::before(op);
+        op.borrow_mut().insert_before(ip);
+        self.notify_operation_inserted(op, prev);
+    }
+
+    /// Insert an unlinked operation right after `ip`
+    fn insert_op_after(&mut self, mut op: OperationRef, ip: OperationRef) {
+        let prev = ProgramPoint::before(op);
+        op.borrow_mut().insert_after(ip);
+        self.notify_operation_inserted(op, prev);
+    }
+
+    /// Insert an unlinked operation at the end of `ip`
+    fn insert_op_at_end(&mut self, mut op: OperationRef, ip: BlockRef) {
+        let prev = ProgramPoint::before(op);
+        op.borrow_mut().insert_at_end(ip);
+        self.notify_operation_inserted(op, prev);
     }
 
     /// Find uses of `from` and replace them with `to`.
@@ -325,7 +367,7 @@ pub trait Rewriter: Builder + RewriterListener {
         while let Some(mut operand) = cursor.remove() {
             let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().value = to;
+            operand.borrow_mut().value = Some(to);
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -338,10 +380,9 @@ pub trait Rewriter: Builder + RewriterListener {
         let mut from_block = from.borrow_mut();
         let from_uses = from_block.uses_mut();
         let mut cursor = from_uses.front_mut();
-        while let Some(mut operand) = cursor.remove() {
+        while let Some(operand) = cursor.remove() {
             let op = operand.borrow().owner;
             self.notify_operation_modification_started(&op);
-            operand.borrow_mut().block = to;
             to.borrow_mut().insert_use(operand);
             self.notify_operation_modified(op);
         }
@@ -350,10 +391,12 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Find uses of `from` and replace them with `to`.
     ///
     /// Notifies the listener about every in-place op modification (for every use that was replaced).
-    fn replace_all_uses_with(&mut self, from: &[ValueRef], to: &[ValueRef]) {
+    fn replace_all_uses_with(&mut self, from: &[ValueRef], to: &[Option<ValueRef>]) {
         assert_eq!(from.len(), to.len(), "incorrect number of replacements");
         for (from, to) in from.iter().cloned().zip(to.iter().cloned()) {
-            self.replace_all_uses_of_value_with(from, to);
+            if let Some(to) = to {
+                self.replace_all_uses_of_value_with(from, to);
+            }
         }
     }
 
@@ -361,7 +404,7 @@ pub trait Rewriter: Builder + RewriterListener {
     ///
     /// Notifies the listener about every in-place modification (for every use that was replaced),
     /// and that the `from` operation is about to be replaced.
-    fn replace_all_op_uses_with_values(&mut self, from: OperationRef, to: &[ValueRef]) {
+    fn replace_all_op_uses_with_values(&mut self, from: OperationRef, to: &[Option<ValueRef>]) {
         self.notify_operation_replaced_with_values(from, to);
 
         let results = from
@@ -369,7 +412,8 @@ pub trait Rewriter: Builder + RewriterListener {
             .results()
             .all()
             .iter()
-            .map(|result| result.borrow().as_value_ref())
+            .copied()
+            .map(|result| result as ValueRef)
             .collect::<SmallVec<[ValueRef; 2]>>();
 
         self.replace_all_uses_with(&results, to);
@@ -387,7 +431,8 @@ pub trait Rewriter: Builder + RewriterListener {
             .results()
             .all()
             .iter()
-            .map(|result| result.borrow().as_value_ref())
+            .copied()
+            .map(|result| result as ValueRef)
             .collect::<SmallVec<[ValueRef; 2]>>();
 
         let to_results = to
@@ -395,8 +440,9 @@ pub trait Rewriter: Builder + RewriterListener {
             .results()
             .all()
             .iter()
-            .map(|result| result.borrow().as_value_ref())
-            .collect::<SmallVec<[ValueRef; 2]>>();
+            .copied()
+            .map(|result| Some(result as ValueRef))
+            .collect::<SmallVec<[Option<ValueRef>; 2]>>();
 
         self.replace_all_uses_with(&from_results, &to_results);
     }
@@ -412,7 +458,7 @@ pub trait Rewriter: Builder + RewriterListener {
         to: &[ValueRef],
         block: BlockRef,
     ) -> bool {
-        let parent_op = block.borrow().parent_op();
+        let parent_op = block.grandparent();
         self.maybe_replace_op_uses_with(from, to, |operand| {
             !parent_op
                 .as_ref()
@@ -440,6 +486,12 @@ pub trait Rewriter: Builder + RewriterListener {
 /// This trait contains functionality that is not object safe, and would prevent using [Rewriter] as
 /// a trait object. It is automatically implemented for all [Rewriter] impls.
 pub trait RewriterExt: Rewriter {
+    /// This is a utility function that wraps an in-place modification of an operation, such that
+    /// the rewriter is guaranteed to be notified when the modifications start and stop.
+    fn modify_op_in_place(&mut self, op: OperationRef) -> InPlaceModificationGuard<'_, Self> {
+        InPlaceModificationGuard::new(self, op)
+    }
+
     /// Find uses of `from` and replace them with `to`, if `should_replace` returns true.
     ///
     /// Notifies the listener about every in-place op modification (for every use that was replaced).
@@ -462,10 +514,7 @@ pub trait RewriterExt: Rewriter {
             if should_replace(&user.borrow()) {
                 let owner = user.borrow().owner;
                 self.notify_operation_modification_started(&owner);
-                let mut operand = cursor.remove().unwrap();
-                {
-                    operand.borrow_mut().value = to;
-                }
+                let operand = cursor.remove().unwrap();
                 to.borrow_mut().insert_use(operand);
                 self.notify_operation_modified(owner);
             } else {
@@ -513,7 +562,7 @@ pub trait RewriterExt: Rewriter {
         P: Fn(&OpOperandImpl) -> bool,
     {
         let results = SmallVec::<[ValueRef; 2]>::from_iter(
-            from.borrow().results.all().iter().cloned().map(|result| result.upcast()),
+            from.borrow().results.all().iter().cloned().map(|result| result as ValueRef),
         );
         self.maybe_replace_uses_with(&results, to, should_replace)
     }
@@ -549,15 +598,20 @@ pub trait RewriterListener: Listener {
             .all()
             .iter()
             .cloned()
-            .map(|result| result.upcast())
-            .collect::<SmallVec<[ValueRef; 2]>>();
+            .map(|result| Some(result as ValueRef))
+            .collect::<SmallVec<[Option<ValueRef>; 2]>>();
         self.notify_operation_replaced_with_values(op, &values);
     }
 
     /// Notify the listener that all uses of the specified operation's results are about to be
     /// replaced with the given range of values, potentially produced by other operations. This is
     /// called before the uses of the operation have been changed.
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {}
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
+    }
 
     /// Notify the listener that the specified operation is about to be erased. At this point, the
     /// operation has zero uses.
@@ -612,7 +666,11 @@ impl<L: RewriterListener> RewriterListener for Option<L> {
         }
     }
 
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         if let Some(listener) = self.as_ref() {
             listener.notify_operation_replaced_with_values(op, replacement);
         }
@@ -664,7 +722,11 @@ impl<L: ?Sized + RewriterListener> RewriterListener for Box<L> {
         (**self).notify_operation_replaced(op, replacement);
     }
 
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         (**self).notify_operation_replaced_with_values(op, replacement);
     }
 
@@ -706,7 +768,11 @@ impl<L: ?Sized + RewriterListener> RewriterListener for Rc<L> {
         (**self).notify_operation_replaced(op, replacement);
     }
 
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         (**self).notify_operation_replaced_with_values(op, replacement);
     }
 
@@ -808,7 +874,11 @@ impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
         self.derived.notify_operation_replaced(op, replacement);
     }
 
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         self.base.notify_operation_replaced_with_values(op, replacement);
         self.derived.notify_operation_replaced_with_values(op, replacement);
     }
@@ -1096,13 +1166,17 @@ impl<L: RewriterListener> RewriterListener for RewriterImpl<L> {
                 .all()
                 .iter()
                 .cloned()
-                .map(|result| result.upcast())
-                .collect::<SmallVec<[ValueRef; 2]>>();
+                .map(|result| Some(result.upcast()))
+                .collect::<SmallVec<[Option<ValueRef>; 2]>>();
             self.notify_operation_replaced_with_values(op, &values);
         }
     }
 
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         if let Some(listener) = self.listener.as_ref() {
             listener.notify_operation_replaced_with_values(op, replacement);
         }

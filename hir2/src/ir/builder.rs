@@ -84,7 +84,7 @@ pub trait Builder: Listener {
     fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
         let mut block = self.context().create_block_with_params(args.iter().cloned());
         if let Some(at) = ip {
-            let region = at.borrow().parent().unwrap();
+            let region = at.parent().unwrap();
             assert!(
                 RegionRef::ptr_eq(&parent, &region),
                 "insertion point region differs from 'parent'"
@@ -231,6 +231,10 @@ impl<L: Listener> OpBuilder<L> {
         }
     }
 
+    pub fn listener(&self) -> Option<&L> {
+        self.listener.as_ref()
+    }
+
     #[inline]
     pub fn into_parts(self) -> (Rc<Context>, Option<L>, ProgramPoint) {
         (self.context, self.listener, self.ip)
@@ -301,7 +305,7 @@ pub enum ListenerType {
 }
 
 #[allow(unused_variables)]
-pub trait Listener: 'static {
+pub trait Listener {
     fn kind(&self) -> ListenerType;
     /// Notify the listener that the specified operation was inserted.
     ///
@@ -443,5 +447,84 @@ impl<B: ?Sized> Drop for InsertionGuard<'_, B> {
     fn drop(&mut self) {
         let ip = self.ip;
         self.restore_insertion_point_on_drop(ip);
+    }
+}
+impl<B: ?Sized + Listener> Listener for InsertionGuard<'_, B> {
+    fn kind(&self) -> ListenerType {
+        self.builder.kind()
+    }
+
+    fn notify_block_inserted(
+        &self,
+        block: BlockRef,
+        prev: Option<RegionRef>,
+        ip: Option<BlockRef>,
+    ) {
+        self.builder.notify_block_inserted(block, prev, ip);
+    }
+
+    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
+        self.builder.notify_operation_inserted(op, prev);
+    }
+}
+impl<B: ?Sized + Builder> Builder for InsertionGuard<'_, B> {
+    fn context(&self) -> &Context {
+        self.builder.context()
+    }
+
+    fn context_rc(&self) -> Rc<Context> {
+        self.builder.context_rc()
+    }
+
+    fn insertion_point(&self) -> &ProgramPoint {
+        self.builder.insertion_point()
+    }
+
+    fn clear_insertion_point(&mut self) -> ProgramPoint {
+        self.builder.clear_insertion_point()
+    }
+
+    fn restore_insertion_point(&mut self, ip: ProgramPoint) {
+        self.builder.restore_insertion_point(ip);
+    }
+
+    fn set_insertion_point(&mut self, ip: ProgramPoint) {
+        self.builder.set_insertion_point(ip);
+    }
+
+    fn set_insertion_point_before(&mut self, op: OperationRef) {
+        self.builder.set_insertion_point_before(op);
+    }
+
+    fn set_insertion_point_after(&mut self, op: OperationRef) {
+        self.builder.set_insertion_point_after(op);
+    }
+
+    fn set_insertion_point_after_value(&mut self, value: &dyn Value) {
+        self.builder.set_insertion_point_after_value(value);
+    }
+
+    fn set_insertion_point_to_start(&mut self, block: BlockRef) {
+        self.builder.set_insertion_point_to_start(block);
+    }
+
+    fn set_insertion_point_to_end(&mut self, block: BlockRef) {
+        self.builder.set_insertion_point_to_end(block);
+    }
+
+    fn insertion_block(&self) -> Option<BlockRef> {
+        self.builder.insertion_block()
+    }
+
+    fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
+        self.builder.create_block(parent, ip, args)
+    }
+
+    fn create_block_before(&mut self, before: BlockRef, args: &[Type]) -> BlockRef {
+        self.builder.create_block_before(before, args)
+    }
+
+    fn insert(&mut self, op: OperationRef) {
+        self.builder.insert(op);
     }
 }

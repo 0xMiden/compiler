@@ -6,7 +6,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         ^block5(v0: i64):
             v2 = hir.constant 0 : i64;
             v3 = hir.sub v2, v0 : i64 #[overflow = wrapping];
-            hir.br block6 v3;
+            hir.br block6(v3);
         ^block6(v1: i64):
             hir.ret v1;
         };

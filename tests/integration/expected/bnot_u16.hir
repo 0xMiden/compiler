@@ -6,7 +6,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
         ^block5(v0: i32):
             v2 = hir.constant 65535 : i32;
             v3 = hir.bxor v0, v2 : i32;
-            hir.br block6 v3;
+            hir.br block6(v3);
         ^block6(v1: i32):
             hir.ret v1;
         };

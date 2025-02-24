@@ -14,11 +14,14 @@ use midenc_hir::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
     Block, ModuleFunctionBuilder,
 };
-use midenc_hir2::{dialects::builtin::Function, BlockRef, Context};
+use midenc_hir2::{dialects::builtin::Function, BlockRef, Context, Op};
 use midenc_session::Session;
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
-use super::{module_env::ParsedModule, module_translation_state::ModuleTranslationState};
+use super::{
+    function_builder_ext::SSABuilderListener, module_env::ParsedModule,
+    module_translation_state::ModuleTranslationState,
+};
 use crate::{
     code_translator::translate_operator,
     error::WasmResult,
@@ -65,7 +68,9 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
     ) -> WasmResult<()> {
-        let mut builder = FunctionBuilderExt::new(func, self.func_ctx.clone());
+        let mut op_builder = midenc_hir2::OpBuilder::new(func.as_operation().context_rc())
+            .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
+        let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
 
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.

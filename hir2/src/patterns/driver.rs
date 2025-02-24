@@ -10,8 +10,8 @@ use super::{
 use crate::{
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttrPrinter, BlockRef, Builder, Context, InsertionGuard, Listener, OpFoldResult,
-    OperationFolder, OperationRef, ProgramPoint, Region, RegionRef, Report, RewritePattern,
-    SourceSpan, Spanned, Value, ValueRef, WalkResult, Walkable,
+    OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report,
+    RewritePattern, SourceSpan, Spanned, Value, ValueRef, WalkResult,
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
@@ -40,7 +40,7 @@ pub fn apply_patterns_and_fold_region_greedily(
     // The top-level operation must be known to be isolated from above to prevent performing
     // canonicalizations on operations defined at or above the region containing 'op'.
     let context = {
-        let parent_op = region.borrow().parent().unwrap().borrow();
+        let parent_op = region.parent().unwrap().borrow();
         assert!(
             parent_op.implements::<dyn IsolatedFromAbove>(),
             "patterns can only be applied to operations which are isolated from above"
@@ -275,7 +275,7 @@ impl Default for GreedyRewriteConfig {
     }
 }
 impl GreedyRewriteConfig {
-    pub fn new_with_listener(listener: impl RewriterListener) -> Self {
+    pub fn new_with_listener(listener: impl RewriterListener + 'static) -> Self {
         Self {
             listener: Some(Rc::new(listener)),
             ..Default::default()
@@ -416,7 +416,7 @@ impl GreedyPatternRewriteDriver {
         let mut ancestors = SmallVec::<[OperationRef; 8]>::default();
         let mut op = Some(op);
         while let Some(ancestor_op) = op.take() {
-            let region = ancestor_op.borrow().parent_region();
+            let region = ancestor_op.grandparent();
             if self.config.scope.as_ref() == region.as_ref() {
                 ancestors.push(ancestor_op);
                 for op in ancestors {
@@ -431,7 +431,7 @@ impl GreedyPatternRewriteDriver {
                 ancestors.push(ancestor_op);
             }
             if let Some(region) = region {
-                op = region.borrow().parent();
+                op = region.parent();
             } else {
                 log::trace!("reached top level op while searching for ancestors");
             }
@@ -518,7 +518,7 @@ impl GreedyPatternRewriteDriver {
                 rewriter.set_insertion_point(ProgramPoint::before(op_ref));
 
                 log::trace!("replacing op with fold results..");
-                let mut replacements = SmallVec::<[ValueRef; 2]>::default();
+                let mut replacements = SmallVec::<[Option<ValueRef>; 2]>::default();
                 let mut materialization_succeeded = true;
                 for (fold_result, result_ty) in results
                     .into_iter()
@@ -531,7 +531,7 @@ impl GreedyPatternRewriteDriver {
                                 &result_ty,
                                 "folder produced value of incorrect type"
                             );
-                            replacements.push(value);
+                            replacements.push(Some(value));
                         }
                         OpFoldResult::Attribute(attr) => {
                             // Materialize attributes as SSA values using a constant op
@@ -556,7 +556,8 @@ impl GreedyPatternRewriteDriver {
                                     // If materialization fails, clean up any operations generated for the previous results
                                     let mut replacement_ops =
                                         SmallVec::<[OperationRef; 2]>::default();
-                                    for replacement in replacements.iter() {
+                                    for replacement in replacements.iter().filter_map(|repl| *repl)
+                                    {
                                         let replacement = replacement.borrow();
                                         assert!(
                                             !replacement.is_used(),
@@ -592,7 +593,7 @@ impl GreedyPatternRewriteDriver {
                                         "successfully materialized constant as {}",
                                         result.borrow().id()
                                     );
-                                    replacements.push(result);
+                                    replacements.push(Some(result));
                                 }
                             }
                         }
@@ -778,7 +779,7 @@ impl RewriterListener for GreedyPatternRewriteDriver {
         // that would break the worklist handling and some sanity checks.
         if let Some(scope) = self.config.scope.as_ref() {
             assert!(
-                scope.borrow().parent().is_some_and(|parent_op| parent_op != op),
+                scope.parent().is_some_and(|parent_op| parent_op != op),
                 "scope region must not be erased during greedy pattern rewrite"
             );
         }
@@ -798,7 +799,11 @@ impl RewriterListener for GreedyPatternRewriteDriver {
     /// Notify the driver that the specified operation was replaced.
     ///
     /// Update the worklist as needed: new users are enqueued
-    fn notify_operation_replaced_with_values(&self, op: OperationRef, replacement: &[ValueRef]) {
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        replacement: &[Option<ValueRef>],
+    ) {
         if let Some(listener) = self.config.listener.as_deref() {
             listener.notify_operation_replaced_with_values(op, replacement);
         }
@@ -822,12 +827,11 @@ impl RegionPatternRewriteDriver {
         config: GreedyRewriteConfig,
         region: RegionRef,
     ) -> Self {
-        use crate::Walkable;
         let mut driver = GreedyPatternRewriteDriver::new(context, patterns, config);
         // Populate strict mode ops, if applicable
         if driver.config.restrict != GreedyRewriteStrictness::Any {
             let filtered_ops = driver.filtered_ops.get_mut();
-            region.borrow().postwalk(|op| {
+            region.raw_postwalk_all(|op| {
                 filtered_ops.insert(op);
             });
         }
@@ -861,7 +865,9 @@ impl RegionPatternRewriteDriver {
             let mut insert_known_constant = |op: OperationRef| {
                 // Check for existing constants when populating the worklist. This avoids
                 // accidentally reversing the constant order during processing.
-                if let Some(const_value) = crate::matchers::constant().matches(&op.borrow()) {
+                let operation = op.borrow();
+                if let Some(const_value) = crate::matchers::constant().matches(&operation) {
+                    drop(operation);
                     if !folder.insert_known_constant(op, Some(const_value)) {
                         return true;
                     }
@@ -872,7 +878,7 @@ impl RegionPatternRewriteDriver {
             if !self.driver.config.use_top_down_traversal {
                 // Add operations to the worklist in postorder.
                 log::trace!("adding operations in postorder");
-                self.region.borrow().postwalk(|op| {
+                self.region.raw_postwalk_all(|op| {
                     if !insert_known_constant(op) {
                         self.driver.add_to_worklist(op);
                     }
@@ -881,8 +887,7 @@ impl RegionPatternRewriteDriver {
                 // Add all nested operations to the worklist in preorder.
                 log::trace!("adding operations in preorder");
                 self.region
-                    .borrow()
-                    .prewalk_interruptible(|op| {
+                    .raw_prewalk(|op| {
                         if !insert_known_constant(op) {
                             self.driver.add_to_worklist(op);
                             WalkResult::<Report>::Continue(())
@@ -952,7 +957,7 @@ impl MultiOpPatternRewriteDriver {
         mut config: GreedyRewriteConfig,
         ops: &[OperationRef],
     ) -> Self {
-        let surviving_ops = BTreeSet::from_iter(ops.iter().cloned());
+        let surviving_ops = BTreeSet::from_iter(ops.iter().copied());
         let inner = Rc::new(MultiOpPatternRewriteDriverImpl {
             surviving_ops: RefCell::new(surviving_ops),
         });

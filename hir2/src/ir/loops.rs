@@ -729,7 +729,7 @@ impl Loop {
 
     /// Returns true if the specified operation is in this loop
     pub fn contains_op(&self, op: &OperationRef) -> bool {
-        let Some(block) = op.borrow().parent() else {
+        let Some(block) = op.parent() else {
             return false;
         };
         self.contains_block(block)
@@ -1229,14 +1229,14 @@ impl Loop {
             } else if !outside_loop_preds.is_empty() {
                 // A non-header loop shouldn't be reachable from outside the loop, though it is
                 // permitted if the predecessor is not itself actually reachable.
-                let entry = block.borrow().parent().unwrap().borrow().entry_block_ref().unwrap();
+                let entry = block.parent().unwrap().borrow().entry_block_ref().unwrap();
                 for child_block in PreOrderBlockIter::new(entry) {
                     if outside_loop_preds.iter().any(|pred| &child_block == pred) {
                         return Err(Report::msg("loop has multiple entry points"));
                     }
                 }
             }
-            if block != header.borrow().parent().unwrap().borrow().entry_block_ref().unwrap() {
+            if block != header.parent().unwrap().borrow().entry_block_ref().unwrap() {
                 return Err(Report::msg("loop contains region entry block"));
             }
             visited_blocks.insert(block);

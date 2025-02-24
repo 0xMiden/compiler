@@ -1,4 +1,5 @@
 mod builder;
+pub mod equivalence;
 mod name;
 
 use alloc::rc::Rc;
@@ -11,7 +12,10 @@ use core::{
 use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
-use super::*;
+use super::{
+    traits::{HasRecursiveMemoryEffects, MemoryAlloc, MemoryFree, MemoryRead, MemoryWrite},
+    *,
+};
 use crate::{AttributeSet, AttributeValue, ProgramPoint};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
@@ -91,10 +95,6 @@ pub struct Operation {
     pub span: SourceSpan,
     /// Attributes that apply to this operation
     pub attrs: AttributeSet,
-    /// The containing block of this operation
-    ///
-    /// Is set to `None` if this operation is detached
-    pub block: Option<BlockRef>,
     /// The set of operands for this operation
     ///
     /// NOTE: If the op supports immediate operands, the storage for the immediates is handled
@@ -117,7 +117,7 @@ impl fmt::Debug for Operation {
             .field("offset", &self.offset)
             .field("order", &self.order)
             .field("attrs", &self.attrs)
-            .field("block", &self.block.as_ref().map(|b| b.borrow().id()))
+            .field("block", &self.parent().as_ref().map(|b| b.borrow().id()))
             .field_with("operands", |f| {
                 let mut list = f.debug_list();
                 for operand in self.operands().all() {
@@ -156,40 +156,31 @@ impl AsMut<dyn Op> for Operation {
 impl Entity for Operation {}
 impl EntityWithParent for Operation {
     type Parent = Block;
-
-    fn on_inserted_into_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-        let mut op = this.borrow_mut();
-        op.block = Some(parent);
-        op.order.store(Self::INVALID_ORDER, std::sync::atomic::Ordering::Release);
+}
+impl EntityListItem for Operation {
+    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, _cursor: &mut EntityCursorMut<'_, Self>) {
+        let order_offset = core::mem::offset_of!(Operation, order);
+        unsafe {
+            let ptr = UnsafeIntrusiveEntityRef::as_ptr(&this);
+            let order_ptr = ptr.byte_add(order_offset).cast::<AtomicU32>();
+            (*order_ptr).store(Self::INVALID_ORDER, std::sync::atomic::Ordering::Release);
+        }
     }
 
-    fn on_removed_from_parent(
-        mut this: UnsafeIntrusiveEntityRef<Self>,
-        _parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-        this.borrow_mut().block = None;
-    }
-
-    fn on_transfered_to_new_parent(
-        from: UnsafeIntrusiveEntityRef<Self::Parent>,
-        mut to: UnsafeIntrusiveEntityRef<Self::Parent>,
-        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
+    fn on_transfer(
+        _this: UnsafeIntrusiveEntityRef<Self>,
+        _from: &mut EntityList<Self>,
+        to: &mut EntityList<Self>,
     ) {
         // Invalidate the ordering of the new parent block
+        let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();
+    }
+}
 
-        // If we are transferring operations within the same block, the block pointer doesn't
-        // need to be updated
-        if BlockRef::ptr_eq(&from, &to) {
-            return;
-        }
-
-        for mut transferred_op in transferred {
-            transferred_op.borrow_mut().block = Some(to);
-        }
+impl EntityParent<Region> for Operation {
+    fn offset() -> usize {
+        core::mem::offset_of!(Operation, regions)
     }
 }
 
@@ -206,7 +197,6 @@ impl Operation {
             order: AtomicU32::new(0),
             span: Default::default(),
             attrs: Default::default(),
-            block: Default::default(),
             operands: Default::default(),
             results: Default::default(),
             successors: Default::default(),
@@ -274,11 +264,7 @@ impl Operation {
     /// The verification is performed in post-order, so that when the verifier(s) for `self` are
     /// run, it is known that all of its children have successfully verified.
     pub fn recursively_verify(&self) -> Result<(), Report> {
-        self.postwalk_interruptible(|op: OperationRef| {
-            let op = op.borrow();
-            op.verify().into()
-        })
-        .into_result()
+        self.postwalk(|op: &Operation| op.verify().into()).into_result()
     }
 }
 
@@ -295,6 +281,9 @@ impl Operation {
     pub fn as_operation_ref(&self) -> OperationRef {
         // SAFETY: This is safe under the assumption that we always allocate Operations using the
         // arena, i.e. it is a child of a RawEntityMetadata structure.
+        //
+        // Additionally, this relies on the fact that Op implementations are #[repr(C)] and ensure
+        // that their Operation field is always first in the generated struct
         unsafe { OperationRef::from_raw(self) }
     }
 
@@ -465,20 +454,20 @@ impl Operation {
 /// Navigation
 impl Operation {
     /// Returns a handle to the containing [Block] of this operation, if it is attached to one
-    #[inline(always)]
-    pub const fn parent(&self) -> Option<BlockRef> {
-        self.block
+    #[inline]
+    pub fn parent(&self) -> Option<BlockRef> {
+        self.as_operation_ref().parent()
     }
 
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
-        self.block.as_ref().and_then(|block| block.borrow().parent())
+        self.parent().and_then(|block| block.parent())
     }
 
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {
-        self.block.as_ref().and_then(|block| block.borrow().parent_op())
+        self.parent_region().and_then(|region| region.parent())
     }
 
     /// Returns a handle to the nearest containing [Operation] of type `T` for this operation, if it
@@ -486,9 +475,10 @@ impl Operation {
     pub fn nearest_parent_op<T: Op>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         let mut parent = self.parent_op();
         while let Some(op) = parent.take() {
-            let entity_ref = op.borrow();
-            parent = entity_ref.parent_op();
-            if let Some(t_ref) = entity_ref.downcast_ref::<T>() {
+            parent =
+                op.parent().and_then(|block| block.parent()).and_then(|region| region.parent());
+            let op = op.borrow();
+            if let Some(t_ref) = op.downcast_ref::<T>() {
                 return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(t_ref) });
             }
         }
@@ -642,6 +632,7 @@ impl Operation {
 
     /// Get a reference to the successor at `index`
     #[inline]
+    #[track_caller]
     pub fn successor(&self, index: usize) -> OpSuccessor<'_> {
         let info = &self.successors[index];
         OpSuccessor {
@@ -652,6 +643,7 @@ impl Operation {
 
     /// Get a mutable reference to the successor at `index`
     #[inline]
+    #[track_caller]
     pub fn successor_mut(&mut self, index: usize) -> OpSuccessorMut<'_> {
         let info = self.successors[index];
         OpSuccessorMut {
@@ -709,24 +701,15 @@ impl Operation {
     }
 
     /// Replace any uses of `from` with `to` within this operation
-    pub fn replaces_uses_of_with(&mut self, mut from: ValueRef, mut to: ValueRef) {
+    pub fn replaces_uses_of_with(&mut self, from: ValueRef, to: ValueRef) {
         if ValueRef::ptr_eq(&from, &to) {
             return;
         }
 
         for operand in self.operands.iter_mut() {
             debug_assert!(operand.is_linked());
-            if ValueRef::ptr_eq(&from, &operand.borrow().value) {
-                // Remove use of `from` by `operand`
-                {
-                    let mut from_mut = from.borrow_mut();
-                    let from_uses = from_mut.uses_mut();
-                    let mut cursor = unsafe { from_uses.cursor_mut_from_ptr(*operand) };
-                    cursor.remove();
-                }
-                // Add use of `to` by `operand`
-                operand.borrow_mut().value = to;
-                to.borrow_mut().insert_use(*operand);
+            if ValueRef::ptr_eq(&from, &operand.borrow().value.unwrap()) {
+                operand.borrow_mut().set(to);
             }
         }
     }
@@ -855,24 +838,33 @@ impl Operation {
     /// dead without always being conservative about terminators.
     pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
         // The set of operations to consider when checking for side effects
-        let mut effecting_ops = SmallVec::<[OperationRef; 1]>::from_iter([self.as_operation_ref()]);
-        while let Some(op) = effecting_ops.pop() {
-            let op = op.borrow();
-            // If the operation has recursive effects, push all of the nested operations on to the
-            // stack to consider.
-            let has_recursive_effects =
-                op.implements::<dyn crate::traits::HasRecursiveMemoryEffects>();
-            if has_recursive_effects {
-                for region in op.regions() {
-                    for block in region.body() {
-                        let mut cursor = block.body().front();
-                        while let Some(op) = cursor.as_pointer() {
-                            effecting_ops.push(op);
-                            cursor.move_next();
+        let mut effecting_ops = SmallVec::<[OperationRef; 4]>::default();
+        let visit_children_with_recursive_effects =
+            |op: &Operation, effecting_ops: &mut SmallVec<[OperationRef; 4]>| {
+                // If the operation has recursive effects, push all of the nested operations on to the
+                // stack to consider.
+                let has_recursive_effects =
+                    op.implements::<dyn crate::traits::HasRecursiveMemoryEffects>();
+
+                if has_recursive_effects {
+                    for region in self.regions() {
+                        for block in region.body() {
+                            let mut cursor = block.body().front();
+                            while let Some(op) = cursor.as_pointer() {
+                                effecting_ops.push(op);
+                                cursor.move_next();
+                            }
                         }
                     }
                 }
-            }
+            };
+
+        visit_children_with_recursive_effects(self, &mut effecting_ops);
+
+        while let Some(op) = effecting_ops.pop() {
+            let op = op.borrow();
+
+            visit_children_with_recursive_effects(&op, &mut effecting_ops);
 
             // If the op has memory effects, try to characterize them to see if the op is trivially
             // dead here.
@@ -894,63 +886,102 @@ impl Operation {
         // as dead.
         true
     }
+
+    /// Returns true if the given operation is free of memory effects.
+    ///
+    /// An operation is free of memory effects if its implementation of `MemoryEffectOpInterface`
+    /// indicates that it has no memory effects. For example, it may implement `NoMemoryEffect`.
+    /// Alternatively, if the operation has the `HasRecursiveMemoryEffects` trait, then it is free
+    /// of memory effects if all of its nested operations are free of memory effects.
+    ///
+    /// If the operation has both, then it is free of memory effects if both conditions are
+    /// satisfied.
+    pub fn is_memory_effect_free(&self) -> bool {
+        let has_effects = self.implements::<dyn MemoryRead>()
+            || self.implements::<dyn MemoryWrite>()
+            || self.implements::<dyn MemoryAlloc>()
+            || self.implements::<dyn MemoryFree>();
+        if has_effects {
+            return false;
+        } else if !self.implements::<dyn HasRecursiveMemoryEffects>() {
+            // TODO(pauls): We should implement the effect interface at some point, in which case
+            // if the op does not implement the interface, and does not have recursive side effects,
+            // we would need to return `false` here instead, as it cannot be known that the op is
+            // moveable.
+            //
+            // For now, we can return true here as there are no known effects, and no recursive
+            // effects
+            return true;
+        }
+
+        // Recurse into the regions and ensure that all nested ops are memory effect free.
+        for region in self.regions() {
+            let walk_result = region.prewalk(|op| {
+                if !op.is_memory_effect_free() {
+                    WalkResult::Break(())
+                } else {
+                    WalkResult::Continue(())
+                }
+            });
+            if walk_result.was_interrupted() {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 /// Insertion
 impl Operation {
     pub fn insert_at_start(&mut self, mut block: BlockRef) {
         assert!(
-            self.block.is_none(),
+            self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
         {
             let mut block = block.borrow_mut();
             block.body_mut().push_front(self.as_operation_ref());
         }
-        self.block = Some(block);
     }
 
     pub fn insert_at_end(&mut self, mut block: BlockRef) {
         assert!(
-            self.block.is_none(),
+            self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
         {
             let mut block = block.borrow_mut();
             block.body_mut().push_back(self.as_operation_ref());
         }
-        self.block = Some(block);
     }
 
     pub fn insert_before(&mut self, before: OperationRef) {
         assert!(
-            self.block.is_none(),
+            self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
-        let mut block =
-            before.borrow().parent().expect("'before' block is not attached to a block");
+        let mut block = before.parent().expect("'before' block is not attached to a block");
         {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
             cursor.insert_before(self.as_operation_ref());
         }
-        self.block = Some(block);
     }
 
     pub fn insert_after(&mut self, after: OperationRef) {
         assert!(
-            self.block.is_none(),
+            self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
-        let mut block = after.borrow().parent().expect("'after' block is not attached to a block");
+        let mut block = after.parent().expect("'after' block is not attached to a block");
         {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
             cursor.insert_after(self.as_operation_ref());
         }
-        self.block = Some(block);
     }
 }
 
@@ -960,18 +991,24 @@ impl Operation {
     #[inline]
     pub fn erase(&mut self) {
         // We don't delete entities currently, so for now this is just an alias for `remove`
-        self.remove()
+        self.remove();
+
+        for succ in self.successors.iter_mut() {
+            succ.block.unlink();
+        }
+        for operand in self.operands.iter_mut() {
+            operand.unlink();
+        }
     }
 
     /// Remove the operation from its parent block, but don't delete it.
     pub fn remove(&mut self) {
-        let Some(mut parent) = self.block.take() else {
-            return;
-        };
-        let mut block = parent.borrow_mut();
-        let body = block.body_mut();
-        let mut cursor = unsafe { body.cursor_mut_from_ptr(OperationRef::from_raw(self)) };
-        cursor.remove();
+        if let Some(mut parent) = self.parent() {
+            let mut block = parent.borrow_mut();
+            let body = block.body_mut();
+            let mut cursor = unsafe { body.cursor_mut_from_ptr(self.as_operation_ref()) };
+            cursor.remove();
+        }
     }
 
     /// Unlink this operation from its current block and insert it at `ip`, which may be in the same
@@ -1002,9 +1039,6 @@ impl Operation {
             // insert_after will always insert at the precise point specified.
             cursor.insert_after(self.as_operation_ref());
         }
-
-        // Ensure the parent of `self` is set properly
-        self.block = ip.block();
     }
 
     /// This drops all operand uses from this operation, which is used to break cyclic dependencies
@@ -1092,11 +1126,11 @@ impl Operation {
     pub fn is_before_in_block(&self, other: &OperationRef) -> bool {
         use core::sync::atomic::Ordering;
 
-        let block = self.block.expect("operations without parent blocks have no order");
+        let block = self.parent().expect("operations without parent blocks have no order");
         let other = other.borrow();
         assert!(
             other
-                .block
+                .parent()
                 .as_ref()
                 .is_some_and(|other_block| BlockRef::ptr_eq(&block, other_block)),
             "expected both operations to have the same parent block"
@@ -1119,10 +1153,10 @@ impl Operation {
     fn update_order_if_necessary(&self) {
         use core::sync::atomic::Ordering;
 
-        assert!(self.block.is_some(), "expected valid parent");
+        assert!(self.parent().is_some(), "expected valid parent");
 
         // If the order is valid for this operation there is nothing to do.
-        let block = self.block.unwrap();
+        let block = self.parent().unwrap();
         if self.has_valid_order() || block.borrow().body().iter().count() == 1 {
             return;
         }

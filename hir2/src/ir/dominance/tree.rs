@@ -11,7 +11,7 @@ use super::{BatchUpdateInfo, SemiNCA};
 use crate::{
     cfg::{self, Graph, Inverse, InvertibleGraph},
     formatter::DisplayOptional,
-    BlockRef, EntityWithId, RegionRef,
+    BlockRef, EntityId, EntityWithId, RegionRef,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -55,7 +55,8 @@ pub struct DomTreeBase<const IS_POST_DOM: bool> {
     /// may be multiple, one for each exit from the region.
     roots: DomTreeRoots,
     /// The nodes represented in this dominance tree
-    nodes: SmallVec<[(Option<BlockRef>, Rc<DomTreeNode>); 64]>,
+    #[allow(clippy::type_complexity)]
+    nodes: SmallVec<[Option<(Option<BlockRef>, Rc<DomTreeNode>)>; 64]>,
     /// The root dominance tree node.
     root: Option<Rc<DomTreeNode>>,
     /// The parent region for which this dominance tree was computed
@@ -296,12 +297,9 @@ impl DomTreeBase<false> {
         let mut nodes = self
             .nodes
             .iter()
-            .filter_map(|(blk, node)| {
-                if blk.is_some() {
-                    Some(node.clone())
-                } else {
-                    None
-                }
+            .filter_map(|entry| match entry {
+                Some((Some(_), node)) => Some(node.clone()),
+                _ => None,
             })
             .collect::<Vec<_>>();
         nodes.sort_by(|a, b| a.num_in.get().cmp(&b.num_in.get()));
@@ -313,12 +311,9 @@ impl DomTreeBase<false> {
         let mut nodes = self
             .nodes
             .iter()
-            .filter_map(|(blk, node)| {
-                if blk.is_some() {
-                    Some(node.clone())
-                } else {
-                    None
-                }
+            .filter_map(|entry| match entry {
+                Some((Some(_), node)) => Some(node.clone()),
+                _ => None,
             })
             .collect::<Vec<_>>();
         nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()));
@@ -336,12 +331,9 @@ impl DomTreeBase<false> {
         let mut nodes = self
             .nodes
             .iter()
-            .filter_map(|(blk, node)| {
-                if blk.is_some() {
-                    Some(node.clone())
-                } else {
-                    None
-                }
+            .filter_map(|entry| match entry {
+                Some((Some(_), node)) => Some(node.clone()),
+                _ => None,
             })
             .collect::<Vec<_>>();
         nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()).reverse());
@@ -354,7 +346,10 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     pub fn new(region: RegionRef) -> Result<Self, DomTreeError> {
         let entry = region.borrow().entry_block_ref().ok_or(DomTreeError::EmptyRegion)?;
         let root = Rc::new(DomTreeNode::new(Some(entry), None));
-        let nodes = smallvec![(Some(entry), root.clone())];
+        let root_id = entry.borrow().id().as_usize() + 1;
+        let mut nodes = SmallVec::default();
+        nodes.resize(root_id + 2, None);
+        nodes[root_id] = Some((Some(entry), root.clone()));
         let roots = smallvec![Some(entry)];
 
         let mut this = Self {
@@ -377,11 +372,11 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     }
 
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.nodes.iter().filter(|entry| entry.is_some()).count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        self.nodes.is_empty() || self.nodes.iter().all(|entry| entry.is_none())
     }
 
     #[inline]
@@ -417,23 +412,24 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     ///
     /// Use `None` to get the virtual node, if this is a post-dominator tree
     pub fn get(&self, block: Option<BlockRef>) -> Option<Rc<DomTreeNode>> {
-        self.node_index(block)
-            .map(|index| unsafe { self.nodes.get_unchecked(index).1.clone() })
+        let index = self.node_index(block);
+        self.nodes.get(index).and_then(|entry| match entry {
+            Some((_, node)) => Some(node.clone()),
+            _ => None,
+        })
     }
 
     #[inline]
-    fn node_index(&self, block: Option<BlockRef>) -> Option<usize> {
+    fn node_index(&self, block: Option<BlockRef>) -> usize {
         assert!(
-            block.is_none_or(|block| block
-                .borrow()
-                .parent()
-                .is_some_and(|parent| parent == self.parent)),
+            block.is_none_or(|block| block.parent().is_some_and(|parent| parent == self.parent)),
             "cannot get dominance info of block with different parent"
         );
         if let Some(block) = block {
-            self.nodes.iter().position(|(b, _)| b.is_some_and(|b| b == block))
+            block.borrow().id().as_usize() + 1
         } else {
-            self.nodes.iter().position(|(b, _)| b.is_none())
+            // Reserve index 0 for None
+            0
         }
     }
 
@@ -569,12 +565,12 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
 
     /// Finds the nearest block which is a common dominator of both `a` and `b`
     pub fn find_nearest_common_dominator(&self, a: BlockRef, b: BlockRef) -> Option<BlockRef> {
-        assert!(a.borrow().parent() == b.borrow().parent(), "two blocks are not in same region");
+        assert!(a.parent() == b.parent(), "two blocks are not in same region");
 
         // If either A or B is an entry block then it is nearest common dominator (for forward
         // dominators).
         if !self.is_post_dominator() {
-            let parent = a.borrow().parent().unwrap();
+            let parent = a.parent().unwrap();
             let entry = parent.borrow().entry_block_ref().unwrap();
             if a == entry || b == entry {
                 return Some(entry);
@@ -737,8 +733,11 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
     /// Removes node from the children of its immediate dominator. Deletes dominator node associated
     /// with `block`.
     pub fn erase_node(&mut self, block: BlockRef) {
-        let node_index = self.node_index(Some(block)).expect("removing node that isn't in tree");
-        let node = unsafe { self.nodes.get_unchecked(node_index).1.clone() };
+        let node_index = self.node_index(Some(block));
+        let entry = unsafe { self.nodes.get_unchecked_mut(node_index).take() };
+        let Some((_, node)) = entry else {
+            panic!("no node in tree for {block}");
+        };
         assert!(node.is_leaf(), "node is not a leaf node");
 
         self.valid.set(false);
@@ -748,15 +747,13 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
             idom.children.borrow_mut().retain(|child| child != &node);
         }
 
-        self.nodes.swap_remove(node_index);
-
         if !IS_POST_DOM {
             return;
         }
 
         // Remember to update PostDominatorTree roots
         if let Some(root_index) = self.roots.iter().position(|r| r.is_some_and(|r| r == block)) {
-            self.roots.swap_remove(root_index);
+            self.roots.remove(root_index);
         }
     }
 
@@ -775,7 +772,7 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         this_root.num_in.set(NonZeroU32::new(1));
         worklist.push((this_root, 0));
 
-        let mut dfs_num = 2u32;
+        let mut dfs_num = 1u32;
 
         while let Some((node, child_index)) = worklist.last_mut() {
             // If we visited all of the children of this node, "recurse" back up the
@@ -789,8 +786,8 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
                 let index = *child_index;
                 *child_index += 1;
                 let child = node.children.borrow()[index].clone();
-                dfs_num += 1;
                 child.num_in.set(Some(unsafe { NonZeroU32::new_unchecked(dfs_num) }));
+                dfs_num += 1;
                 worklist.push((child, 0));
             }
         }
@@ -814,7 +811,11 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
         idom: Option<Rc<DomTreeNode>>,
     ) -> Rc<DomTreeNode> {
         let node = Rc::new(DomTreeNode::new(block, idom.clone()));
-        self.nodes.push((block, node.clone()));
+        let node_index = self.node_index(block);
+        if node_index >= self.nodes.len() {
+            self.nodes.resize(node_index + 1, None);
+        }
+        self.nodes[node_index] = Some((block, node.clone()));
         if let Some(idom) = idom {
             idom.add_child(node.clone());
         }
@@ -958,9 +959,12 @@ impl<const IS_POST_DOM: bool> PartialEq for DomTreeBase<IS_POST_DOM> {
             && self.roots.len() == other.roots.len()
             && self.roots.iter().all(|root| other.roots.contains(root))
             && self.nodes.len() == other.nodes.len()
-            && self.nodes.iter().all(|(_, node)| {
-                let block = node.block();
-                other.get(block).is_some_and(|n| node == &n)
+            && self.nodes.iter().all(|entry| match entry {
+                Some((_, node)) => {
+                    let block = node.block();
+                    other.get(block).is_some_and(|n| node == &n)
+                }
+                None => true,
             })
     }
 }

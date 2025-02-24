@@ -13,7 +13,7 @@ use crate::{
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DominanceInfo {
     info: DominanceInfoBase<false>,
 }
@@ -56,6 +56,12 @@ impl DominanceInfo {
         &self.info
     }
 
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) fn info_mut(&mut self) -> &mut DominanceInfoBase<false> {
+        &mut self.info
+    }
+
     /// Returns true if `a` dominates `b`.
     ///
     /// Note that if `a == b`, this returns true, if you want strict dominance, see
@@ -92,8 +98,8 @@ impl DominanceInfo {
         mut b: OperationRef,
         enclosing_op_ok: bool,
     ) -> bool {
-        let a_block = a.borrow().parent().expect("`a` must be in a block");
-        let mut b_block = b.borrow().parent().expect("`b` must be in a block");
+        let a_block = a.parent().expect("`a` must be in a block");
+        let mut b_block = b.parent().expect("`b` must be in a block");
 
         // An instruction dominates itself, but does not properly dominate itself, unless this is
         // a graph region.
@@ -102,16 +108,16 @@ impl DominanceInfo {
         }
 
         // If these ops are in different regions, then normalize one into the other.
-        let a_region = a_block.borrow().parent().unwrap();
-        if a_region != b_block.borrow().parent().unwrap() {
+        let a_region = a_block.parent().unwrap();
+        if a_region != b_block.parent().unwrap() {
             // Walk up `b`'s region tree until we find an operation in `a`'s region that encloses
             // it. If this fails, then we know there is no post-dominance relation.
             let Some(found) = a_region.borrow().find_ancestor_op(b) else {
                 return false;
             };
             b = found;
-            b_block = b.borrow().parent().expect("`b` must be in a block");
-            assert!(b_block.borrow().parent().unwrap() == a_region);
+            b_block = b.parent().expect("`b` must be in a block");
+            assert!(b_block.parent().unwrap() == a_region);
 
             // If `a` encloses `b`, then we consider it to dominate.
             if a == b && enclosing_op_ok {
@@ -141,7 +147,7 @@ impl DominanceInfo {
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PostDominanceInfo {
     info: DominanceInfoBase<true>,
 }
@@ -220,6 +226,16 @@ pub struct RegionDominanceInfo<const IS_POST_DOM: bool> {
     has_ssa_dominance: bool,
 }
 
+impl<const IS_POST_DOM: bool> Clone for RegionDominanceInfo<IS_POST_DOM> {
+    fn clone(&self) -> Self {
+        let domtree = self.domtree.clone();
+        Self {
+            domtree: LazyCell::new(RegionDomTreeCtor::Clone(domtree)),
+            has_ssa_dominance: self.has_ssa_dominance,
+        }
+    }
+}
+
 impl<const IS_POST_DOM: bool> RegionDominanceInfo<IS_POST_DOM> {
     /// Construct a new [RegionDominanceInfo] for `region`
     pub fn new(region: RegionRef) -> Self {
@@ -240,12 +256,12 @@ impl<const IS_POST_DOM: bool> RegionDominanceInfo<IS_POST_DOM> {
         // We only create a dominator tree for multi-block regions
         if has_one_block {
             Self {
-                domtree: LazyCell::new(RegionDomTreeCtor(None)),
+                domtree: LazyCell::new(RegionDomTreeCtor::Compute(None)),
                 has_ssa_dominance,
             }
         } else {
             Self {
-                domtree: LazyCell::new(RegionDomTreeCtor(Some(region))),
+                domtree: LazyCell::new(RegionDomTreeCtor::Compute(Some(region))),
                 has_ssa_dominance,
             }
         }
@@ -268,6 +284,15 @@ pub(crate) struct DominanceInfoBase<const IS_POST_DOM: bool> {
     /// This map does not contain dominator trees for empty or single block regions, however we
     /// still compute whether or not they have SSA dominance regardless.
     dominance_infos: RefCell<BTreeMap<RegionRef, RegionDominanceInfo<IS_POST_DOM>>>,
+}
+
+impl<const IS_POST_DOM: bool> Clone for DominanceInfoBase<IS_POST_DOM> {
+    fn clone(&self) -> Self {
+        let infos = self.dominance_infos.borrow();
+        Self {
+            dominance_infos: RefCell::new(infos.clone()),
+        }
+    }
 }
 
 #[allow(unused)]
@@ -341,7 +366,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
         }
 
         // Otherwise, there must be multiple blocks in the region, check the dominance tree
-        self.dominance(a.borrow().parent().unwrap()).find_nearest_common_dominator(a, b)
+        self.dominance(a.parent().unwrap()).find_nearest_common_dominator(a, b)
     }
 
     /// Finds the nearest common dominator block for the given range of blocks.
@@ -376,7 +401,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     ///
     /// Panics if `block` is not a member of a multi-block region.
     pub fn node(&self, block: BlockRef) -> Option<Rc<DomTreeNode>> {
-        self.get_dominance_info(block.borrow().parent().expect("block isn't attached to region"))
+        self.get_dominance_info(block.parent().expect("block isn't attached to region"))
             .domtree
             .as_deref()
             .expect("`block` isn't in a multi-block region")
@@ -390,7 +415,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
             return true;
         }
 
-        let region = block.borrow().parent().expect("block isn't attached to region");
+        let region = block.parent().expect("block isn't attached to region");
         self.dominance(region).is_reachable_from_entry(block)
     }
 
@@ -398,7 +423,7 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
     ///
     /// Returns false if the block is a graph region or unknown.
     pub fn block_has_ssa_dominance(&self, block: BlockRef) -> bool {
-        let region = block.borrow().parent().expect("block isn't attached to region");
+        let region = block.parent().expect("block isn't attached to region");
         self.get_dominance_info(region).has_ssa_dominance
     }
 
@@ -441,8 +466,8 @@ impl<const IS_POST_DOM: bool> DominanceInfoBase<IS_POST_DOM> {
         // If both blocks are not in the same region, `a` properly dominates `b` if `b` is defined
         // in an operation region that (recursively) ends up being dominated by `a`. Walk up the
         // ancestors of `b`.
-        let a_region = a.borrow().parent();
-        if a_region != b.borrow().parent() {
+        let a_region = a.parent();
+        if a_region != b.parent() {
             // If we could not find a valid block `b` then it is not a dominator.
             let Some(found) = a_region.as_ref().and_then(|r| r.borrow().find_ancestor_block(b))
             else {
@@ -476,21 +501,36 @@ impl DominanceInfoBase<true> {
 }
 
 /// A faux-constructor for [RegionDominanceInfo] for use with [LazyCell] without boxing.
-struct RegionDomTreeCtor<const IS_POST_DOM: bool>(Option<RegionRef>);
+enum RegionDomTreeCtor<const IS_POST_DOM: bool> {
+    Compute(Option<RegionRef>),
+    Clone(Option<Rc<DomTreeBase<IS_POST_DOM>>>),
+}
 impl<const IS_POST_DOM: bool> FnOnce<()> for RegionDomTreeCtor<IS_POST_DOM> {
     type Output = Option<Rc<DomTreeBase<IS_POST_DOM>>>;
 
     extern "rust-call" fn call_once(self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree,
+        }
     }
 }
 impl<const IS_POST_DOM: bool> FnMut<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call_mut(&mut self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(*region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree.clone(),
+        }
     }
 }
 impl<const IS_POST_DOM: bool> Fn<()> for RegionDomTreeCtor<IS_POST_DOM> {
     extern "rust-call" fn call(&self, _args: ()) -> Self::Output {
-        self.0.and_then(|region| DomTreeBase::new(region).ok().map(Rc::new))
+        match self {
+            Self::Compute(None) => None,
+            Self::Compute(Some(region)) => DomTreeBase::new(*region).ok().map(Rc::new),
+            Self::Clone(domtree) => domtree.clone(),
+        }
     }
 }

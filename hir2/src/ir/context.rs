@@ -206,7 +206,7 @@ impl Context {
         owner: OperationRef,
         index: u8,
     ) -> BlockOperandRef {
-        let block_operand = self.alloc_tracked(BlockOperand::new(block, owner, index));
+        let block_operand = self.alloc_tracked(BlockOperand::new(owner, index));
         let mut block = block.borrow_mut();
         block.insert_use(block_operand);
         block_operand
@@ -246,7 +246,7 @@ impl Context {
         let dest_operand_groups: Vec<usize> = op
             .successors()
             .iter()
-            .filter(|succ| succ.block.borrow().block == dest)
+            .filter(|succ| succ.block.borrow().successor() == dest)
             .map(|succ| succ.operand_group as usize)
             .collect();
         for dest_group in dest_operand_groups {
@@ -256,7 +256,7 @@ impl Context {
                 op.as_operation_ref(),
                 (current_dest_operands_len + 1) as u8,
             );
-            op.operands_mut().extend_group(dest_group, vec![operand]);
+            op.operands_mut().extend_group(dest_group, [operand]);
         }
     }
 
@@ -276,7 +276,7 @@ impl Context {
     /// where you need to allocate the space for `T` first, and then perform initialization,
     /// this can be used.
     pub fn alloc_uninit_tracked<T: 'static>(&self) -> UnsafeIntrusiveEntityRef<MaybeUninit<T>> {
-        UnsafeIntrusiveEntityRef::new_uninit(&self.allocator)
+        UnsafeIntrusiveEntityRef::<T>::new_uninit_with_metadata(Default::default(), &self.allocator)
     }
 
     /// Allocate a new `EntityHandle<T>`.
@@ -295,7 +295,7 @@ impl Context {
     /// in a region, or the ops in a block. It does this without requiring the entity to know about
     /// the link at all, while still making it possible to access the link from the entity.
     pub fn alloc_tracked<T: 'static>(&self, value: T) -> UnsafeIntrusiveEntityRef<T> {
-        UnsafeIntrusiveEntityRef::new(value, &self.allocator)
+        UnsafeIntrusiveEntityRef::new_with_metadata(value, Default::default(), &self.allocator)
     }
 
     fn alloc_block_id(&self) -> BlockId {

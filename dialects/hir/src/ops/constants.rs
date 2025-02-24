@@ -60,7 +60,7 @@ impl Foldable for Constant {
     dialect = HirDialect,
     name = "bytes",
     traits(ConstantLike),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, Foldable)
 )]
 pub struct ConstantBytes {
     #[attr]
@@ -75,6 +75,23 @@ impl InferTypeOpInterface for ConstantBytes {
         self.result_mut().set_type(Type::Array(Box::new(Type::U8), len));
 
         Ok(())
+    }
+}
+
+impl Foldable for ConstantBytes {
+    #[inline]
+    fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        results.push(OpFoldResult::Attribute(self.get_attribute("id").unwrap().clone_value()));
+        FoldResult::Ok(())
+    }
+
+    #[inline(always)]
+    fn fold_with(
+        &self,
+        _operands: &[Option<Box<dyn AttributeValue>>],
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        self.fold(results)
     }
 }
 

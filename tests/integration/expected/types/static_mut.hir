@@ -21,7 +21,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v14 = hir.add v12, v13 : u32 #[overflow = checked];
             v15 = hir.int_to_ptr v14 : (ptr u8) #[ty = (ptr u8)];
             hir.store v15, v11;
-            hir.br block6 ;
+            hir.br block6;
         ^block6:
             hir.ret ;
         };
@@ -31,7 +31,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             hir.exec  #[callee = root/test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4/global_var_update] #[signature = ];
             v18 = hir.constant 0 : i32;
             v19 = hir.constant -9 : i32;
-            hir.br block9 v19, v18;
+            hir.br block9(v19, v18);
         ^block8(v16: i32):
             hir.ret v16;
         ^block9(v20: i32, v27: i32):
@@ -48,13 +48,13 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v32 = hir.add v20, v31 : i32 #[overflow = wrapping];
             v33 = hir.constant 0 : i32;
             v34 = hir.neq v32, v33 : i1;
-            hir.cond_br block9, block11 v34, v32, v30;
+            hir.cond_br v34 block9(v32, v30), block11;
         ^block10:
             v35 = hir.constant 255 : i32;
             v36 = hir.band v30, v35 : i32;
-            hir.br block8 v36;
+            hir.br block8(v36);
         ^block11:
-            hir.br block10 ;
+            hir.br block10;
         };
         builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 

@@ -8,7 +8,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v4 = hir.sub v3, v0 : felt #[overflow = unchecked];
             v5 = hir.add v4, v1 : felt #[overflow = unchecked];
             v6 = hir.div v0, v5 : felt;
-            hir.br block4 v6;
+            hir.br block4(v6);
         ^block4(v2: felt):
             hir.ret v2;
         };

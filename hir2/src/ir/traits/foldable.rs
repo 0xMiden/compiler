@@ -38,6 +38,23 @@ impl<T> FoldResult<T> {
             Self::Failed => unwrap_failed_fold_result(message),
         }
     }
+
+    /// Convert this result to an `Option` representing a successful outcome, where `None` indicates
+    /// an in-place fold, and `Some(T)` indicates that the operation was folded away.
+    ///
+    /// Invokes the given callback if the fold attempt failed.
+    #[inline]
+    #[track_caller]
+    pub fn unwrap_or_else<F>(self, callback: F) -> Option<T>
+    where
+        F: FnOnce() -> !,
+    {
+        match self {
+            Self::Ok(out) => Some(out),
+            Self::InPlace => None,
+            Self::Failed => callback(),
+        }
+    }
 }
 
 #[cold]

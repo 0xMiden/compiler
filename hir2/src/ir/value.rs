@@ -58,15 +58,14 @@ pub trait Value:
     fn get_defining_op(&self) -> Option<OperationRef>;
     /// Get the region which contains the definition of this value
     fn parent_region(&self) -> Option<RegionRef> {
-        self.parent_block().and_then(|block| block.borrow().parent())
+        self.parent_block().and_then(|block| block.parent())
     }
     /// Get the block which contains the definition of this value
     fn parent_block(&self) -> Option<BlockRef>;
     /// Returns true if this value is used outside of the given block
     fn is_used_outside_of_block(&self, block: &BlockRef) -> bool {
-        self.iter_uses().any(|user| {
-            user.owner.borrow().parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block))
-        })
+        self.iter_uses()
+            .any(|user| user.owner.parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block)))
     }
     /// Replace all uses of `self` with `replacement`
     fn replace_all_uses_with(&mut self, mut replacement: ValueRef) {
@@ -75,7 +74,7 @@ pub trait Value:
             // Rewrite use of `self` with `replacement`
             {
                 let mut user = user.borrow_mut();
-                user.value = replacement;
+                user.value = Some(replacement);
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -94,7 +93,7 @@ pub trait Value:
                     cursor.move_next();
                     continue;
                 }
-                user.value = replacement;
+                user.value = Some(replacement);
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -134,7 +133,7 @@ impl dyn Value {
                     cursor.move_next();
                     continue;
                 }
-                user.value = replacement;
+                user.value = Some(replacement);
             }
             // Remove `user` from the use list of `self`
             cursor.remove();
@@ -249,6 +248,12 @@ macro_rules! value_impl {
             #[inline(always)]
             fn id(&self) -> Self::Id {
                 self.id
+            }
+        }
+
+        impl EntityParent<OpOperandImpl> for $ValueKind {
+            fn offset() -> usize {
+                core::mem::offset_of!($ValueKind, uses)
             }
         }
 
@@ -368,7 +373,7 @@ value_impl!(
     }
 
     fn parent_block(&self) -> Option<BlockRef> {
-        self.owner.borrow().parent()
+        self.owner.parent()
     }
 );
 

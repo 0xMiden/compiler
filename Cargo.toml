@@ -48,6 +48,7 @@ publish = false
 anyhow = "1.0"
 bitflags = "2.4"
 bitcode = { version = "0.6.3", default-features = false, features = ["serde"] }
+bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 clap = { version = "4.1", default-features = false, features = [
     "derive",
     "std",

@@ -1,5 +1,5 @@
 use super::{DominanceInfo, PostDominanceInfo};
-use crate::{Block, Operation, Value};
+use crate::{Block, BlockRef, Operation, Value};
 
 /// This trait is implemented on a type which has a dominance relationship with `Rhs`.
 pub trait Dominates<Rhs = Self> {
@@ -49,6 +49,26 @@ impl Dominates for Block {
     }
 }
 
+/// The dominance relationship between two blocks.
+impl Dominates for BlockRef {
+    /// Returns true if `a == b` or `a` properly dominates `b`.
+    fn dominates(&self, other: &Self, dom_info: &DominanceInfo) -> bool {
+        BlockRef::ptr_eq(self, other) || self.properly_dominates(other, dom_info)
+    }
+
+    /// Returns true if `a != b` and:
+    ///
+    /// * `a` is an ancestor of `b`
+    /// * The region containing `a` also contains `b` or some ancestor of `b`, and `a` dominates
+    ///   that block in that kind of region.
+    /// * In SSA regions, `a` properly dominates `b` if all control flow paths from the entry
+    ///   block to `b`, flow through `a`.
+    /// * In graph regions, all blocks dominate all other blocks.
+    fn properly_dominates(&self, other: &Self, dom_info: &DominanceInfo) -> bool {
+        dom_info.info().properly_dominates(*self, *other)
+    }
+}
+
 /// The post-dominance relationship between two blocks.
 impl PostDominates for Block {
     fn post_dominates(&self, other: &Self, dom_info: &PostDominanceInfo) -> bool {
@@ -65,6 +85,25 @@ impl PostDominates for Block {
     /// * In graph regions, all blocks post-dominate all other blocks.
     fn properly_post_dominates(&self, other: &Self, dom_info: &PostDominanceInfo) -> bool {
         dom_info.info().properly_dominates(self.as_block_ref(), other.as_block_ref())
+    }
+}
+
+/// The post-dominance relationship between two blocks.
+impl PostDominates for BlockRef {
+    fn post_dominates(&self, other: &Self, dom_info: &PostDominanceInfo) -> bool {
+        BlockRef::ptr_eq(self, other) || self.properly_post_dominates(other, dom_info)
+    }
+
+    /// Returns true if `a != b` and:
+    ///
+    /// * `a` is an ancestor of `b`
+    /// * The region containing `a` also contains `b` or some ancestor of `b`, and `a` dominates
+    ///   that block in that kind of region.
+    /// * In SSA regions, `a` properly post-dominates `b` if all control flow paths from `b` to
+    ///   an exit node, flow through `a`.
+    /// * In graph regions, all blocks post-dominate all other blocks.
+    fn properly_post_dominates(&self, other: &Self, dom_info: &PostDominanceInfo) -> bool {
+        dom_info.info().properly_dominates(*self, *other)
     }
 }
 
@@ -114,8 +153,8 @@ impl PostDominates for Operation {
         }
 
         // If these ops are in different regions, then normalize one into the other.
-        let a_region = a_block.borrow().parent();
-        let b_region = b_block.borrow().parent();
+        let a_region = a_block.parent();
+        let b_region = b_block.parent();
         let a = self.as_operation_ref();
         let mut b = other.as_operation_ref();
         if a_region != b_region {
@@ -125,8 +164,8 @@ impl PostDominates for Operation {
                 return false;
             };
             b = found;
-            b_block = b.borrow().parent().unwrap();
-            assert!(b_block.borrow().parent() == a_region);
+            b_block = b.parent().unwrap();
+            assert!(b_block.parent() == a_region);
 
             // If `a` encloses `b`, then we consider it to post-dominate.
             if a == b {

@@ -74,7 +74,7 @@ impl PassManager {
     /// style. The created pass manager can schedule operations that match
     /// `OperationTy`.
     pub fn on<T: OpRegistration>(context: Rc<Context>, nesting: Nesting) -> Self {
-        Self::new(context, <T as OpRegistration>::name(), nesting)
+        Self::new(context, <T as OpRegistration>::full_name(), nesting)
     }
 
     /// Run the passes within this manager on the provided operation. The
@@ -113,6 +113,9 @@ impl PassManager {
         // Before running, make sure to finalize the pipeline pass list.
         self.pm.finalize_pass_list()?;
 
+        // Run pass initialization
+        self.pm.initialize()?;
+
         // Construct a top level analysis manager for the pipeline.
         let analysis_manager = AnalysisManager::new(op, Some(self.instrumentor.clone()));
 
@@ -147,7 +150,7 @@ impl PassManager {
             analysis_manager,
             self.verification,
             Some(self.instrumentor.clone()),
-            None,
+            Some(&PipelineParentInfo { pass: None }),
         )
     }
 
@@ -183,6 +186,32 @@ impl PassManager {
 
     fn dump_statistics(&mut self, out: &mut dyn core::fmt::Write) -> core::fmt::Result {
         self.pm.print_statistics(out, self.statistics.unwrap_or_default())
+    }
+
+    pub fn print_as_textual_pipeline(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.pm.print_as_textual_pipeline(f)
+    }
+
+    pub fn nest(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
+        self.pm.nest(nested)
+    }
+
+    /// Nest a new op-specific pass manager (for the op with the given name), under this pass manager.
+    pub fn nest_with_type(&mut self, nested_name: &str) -> NestedOpPassManager<'_> {
+        self.pm.nest_with_type(nested_name)
+    }
+
+    /// Nest a new op-agnostic ("any") pass manager under this pass manager.
+    pub fn nest_any(&mut self) -> NestedOpPassManager<'_> {
+        self.pm.nest_any()
+    }
+
+    pub fn add_pass(&mut self, pass: Box<dyn OperationPass>) {
+        self.pm.add_pass(pass)
+    }
+
+    pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
+        self.pm.add_nested_pass::<T>(pass)
     }
 }
 
@@ -321,7 +350,7 @@ impl OpPassManager {
     }
 
     pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
-        let name = <T as OpRegistration>::name();
+        let name = <T as OpRegistration>::full_name();
         let mut nested = self.nest(Self::new(name.as_str(), self.nesting, self.context.clone()));
         nested.add_pass(pass);
     }

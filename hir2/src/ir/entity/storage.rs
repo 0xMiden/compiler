@@ -311,6 +311,12 @@ impl<T, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
         self.as_slice().len()
     }
 
+    /// Returns a reference to the index range covered by this EntityRangeMut
+    #[inline(always)]
+    pub const fn range(&self) -> &core::ops::Range<usize> {
+        &self.range
+    }
+
     /// Temporarily borrow this range immutably
     pub fn as_immutable(&self) -> EntityRange<'_, T> {
         EntityRange {

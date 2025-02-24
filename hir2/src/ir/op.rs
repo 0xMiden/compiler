@@ -2,7 +2,19 @@ use super::*;
 use crate::{any::AsAny, traits::TraitInfo, AttributeValue};
 
 pub trait OpRegistration: Op {
+    /// The name of the dialect this op is declared part of
+    fn dialect_name() -> ::midenc_hir_symbol::Symbol;
+    /// The name of the operation (i.e. its opcode)
     fn name() -> ::midenc_hir_symbol::Symbol;
+    /// The fully-qualified name of the operation (i.e. `<dialect>.<opcode>`)
+    fn full_name() -> ::midenc_hir_symbol::Symbol {
+        ::midenc_hir_symbol::Symbol::intern(format!(
+            "{}.{}",
+            Self::dialect_name(),
+            <Self as OpRegistration>::name()
+        ))
+    }
+    /// The set of statically known traits for this op
     fn traits() -> Box<[TraitInfo]>;
 }
 
@@ -24,6 +36,10 @@ pub trait Op: AsAny + OpVerifier {
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
 
+    #[inline]
+    fn as_operation_ref(&self) -> OperationRef {
+        self.as_operation().as_operation_ref()
+    }
     fn set_span(&mut self, span: SourceSpan) {
         self.as_operation_mut().set_span(span);
     }
@@ -68,6 +84,12 @@ pub trait Op: AsAny + OpVerifier {
     }
     fn operands_mut(&mut self) -> &mut OpOperandStorage {
         self.as_operation_mut().operands_mut()
+    }
+    fn has_results(&self) -> bool {
+        self.as_operation().has_results()
+    }
+    fn num_results(&self) -> usize {
+        self.as_operation().num_results()
     }
     fn results(&self) -> &OpResultStorage {
         self.as_operation().results()

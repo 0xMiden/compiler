@@ -1,7 +1,7 @@
 use crate::{
     dialects::{builtin::*, test::*},
-    Block, BlockRef, Builder, Immediate, Op, OpBuilder, Region, RegionRef, Report, SourceSpan,
-    Type, UnsafeIntrusiveEntityRef, Usable, ValueRef,
+    BlockRef, Builder, Immediate, Op, OpBuilder, RegionRef, Report, SourceSpan, Type,
+    UnsafeIntrusiveEntityRef, Usable, ValueRef,
 };
 
 pub struct FunctionBuilder<'f> {
@@ -54,16 +54,14 @@ impl<'f> FunctionBuilder<'f> {
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
-        use crate::EntityWithParent;
-
         assert_ne!(
             block,
             self.current_block(),
             "cannot remove block the builder is currently inserting in"
         );
         assert_eq!(
-            block.borrow().parent().map(|p| RegionRef::as_ptr(&p)),
-            Some(&*self.func.body() as *const Region),
+            block.parent().map(|p| RegionRef::as_ptr(&p)),
+            Some(RegionRef::as_ptr(&self.func.body().as_region_ref())),
             "cannot detach a block that does not belong to this function"
         );
         let mut body = self.func.body_mut();
@@ -71,7 +69,6 @@ impl<'f> FunctionBuilder<'f> {
             body.body_mut().cursor_mut_from_ptr(block).remove();
         }
         block.borrow_mut().uses_mut().clear();
-        Block::on_removed_from_parent(block, body.as_region_ref());
     }
 
     pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {

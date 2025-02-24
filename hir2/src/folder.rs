@@ -79,7 +79,7 @@ pub struct OperationFolder {
 impl OperationFolder {
     pub fn new<L>(context: Rc<Context>, listener: L) -> Self
     where
-        L: RewriterListener,
+        L: RewriterListener + 'static,
     {
         Self {
             rewriter: Box::new(RewriterImpl::<L>::new(context).with_listener(listener)),
@@ -99,7 +99,7 @@ impl OperationFolder {
         if self.is_folder_owned_constant(&op) {
             // Check to see if we should rehoist, i.e. if a non-constant operation was inserted
             // before this one.
-            let block = op.borrow().parent().unwrap();
+            let block = op.parent().unwrap();
             if block.borrow().front().unwrap() != op
                 && !self.is_folder_owned_constant(&op.prev().unwrap())
             {
@@ -145,7 +145,7 @@ impl OperationFolder {
         &mut self,
         op: OperationRef,
         fold_results: &[OpFoldResult],
-    ) -> FoldResult<SmallVec<[ValueRef; 2]>> {
+    ) -> FoldResult<SmallVec<[Option<ValueRef>; 2]>> {
         let borrowed_op = op.borrow();
         assert_eq!(fold_results.len(), borrowed_op.num_results());
 
@@ -161,7 +161,7 @@ impl OperationFolder {
             match fold_result {
                 // Check if the result was an SSA value.
                 OpFoldResult::Value(value) => {
-                    out.push(*value);
+                    out.push(Some(*value));
                     continue;
                 }
                 // Check to see if there is a canonicalized version of this constant.
@@ -178,12 +178,12 @@ impl OperationFolder {
                         // This may not automatically happen if the operation being folded was
                         // inserted before the constant within the insertion block.
                         let op_block = borrowed_op.parent().unwrap();
-                        if op_block == const_op.borrow().parent().unwrap()
+                        if op_block == const_op.parent().unwrap()
                             && op_block.borrow().front().unwrap() != const_op
                         {
                             const_op.borrow_mut().move_to(ProgramPoint::at_start_of(op_block));
                         }
-                        out.push(const_op.borrow().get_result(0).borrow().as_value_ref());
+                        out.push(Some(const_op.borrow().get_result(0).borrow().as_value_ref()));
                         continue;
                     }
 
@@ -258,7 +258,7 @@ impl OperationFolder {
         mut op: OperationRef,
         value: Option<Box<dyn AttributeValue>>,
     ) -> bool {
-        let block = op.borrow().parent().unwrap();
+        let block = op.parent().unwrap();
 
         // If this is a constant we uniqued, we don't need to insert, but we can check to see if
         // we should rehoist it.
@@ -454,17 +454,15 @@ fn get_insertion_region(insertion_block: BlockRef) -> RegionRef {
 
     let mut insertion_block = Some(insertion_block);
     while let Some(block) = insertion_block.take() {
-        let parent_region = block.borrow().parent().unwrap_or_else(|| {
+        let parent_region = block.parent().unwrap_or_else(|| {
             panic!("expected block {} to be attached to a region", block.borrow().id())
         });
         // Insert in this region for any of the following scenarios:
         //
         // * The parent is known to be isolated from above
         // * The parent is a top-level operation
-        let parent_op = parent_region
-            .borrow()
-            .parent()
-            .expect("expected region to be attached to an operation");
+        let parent_op =
+            parent_region.parent().expect("expected region to be attached to an operation");
         let parent = parent_op.borrow();
         let parent_block = parent.parent();
         if parent.implements::<dyn IsolatedFromAbove>() || parent_block.is_none() {

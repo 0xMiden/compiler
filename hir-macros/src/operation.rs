@@ -696,7 +696,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                             __op_ptr.write(::midenc_hir2::Operation::uninit::<Self>(__context, __operation_name, __offset));
                             #initialize_custom_fields
                         }
-                        let mut __this = ::midenc_hir2::UnsafeIntrusiveEntityRef::assume_init(__op);
+                        let mut __this = ::midenc_hir2::RawEntityRef::assume_init(__op);
                         __this.borrow_mut().set_span(span);
                         __this
                     }
@@ -755,6 +755,7 @@ impl quote::ToTokens for OpDefinition {
 
         // impl Op
         // impl OpRegistration
+        let dialect = &self.dialect;
         let opcode = &self.opcode;
         let opcode_str = syn::Lit::Str(syn::LitStr::new(&opcode.to_string(), opcode.span()));
         let traits = &self.traits;
@@ -778,6 +779,11 @@ impl quote::ToTokens for OpDefinition {
             }
 
             impl #impl_generics ::midenc_hir2::OpRegistration for #op_ident #ty_generics #where_clause {
+                fn dialect_name() -> ::midenc_hir_symbol::Symbol {
+                    let namespace = <#dialect as ::midenc_hir2::DialectRegistration>::NAMESPACE;
+                    ::midenc_hir_symbol::Symbol::intern(namespace)
+                }
+
                 fn name() -> ::midenc_hir_symbol::Symbol {
                     ::midenc_hir_symbol::Symbol::intern(#opcode_str)
                 }

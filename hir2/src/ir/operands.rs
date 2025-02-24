@@ -14,7 +14,7 @@ pub type OpOperandCursorMut<'a> = crate::EntityCursorMut<'a, OpOperandImpl>;
 /// An [OpOperand] represents a use of a [Value] by an [Operation]
 pub struct OpOperandImpl {
     /// The operand value
-    pub value: ValueRef,
+    pub value: Option<ValueRef>,
     /// The owner of this operand, i.e. the operation it is an operand of
     pub owner: OperationRef,
     /// The index of this operand in the operand list of an operation
@@ -24,19 +24,19 @@ impl OpOperandImpl {
     #[inline]
     pub fn new(value: ValueRef, owner: OperationRef, index: u8) -> Self {
         Self {
-            value,
+            value: Some(value),
             owner,
             index,
         }
     }
 
     pub fn value(&self) -> EntityRef<'_, dyn Value> {
-        self.value.borrow()
+        self.value.as_ref().unwrap().borrow()
     }
 
     #[inline]
     pub const fn as_value_ref(&self) -> ValueRef {
-        self.value
+        self.value.unwrap()
     }
 
     #[inline]
@@ -62,6 +62,20 @@ impl OpOperandImpl {
             .expect("broken operand reference!");
         group_index as u8
     }
+
+    /// Set the operand value to `value`, removing the operand from the use list of the previous
+    /// value, and adding it to the use list of `value`.
+    pub fn set(&mut self, mut value: ValueRef) {
+        let this = self.as_operand_ref();
+        if let Some(mut prev) = self.value.take() {
+            unsafe {
+                let mut prev = prev.borrow_mut();
+                prev.uses_mut().cursor_mut_from_ptr(this).remove();
+            }
+        }
+        self.value = Some(value);
+        value.borrow_mut().insert_use(this);
+    }
 }
 impl fmt::Debug for OpOperandImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -72,21 +86,24 @@ impl fmt::Debug for OpOperandImpl {
             ty: &'a Type,
         }
 
-        let value = self.value.borrow();
-        let id = value.id();
-        let ty = value.ty();
+        let value = self.value.map(|value| value.borrow());
+        let value = value.as_ref().map(|value| ValueInfo {
+            id: value.id(),
+            ty: value.ty(),
+        });
         f.debug_struct("OpOperand")
             .field("index", &self.index)
-            .field("value", &ValueInfo { id, ty })
+            .field("value", &value)
             .finish_non_exhaustive()
     }
 }
 impl crate::Spanned for OpOperandImpl {
     fn span(&self) -> crate::SourceSpan {
-        self.value.borrow().span()
+        self.value().span()
     }
 }
 impl crate::Entity for OpOperandImpl {}
+impl crate::EntityListItem for OpOperandImpl {}
 impl crate::StorableEntity for OpOperandImpl {
     #[inline(always)]
     fn index(&self) -> usize {
@@ -98,12 +115,14 @@ impl crate::StorableEntity for OpOperandImpl {
     }
 
     fn unlink(&mut self) {
-        let ptr = self.as_operand_ref();
-        let mut value = self.value.borrow_mut();
-        let uses = value.uses_mut();
-        unsafe {
-            let mut cursor = uses.cursor_mut_from_ptr(ptr);
-            cursor.remove();
+        if let Some(mut value) = self.value.take() {
+            let ptr = self.as_operand_ref();
+            let mut value = value.borrow_mut();
+            let uses = value.uses_mut();
+            unsafe {
+                let mut cursor = uses.cursor_mut_from_ptr(ptr);
+                cursor.remove();
+            }
         }
     }
 }
@@ -111,3 +130,41 @@ impl crate::StorableEntity for OpOperandImpl {
 pub type OpOperandStorage = crate::EntityStorage<OpOperand, 1>;
 pub type OpOperandRange<'a> = crate::EntityRange<'a, OpOperand>;
 pub type OpOperandRangeMut<'a> = crate::EntityRangeMut<'a, OpOperand, 1>;
+
+impl OpOperandRangeMut<'_> {
+    pub fn set_operands<I>(&mut self, operands: I, owner: OperationRef)
+    where
+        I: IntoIterator<Item = ValueRef>,
+    {
+        let mut operands = operands.into_iter().enumerate();
+        let mut num_operands = 0;
+        let mut context = None;
+        while let Some((index, value)) = operands.next() {
+            num_operands += 1;
+            if let Some(operand) = self.get_mut(index) {
+                let mut operand = operand.borrow_mut();
+                // If the new operand value and the existing one are the same, no change is required
+                if operand.value.is_some_and(|v| v == value) {
+                    continue;
+                }
+                // Otherwise, set the operand value to the new value
+                operand.set(value);
+            } else {
+                // The operand group is being extended
+                let context = context.get_or_insert_with(|| owner.borrow().context_rc());
+                self.extend(operands.map(|(index, value)| {
+                    num_operands += 1;
+                    context.make_operand(value, owner, index as u8)
+                }));
+                break;
+            }
+        }
+
+        // Remove excess operands
+        if num_operands < self.len() {
+            for _ in 0..(self.len() - num_operands) {
+                let _ = self.pop();
+            }
+        }
+    }
+}

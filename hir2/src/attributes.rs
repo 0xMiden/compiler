@@ -22,7 +22,7 @@ pub mod markers {
 }
 
 /// An [AttributeSet] is a uniqued collection of attributes associated with some IR entity
-#[derive(Debug, Default, Hash)]
+#[derive(Debug, Default)]
 pub struct AttributeSet(Vec<Attribute>);
 impl FromIterator<Attribute> for AttributeSet {
     fn from_iter<T>(attrs: T) -> Self
@@ -139,6 +139,38 @@ impl AttributeSet {
     }
 }
 
+impl Eq for AttributeSet {}
+impl PartialEq for AttributeSet {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+
+        for attr in self.0.iter() {
+            if !other.has(attr.name) {
+                return false;
+            }
+
+            let other_value = other.get_any(attr.name);
+            if attr.value() != other_value {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl core::hash::Hash for AttributeSet {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.len().hash(state);
+
+        for attr in self.0.iter() {
+            attr.hash(state);
+        }
+    }
+}
+
 /// An [Attribute] associates some data with a well-known identifier (name).
 ///
 /// Attributes are used for representing metadata that helps guide compilation,
@@ -212,6 +244,18 @@ impl dyn AttributeValue {
             self.downcast_ref::<bool>().copied()
         }
     }
+
+    pub fn as_u32(&self) -> Option<u32> {
+        if let Some(imm) = self.downcast_ref::<Immediate>() {
+            imm.as_u32()
+        } else {
+            self.downcast_ref::<u32>().copied()
+        }
+    }
+
+    pub fn as_immediate(&self) -> Option<Immediate> {
+        self.downcast_ref::<Immediate>().copied()
+    }
 }
 
 impl core::hash::Hash for dyn AttributeValue {
@@ -230,6 +274,116 @@ impl PartialEq for dyn AttributeValue {
 
         let partial_eqable = self as &dyn DynPartialEq;
         partial_eqable.dyn_eq(other as &dyn DynPartialEq)
+    }
+}
+
+#[derive(Clone)]
+pub struct ArrayAttr<T> {
+    values: Vec<T>,
+}
+impl<T> Default for ArrayAttr<T> {
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+        }
+    }
+}
+impl<T> FromIterator<T> for ArrayAttr<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self {
+            values: Vec::<T>::from_iter(iter),
+        }
+    }
+}
+impl<T> ArrayAttr<T> {
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, T> {
+        self.values.iter()
+    }
+
+    pub fn push(&mut self, value: T) {
+        self.values.push(value);
+    }
+
+    pub fn remove(&mut self, index: usize) -> T {
+        self.values.remove(index)
+    }
+}
+impl<T> ArrayAttr<T>
+where
+    T: Eq,
+{
+    pub fn contains(&self, value: &T) -> bool {
+        self.values.contains(value)
+    }
+}
+impl<T> Eq for ArrayAttr<T> where T: Eq {}
+impl<T> PartialEq for ArrayAttr<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+impl<T> fmt::Debug for ArrayAttr<T>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.values.iter()).finish()
+    }
+}
+impl<T> crate::formatter::PrettyPrint for ArrayAttr<T>
+where
+    T: crate::formatter::PrettyPrint,
+{
+    fn render(&self) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let entries = self.values.iter().fold(Document::Empty, |acc, v| match acc {
+            Document::Empty => v.render(),
+            _ => acc + const_text(", ") + v.render(),
+        });
+        if self.values.is_empty() {
+            const_text("[]")
+        } else {
+            const_text("[") + entries + const_text("]")
+        }
+    }
+}
+impl<T> core::hash::Hash for ArrayAttr<T>
+where
+    T: core::hash::Hash,
+{
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        <Vec<T> as core::hash::Hash>::hash(&self.values, state);
+    }
+}
+impl<T> AttributeValue for ArrayAttr<T>
+where
+    T: fmt::Debug + crate::formatter::PrettyPrint + Clone + Eq + core::hash::Hash + 'static,
+{
+    #[inline(always)]
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    #[inline(always)]
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self as &mut dyn Any
+    }
+
+    #[inline]
+    fn clone_value(&self) -> Box<dyn AttributeValue> {
+        Box::new(self.clone())
     }
 }
 
@@ -302,7 +456,17 @@ where
     K: crate::formatter::PrettyPrint,
 {
     fn render(&self) -> crate::formatter::Document {
-        todo!()
+        use crate::formatter::*;
+
+        let entries = self.values.iter().fold(Document::Empty, |acc, k| match acc {
+            Document::Empty => k.render(),
+            _ => acc + const_text(", ") + k.render(),
+        });
+        if self.values.is_empty() {
+            const_text("{}")
+        } else {
+            const_text("{") + entries + const_text("}")
+        }
     }
 }
 impl<K> core::hash::Hash for SetAttr<K>
@@ -424,7 +588,17 @@ where
     V: crate::formatter::PrettyPrint,
 {
     fn render(&self) -> crate::formatter::Document {
-        todo!()
+        use crate::formatter::*;
+
+        let entries = self.values.iter().fold(Document::Empty, |acc, (k, v)| match acc {
+            Document::Empty => k.render() + const_text(" = ") + v.render(),
+            _ => acc + const_text(", ") + k.render() + const_text(" = ") + v.render(),
+        });
+        if self.values.is_empty() {
+            const_text("{}")
+        } else {
+            const_text("{") + entries + const_text("}")
+        }
     }
 }
 impl<K, V> core::hash::Hash for DictAttr<K, V>

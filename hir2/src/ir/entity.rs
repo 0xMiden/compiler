@@ -23,6 +23,60 @@ use crate::any::*;
 /// A trait implemented by an IR entity
 pub trait Entity: Any {}
 
+/// A trait implemented by any [Entity] that is storeable in an [EntityList].
+///
+/// This trait defines callbacks that are executed any time the entity is added, removed, or
+/// transferred between lists.
+///
+/// By default, these callbacks are no-ops.
+#[allow(unused_variables)]
+pub trait EntityListItem: Sized + Entity {
+    /// Invoked when this entity type is inserted into an intrusive list
+    #[inline]
+    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, cursor: &mut EntityCursorMut<'_, Self>) {}
+    /// Invoked when this entity type is removed from an intrusive list
+    #[inline]
+    fn on_removed(this: UnsafeIntrusiveEntityRef<Self>, list: &mut EntityCursorMut<'_, Self>) {}
+    /// Invoked when a set of entities is moved from one intrusive list to another
+    #[inline]
+    fn on_transfer(
+        this: UnsafeIntrusiveEntityRef<Self>,
+        from: &mut EntityList<Self>,
+        to: &mut EntityList<Self>,
+    ) {
+    }
+}
+
+impl<T: Sized + Entity> EntityListItem for T {
+    default fn on_inserted(
+        _this: UnsafeIntrusiveEntityRef<Self>,
+        _list: &mut EntityCursorMut<'_, Self>,
+    ) {
+    }
+
+    default fn on_removed(
+        _this: UnsafeIntrusiveEntityRef<Self>,
+        _list: &mut EntityCursorMut<'_, Self>,
+    ) {
+    }
+
+    default fn on_transfer(
+        _this: UnsafeIntrusiveEntityRef<Self>,
+        _from: &mut EntityList<Self>,
+        _to: &mut EntityList<Self>,
+    ) {
+    }
+}
+
+/// A trait implemented by an [Entity] that is a parent to one or more other [Entity] types.
+///
+/// Parents must implement this trait for each unique [EntityList] they contain.
+pub trait EntityParent<Child: ?Sized>: Entity {
+    /// Statically compute the offset of the [EntityList] within `Self` that is used to store
+    /// children of type `Child`.
+    fn offset() -> usize;
+}
+
 /// A trait implemented by an [Entity] that is a logical child of another entity type, and is stored
 /// in the parent using an [EntityList].
 ///
@@ -32,33 +86,7 @@ pub trait Entity: Any {}
 /// By default, these callbacks are no-ops.
 pub trait EntityWithParent: Entity {
     /// The parent entity that this entity logically belongs to.
-    type Parent: Entity;
-
-    /// Invoked when this entity type is inserted into an intrusive list
-    #[allow(unused_variables)]
-    #[inline]
-    fn on_inserted_into_parent(
-        this: UnsafeIntrusiveEntityRef<Self>,
-        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-    }
-    /// Invoked when this entity type is removed from an intrusive list
-    #[allow(unused_variables)]
-    #[inline]
-    fn on_removed_from_parent(
-        this: UnsafeIntrusiveEntityRef<Self>,
-        parent: UnsafeIntrusiveEntityRef<Self::Parent>,
-    ) {
-    }
-    /// Invoked when a set of entities is moved from one intrusive list to another
-    #[allow(unused_variables)]
-    #[inline]
-    fn on_transfered_to_new_parent(
-        from: UnsafeIntrusiveEntityRef<Self::Parent>,
-        to: UnsafeIntrusiveEntityRef<Self::Parent>,
-        transferred: impl IntoIterator<Item = UnsafeIntrusiveEntityRef<Self>>,
-    ) {
-    }
+    type Parent: EntityParent<Self>;
 }
 
 /// A trait implemented by an [Entity] that has a unique identifier
@@ -150,7 +178,54 @@ impl fmt::Display for AliasingViolationError {
 pub type UnsafeEntityRef<T> = RawEntityRef<T, ()>;
 
 /// A raw pointer to an IR entity that has an intrusive linked-list link as its metadata
-pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, intrusive_collections::LinkedListLink>;
+pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, IntrusiveLink>;
+
+pub struct IntrusiveLink {
+    link: intrusive_collections::LinkedListLink,
+    parent: Cell<*const ()>,
+}
+
+impl Default for IntrusiveLink {
+    fn default() -> Self {
+        Self {
+            link: Default::default(),
+            parent: Cell::new(core::ptr::null()),
+        }
+    }
+}
+
+impl IntrusiveLink {
+    #[inline]
+    pub fn is_linked(&self) -> bool {
+        self.link.is_linked()
+    }
+}
+
+impl IntrusiveLink {
+    pub(self) fn set_parent<T>(&self, parent: Option<UnsafeIntrusiveEntityRef<T>>) {
+        if let Some(parent) = parent {
+            assert!(
+                self.link.is_linked(),
+                "must add entity to parent entity list before setting parent"
+            );
+            self.parent.set(UnsafeIntrusiveEntityRef::as_ptr(&parent).cast());
+        } else if self.parent.get().is_null() {
+            panic!("no parent previously set");
+        } else {
+            self.parent.set(core::ptr::null());
+        }
+    }
+
+    pub unsafe fn parent<T>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
+        let parent = self.parent.get();
+        if parent.is_null() {
+            // EntityList is orphaned
+            None
+        } else {
+            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(parent.cast()) })
+        }
+    }
+}
 
 /// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [Context].
 ///
@@ -527,6 +602,18 @@ impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
     }
 }
 
+impl<T: crate::Op> RawEntityRef<T, IntrusiveLink> {
+    /// Get a entity ref for the underlying [crate::Operation] data of an [Op].
+    pub fn as_operation_ref(self) -> crate::OperationRef {
+        // SAFETY: This relies on the fact that we generate Op implementations such that the first
+        // field is always the [crate::Operation], and that the containing struct is #[repr(C)].
+        unsafe {
+            let ptr = Self::into_raw(self);
+            crate::OperationRef::from_raw(ptr.cast())
+        }
+    }
+}
+
 impl<T, U, Metadata> core::ops::CoerceUnsized<RawEntityRef<U, Metadata>>
     for RawEntityRef<T, Metadata>
 where
@@ -819,6 +906,17 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
                 _marker: core::marker::PhantomData,
             },
         )
+    }
+
+    /// Convert this mutable borrow into an immutable borrow
+    pub fn into_entity_ref(self) -> EntityRef<'b, T> {
+        let value = self.value;
+        let borrow = self.into_borrow_ref_mut();
+
+        EntityRef {
+            value,
+            borrow: borrow.into_borrow_ref(),
+        }
     }
 
     #[doc(hidden)]

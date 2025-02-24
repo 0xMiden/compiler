@@ -69,6 +69,12 @@ pub struct SSABuilderListener {
     builder: Rc<RefCell<FunctionBuilderContext>>,
 }
 
+impl SSABuilderListener {
+    pub const fn new(builder: Rc<RefCell<FunctionBuilderContext>>) -> Self {
+        Self { builder }
+    }
+}
+
 impl Listener for SSABuilderListener {
     fn kind(&self) -> ListenerType {
         ListenerType::Builder
@@ -96,12 +102,11 @@ impl Listener for SSABuilderListener {
         if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
             let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
             for succ in op.successors().iter() {
-                if !unique.insert(succ.block.borrow().block) {
+                let successor = succ.block.borrow().successor();
+                if !unique.insert(successor) {
                     continue;
                 }
-                builder
-                    .ssa
-                    .declare_block_predecessor(succ.block.borrow().block, op.as_operation_ref());
+                builder.ssa.declare_block_predecessor(successor, op.as_operation_ref());
             }
         }
 
@@ -121,21 +126,18 @@ impl Listener for SSABuilderListener {
 
 /// A wrapper around Miden's `FunctionBuilder` and `SSABuilder` which provides
 /// additional API for dealing with variables and SSA construction.
-pub struct FunctionBuilderExt<'c, L: Listener = SSABuilderListener> {
-    inner: FunctionBuilder<'c, L>,
+pub struct FunctionBuilderExt<'c> {
+    inner: FunctionBuilder<'c, OpBuilder<SSABuilderListener>>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
 }
 
 impl<'c> FunctionBuilderExt<'c> {
-    pub fn new(func: &'c mut Function, func_ctx: Rc<RefCell<FunctionBuilderContext>>) -> Self {
+    pub fn new(func: &'c mut Function, builder: &'c mut OpBuilder<SSABuilderListener>) -> Self {
+        let func_ctx = builder.listener().map(|l| l.builder.clone()).unwrap();
         debug_assert!(func_ctx.borrow().is_empty());
 
-        let context = func.as_operation().context_rc();
-        let ssa_builder_listener = SSABuilderListener {
-            builder: func_ctx.clone(),
-        };
-        let op_builder = OpBuilder::new(context).with_listener(ssa_builder_listener);
-        let inner = FunctionBuilder::new(func, op_builder);
+        let inner = FunctionBuilder::new(func, builder);
+
         Self { inner, func_ctx }
     }
 
@@ -147,9 +149,10 @@ impl<'c> FunctionBuilderExt<'c> {
         self.inner.func.signature()
     }
 
-    pub fn ins<'b: 'a, 'a>(&'b mut self) -> FuncInstBuilderExt<'a> {
-        let (func, builder) = self.inner.as_parts_mut();
-        FuncInstBuilderExt::new(func, builder)
+    pub fn ins<'b: 'a, 'a>(
+        &'b mut self,
+    ) -> midenc_dialect_hir::DefaultInstBuilder<'a, OpBuilder<SSABuilderListener>> {
+        midenc_dialect_hir::DefaultInstBuilder::new(self.inner.builder_mut())
     }
 
     #[inline]
@@ -493,33 +496,4 @@ pub enum DefVariableError {
          call `declare_var`)"
     )]
     DefinedBeforeDeclared(Variable),
-}
-
-pub struct FuncInstBuilderExt<'a, L = SSABuilderListener> {
-    pub func: &'a mut Function,
-    builder: &'a mut OpBuilder<L>,
-}
-impl<'a> FuncInstBuilderExt<'a> {
-    pub(crate) fn new(
-        func: &'a mut Function,
-        builder: &'a mut OpBuilder<SSABuilderListener>,
-    ) -> Self {
-        Self { func, builder }
-    }
-}
-
-impl InstBuilderBase for FuncInstBuilderExt<'_> {
-    type L = SSABuilderListener;
-
-    fn builder(&self) -> &OpBuilder<Self::L> {
-        self.builder
-    }
-
-    fn builder_mut(&mut self) -> &mut OpBuilder<Self::L> {
-        self.builder
-    }
-
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
-        (self.func, self.builder)
-    }
 }

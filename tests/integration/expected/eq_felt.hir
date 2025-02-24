@@ -9,7 +9,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v5 = hir.constant 1 : i32;
             v6 = hir.eq v4, v5 : i1;
             v7 = hir.zext v6 : u32 #[ty = u32];
-            hir.br block4 v7;
+            hir.br block4(v7);
         ^block4(v2: i32):
             hir.ret v2;
         };

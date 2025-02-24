@@ -1049,8 +1049,6 @@ fn translate_if(
                 state.peekn(blockty.params.len()).iter().copied(),
                 span,
             )?
-            .borrow()
-            .as_ref()
             .as_operation_ref();
         (
             destination,
@@ -1128,13 +1126,7 @@ fn translate_unreachable_operator(
             state.push_if(
                 detached_block,
                 ElseData::NoElse {
-                    branch_inst: builder
-                        .ins()
-                        .unreachable(span)
-                        .unwrap()
-                        .borrow()
-                        .as_ref()
-                        .as_operation_ref(),
+                    branch_inst: builder.ins().unreachable(span).unwrap().as_operation_ref(),
                     placeholder: detached_block,
                 },
                 0,

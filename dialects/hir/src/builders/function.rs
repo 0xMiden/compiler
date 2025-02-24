@@ -1,17 +1,17 @@
 use midenc_hir2::{
-    dialects::builtin::*, AsCallableSymbolRef, Block, BlockRef, Builder, Felt, Immediate, Listener,
-    Op, OpBuilder, Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type,
-    UnsafeIntrusiveEntityRef, Usable, ValueRef,
+    dialects::builtin::*, ArrayAttr, AsCallableSymbolRef, BlockRef, Builder, Felt, Immediate, Op,
+    Overflow, Region, RegionRef, Report, Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef,
+    Usable, ValueRef,
 };
 
 use crate::*;
 
-pub struct FunctionBuilder<'f, L: Listener> {
+pub struct FunctionBuilder<'f, B: ?Sized> {
     pub func: &'f mut Function,
-    builder: OpBuilder<L>,
+    builder: &'f mut B,
 }
-impl<'f, L: Listener> FunctionBuilder<'f, L> {
-    pub fn new(func: &'f mut Function, mut builder: OpBuilder<L>) -> Self {
+impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
+    pub fn new(func: &'f mut Function, builder: &'f mut B) -> Self {
         let current_block = if func.body().is_empty() {
             func.create_entry_block()
         } else {
@@ -31,8 +31,8 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     //     Self { func, builder }
     // }
 
-    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut OpBuilder<L>) {
-        (&mut self.func, &mut self.builder)
+    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut B) {
+        (self.func, self.builder)
     }
 
     pub fn body_region(&self) -> RegionRef {
@@ -54,20 +54,21 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
     }
 
     pub fn create_block(&mut self) -> BlockRef {
-        self.builder.create_block(self.body_region(), None, &[])
+        let ip = *self.builder.insertion_point();
+        let block = self.builder.create_block(self.body_region(), None, &[]);
+        self.builder.restore_insertion_point(ip);
+        block
     }
 
     pub fn detach_block(&mut self, mut block: BlockRef) {
-        use midenc_hir2::EntityWithParent;
-
         assert_ne!(
             block,
             self.current_block(),
             "cannot remove block the builder is currently inserting in"
         );
         assert_eq!(
-            block.borrow().parent().map(|p| RegionRef::as_ptr(&p)),
-            Some(&*self.func.body() as *const Region),
+            block.parent().map(|p| RegionRef::as_ptr(&p)),
+            Some(RegionRef::as_ptr(&self.func.body().as_region_ref())),
             "cannot detach a block that does not belong to this function"
         );
         let mut body = self.func.body_mut();
@@ -75,61 +76,54 @@ impl<'f, L: Listener> FunctionBuilder<'f, L> {
             body.body_mut().cursor_mut_from_ptr(block).remove();
         }
         block.borrow_mut().uses_mut().clear();
-        Block::on_removed_from_parent(block, body.as_region_ref());
     }
 
     pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
         self.builder.context().append_block_argument(block, ty, span)
     }
 
-    pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, L> {
-        DefaultInstBuilder::new(self.func, &mut self.builder)
+    pub fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, B> {
+        DefaultInstBuilder::new(self.builder)
     }
 
-    pub fn builder(&self) -> &OpBuilder<L> {
-        &self.builder
-    }
-
-    pub fn builder_mut(&mut self) -> &mut OpBuilder<L> {
-        &mut self.builder
-    }
-}
-
-pub struct DefaultInstBuilder<'f, L: Listener> {
-    func: &'f mut Function,
-    builder: &'f mut OpBuilder<L>,
-}
-impl<'f, L: Listener> DefaultInstBuilder<'f, L> {
-    pub(crate) fn new(func: &'f mut Function, builder: &'f mut OpBuilder<L>) -> Self {
-        Self { func, builder }
-    }
-}
-impl<L: Listener> InstBuilderBase for DefaultInstBuilder<'_, L> {
-    type L = L;
-
-    fn builder(&self) -> &OpBuilder<L> {
+    pub fn builder(&self) -> &B {
         self.builder
     }
 
-    fn builder_mut(&mut self) -> &mut OpBuilder<L> {
+    pub fn builder_mut(&mut self) -> &mut B {
+        self.builder
+    }
+}
+
+pub struct DefaultInstBuilder<'f, B: ?Sized> {
+    builder: &'f mut B,
+}
+impl<'f, B: ?Sized + Builder> DefaultInstBuilder<'f, B> {
+    pub fn new(builder: &'f mut B) -> Self {
+        Self { builder }
+    }
+}
+impl<B: ?Sized + Builder> InstBuilderBase for DefaultInstBuilder<'_, B> {
+    type Builder = B;
+
+    fn builder(&self) -> &Self::Builder {
         self.builder
     }
 
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>) {
-        (self.func, self.builder)
+    fn builder_mut(&mut self) -> &mut Self::Builder {
+        self.builder
     }
 }
 
 pub trait InstBuilderBase: Sized {
-    type L: Listener;
-    fn builder(&self) -> &OpBuilder<Self::L>;
-    fn builder_mut(&mut self) -> &mut OpBuilder<Self::L>;
-    fn builder_parts(&mut self) -> (&mut Function, &mut OpBuilder<Self::L>);
+    type Builder: ?Sized + Builder;
+
+    fn builder(&self) -> &Self::Builder;
+    fn builder_mut(&mut self) -> &mut Self::Builder;
     /// Get a default instruction builder using the dataflow graph and insertion point of the
     /// current builder
-    fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::L> {
-        let (func, builder) = self.builder_parts();
-        DefaultInstBuilder::new(func, builder)
+    fn ins<'a, 'b: 'a>(&'b mut self) -> DefaultInstBuilder<'a, Self::Builder> {
+        DefaultInstBuilder::new(self.builder_mut())
     }
 }
 
@@ -1124,6 +1118,94 @@ pub trait InstBuilder: InstBuilderBase {
         op_builder(cond, then_dest, then_args, else_dest, else_args)
     }
 
+    fn r#if(
+        mut self,
+        cond: ValueRef,
+        results: &[Type],
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::If>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::If, (_,)>(span);
+        let if_op = op_builder(cond)?;
+        {
+            let mut owner = if_op.as_operation_ref();
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+        Ok(if_op)
+    }
+
+    fn r#while<T>(
+        mut self,
+        loop_init_variables: T,
+        results: &[Type],
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::While>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::While, (T,)>(span);
+        let mut while_op = op_builder(loop_init_variables)?;
+        {
+            let mut owner = while_op.as_operation_ref();
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+        {
+            let mut while_op = while_op.borrow_mut();
+            let before_block = self
+                .builder()
+                .context()
+                .create_block_with_params(while_op.inits().iter().map(|v| v.borrow().ty()));
+            while_op.before_mut().body_mut().push_back(before_block);
+            let after_block =
+                self.builder().context().create_block_with_params(results.iter().cloned());
+            while_op.after_mut().body_mut().push_back(after_block);
+        }
+        Ok(while_op)
+    }
+
+    fn index_switch<T>(
+        mut self,
+        selector: ValueRef,
+        cases: T,
+        results: &[Type],
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::IndexSwitch>, Report>
+    where
+        T: IntoIterator<Item = u32>,
+    {
+        let cases = ArrayAttr::from_iter(cases);
+        let num_cases = cases.len();
+        let op_builder = self.builder_mut().create::<crate::ops::IndexSwitch, (_, _)>(span);
+        let switch_op = op_builder(selector, cases)?;
+        let mut owner = switch_op.as_operation_ref();
+
+        // Create results
+        {
+            let context = self.builder().context();
+            for result_ty in results {
+                let result = context.make_result(span, result_ty.clone(), owner, 0);
+                owner.borrow_mut().results_mut().push(result);
+            }
+        }
+
+        // Create regions for all cases
+        {
+            for i in 0..num_cases {
+                let region = self.builder().context().alloc_tracked(Region::default());
+                owner.borrow_mut().regions_mut().push_back(region);
+            }
+        }
+
+        Ok(switch_op)
+    }
+
     fn switch<TCases, TFallbackArgs>(
         mut self,
         selector: ValueRef,
@@ -1140,6 +1222,31 @@ pub trait InstBuilder: InstBuilderBase {
             .builder_mut()
             .create::<crate::ops::Switch, (_, TCases, _, TFallbackArgs)>(span);
         op_builder(selector, cases, fallback, fallback_args)
+    }
+
+    fn condition<T>(
+        mut self,
+        cond: ValueRef,
+        forwarded: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Condition>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Condition, (_, T)>(span);
+        op_builder(cond, forwarded)
+    }
+
+    fn r#yield<T>(
+        mut self,
+        yielded: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Yield>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Yield, (T,)>(span);
+        op_builder(yielded)
     }
 
     fn ret(
@@ -1168,6 +1275,12 @@ pub trait InstBuilder: InstBuilderBase {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Unreachable>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Unreachable, _>(span);
         op_builder()
+    }
+
+    fn poison(mut self, ty: Type, span: SourceSpan) -> ValueRef {
+        let op_builder = self.builder_mut().create::<crate::ops::Poison, _>(span);
+        let op = op_builder(ty).unwrap();
+        op.borrow().result().as_value_ref()
     }
 
     /*

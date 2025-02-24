@@ -7,7 +7,7 @@ pub use core::ops::ControlFlow;
 pub use self::{
     searcher::Searcher,
     visitor::{OpVisitor, OperationVisitor, SymbolVisitor, Visitor},
-    walkable::{WalkOrder, WalkStage, Walkable},
+    walkable::{RawWalk, Walk, WalkMut, WalkOrder, WalkStage},
 };
 use crate::Report;
 
@@ -55,6 +55,11 @@ impl<B> WalkResult<B, ()> {
             Self::Break(err) => Err(err),
             Self::Skip | Self::Continue(_) => Ok(()),
         }
+    }
+}
+impl<B> From<()> for WalkResult<B, ()> {
+    fn from(_value: ()) -> Self {
+        Self::Continue(())
     }
 }
 impl<B> From<Result<(), B>> for WalkResult<B, ()> {

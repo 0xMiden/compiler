@@ -405,9 +405,7 @@ impl AnalysisManager {
         A: Analysis<Target = O>,
         O: Op,
     {
-        self.clone()
-            .nest(op.as_operation().as_operation_ref())
-            .get_analysis_for::<A, O>()
+        self.clone().nest(op.as_operation_ref()).get_analysis_for::<A, O>()
     }
 
     /// Query for a cached analysis of a child operation, or return `None`.

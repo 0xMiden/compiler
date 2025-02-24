@@ -40,9 +40,10 @@ pub use self::{
     dialect::{Dialect, DialectInfo, DialectRegistration, DialectRegistrationHook},
     entity::{
         Entity, EntityCursor, EntityCursorMut, EntityGroup, EntityId, EntityIter, EntityList,
-        EntityMut, EntityProjection, EntityProjectionMut, EntityRange, EntityRangeMut, EntityRef,
-        EntityStorage, EntityWithId, EntityWithParent, MaybeDefaultEntityIter, RawEntityRef,
-        StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
+        EntityListItem, EntityMut, EntityParent, EntityProjection, EntityProjectionMut,
+        EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId, EntityWithParent,
+        MaybeDefaultEntityIter, RawEntityRef, StorableEntity, UnsafeEntityRef,
+        UnsafeIntrusiveEntityRef,
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
@@ -53,7 +54,8 @@ pub use self::{
         OpOperandStorage,
     },
     operation::{
-        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
+        equivalence, OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName,
+        OperationRef,
     },
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
@@ -79,7 +81,7 @@ pub use self::{
     },
     verifier::{OpVerifier, Verify},
     visit::{
-        OpVisitor, OperationVisitor, Searcher, SymbolVisitor, Visitor, WalkOrder, WalkResult,
-        WalkStage, Walkable,
+        OpVisitor, OperationVisitor, RawWalk, Searcher, SymbolVisitor, Visitor, Walk, WalkMut,
+        WalkOrder, WalkResult, WalkStage,
     },
 };

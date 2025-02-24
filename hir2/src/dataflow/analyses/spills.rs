@@ -583,7 +583,7 @@ impl SpillAnalysis {
         self.splits.push(SplitInfo {
             id,
             edge: CfgEdge::Local {
-                from: predecessor.block,
+                from: predecessor.predecessor(),
                 to: block,
             },
             split: None,
@@ -874,7 +874,7 @@ impl SpillAnalysis {
                 if pred == &branch_op {
                     return true;
                 }
-                let pred_block = pred.borrow().parent().unwrap();
+                let pred_block = pred.parent().unwrap();
                 liveness.is_block_executable(pred_block)
             });
             let mut deferred_preds = SmallVec::<[BlockRef; 2]>::default();
@@ -945,7 +945,7 @@ impl SpillAnalysis {
                 if pred == &branch_op {
                     return false;
                 }
-                let pred_block = pred.borrow().parent().unwrap();
+                let pred_block = pred.parent().unwrap();
                 // Only visit predecessors that were deferred
                 liveness.is_block_executable(pred_block) && deferred_preds.contains(&pred_block)
             });
@@ -1025,7 +1025,9 @@ impl SpillAnalysis {
             // to determine the true contents of W^exit(P) for each predecessor/successor edge, and
             // only then insert spills/reloads as described above.
             let mut deferred_preds = SmallVec::<[BlockRef; 2]>::default();
-            for pred in block.predecessors().filter(|p| liveness.is_block_executable(p.block)) {
+            for pred in
+                block.predecessors().filter(|p| liveness.is_block_executable(p.predecessor()))
+            {
                 // As soon as we need to start inserting spills/reloads, mark the function changed
                 self.compute_control_flow_edge_spills_and_reloads(
                     &block_info,
@@ -1106,9 +1108,11 @@ impl SpillAnalysis {
             // If a given predecessor has not been processed yet, skip P, and revisit the edge later
             // after we have processed P.
             let mut _defer = SmallVec::default();
-            for pred in block.predecessors().filter(|p| liveness.is_block_executable(p.block)) {
+            for pred in
+                block.predecessors().filter(|p| liveness.is_block_executable(p.predecessor()))
+            {
                 // Only visit predecessors that were deferred
-                if !preds.contains(&pred.block) {
+                if !preds.contains(&pred.predecessor()) {
                     continue;
                 }
 
@@ -1184,7 +1188,7 @@ impl SpillAnalysis {
                 // Otherwise, the predecessor is a region within `op`, so we want the `w_exit` of
                 // the block containing `pred`, stripped of anything that is not live at the
                 // current program point
-                let pred_block = pred.borrow().parent().unwrap();
+                let pred_block = pred.parent().unwrap();
                 for o in self.w_exits[&pred_block].iter().copied() {
                     // Do not add candidates which are either:
                     //
@@ -1264,7 +1268,7 @@ impl SpillAnalysis {
             if pred == &op_ref {
                 s_entry = s_entry.into_union(s_in);
             } else {
-                let pred_block = pred.borrow().parent().unwrap();
+                let pred_block = pred.parent().unwrap();
                 if let Some(s_exitp) = self.s_exits.get(&pred_block) {
                     // Union any spills of values defined above `op`
                     for spilled in s_exitp.iter().copied() {
@@ -1279,7 +1283,7 @@ impl SpillAnalysis {
                                     .unwrap()
                                     .parent_region()
                                     .unwrap();
-                                let defining_op = defining_region.borrow().parent().unwrap();
+                                let defining_op = defining_region.parent().unwrap();
                                 defining_op.borrow().is_ancestor_of(op)
                             };
                         if is_visible {
@@ -1314,7 +1318,7 @@ impl SpillAnalysis {
                     if pred == &op_ref {
                         s_entry = s_entry.into_union(s_in);
                     } else {
-                        let pred_block = pred.borrow().parent().unwrap();
+                        let pred_block = pred.parent().unwrap();
                         if let Some(s_exitp) = self.s_exits.get(&pred_block) {
                             // Union any spills of values defined above `op`
                             for spilled in s_exitp.iter().copied() {
@@ -1330,7 +1334,7 @@ impl SpillAnalysis {
                                         .unwrap()
                                         .parent_region()
                                         .unwrap();
-                                    let defining_op = defining_region.borrow().parent().unwrap();
+                                    let defining_op = defining_region.parent().unwrap();
                                     defining_op.borrow().is_ancestor_of(op)
                                 };
                                 if is_visible {
@@ -1342,10 +1346,12 @@ impl SpillAnalysis {
                 }
             }
         } else {
-            let predecessors =
-                block.predecessors().filter(|p| liveness.is_block_executable(p.block));
+            let predecessors = block
+                .predecessors()
+                .map(|p| p.predecessor())
+                .filter(|p| liveness.is_block_executable(*p));
             for pred in predecessors {
-                if let Some(s_exitp) = self.s_exits.get(&pred.block) {
+                if let Some(s_exitp) = self.s_exits.get(&pred) {
                     s_entry = s_entry.into_union(s_exitp);
                 }
             }
@@ -1431,15 +1437,15 @@ impl SpillAnalysis {
         let mut num_predecessors = 0usize;
 
         // Unstructured control predecessors
-        for pred in block.predecessors() {
-            let is_executable = liveness.is_block_executable(pred.block);
+        for pred in block.predecessors().map(|p| p.predecessor()) {
+            let is_executable = liveness.is_block_executable(pred);
             if !is_executable {
                 continue;
             }
 
             num_predecessors += 1;
-            let next_uses = liveness.next_uses_at(&ProgramPoint::at_end_of(pred.block)).unwrap();
-            for o in self.w_exits[&pred.block].iter().copied() {
+            let next_uses = liveness.next_uses_at(&ProgramPoint::at_end_of(pred)).unwrap();
+            for o in self.w_exits[&pred].iter().copied() {
                 // Do not add candidates which are not live-after the predecessor
                 if next_uses.is_live(&o.value) {
                     *freq.entry(o).or_insert(0) += 1;
@@ -1479,7 +1485,7 @@ impl SpillAnalysis {
                     }
 
                     // Otherwise, `pred` is one of the regions of the current op
-                    let pred_block = pred.borrow().parent().unwrap();
+                    let pred_block = pred.parent().unwrap();
                     for o in self.w_exits[&pred_block].iter().copied() {
                         if next_uses.is_live(&o.value) {
                             *freq.entry(o).or_insert(0) += 1;
@@ -1679,7 +1685,7 @@ impl SpillAnalysis {
     ) {
         let op_ref = branch.as_operation().as_operation_ref();
         let predecessor = pred.borrow();
-        let pred_block = predecessor.parent().unwrap();
+        let pred_block = pred.parent().unwrap();
         let (w_exitp, s_exitp) = if pred == op_ref {
             (w_in, s_in)
         } else {
@@ -1827,7 +1833,7 @@ impl SpillAnalysis {
     ) {
         let op_ref = branch.as_operation().as_operation_ref();
         let predecessor = pred.borrow();
-        let pred_block = predecessor.parent().unwrap();
+        let pred_block = pred.parent().unwrap();
         let (w_exitp, s_exitp) = if pred == op_ref {
             (w_in, s_in)
         } else {
@@ -1911,7 +1917,7 @@ impl SpillAnalysis {
         // S, moving any block arguments for B, to the unconditional branch in S.
         let split = self.split_regional(
             op_ref,
-            RegionBranchPoint::Child(block_info.block_id.borrow().parent().unwrap()),
+            RegionBranchPoint::Child(block_info.block_id.parent().unwrap()),
             if pred == op_ref {
                 RegionBranchPoint::Parent
             } else {
@@ -1973,15 +1979,16 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
     ) {
         // If we don't have W^exit(P), then P hasn't been processed yet
-        let Some(w_exitp) = self.w_exits.get(&pred.block) else {
-            deferred.push(pred.block);
+        let predecessor = pred.predecessor();
+        let Some(w_exitp) = self.w_exits.get(&predecessor) else {
+            deferred.push(predecessor);
             return;
         };
 
         let mut to_reload = block_info.w_entry.difference(w_exitp);
         let mut to_spill = block_info
             .s_entry
-            .difference(&self.s_exits[&pred.block])
+            .difference(&self.s_exits[&pred.successor()])
             .into_intersection(w_exitp);
 
         let block_next_uses =
@@ -1995,7 +2002,7 @@ impl SpillAnalysis {
         // loop requiring us to place spills of those values outside the loop.
         let must_spill = w_exitp
             .difference(&block_info.w_entry)
-            .into_difference(&self.s_exits[&pred.block]);
+            .into_difference(&self.s_exits[&predecessor]);
         to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(&o.value)));
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
@@ -2017,8 +2024,8 @@ impl SpillAnalysis {
         // So in short, we post-process `to_reload` by matching any values in the set which are block
         // parameters, with the corresponding source values in W^exit(P) (issuing reloads if the value
         // given as argument in the predecessor is not in W^exit(P))
-        let predecesor = pred.owner.borrow();
-        let branch = predecesor
+        let predecessor = pred.owner.borrow();
+        let branch = predecessor
             .as_trait::<dyn BranchOpInterface>()
             .expect("expected predecessor op to implement BranchOpInterface");
 
@@ -2049,7 +2056,7 @@ impl SpillAnalysis {
         // S, moving any block arguments for B, to the unconditional branch in S.
         let split = self.split_local(block_info.block_id, pred);
         let place = Placement::Split(split);
-        let span = pred.owner.span();
+        let span = predecessor.span();
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
@@ -2319,7 +2326,7 @@ impl SpillAnalysis {
                     .successors()
                     .iter()
                     .filter_map(|s| {
-                        let successor = s.block.borrow().block;
+                        let successor = s.block.borrow().successor();
                         if liveness.is_block_executable(successor) {
                             Some(s.operand_group as usize)
                         } else {

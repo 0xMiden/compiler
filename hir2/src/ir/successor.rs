@@ -1,6 +1,6 @@
 use core::fmt;
 
-use super::OpOperandStorage;
+use super::{OpOperandStorage, StorableEntity, Usable};
 use crate::{AttributeValue, BlockOperandRef, BlockRef, OpOperandRange, OpOperandRangeMut};
 
 pub type OpSuccessorStorage = crate::EntityStorage<SuccessorInfo, 0>;
@@ -300,6 +300,7 @@ pub struct OpSuccessor<'a> {
     pub dest: BlockOperandRef,
     pub arguments: OpOperandRange<'a>,
 }
+
 impl fmt::Debug for OpSuccessor<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpSuccessor")
@@ -320,6 +321,30 @@ pub struct OpSuccessorMut<'a> {
     pub dest: BlockOperandRef,
     pub arguments: OpOperandRangeMut<'a>,
 }
+
+impl OpSuccessorMut<'_> {
+    /// Rewrite the successor destination with `block`, updating the use list of each block.
+    ///
+    /// This is a no-op if the block has not changed.
+    pub fn set(&mut self, mut block: BlockRef) {
+        // Unlink from old destination
+        {
+            let mut dest = self.dest.borrow_mut();
+            if BlockRef::ptr_eq(&block, &dest.successor()) {
+                return;
+            }
+            dest.unlink();
+        }
+
+        // Link to new destination
+        let mut block = block.borrow_mut();
+        let uses = block.uses_mut();
+        uses.push_back(self.dest);
+
+        debug_assert!(self.dest.parent().is_some());
+    }
+}
+
 impl fmt::Debug for OpSuccessorMut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpSuccessorMut")
@@ -441,7 +466,7 @@ impl<'a, T: KeyedSuccessor> SuccessorWithKey<'a, T> {
     }
 
     pub fn block(&self) -> BlockRef {
-        self.info.block.borrow().block
+        self.info.block.borrow().successor()
     }
 
     #[inline(always)]
@@ -463,7 +488,7 @@ impl<'a, T: KeyedSuccessor> SuccessorWithKeyMut<'a, T> {
     }
 
     pub fn block(&self) -> BlockRef {
-        self.info.block.borrow().block
+        self.info.block.borrow().successor()
     }
 
     #[inline(always)]

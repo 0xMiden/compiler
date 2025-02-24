@@ -125,7 +125,7 @@ pub trait LatticeAnchor:
         if let Some(pp) = any.downcast_ref::<ProgramPoint>() {
             Some(*pp)
         } else if let Some(op) = any.downcast_ref::<OperationRef>().cloned() {
-            let block = op.borrow().parent();
+            let block = op.parent();
             Some(ProgramPoint::Op {
                 block,
                 op,

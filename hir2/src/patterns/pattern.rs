@@ -319,7 +319,7 @@ mod tests {
             let shift = constant.borrow().result().as_value_ref();
             let mul_builder = rewriter.create::<Mul, _>(span);
             let mul = mul_builder(lhs, shift, Overflow::Wrapping).unwrap();
-            let mul = mul.borrow().as_operation().as_operation_ref();
+            let mul = mul.as_operation_ref();
             log::trace!("replacing shl with mul");
             rewriter.replace_op(op, mul);
         }
@@ -360,11 +360,8 @@ mod tests {
         // Execute pattern driver
         let mut config = GreedyRewriteConfig::default();
         config.with_region_simplification_level(RegionSimplificationLevel::None);
-        let result = crate::apply_patterns_and_fold_greedily(
-            function.borrow().as_operation().as_operation_ref(),
-            rewrites,
-            config,
-        );
+        let result =
+            crate::apply_patterns_and_fold_greedily(function.as_operation_ref(), rewrites, config);
 
         // The rewrite should converge and modify the IR
         assert_eq!(result, Ok(true));
@@ -375,7 +372,6 @@ mod tests {
         let expected = "\
 builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v1 = test.constant 1 : u32;
     v3 = test.constant 2 : u32;
     v4 = test.mul v0, v3 : u32 #[overflow = wrapping];
     test.ret v4;

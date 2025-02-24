@@ -4,7 +4,7 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct Assert {
     #[operand]
@@ -16,7 +16,7 @@ pub struct Assert {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct Assertz {
     #[operand]
@@ -28,7 +28,7 @@ pub struct Assertz {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, Commutative, SameTypeOperands)
+    traits(HasSideEffects, MemoryWrite, Commutative, SameTypeOperands)
 )]
 pub struct AssertEq {
     #[operand]
@@ -39,7 +39,7 @@ pub struct AssertEq {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects)
+    traits(HasSideEffects, MemoryWrite)
 )]
 pub struct AssertEqImm {
     #[operand]
@@ -53,3 +53,37 @@ pub struct AssertEqImm {
     traits(HasSideEffects, Terminator)
 )]
 pub struct Unreachable {}
+
+#[operation(
+    dialect = HirDialect,
+    traits(ConstantLike),
+    implements(InferTypeOpInterface, Foldable)
+)]
+pub struct Poison {
+    #[attr]
+    ty: Type,
+    #[result]
+    result: AnyType,
+}
+
+impl Foldable for Poison {
+    fn fold(&self, _results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        FoldResult::InPlace
+    }
+
+    fn fold_with(
+        &self,
+        _operands: &[Option<std::prelude::v1::Box<dyn AttributeValue>>],
+        _results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        FoldResult::InPlace
+    }
+}
+
+impl InferTypeOpInterface for Poison {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let poison_ty = self.ty().clone();
+        self.result_mut().set_type(poison_ty);
+        Ok(())
+    }
+}

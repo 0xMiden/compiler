@@ -12,13 +12,13 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v8 = hir.bitcast v7 : i32 #[ty = i32];
             v9 = hir.constant 0 : i32;
             v10 = hir.neq v8, v9 : i1;
-            hir.cond_br block7, block8 v10, v4;
+            hir.cond_br v10 block7(v4), block8;
         ^block6(v2: i32):
             hir.ret v2;
         ^block7(v26: i32):
-            hir.br block6 v26;
+            hir.br block6(v26);
         ^block8:
-            hir.br block9 v0, v4, v1;
+            hir.br block9(v0, v4, v1);
         ^block9(v11: i32, v17: i32, v21: i32):
             v12 = hir.bitcast v11 : u32 #[ty = u32];
             v13 = hir.constant 4 : u32;
@@ -33,11 +33,11 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v23 = hir.add v21, v22 : i32 #[overflow = wrapping];
             v24 = hir.constant 0 : i32;
             v25 = hir.neq v23, v24 : i1;
-            hir.cond_br block9, block11 v25, v20, v18, v23;
+            hir.cond_br v25 block9(v20, v18, v23), block11;
         ^block10:
-            hir.br block7 v18;
+            hir.br block7(v18);
         ^block11:
-            hir.br block10 ;
+            hir.br block10;
         };
         builtin.function public @__main() -> i32 {
         ^block12:
@@ -48,7 +48,7 @@ builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[
             v32 = hir.constant 5 : i32;
             v33 = hir.exec v31, v32 : i32 #[callee = root/test_rust_d63291a98b435c53f58385d5782fb46f0b0b78bee8e860843e7223106d66f7d6/sum_arr] #[signature = (param i32) (param i32) (result i32)];
             v34 = hir.add v30, v33 : i32 #[overflow = wrapping];
-            hir.br block13 v34;
+            hir.br block13(v34);
         ^block13(v27: i32):
             hir.ret v27;
         };

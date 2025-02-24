@@ -158,7 +158,7 @@ impl MasmComponentBuilder<'_> {
         let mut masm_module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
         let builder = MasmModuleBuilder {
             module: &mut masm_module,
-            analysis_manager: self.analysis_manager.nest(module.as_operation().as_operation_ref()),
+            analysis_manager: self.analysis_manager.nest(module.as_operation_ref()),
             link_info: self.link_info,
         };
         builder.build(module)?;
@@ -172,7 +172,7 @@ impl MasmComponentBuilder<'_> {
         let builder = MasmFunctionBuilder::new(function)?;
         let procedure = builder.build(
             function,
-            self.analysis_manager.nest(function.as_operation().as_operation_ref()),
+            self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
         )?;
 
@@ -237,7 +237,7 @@ impl MasmModuleBuilder<'_> {
 
         let procedure = builder.build(
             function,
-            self.analysis_manager.nest(function.as_operation().as_operation_ref()),
+            self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
         )?;
 

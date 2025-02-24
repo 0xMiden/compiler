@@ -2,7 +2,7 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{IsolatedFromAbove, SingleRegion},
-    Block, BlockRef, CallableOpInterface, Ident, Op, Operation, RegionKind, RegionKindInterface,
+    BlockRef, CallableOpInterface, Ident, Op, Operation, RegionKind, RegionKindInterface,
     RegionRef, Signature, Symbol, SymbolName, SymbolUse, SymbolUseList, Type,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
@@ -62,8 +62,6 @@ impl Function {
     ///
     /// This function will panic if an entry block has already been created
     pub fn create_entry_block(&mut self) -> BlockRef {
-        use crate::EntityWithParent;
-
         assert!(self.body().is_empty(), "entry block already exists");
         let signature = self.signature();
         let block = self
@@ -72,7 +70,6 @@ impl Function {
             .create_block_with_params(signature.params().iter().map(|p| p.ty.clone()));
         let mut body = self.body_mut();
         body.push_back(block);
-        Block::on_inserted_into_parent(block, body.as_region_ref());
         block
     }
 }
@@ -81,7 +78,11 @@ impl Function {
 impl Function {
     #[inline]
     pub fn entry_block(&self) -> BlockRef {
-        unsafe { BlockRef::from_raw(&*self.body().entry()) }
+        self.body()
+            .body()
+            .front()
+            .as_pointer()
+            .expect("cannot get entry block for declaration")
     }
 
     pub fn last_block(&self) -> BlockRef {

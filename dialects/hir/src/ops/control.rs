@@ -1,7 +1,6 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
 use midenc_hir2::{derive::operation, traits::*, *};
-use midenc_session::diagnostics::Severity;
 
 use crate::HirDialect;
 
@@ -206,8 +205,8 @@ impl KeyedSuccessor for SwitchCase {
 /// * [Yield] to return from the enclosing [If]
 #[operation(
     dialect = HirDialect,
-    traits(SingleBlock, NoRegionArguments),
-    implements(RegionBranchOpInterface, InferTypeOpInterface)
+    traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
+    implements(RegionBranchOpInterface)
 )]
 pub struct If {
     #[operand]
@@ -218,73 +217,32 @@ pub struct If {
     else_body: Region,
 }
 
-impl InferTypeOpInterface for If {
-    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let then_region = self.then_body();
-        if then_region.is_empty() {
-            return Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
-                .into_report());
-        }
+impl If {
+    pub fn then_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let terminator = self.then_body().entry().terminator().unwrap();
+        let term = terminator
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("invalid hir.if then terminator: expected yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
+    }
 
-        let then_block = then_region.entry();
-        if then_block.body().is_empty() {
-            return Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "empty `then` body, unable to infer return types")
-                .into_report());
-        }
+    pub fn else_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let terminator = self.else_body().entry().terminator().unwrap();
+        let term = terminator
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("invalid hir.if else terminator: expected yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
+    }
+}
 
-        if let Some(terminator) = then_block.terminator() {
-            drop(then_block);
-            drop(then_region);
-            let terminator = terminator.borrow();
-            if let Some(yield_op) = terminator.downcast_ref::<Yield>() {
-                let types = yield_op
-                    .yielded()
-                    .iter()
-                    .map(|operand| operand.borrow().ty())
-                    .collect::<SmallVec<[_; 2]>>();
-
-                let span = self.span();
-                let owner = self.as_operation().as_operation_ref();
-                self.results_mut().extend(types.into_iter().enumerate().map(|(index, ty)| {
-                    context.make_result(
-                        span,
-                        ty,
-                        owner,
-                        index.try_into().expect("too many results"),
-                    )
-                }));
-
-                Ok(())
-            } else {
-                Err(context
-                    .session
-                    .diagnostics
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid `if` operation")
-                    .with_primary_label(terminator.span(), "expected `yield` op here")
-                    .with_help("The `if` operation blocks must be terminated by a `yield`")
-                    .into_report())
-            }
-        } else {
-            Err(context
-                .session
-                .diagnostics
-                .diagnostic(Severity::Error)
-                .with_message("invalid `if` operation")
-                .with_primary_label(self.span(), "`if` blocks require a terminator")
-                .with_help("The `if` operation blocks must be terminated by a `yield`")
-                .into_report())
-        }
+impl Canonicalizable for If {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::ConvertTrivialIfToSelect::new(context.clone()));
+        rewrites.push(crate::canonicalization::IfRemoveUnusedResults::new(context));
     }
 }
 
@@ -384,14 +342,60 @@ impl RegionBranchOpInterface for If {
 /// continue the loop.
 #[operation(
     dialect = HirDialect,
-    traits(SingleBlock),
+    traits(SingleBlock, HasRecursiveMemoryEffects),
     implements(RegionBranchOpInterface, LoopLikeOpInterface)
 )]
 pub struct While {
+    #[operands]
+    inits: AnyType,
     #[region]
     before: Region,
     #[region]
     after: Region,
+}
+
+impl While {
+    pub fn condition_op(&self) -> UnsafeIntrusiveEntityRef<Condition> {
+        let term = self
+            .before()
+            .entry()
+            .terminator()
+            .expect("expected before region to have a terminator");
+        let cond = term
+            .borrow()
+            .downcast_ref::<Condition>()
+            .expect("expected before region to terminate with hir.condition")
+            as *const Condition;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(cond) }
+    }
+
+    pub fn yield_op(&self) -> UnsafeIntrusiveEntityRef<Yield> {
+        let term = self
+            .after()
+            .entry()
+            .terminator()
+            .expect("expected after region to have a terminator");
+        let yield_op = term
+            .borrow()
+            .downcast_ref::<Yield>()
+            .expect("expected after region to terminate with hir.yield")
+            as *const Yield;
+        unsafe { UnsafeIntrusiveEntityRef::from_raw(yield_op) }
+    }
+}
+
+impl Canonicalizable for While {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::RemoveLoopInvariantArgsFromBeforeBlock::new(
+            context.clone(),
+        ));
+        //rewrites.push(crate::canonicalization::RemoveLoopInvariantValueYielded::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileConditionTruth::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileUnusedResult::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileRemoveDuplicatedResults::new(context.clone()));
+        rewrites.push(crate::canonicalization::WhileRemoveUnusedArgs::new(context.clone()));
+        //rewrites.push(crate::canonicalization::ConvertDoWhileToWhileTrue::new(context));
+    }
 }
 
 impl LoopLikeOpInterface for While {
@@ -409,7 +413,7 @@ impl LoopLikeOpInterface for While {
     }
 
     fn get_inits_mut(&mut self) -> OpOperandRangeMut<'_> {
-        self.operands_mut().group_mut(0)
+        self.inits_mut()
     }
 
     fn get_yielded_values_mut(&mut self) -> Option<EntityProjectionMut<'_, OpOperandRangeMut<'_>>> {
@@ -489,6 +493,172 @@ impl RegionBranchOpInterface for While {
     #[inline(always)]
     fn has_loop(&self) -> bool {
         true
+    }
+}
+
+/// The `hir.index_switch` is a control-flow operation that branches to one of the given regions
+/// based on the values of the argument and the cases. The argument is always of type `u32`.
+///
+/// The operation always has a "default" region and any number of case regions denoted by integer
+/// constants. Control-flow transfers to the case region whose constant value equals the value of
+/// the argument. If the argument does not equal any of the case values, control-flow transfer to
+/// the "default" region.
+///
+/// ## Example
+///
+/// ```text,ignore
+/// %0 = hir.index_switch %arg0 : u32 -> i32
+/// case 2 {
+///   %1 = hir.constant 10 : i32
+///   scf.yield %1 : i32
+/// }
+/// case 5 {
+///   %2 = hir.constant 20 : i32
+///   scf.yield %2 : i32
+/// }
+/// default {
+///   %3 = hir.constant 30 : i32
+///   scf.yield %3 : i32
+/// }
+/// ```
+#[operation(
+    dialect = HirDialect,
+    traits(SingleBlock, HasRecursiveMemoryEffects),
+    implements(RegionBranchOpInterface)
+)]
+pub struct IndexSwitch {
+    #[operand]
+    selector: UInt32,
+    #[attr]
+    cases: ArrayAttr<u32>,
+    #[region]
+    default_region: Region,
+}
+
+impl IndexSwitch {
+    pub fn num_cases(&self) -> usize {
+        self.cases().len()
+    }
+
+    pub fn get_default_block(&self) -> BlockRef {
+        self.default_region().entry_block_ref().expect("default region has no blocks")
+    }
+
+    pub fn get_case_index_for_selector(&self, selector: u32) -> Option<usize> {
+        self.cases().iter().position(|case| *case == selector)
+    }
+
+    #[track_caller]
+    pub fn get_case_block(&self, index: usize) -> BlockRef {
+        let block_ref = self.get_case_region(index).borrow().entry_block_ref();
+        match block_ref {
+            None => panic!("region for case {index} has no blocks"),
+            Some(block) => block,
+        }
+    }
+
+    #[track_caller]
+    pub fn get_case_region(&self, mut index: usize) -> RegionRef {
+        let mut next_region = self.regions().front().as_pointer();
+        let mut current_index = 0;
+        // Shift the requested index up by one to account for default region
+        index += 1;
+        while let Some(region) = next_region.take() {
+            if index == current_index {
+                return region;
+            }
+            next_region = region.next();
+            current_index += 1;
+        }
+
+        panic!("invalid region index `{}`: out of bounds", index - 1)
+    }
+}
+
+impl RegionBranchOpInterface for IndexSwitch {
+    fn get_entry_successor_regions(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+    ) -> RegionSuccessorIter<'_> {
+        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+        let selected = selector.map(|s| self.get_case_index_for_selector(s));
+
+        match selected {
+            None => {
+                // All regions are possible successors
+                let infos =
+                    self.regions().iter().map(|r| RegionSuccessorInfo::Entering(r.as_region_ref()));
+                RegionSuccessorIter::new(self.as_operation(), infos)
+            }
+            Some(Some(selected)) => {
+                // A specific case was selected
+                RegionSuccessorIter::new(
+                    self.as_operation(),
+                    [RegionSuccessorInfo::Entering(self.get_case_region(selected))],
+                )
+            }
+            Some(None) => {
+                // The fallback case should be used
+                RegionSuccessorIter::new(
+                    self.as_operation(),
+                    [RegionSuccessorInfo::Entering(self.default_region().as_region_ref())],
+                )
+            }
+        }
+    }
+
+    fn get_successor_regions(&self, point: RegionBranchPoint) -> RegionSuccessorIter<'_> {
+        match point {
+            RegionBranchPoint::Parent => {
+                // Any region is reachable on entry
+                let infos =
+                    self.regions().iter().map(|r| RegionSuccessorInfo::Entering(r.as_region_ref()));
+                RegionSuccessorIter::new(self.as_operation(), infos)
+            }
+            RegionBranchPoint::Child(_) => {
+                // Only the parent op is reachable from its regions
+                RegionSuccessorIter::new(
+                    self.as_operation(),
+                    [RegionSuccessorInfo::Returning(
+                        self.results().all().iter().map(|v| v.borrow().as_value_ref()).collect(),
+                    )],
+                )
+            }
+        }
+    }
+
+    fn get_region_invocation_bounds(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+    ) -> SmallVec<[InvocationBounds; 1]> {
+        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+
+        if let Some(selector) = selector {
+            let mut bounds = smallvec![InvocationBounds::Never; self.num_cases()];
+            let selected =
+                self.get_case_index_for_selector(selector).map(|idx| idx + 1).unwrap_or(0);
+            bounds[selected] = InvocationBounds::Exact(1);
+            bounds
+        } else {
+            // Only one region is invoked, and no more than a single time
+            smallvec![InvocationBounds::NoMoreThan(1); self.num_cases()]
+        }
+    }
+
+    #[inline(always)]
+    fn is_repetitive_region(&self, _index: usize) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    fn has_loop(&self) -> bool {
+        false
+    }
+}
+
+impl Canonicalizable for IndexSwitch {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::FoldConstantIndexSwitch::new(context));
     }
 }
 

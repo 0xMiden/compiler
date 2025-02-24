@@ -2,6 +2,8 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
+#![feature(specialization)]
+#![allow(incomplete_features)]
 #![no_std]
 
 extern crate alloc;
@@ -10,7 +12,9 @@ extern crate alloc;
 extern crate std;
 
 mod builders;
+mod canonicalization;
 mod ops;
+pub mod transforms;
 
 use alloc::boxed::Box;
 
@@ -20,7 +24,7 @@ use midenc_hir2::{
 };
 
 pub use self::{
-    builders::{FunctionBuilder, InstBuilder, InstBuilderBase},
+    builders::{DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase},
     ops::*,
 };
 
@@ -49,8 +53,6 @@ impl Dialect for HirDialect {
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
-        use midenc_hir2::Op;
-
         // Save the current insertion point
         let mut builder = midenc_hir2::InsertionGuard::new(builder);
 
@@ -66,9 +68,7 @@ impl Dialect for HirDialect {
             let imm_ty = imm.ty();
             if &imm_ty == ty {
                 let op_builder = builder.create::<Constant, _>(span);
-                return op_builder(imm)
-                    .ok()
-                    .map(|op| op.borrow().as_operation().as_operation_ref());
+                return op_builder(imm).ok().map(|op| op.as_operation_ref());
             }
 
             // The immediate value has a different type than expected, but we can coerce types, so
@@ -113,7 +113,7 @@ impl Dialect for HirDialect {
             };
 
             let op_builder = builder.create::<Constant, _>(span);
-            return op_builder(imm).ok().map(|op| op.borrow().as_operation().as_operation_ref());
+            return op_builder(imm).ok().map(|op| op.as_operation_ref());
         }
 
         None
@@ -134,6 +134,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::AssertEq>();
         info.register_operation::<ops::AssertEqImm>();
         info.register_operation::<ops::Unreachable>();
+        info.register_operation::<ops::Poison>();
         info.register_operation::<ops::Add>();
         info.register_operation::<ops::AddOverflowing>();
         info.register_operation::<ops::Sub>();
@@ -183,6 +184,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Switch>();
         info.register_operation::<ops::If>();
         info.register_operation::<ops::While>();
+        info.register_operation::<ops::IndexSwitch>();
         info.register_operation::<ops::Condition>();
         info.register_operation::<ops::Yield>();
         info.register_operation::<ops::Exec>();
