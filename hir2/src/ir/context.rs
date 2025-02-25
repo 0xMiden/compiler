@@ -27,7 +27,7 @@ use crate::{
 ///
 /// The [Context] _must_ live as long as any reference to an IR entity may be dereferenced.
 pub struct Context {
-    pub session: Rc<Session>,
+    session: Rc<Session>,
     allocator: Rc<Blink>,
     registered_dialects: RefCell<FxHashMap<interner::Symbol, Rc<dyn Dialect>>>,
     dialect_hooks: RefCell<FxHashMap<interner::Symbol, Vec<DialectRegistrationHook>>>,
@@ -64,6 +64,21 @@ impl Context {
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
         }
+    }
+
+    #[inline]
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    #[inline]
+    pub fn session_rc(&self) -> Rc<Session> {
+        self.session.clone()
+    }
+
+    #[inline]
+    pub fn diagnostics(&self) -> &::midenc_session::DiagnosticsHandler {
+        &self.session.diagnostics
     }
 
     pub fn registered_dialects(

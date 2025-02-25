@@ -149,7 +149,7 @@ mod tests {
                     Ok(())
                 } else {
                     Err(
-                        ctx.session.diagnostics
+                        ctx.diagnostics()
                             .diagnostic(Severity::Error)
                             .with_message("invalid operation")
                             .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))

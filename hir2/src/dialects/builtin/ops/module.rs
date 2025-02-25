@@ -81,6 +81,30 @@ impl Module {
     }
 }
 
+impl midenc_session::Emit for Module {
+    fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
+        Some(self.name().as_symbol())
+    }
+
+    fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {
+        midenc_session::OutputType::Hir
+    }
+
+    fn write_to<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        _mode: midenc_session::OutputMode,
+        _session: &midenc_session::Session,
+    ) -> std::io::Result<()> {
+        use crate::{Op, OpPrinter};
+
+        let flags = crate::OpPrintingFlags::default();
+        let context = self.as_operation().context();
+        let document = self.print(&flags, context);
+        writer.write_fmt(format_args!("{}", document))
+    }
+}
+
 impl RegionKindInterface for Module {
     #[inline(always)]
     fn kind(&self) -> RegionKind {

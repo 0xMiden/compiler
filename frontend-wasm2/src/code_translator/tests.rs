@@ -33,7 +33,7 @@ fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
                     eprintln!("{}", label.label().unwrap());
                 }
             }
-            let report = midenc_hir::diagnostics::PrintDiagnostic::new(e).to_string();
+            let report = midenc_session::diagnostics::PrintDiagnostic::new(e).to_string();
             eprintln!("{report}");
         })
         .unwrap();

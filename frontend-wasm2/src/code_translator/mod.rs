@@ -13,18 +13,16 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use midenc_dialect_hir::{InstBuilder, InstBuilderBase, SwitchCase};
-use midenc_hir::{
-    cranelift_entity::packed_option::ReservedValue,
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan},
-    Block, FieldElement, Inst, Type,
-    Type::*,
-};
+use cranelift_entity::packed_option::ReservedValue;
+use midenc_dialect_hir::{assertions, InstBuilder, InstBuilderBase, SwitchCase};
 use midenc_hir2::{
     dialects::builtin::{Function, GlobalSymbolBuilder, GlobalVariable},
     traits::InferTypeOpInterface,
-    BlockRef, CallableOpInterface, Immediate, Op, SymbolTable, UnsafeIntrusiveEntityRef, ValueRef,
+    BlockRef, CallableOpInterface, Felt, FieldElement, Immediate, Op, SymbolTable, Type,
+    Type::*,
+    UnsafeIntrusiveEntityRef, ValueRef,
 };
+use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
 
 use crate::{
@@ -132,8 +130,7 @@ pub fn translate_operator(
             let (arg1, arg2, cond) = state.pop3();
             match ty {
                 wasmparser::ValType::F32 => {
-                    let cond =
-                        builder.ins().gt_imm(cond, Immediate::Felt(midenc_hir::Felt::ZERO), span);
+                    let cond = builder.ins().gt_imm(cond, Immediate::Felt(Felt::ZERO), span);
                     state.push1(builder.ins().select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I32 => {
@@ -665,7 +662,7 @@ fn prepare_addr(
             let align_offset = builder.ins().r#mod(full_addr_int, imm, span)?;
             builder.ins().assertz_with_error(
                 align_offset,
-                midenc_hir::ASSERT_FAILED_ALIGNMENT,
+                assertions::ASSERT_FAILED_ALIGNMENT,
                 span,
             );
         }

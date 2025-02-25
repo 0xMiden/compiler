@@ -14,6 +14,7 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 addr2line = "0.24"
+cranelift-entity.workspace = true
 derive_more.workspace = true
 gimli = { version = "0.31", default-features = false, features = [
     'read',
@@ -23,12 +24,10 @@ indexmap.workspace = true
 log.workspace = true
 hashbrown.workspace = true
 miden-core.workspace = true
-midenc-hir.workspace = true
 midenc-hir2.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-hir-type.workspace = true
 midenc-session.workspace = true
-rustc-hash.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 wasmparser = "0.214"

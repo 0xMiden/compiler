@@ -2,20 +2,20 @@ use core::mem;
 use std::rc::Rc;
 
 use midenc_dialect_hir::{Constant, FunctionBuilder};
-use midenc_hir::{
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
-    MidenAbiImport, Symbol,
-};
 use midenc_hir2::{
     constants::ConstantData,
     dialects::builtin::{
-        Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef, World,
+        self, Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef, World,
         WorldBuilder, WorldRef,
     },
+    interner::Symbol,
     version::Version,
     Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
 };
-use midenc_session::Session;
+use midenc_session::{
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
+    Session,
+};
 use wasmparser::Validator;
 
 use super::{module_translation_state::ModuleTranslationState, MemoryIndex};
@@ -40,7 +40,7 @@ pub fn translate_module_as_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::WorldRef> {
+) -> WasmResult<builtin::ComponentRef> {
     let mut validator = Validator::new_with_features(crate::supported_features());
     let parser = wasmparser::Parser::new(0);
     let mut module_types_builder = Default::default();
@@ -49,17 +49,18 @@ pub fn translate_module_as_component(
         &mut validator,
         &mut module_types_builder,
     )
-    .parse(parser, wasm, &context.session.diagnostics)?;
+    .parse(parser, wasm, context.diagnostics())?;
     parsed_module.module.set_name_fallback(config.source_name.clone());
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
     let module_types = module_types_builder.finish();
 
-    let world_name = Ident::from("world");
-
-    let world_ref =
-        context.clone().builder().create::<World, (Ident,)>(Default::default())(world_name)?;
+    // If a world wasn't provided to us, create one
+    let world_ref = match config.world {
+        Some(world) => world,
+        None => context.clone().builder().create::<World, ()>(Default::default())()?,
+    };
     let mut world_builder = WorldBuilder::new(world_ref);
 
     let ns = Ident::from("root_ns");
@@ -74,13 +75,14 @@ pub fn translate_module_as_component(
     let mut module_state = ModuleTranslationState::new(
         &parsed_module.module,
         &mut module_builder,
-        &mut cb,
+        &mut world_builder,
         &module_types,
         vec![],
-        &context.session.diagnostics,
+        context.diagnostics(),
     );
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
-    Ok(world_ref)
+
+    Ok(component_ref)
 }
 
 pub fn build_ir_module(
@@ -99,12 +101,8 @@ pub fn build_ir_module(
     // module_builder.with_reserved_memory_pages(memory_size);
     // }
 
-    build_globals(
-        &parsed_module.module,
-        module_state.module_builder,
-        &context.session.diagnostics,
-    )?;
-    build_data_segments(parsed_module, module_state.module_builder, &context.session.diagnostics)?;
+    build_globals(&parsed_module.module, module_state.module_builder, context.diagnostics())?;
+    build_data_segments(parsed_module, module_state.module_builder, context.diagnostics())?;
     let addr2line = addr2line::Context::from_dwarf(gimli::Dwarf {
         debug_abbrev: parsed_module.debuginfo.dwarf.debug_abbrev,
         debug_addr: parsed_module.debuginfo.dwarf.debug_addr,
@@ -132,7 +130,7 @@ pub fn build_ir_module(
         let func_type = &parsed_module.module.functions[func_index];
         let func_name = parsed_module.module.func_name(func_index).as_str();
         let wasm_func_type = module_types[func_type.signature].clone();
-        let ir_func_type = ir_func_type(&wasm_func_type, &context.session.diagnostics)?;
+        let ir_func_type = ir_func_type(&wasm_func_type, context.diagnostics())?;
         let visibility = if parsed_module.module.is_exported(func_index.into()) {
             Visibility::Public
         } else {
@@ -157,7 +155,7 @@ pub fn build_ir_module(
             parsed_module,
             module_types,
             &addr2line,
-            &context.session,
+            context.session(),
             &mut func_validator,
         )?;
         // module_func_builder.build(&context.session.diagnostics)?;

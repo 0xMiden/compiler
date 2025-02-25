@@ -6,8 +6,7 @@
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
 use midenc_dialect_hir::InstBuilder;
-use midenc_hir::{diagnostics::SourceSpan, Block, Inst};
-use midenc_hir2::{BlockRef, OperationRef, Signature, ValueRef};
+use midenc_hir2::{BlockRef, OperationRef, Signature, SourceSpan, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;

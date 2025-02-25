@@ -864,7 +864,7 @@ pub struct CompilerTest {
     /// The MASM source code
     masm_src: Option<String>,
     /// The compiled IR MASM program
-    ir_masm_program: Option<Result<Arc<midenc_codegen_masm::Program>, String>>,
+    ir_masm_program: Option<Result<Arc<midenc_codegen_masm2::MasmComponent>, String>>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
 }
@@ -1111,12 +1111,12 @@ impl CompilerTest {
     }
 
     /// Get the compiled IR MASM program
-    pub fn ir_masm_program(&mut self) -> Arc<midenc_codegen_masm::Program> {
+    pub fn ir_masm_program(&mut self) -> Arc<midenc_codegen_masm2::MasmComponent> {
         if self.ir_masm_program.is_none() {
             self.compile_wasm_to_masm_program().unwrap();
         }
         match self.ir_masm_program.as_ref().unwrap().as_ref() {
-            Ok(prog) => prog.clone(),
+            Ok(component) => component.clone(),
             Err(msg) => panic!("{msg}"),
         }
     }
@@ -1150,25 +1150,18 @@ impl CompilerTest {
     }
 
     pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {
-        use midenc_codegen_masm::MasmArtifact;
-        use midenc_compile::compile_to_memory_with_pre_assembly_stage;
-        use midenc_hir::pass::AnalysisManager;
+        use midenc_compile::{compile_to_memory_with_pre_assembly_stage, CodegenOutput};
+        use midenc_hir2::Context;
 
         let mut src = None;
         let mut masm_program = None;
-        let mut stage =
-            |artifact: MasmArtifact, _analyses: &mut AnalysisManager, _session: &Session| {
-                match artifact {
-                    MasmArtifact::Executable(ref program) => {
-                        src = Some(program.to_string());
-                        masm_program = Some(Arc::from(program.clone()));
-                    }
-                    MasmArtifact::Library(ref lib) => {
-                        src = Some(lib.to_string());
-                    }
-                }
-                Ok(artifact)
-            };
+        let mut stage = |output: CodegenOutput, _context: Rc<Context>| {
+            src = Some(output.component.to_string());
+            if output.component.entrypoint.is_some() {
+                masm_program = Some(Arc::clone(&output.component));
+            }
+            Ok(output)
+        };
         let package =
             compile_to_memory_with_pre_assembly_stage(self.session.clone(), &mut stage as _)
                 .map_err(format_report)?

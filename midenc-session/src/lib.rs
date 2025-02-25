@@ -43,7 +43,7 @@ pub use self::{
     duration::HumanDuration,
     emit::Emit,
     flags::{CompileFlag, CompileFlags, FlagAction},
-    inputs::{FileType, InputFile, InputType, InvalidInputError},
+    inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
         LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
     },

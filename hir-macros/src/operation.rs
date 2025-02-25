@@ -442,7 +442,7 @@ impl quote::ToTokens for WithOperands<'_> {
                                 if !<#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
                                     let expected = <#operand_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
                                     return Err(builder.context()
-                                        .session
+                                        .session()
                                         .diagnostics
                                         .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                         .with_message("invalid operand")
@@ -472,7 +472,7 @@ impl quote::ToTokens for WithOperands<'_> {
                             if !<#group_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
                                 let expected = <#group_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
                                 return Err(builder.context()
-                                    .session
+                                    .session()
                                     .diagnostics
                                     .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                     .with_message("invalid operand")
@@ -579,7 +579,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                     if !<#result_constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
                                         let expected = <#result_constraint as ::midenc_hir2::traits::TypeConstraint>::description();
                                         return Err(builder.context()
-                                            .session
+                                            .session()
                                             .diagnostics
                                             .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                             .with_message(::alloc::format!("invalid operation {}", op.name()))
@@ -610,7 +610,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                     if !<#constraint as ::midenc_hir2::traits::TypeConstraint>::matches(value_ty) {
                                         let expected = <#constraint as ::midenc_hir2::traits::TypeConstraint>::description();
                                         return Err(builder.context()
-                                            .session
+                                            .session()
                                             .diagnostics
                                             .diagnostic(::midenc_session::diagnostics::Severity::Error)
                                             .with_message("invalid operation")

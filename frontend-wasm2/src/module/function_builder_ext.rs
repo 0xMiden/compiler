@@ -1,11 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+use cranelift_entity::{EntitySet, SecondaryMap};
 use midenc_dialect_hir::{FunctionBuilder, InstBuilderBase};
-use midenc_hir::{
-    cranelift_entity::{EntitySet, SecondaryMap},
-    diagnostics::SourceSpan,
-    DefaultInstBuilder,
-};
 use midenc_hir2::{
     dialects::builtin::Function,
     traits::{BranchOpInterface, Terminator},
@@ -14,6 +10,7 @@ use midenc_hir2::{
     ValueRef,
 };
 use midenc_hir_type::Type;
+use midenc_session::diagnostics::SourceSpan;
 
 use crate::ssa::{SSABuilder, SideEffects, Variable};
 

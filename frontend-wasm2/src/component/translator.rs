@@ -5,17 +5,16 @@
 
 use std::{borrow::BorrowMut, rc::Rc};
 
-use midenc_hir::{
-    cranelift_entity::PrimaryMap, diagnostics::Report, AbiParam, CallConv, FunctionIdent,
-    FunctionType, FxHashMap, Ident, Linkage, Signature, SourceSpan, Symbol,
-};
+use cranelift_entity::PrimaryMap;
 use midenc_hir2::{
     self as hir2,
-    dialects::builtin::{Component, ComponentBuilder, ComponentRef},
+    dialects::builtin::{self, Component, ComponentBuilder, ComponentRef},
+    interner::Symbol,
     version::Version,
-    Abi, BuilderExt, Context, EntityMut, OpBuilder,
+    Abi, AbiParam, BuilderExt, CallConv, Context, EntityMut, FunctionIdent, FunctionType,
+    FxHashMap, Ident, OpBuilder, Signature, SourceSpan, Visibility,
 };
-use midenc_session::{DiagnosticsHandler, Session};
+use midenc_session::{diagnostics::Report, DiagnosticsHandler, Session};
 use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{
@@ -65,6 +64,7 @@ pub struct ComponentTranslator<'a> {
 
 impl<'a> ComponentTranslator<'a> {
     pub fn new(
+        id: builtin::ComponentId,
         nested_modules: &'a PrimaryMap<StaticModuleIndex, ParsedModule<'a>>,
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
         config: &'a WasmTranslationConfig,
@@ -73,11 +73,9 @@ impl<'a> ComponentTranslator<'a> {
         let mut builder = context.clone().builder();
         let component_builder =
             builder.create::<Component, (hir2::Ident, hir2::Ident, Version)>(Default::default());
-        // TODO: get proper ns and name (from exported interfaces?)
-        let ns = hir2::Ident::from("root_ns");
-        let name = hir2::Ident::from("root");
-        let ver = Version::parse("1.0.0").unwrap();
-        let mut raw_entity_ref = component_builder(ns, name, ver).unwrap();
+        let ns = hir2::Ident::with_empty_span(id.namespace);
+        let name = hir2::Ident::with_empty_span(id.name);
+        let mut raw_entity_ref = component_builder(ns, name, id.version).unwrap();
         let result = ComponentBuilder::new(raw_entity_ref);
         Self {
             config,
@@ -124,7 +122,7 @@ impl<'a> ComponentTranslator<'a> {
                             }
                             _ => {
                                 unsupported_diag!(
-                                    &self.context.session.diagnostics,
+                                    self.context.diagnostics(),
                                     "Importing of {:?} is not yet supported",
                                     ty
                                 )
@@ -141,27 +139,21 @@ impl<'a> ComponentTranslator<'a> {
             }
             LocalInitializer::Resource(..) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Resource initializers are not supported"
                 )
             }
             LocalInitializer::ResourceNew(..) => {
-                unsupported_diag!(
-                    &self.context.session.diagnostics,
-                    "Resource creation is not supported"
-                )
+                unsupported_diag!(self.context.diagnostics(), "Resource creation is not supported")
             }
             LocalInitializer::ResourceRep(..) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Resource representation is not supported"
                 )
             }
             LocalInitializer::ResourceDrop(..) => {
-                unsupported_diag!(
-                    &self.context.session.diagnostics,
-                    "Resource dropping is not supported"
-                )
+                unsupported_diag!(self.context.diagnostics(), "Resource dropping is not supported")
             }
             LocalInitializer::ModuleStatic(static_module_idx) => {
                 frame.modules.push(ModuleDef::Static(*static_module_idx));
@@ -215,7 +207,7 @@ impl<'a> ComponentTranslator<'a> {
             }
             LocalInitializer::ComponentSynthetic(_) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Synthetic components are not yet supported"
                 )
             }
@@ -223,14 +215,11 @@ impl<'a> ComponentTranslator<'a> {
                 frame.funcs.push(CoreDef::Export(*module_instance_idx, name));
             }
             LocalInitializer::AliasExportTable(..) => {
-                unsupported_diag!(
-                    &self.context.session.diagnostics,
-                    "Table exports are not yet supported"
-                )
+                unsupported_diag!(self.context.diagnostics(), "Table exports are not yet supported")
             }
             LocalInitializer::AliasExportGlobal(..) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Global exports are not yet supported"
                 )
             }
@@ -248,13 +237,13 @@ impl<'a> ComponentTranslator<'a> {
             }
             LocalInitializer::AliasModule(_) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Module aliases are not yet supported"
                 )
             }
             LocalInitializer::AliasComponent(_) => {
                 unsupported_diag!(
-                    &self.context.session.diagnostics,
+                    self.context.diagnostics(),
                     "Component aliases are not yet supported"
                 )
             }
@@ -272,7 +261,7 @@ impl<'a> ComponentTranslator<'a> {
                         // do nothing
                     }
                     _ => unsupported_diag!(
-                        &self.context.session.diagnostics,
+                        self.context.diagnostics(),
                         "Exporting of {:?} is not yet supported",
                         component_item
                     ),
@@ -340,7 +329,7 @@ impl<'a> ComponentTranslator<'a> {
             params: func_ty.params.into_iter().map(AbiParam::new).collect(),
             results: func_ty.results.into_iter().map(AbiParam::new).collect(),
             cc: CallConv::CanonLift,
-            linkage: Linkage::External,
+            visibility: Visibility::Public,
         };
 
         let function_id = FunctionIdent {
@@ -424,7 +413,7 @@ impl<'a> ComponentTranslator<'a> {
                             args: _,
                         } => {
                             unsupported_diag!(
-                                &self.context.session.diagnostics,
+                                self.context.diagnostics(),
                                 "Instantiated module as another module instantiation argument is \
                                  not supported yet"
                             )
@@ -574,7 +563,7 @@ fn import_component_export_func(
             params: func_ty.params.into_iter().map(AbiParam::new).collect(),
             results: func_ty.results.into_iter().map(AbiParam::new).collect(),
             cc: CallConv::CanonLift,
-            linkage: Linkage::External,
+            visibility: Visibility::Public,
         };
         Some(hir2_sketch::SyntheticFunction {
             id: FunctionIdent {
@@ -609,7 +598,7 @@ fn canon_lower_func(
         params: func_ty.params.into_iter().map(AbiParam::new).collect(),
         results: func_ty.results.into_iter().map(AbiParam::new).collect(),
         cc: CallConv::CanonLower,
-        linkage: Linkage::External,
+        visibility: Visibility::Public,
     };
 
     let func_id = FunctionIdent {

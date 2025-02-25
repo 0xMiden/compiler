@@ -197,7 +197,7 @@ derive! {
                 Ok(())
             } else {
                 Err(
-                    context.session.diagnostics
+                    context.diagnostics()
                         .diagnostic(Severity::Error)
                         .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(op.span(), format!("incorrect number of operands, expected 1, got {}", op.num_operands()))
@@ -219,7 +219,7 @@ derive! {
                 Ok(())
             } else {
                 Err(
-                    context.session.diagnostics
+                    context.diagnostics()
                         .diagnostic(Severity::Error)
                         .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))
@@ -243,8 +243,7 @@ derive! {
                 }
                 if region.entry().has_arguments() {
                     return Err(context
-                        .session
-                        .diagnostics
+                        .diagnostics()
                         .diagnostic(Severity::Error)
                         .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(
@@ -269,8 +268,7 @@ derive! {
             for region in op.regions().iter() {
                 if region.body().iter().count() > 1 {
                     return Err(context
-                        .session
-                        .diagnostics
+                        .diagnostics()
                         .diagnostic(Severity::Error)
                         .with_message(::alloc::format!("invalid operation {}", op.name()))
                         .with_primary_label(
@@ -298,8 +296,7 @@ derive! {
             let num_regions = op.num_regions();
             if num_regions != 1 {
                 return Err(context
-                    .session
-                    .diagnostics
+                    .diagnostics()
                     .diagnostic(Severity::Error)
                         .with_message(::alloc::format!("invalid operation {}", op.name()))
                     .with_primary_label(

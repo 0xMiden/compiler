@@ -11,9 +11,9 @@ use crate::{
         NoTerminator, SingleBlock, SingleRegion,
     },
     version::Version,
-    Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    Ident, Op, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
@@ -88,6 +88,28 @@ pub struct Component {
     symbols: SymbolMap,
     #[default]
     uses: SymbolUseList,
+}
+
+impl midenc_session::Emit for Component {
+    fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
+        Some(self.name().as_symbol())
+    }
+
+    fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {
+        midenc_session::OutputType::Hir
+    }
+
+    fn write_to<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        _mode: midenc_session::OutputMode,
+        _session: &midenc_session::Session,
+    ) -> std::io::Result<()> {
+        let flags = crate::OpPrintingFlags::default();
+        let context = self.as_operation().context();
+        let document = self.print(&flags, context);
+        writer.write_fmt(format_args!("{}", document))
+    }
 }
 
 impl RegionKindInterface for Component {

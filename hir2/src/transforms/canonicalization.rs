@@ -109,8 +109,7 @@ impl Pass for Canonicalizer {
             let span = op.borrow().span();
             return Err(state
                 .context()
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message("canonicalization failed")
                 .with_primary_label(

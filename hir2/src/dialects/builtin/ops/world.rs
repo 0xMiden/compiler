@@ -5,9 +5,8 @@ use crate::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut, SymbolMap,
+    SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
 };
 
 pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
@@ -31,11 +30,9 @@ pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable, Symbol)
+    implements(RegionKindInterface, SymbolTable)
 )]
 pub struct World {
-    #[attr]
-    name: Ident,
     #[region]
     body: RegionRef,
     #[default]
@@ -62,35 +59,6 @@ impl Usable for World {
     #[inline(always)]
     fn uses_mut(&mut self) -> &mut SymbolUseList {
         &mut self.uses
-    }
-}
-
-impl Symbol for World {
-    #[inline(always)]
-    fn as_symbol_operation(&self) -> &Operation {
-        &self.op
-    }
-
-    #[inline(always)]
-    fn as_symbol_operation_mut(&mut self) -> &mut Operation {
-        &mut self.op
-    }
-
-    fn name(&self) -> SymbolName {
-        World::name(self).as_symbol()
-    }
-
-    fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
-    }
-
-    fn visibility(&self) -> Visibility {
-        Visibility::Public
-    }
-
-    fn set_visibility(&mut self, _visibility: Visibility) {
-        panic!("Cannot set World's visibility. It's always Public");
     }
 }
 
