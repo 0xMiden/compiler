@@ -101,8 +101,7 @@ impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
             } else {
                 let description = <C as TypeConstraint>::description();
                 return Err(context
-                    .session
-                    .diagnostics
+                    .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("invalid operand")
                     .with_primary_label(

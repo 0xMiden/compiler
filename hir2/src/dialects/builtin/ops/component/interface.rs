@@ -47,6 +47,20 @@ impl ComponentId {
     }
 }
 
+#[derive(Debug)]
+pub enum InvalidComponentIdError {
+    MissingNamespace,
+    MissingName,
+}
+
+impl core::str::FromStr for ComponentId {
+    type Err = InvalidComponentIdError;
+
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
+}
+
 impl From<&Component> for ComponentId {
     fn from(value: &Component) -> Self {
         let namespace = value.namespace().as_symbol();

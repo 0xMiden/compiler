@@ -92,12 +92,25 @@ impl FileName {
         self.as_path().file_name().and_then(|name| name.to_str())
     }
 
+    #[cfg(feature = "std")]
+    pub fn file_stem(&self) -> Option<&str> {
+        self.as_path().file_stem().and_then(|name| name.to_str())
+    }
+
     #[cfg(not(feature = "std"))]
     pub fn file_name(&self) -> Option<&str> {
         match self.name.rsplit_once('/') {
             Some((_, name)) => Some(name),
             None => Some(self.name.as_ref()),
         }
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub fn file_stem(&self) -> Option<&str> {
+        self.file_name().map(|name| match name.rsplit_once('.') {
+            Some((stem, _extension)) => stem,
+            None => name,
+        })
     }
 }
 

@@ -227,7 +227,7 @@ where
                 return Err(self
                     .builder
                     .context()
-                    .session
+                    .session()
                     .diagnostics
                     .diagnostic(Severity::Error)
                     .with_message(::alloc::format!("invalid operation {}", op.name()))

@@ -1,6 +1,6 @@
-use std::fmt;
+use core::fmt;
 
-use midenc_hir::{formatter::PrettyPrint, FunctionIdent, Ident, Signature};
+use midenc_hir2::{formatter::PrettyPrint, FunctionIdent, Ident, Signature};
 
 #[derive(Debug)]
 pub struct SyntheticFunction {
@@ -16,8 +16,8 @@ impl fmt::Display for SyntheticFunction {
 }
 
 impl PrettyPrint for SyntheticFunction {
-    fn render(&self) -> midenc_hir::formatter::Document {
-        use midenc_hir::formatter::*;
+    fn render(&self) -> midenc_hir2::formatter::Document {
+        use midenc_hir2::formatter::*;
 
         const_text("(")
             + const_text("synth_func")
@@ -45,8 +45,8 @@ impl fmt::Display for Interface {
 }
 
 impl PrettyPrint for Interface {
-    fn render(&self) -> midenc_hir::formatter::Document {
-        use midenc_hir::formatter::*;
+    fn render(&self) -> midenc_hir2::formatter::Document {
+        use midenc_hir2::formatter::*;
 
         let functions = self
             .functions
@@ -78,8 +78,8 @@ impl fmt::Display for Module {
 }
 
 impl PrettyPrint for Module {
-    fn render(&self) -> midenc_hir::formatter::Document {
-        use midenc_hir::formatter::*;
+    fn render(&self) -> midenc_hir2::formatter::Document {
+        use midenc_hir2::formatter::*;
 
         let functions = self
             .functions
@@ -112,8 +112,8 @@ impl fmt::Display for Component {
 }
 
 impl PrettyPrint for Component {
-    fn render(&self) -> midenc_hir::formatter::Document {
-        use midenc_hir::formatter::*;
+    fn render(&self) -> midenc_hir2::formatter::Document {
+        use midenc_hir2::formatter::*;
 
         let interfaces = self
             .interfaces
@@ -165,8 +165,8 @@ impl fmt::Display for World {
 }
 
 impl PrettyPrint for World {
-    fn render(&self) -> midenc_hir::formatter::Document {
-        use midenc_hir::formatter::*;
+    fn render(&self) -> midenc_hir2::formatter::Document {
+        use midenc_hir2::formatter::*;
 
         let components = self
             .components

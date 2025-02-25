@@ -1,6 +1,6 @@
 use midenc_dialect_hir::InstBuilder;
-use midenc_hir::diagnostics::{DiagnosticsHandler, SourceSpan};
 use midenc_hir2::{dialects::builtin::FunctionRef, FunctionIdent, Immediate, Type, ValueRef};
+use midenc_session::diagnostics::{DiagnosticsHandler, SourceSpan};
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;

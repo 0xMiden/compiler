@@ -1,13 +1,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use midenc_dialect_hir::InstBuilder;
-use midenc_hir::diagnostics::{DiagnosticsHandler, Severity};
 use midenc_hir2::{
-    dialects::builtin::{ComponentBuilder, Function, FunctionRef, ModuleBuilder},
+    dialects::builtin::{Function, FunctionRef, ModuleBuilder, WorldBuilder},
     AbiParam, CallConv, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, Symbol,
     SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
     ValueRef, Visibility,
 };
+use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
 use super::{
     function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -47,7 +47,7 @@ impl<'a> ModuleTranslationState<'a> {
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
-        component_builder: &'a mut ComponentBuilder,
+        world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypes,
         module_args: Vec<ModuleArgument>,
         diagnostics: &DiagnosticsHandler,
@@ -103,11 +103,11 @@ impl<'a> ModuleTranslationState<'a> {
                                 signature: sig,
                             }
                         } else {
-                            define_func_for_intrinsic(component_builder, sig, import_func_id)
+                            define_func_for_intrinsic(world_builder, sig, import_func_id)
                         }
                     } else if is_miden_abi_module(import_func_id.module.as_symbol()) {
                         define_func_for_miden_abi_trans(
-                            component_builder,
+                            world_builder,
                             module_builder,
                             func_id,
                             sig,
@@ -148,7 +148,7 @@ impl<'a> ModuleTranslationState<'a> {
 }
 
 fn define_func_for_miden_abi_trans(
-    component_builder: &mut ComponentBuilder,
+    world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
     synth_func_id: FunctionIdent,
     synth_func_sig: Signature,
@@ -184,12 +184,12 @@ fn define_func_for_miden_abi_trans(
         .collect();
 
     let import_module_ref = if let Some(found_module_ref) =
-        component_builder.find_module(import_func_id.module.as_symbol())
+        world_builder.find_module(import_func_id.module.as_symbol())
     {
         found_module_ref
     } else {
-        component_builder
-            .define_module(import_func_id.module)
+        world_builder
+            .declare_module(import_func_id.module)
             .expect("failed to create a module for imports")
     };
     let mut import_module_builder = ModuleBuilder::new(import_module_ref);
@@ -218,16 +218,16 @@ fn define_func_for_miden_abi_trans(
 }
 
 fn define_func_for_intrinsic(
-    component_builder: &mut ComponentBuilder,
+    world_builder: &mut WorldBuilder,
     sig: Signature,
     func_id: FunctionIdent,
 ) -> CallableFunction {
     let import_module_ref =
-        if let Some(found_module_ref) = component_builder.find_module(func_id.module.as_symbol()) {
+        if let Some(found_module_ref) = world_builder.find_module(func_id.module.as_symbol()) {
             found_module_ref
         } else {
-            component_builder
-                .define_module(func_id.module)
+            world_builder
+                .declare_module(func_id.module)
                 .expect("failed to create a module for imports")
         };
     let mut import_module_builder = ModuleBuilder::new(import_module_ref);

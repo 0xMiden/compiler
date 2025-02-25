@@ -9,6 +9,7 @@ extern crate alloc;
 mod artifact;
 mod emit;
 mod emitter;
+pub mod intrinsics;
 mod linker;
 mod lower;
 mod opt;
@@ -22,6 +23,7 @@ pub mod masm {
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
+    artifact::MasmComponent,
     lower::ToMasmComponent,
     stack::{Constraint, Operand, OperandStack},
 };

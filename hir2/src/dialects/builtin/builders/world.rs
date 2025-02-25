@@ -1,7 +1,9 @@
 use crate::{
-    dialects::builtin::{ComponentRef, PrimComponentBuilder, WorldRef},
+    dialects::builtin::{
+        ComponentRef, Module, ModuleRef, PrimComponentBuilder, PrimModuleBuilder, WorldRef,
+    },
     version::Version,
-    Builder, Ident, Op, OpBuilder, Report, Spanned,
+    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolTable,
 };
 
 pub struct WorldBuilder {
@@ -37,5 +39,26 @@ impl WorldBuilder {
     ) -> Result<ComponentRef, Report> {
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
         builder(ns, name, ver)
+    }
+
+    /// Declare a new world-level module `name`
+    pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
+        let module_ref = builder(name)?;
+        let is_new = self
+            .world
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(module_ref, crate::ProgramPoint::Invalid);
+        assert!(is_new, "module with the name {name} already exists in world",);
+        Ok(module_ref)
+    }
+
+    /// Resolve a world-level module with `name`, if declared/defined
+    pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
+        self.world.borrow().get(name).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+        })
     }
 }

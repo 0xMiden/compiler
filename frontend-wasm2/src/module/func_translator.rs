@@ -8,14 +8,13 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+use cranelift_entity::EntityRef;
 use midenc_dialect_hir::{FunctionBuilder, InstBuilder};
-use midenc_hir::{
-    cranelift_entity::EntityRef,
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
-    Block, ModuleFunctionBuilder,
-};
 use midenc_hir2::{dialects::builtin::Function, BlockRef, Context, Op};
-use midenc_session::Session;
+use midenc_session::{
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
+    Session,
+};
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{

@@ -3,8 +3,7 @@ pub mod mem;
 
 use std::{collections::HashSet, sync::OnceLock};
 
-use midenc_hir::{FunctionType, SourceSpan, Symbol, Value};
-use midenc_hir2::{FunctionIdent, ValueRef};
+use midenc_hir2::{interner::Symbol, FunctionIdent, FunctionType, SourceSpan, ValueRef};
 
 use crate::{
     error::WasmResult,

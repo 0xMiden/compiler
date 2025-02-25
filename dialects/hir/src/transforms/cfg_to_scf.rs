@@ -166,8 +166,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
 
         Err(builder
             .context()
-            .session
-            .diagnostics
+            .diagnostics()
             .diagnostic(Severity::Error)
             .with_message("control flow transformation failed")
             .with_primary_label(

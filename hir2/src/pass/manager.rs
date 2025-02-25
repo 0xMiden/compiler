@@ -55,9 +55,8 @@ pub struct PassManager {
 }
 
 impl PassManager {
-    /// Create a new pass manager under the given context with a specific nesting
-    /// style. The created pass manager can schedule operations that match
-    /// `operationName`.
+    /// Create a new pass manager under the given context with a specific nesting style. The created
+    /// pass manager can schedule operations that match `name`.
     pub fn new(context: Rc<Context>, name: impl AsRef<str>, nesting: Nesting) -> Self {
         let pm = OpPassManager::new(name.as_ref(), nesting, context.clone());
         Self {
@@ -70,9 +69,9 @@ impl PassManager {
         }
     }
 
-    /// Create a new pass manager under the given context with a specific nesting
-    /// style. The created pass manager can schedule operations that match
-    /// `OperationTy`.
+    /// Create a new pass manager under the given context with a specific nesting style.
+    ///
+    /// The created pass manager can schedule operations that match type `T`.
     pub fn on<T: OpRegistration>(context: Rc<Context>, nesting: Nesting) -> Self {
         Self::new(context, <T as OpRegistration>::full_name(), nesting)
     }
@@ -89,8 +88,7 @@ impl PassManager {
             if anchor != &op_name {
                 return Err(self
                     .context
-                    .session
-                    .diagnostics
+                    .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("failed to construct pass manager")
                     .with_primary_label(
@@ -192,8 +190,12 @@ impl PassManager {
         self.pm.print_as_textual_pipeline(f)
     }
 
-    pub fn nest(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
-        self.pm.nest(nested)
+    pub fn nest<T: OpRegistration>(&mut self) -> NestedOpPassManager<'_> {
+        self.pm.nest::<T>()
+    }
+
+    pub fn nest_pass_manager(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
+        self.pm.nest_pass_manager(nested)
     }
 
     /// Nest a new op-specific pass manager (for the op with the given name), under this pass manager.
@@ -275,6 +277,29 @@ impl OpPassManager {
         }
     }
 
+    pub fn on<T: OpRegistration>(nesting: Nesting, context: Rc<Context>) -> Self {
+        let dialect_name = <T as OpRegistration>::dialect_name();
+        let opcode = <T as OpRegistration>::name();
+        let dialect = context.get_registered_dialect(dialect_name);
+        let name = dialect
+            .registered_ops()
+            .iter()
+            .find(|n| n.name() == opcode)
+            .cloned()
+            .unwrap_or_else(|| {
+                panic!(
+                    "invalid operation name: found dialect '{dialect_name}', but no operation \
+                     called '{opcode}' is registered to that dialect"
+                );
+            });
+        Self {
+            context,
+            name: Some(name),
+            passes: Default::default(),
+            nesting,
+        }
+    }
+
     pub fn for_operation(name: OperationName, nesting: Nesting, context: Rc<Context>) -> Self {
         Self {
             context,
@@ -314,16 +339,20 @@ impl OpPassManager {
 
     /// Nest a new op-specific pass manager (for the op with the given name), under this pass manager.
     pub fn nest_with_type(&mut self, nested_name: &str) -> NestedOpPassManager<'_> {
-        self.nest(Self::new(nested_name, self.nesting, self.context.clone()))
+        self.nest_pass_manager(Self::new(nested_name, self.nesting, self.context.clone()))
+    }
+
+    pub fn nest<T: OpRegistration>(&mut self) -> NestedOpPassManager<'_> {
+        self.nest_pass_manager(Self::on::<T>(self.nesting, self.context.clone()))
     }
 
     /// Nest a new op-agnostic ("any") pass manager under this pass manager.
     pub fn nest_any(&mut self) -> NestedOpPassManager<'_> {
-        self.nest(Self::any(self.nesting, self.context.clone()))
+        self.nest_pass_manager(Self::any(self.nesting, self.context.clone()))
     }
 
     fn nest_for(&mut self, nested_name: OperationName) -> NestedOpPassManager<'_> {
-        self.nest(Self::for_operation(nested_name, self.nesting, self.context.clone()))
+        self.nest_pass_manager(Self::for_operation(nested_name, self.nesting, self.context.clone()))
     }
 
     pub fn add_pass(&mut self, pass: Box<dyn OperationPass>) {
@@ -350,8 +379,7 @@ impl OpPassManager {
     }
 
     pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
-        let name = <T as OpRegistration>::full_name();
-        let mut nested = self.nest(Self::new(name.as_str(), self.nesting, self.context.clone()));
+        let mut nested = self.nest::<T>();
         nested.add_pass(pass);
     }
 
@@ -417,8 +445,7 @@ impl OpPassManager {
                     if !pass.can_schedule_on(name) {
                         return Err(self
                             .context
-                            .session
-                            .diagnostics
+                            .diagnostics()
                             .diagnostic(Severity::Error)
                             .with_message(format!(
                                 "unable to schedule pass '{}' on pass manager intended for \
@@ -485,7 +512,7 @@ impl OpPassManager {
         }
     }
 
-    pub fn nest(&mut self, nested: Self) -> NestedOpPassManager<'_> {
+    pub fn nest_pass_manager(&mut self, nested: Self) -> NestedOpPassManager<'_> {
         let adaptor = Box::new(OpToOpPassAdaptor::new(nested));
         NestedOpPassManager {
             parent: self,
@@ -817,8 +844,7 @@ impl OpToOpPassAdaptor {
         };
         if !op_name.implements::<dyn IsolatedFromAbove>() {
             return Err(context
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message("failed to execute pass")
                 .with_primary_label(
@@ -830,8 +856,7 @@ impl OpToOpPassAdaptor {
         }
         if !pass.can_schedule_on(&op_name) {
             return Err(context
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message("failed to execute pass")
                 .with_primary_label(span, "trying to schedule a pass on an unsupported operation")
@@ -854,8 +879,7 @@ impl OpToOpPassAdaptor {
                 let root_op = root.borrow();
                 if !root_op.is_ancestor_of(&op) {
                     return Err(context
-                        .session
-                        .diagnostics
+                        .diagnostics()
                         .diagnostic(Severity::Error)
                         .with_message("failed to execute pass")
                         .with_primary_label(

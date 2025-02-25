@@ -1,4 +1,13 @@
-use std::{ffi::OsString, path::PathBuf, sync::Arc};
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
+#[cfg(feature = "std")]
+use std::{ffi::OsString, path::PathBuf};
 
 use clap::{builder::ArgPredicate, Parser};
 use midenc_session::{

@@ -2,8 +2,7 @@
 
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_hir::InstBuilder;
-use midenc_hir::SourceSpan;
-use midenc_hir2::{AbiParam, CallConv, Signature, ValueRef, Visibility};
+use midenc_hir2::{AbiParam, CallConv, Signature, SourceSpan, ValueRef, Visibility};
 use midenc_hir_type::{FunctionType, Type};
 use midenc_session::DiagnosticsHandler;
 

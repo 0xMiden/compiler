@@ -48,7 +48,7 @@ impl ToMasmComponent for builtin::Component {
         let component_path = link_info.component().to_library_path();
 
         // Get the entrypoint, if specified
-        let entrypoint = match context.session.options.entrypoint.as_deref() {
+        let entrypoint = match context.session().options.entrypoint.as_deref() {
             Some(entry) => {
                 let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
                     Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
@@ -272,8 +272,7 @@ impl MasmFunctionBuilder {
         let num_locals = u16::try_from(function.num_locals()).map_err(|_| {
             let context = function.as_operation().context();
             context
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(miden_assembly::diagnostics::Severity::Error)
                 .with_message("cannot emit masm for function")
                 .with_primary_label(
@@ -903,8 +902,7 @@ impl HirLowering for hir::Exec {
         let callee = self.resolve().ok_or_else(|| {
             let context = self.as_operation().context();
             context
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message("invalid call operation: unable to resolve callee")
                 .with_primary_label(
@@ -924,8 +922,7 @@ impl HirLowering for hir::Exec {
             None => {
                 let context = self.as_operation().context();
                 return Err(context
-                    .session
-                    .diagnostics
+                    .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("invalid call operation: callee is not a callable op")
                     .with_primary_label(
@@ -959,8 +956,7 @@ impl HirLowering for hir::Call {
         let callee = self.resolve().ok_or_else(|| {
             let context = self.as_operation().context();
             context
-                .session
-                .diagnostics
+                .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message("invalid call operation: unable to resolve callee")
                 .with_primary_label(
@@ -980,8 +976,7 @@ impl HirLowering for hir::Call {
             None => {
                 let context = self.as_operation().context();
                 return Err(context
-                    .session
-                    .diagnostics
+                    .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("invalid call operation: callee is not a callable op")
                     .with_primary_label(
