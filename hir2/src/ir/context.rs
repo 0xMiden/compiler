@@ -117,14 +117,15 @@ impl Context {
         dialect
     }
 
-    pub fn register_dialect_hook<D, F>(&self, dialect: D, hook: F)
+    pub fn register_dialect_hook<T, F>(&self, hook: F)
     where
-        D: Into<interner::Symbol>,
+        T: DialectRegistration,
         F: Fn(&mut DialectInfo, &Context) + 'static,
     {
+        let dialect_name = <T as DialectRegistration>::NAMESPACE.into();
         let mut dialect_hooks = self.dialect_hooks.borrow_mut();
         let registered_hooks =
-            dialect_hooks.entry(dialect.into()).or_insert_with(|| Vec::with_capacity(1));
+            dialect_hooks.entry(dialect_name).or_insert_with(|| Vec::with_capacity(1));
         registered_hooks.push(Box::new(hook));
     }
 
