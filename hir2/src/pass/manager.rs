@@ -396,7 +396,7 @@ impl OpPassManager {
         let num_passes = self.passes.len();
         let passes = core::mem::replace(&mut self.passes, SmallVec::with_capacity(num_passes));
         let prev_adaptor = None::<Box<OpToOpPassAdaptor>>;
-        passes.into_iter().try_fold(
+        let (_, prev_adaptor) = passes.into_iter().try_fold(
             (&mut self.passes, prev_adaptor),
             |(passes, prev), mut pass| {
                 // Is this pass an adaptor?
@@ -435,6 +435,10 @@ impl OpPassManager {
                 }
             },
         )?;
+
+        if let Some(prev_adaptor) = prev_adaptor {
+            self.passes.push(prev_adaptor);
+        }
 
         // If this is a op-agnostic pass manager, there is nothing left to do.
         match self.name.as_ref() {
