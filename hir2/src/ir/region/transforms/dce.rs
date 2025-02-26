@@ -240,10 +240,10 @@ impl Region {
             reachable.extend(iter);
 
             // Collect all of the dead blocks and push the live regions on the worklist
-            let mut cursor = blocks.front_mut();
-            cursor.move_next();
-            while let Some(mut block) = cursor.as_pointer() {
-                cursor.move_next();
+            let mut cursor = blocks.front().as_pointer().and_then(|blk| blk.next());
+            drop(current_region);
+            while let Some(mut block) = cursor.take() {
+                cursor = block.next();
 
                 if reachable.contains(&block) {
                     // Walk any regions within this block
