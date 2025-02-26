@@ -160,6 +160,7 @@ impl LiveMap {
             for successor_idx in 0..num_successors {
                 let operands = branch_op.get_successor_operands(successor_idx);
                 let succ = op.successor(successor_idx).dest.borrow().successor();
+                // Produced operands are always live if the terminator is live
                 for arg in succ.borrow().arguments().iter().copied().take(operands.num_produced()) {
                     self.set_proved_live(arg as ValueRef);
                 }
@@ -343,10 +344,13 @@ impl Region {
         // Iterate successors in reverse to minimize the amount of operand shifting
         for succ_index in (0..op.num_successors()).rev() {
             let mut succ = op.successor_mut(succ_index);
+            let block = succ.dest.borrow().successor();
             // Iterate arguments in reverse so that erasing an argument does not shift the others
             let num_arguments = succ.arguments.len();
             for arg_index in (0..num_arguments).rev() {
-                if !live_map.was_proven_live(&succ.arguments[arg_index].borrow().as_value_ref()) {
+                let arg = block.borrow().get_argument(arg_index) as ValueRef;
+                let is_dead = !live_map.was_proven_live(&arg);
+                if is_dead {
                     succ.arguments.erase(arg_index);
                 }
             }
