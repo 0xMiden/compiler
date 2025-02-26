@@ -135,8 +135,9 @@ mod tests {
     use midenc_session::diagnostics::Severity;
 
     use crate::{
-        attributes::Overflow, dialects::test::Add, Builder, BuilderExt, Context, Op, Operation,
-        Report, Spanned,
+        attributes::Overflow,
+        dialects::test::{self, Add},
+        Builder, BuilderExt, Context, Op, Operation, Report, Spanned,
     };
 
     derive! {
@@ -168,7 +169,7 @@ mod tests {
         use crate::{SourceSpan, Type};
 
         let context = Rc::new(Context::default());
-        context.register_dialect_hook("test", |info, _ctx| {
+        context.register_dialect_hook::<test::TestDialect, _>(|info, _ctx| {
             info.register_operation_trait::<Add, dyn ArithmeticOp>();
         });
         let block = context.create_block_with_params([Type::U32, Type::U32]);
