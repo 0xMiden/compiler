@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use cargo_component::config::{CargoArguments, Config};
+use cargo_component::config::CargoArguments;
 use cargo_metadata::{Artifact, Message};
 
 use crate::target::install_wasm32_wasip1;
@@ -16,7 +16,6 @@ fn is_wasm_target(target: &str) -> bool {
 }
 
 pub fn run_cargo_command_for_non_component(
-    config: &Config,
     subcommand: Option<&str>,
     cargo_args: &CargoArguments,
     spawn_args: &[String],
@@ -56,7 +55,7 @@ pub fn run_cargo_command_for_non_component(
 
     // Handle the target for build command
     if is_build {
-        install_wasm32_wasip1(config)?;
+        install_wasm32_wasip1()?;
 
         // Add an implicit wasm32-wasip1 target if there isn't a wasm target present
         if !cargo_args.targets.iter().any(|t| is_wasm_target(t))

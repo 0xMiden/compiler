@@ -1,6 +1,42 @@
 (component
   (type (;0;)
     (instance
+      (type (;0;) (func (result s32)))
+      (export (;0;) "heap-base" (func (type 0)))
+    )
+  )
+  (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;0;) (type 0)))
+  (type (;1;)
+    (instance
+      (type (;0;) (func (param "a" float32) (param "b" float32) (result float32)))
+      (export (;0;) "add" (func (type 0)))
+    )
+  )
+  (import "miden:core-import/intrinsics-felt@1.0.0" (instance (;1;) (type 1)))
+  (type (;2;)
+    (instance
+      (type (;0;) (func (param "a0" s32) (param "a1" s32) (param "a2" s32) (param "a3" s32) (param "a4" s32) (param "a5" s32) (param "a6" s32) (param "a7" s32) (param "result-ptr" s32)))
+      (export (;0;) "hash-one-to-one" (func (type 0)))
+    )
+  )
+  (import "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0" (instance (;2;) (type 2)))
+  (type (;3;)
+    (instance
+      (type (;0;) (func (param "asset0" float32) (param "asset1" float32) (param "asset2" float32) (param "asset3" float32) (param "result-ptr" s32)))
+      (export (;0;) "add-asset" (func (type 0)))
+      (export (;1;) "remove-asset" (func (type 0)))
+    )
+  )
+  (import "miden:core-import/account@1.0.0" (instance (;3;) (type 3)))
+  (type (;4;)
+    (instance
+      (type (;0;) (func (param "asset0" float32) (param "asset1" float32) (param "asset2" float32) (param "asset3" float32) (param "tag" float32) (param "note-type" float32) (param "recipient0" float32) (param "recipient1" float32) (param "recipient2" float32) (param "recipient3" float32) (result float32)))
+      (export (;0;) "create-note" (func (type 0)))
+    )
+  )
+  (import "miden:core-import/tx@1.0.0" (instance (;4;) (type 4)))
+  (type (;5;)
+    (instance
       (type (;0;) (record (field "inner" float32)))
       (export (;1;) "felt" (type (eq 0)))
       (type (;2;) (tuple 1 1 1 1))
@@ -16,43 +52,7 @@
       (export (;12;) "note-type" (type (eq 11)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
-  (type (;1;)
-    (instance
-      (type (;0;) (func (result s32)))
-      (export (;0;) "heap-base" (func (type 0)))
-    )
-  )
-  (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;1;) (type 1)))
-  (type (;2;)
-    (instance
-      (type (;0;) (func (param "a" float32) (param "b" float32) (result float32)))
-      (export (;0;) "add" (func (type 0)))
-    )
-  )
-  (import "miden:core-import/intrinsics-felt@1.0.0" (instance (;2;) (type 2)))
-  (type (;3;)
-    (instance
-      (type (;0;) (func (param "a0" s32) (param "a1" s32) (param "a2" s32) (param "a3" s32) (param "a4" s32) (param "a5" s32) (param "a6" s32) (param "a7" s32) (param "result-ptr" s32)))
-      (export (;0;) "hash-one-to-one" (func (type 0)))
-    )
-  )
-  (import "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0" (instance (;3;) (type 3)))
-  (type (;4;)
-    (instance
-      (type (;0;) (func (param "asset0" float32) (param "asset1" float32) (param "asset2" float32) (param "asset3" float32) (param "result-ptr" s32)))
-      (export (;0;) "add-asset" (func (type 0)))
-      (export (;1;) "remove-asset" (func (type 0)))
-    )
-  )
-  (import "miden:core-import/account@1.0.0" (instance (;4;) (type 4)))
-  (type (;5;)
-    (instance
-      (type (;0;) (func (param "asset0" float32) (param "asset1" float32) (param "asset2" float32) (param "asset3" float32) (param "tag" float32) (param "note-type" float32) (param "recipient0" float32) (param "recipient1" float32) (param "recipient2" float32) (param "recipient3" float32) (result float32)))
-      (export (;0;) "create-note" (func (type 0)))
-    )
-  )
-  (import "miden:core-import/tx@1.0.0" (instance (;5;) (type 5)))
+  (import "miden:base/core-types@1.0.0" (instance (;5;) (type 5)))
   (core module (;0;)
     (type (;0;) (func (param f32 f32) (result f32)))
     (type (;1;) (func (param i32 i32 i32 i32 i32 i32 i32 i32 i32)))
@@ -63,10 +63,10 @@
     (type (;6;) (func (param i32 i32) (result i32)))
     (type (;7;) (func (param i32 i32 i32)))
     (type (;8;) (func (param i32 i32 i32 i32) (result i32)))
-    (type (;9;) (func (param f32 f32 f32 f32)))
-    (type (;10;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)))
-    (type (;11;) (func (param i32)))
-    (type (;12;) (func (param f32 f32 f32 f32) (result i32)))
+    (type (;9;) (func (param i32)))
+    (type (;10;) (func (param f32 f32 f32 f32) (result i32)))
+    (type (;11;) (func (param f32 f32 f32 f32)))
+    (type (;12;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)))
     (type (;13;) (func (param i32 i32 i32) (result i32)))
     (type (;14;) (func (param i32 i32)))
     (type (;15;) (func (param i32 f32 f32 i32) (result f32)))
@@ -82,7 +82,7 @@
     (func $__wasm_call_ctors (;6;) (type 5))
     (func $basic_wallet::bindings::__link_custom_section_describing_imports (;7;) (type 5))
     (func $__rust_alloc (;8;) (type 6) (param i32 i32) (result i32)
-      i32.const 1048756
+      i32.const 1048740
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -90,7 +90,7 @@
     (func $__rust_dealloc (;9;) (type 7) (param i32 i32 i32))
     (func $__rust_realloc (;10;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048756
+        i32.const 1048740
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -111,7 +111,7 @@
     )
     (func $__rust_alloc_zeroed (;11;) (type 6) (param i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048756
+        i32.const 1048740
         local.get 1
         local.get 0
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -125,97 +125,13 @@
       end
       local.get 1
     )
-    (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset (;12;) (type 9) (param f32 f32 f32 f32)
-      (local i32 i32)
-      global.get $__stack_pointer
-      local.tee 4
-      i32.const 64
-      i32.sub
-      i32.const -32
-      i32.and
-      local.tee 5
-      global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
-      local.get 5
-      local.get 3
-      f32.store offset=12
-      local.get 5
-      local.get 2
-      f32.store offset=8
-      local.get 5
-      local.get 1
-      f32.store offset=4
-      local.get 5
-      local.get 0
-      f32.store
-      local.get 5
-      i32.const 32
-      i32.add
-      local.get 5
-      call $miden_base_sys::bindings::account::add_asset
-      local.get 4
-      global.set $__stack_pointer
-    )
-    (func $miden:basic-wallet/basic-wallet@1.0.0#send-asset (;13;) (type 10) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)
-      (local i32 i32)
-      global.get $__stack_pointer
-      local.tee 10
-      i32.const 96
-      i32.sub
-      i32.const -32
-      i32.and
-      local.tee 11
-      global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
-      local.get 11
-      local.get 3
-      f32.store offset=12
-      local.get 11
-      local.get 2
-      f32.store offset=8
-      local.get 11
-      local.get 1
-      f32.store offset=4
-      local.get 11
-      local.get 0
-      f32.store
-      local.get 11
-      local.get 9
-      f32.store offset=44
-      local.get 11
-      local.get 8
-      f32.store offset=40
-      local.get 11
-      local.get 7
-      f32.store offset=36
-      local.get 11
-      local.get 6
-      f32.store offset=32
-      local.get 11
-      i32.const 64
-      i32.add
-      local.get 11
-      call $miden_base_sys::bindings::account::remove_asset
-      local.get 11
-      i32.const 64
-      i32.add
-      local.get 4
-      local.get 5
-      local.get 11
-      i32.const 32
-      i32.add
-      call $miden_base_sys::bindings::tx::create_note
-      drop
-      local.get 10
-      global.set $__stack_pointer
-    )
-    (func $miden:basic-wallet/aux@1.0.0#test-felt-intrinsics (;14;) (type 0) (param f32 f32) (result f32)
+    (func $miden:basic-wallet/aux@1.0.0#test-felt-intrinsics (;12;) (type 0) (param f32 f32) (result f32)
       call $wit_bindgen_rt::run_ctors_once
       local.get 0
       local.get 1
       call $miden_stdlib_sys::intrinsics::felt::extern_add
     )
-    (func $miden:basic-wallet/aux@1.0.0#test-stdlib (;15;) (type 6) (param i32 i32) (result i32)
+    (func $miden:basic-wallet/aux@1.0.0#test-stdlib (;13;) (type 6) (param i32 i32) (result i32)
       (local i32 i32 i32 i32 i32 i32 i32 i32)
       global.get $__stack_pointer
       local.tee 2
@@ -350,10 +266,10 @@
           i32.const 0
           local.get 2
           i64.load offset=8
-          i64.store offset=1048740 align=4
+          i64.store offset=1048744 align=4
           local.get 3
           global.set $__stack_pointer
-          i32.const 1048740
+          i32.const 1048744
           return
         end
         unreachable
@@ -365,14 +281,98 @@
       call $alloc::raw_vec::handle_error
       unreachable
     )
-    (func $miden:basic-wallet/aux@1.0.0#process-list-felt (;16;) (type 6) (param i32 i32) (result i32)
+    (func $miden:basic-wallet/aux@1.0.0#process-list-felt (;14;) (type 6) (param i32 i32) (result i32)
       call $wit_bindgen_rt::run_ctors_once
       unreachable
     )
-    (func $cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt (;17;) (type 11) (param i32))
-    (func $miden:basic-wallet/aux@1.0.0#process-core-asset (;18;) (type 12) (param f32 f32 f32 f32) (result i32)
+    (func $cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt (;15;) (type 9) (param i32))
+    (func $miden:basic-wallet/aux@1.0.0#process-core-asset (;16;) (type 10) (param f32 f32 f32 f32) (result i32)
       call $wit_bindgen_rt::run_ctors_once
       unreachable
+    )
+    (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset (;17;) (type 11) (param f32 f32 f32 f32)
+      (local i32 i32)
+      global.get $__stack_pointer
+      local.tee 4
+      i32.const 64
+      i32.sub
+      i32.const -32
+      i32.and
+      local.tee 5
+      global.set $__stack_pointer
+      call $wit_bindgen_rt::run_ctors_once
+      local.get 5
+      local.get 3
+      f32.store offset=12
+      local.get 5
+      local.get 2
+      f32.store offset=8
+      local.get 5
+      local.get 1
+      f32.store offset=4
+      local.get 5
+      local.get 0
+      f32.store
+      local.get 5
+      i32.const 32
+      i32.add
+      local.get 5
+      call $miden_base_sys::bindings::account::add_asset
+      local.get 4
+      global.set $__stack_pointer
+    )
+    (func $miden:basic-wallet/basic-wallet@1.0.0#send-asset (;18;) (type 12) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)
+      (local i32 i32)
+      global.get $__stack_pointer
+      local.tee 10
+      i32.const 96
+      i32.sub
+      i32.const -32
+      i32.and
+      local.tee 11
+      global.set $__stack_pointer
+      call $wit_bindgen_rt::run_ctors_once
+      local.get 11
+      local.get 3
+      f32.store offset=12
+      local.get 11
+      local.get 2
+      f32.store offset=8
+      local.get 11
+      local.get 1
+      f32.store offset=4
+      local.get 11
+      local.get 0
+      f32.store
+      local.get 11
+      local.get 9
+      f32.store offset=44
+      local.get 11
+      local.get 8
+      f32.store offset=40
+      local.get 11
+      local.get 7
+      f32.store offset=36
+      local.get 11
+      local.get 6
+      f32.store offset=32
+      local.get 11
+      i32.const 64
+      i32.add
+      local.get 11
+      call $miden_base_sys::bindings::account::remove_asset
+      local.get 11
+      i32.const 64
+      i32.add
+      local.get 4
+      local.get 5
+      local.get 11
+      i32.const 32
+      i32.add
+      call $miden_base_sys::bindings::tx::create_note
+      drop
+      local.get 10
+      global.set $__stack_pointer
     )
     (func $cabi_realloc_wit_bindgen_0_28_0 (;19;) (type 8) (param i32 i32 i32 i32) (result i32)
       local.get 0
@@ -587,11 +587,11 @@
       end
       unreachable
     )
-    (func $<alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop (;27;) (type 11) (param i32))
+    (func $<alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop (;27;) (type 9) (param i32))
     (func $alloc::raw_vec::new_cap (;28;) (type 16) (param i32) (result i32)
       local.get 0
     )
-    (func $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop (;29;) (type 11) (param i32)
+    (func $<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop (;29;) (type 9) (param i32)
       local.get 0
       i32.const 1
       i32.const 1
@@ -952,43 +952,43 @@
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (export "memory" (memory 0))
-    (export "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset))
-    (export "miden:basic-wallet/basic-wallet@1.0.0#send-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#send-asset))
     (export "miden:basic-wallet/aux@1.0.0#test-felt-intrinsics" (func $miden:basic-wallet/aux@1.0.0#test-felt-intrinsics))
     (export "miden:basic-wallet/aux@1.0.0#test-stdlib" (func $miden:basic-wallet/aux@1.0.0#test-stdlib))
     (export "miden:basic-wallet/aux@1.0.0#process-list-felt" (func $miden:basic-wallet/aux@1.0.0#process-list-felt))
     (export "cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt" (func $cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt))
     (export "miden:basic-wallet/aux@1.0.0#process-core-asset" (func $miden:basic-wallet/aux@1.0.0#process-core-asset))
+    (export "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset))
+    (export "miden:basic-wallet/basic-wallet@1.0.0#send-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#send-asset))
     (export "cabi_post_miden:basic-wallet/aux@1.0.0#test-stdlib" (func $cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt))
     (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
     (export "cabi_realloc" (func $cabi_realloc))
     (elem (;0;) (i32.const 1) func $basic_wallet::bindings::__link_custom_section_describing_imports $cabi_realloc)
-    (data $.rodata (;0;) (i32.const 1048576) "/rustc/419b3e2d3e350822550eee0e82eeded4d324d584/library/alloc/src/slice.rs\00\00\00\00\10\00J\00\00\00\a1\00\00\00\19\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00src/bindings.rs\00\80\00\10\00\0f\00\00\00@\01\00\00*\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "/rustc/419b3e2d3e350822550eee0e82eeded4d324d584/library/alloc/src/slice.rs\00\00\00\00\10\00J\00\00\00\a1\00\00\00\19\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00src/bindings.rs\00\80\00\10\00\0f\00\00\00L\01\00\00*\00\00\00\02\00\00\00")
   )
-  (alias export 2 "add" (func (;0;)))
+  (alias export 1 "add" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
   (core instance (;0;)
     (export "add" (func 0))
   )
-  (alias export 3 "hash-one-to-one" (func (;1;)))
+  (alias export 2 "hash-one-to-one" (func (;1;)))
   (core func (;1;) (canon lower (func 1)))
   (core instance (;1;)
     (export "hash-one-to-one" (func 1))
   )
-  (alias export 1 "heap-base" (func (;2;)))
+  (alias export 0 "heap-base" (func (;2;)))
   (core func (;2;) (canon lower (func 2)))
   (core instance (;2;)
     (export "heap-base" (func 2))
   )
-  (alias export 4 "add-asset" (func (;3;)))
+  (alias export 3 "add-asset" (func (;3;)))
   (core func (;3;) (canon lower (func 3)))
-  (alias export 4 "remove-asset" (func (;4;)))
+  (alias export 3 "remove-asset" (func (;4;)))
   (core func (;4;) (canon lower (func 4)))
   (core instance (;3;)
     (export "add-asset" (func 3))
     (export "remove-asset" (func 4))
   )
-  (alias export 5 "create-note" (func (;5;)))
+  (alias export 4 "create-note" (func (;5;)))
   (core func (;5;) (canon lower (func 5)))
   (core instance (;4;)
     (export "create-note" (func 5))
@@ -1002,23 +1002,23 @@
     )
   )
   (alias core export 5 "memory" (core memory (;0;)))
-  (alias core export 5 "cabi_realloc" (core func (;6;)))
-  (alias export 0 "core-asset" (type (;6;)))
+  (alias export 5 "core-asset" (type (;6;)))
   (type (;7;) (func (param "core-asset" 6)))
-  (alias core export 5 "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (core func (;7;)))
-  (func (;6;) (type 7) (canon lift (core func 7)))
-  (alias export 0 "tag" (type (;8;)))
-  (alias export 0 "note-type" (type (;9;)))
-  (alias export 0 "recipient" (type (;10;)))
+  (alias core export 5 "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (core func (;6;)))
+  (alias core export 5 "cabi_realloc" (core func (;7;)))
+  (func (;6;) (type 7) (canon lift (core func 6)))
+  (alias export 5 "tag" (type (;8;)))
+  (alias export 5 "note-type" (type (;9;)))
+  (alias export 5 "recipient" (type (;10;)))
   (type (;11;) (func (param "core-asset" 6) (param "tag" 8) (param "note-type" 9) (param "recipient" 10)))
   (alias core export 5 "miden:basic-wallet/basic-wallet@1.0.0#send-asset" (core func (;8;)))
   (func (;7;) (type 11) (canon lift (core func 8)))
-  (alias export 0 "felt" (type (;12;)))
-  (alias export 0 "word" (type (;13;)))
-  (alias export 0 "core-asset" (type (;14;)))
-  (alias export 0 "tag" (type (;15;)))
-  (alias export 0 "recipient" (type (;16;)))
-  (alias export 0 "note-type" (type (;17;)))
+  (alias export 5 "felt" (type (;12;)))
+  (alias export 5 "word" (type (;13;)))
+  (alias export 5 "core-asset" (type (;14;)))
+  (alias export 5 "tag" (type (;15;)))
+  (alias export 5 "recipient" (type (;16;)))
+  (alias export 5 "note-type" (type (;17;)))
   (component (;0;)
     (type (;0;) (record (field "inner" float32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
@@ -1067,7 +1067,7 @@
     )
   )
   (export (;7;) "miden:basic-wallet/basic-wallet@1.0.0" (instance 6))
-  (alias export 0 "felt" (type (;18;)))
+  (alias export 5 "felt" (type (;18;)))
   (type (;19;) (func (param "a" 18) (param "b" 18) (result 18)))
   (alias core export 5 "miden:basic-wallet/aux@1.0.0#test-felt-intrinsics" (core func (;9;)))
   (func (;8;) (type 19) (canon lift (core func 9)))
@@ -1075,12 +1075,12 @@
   (type (;21;) (func (param "input" 20) (result 20)))
   (alias core export 5 "miden:basic-wallet/aux@1.0.0#test-stdlib" (core func (;10;)))
   (alias core export 5 "cabi_post_miden:basic-wallet/aux@1.0.0#test-stdlib" (core func (;11;)))
-  (func (;9;) (type 21) (canon lift (core func 10) (memory 0) (realloc 6) (post-return 11)))
+  (func (;9;) (type 21) (canon lift (core func 10) (memory 0) (realloc 7) (post-return 11)))
   (type (;22;) (list 18))
   (type (;23;) (func (param "input" 22) (result 22)))
   (alias core export 5 "miden:basic-wallet/aux@1.0.0#process-list-felt" (core func (;12;)))
   (alias core export 5 "cabi_post_miden:basic-wallet/aux@1.0.0#process-list-felt" (core func (;13;)))
-  (func (;10;) (type 23) (canon lift (core func 12) (memory 0) (realloc 6) (post-return 13)))
+  (func (;10;) (type 23) (canon lift (core func 12) (memory 0) (realloc 7) (post-return 13)))
   (type (;24;) (func (param "input" 6) (result 6)))
   (alias core export 5 "miden:basic-wallet/aux@1.0.0#process-core-asset" (core func (;14;)))
   (func (;11;) (type 24) (canon lift (core func 14) (memory 0)))

@@ -89,7 +89,7 @@ thiserror = { package = "miden-thiserror", version = "1.0" }
 #thiserror = { version = "1.0", git = "https://github.com/bitwalker/thiserror", branch = "no-std" }
 toml = { version = "0.8", features = ["preserve_order"] }
 derive_more = "0.99"
-indexmap = "2.2"
+indexmap = "2.7"
 miden-formatting = { version = "0.1", default-features = false }
 miden-parsing = "0.1"
 

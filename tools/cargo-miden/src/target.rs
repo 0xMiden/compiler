@@ -5,9 +5,8 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use cargo_component::config::Config;
 
-pub fn install_wasm32_wasip1(config: &Config) -> Result<()> {
+pub fn install_wasm32_wasip1() -> Result<()> {
     let sysroot = get_sysroot()?;
     if sysroot.join("lib/rustlib/wasm32-wasip1").exists() {
         return Ok(());
@@ -21,7 +20,7 @@ pub fn install_wasm32_wasip1(config: &Config) -> Result<()> {
         );
     }
 
-    config.terminal().status("Installing", "wasm32-wasip1 target")?;
+    log::info!("Installing wasm32-wasip1 target");
 
     let output = Command::new("rustup")
         .arg("target")
