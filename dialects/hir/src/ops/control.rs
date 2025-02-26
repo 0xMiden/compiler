@@ -35,6 +35,14 @@ pub struct Br {
     target: Successor,
 }
 
+impl Canonicalizable for Br {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites
+            .push(crate::canonicalization::SimplifyBrToBlockWithSinglePred::new(context.clone()));
+        rewrites.push(crate::canonicalization::SimplifyPassthroughBr::new(context));
+    }
+}
+
 impl BranchOpInterface for Br {
     #[inline]
     fn get_successor_for_operands(
