@@ -1,15 +1,10 @@
-# mod test_rust_32f5b5ff2aa96482da580eb924797236536a4ae0cbbb6d7daa491e9293c00bda
+# mod root_ns:root::test_rust_32f5b5ff2aa96482da580eb924797236536a4ae0cbbb6d7daa491e9293c00bda
 
 export.entrypoint
-    movdn.3
-    movdn.3
-    exec.::std::math::u64::lt
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
+
+        movdn.3
+        movdn.3
+        exec.::std::math::u64::lt
 end
 
 

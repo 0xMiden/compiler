@@ -1,7 +1,9 @@
-# mod test_rust_a27a86095ba52da4bcd985229e6b3275c1a4a8354c4b119cef358f6ec3ac98c4
+# mod root_ns:root::test_rust_a27a86095ba52da4bcd985229e6b3275c1a4a8354c4b119cef358f6ec3ac98c4
 
 export.entrypoint
-    swap.1 u32wrapping_sub
+
+        swap.1
+        u32wrapping_sub
 end
 
 

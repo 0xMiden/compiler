@@ -1,7 +1,9 @@
-# mod test_rust_597108c1534cd7c973774710a354c519e8a9ce32a5a499ffe5839f4fea0cd83b
+# mod root_ns:root::test_rust_597108c1534cd7c973774710a354c519e8a9ce32a5a499ffe5839f4fea0cd83b
 
 export.entrypoint
-    push.4294967295 u32xor
+
+        push.4294967295
+        u32xor
 end
 
 

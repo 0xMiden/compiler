@@ -1,7 +1,11 @@
-# mod test_rust_711c7705576a28225a7e87d297c54811b91eb1b69f3f407376a0af96dcad37b2
+# mod root_ns:root::test_rust_711c7705576a28225a7e87d297c54811b91eb1b69f3f407376a0af96dcad37b2
 
 export.entrypoint
-    u32wrapping_add push.65535 u32and
+
+        push.65535
+        movdn.2
+        u32wrapping_add
+        u32and
 end
 
 

@@ -1,34 +1,32 @@
-builtin.world  #[name = #world] {
+builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
 
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+    builtin.module  #[name = #test_rust_3114079be600d0d34a20fede92f64baec1c63ae3845306ba2de322513ab73343] #[visibility = public] {
 
-        builtin.module  #[name = #test_rust_3114079be600d0d34a20fede92f64baec1c63ae3845306ba2de322513ab73343] #[visibility = public] {
+        builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
+        ^block6(v0: i32, v1: i32):
+            v3 = hir.bitcast v0 : u32 #[ty = u32];
+            v4 = hir.bitcast v1 : u32 #[ty = u32];
+            v5 = hir.lt v3, v4 : i1;
+            v6 = hir.zext v5 : u32 #[ty = u32];
+            v7 = hir.bitcast v6 : i32 #[ty = i32];
+            v8 = hir.constant 0 : i32;
+            v9 = hir.neq v7, v8 : i1;
+            v10 = hir.select v9, v0, v1 : i32;
+            hir.br block7(v10);
+        ^block7(v2: i32):
+            hir.ret v2;
+        };
+        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
-            ^block6(v0: i32, v1: i32):
-                v3 = hir.bitcast v0 : u32 #[ty = u32];
-                v4 = hir.bitcast v1 : u32 #[ty = u32];
-                v5 = hir.lt v3, v4 : i1;
-                v6 = hir.zext v5 : u32 #[ty = u32];
-                v7 = hir.constant 0 : i32;
-                v8 = hir.neq v6, v7 : i1;
-                v9 = hir.select v8, v0, v1 : i32;
-                hir.br block7(v9);
-            ^block7(v2: i32):
-                hir.ret v2;
-            };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+            hir.ret_imm  #[value = 1048576];
+        };
+        builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
 
-                hir.ret_imm  #[value = 1048576];
-            };
-            builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
+            hir.ret_imm  #[value = 1048576];
+        };
+        builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
 
-                hir.ret_imm  #[value = 1048576];
-            };
-            builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
+            hir.ret_imm  #[value = 1048576];
         };
     };
 };

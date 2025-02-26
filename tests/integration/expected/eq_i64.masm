@@ -1,7 +1,8 @@
-# mod test_rust_335e8b9940dcc6e8b83a7c4b5c50143e223e0f4e2cb269440866b6f3f4a0d5a6
+# mod root_ns:root::test_rust_335e8b9940dcc6e8b83a7c4b5c50143e223e0f4e2cb269440866b6f3f4a0d5a6
 
 export.entrypoint
-    movdn.3 movdn.3 exec.::std::math::u64::eq
+
+        exec.::std::math::u64::eq
 end
 
 

@@ -1,7 +1,8 @@
-# mod test_rust_bf1daa4716c09a8fc6f8362a72042139765ebe6efcfdd17e817a70b2a495f6b1
+# mod root_ns:root::test_rust_bf1daa4716c09a8fc6f8362a72042139765ebe6efcfdd17e817a70b2a495f6b1
 
 export.entrypoint
-    swap.1 u32xor
+
+        u32xor
 end
 
 

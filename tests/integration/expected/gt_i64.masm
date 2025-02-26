@@ -1,7 +1,10 @@
-# mod test_rust_ceadd0c619424ea8897ac24b5176dad699485353543e7607a12bdee342a50966
+# mod root_ns:root::test_rust_ceadd0c619424ea8897ac24b5176dad699485353543e7607a12bdee342a50966
 
 export.entrypoint
-    movdn.3 movdn.3 exec.::intrinsics::i64::gt
+
+        movdn.3
+        movdn.3
+        exec.::intrinsics::i64::gt
 end
 
 

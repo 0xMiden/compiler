@@ -1,7 +1,9 @@
-# mod test_rust_dcf68bbd3d38962baca8bcc39895a74e9f927a15ae1af780f83843028d53154e
+# mod root_ns:root::test_rust_dcf68bbd3d38962baca8bcc39895a74e9f927a15ae1af780f83843028d53154e
 
 export.entrypoint
-    swap.1 exec.::intrinsics::i32::is_gt
+
+        swap.1
+        exec.::intrinsics::i32::is_gt
 end
 
 

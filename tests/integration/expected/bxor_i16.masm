@@ -1,7 +1,8 @@
-# mod test_rust_06b51ddbcc44da2e5b8841fa052397384b0f5d4eefe1a6761fd89258dd630db1
+# mod root_ns:root::test_rust_06b51ddbcc44da2e5b8841fa052397384b0f5d4eefe1a6761fd89258dd630db1
 
 export.entrypoint
-    u32xor
+
+        u32xor
 end
 
 

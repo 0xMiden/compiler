@@ -1,7 +1,8 @@
-# mod test_rust_ac7483d8e665bc8618c926c4a827af8cc8b060db1a400373319417a1045674f6
+# mod root_ns:root::test_rust_ac7483d8e665bc8618c926c4a827af8cc8b060db1a400373319417a1045674f6
 
 export.entrypoint
-    exec.::intrinsics::i64::wrapping_mul
+
+        exec.::intrinsics::i64::wrapping_mul
 end
 
 

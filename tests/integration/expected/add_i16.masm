@@ -1,7 +1,8 @@
-# mod test_rust_4a80dace0dddc4f08e0a7761b4e1d269aa474b6beb14702baa097a4626d593c1
+# mod root_ns:root::test_rust_4a80dace0dddc4f08e0a7761b4e1d269aa474b6beb14702baa097a4626d593c1
 
 export.entrypoint
-    u32wrapping_add
+
+        u32wrapping_add
 end
 
 
