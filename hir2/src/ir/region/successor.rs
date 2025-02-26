@@ -174,6 +174,10 @@ impl<'a> Iterator for RegionSuccessorIter<'a> {
             return None;
         }
 
-        self.get(self.index)
+        let next = self.get(self.index)?;
+
+        self.index += 1;
+
+        Some(next)
     }
 }
