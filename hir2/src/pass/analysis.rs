@@ -363,7 +363,7 @@ impl AnalysisManager {
     where
         A: Analysis<Target = Operation>,
     {
-        self.analyses.analyses.borrow_mut().get(self.pass_instrumentor(), self.clone())
+        self.get_analysis_for::<A, Operation>()
     }
 
     /// Query for the given analysis for the current operation of a specific derived operation type.
@@ -374,10 +374,30 @@ impl AnalysisManager {
         A: Analysis<Target = O>,
         O: 'static,
     {
+        let op = {
+            let analysis_map = self.analyses.analyses.borrow();
+            let cached = analysis_map.get_cached_for::<A, O>();
+            if let Some(cached) = cached {
+                return Ok(cached);
+            }
+            analysis_map.ir
+        };
+
+        // We have to construct the analysis without borrowing the AnalysisMap, otherwise we might
+        // try to re-borrow the map to construct a dependent analysis while holding a mutable ref.
+        let pi = self.pass_instrumentor();
+        let am = self.clone();
+        let ir = <O as PassTarget>::into_target(&op);
+        let analysis = AnalysisMap::compute_analysis_for::<A, O>(pi, &*ir, &op, am)?;
+
+        // Once the analysis is constructed, we can add it to the map
         self.analyses
             .analyses
             .borrow_mut()
-            .get_analysis_for::<A, O>(self.pass_instrumentor(), self.clone())
+            .analyses
+            .insert(TypeId::of::<A>(), Rc::clone(&analysis) as Rc<dyn OperationAnalysis>);
+
+        Ok(analysis)
     }
 
     /// Query for a cached entry of the given analysis on the current operation.
@@ -611,24 +631,6 @@ impl AnalysisMap {
         }
     }
 
-    /// Get an analysis for the current IR unit, computing it if necessary.
-    pub fn get<A>(
-        &mut self,
-        pi: Option<Rc<PassInstrumentor>>,
-        am: AnalysisManager,
-    ) -> Result<Rc<A>, Report>
-    where
-        A: Analysis<Target = Operation>,
-    {
-        Self::get_analysis_impl::<A, Operation>(
-            &mut self.analyses,
-            pi,
-            &self.ir.borrow(),
-            &self.ir,
-            am,
-        )
-    }
-
     /// Get a cached analysis instance if one exists, otherwise return `None`.
     pub fn get_cached<A>(&self) -> Option<Rc<A>>
     where
@@ -637,25 +639,16 @@ impl AnalysisMap {
         self.analyses.get(&TypeId::of::<A>()).cloned().and_then(|a| a.downcast::<A>())
     }
 
-    /// Get an analysis for the current IR unit, assuming it's of the specified type, computing it
-    /// if necessary.
-    ///
-    /// NOTE: This will panic if the current operation is not of type `O`.
-    pub fn get_analysis_for<A, O>(
-        &mut self,
-        pi: Option<Rc<PassInstrumentor>>,
-        am: AnalysisManager,
-    ) -> Result<Rc<A>, Report>
+    /// Get a cached analysis instance if one exists, otherwise return `None`.
+    pub fn get_cached_for<A, O>(&self) -> Option<Rc<A>>
     where
         A: Analysis<Target = O>,
         O: 'static,
     {
-        let ir = <<A as Analysis>::Target as PassTarget>::into_target(&self.ir);
-        Self::get_analysis_impl::<A, O>(&mut self.analyses, pi, &*ir, &self.ir, am)
+        self.analyses.get(&TypeId::of::<A>()).cloned().and_then(|a| a.downcast::<A>())
     }
 
-    fn get_analysis_impl<A, O>(
-        analyses: &mut FxHashMap<TypeId, Rc<dyn OperationAnalysis>>,
+    fn compute_analysis_for<A, O>(
         pi: Option<Rc<PassInstrumentor>>,
         ir: &O,
         op: &OperationRef,
@@ -664,27 +657,21 @@ impl AnalysisMap {
     where
         A: Analysis<Target = O>,
     {
-        use hashbrown::hash_map::Entry;
-
         let id = TypeId::of::<A>();
-        match analyses.entry(id) {
-            Entry::Vacant(entry) => {
-                // We don't have a cached analysis for the operation, compute it directly and
-                // add it to the cache.
-                if let Some(pi) = pi.as_deref() {
-                    pi.run_before_analysis(core::any::type_name::<A>(), &id, op);
-                }
 
-                let analysis = entry.insert(Self::construct_analysis::<A, O>(am, ir)?);
-
-                if let Some(pi) = pi.as_deref() {
-                    pi.run_after_analysis(core::any::type_name::<A>(), &id, op);
-                }
-
-                Ok(Rc::clone(analysis).downcast::<A>().unwrap())
-            }
-            Entry::Occupied(entry) => Ok(Rc::clone(entry.get()).downcast::<A>().unwrap()),
+        // We don't have a cached analysis for the operation, compute it directly and
+        // add it to the cache.
+        if let Some(pi) = pi.as_deref() {
+            pi.run_before_analysis(core::any::type_name::<A>(), &id, op);
         }
+
+        let analysis = Self::construct_analysis::<A, O>(am, ir)?;
+
+        if let Some(pi) = pi.as_deref() {
+            pi.run_after_analysis(core::any::type_name::<A>(), &id, op);
+        }
+
+        Ok(analysis.downcast::<A>().unwrap())
     }
 
     fn construct_analysis<A, O>(
