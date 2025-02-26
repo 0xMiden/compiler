@@ -15,8 +15,8 @@ use miden_processor::{
     AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
     ProcessState, RowIndex, StackOutputs, VmState, VmStateIterator,
 };
-use midenc_codegen_masm::{NativePtr, Rodata};
-use midenc_hir::Type;
+use midenc_codegen_masm2::{NativePtr, Rodata};
+use midenc_hir2::Type;
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report},
     LinkLibrary, Session, BASE, STDLIB,
@@ -57,7 +57,7 @@ impl Executor {
         args: Vec<Felt>,
         session: &Session,
     ) -> Result<Self, Report> {
-        use midenc_hir::formatter::DisplayHex;
+        use midenc_hir2::formatter::DisplayHex;
         log::debug!(
             "creating executor for package '{}' (digest={})",
             package.name,
@@ -71,7 +71,7 @@ impl Executor {
 
     /// Adds dependencies to the executor
     pub fn with_dependencies(&mut self, dependencies: &[Dependency]) -> Result<&mut Self, Report> {
-        use midenc_hir::formatter::DisplayHex;
+        use midenc_hir2::formatter::DisplayHex;
 
         for dep in dependencies {
             match self.dependency_resolver.resolve(dep) {
@@ -320,7 +320,7 @@ fn render_execution_error(
     execution_state: &DebugExecutor,
     session: &Session,
 ) -> ! {
-    use midenc_hir::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
+    use midenc_session::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
 
     let stacktrace = execution_state.callstack.stacktrace(&execution_state.recent, session);
 
@@ -328,7 +328,7 @@ fn render_execution_error(
 
     if let Some(last_state) = execution_state.last.as_ref() {
         let stack = last_state.stack.iter().map(|elem| elem.as_int());
-        let stack = midenc_hir::DisplayValues::new(stack);
+        let stack = midenc_hir2::formatter::DisplayValues::new(stack);
         let fmp = last_state.fmp.as_int();
         eprintln!(
             "\nLast Known State (at most recent instruction which succeeded):

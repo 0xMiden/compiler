@@ -5,7 +5,7 @@ use expect_test::expect_file;
 use miden_core::utils::group_slice_elements;
 use miden_processor::AdviceInputs;
 use midenc_debug::{Executor, PopFromStack, PushToStack, TestFelt};
-use midenc_hir::Felt;
+use midenc_hir2::Felt;
 use midenc_session::Emit;
 use proptest::{
     arbitrary::any,
@@ -29,7 +29,7 @@ fn test_blake3_hash() {
     );
     // Test expected compilation artifacts
     test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../../expected/{artifact_name}.masm")]);
 
     // FIX: uncomment when https://github.com/0xPolygonMiden/compiler/issues/352 is fixed

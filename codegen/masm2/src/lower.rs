@@ -1,8 +1,11 @@
 mod native_ptr;
 
+use alloc::sync::Arc;
+
 use midenc_dialect_hir as hir;
 use midenc_hir2::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, Operation, Span, Value, ValueRef,
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, OpExt, Operation, Span,
+    SymbolTable, Value, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
 
@@ -38,6 +41,8 @@ impl ToMasmComponent for builtin::Component {
         &self,
         analysis_manager: AnalysisManager,
     ) -> Result<MasmComponent, Report> {
+        std::println!("{}", self.as_operation());
+
         // Get the current compiler context
         let context = self.as_operation().context_rc();
 
@@ -67,7 +72,7 @@ impl ToMasmComponent for builtin::Component {
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
         let mut modules = Vec::default();
         if requires_init {
-            modules.push(Box::new(masm::Module::new(
+            modules.push(Arc::new(masm::Module::new(
                 masm::ModuleKind::Library,
                 component_path.clone(),
             )));
@@ -83,13 +88,22 @@ impl ToMasmComponent for builtin::Component {
 
         // Initialize the MASM component with basic information we have already
         let id = link_info.component().clone();
+
+        // Compute the first page boundary after the end of the globals table to use as the start
+        // of the dynamic heap when the program is executed
+        let heap_base = link_info.reserved_memory_bytes()
+            + link_info.globals_layout().next_page_boundary() as usize;
+        let heap_base = u32::try_from(heap_base)
+            .expect("unable to allocate dynamic heap: global table too large");
+        let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
             id,
             init,
             entrypoint,
             kernel: None,
             rodata: Default::default(),
-            stack_pointer: None,
+            heap_base,
+            stack_pointer,
             modules,
         };
         let builder = MasmComponentBuilder {
@@ -147,7 +161,7 @@ impl MasmComponentBuilder<'_> {
         };
         builder.build_from_interface(interface)?;
 
-        self.component.modules.push(masm_module);
+        self.component.modules.push(Arc::from(masm_module));
 
         Ok(())
     }
@@ -163,7 +177,7 @@ impl MasmComponentBuilder<'_> {
         };
         builder.build(module)?;
 
-        self.component.modules.push(masm_module);
+        self.component.modules.push(Arc::from(masm_module));
 
         Ok(())
     }
@@ -176,7 +190,8 @@ impl MasmComponentBuilder<'_> {
             self.link_info,
         )?;
 
-        let module = &mut self.component.modules[0];
+        let module =
+            Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
         assert_eq!(
             module.path().num_components(),
             1,
@@ -299,19 +314,27 @@ impl MasmFunctionBuilder {
         use alloc::collections::BTreeSet;
 
         use midenc_hir2::dataflow::analyses::LivenessAnalysis;
+        std::println!("{}", &function.as_operation());
 
         let liveness =
             analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
 
         let mut invoked = BTreeSet::default();
         let entry = function.entry_block();
+        let mut stack = crate::OperandStack::default();
+        {
+            let entry_block = entry.borrow();
+            for arg in entry_block.arguments().iter().rev().copied() {
+                stack.push(arg as ValueRef);
+            }
+        }
         let emitter = BlockEmitter {
             function,
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
-            stack: Default::default(),
+            stack,
         };
 
         let body = emitter.emit(&entry.borrow());
@@ -448,6 +471,9 @@ impl HirLowering for hir::While {
 
         // We map `hir::While` semantics to Miden's 'while.true' semantics as follows:
         //
+        // TODO(pauls): We can simplify the lowering here when it is known that a loop is in
+        // do-while form, by simply emitting a `true` to enter the loop the first time.
+        //
         // * First, we must evaluate the "before" block unconditionally, to obtain the value of the
         //   condition that determines whether or not to enter the loop. This is done by inlining
         //   the body of the "before" block at the current position in the current block
@@ -527,18 +553,35 @@ impl HirLowering for hir::While {
     }
 }
 
-impl HirLowering for hir::Yield {
+impl HirLowering for hir::IndexSwitch {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
+        // the selector against each non-default case to determine whether control should enter
+        // that block. The final else contains the default case.
+        todo!()
+    }
+}
+
+impl HirLowering for hir::Yield {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
+
+        // Drop any unused stack operands at this point
+        emitter.drop_unused_operands_at(midenc_hir2::ProgramPoint::before(self.as_operation_ref()));
+
         Ok(())
     }
 }
 
 impl HirLowering for hir::Condition {
-    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
+
+        // Drop any unused stack operands at this point
+        emitter.drop_unused_operands_at(midenc_hir2::ProgramPoint::before(self.as_operation_ref()));
+
         Ok(())
     }
 }
@@ -547,7 +590,7 @@ impl HirLowering for hir::Constant {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let value = *self.value();
 
-        emitter.emitter().literal(value, self.span());
+        emitter.inst_emitter(self.as_operation()).literal(value, self.span());
 
         Ok(())
     }
@@ -1145,61 +1188,70 @@ impl HirLowering for hir::Cto {
 }
 
 impl HirLowering for builtin::GlobalSymbol {
-    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let context = self.as_operation().context();
+
         // 1. Resolve symbol to computed address in global layout
-        // 2. Push computed address on the stack as the result
-        todo!("global symbol references are not yet implemented")
-
-        // OLD IMPLEMENTATION
-        /*
-        use midenc_hir::Immediate;
-
-        assert_eq!(op.op, hir::Opcode::GlobalValue);
-        let addr = self
-            .function
-            .globals
-            .get_computed_addr(&self.function.f.id, op.global)
-            .unwrap_or_else(|| {
-                panic!(
-                    "expected linker to identify all undefined symbols, but failed on func id: \
-                        {}, gv: {}",
-                    self.function.f.id, op.global
+        let current_module = self
+            .nearest_parent_op::<builtin::Module>()
+            .expect("expected 'hir.global_symbol' op to have a module ancestor");
+        let symbol = current_module.borrow().resolve(&self.symbol().path).ok_or_else(|| {
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid symbol reference")
+                .with_primary_label(
+                    self.span(),
+                    "unable to resolve this symbol in the current module",
                 )
-            });
-        let span = self.function.f.dfg.inst_span(inst_info.inst);
-        match self.function.f.dfg.global_value(op.global) {
-            hir::GlobalValueData::Load { ref ty, offset, .. } => {
-                let mut emitter = self.inst_emitter(inst_info.inst);
-                let offset = *offset;
-                let addr = if offset >= 0 {
-                    addr + (offset as u32)
-                } else {
-                    addr - offset.unsigned_abs()
-                };
-                emitter.load_imm(addr, ty.clone(), span);
-            }
-            global @ (hir::GlobalValueData::IAddImm { .. }
-            | hir::GlobalValueData::Symbol { .. }) => {
-                let ty = self
-                    .function
-                    .f
-                    .dfg
-                    .value_type(self.function.f.dfg.first_result(inst_info.inst))
-                    .clone();
-                let mut emitter = self.inst_emitter(inst_info.inst);
-                let offset = global.offset();
-                let addr = if offset >= 0 {
-                    addr + (offset as u32)
-                } else {
-                    addr - offset.unsigned_abs()
-                };
-                emitter.literal(Immediate::U32(addr), span);
-                // "cast" the immediate to the expected type
-                emitter.stack_mut().pop();
-                emitter.stack_mut().push(ty);
-            }
-        }
-        */
+                .into_report()
+        })?;
+
+        let global_variable = symbol
+            .borrow()
+            .downcast_ref::<builtin::GlobalVariable>()
+            .map(|gv| unsafe { builtin::GlobalVariableRef::from_raw(gv) })
+            .ok_or_else(|| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid symbol reference")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolves to a '{}', but a 'hir.global_variable' was \
+                             expected",
+                            symbol.borrow().as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report()
+            })?;
+
+        let computed_addr = emitter
+            .link_info
+            .globals_layout()
+            .get_computed_addr(global_variable)
+            .expect("link error: missing global variable in computed global layout");
+        let addr = computed_addr.checked_add_signed(*self.offset()).ok_or_else(|| {
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid global symbol offset")
+                .with_primary_label(
+                    self.span(),
+                    "the specified offset is invalid for the referenced symbol",
+                )
+                .with_help(
+                    "the offset is invalid because the computed address under/overflows the \
+                     address space",
+                )
+                .into_report()
+        })?;
+
+        // 2. Push computed address on the stack as the result
+        emitter.emitter().push_u32(addr, self.span());
+
+        Ok(())
     }
 }
 

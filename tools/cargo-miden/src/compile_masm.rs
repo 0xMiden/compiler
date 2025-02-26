@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use midenc_compile::Compiler;
+use midenc_compile::{Compiler, Context};
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report, WrapErr},
     InputFile, OutputType,
@@ -53,6 +53,7 @@ pub fn wasm_to_masm(
     }
 
     let session = Rc::new(Compiler::new_session([input], None, args));
-    midenc_compile::compile(session.clone())?;
+    let context = Rc::new(Context::new(session));
+    midenc_compile::compile(context.clone())?;
     Ok(output_file)
 }

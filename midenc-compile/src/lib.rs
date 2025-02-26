@@ -10,10 +10,10 @@ mod stages;
 
 use alloc::{rc::Rc, vec::Vec};
 
-use midenc_hir2::Context;
+pub use midenc_hir2::Context;
 use midenc_session::{
     diagnostics::{miette, Diagnostic, IntoDiagnostic, Report, WrapErr},
-    OutputMode, Session,
+    OutputMode,
 };
 
 pub use self::{compiler::Compiler, stages::CodegenOutput};
@@ -28,10 +28,11 @@ pub type CompilerResult<T> = Result<T, Report>;
 pub struct CompilerStopped;
 
 /// Run the compiler using the provided [Session]
-pub fn compile(session: Rc<Session>) -> CompilerResult<()> {
+pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir2::formatter::DisplayHex;
     log::info!("starting compilation session");
-    match compile_inputs(session.inputs.clone(), session.clone())? {
+    let session = context.session();
+    match compile_inputs(session.inputs.clone(), context.clone())? {
         Artifact::Assembled(ref package) => {
             log::info!(
                 "succesfully assembled mast package '{}' with digest {}",
@@ -55,21 +56,20 @@ pub fn compile(session: Rc<Session>) -> CompilerResult<()> {
 }
 
 /// Same as `compile`, but return compiled artifacts to the caller
-pub fn compile_to_memory(session: Rc<Session>) -> CompilerResult<Artifact> {
-    compile_inputs(session.inputs.clone(), session)
+pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<Artifact> {
+    let inputs = context.session().inputs.clone();
+    compile_inputs(inputs, context)
 }
 
 /// Same as `compile_to_memory`, but allows registering a callback which will be used as an extra
 /// compiler stage immediately after code generation and prior to assembly, if the linker was run.
 pub fn compile_to_memory_with_pre_assembly_stage<F>(
-    session: Rc<Session>,
+    context: Rc<Context>,
     pre_assembly_stage: &mut F,
 ) -> CompilerResult<Artifact>
 where
     F: FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>,
 {
-    let context = Rc::new(Context::new(session));
-
     let mut stages = ParseStage
         .collect(LinkStage)
         .next_optional(ApplyRewritesStage)
@@ -87,9 +87,8 @@ where
 
 fn compile_inputs(
     inputs: Vec<midenc_session::InputFile>,
-    session: Rc<Session>,
+    context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
-    let context = Rc::new(Context::new(session));
     let mut stages = ParseStage
         .collect(LinkStage)
         .next_optional(ApplyRewritesStage)

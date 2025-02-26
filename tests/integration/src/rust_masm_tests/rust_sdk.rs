@@ -4,10 +4,8 @@ use expect_test::expect_file;
 use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
 use miden_mast_package::Package;
 use midenc_debug::Executor;
-use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{
-    FunctionIdent, Ident, InterfaceFunctionIdent, InterfaceIdent, SourceSpan, Symbol,
-};
+use midenc_frontend_wasm2::WasmTranslationConfig;
+use midenc_hir2::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
 
 use crate::{
     cargo_proj::project, compiler_test::sdk_crate_path, CompilerTest, CompilerTestBuilder,
@@ -228,6 +226,5 @@ fn pure_rust_hir2() {
         CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}_old.hir")]);
-    test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
 }

@@ -127,12 +127,20 @@ impl core::ops::Index<usize> for Stack {
 
     fn index(&self, index: usize) -> &Self::Output {
         let len = self.stack.len();
-        &self.stack[len - index - 1]
+        let index = len
+            .checked_sub(index)
+            .and_then(|idx| idx.checked_sub(1))
+            .expect("invalid stack index");
+        &self.stack[index]
     }
 }
 impl core::ops::IndexMut<usize> for Stack {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let len = self.stack.len();
-        &mut self.stack[len - index - 1]
+        let index = len
+            .checked_sub(index)
+            .and_then(|idx| idx.checked_sub(1))
+            .expect("invalid stack index");
+        &mut self.stack[index]
     }
 }

@@ -45,7 +45,7 @@ pub fn run_noninteractively(
 ) -> ExecutionResult<()> {
     use std::time::Instant;
 
-    use midenc_hir::formatter::ToHex;
+    use midenc_hir2::formatter::ToHex;
 
     println!("===============================================================================");
     println!("Run program: {}", session.inputs[0].file_name());

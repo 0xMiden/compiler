@@ -1,4 +1,4 @@
-use alloc::{borrow::ToOwned, boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{borrow::ToOwned, collections::BTreeMap, sync::Arc, vec::Vec};
 use std::path::Path;
 
 use midenc_hir2::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
@@ -16,8 +16,7 @@ pub struct LinkOutput {
     pub component: builtin::ComponentRef,
     /// The set of Miden Assembly sources to be provided to the assembler to satisfy link-time
     /// dependencies
-    #[allow(clippy::vec_box)]
-    pub masm: Vec<Box<miden_assembly::ast::Module>>,
+    pub masm: Vec<Arc<miden_assembly::ast::Module>>,
     /// The set of MAST libraries to be provided to the assembler to satisfy link-time dependencies
     ///
     /// These are either given via `-l`, or as inputs

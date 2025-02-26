@@ -228,7 +228,6 @@ impl OperandMovementConstraintSolver {
         best_solution.take().ok_or(SolverError::NoSolution)
     }
 
-    #[track_caller]
     pub fn solve_and_apply(
         self,
         emitter: &mut crate::emit::OpEmitter<'_>,
@@ -246,9 +245,9 @@ impl OperandMovementConstraintSolver {
                     }
                 } else {
                     assert!(
-                        self.context.copies().has_copies(&expected.value),
+                        self.context.copies().has_copies(&expected.value.unaliased()),
                         "{:?} was not found on the operand stack",
-                        expected.value
+                        expected.value.unaliased()
                     );
                     let current_position =
                         self.context.stack().position(&expected.value.unaliased()).unwrap_or_else(

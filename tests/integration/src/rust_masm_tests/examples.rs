@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
-use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::Felt;
+use midenc_frontend_wasm2::WasmTranslationConfig;
+use midenc_hir2::Felt;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -29,7 +29,7 @@ fn fibonacci() {
         ["--entrypoint=fibonacci::entrypoint".into()],
     );
     test.expect_wasm(expect_file!["../../expected/examples/fib.wat"]);
-    test.expect_ir2(expect_file!["../../expected/examples/fib.hir"]);
+    test.expect_ir(expect_file!["../../expected/examples/fib.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/fib.masm"]);
     let package = test.compiled_package();
 
@@ -75,7 +75,7 @@ fn collatz() {
     );
     let artifact_name = "collatz";
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
 

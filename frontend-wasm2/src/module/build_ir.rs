@@ -228,7 +228,9 @@ fn build_data_segments(
         let init = ConstantData::from(data_segment.data);
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
         let size = init.len() as u32;
-        if let Err(e) = module_builder.define_data_segment(offset, init, SourceSpan::default()) {
+        if let Err(e) =
+            module_builder.define_data_segment(offset, init, readonly, SourceSpan::default())
+        {
             let message = format!(
                 "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
                  '{offset}'",
