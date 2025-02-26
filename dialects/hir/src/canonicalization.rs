@@ -6,6 +6,7 @@ mod remove_loop_invariant_args_from_before_block;
 //mod remove_loop_invariant_value_yielded;
 mod simplify_br_to_block_with_single_pred;
 mod simplify_passthrough_br;
+mod simplify_passthrough_cond_br;
 mod while_condition_truth;
 mod while_remove_duplicated_results;
 mod while_remove_unused_args;
@@ -19,6 +20,7 @@ pub use self::{
     remove_loop_invariant_args_from_before_block::RemoveLoopInvariantArgsFromBeforeBlock,
     simplify_br_to_block_with_single_pred::SimplifyBrToBlockWithSinglePred,
     simplify_passthrough_br::SimplifyPassthroughBr,
+    simplify_passthrough_cond_br::SimplifyPassthroughCondBr,
     while_condition_truth::WhileConditionTruth,
     while_remove_duplicated_results::WhileRemoveDuplicatedResults,
     while_remove_unused_args::WhileRemoveUnusedArgs,

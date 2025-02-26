@@ -68,6 +68,13 @@ pub struct CondBr {
     #[successor]
     else_dest: Successor,
 }
+
+impl Canonicalizable for CondBr {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context));
+    }
+}
+
 impl BranchOpInterface for CondBr {
     fn get_successor_for_operands(
         &self,
