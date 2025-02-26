@@ -1,7 +1,11 @@
-# mod test_rust_ca665f22f7b5ce9ba2e09ff8053ec1ab7a69e93524c27a02273f65f21b7b3e9a
+# mod root_ns:root::test_rust_ca665f22f7b5ce9ba2e09ff8053ec1ab7a69e93524c27a02273f65f21b7b3e9a
 
 export.entrypoint
-    exec.::intrinsics::i32::wrapping_mul push.255 u32and
+
+        push.255
+        movdn.2
+        exec.::intrinsics::i32::wrapping_mul
+        u32and
 end
 
 

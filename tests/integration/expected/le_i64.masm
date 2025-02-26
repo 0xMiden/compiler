@@ -1,15 +1,10 @@
-# mod test_rust_c4a9c74221b4f52c7cc028d994d8735ad8985dec62b6a6980159d497d7c3fa93
+# mod root_ns:root::test_rust_c4a9c74221b4f52c7cc028d994d8735ad8985dec62b6a6980159d497d7c3fa93
 
 export.entrypoint
-    movdn.3
-    movdn.3
-    exec.::intrinsics::i64::lte
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
+
+        movdn.3
+        movdn.3
+        exec.::intrinsics::i64::lte
 end
 
 

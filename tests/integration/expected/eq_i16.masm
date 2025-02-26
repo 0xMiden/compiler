@@ -1,7 +1,8 @@
-# mod test_rust_2f29f68fe27c60920a7ea2ddd41d7b6f088aaca71b06fe98e8543c00277965f4
+# mod root_ns:root::test_rust_2f29f68fe27c60920a7ea2ddd41d7b6f088aaca71b06fe98e8543c00277965f4
 
 export.entrypoint
-    swap.1 eq
+
+        eq
 end
 
 

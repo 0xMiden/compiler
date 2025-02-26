@@ -1,7 +1,9 @@
-# mod test_rust_df76c987a66b14b20c7ce818414abfb720a4e3e74eb3dc8015560af9bdb3fee4
+# mod root_ns:root::test_rust_df76c987a66b14b20c7ce818414abfb720a4e3e74eb3dc8015560af9bdb3fee4
 
 export.entrypoint
-    push.65535 u32xor
+
+        push.65535
+        u32xor
 end
 
 

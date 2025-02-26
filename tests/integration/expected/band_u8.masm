@@ -1,7 +1,8 @@
-# mod test_rust_bcd6febe71cae37427fa9ff25c42a5ecaea8f1ac799aa86f8a46e3d07ab1bc01
+# mod root_ns:root::test_rust_bcd6febe71cae37427fa9ff25c42a5ecaea8f1ac799aa86f8a46e3d07ab1bc01
 
 export.entrypoint
-    u32and
+
+        u32and
 end
 
 

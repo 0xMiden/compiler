@@ -1,7 +1,9 @@
-# mod test_rust_7e6c842b77a3cb1324eb4149ea3db75e8175bb301dd8d842a28fa5eb165bc64c
+# mod root_ns:root::test_rust_7e6c842b77a3cb1324eb4149ea3db75e8175bb301dd8d842a28fa5eb165bc64c
 
 export.entrypoint
-    swap.1 u32shl
+
+        swap.1
+        u32shl
 end
 
 

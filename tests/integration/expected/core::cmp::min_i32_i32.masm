@@ -1,17 +1,13 @@
-# mod test_rust_7ebd625ebc756910f700d1547e5bf4cc2c32a85181b0c8e5a3b9113c39335db7
+# mod root_ns:root::test_rust_7ebd625ebc756910f700d1547e5bf4cc2c32a85181b0c8e5a3b9113c39335db7
 
 export.entrypoint
-    dup.0
-    dup.2
-    exec.::intrinsics::i32::is_lt
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
-    neq.0
-    cdrop
+
+        push.0
+        dup.1
+        dup.3
+        exec.::intrinsics::i32::is_lt
+        neq
+        cdrop
 end
 
 

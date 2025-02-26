@@ -1,7 +1,11 @@
-# mod test_rust_35c4da632353887f7b18847780ef2124ea854f0ed6df12437e5a3eaa8f8aacc6
+# mod root_ns:root::test_rust_35c4da632353887f7b18847780ef2124ea854f0ed6df12437e5a3eaa8f8aacc6
 
 export.entrypoint
-    swap.1 u32wrapping_sub push.255 u32and
+
+        push.255
+        swap.2
+        u32wrapping_sub
+        u32and
 end
 
 

@@ -1,13 +1,16 @@
-# mod test_rust_0ab094171adf5f867d5a41b825b648320b4a7b9662828d177cacb8db3f7de5ef
+# mod root_ns:root::test_rust_0ab094171adf5f867d5a41b825b648320b4a7b9662828d177cacb8db3f7de5ef
 
 export.entrypoint
-    push.15
-    movup.2
-    swap.1
-    u32and
-    u32shl
-    push.65535
-    u32and
+
+        push.65535
+        push.15
+        movup.3
+        swap.1
+        u32and
+        movup.2
+        swap.1
+        u32shl
+        u32and
 end
 
 
