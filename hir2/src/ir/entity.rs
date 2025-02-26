@@ -1318,6 +1318,7 @@ impl<T, U> core::ops::CoerceUnsized<RawEntity<U>> for RawEntity<T> where
 }
 
 impl<T: ?Sized> RawEntity<T> {
+    #[track_caller]
     #[allow(unused)]
     pub unsafe fn borrow_unsafe(&self) -> (NonNull<T>, BorrowRef<'_>) {
         match self.try_borrow() {
@@ -1326,7 +1327,7 @@ impl<T: ?Sized> RawEntity<T> {
         }
     }
 
-    /// Return true if the underlying entity can be exclusively borrowed
+    #[track_caller]
     pub unsafe fn borrow_mut_unsafe(&self) -> (NonNull<T>, BorrowRefMut<'_>) {
         match self.try_borrow_mut() {
             Ok(b) => (b.value, b.into_borrow_ref_mut()),
@@ -1344,7 +1345,7 @@ impl<T: ?Sized> RawEntity<T> {
     }
 
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[track_caller]
     pub fn try_borrow(&self) -> Result<EntityRef<'_, T>, AliasingViolationError> {
         match BorrowRef::new(&self.borrow) {
             Some(b) => {
@@ -1379,7 +1380,7 @@ impl<T: ?Sized> RawEntity<T> {
     }
 
     #[inline]
-    #[cfg_attr(feature = "debug_refcell", track_caller)]
+    #[track_caller]
     pub fn try_borrow_mut(&self) -> Result<EntityMut<'_, T>, AliasingViolationError> {
         match BorrowRefMut::new(&self.borrow) {
             Some(b) => {

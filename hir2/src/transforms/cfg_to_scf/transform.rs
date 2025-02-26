@@ -996,8 +996,10 @@ impl<'a> TransformationContext<'a> {
                 }
             }
 
-            let loop_block = loop_block_ref.borrow();
-            for op in loop_block.body() {
+            let mut loop_block_cursor = loop_block_ref.borrow().body().front().as_pointer();
+            while let Some(op) = loop_block_cursor.take() {
+                loop_block_cursor = op.next();
+                let op = op.borrow();
                 for result in op.results().iter().map(|res| res.borrow().as_value_ref()) {
                     check_value(self, result);
                 }
