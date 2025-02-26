@@ -894,17 +894,9 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
         let input = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_input, &input);
 
-        struct PrintPm<'a>(&'a midenc_hir2::pass::PassManager);
-        impl core::fmt::Display for PrintPm<'_> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                self.0.print_as_textual_pipeline(f)
-            }
-        }
-
         let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
         pm.add_pass(Box::new(LiftControlFlowToSCF));
         pm.add_pass(midenc_hir2::transforms::Canonicalizer::create());
-        std::println!("{}", PrintPm(&pm));
         pm.run(operation)?;
 
         // Verify that the function body now consists of a single `hir.if` operation, followed by
