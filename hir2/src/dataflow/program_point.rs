@@ -373,13 +373,17 @@ impl PartialEq for ProgramPoint {
 
 impl core::hash::Hash for ProgramPoint {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        use crate::EntityWithId;
-
         core::mem::discriminant(self).hash(state);
-        self.block().map(|b| b.borrow().id()).hash(state);
-        match self.operation() {
-            None => core::ptr::hash::<crate::Operation, _>(core::ptr::null(), state),
-            Some(op) => core::ptr::hash::<crate::Operation, _>(&*op.borrow(), state),
+        match self {
+            Self::Invalid => (),
+            Self::Block { block, point } => {
+                core::ptr::hash(BlockRef::as_ptr(block), state);
+                point.hash(state);
+            }
+            Self::Op { op, point, .. } => {
+                core::ptr::hash(OperationRef::as_ptr(op), state);
+                point.hash(state);
+            }
         }
     }
 }

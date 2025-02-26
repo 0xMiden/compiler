@@ -276,9 +276,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
         // Set the next-use distance of any operands to 0
         for operand in op.operands().all().iter() {
-            if let Some(next_use) = temp_live_in.get_mut(&operand.borrow().as_value_ref()) {
-                next_use.distance = 0;
-            }
+            temp_live_in.insert(operand.borrow().as_value_ref(), 0);
         }
 
         // Determine if the state has changed, if so, then overwrite `live_in` with what we've
@@ -538,8 +536,8 @@ impl Liveness {
             // live-in set for this op, and ensure entries for all of the block parameters
             let mut live_in_block = live_in.clone();
             let block = parent_block.borrow();
-            for arg in block.arguments() {
-                let arg = arg.borrow().as_value_ref();
+            for arg in block.arguments().iter().copied() {
+                let arg = arg as ValueRef;
                 if live_in_block.contains(&arg) {
                     continue;
                 }
