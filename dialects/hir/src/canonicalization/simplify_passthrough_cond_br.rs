@@ -1,0 +1,113 @@
+use alloc::rc::Rc;
+
+use midenc_hir2::*;
+
+use super::simplify_passthrough_br::collapse_branch;
+use crate::{
+    builders::{DefaultInstBuilder, InstBuilder},
+    ops::CondBr,
+    HirDialect,
+};
+
+/// Simplify conditional branches to a block from that block's sole predecessor
+///
+/// # Example
+///
+/// ```text,ignore
+///   cf.cond_br %cond, ^bb1, ^bb2
+/// ^bb1
+///   br ^bbN(...)
+/// ^bb2
+///   br ^bbK(...)
+/// ```
+///
+/// Becomes:
+///
+/// ```text,ignore
+///  cf.cond_br %cond, ^bbN(...), ^bbK(...)
+/// ```
+pub struct SimplifyPassthroughCondBr {
+    info: PatternInfo,
+}
+
+impl SimplifyPassthroughCondBr {
+    pub fn new(context: Rc<Context>) -> Self {
+        let hir_dialect = context.get_or_register_dialect::<HirDialect>();
+        let cond_br_op =
+            hir_dialect.registered_name::<CondBr>().expect("hir.cond_br is not registered");
+        Self {
+            info: PatternInfo::new(
+                context,
+                "simplify-passthrough-cond-br",
+                PatternKind::Operation(cond_br_op),
+                PatternBenefit::MAX,
+            ),
+        }
+    }
+}
+
+impl Pattern for SimplifyPassthroughCondBr {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl RewritePattern for SimplifyPassthroughCondBr {
+    fn matches(&self, _op: OperationRef) -> Result<bool, Report> {
+        panic!("call match_and_rewrite")
+    }
+
+    fn rewrite(&self, _op: OperationRef, _rewriter: &mut dyn Rewriter) {
+        panic!("call match_and_rewrite")
+    }
+
+    fn match_and_rewrite(
+        &self,
+        operation: OperationRef,
+        rewriter: &mut dyn Rewriter,
+    ) -> Result<bool, Report> {
+        let op = operation.borrow();
+        let Some(cond_br_op) = op.downcast_ref::<CondBr>() else {
+            return Ok(false);
+        };
+
+        let true_dest = cond_br_op.then_dest();
+        let mut true_dest_operands = true_dest
+            .arguments
+            .iter()
+            .map(|o| o.borrow().as_value_ref())
+            .collect::<SmallVec<[_; 4]>>();
+        let true_dest = true_dest.successor();
+        let false_dest = cond_br_op.else_dest();
+        let mut false_dest_operands = false_dest
+            .arguments
+            .iter()
+            .map(|o| o.borrow().as_value_ref())
+            .collect::<SmallVec<[_; 4]>>();
+        let false_dest = false_dest.successor();
+
+        // Try to collapse one of the current successors.
+        let Some(new_true_dest) = collapse_branch(true_dest, &mut true_dest_operands) else {
+            return Ok(false);
+        };
+        let Some(new_false_dest) = collapse_branch(false_dest, &mut false_dest_operands) else {
+            return Ok(false);
+        };
+
+        // Create a new branch with the collapsed successors.
+        let span = cond_br_op.span();
+        let cond = cond_br_op.condition().as_value_ref();
+        drop(op);
+        let new_cond_br = DefaultInstBuilder::new(rewriter).cond_br(
+            cond,
+            new_true_dest,
+            true_dest_operands,
+            new_false_dest,
+            false_dest_operands,
+            span,
+        )?;
+        rewriter.replace_op(operation, new_cond_br.as_operation_ref());
+
+        Ok(true)
+    }
+}
