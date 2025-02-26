@@ -80,13 +80,16 @@ impl Stage for CodegenStage {
     }
 }
 
-fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Box<Module>> {
+fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Arc<Module>> {
     [
         masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, &session.source_manager)
+            .map(Arc::from)
             .expect("undefined intrinsics module"),
         masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, &session.source_manager)
+            .map(Arc::from)
             .expect("undefined intrinsics module"),
         masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, &session.source_manager)
+            .map(Arc::from)
             .expect("undefined intrinsics module"),
     ]
 }

@@ -6,10 +6,8 @@
 
 mod cargo_proj;
 mod compiler_test;
-mod exec_emulator;
 
 pub use compiler_test::{default_session, CargoTest, CompilerTest, CompilerTestBuilder, RustcTest};
-pub use exec_emulator::execute_emulator;
 
 #[cfg(test)]
 mod rust_masm_tests;

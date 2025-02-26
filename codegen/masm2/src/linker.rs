@@ -7,9 +7,7 @@ pub struct LinkInfo {
     component: builtin::ComponentId,
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
-    #[allow(unused)]
     reserved_memory_pages: u32,
-    #[allow(unused)]
     page_size: u32,
 }
 
@@ -27,7 +25,6 @@ impl LinkInfo {
         !self.segment_layout.is_empty()
     }
 
-    #[allow(unused)]
     pub fn globals_layout(&self) -> &GlobalVariableLayout {
         &self.globals_layout
     }
@@ -37,13 +34,16 @@ impl LinkInfo {
         &self.segment_layout
     }
 
-    #[allow(unused)]
     #[inline(always)]
     pub fn reserved_memory_pages(&self) -> u32 {
         self.reserved_memory_pages
     }
 
-    #[allow(unused)]
+    #[inline]
+    pub fn reserved_memory_bytes(&self) -> usize {
+        self.reserved_memory_pages() as usize * self.page_size() as usize
+    }
+
     #[inline(always)]
     pub fn page_size(&self) -> u32 {
         self.page_size
@@ -72,7 +72,7 @@ impl Linker {
             2u32.pow(16)
         };
         Self {
-            globals_layout: Default::default(),
+            globals_layout: GlobalVariableLayout::new(reserved_memory_pages * page_size, page_size),
             segment_layout: Default::default(),
             reserved_memory_pages,
             page_size,
@@ -153,15 +153,18 @@ pub enum LinkerError {
 #[derive(Default, Clone)]
 pub struct GlobalVariableLayout {
     global_table_offset: u32,
+    stack_pointer: Option<u32>,
     next_offset: u32,
+    page_size: u32,
     offsets: FxHashMap<builtin::GlobalVariableRef, u32>,
 }
 impl GlobalVariableLayout {
-    #[allow(unused)]
-    fn new(global_table_offset: u32) -> Self {
+    fn new(global_table_offset: u32, page_size: u32) -> Self {
         Self {
             global_table_offset,
+            stack_pointer: None,
             next_offset: global_table_offset,
+            page_size,
             offsets: Default::default(),
         }
     }
@@ -170,6 +173,16 @@ impl GlobalVariableLayout {
     #[allow(unused)]
     pub fn global_table_offset(&self) -> u32 {
         self.global_table_offset
+    }
+
+    /// Get the address/offset at which the global stack pointer variable will be allocated
+    pub fn stack_pointer_offset(&self) -> Option<u32> {
+        self.stack_pointer
+    }
+
+    /// Get the address/offset of the next page boundary following the last inserted global variable
+    pub fn next_page_boundary(&self) -> u32 {
+        self.next_offset.next_multiple_of(self.page_size)
     }
 
     /// Get the statically-allocated address at which the global variable `gv` is to be placed.
@@ -181,10 +194,23 @@ impl GlobalVariableLayout {
     }
 
     pub fn insert(&mut self, gv: &builtin::GlobalVariable) {
+        let key = unsafe { builtin::GlobalVariableRef::from_raw(gv) };
+
+        // Ensure the stack pointer is tracked and uses the same offset globally
+        let is_stack_pointer = gv.name() == "__stack_pointer";
+        if is_stack_pointer {
+            if let Some(offset) = self.stack_pointer {
+                let _ = self.offsets.try_insert(key, offset);
+                return;
+            }
+        }
+
         let ty = gv.ty();
         let offset = self.next_offset.align_up(ty.min_alignment() as u32);
-        let key = unsafe { builtin::GlobalVariableRef::from_raw(gv) };
         if self.offsets.try_insert(key, offset).is_ok() {
+            if is_stack_pointer {
+                self.stack_pointer = Some(offset);
+            }
             self.next_offset = offset + ty.size_in_bytes() as u32;
         }
     }

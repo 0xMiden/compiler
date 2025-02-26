@@ -5,8 +5,8 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
-use midenc_codegen_masm::NativePtr;
-use midenc_hir::Type;
+use midenc_codegen_masm2::NativePtr;
+use midenc_hir2::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadMemoryExpr {

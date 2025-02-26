@@ -1,6 +1,6 @@
 use core::num::NonZeroU8;
 
-use midenc_hir2::{self as hir, FxHashMap};
+use midenc_hir2::{self as hir, hashbrown, FxHashMap};
 
 use super::{SolverError, Stack, ValueOrAlias};
 use crate::{Constraint, OperandStack};

@@ -86,11 +86,12 @@ impl ModuleBuilder {
         &mut self,
         offset: u32,
         data: impl Into<ConstantData>,
+        readonly: bool,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
         let data = self.builder.context().create_constant(data);
         let builder = SegmentBuilder::new(&mut self.builder, span);
-        builder(offset, data, /*readonly= */ false)
+        builder(offset, data, readonly)
     }
 
     pub fn get_function(&self, name: &str) -> Option<FunctionRef> {

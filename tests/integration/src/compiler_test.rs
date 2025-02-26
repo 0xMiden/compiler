@@ -14,43 +14,15 @@ use std::{
 };
 
 use miden_assembly::LibraryPath;
-use midenc_frontend_wasm::{translate, WasmTranslationConfig};
-use midenc_hir::{demangle, FunctionIdent, Ident, Symbol};
+use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
+use midenc_hir2::{
+    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident,
+};
 use midenc_session::{InputFile, InputType, Session};
 
 use crate::cargo_proj::project;
 
 type LinkMasmModules = Vec<(LibraryPath, String)>;
-
-#[derive(derive_more::From)]
-pub enum HirArtifact {
-    Program(Box<midenc_hir::Program>),
-    Module(Box<midenc_hir::Module>),
-    Component(Box<midenc_hir::Component>),
-}
-
-impl HirArtifact {
-    pub fn unwrap_module(&self) -> &midenc_hir::Module {
-        match self {
-            HirArtifact::Module(module) => module,
-            _ => panic!("Expected a Module"),
-        }
-    }
-
-    pub fn unwrap_program(&self) -> &midenc_hir::Program {
-        match self {
-            Self::Program(program) => program,
-            _ => panic!("attempted to unwrap a program, but had a component"),
-        }
-    }
-
-    pub fn unwrap_component(&self) -> &midenc_hir::Component {
-        match self {
-            Self::Component(program) => program,
-            _ => panic!("attempted to unwrap a component, but had a program"),
-        }
-    }
-}
 
 /// Configuration for tests which use as input, the artifact produced by a Cargo build
 pub struct CargoTest {
@@ -215,6 +187,8 @@ pub struct CompilerTestBuilder {
 impl CompilerTestBuilder {
     /// Construct a new [CompilerTestBuilder] for the given source type configuration
     pub fn new(source: impl Into<CompilerTestInputType>) -> Self {
+        env_logger::Builder::from_env("MIDENC_TRACE").init();
+
         let workspace_dir = get_workspace_dir();
         let mut source = source.into();
         let mut rustflags = match source {
@@ -456,9 +430,12 @@ impl CompilerTestBuilder {
                 }));
                 // dbg!(&inputs);
 
+                let context = default_context(inputs, &self.midenc_flags);
+                let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
-                    session: default_session(inputs, &self.midenc_flags),
+                    session,
+                    context,
                     artifact_name: artifact_name.into(),
                     entrypoint: self.entrypoint,
                     ..Default::default()
@@ -512,9 +489,13 @@ impl CompilerTestBuilder {
                         },
                     )
                 }));
+
+                let context = default_context(inputs, &self.midenc_flags);
+                let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
-                    session: default_session(inputs, &self.midenc_flags),
+                    session,
+                    context,
                     artifact_name: config.name,
                     entrypoint: self.entrypoint,
                     ..Default::default()
@@ -565,9 +546,13 @@ impl CompilerTestBuilder {
                         },
                     )
                 }));
+
+                let context = default_context(inputs, &self.midenc_flags);
+                let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
-                    session: default_session(inputs, &self.midenc_flags),
+                    session,
+                    context,
                     artifact_name: config.name,
                     entrypoint: self.entrypoint,
                     ..Default::default()
@@ -855,12 +840,14 @@ pub struct CompilerTest {
     pub config: WasmTranslationConfig,
     /// The compiler session
     pub session: Rc<Session>,
+    /// The compiler context
+    pub context: Rc<Context>,
     /// The artifact name from which this test is derived
     artifact_name: Cow<'static, str>,
     /// The entrypoint function to use when building the IR
     entrypoint: Option<FunctionIdent>,
     /// The compiled IR
-    hir: Option<HirArtifact>,
+    hir: Option<builtin::ComponentRef>,
     /// The MASM source code
     masm_src: Option<String>,
     /// The compiled IR MASM program
@@ -878,44 +865,7 @@ impl fmt::Debug for CompilerTest {
             .field("entrypoint", &self.entrypoint)
             .field_with("hir", |f| match self.hir.as_ref() {
                 None => f.debug_tuple("None").finish(),
-                Some(HirArtifact::Module(module)) => f
-                    .debug_struct("Module")
-                    .field("name", &module.name)
-                    .field("entrypoint", &module.entrypoint())
-                    .field("is_kernel", &module.is_kernel())
-                    .field_with("functions", |f| {
-                        f.debug_list()
-                            .entries(module.functions().map(|fun| &fun.signature))
-                            .finish()
-                    })
-                    .field_with("globals", |f| {
-                        f.debug_list().entries(module.globals().iter()).finish()
-                    })
-                    .finish_non_exhaustive(),
-                Some(HirArtifact::Program(program)) => f
-                    .debug_struct("Program")
-                    .field("is_executable", &program.is_executable())
-                    .field_with("modules", |f| {
-                        f.debug_list().entries(program.modules().iter().map(|m| m.name)).finish()
-                    })
-                    .field_with("libraries", |f| {
-                        let mut map = f.debug_map();
-                        for (digest, lib) in program.libraries().iter() {
-                            map.key(digest).value_with(|f| {
-                                f.debug_list()
-                                    .entries(lib.exports().map(|proc| proc.to_string()))
-                                    .finish()
-                            });
-                        }
-                        map.finish()
-                    })
-                    .finish_non_exhaustive(),
-                Some(HirArtifact::Component(component)) => f
-                    .debug_struct("Component")
-                    .field_with("exports", |f| {
-                        f.debug_map().entries(component.exports().iter()).finish()
-                    })
-                    .finish_non_exhaustive(),
+                Some(component) => f.debug_tuple("Some").field(&component.borrow().id()).finish(),
             })
             .finish_non_exhaustive()
     }
@@ -923,9 +873,12 @@ impl fmt::Debug for CompilerTest {
 
 impl Default for CompilerTest {
     fn default() -> Self {
+        let context = dummy_context(&[]);
+        let session = context.session_rc();
         Self {
             config: WasmTranslationConfig::default(),
-            session: dummy_session(&[]),
+            session,
+            context,
             artifact_name: "unknown".into(),
             entrypoint: None,
             hir: None,
@@ -1043,70 +996,31 @@ impl CompilerTest {
         expected_wat_file.assert_eq(&wat);
     }
 
-    fn wasm_to_ir(&self) -> HirArtifact {
-        let ir_component = translate(&self.wasm_bytes(), &self.config, &self.session)
-            .expect("Failed to translate Wasm binary to IR component");
-        Box::new(ir_component).into()
+    fn wasm_to_ir(&self) -> builtin::ComponentRef {
+        translate(&self.wasm_bytes(), &self.config, self.context.clone())
+            .expect("Failed to translate Wasm binary to IR component")
     }
 
     /// Get the compiled IR, compiling the Wasm if it has not been compiled yet
-    pub fn hir(&mut self) -> &HirArtifact {
+    pub fn hir(&mut self) -> builtin::ComponentRef {
         if self.hir.is_none() {
             self.hir = Some(self.wasm_to_ir());
         }
-        self.hir.as_ref().unwrap()
+        self.hir.unwrap()
     }
 
     /// Compare the compiled IR against the expected output
     pub fn expect_ir(&mut self, expected_hir_file: expect_test::ExpectFile) {
-        match self.hir() {
-            HirArtifact::Program(hir_program) => {
-                // Program does not implement pretty printer yet, use the module containing the
-                // entrypoint function, or the first module found if no entrypoint is set
-                let ir_module = hir_program
-                    .entrypoint()
-                    .map(|entry| {
-                        hir_program
-                            .modules()
-                            .find(&entry.module)
-                            .get()
-                            .expect("missing entrypoint module")
-                    })
-                    .unwrap_or_else(|| {
-                        hir_program.modules().iter().next().expect("expected at least one module")
-                    })
-                    .to_string();
-                let ir_module = demangle(ir_module);
-                expected_hir_file.assert_eq(&ir_module);
-            }
-            HirArtifact::Component(hir_component) => {
-                let ir_component = demangle(hir_component.to_string());
-                expected_hir_file.assert_eq(&ir_component);
-            }
-            HirArtifact::Module(hir_module) => {
-                let ir_module = demangle(hir_module.to_string());
-                expected_hir_file.assert_eq(&ir_module);
-            }
-        }
-    }
+        use midenc_hir2::Op;
 
-    /// Expect test that builds the IR2(sketch)
-    pub fn expect_ir2(&mut self, expected_hir_file: expect_test::ExpectFile) {
-        let context = Rc::new(midenc_hir2::Context::new(self.session.clone()));
-        let ir = midenc_frontend_wasm2::translate(
-            &self.wasm_bytes(),
-            &midenc_frontend_wasm2::WasmTranslationConfig::default(),
-            context.clone(),
-        )
-        .map_err(format_report)
-        .unwrap_or_else(|err| panic!("Failed to translate Wasm to IR:\n{err}"));
-        let src = demangle(ir.borrow().as_ref().to_string());
-        expected_hir_file.assert_eq(&src);
+        let ir = demangle(self.hir().borrow().as_operation().to_string());
+        expected_hir_file.assert_eq(&ir);
     }
 
     /// Compare the compiled MASM against the expected output
     pub fn expect_masm(&mut self, expected_masm_file: expect_test::ExpectFile) {
         let program = demangle(self.masm_src().as_str());
+        std::println!("{program}");
         expected_masm_file.assert_eq(&program);
     }
 
@@ -1163,7 +1077,7 @@ impl CompilerTest {
             Ok(output)
         };
         let package =
-            compile_to_memory_with_pre_assembly_stage(self.session.clone(), &mut stage as _)
+            compile_to_memory_with_pre_assembly_stage(self.context.clone(), &mut stage as _)
                 .map_err(format_report)?
                 .unwrap_mast();
         assert!(src.is_some(), "failed to pretty print masm artifact");
@@ -1256,9 +1170,27 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
     wat
 }
 
+fn dummy_context(flags: &[&str]) -> Rc<Context> {
+    let session = dummy_session(flags);
+    let context = Rc::new(Context::new(session));
+    midenc_codegen_masm2::register_dialect_hooks(&context);
+    context
+}
+
 fn dummy_session(flags: &[&str]) -> Rc<Session> {
     let dummy = InputFile::from_path(PathBuf::from("dummy.wasm")).unwrap();
     default_session([dummy], flags)
+}
+
+pub fn default_context<S, I>(inputs: I, argv: &[S]) -> Rc<Context>
+where
+    I: IntoIterator<Item = InputFile>,
+    S: AsRef<str>,
+{
+    let session = default_session(inputs, argv);
+    let context = Rc::new(Context::new(session));
+    midenc_codegen_masm2::register_dialect_hooks(&context);
+    context
 }
 
 /// Create a default session for testing
@@ -1267,7 +1199,7 @@ where
     I: IntoIterator<Item = InputFile>,
     S: AsRef<str>,
 {
-    use midenc_hir::diagnostics::reporting::{self, ReportHandlerOpts};
+    use midenc_session::diagnostics::reporting::{self, ReportHandlerOpts};
 
     let result = reporting::set_hook(Box::new(|_| {
         let wrapping_width = 300; // avoid wrapped file paths in the backtrace

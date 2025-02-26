@@ -7,7 +7,7 @@ use miden_processor::ExecutionError;
 use midenc_debug::Executor;
 use midenc_session::{diagnostics::Report, Emit};
 
-use crate::{execute_emulator, CompilerTestBuilder};
+use crate::CompilerTestBuilder;
 
 #[allow(unused)]
 fn setup_log() {
@@ -50,7 +50,7 @@ end
 
     // Test expected compilation artifacts
     test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
 
     // FIX: temporarily disabled until we figure out what broke
 
@@ -100,5 +100,5 @@ fn test_get_id() {
     let mut test = test_builder.build();
     // Test expected compilation artifacts
     test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
 }

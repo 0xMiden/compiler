@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, format, rc::Rc, string::ToString, sync::Arc};
+use alloc::{format, rc::Rc, string::ToString, sync::Arc};
 #[cfg(feature = "std")]
 use std::path::Path;
 
@@ -18,7 +18,7 @@ pub enum ParseOutput {
     /// types.
     Wasm(InputType),
     /// A single Miden Assembly module was given as an input
-    Module(Box<miden_assembly::ast::Module>),
+    Module(Arc<miden_assembly::ast::Module>),
     /// A MAST library was given as an input
     Library(Arc<miden_assembly::Library>),
     /// A Miden package was given as an input
@@ -155,7 +155,7 @@ impl ParseStage {
         let mut parser = ast::Module::parser(ModuleKind::Library);
         let ast = parser.parse_file(name, path, &context.session().source_manager)?;
 
-        Ok(ParseOutput::Module(ast))
+        Ok(ParseOutput::Module(Arc::from(ast)))
     }
 
     fn parse_masm_from_bytes(
@@ -180,6 +180,6 @@ impl ParseStage {
         let mut parser = ast::Module::parser(ModuleKind::Library);
         let ast = parser.parse_str(name, source, &context.session().source_manager)?;
 
-        Ok(ParseOutput::Module(ast))
+        Ok(ParseOutput::Module(Arc::from(ast)))
     }
 }

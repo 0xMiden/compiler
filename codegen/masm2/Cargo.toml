@@ -13,14 +13,11 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["bitcode/std", "midenc-hir2/std", "midenc-dialect-hir/std"]
+std = ["midenc-hir2/std", "midenc-dialect-hir/std"]
 
 [dependencies]
-anyhow.workspace = true
-bitcode.workspace = true
 inventory.workspace = true
 log.workspace = true
-hashbrown.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
@@ -29,10 +26,8 @@ miden-stdlib.workspace = true
 midenc-hir2 = { workspace = true, features = ["serde"] }
 midenc-dialect-hir.workspace = true
 midenc-session.workspace = true
-paste.workspace = true
 petgraph.workspace = true
 serde.workspace = true
-serde_bytes.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 

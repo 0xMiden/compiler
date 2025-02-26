@@ -24,7 +24,7 @@ macro_rules! test_bin_op {
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, false, None);
                 // Test expected compilation artifacts
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
                 let package = test.compiled_package();
 
@@ -36,7 +36,7 @@ macro_rules! test_bin_op {
                         let b_felt: Felt = b.0;
                         let rs_out = a_felt $op b_felt;
                         dbg!(&rs_out);
-                        let mut args = Vec::<midenc_hir::Felt>::default();
+                        let mut args = Vec::<midenc_hir2::Felt>::default();
                         PushToStack::try_push(&b, &mut args);
                         PushToStack::try_push(&a, &mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
@@ -65,7 +65,7 @@ macro_rules! test_compile_comparison_op {
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, false, None);
                 // Test expected compilation artifacts
                 test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
                 test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
             }
         });

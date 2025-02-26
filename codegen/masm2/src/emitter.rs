@@ -1,7 +1,10 @@
 use alloc::collections::BTreeSet;
 
 use midenc_hir2::{
-    dataflow::analyses::LivenessAnalysis, dialects::builtin, Block, Operation, ValueRef,
+    dataflow::analyses::LivenessAnalysis,
+    dialects::builtin,
+    traits::{BinaryOp, Commutative},
+    Block, Operation, ValueRef,
 };
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -57,12 +60,20 @@ impl BlockEmitter<'_> {
         //
         // NOTE: This does not include block arguments for control flow instructions, those are
         // handled separately within the specific handlers for those instructions
-        let args = op
+        let mut args = op
             .operands()
             .group(0)
             .iter()
             .map(|operand| operand.borrow().as_value_ref())
             .collect::<SmallVec<[_; 2]>>();
+
+        // All of Miden's binary ops expect the right-hand operand on top of the stack, this
+        // requires us to invert the expected order of operands from the standard ordering in the
+        // IR
+        if op.implements::<dyn BinaryOp>() {
+            args.swap(0, 1);
+        }
+
         let constraints = op
             .operands()
             .group(0)
@@ -84,15 +95,32 @@ impl BlockEmitter<'_> {
                 }
             })
             .collect::<SmallVec<[_; 2]>>();
-        self.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
-            panic!(
-                "failed to schedule operands: {:?} \n for inst '{}'\n with error: {err:?}\n \
-                 stack: {:?}",
-                args,
-                op.name(),
-                self.stack,
-            )
-        });
+
+        // If we're emitting a commutative binary op, and the operands are on top of the operand
+        // stack, then we can skip any stack manipulation, so long as we can consume both of the
+        // operands, and they are of the same type. This is a narrow optimization, but a useful one.
+        let is_binary_commutative = args.len() == 2 && op.implements::<dyn Commutative>();
+        let preserve_stack = if is_binary_commutative {
+            let can_move = constraints.iter().all(|c| matches!(c, Constraint::Move));
+            let operands_in_place = self.stack[0].as_value().is_none_or(|v| args.contains(&v));
+            let operands_in_place =
+                operands_in_place && self.stack[1].as_value().is_none_or(|v| args.contains(&v));
+            can_move && operands_in_place
+        } else {
+            false
+        };
+
+        if !preserve_stack {
+            self.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule operands: {:?} \n for inst '{}'\n with error: {err:?}\n \
+                     stack: {:?}",
+                    args,
+                    op.name(),
+                    self.stack,
+                )
+            });
+        }
 
         let lowering = op.as_trait::<dyn HirLowering>().unwrap_or_else(|| {
             panic!("illegal operation: no lowering has been defined for '{}'", op.name())

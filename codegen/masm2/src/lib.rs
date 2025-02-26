@@ -3,12 +3,14 @@
 #![feature(const_type_id)]
 #![feature(array_chunks)]
 #![feature(iter_array_chunks)]
+#![feature(iterator_try_collect)]
 
 extern crate alloc;
 
 mod artifact;
 mod emit;
 mod emitter;
+mod events;
 pub mod intrinsics;
 mod linker;
 mod lower;
@@ -23,8 +25,9 @@ pub mod masm {
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
-    artifact::MasmComponent,
-    lower::ToMasmComponent,
+    artifact::{MasmComponent, Rodata},
+    events::{TraceEvent, TRACE_FRAME_END, TRACE_FRAME_START},
+    lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };
 

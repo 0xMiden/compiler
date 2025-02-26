@@ -301,6 +301,12 @@ pub struct OpSuccessor<'a> {
     pub arguments: OpOperandRange<'a>,
 }
 
+impl OpSuccessor<'_> {
+    pub fn successor(&self) -> BlockRef {
+        self.dest.borrow().successor()
+    }
+}
+
 impl fmt::Debug for OpSuccessor<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpSuccessor")

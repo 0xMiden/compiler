@@ -3138,13 +3138,10 @@ dependencies = [
  "miden-mast-package",
  "miden-processor",
  "miden-stdlib",
- "midenc-codegen-masm",
  "midenc-codegen-masm2",
  "midenc-compile",
  "midenc-debug",
- "midenc-frontend-wasm",
  "midenc-frontend-wasm2",
- "midenc-hir",
  "midenc-hir-transform",
  "midenc-hir2",
  "midenc-session",
@@ -3297,10 +3294,7 @@ dependencies = [
 name = "midenc-codegen-masm2"
 version = "0.0.7"
 dependencies = [
- "anyhow",
- "bitcode",
  "env_logger 0.11.5",
- "hashbrown 0.14.5",
  "inventory",
  "log",
  "miden-assembly",
@@ -3312,11 +3306,9 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-hir2",
  "midenc-session",
- "paste",
  "petgraph",
  "proptest",
  "serde",
- "serde_bytes",
  "smallvec",
 ]
 
@@ -3353,8 +3345,9 @@ dependencies = [
  "miden-processor",
  "miden-stdlib",
  "miden-thiserror",
- "midenc-codegen-masm",
- "midenc-hir",
+ "midenc-codegen-masm2",
+ "midenc-dialect-hir",
+ "midenc-hir2",
  "midenc-session",
  "proptest",
  "ratatui",
@@ -3388,7 +3381,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-compile",
  "midenc-debug",
- "midenc-hir",
+ "midenc-hir2",
  "midenc-session",
 ]
 
