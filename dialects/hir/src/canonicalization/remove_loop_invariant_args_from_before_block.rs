@@ -148,7 +148,7 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             // condition op operand is equal to either the i-th before block argument or the initial
             // value of i-th before block argument. If the comparison results `true`, i-th before
             // block argument is loop invariant.
-            if let Ok(yield_op_block_arg) = yield_arg.try_downcast::<BlockArgument, dyn Value>() {
+            if let Ok(yield_op_block_arg) = yield_arg.try_downcast::<BlockArgument>() {
                 let cond_op_arg = cond_op_args[yield_op_block_arg.borrow().index()];
                 if cond_op_arg == before_args[index] || cond_op_arg == init_value {
                     can_simplify = true;
@@ -177,7 +177,7 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
                 continue;
             }
 
-            if let Ok(yield_op_block_arg) = yield_arg.try_downcast::<BlockArgument, dyn Value>() {
+            if let Ok(yield_op_block_arg) = yield_arg.try_downcast::<BlockArgument>() {
                 let cond_op_arg = cond_op_args[yield_op_block_arg.borrow().index()];
                 if cond_op_arg == before_args[index] || cond_op_arg == init_value {
                     before_block_init_val_map[index] = Some(init_value);

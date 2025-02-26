@@ -485,13 +485,12 @@ impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
     ///
     /// If the cast is not valid for this reference, `Err` is returned containing the original value.
     #[inline]
-    pub fn try_downcast<To, Obj>(
+    pub fn try_downcast<To>(
         self,
-    ) -> Result<RawEntityRef<To, Metadata>, RawEntityRef<Obj, Metadata>>
+    ) -> Result<RawEntityRef<To, Metadata>, RawEntityRef<From, Metadata>>
     where
         To: DowncastFromRef<From> + 'static,
-        From: Is<Obj> + AsAny + 'static,
-        Obj: ?Sized,
+        From: 'static,
     {
         RawEntityRef::<To, Metadata>::try_downcast_from(self)
     }
@@ -539,20 +538,17 @@ impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
 }
 
 impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
-    pub fn try_downcast_from<From, Obj>(
+    pub fn try_downcast_from<From>(
         from: RawEntityRef<From, Metadata>,
-    ) -> Result<Self, RawEntityRef<Obj, Metadata>>
+    ) -> Result<Self, RawEntityRef<From, Metadata>>
     where
-        From: ?Sized + Is<Obj> + AsAny + 'static,
+        From: ?Sized + 'static,
         To: DowncastFromRef<From> + 'static,
-        Obj: ?Sized,
     {
         let borrow = from.borrow();
-        if let Some(to) = borrow.as_any().downcast_ref() {
-            Ok(unsafe { RawEntityRef::from_raw(to) })
-        } else {
-            Err(from)
-        }
+        <To as DowncastFromRef<From>>::downcast_from_ref(&*borrow)
+            .map(|to| unsafe { RawEntityRef::from_raw(to) })
+            .ok_or(from)
     }
 
     pub fn try_downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Option<Self>
