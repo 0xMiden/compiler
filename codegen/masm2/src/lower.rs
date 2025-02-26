@@ -41,8 +41,6 @@ impl ToMasmComponent for builtin::Component {
         &self,
         analysis_manager: AnalysisManager,
     ) -> Result<MasmComponent, Report> {
-        std::println!("{}", self.as_operation());
-
         // Get the current compiler context
         let context = self.as_operation().context_rc();
 
@@ -314,7 +312,6 @@ impl MasmFunctionBuilder {
         use alloc::collections::BTreeSet;
 
         use midenc_hir2::dataflow::analyses::LivenessAnalysis;
-        std::println!("{}", &function.as_operation());
 
         let liveness =
             analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
