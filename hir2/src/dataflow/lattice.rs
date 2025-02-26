@@ -93,7 +93,7 @@ impl<T> Lattice<T> {
 /// state when they otherwise would not (due to a non-minimal value "conflicting" with the value
 /// concluded by the analysis).
 impl<T: Default + 'static> BuildableAnalysisState for Lattice<T> {
-    fn create(anchor: LatticeAnchorRef) -> Self {
+    default fn create(anchor: LatticeAnchorRef) -> Self {
         Self {
             anchor,
             value: Default::default(),

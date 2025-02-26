@@ -233,9 +233,12 @@ impl DataFlowSolver {
     fn analyze(&mut self, op: &Operation, analysis_manager: AnalysisManager) -> Result<(), Report> {
         for mut analysis in core::mem::take(&mut self.child_analyses) {
             // priming analysis {analysis.debug_name()}
+            assert!(self.current_analysis.is_none());
+            self.current_analysis = Some(analysis);
             unsafe {
                 analysis.as_mut().initialize(op, self, analysis_manager.clone())?;
             }
+            self.current_analysis = None;
         }
 
         Ok(())
