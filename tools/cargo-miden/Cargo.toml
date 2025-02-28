@@ -28,8 +28,8 @@ env_logger.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-cargo-component = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "a7b141845c11471dbf3aa98e94b553dd7feb2060" }
-cargo-component-core = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "a7b141845c11471dbf3aa98e94b553dd7feb2060" }
+cargo-component = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "093ee4ce75e67814e9ec912faed87160e9a762ca" }
+cargo-component-core = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "093ee4ce75e67814e9ec912faed87160e9a762ca" }
 cargo_metadata = "0.18"
 cargo-generate = "0.22"
 semver = "1.0.20"

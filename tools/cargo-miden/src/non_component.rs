@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -19,7 +18,6 @@ pub fn run_cargo_command_for_non_component(
     subcommand: Option<&str>,
     cargo_args: &CargoArguments,
     spawn_args: &[String],
-    env_vars: &HashMap<String, String>,
 ) -> anyhow::Result<Vec<PathBuf>> {
     let cargo_path = std::env::var("CARGO")
         .map(PathBuf::from)
@@ -48,7 +46,6 @@ pub fn run_cargo_command_for_non_component(
     );
 
     let mut cargo = Command::new(&cargo_path);
-    cargo.envs(env_vars);
     cargo.args(args);
 
     let cargo_config = cargo_config2::Config::load()?;

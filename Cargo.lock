@@ -593,7 +593,7 @@ dependencies = [
 [[package]]
 name = "cargo-component"
 version = "0.20.0-dev"
-source = "git+https://github.com/greenhat/cargo-component?rev=a7b141845c11471dbf3aa98e94b553dd7feb2060#a7b141845c11471dbf3aa98e94b553dd7feb2060"
+source = "git+https://github.com/greenhat/cargo-component?rev=093ee4ce75e67814e9ec912faed87160e9a762ca#093ee4ce75e67814e9ec912faed87160e9a762ca"
 dependencies = [
  "anyhow",
  "bytes",
@@ -634,7 +634,7 @@ dependencies = [
 [[package]]
 name = "cargo-component-core"
 version = "0.20.0-dev"
-source = "git+https://github.com/greenhat/cargo-component?rev=a7b141845c11471dbf3aa98e94b553dd7feb2060#a7b141845c11471dbf3aa98e94b553dd7feb2060"
+source = "git+https://github.com/greenhat/cargo-component?rev=093ee4ce75e67814e9ec912faed87160e9a762ca#093ee4ce75e67814e9ec912faed87160e9a762ca"
 dependencies = [
  "anyhow",
  "clap",
@@ -7127,7 +7127,7 @@ checksum = "1507ef312ea5569d54c2c7446a18b82143eb2a2e21f5c3ec7cfbe8200c03bd7c"
 [[package]]
 name = "wit-bindgen-core"
 version = "0.39.0"
-source = "git+https://github.com/greenhat/wit-bindgen.git?rev=56f0842b01369ec97d75cce657cb6d18cbcbb65a#56f0842b01369ec97d75cce657cb6d18cbcbb65a"
+source = "git+https://github.com/greenhat/wit-bindgen.git?rev=613d2fd95f360e554613d435e74c1c52b85617bf#613d2fd95f360e554613d435e74c1c52b85617bf"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -7137,7 +7137,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust"
 version = "0.39.0"
-source = "git+https://github.com/greenhat/wit-bindgen.git?rev=56f0842b01369ec97d75cce657cb6d18cbcbb65a#56f0842b01369ec97d75cce657cb6d18cbcbb65a"
+source = "git+https://github.com/greenhat/wit-bindgen.git?rev=613d2fd95f360e554613d435e74c1c52b85617bf#613d2fd95f360e554613d435e74c1c52b85617bf"
 dependencies = [
  "anyhow",
  "heck 0.5.0",

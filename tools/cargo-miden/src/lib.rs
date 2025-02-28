@@ -202,7 +202,6 @@ where
             );
 
             std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory");
-            let env_vars = Default::default();
             let terminal = Terminal::new(
                 if cargo_args.quiet {
                     Verbosity::Quiet
@@ -228,7 +227,6 @@ where
                     subcommand.as_deref(),
                     &cargo_args,
                     &spawn_args,
-                    &env_vars,
                 )
                 .await
             })?;
@@ -241,7 +239,6 @@ where
                     subcommand.as_deref(),
                     &cargo_args,
                     &spawn_args,
-                    &env_vars,
                 )?;
             }
             match build_output_type {
