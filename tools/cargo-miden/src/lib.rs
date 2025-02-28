@@ -201,10 +201,8 @@ where
                 .map(|s| s.to_string()),
             );
 
-            let env_vars =
-                vec![("RUSTFLAGS".to_string(), "-C target-feature=+bulk-memory".to_string())]
-                    .into_iter()
-                    .collect();
+            std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory");
+            let env_vars = Default::default();
             let terminal = Terminal::new(
                 if cargo_args.quiet {
                     Verbosity::Quiet
