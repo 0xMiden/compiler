@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use midenc_hir::{
     dialects::builtin::{self, BuiltinDialect},
+    version::Version,
     Context,
 };
 use midenc_session::{diagnostics::Report, Session};
@@ -9,7 +10,7 @@ use midenc_session::{diagnostics::Report, Session};
 use super::{translator::ComponentTranslator, ComponentTypesBuilder, ParsedRootComponent};
 use crate::{
     component::ComponentParser, error::WasmResult, supported_component_model_features,
-    WasmTranslationConfig,
+    translation_utils::parse_component_id, WasmTranslationConfig,
 };
 
 fn parse<'data>(
@@ -32,27 +33,26 @@ pub fn translate_component(
     config: &WasmTranslationConfig,
     context: Rc<Context>,
 ) -> WasmResult<midenc_hir::dialects::builtin::ComponentRef> {
-    let (mut component_types_builder, parsed_root_component) =
+    let (mut component_types_builder, mut parsed_root_component) =
         parse(config, wasm, context.session())?;
     let dialect = context.get_or_register_dialect::<BuiltinDialect>();
     dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
-    // context.get_or_register_dialect::<HirDialect>();
     // Extract component name from exported component instance
     let id = {
-        let instance = parsed_root_component
+        let instance: String = parsed_root_component
             .root_component
             .exports
             .iter()
             .find_map(|(name, c)| match c {
-                super::ComponentItem::ComponentInstance(_) => Some(*name),
+                super::ComponentItem::ComponentInstance(_) => Some((*name).to_string()),
                 _ => None,
             })
             .expect("expected at least one component instance to be exported");
-        instance.parse::<builtin::ComponentId>().expect("invalid component name")
+        parse_component_id(instance)
     };
     let translator = ComponentTranslator::new(
         id,
-        &parsed_root_component.static_modules,
+        &mut parsed_root_component.static_modules,
         &parsed_root_component.static_components,
         config,
         context,

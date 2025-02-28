@@ -17,7 +17,9 @@ use midenc_session::{
 };
 use wasmparser::Validator;
 
-use super::{module_translation_state::ModuleTranslationState, MemoryIndex};
+use super::{
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
+};
 use crate::{
     error::WasmResult,
     miden_abi::miden_abi_function_type,
@@ -53,7 +55,7 @@ pub fn translate_module_as_component(
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
-    let module_types = module_types_builder.finish();
+    let module_types = module_types_builder;
 
     // If a world wasn't provided to us, create one
     let world_ref = match config.world {
@@ -86,7 +88,7 @@ pub fn translate_module_as_component(
 
 pub fn build_ir_module(
     parsed_module: &mut ParsedModule,
-    module_types: &ModuleTypes,
+    module_types: &ModuleTypesBuilder,
     module_state: &mut ModuleTranslationState,
     _config: &WasmTranslationConfig,
     context: Rc<Context>,

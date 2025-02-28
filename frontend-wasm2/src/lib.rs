@@ -44,8 +44,7 @@ pub fn translate(
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
         translate_module_as_component(wasm, config, context)
     } else {
-        todo!()
-        // translate_component(wasm, config, context)
+        translate_component(wasm, config, context)
     }
 }
 

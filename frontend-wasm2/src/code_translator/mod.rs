@@ -36,7 +36,7 @@ use crate::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
         module_translation_state::ModuleTranslationState,
-        types::{ir_type, BlockType, FuncIndex, GlobalIndex, ModuleTypes},
+        types::{ir_type, BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
         Module,
     },
     ssa::Variable,
@@ -54,7 +54,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &Module,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -904,7 +904,7 @@ fn translate_block<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -1034,7 +1034,7 @@ fn translate_if<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -1095,7 +1095,7 @@ fn translate_loop<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -1124,7 +1124,7 @@ fn translate_unreachable_operator<B: ?Sized + Builder>(
     op: &Operator,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {

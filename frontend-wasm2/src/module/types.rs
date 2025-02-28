@@ -447,7 +447,7 @@ pub struct BlockType {
 impl BlockType {
     pub fn from_wasm(
         block_ty: &wasmparser::BlockType,
-        mod_types: &ModuleTypes,
+        mod_types: &ModuleTypesBuilder,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
         Ok(match block_ty {

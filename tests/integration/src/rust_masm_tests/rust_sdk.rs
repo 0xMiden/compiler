@@ -125,7 +125,6 @@ fn rust_sdk_p2id_note_script() {
 #[test]
 #[ignore = "requires component translation"]
 fn rust_sdk_cross_ctx_account() {
-    let _ = env_logger::builder().is_test(true).try_init();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-account",
@@ -135,6 +134,7 @@ fn rust_sdk_cross_ctx_account() {
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+    panic!("Exit here for now");
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     let package = test.compiled_package();
     let lib = package.unwrap_library();

@@ -22,7 +22,7 @@ use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
     function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState,
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -65,7 +65,7 @@ impl FuncTranslator {
         func: &mut Function,
         module_state: &mut ModuleTranslationState,
         module: &ParsedModule<'_>,
-        mod_types: &ModuleTypes,
+        mod_types: &ModuleTypesBuilder,
         addr2line: &addr2line::Context<DwarfReader<'_>>,
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
@@ -190,7 +190,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &ParsedModule<'_>,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     addr2line: &addr2line::Context<DwarfReader<'_>>,
     session: &Session,
     func_validator: &mut FuncValidator<impl WasmModuleResources>,

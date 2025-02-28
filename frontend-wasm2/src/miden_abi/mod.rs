@@ -67,8 +67,28 @@ pub fn recover_imported_masm_function_id(
     wasm_module_id: &str,
     wasm_function_id: &str,
 ) -> FunctionIdent {
-    // Hard-coding is error-prone.
-    // See better option suggested in https://github.com/0xPolygonMiden/compiler/issues/342
+    let module_id = recover_imported_masm_module(wasm_module_id.to_string());
+    // Since `hash-1to1` is an invalid name in Wasm CM (dashed part cannot start with a digit),
+    // we need to translate the CM name to the one that is expected at the linking stage
+    let function_id = if wasm_function_id == "hash-one-to-one" {
+        "hash_1to1".to_string()
+    } else if wasm_function_id == "hash-two-to-one" {
+        "hash_2to1".to_string()
+    } else {
+        wasm_function_id.replace("-", "_")
+    };
+    FunctionIdent {
+        module: Ident::from(module_id),
+        function: Ident::from(function_id.as_str()),
+    }
+}
+
+/// Restore module names of the intrinsics and Miden SDK
+/// that were renamed to satisfy the Wasm Component Model requirements.
+///
+/// Returns the pre-renamed (expected at the linking stage) module name
+/// or given `wasm_module_id` if the module is not an intrinsic or Miden SDK module
+pub fn recover_imported_masm_module(wasm_module_id: String) -> Symbol {
     let module_id = if wasm_module_id.starts_with("miden:core-import/intrinsics-mem") {
         intrinsics::mem::MODULE_ID
     } else if wasm_module_id.starts_with("miden:core-import/intrinsics-felt") {
@@ -86,28 +106,10 @@ pub fn recover_imported_masm_function_id(
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-blake3") {
         stdlib::crypto::hashes::blake3::MODULE_ID
     } else if wasm_module_id.starts_with("miden:core-import") {
-        panic!(
-            "unrecovered intrinsics or Miden SDK import module ID: {wasm_module_id}, function: \
-             {wasm_function_id}"
-        )
+        panic!("unrecovered intrinsics or Miden SDK import module ID: {wasm_module_id}")
     } else {
         // Unrecognized module ID, return as is
-        return FunctionIdent {
-            module: Ident::from(wasm_module_id),
-            function: Ident::from(wasm_function_id),
-        };
+        return wasm_module_id.into();
     };
-    // Since `hash-1to1` is an invalid name in Wasm CM (dashed part cannot start with a digit),
-    // we need to translate the CM name to the one that is expected at the linking stage
-    let function_id = if wasm_function_id == "hash-one-to-one" {
-        "hash_1to1".to_string()
-    } else if wasm_function_id == "hash-two-to-one" {
-        "hash_2to1".to_string()
-    } else {
-        wasm_function_id.replace("-", "_")
-    };
-    FunctionIdent {
-        module: Ident::from(module_id),
-        function: Ident::from(function_id.as_str()),
-    }
+    module_id.into()
 }

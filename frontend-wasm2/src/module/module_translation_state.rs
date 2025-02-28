@@ -12,7 +12,9 @@ use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 use super::{
     function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
     instance::ModuleArgument,
-    ir_func_type, EntityIndex, FuncIndex, Module, ModuleTypes,
+    ir_func_type,
+    types::ModuleTypesBuilder,
+    EntityIndex, FuncIndex, Module, ModuleTypes,
 };
 use crate::{
     error::WasmResult,
@@ -48,7 +50,7 @@ impl<'a> ModuleTranslationState<'a> {
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
-        mod_types: &ModuleTypes,
+        mod_types: &ModuleTypesBuilder,
         module_args: Vec<ModuleArgument>,
         diagnostics: &DiagnosticsHandler,
     ) -> Self {
