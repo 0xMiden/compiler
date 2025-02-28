@@ -17,4 +17,3 @@
         + [Known limitations](appendix/known-limitations.md)
         + [Calling Conventions](appendix/calling_conventions.md)
         + [Canonical ABI vs Miden ABI](appendix/canonabi-adhocabi-mismatch.md)
-
