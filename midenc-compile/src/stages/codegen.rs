@@ -61,14 +61,14 @@ impl Stage for CodegenStage {
         for intrinsics_module in required_intrinsics_modules(session) {
             log::debug!(
                 "adding required intrinsic module '{}' to masm program",
-                intrinsics_module.name()
+                intrinsics_module.path()
             );
             masm_component.modules.push(intrinsics_module);
         }
 
         // Link in any MASM inputs provided to the compiler
         for module in masm_modules {
-            log::debug!("adding external masm module '{}' to masm program", module.name());
+            log::debug!("adding external masm module '{}' to masm program", module.path());
             masm_component.modules.push(module);
         }
 

@@ -36,6 +36,7 @@ impl Stage for AssembleStage {
 
         let session = context.session();
         if session.should_assemble() {
+            log::debug!("assembling mast artifact");
             let mast =
                 input.component.assemble(&input.link_libraries, &input.link_packages, session)?;
             log::debug!(
