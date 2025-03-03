@@ -28,7 +28,6 @@ miden-processor.workspace = true
 miden-stdlib.workspace = true
 midenc-frontend-wasm2.workspace = true
 midenc-hir2.workspace = true
-midenc-hir-transform.workspace = true
 midenc-codegen-masm2.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
@@ -40,6 +39,6 @@ sha2 = "0.10"
 walkdir = "2.5.0"
 
 [dev-dependencies]
-blake3.workspace = true
+blake3 = "1.5"
 concat-idents = "1.1"
 miden-core.workspace = true

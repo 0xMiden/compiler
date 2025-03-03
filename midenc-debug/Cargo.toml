@@ -34,7 +34,7 @@ ratatui = "0.28.0"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 tui-input = "0.10"
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = "0.7.11"
 futures = "0.3.30"
 signal-hook = "0.3.17"
 syntect = { version = "5.2.0", default-features = false, features = [
