@@ -5,7 +5,9 @@ bin/litcheck
 .crates2.json
 
 # Docs platform ignores
-.vscode
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
 .code
 .idea
 site/
