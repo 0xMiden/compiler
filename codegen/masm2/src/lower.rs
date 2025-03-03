@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use midenc_dialect_hir as hir;
 use midenc_hir2::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, OpExt, Operation, Span,
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Immediate, Op, OpExt, Operation, Span,
     SymbolTable, Value, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
@@ -639,6 +639,74 @@ impl HirLowering for hir::Unreachable {
         let mut op_emitter = emitter.emitter();
         op_emitter.emit(masm::Instruction::PushU32(0), span);
         op_emitter.emit(masm::Instruction::Assert, span);
+
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::Poison {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use midenc_hir2::Type;
+
+        // This instruction represents a value that results from undefined behavior in a program.
+        // The presence of it does not indicate that a program is invalid, but rather, the fact that
+        // undefined behavior resulting from control flow to unreachable code produces effectively
+        // any value in the domain of the type associated with the poison result.
+        //
+        // For our purposes, we choose a value that will appear obvious in a debugger, should it
+        // ever appear as an operand to an instruction; and a value that we could emit debug asserts
+        // for should we ever wish to do so. We could also catch the evaluation of poison under an
+        // emulator for the IR itself.
+        let span = self.span();
+        let mut op_emitter = emitter.inst_emitter(self.as_operation());
+        op_emitter.literal(
+            {
+                match self.ty() {
+                    Type::I1 => Immediate::I1(false),
+                    Type::U8 => Immediate::U8(0xde),
+                    Type::I8 => Immediate::I8(0xdeu8 as i8),
+                    Type::U16 => Immediate::U16(0xdead),
+                    Type::I16 => Immediate::I16(0xdeadu16 as i16),
+                    Type::U32 => Immediate::U32(0xdeadc0de),
+                    Type::I32 => Immediate::I32(0xdeadc0deu32 as i32),
+                    Type::U64 => Immediate::U64(0xdeadc0dedeadc0de),
+                    Type::I64 => Immediate::I64(0xdeadc0dedeadc0deu64 as i64),
+                    Type::Felt => Immediate::Felt(miden_core::Felt::new(0xdeadc0de)),
+                    Type::U128 => Immediate::U128(0xdeadc0dedeadc0dedeadc0dedeadc0de),
+                    Type::I128 => Immediate::I128(0xdeadc0dedeadc0dedeadc0dedeadc0deu128 as i128),
+                    Type::U256 => {
+                        return Err(self
+                            .as_operation()
+                            .context()
+                            .diagnostics()
+                            .diagnostic(Severity::Error)
+                            .with_message("invalid operation")
+                            .with_primary_label(
+                                span,
+                                "the lowering for u256 immediates is not yet implemented",
+                            )
+                            .into_report());
+                    }
+                    Type::F64 => {
+                        return Err(self
+                            .as_operation()
+                            .context()
+                            .diagnostics()
+                            .diagnostic(Severity::Error)
+                            .with_message("invalid operation")
+                            .with_primary_label(
+                                span,
+                                "the lowering for f64 immediates is not yet implemented",
+                            )
+                            .into_report());
+                    }
+                    // We emit a pointer that can never refer to a valid object in memory
+                    Type::Ptr(_) => Immediate::U32(u32::MAX),
+                    ty => panic!("unexpected poison type: {ty}"),
+                }
+            },
+            span,
+        );
 
         Ok(())
     }

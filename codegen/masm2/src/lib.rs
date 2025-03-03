@@ -40,7 +40,7 @@ pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
         info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
         info.register_operation_trait::<hir::AssertEqImm, dyn HirLowering>();
         info.register_operation_trait::<hir::Unreachable, dyn HirLowering>();
-        //info.register_operation_trait::<hir::Poison, dyn HirLowering>();
+        info.register_operation_trait::<hir::Poison, dyn HirLowering>();
         info.register_operation_trait::<hir::Add, dyn HirLowering>();
         info.register_operation_trait::<hir::AddOverflowing, dyn HirLowering>();
         info.register_operation_trait::<hir::Sub, dyn HirLowering>();
