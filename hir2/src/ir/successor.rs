@@ -269,6 +269,13 @@ pub struct SuccessorInfo {
     pub(crate) key: Option<core::ptr::NonNull<()>>,
     pub(crate) operand_group: u8,
 }
+
+impl SuccessorInfo {
+    pub fn successor(&self) -> BlockRef {
+        self.block.borrow().successor()
+    }
+}
+
 impl crate::StorableEntity for SuccessorInfo {
     #[inline(always)]
     fn index(&self) -> usize {
