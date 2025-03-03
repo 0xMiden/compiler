@@ -52,7 +52,9 @@ impl IfRemoveUnusedResults {
 
         let yield_operation = yield_op.as_operation_ref();
         let _guard = rewriter.modify_op_in_place(yield_operation);
-        yield_op.borrow_mut().yielded_mut().set_operands(used_operands, yield_operation);
+        let mut yield_op = yield_op.borrow_mut();
+        let context = yield_op.as_operation().context_rc();
+        yield_op.yielded_mut().set_operands(used_operands, yield_operation, &context);
     }
 }
 

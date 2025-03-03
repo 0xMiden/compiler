@@ -52,7 +52,7 @@ impl RewritePattern for SimplifyBrToBlockWithSinglePred {
 
         // Check that the successor block has a single predecessor.
         let target = br_op.target();
-        let succ = target.dest.borrow().successor();
+        let succ = target.successor();
         let parent = op.parent().unwrap();
         if succ == parent || succ.borrow().get_single_predecessor().is_none() {
             return Ok(false);
