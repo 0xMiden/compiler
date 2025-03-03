@@ -1272,6 +1272,9 @@ impl StorableEntity for BlockOperand {
     /// Remove this use of `block`
     fn unlink(&mut self) {
         let this = self.as_block_operand_ref();
+        if !this.is_linked() {
+            return;
+        }
         let Some(mut parent) = this.parent() else {
             return;
         };

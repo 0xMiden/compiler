@@ -1,5 +1,6 @@
 use core::fmt;
 
+use super::Context;
 use crate::{EntityRef, OperationRef, Type, UnsafeIntrusiveEntityRef, Value, ValueId, ValueRef};
 
 pub type OpOperand = UnsafeIntrusiveEntityRef<OpOperandImpl>;
@@ -30,8 +31,9 @@ impl OpOperandImpl {
         }
     }
 
+    #[track_caller]
     pub fn value(&self) -> EntityRef<'_, dyn Value> {
-        self.value.as_ref().unwrap().borrow()
+        self.value.as_ref().expect("operand is unlinked").borrow()
     }
 
     #[inline]
@@ -77,6 +79,11 @@ impl OpOperandImpl {
         value.borrow_mut().insert_use(this);
     }
 }
+impl fmt::Debug for OpOperand {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        fmt::Debug::fmt(&*self.borrow(), f)
+    }
+}
 impl fmt::Debug for OpOperandImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[derive(Debug)]
@@ -115,6 +122,9 @@ impl crate::StorableEntity for OpOperandImpl {
     }
 
     fn unlink(&mut self) {
+        if !self.as_operand_ref().is_linked() {
+            return;
+        }
         if let Some(mut value) = self.value.take() {
             let ptr = self.as_operand_ref();
             let mut value = value.borrow_mut();
@@ -132,17 +142,16 @@ pub type OpOperandRange<'a> = crate::EntityRange<'a, OpOperand>;
 pub type OpOperandRangeMut<'a> = crate::EntityRangeMut<'a, OpOperand, 1>;
 
 impl OpOperandRangeMut<'_> {
-    pub fn set_operands<I>(&mut self, operands: I, owner: OperationRef)
+    pub fn set_operands<I>(&mut self, operands: I, owner: OperationRef, context: &Context)
     where
         I: IntoIterator<Item = ValueRef>,
     {
         let mut operands = operands.into_iter().enumerate();
         let mut num_operands = 0;
-        let mut context = None;
         while let Some((index, value)) = operands.next() {
-            num_operands += 1;
-            if let Some(operand) = self.get_mut(index) {
-                let mut operand = operand.borrow_mut();
+            if let Some(operand_ref) = self.get_mut(index) {
+                num_operands += 1;
+                let mut operand = operand_ref.borrow_mut();
                 // If the new operand value and the existing one are the same, no change is required
                 if operand.value.is_some_and(|v| v == value) {
                     continue;
@@ -151,10 +160,9 @@ impl OpOperandRangeMut<'_> {
                 operand.set(value);
             } else {
                 // The operand group is being extended
-                let context = context.get_or_insert_with(|| owner.borrow().context_rc());
-                self.extend(operands.map(|(index, value)| {
+                self.extend(core::iter::once((index, value)).chain(operands).map(|(_, value)| {
                     num_operands += 1;
-                    context.make_operand(value, owner, index as u8)
+                    context.make_operand(value, owner, 0)
                 }));
                 break;
             }
