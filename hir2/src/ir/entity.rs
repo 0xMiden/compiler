@@ -649,14 +649,26 @@ impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
         fmt::Pointer::fmt(&Self::as_ptr(self), f)
     }
 }
-impl<T: ?Sized + EntityWithId, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
+impl<T: ?Sized + fmt::Display, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
+    #[inline]
+    default fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.borrow())
+    }
+}
+impl<T: ?Sized + fmt::Display + EntityWithId, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.borrow().id())
     }
 }
 
-impl<T: ?Sized + EntityWithId, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
+impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
+    #[inline]
+    default fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.borrow(), f)
+    }
+}
+impl<T: ?Sized + fmt::Debug + EntityWithId, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.borrow().id())
