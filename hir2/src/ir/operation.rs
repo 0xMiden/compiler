@@ -205,6 +205,22 @@ impl Operation {
     }
 }
 
+/// Read-only Metadata
+impl OperationRef {
+    pub fn name(&self) -> OperationName {
+        let ptr = OperationRef::as_ptr(self);
+        // SAFETY: The `name` field of Operation is read-only after an op is allocated, and the
+        // safety guarantees of OperationRef require that the allocation never moves for the
+        // lifetime of the ref. So it is always safe to read this field via direct pointer, even
+        // if a mutable borrow of the containing op exists, because the field is never written to
+        // after allocation.
+        unsafe {
+            let name_ptr = core::ptr::addr_of!((*ptr).name);
+            OperationName::clone(&*name_ptr)
+        }
+    }
+}
+
 /// Metadata
 impl Operation {
     /// Get the name of this operation
