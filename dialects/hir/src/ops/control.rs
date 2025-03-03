@@ -71,7 +71,8 @@ pub struct CondBr {
 
 impl Canonicalizable for CondBr {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
-        rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context));
+        rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context.clone()));
+        rewrites.push(crate::canonicalization::SplitCriticalEdges::new(context));
     }
 }
 
@@ -113,6 +114,12 @@ pub struct Switch {
     cases: SwitchCase,
     #[successor]
     fallback: Successor,
+}
+
+impl Canonicalizable for Switch {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::SplitCriticalEdges::new(context));
+    }
 }
 
 impl BranchOpInterface for Switch {

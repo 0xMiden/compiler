@@ -9,7 +9,9 @@ use crate::{
     HirDialect,
 };
 
-/// Simplify conditional branches to a block from that block's sole predecessor
+/// Simplify conditional branches to a block from that block's sole predecessor, so long as doing
+/// so does not introduce a critical edge in the control flow graph. A critical edge is a control
+/// flow edge from a block with multiple successors to a block with multiple predecessors.
 ///
 /// # Example
 ///
@@ -87,12 +89,13 @@ impl RewritePattern for SimplifyPassthroughCondBr {
         let false_dest = false_dest.successor();
 
         // Try to collapse one of the current successors.
-        let Some(new_true_dest) = collapse_branch(true_dest, &mut true_dest_operands) else {
+        let new_true_dest = collapse_branch(operation, true_dest, &mut true_dest_operands);
+        let new_false_dest = collapse_branch(operation, false_dest, &mut false_dest_operands);
+        if new_true_dest.is_none() && new_false_dest.is_none() {
             return Ok(false);
-        };
-        let Some(new_false_dest) = collapse_branch(false_dest, &mut false_dest_operands) else {
-            return Ok(false);
-        };
+        }
+        let new_true_dest = new_true_dest.unwrap_or(true_dest);
+        let new_false_dest = new_false_dest.unwrap_or(false_dest);
 
         // Create a new branch with the collapsed successors.
         let span = cond_br_op.span();

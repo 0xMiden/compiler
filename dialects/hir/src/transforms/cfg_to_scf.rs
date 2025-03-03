@@ -49,13 +49,15 @@ impl Pass for LiftControlFlowToSCF {
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
+        log::debug!("applying control flow lifting transformation pass starting from {}", &*op);
+
         let mut transformation = ControlFlowToSCFTransformation;
         let mut changed = false;
 
         let root = op.as_operation_ref();
         drop(op);
 
-        let result = root.raw_postwalk(|operation: OperationRef| -> WalkResult {
+        let result = root.raw_prewalk(|operation: OperationRef| -> WalkResult {
             let op = operation.borrow();
             if op.is::<builtin::Function>() {
                 if op.regions().is_empty() {
@@ -72,10 +74,10 @@ impl Pass for LiftControlFlowToSCF {
                     Ok(di) => di,
                     Err(err) => return WalkResult::Break(err),
                 };
-
                 let dominfo = Rc::make_mut(&mut dominfo);
 
                 let visitor = |inner: OperationRef| -> WalkResult {
+                    log::debug!("applying control flow lifting to {}", inner.borrow());
                     let mut next_region = inner.borrow().regions().front().as_pointer();
                     while let Some(region) = next_region.take() {
                         next_region = region.next();
@@ -84,6 +86,10 @@ impl Pass for LiftControlFlowToSCF {
                             transforms::transform_cfg_to_scf(region, &mut transformation, dominfo);
                         match result {
                             Ok(did_change) => {
+                                log::trace!(
+                                    "control flow lifting completed for region \
+                                     (did_change={did_change})"
+                                );
                                 changed |= did_change;
                             }
                             Err(err) => {
@@ -98,15 +104,33 @@ impl Pass for LiftControlFlowToSCF {
                 drop(op);
 
                 operation.raw_postwalk(visitor)?;
-            }
 
-            WalkResult::Continue(())
+                // Do not enter the function body in the outer walk
+                WalkResult::Skip
+            } else if op.is::<builtin::World>()
+                || op.is::<builtin::Component>()
+                || op.is::<builtin::Module>()
+            {
+                // We only care to recurse into ops that can contain functions
+                log::trace!(
+                    "looking for functions to apply control flow lifting to in '{}'",
+                    op.name()
+                );
+                WalkResult::Continue(())
+            } else {
+                // Skip all other ops
+                log::trace!("skipping control flow lifting for '{}'", op.name());
+                WalkResult::Skip
+            }
         });
 
         if result.was_interrupted() {
             return result.into_result();
         }
 
+        log::debug!(
+            "control flow lifting transformation pass completed successfully (changed = {changed}"
+        );
         if !changed {
             state.preserved_analyses_mut().preserve_all();
         }

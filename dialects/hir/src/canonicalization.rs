@@ -7,6 +7,7 @@ mod remove_loop_invariant_args_from_before_block;
 mod simplify_br_to_block_with_single_pred;
 mod simplify_passthrough_br;
 mod simplify_passthrough_cond_br;
+mod split_critical_edges;
 mod while_condition_truth;
 mod while_remove_duplicated_results;
 mod while_remove_unused_args;
@@ -21,6 +22,7 @@ pub use self::{
     simplify_br_to_block_with_single_pred::SimplifyBrToBlockWithSinglePred,
     simplify_passthrough_br::SimplifyPassthroughBr,
     simplify_passthrough_cond_br::SimplifyPassthroughCondBr,
+    split_critical_edges::SplitCriticalEdges,
     while_condition_truth::WhileConditionTruth,
     while_remove_duplicated_results::WhileRemoveDuplicatedResults,
     while_remove_unused_args::WhileRemoveUnusedArgs,

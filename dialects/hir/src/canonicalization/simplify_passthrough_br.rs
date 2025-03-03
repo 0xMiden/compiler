@@ -84,7 +84,7 @@ impl RewritePattern for SimplifyPassthroughBr {
         let span = op.span();
         drop(op);
 
-        let Some(new_dest) = collapse_branch(dest, &mut dest_operands) else {
+        let Some(new_dest) = collapse_branch(operation, dest, &mut dest_operands) else {
             return Ok(false);
         };
 
@@ -102,6 +102,7 @@ impl RewritePattern for SimplifyPassthroughBr {
 /// `arg_storage` is used as storage if operands to the collapsed successor need to be remapped. It
 /// must outlive uses of `successor_operands`.
 pub fn collapse_branch(
+    predecessor: OperationRef,
     successor: BlockRef,
     successor_operands: &mut SmallVec<[ValueRef; 4]>,
 ) -> Option<BlockRef> {
@@ -133,10 +134,24 @@ pub fn collapse_branch(
         return None;
     }
 
+    // Don't try to collapse branches when doing so would introduce a critical edge in the CFG
+    //
+    // A critical edge is an edge from a predecessor with multiple successors, to a successor with
+    // multiple predecessors. It is necessary to break these edges with passthrough blocks that we
+    // would otherwise wish to collapse during canonicalization. By avoiding introducing these edges
+    // we can break any existing critical edges as a separate canonicalization, without the two
+    // working against each other.
+    if predecessor.borrow().num_successors() > 1
+        && successor_dest.borrow().get_unique_predecessor().is_none()
+    {
+        return None;
+    }
+
     // Update the operands to the successor. If the branch parent has no arguments, we can use the
     // branch operands directly.
-    if target.arguments.is_empty() {
+    if !succ.has_arguments() {
         successor_operands.clear();
+        successor_operands.extend(target.arguments.iter().map(|o| o.borrow().as_value_ref()));
         return Some(successor_dest);
     }
 
