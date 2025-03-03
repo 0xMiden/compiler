@@ -1,73 +1,73 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
-
-    builtin.module  #[name = #test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4] #[visibility = public] {
-
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4 {
         builtin.function public @global_var_update() {
         ^block6:
             v0 = hir.constant 0 : i32;
             v1 = hir.constant 0 : i32;
-            v2 = hir.bitcast v1 : u32 #[ty = u32];
+            v2 = hir.bitcast v1 : u32;
             v3 = hir.constant 1048577 : u32;
             v4 = hir.add v2, v3 : u32 #[overflow = checked];
-            v5 = hir.int_to_ptr v4 : (ptr u8) #[ty = (ptr u8)];
+            v5 = hir.int_to_ptr v4 : (ptr u8);
             v6 = hir.load v5 : u8;
-            v7 = hir.zext v6 : u32 #[ty = u32];
+            v7 = hir.zext v6 : u32;
             v8 = hir.constant 1 : i32;
-            v9 = hir.bitcast v8 : u32 #[ty = u32];
+            v9 = hir.bitcast v8 : u32;
             v10 = hir.add v7, v9 : u32 #[overflow = wrapping];
-            v11 = hir.trunc v10 : u8 #[ty = u8];
-            v12 = hir.bitcast v0 : u32 #[ty = u32];
+            v11 = hir.trunc v10 : u8;
+            v12 = hir.bitcast v0 : u32;
             v13 = hir.constant 1048576 : u32;
             v14 = hir.add v12, v13 : u32 #[overflow = checked];
-            v15 = hir.int_to_ptr v14 : (ptr u8) #[ty = (ptr u8)];
+            v15 = hir.int_to_ptr v14 : (ptr u8);
             hir.store v15, v11;
-            hir.br block7;
+            hir.br ^block7;
         ^block7:
             hir.ret ;
         };
+
         builtin.function public @__main() -> i32 {
         ^block8:
             v17 = hir.constant 0 : i32;
-            hir.exec  #[callee = root/test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4/global_var_update] #[signature = ];
+            hir.exec @root_ns:root@1.0.0/test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4/global_var_update()
             v18 = hir.constant 0 : i32;
             v19 = hir.constant -9 : i32;
-            hir.br block10(v19, v18);
+            hir.br ^block10(v19, v18);
         ^block9(v16: i32):
             hir.ret v16;
         ^block10(v20: i32, v27: i32):
             v21 = hir.constant 1048585 : i32;
             v22 = hir.add v20, v21 : i32 #[overflow = wrapping];
-            v23 = hir.bitcast v22 : u32 #[ty = u32];
-            v24 = hir.int_to_ptr v23 : (ptr u8) #[ty = (ptr u8)];
+            v23 = hir.bitcast v22 : u32;
+            v24 = hir.int_to_ptr v23 : (ptr u8);
             v25 = hir.load v24 : u8;
-            v26 = hir.zext v25 : u32 #[ty = u32];
-            v28 = hir.bitcast v27 : u32 #[ty = u32];
+            v26 = hir.zext v25 : u32;
+            v28 = hir.bitcast v27 : u32;
             v29 = hir.add v26, v28 : u32 #[overflow = wrapping];
-            v30 = hir.bitcast v29 : i32 #[ty = i32];
+            v30 = hir.bitcast v29 : i32;
             v31 = hir.constant 1 : i32;
             v32 = hir.add v20, v31 : i32 #[overflow = wrapping];
             v33 = hir.constant 0 : i32;
             v34 = hir.neq v32, v33 : i1;
-            hir.cond_br v34 block10(v32, v30), block12;
+            hir.cond_br v34 ^block10(v32, v30), ^block12;
         ^block11:
             v35 = hir.constant 255 : i32;
             v36 = hir.band v30, v35 : i32;
-            hir.br block9(v36);
+            hir.br ^block9(v36);
         ^block12:
-            hir.br block11;
+            hir.br ^block11;
         };
-        builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
 
-            hir.ret_imm  #[value = 1048576];
+        builtin.global_variable private @#__stack_pointer : i32 {
+            hir.ret_imm 1048576;
         };
-        builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048585];
+        builtin.global_variable public @#gv1 : i32 {
+            hir.ret_imm 1048585;
         };
-        builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
 
-            hir.ret_imm  #[value = 1048592];
+        builtin.global_variable public @#gv2 : i32 {
+            hir.ret_imm 1048592;
         };
-        builtin.segment  #[data = 090807060504030201] #[offset = 1048576] #[readonly = false];
+
+        builtin.segment @1048576 = 0x090807060504030201;
     };
 };

@@ -1,7 +1,8 @@
-# mod mul_felt
+# mod root_ns:root@1.0.0::mul_felt
 
 export.entrypoint
-    swap.1 mul
+
+        mul
 end
 
 

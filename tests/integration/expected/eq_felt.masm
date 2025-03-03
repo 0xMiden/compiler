@@ -1,7 +1,11 @@
-# mod eq_felt
+# mod root_ns:root@1.0.0::eq_felt
 
 export.entrypoint
-    swap.1 eq push.1 eq
+
+        push.1
+        swap.2
+        eq
+        eq
 end
 
 

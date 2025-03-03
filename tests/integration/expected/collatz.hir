@@ -1,51 +1,46 @@
-builtin.world  #[name = #world] {
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @collatz {
+        builtin.function public @entrypoint(v0: i32) -> i32 {
+        ^block4(v0: i32):
+            v2 = hir.constant 0 : i32;
+            v3 = hir.constant 0 : i32;
+            hir.br ^block6(v0, v3);
+        ^block5(v1: i32):
 
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+        ^block6(v5: i32, v12: i32):
+            v6 = hir.constant 1 : i32;
+            v7 = hir.neq v5, v6 : i1;
+            v8 = hir.zext v7 : u32;
+            v9 = hir.bitcast v8 : i32;
+            v10 = hir.constant 0 : i32;
+            v11 = hir.neq v9, v10 : i1;
+            hir.cond_br v11 ^block8, ^block9;
+        ^block7(v4: i32):
 
-        builtin.module  #[name = #collatz] #[visibility = public] {
+        ^block8:
+            v13 = hir.constant 3 : i32;
+            v14 = hir.mul v5, v13 : i32 #[overflow = wrapping];
+            v15 = hir.constant 1 : i32;
+            v16 = hir.add v14, v15 : i32 #[overflow = wrapping];
+            v17 = hir.constant 1 : i32;
+            v18 = hir.bitcast v5 : u32;
+            v19 = hir.bitcast v17 : u32;
+            v20 = hir.shr v18, v19 : u32;
+            v21 = hir.bitcast v20 : i32;
+            v22 = hir.constant 1 : i32;
+            v23 = hir.band v5, v22 : i32;
+            v24 = hir.constant 0 : i32;
+            v25 = hir.neq v23, v24 : i1;
+            v26 = hir.select v25, v16, v21 : i32;
+            v27 = hir.constant 1 : i32;
+            v28 = hir.add v12, v27 : i32 #[overflow = wrapping];
+            hir.br ^block6(v26, v28);
+        ^block9:
+            hir.ret v12;
+        };
 
-            builtin.function public @entrypoint(v0: i32) -> i32 {
-            ^block4(v0: i32):
-                v2 = hir.constant 0 : i32;
-                v3 = hir.constant 0 : i32;
-                hir.br block6(v0, v3);
-            ^block5(v1: i32):
-
-            ^block6(v5: i32, v12: i32):
-                v6 = hir.constant 1 : i32;
-                v7 = hir.neq v5, v6 : i1;
-                v8 = hir.zext v7 : u32 #[ty = u32];
-                v9 = hir.bitcast v8 : i32 #[ty = i32];
-                v10 = hir.constant 0 : i32;
-                v11 = hir.neq v9, v10 : i1;
-                hir.cond_br v11 block8, block9;
-            ^block7(v4: i32):
-
-            ^block8:
-                v13 = hir.constant 3 : i32;
-                v14 = hir.mul v5, v13 : i32 #[overflow = wrapping];
-                v15 = hir.constant 1 : i32;
-                v16 = hir.add v14, v15 : i32 #[overflow = wrapping];
-                v17 = hir.constant 1 : i32;
-                v18 = hir.bitcast v5 : u32 #[ty = u32];
-                v19 = hir.bitcast v17 : u32 #[ty = u32];
-                v20 = hir.shr v18, v19 : u32;
-                v21 = hir.bitcast v20 : i32 #[ty = i32];
-                v22 = hir.constant 1 : i32;
-                v23 = hir.band v5, v22 : i32;
-                v24 = hir.constant 0 : i32;
-                v25 = hir.neq v23, v24 : i1;
-                v26 = hir.select v25, v16, v21 : i32;
-                v27 = hir.constant 1 : i32;
-                v28 = hir.add v12, v27 : i32 #[overflow = wrapping];
-                hir.br block6(v26, v28);
-            ^block9:
-                hir.ret v12;
-            };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
+        builtin.global_variable private @#__stack_pointer : i32 {
+            hir.ret_imm 1048576;
         };
     };
 };

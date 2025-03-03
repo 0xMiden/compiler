@@ -1,4 +1,4 @@
-# mod root_ns:root::test_rust_1dc910df9e5ef302ee236233065a2a50427fb4ff2db8591dcc6713f05a95d77a
+# mod root_ns:root@1.0.0::test_rust_1dc910df9e5ef302ee236233065a2a50427fb4ff2db8591dcc6713f05a95d77a
 
 export.entrypoint
 
