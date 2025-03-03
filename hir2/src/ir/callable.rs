@@ -79,6 +79,14 @@ pub enum Callable {
     Symbol(SymbolPath),
     Value(ValueRef),
 }
+impl fmt::Display for Callable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Symbol(path) => fmt::Display::fmt(path, f),
+            Self::Value(value) => fmt::Display::fmt(value, f),
+        }
+    }
+}
 impl From<&SymbolPathAttr> for Callable {
     fn from(value: &SymbolPathAttr) -> Self {
         Self::Symbol(value.path.clone())
