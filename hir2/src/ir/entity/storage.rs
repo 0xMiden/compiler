@@ -283,7 +283,7 @@ impl<'a, T> IntoIterator for EntityRange<'a, T> {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.items.iter()
+        self.items[self.range.start..self.range.end].iter()
     }
 }
 
@@ -533,7 +533,7 @@ impl<'a, T> IntoIterator for EntityRangeMut<'a, T> {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
+        self.items[self.range.start..self.range.end].iter_mut()
     }
 }
 
