@@ -1,204 +1,199 @@
-builtin.world  #[name = #world] {
-
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
-
-        builtin.module  #[name = #mem_intrinsics_heap_base] #[visibility = public] {
-
-            builtin.function public @entrypoint(v0: i32, v1: i32) {
-            ^block5(v0: i32, v1: i32):
-                v2 = hir.constant 0 : i32;
-                v3 = hir.constant 0 : i32;
-                v4 = hir.bitcast v3 : u32 #[ty = u32];
-                v5 = hir.constant 1048580 : u32;
-                v6 = hir.add v4, v5 : u32 #[overflow = checked];
-                v7 = hir.int_to_ptr v6 : (ptr u8) #[ty = (ptr u8)];
-                v8 = hir.load v7 : u8;
-                v9 = hir.zext v8 : u32 #[ty = u32];
-                v10 = hir.constant 4 : i32;
-                v11 = hir.constant 4 : i32;
-                v12 = hir.exec v10, v11 : i32 #[callee = world/root/mem_intrinsics_heap_base/__rust_alloc] #[signature = (param i32) (param i32) (result i32)];
-                v13 = hir.constant 0 : i32;
-                v14 = hir.neq v12, v13 : i1;
-                hir.cond_br v14 block7, block8;
-            ^block6:
-                hir.ret ;
-            ^block7:
-                v17 = hir.constant 1 : i32;
-                v18 = hir.bitcast v0 : u32 #[ty = u32];
-                v19 = hir.constant 8 : u32;
-                v20 = hir.add v18, v19 : u32 #[overflow = checked];
-                v21 = hir.constant 4 : u32;
-                v22 = hir.mod v20, v21 : u32;
-                hir.assertz v22 #[code = 250];
-                v23 = hir.int_to_ptr v20 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v23, v17;
-                v24 = hir.bitcast v0 : u32 #[ty = u32];
-                v25 = hir.constant 4 : u32;
-                v26 = hir.add v24, v25 : u32 #[overflow = checked];
-                v27 = hir.constant 4 : u32;
-                v28 = hir.mod v26, v27 : u32;
-                hir.assertz v28 #[code = 250];
-                v29 = hir.int_to_ptr v26 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v29, v12;
-                v30 = hir.constant 1 : i32;
-                v31 = hir.bitcast v0 : u32 #[ty = u32];
-                v32 = hir.constant 4 : u32;
-                v33 = hir.mod v31, v32 : u32;
-                hir.assertz v33 #[code = 250];
-                v34 = hir.int_to_ptr v31 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v34, v30;
-                v35 = hir.constant 1 : i32;
-                v36 = hir.bitcast v35 : u32 #[ty = u32];
-                v37 = hir.shl v1, v36 : i32;
-                v38 = hir.bitcast v12 : u32 #[ty = u32];
-                v39 = hir.constant 4 : u32;
-                v40 = hir.mod v38, v39 : u32;
-                hir.assertz v40 #[code = 250];
-                v41 = hir.int_to_ptr v38 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v41, v37;
-                hir.br block6;
-            ^block8:
-                v15 = hir.constant 4 : i32;
-                v16 = hir.constant 4 : i32;
-                hir.exec v15, v16 #[callee = world/root/mem_intrinsics_heap_base/alloc::alloc::handle_alloc_error] #[signature = (param i32) (param i32)];
-                hir.unreachable ;
-            };
-            builtin.function public @__rust_alloc(v42: i32, v43: i32) -> i32 {
-            ^block9(v42: i32, v43: i32):
-                v45 = hir.constant 1048576 : i32;
-                v46 = hir.exec v45, v43, v42 : i32 #[callee = world/root/mem_intrinsics_heap_base/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc] #[signature = (param i32) (param i32) (param i32) (result i32)];
-                hir.br block10(v46);
-            ^block10(v44: i32):
-                hir.ret v44;
-            };
-            builtin.function public @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v47: i32, v48: i32, v49: i32) -> i32 {
-            ^block11(v47: i32, v48: i32, v49: i32):
-                v51 = hir.constant 0 : i32;
-                v52 = hir.constant 32 : i32;
-                v53 = hir.constant 32 : i32;
-                v54 = hir.bitcast v48 : u32 #[ty = u32];
-                v55 = hir.bitcast v53 : u32 #[ty = u32];
-                v56 = hir.gt v54, v55 : i1;
-                v57 = hir.zext v56 : u32 #[ty = u32];
-                v58 = hir.constant 0 : i32;
-                v59 = hir.neq v57, v58 : i1;
-                v60 = hir.select v59, v48, v52 : i32;
-                v61 = hir.popcnt v60 : u32;
-                v62 = hir.bitcast v61 : i32 #[ty = i32];
-                v63 = hir.constant 1 : i32;
-                v64 = hir.neq v62, v63 : i1;
-                v65 = hir.zext v64 : u32 #[ty = u32];
-                v66 = hir.bitcast v65 : i32 #[ty = i32];
-                v67 = hir.constant 0 : i32;
-                v68 = hir.neq v66, v67 : i1;
-                hir.cond_br v68 block13, block14;
-            ^block12(v50: i32):
-
-            ^block13:
-                hir.unreachable ;
-            ^block14:
-                v69 = hir.constant -2147483648 : i32;
-                v70 = hir.exec v48, v60 : i32 #[callee = world/root/mem_intrinsics_heap_base/core::ptr::alignment::Alignment::max] #[signature = (param i32) (param i32) (result i32)];
-                v71 = hir.sub v69, v70 : i32 #[overflow = wrapping];
-                v72 = hir.bitcast v71 : u32 #[ty = u32];
-                v73 = hir.bitcast v49 : u32 #[ty = u32];
-                v74 = hir.lt v72, v73 : i1;
-                v75 = hir.zext v74 : u32 #[ty = u32];
-                v76 = hir.bitcast v75 : i32 #[ty = i32];
-                v77 = hir.constant 0 : i32;
-                v78 = hir.neq v76, v77 : i1;
-                hir.cond_br v78 block13, block15;
-            ^block15:
-                v79 = hir.constant 0 : i32;
-                v80 = hir.add v49, v70 : i32 #[overflow = wrapping];
-                v81 = hir.constant -1 : i32;
-                v82 = hir.add v80, v81 : i32 #[overflow = wrapping];
-                v83 = hir.constant 0 : i32;
-                v84 = hir.sub v83, v70 : i32 #[overflow = wrapping];
-                v85 = hir.band v82, v84 : i32;
-                v86 = hir.bitcast v47 : u32 #[ty = u32];
-                v87 = hir.constant 4 : u32;
-                v88 = hir.mod v86, v87 : u32;
-                hir.assertz v88 #[code = 250];
-                v89 = hir.int_to_ptr v86 : (ptr i32) #[ty = (ptr i32)];
-                v90 = hir.load v89 : i32;
-                v91 = hir.constant 0 : i32;
-                v92 = hir.neq v90, v91 : i1;
-                hir.cond_br v92 block16(v47, v85, v70, v79), block17;
-            ^block16(v105: i32, v112: i32, v125: i32, v128: i32):
-                v104 = hir.constant 268435456 : i32;
-                v106 = hir.bitcast v105 : u32 #[ty = u32];
-                v107 = hir.constant 4 : u32;
-                v108 = hir.mod v106, v107 : u32;
-                hir.assertz v108 #[code = 250];
-                v109 = hir.int_to_ptr v106 : (ptr i32) #[ty = (ptr i32)];
-                v110 = hir.load v109 : i32;
-                v111 = hir.sub v104, v110 : i32 #[overflow = wrapping];
-                v113 = hir.bitcast v111 : u32 #[ty = u32];
-                v114 = hir.bitcast v112 : u32 #[ty = u32];
-                v115 = hir.lt v113, v114 : i1;
-                v116 = hir.zext v115 : u32 #[ty = u32];
-                v117 = hir.bitcast v116 : i32 #[ty = i32];
-                v118 = hir.constant 0 : i32;
-                v119 = hir.neq v117, v118 : i1;
-                hir.cond_br v119 block18(v128), block19;
-            ^block17:
-                v93 = hir.exec  : i32 #[callee = world/root/intrinsics::mem/heap_base] #[signature = (result i32)];
-                v94 = hir.mem_size  : u32;
-                v95 = hir.constant 16 : i32;
-                v96 = hir.bitcast v95 : u32 #[ty = u32];
-                v97 = hir.shl v94, v96 : u32;
-                v98 = hir.bitcast v97 : i32 #[ty = i32];
-                v99 = hir.add v93, v98 : i32 #[overflow = wrapping];
-                v100 = hir.bitcast v47 : u32 #[ty = u32];
-                v101 = hir.constant 4 : u32;
-                v102 = hir.mod v100, v101 : u32;
-                hir.assertz v102 #[code = 250];
-                v103 = hir.int_to_ptr v100 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v103, v99;
-                hir.br block16(v47, v85, v70, v79);
-            ^block18(v127: i32):
-                hir.ret v127;
-            ^block19:
-                v120 = hir.add v110, v112 : i32 #[overflow = wrapping];
-                v121 = hir.bitcast v105 : u32 #[ty = u32];
-                v122 = hir.constant 4 : u32;
-                v123 = hir.mod v121, v122 : u32;
-                hir.assertz v123 #[code = 250];
-                v124 = hir.int_to_ptr v121 : (ptr i32) #[ty = (ptr i32)];
-                hir.store v124, v120;
-                v126 = hir.add v110, v125 : i32 #[overflow = wrapping];
-                hir.br block18(v126);
-            };
-            builtin.function public @alloc::alloc::handle_alloc_error(v129: i32, v130: i32) {
-            ^block20(v129: i32, v130: i32):
-                hir.unreachable ;
-            ^block21:
-
-            };
-            builtin.function public @core::ptr::alignment::Alignment::max(v131: i32, v132: i32) -> i32 {
-            ^block22(v131: i32, v132: i32):
-                v134 = hir.bitcast v131 : u32 #[ty = u32];
-                v135 = hir.bitcast v132 : u32 #[ty = u32];
-                v136 = hir.gt v134, v135 : i1;
-                v137 = hir.zext v136 : u32 #[ty = u32];
-                v138 = hir.constant 0 : i32;
-                v139 = hir.neq v137, v138 : i1;
-                v140 = hir.select v139, v131, v132 : i32;
-                hir.br block23(v140);
-            ^block23(v133: i32):
-                hir.ret v133;
-            };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @mem_intrinsics_heap_base {
+        builtin.function public @entrypoint(v0: i32, v1: i32) {
+        ^block5(v0: i32, v1: i32):
+            v2 = hir.constant 0 : i32;
+            v3 = hir.constant 0 : i32;
+            v4 = hir.bitcast v3 : u32;
+            v5 = hir.constant 1048580 : u32;
+            v6 = hir.add v4, v5 : u32 #[overflow = checked];
+            v7 = hir.int_to_ptr v6 : (ptr u8);
+            v8 = hir.load v7 : u8;
+            v9 = hir.zext v8 : u32;
+            v10 = hir.constant 4 : i32;
+            v11 = hir.constant 4 : i32;
+            v12 = hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/__rust_alloc(v10, v11) : i32
+            v13 = hir.constant 0 : i32;
+            v14 = hir.neq v12, v13 : i1;
+            hir.cond_br v14 ^block7, ^block8;
+        ^block6:
+            hir.ret ;
+        ^block7:
+            v17 = hir.constant 1 : i32;
+            v18 = hir.bitcast v0 : u32;
+            v19 = hir.constant 8 : u32;
+            v20 = hir.add v18, v19 : u32 #[overflow = checked];
+            v21 = hir.constant 4 : u32;
+            v22 = hir.mod v20, v21 : u32;
+            hir.assertz v22 #[code = 250];
+            v23 = hir.int_to_ptr v20 : (ptr i32);
+            hir.store v23, v17;
+            v24 = hir.bitcast v0 : u32;
+            v25 = hir.constant 4 : u32;
+            v26 = hir.add v24, v25 : u32 #[overflow = checked];
+            v27 = hir.constant 4 : u32;
+            v28 = hir.mod v26, v27 : u32;
+            hir.assertz v28 #[code = 250];
+            v29 = hir.int_to_ptr v26 : (ptr i32);
+            hir.store v29, v12;
+            v30 = hir.constant 1 : i32;
+            v31 = hir.bitcast v0 : u32;
+            v32 = hir.constant 4 : u32;
+            v33 = hir.mod v31, v32 : u32;
+            hir.assertz v33 #[code = 250];
+            v34 = hir.int_to_ptr v31 : (ptr i32);
+            hir.store v34, v30;
+            v35 = hir.constant 1 : i32;
+            v36 = hir.bitcast v35 : u32;
+            v37 = hir.shl v1, v36 : i32;
+            v38 = hir.bitcast v12 : u32;
+            v39 = hir.constant 4 : u32;
+            v40 = hir.mod v38, v39 : u32;
+            hir.assertz v40 #[code = 250];
+            v41 = hir.int_to_ptr v38 : (ptr i32);
+            hir.store v41, v37;
+            hir.br ^block6;
+        ^block8:
+            v15 = hir.constant 4 : i32;
+            v16 = hir.constant 4 : i32;
+            hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/alloc::alloc::handle_alloc_error(v15, v16)
+            hir.unreachable ;
         };
-        builtin.module  #[name = #intrinsics::mem] #[visibility = public] {
 
-            builtin.function public @heap_base(result i32) {
+        builtin.function public @__rust_alloc(v42: i32, v43: i32) -> i32 {
+        ^block9(v42: i32, v43: i32):
+            v45 = hir.constant 1048576 : i32;
+            v46 = hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v45, v43, v42) : i32
+            hir.br ^block10(v46);
+        ^block10(v44: i32):
+            hir.ret v44;
+        };
 
-            };
+        builtin.function public @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v47: i32, v48: i32, v49: i32) -> i32 {
+        ^block11(v47: i32, v48: i32, v49: i32):
+            v51 = hir.constant 0 : i32;
+            v52 = hir.constant 32 : i32;
+            v53 = hir.constant 32 : i32;
+            v54 = hir.bitcast v48 : u32;
+            v55 = hir.bitcast v53 : u32;
+            v56 = hir.gt v54, v55 : i1;
+            v57 = hir.zext v56 : u32;
+            v58 = hir.bitcast v57 : i32;
+            v59 = hir.constant 0 : i32;
+            v60 = hir.neq v58, v59 : i1;
+            v61 = hir.select v60, v48, v52 : i32;
+            v62 = hir.popcnt v61 : u32;
+            v63 = hir.bitcast v62 : i32;
+            v64 = hir.constant 1 : i32;
+            v65 = hir.neq v63, v64 : i1;
+            v66 = hir.zext v65 : u32;
+            v67 = hir.bitcast v66 : i32;
+            v68 = hir.constant 0 : i32;
+            v69 = hir.neq v67, v68 : i1;
+            hir.cond_br v69 ^block13, ^block14;
+        ^block12(v50: i32):
+
+        ^block13:
+            hir.unreachable ;
+        ^block14:
+            v70 = hir.constant -2147483648 : i32;
+            v71 = hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/core::ptr::alignment::Alignment::max(v48, v61) : i32
+            v72 = hir.sub v70, v71 : i32 #[overflow = wrapping];
+            v73 = hir.bitcast v72 : u32;
+            v74 = hir.bitcast v49 : u32;
+            v75 = hir.lt v73, v74 : i1;
+            v76 = hir.zext v75 : u32;
+            v77 = hir.bitcast v76 : i32;
+            v78 = hir.constant 0 : i32;
+            v79 = hir.neq v77, v78 : i1;
+            hir.cond_br v79 ^block13, ^block15;
+        ^block15:
+            v80 = hir.constant 0 : i32;
+            v81 = hir.add v49, v71 : i32 #[overflow = wrapping];
+            v82 = hir.constant -1 : i32;
+            v83 = hir.add v81, v82 : i32 #[overflow = wrapping];
+            v84 = hir.constant 0 : i32;
+            v85 = hir.sub v84, v71 : i32 #[overflow = wrapping];
+            v86 = hir.band v83, v85 : i32;
+            v87 = hir.bitcast v47 : u32;
+            v88 = hir.constant 4 : u32;
+            v89 = hir.mod v87, v88 : u32;
+            hir.assertz v89 #[code = 250];
+            v90 = hir.int_to_ptr v87 : (ptr i32);
+            v91 = hir.load v90 : i32;
+            v92 = hir.constant 0 : i32;
+            v93 = hir.neq v91, v92 : i1;
+            hir.cond_br v93 ^block16(v47, v86, v71, v80), ^block17;
+        ^block16(v106: i32, v113: i32, v126: i32, v129: i32):
+            v105 = hir.constant 268435456 : i32;
+            v107 = hir.bitcast v106 : u32;
+            v108 = hir.constant 4 : u32;
+            v109 = hir.mod v107, v108 : u32;
+            hir.assertz v109 #[code = 250];
+            v110 = hir.int_to_ptr v107 : (ptr i32);
+            v111 = hir.load v110 : i32;
+            v112 = hir.sub v105, v111 : i32 #[overflow = wrapping];
+            v114 = hir.bitcast v112 : u32;
+            v115 = hir.bitcast v113 : u32;
+            v116 = hir.lt v114, v115 : i1;
+            v117 = hir.zext v116 : u32;
+            v118 = hir.bitcast v117 : i32;
+            v119 = hir.constant 0 : i32;
+            v120 = hir.neq v118, v119 : i1;
+            hir.cond_br v120 ^block18(v129), ^block19;
+        ^block17:
+            v94 = hir.exec @intrinsics::mem/heap_base() : i32
+            v95 = hir.mem_size  : u32;
+            v96 = hir.constant 16 : i32;
+            v97 = hir.bitcast v96 : u32;
+            v98 = hir.shl v95, v97 : u32;
+            v99 = hir.bitcast v98 : i32;
+            v100 = hir.add v94, v99 : i32 #[overflow = wrapping];
+            v101 = hir.bitcast v47 : u32;
+            v102 = hir.constant 4 : u32;
+            v103 = hir.mod v101, v102 : u32;
+            hir.assertz v103 #[code = 250];
+            v104 = hir.int_to_ptr v101 : (ptr i32);
+            hir.store v104, v100;
+            hir.br ^block16(v47, v86, v71, v80);
+        ^block18(v128: i32):
+            hir.ret v128;
+        ^block19:
+            v121 = hir.add v111, v113 : i32 #[overflow = wrapping];
+            v122 = hir.bitcast v106 : u32;
+            v123 = hir.constant 4 : u32;
+            v124 = hir.mod v122, v123 : u32;
+            hir.assertz v124 #[code = 250];
+            v125 = hir.int_to_ptr v122 : (ptr i32);
+            hir.store v125, v121;
+            v127 = hir.add v111, v126 : i32 #[overflow = wrapping];
+            hir.br ^block18(v127);
+        };
+
+        builtin.function public @alloc::alloc::handle_alloc_error(v130: i32, v131: i32) {
+        ^block20(v130: i32, v131: i32):
+            hir.unreachable ;
+        ^block21:
+
+        };
+
+        builtin.function public @core::ptr::alignment::Alignment::max(v132: i32, v133: i32) -> i32 {
+        ^block22(v132: i32, v133: i32):
+            v135 = hir.bitcast v132 : u32;
+            v136 = hir.bitcast v133 : u32;
+            v137 = hir.gt v135, v136 : i1;
+            v138 = hir.zext v137 : u32;
+            v139 = hir.bitcast v138 : i32;
+            v140 = hir.constant 0 : i32;
+            v141 = hir.neq v139, v140 : i1;
+            v142 = hir.select v141, v132, v133 : i32;
+            hir.br ^block23(v142);
+        ^block23(v134: i32):
+            hir.ret v134;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            hir.ret_imm 1048576;
         };
     };
 };

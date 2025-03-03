@@ -1,7 +1,11 @@
-# mod le_felt
+# mod root_ns:root@1.0.0::le_felt
 
 export.entrypoint
-    lte push.0 neq
+
+        push.0
+        movdn.2
+        lte
+        neq
 end
 
 

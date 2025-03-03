@@ -1,7 +1,9 @@
-# mod sub_felt
+# mod root_ns:root@1.0.0::sub_felt
 
 export.entrypoint
-    swap.1 sub
+
+        swap.1
+        sub
 end
 
 

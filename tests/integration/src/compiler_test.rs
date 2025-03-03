@@ -187,7 +187,7 @@ pub struct CompilerTestBuilder {
 impl CompilerTestBuilder {
     /// Construct a new [CompilerTestBuilder] for the given source type configuration
     pub fn new(source: impl Into<CompilerTestInputType>) -> Self {
-        env_logger::Builder::from_env("MIDENC_TRACE").init();
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE").format_timestamp(None).try_init();
 
         let workspace_dir = get_workspace_dir();
         let mut source = source.into();
@@ -1049,7 +1049,9 @@ impl CompilerTest {
     /// Get the MASM source code
     pub fn masm_src(&mut self) -> String {
         if self.masm_src.is_none() {
-            self.compile_wasm_to_masm_program().unwrap();
+            if let Err(err) = self.compile_wasm_to_masm_program() {
+                panic!("{err}");
+            }
         }
         self.masm_src.clone().unwrap()
     }
