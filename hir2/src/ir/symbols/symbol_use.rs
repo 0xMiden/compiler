@@ -1,7 +1,7 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
-use super::{SymbolName, SymbolPathAttr};
+use super::SymbolPathAttr;
 use crate::{Entity, EntityListItem, EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
 
 pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
@@ -36,10 +36,10 @@ impl SymbolUse {
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let op = self.owner.borrow();
-        let value = op.get_typed_attribute::<SymbolName>(self.attr);
+        let value = op.get_typed_attribute::<SymbolPathAttr>(self.attr);
         f.debug_struct("SymbolUse")
             .field("attr", &self.attr)
-            .field("symbol", &value)
+            .field("symbol", &value.as_ref().map(|value| &value.path))
             .finish_non_exhaustive()
     }
 }
