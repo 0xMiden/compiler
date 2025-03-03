@@ -4,6 +4,7 @@ use core::{any::Any, fmt};
 
 pub use self::range::ValueRange;
 use super::*;
+use crate::{DynHash, DynPartialEq};
 
 /// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,10 +43,15 @@ impl fmt::Display for ValueId {
 /// the graph formed of the edges between values and operations via operands forms the data-flow
 /// graph of the program.
 pub trait Value:
-    EntityWithId<Id = ValueId> + Spanned + Usable<Use = OpOperandImpl> + fmt::Debug
+    Any
+    + EntityWithId<Id = ValueId>
+    + Spanned
+    + Usable<Use = OpOperandImpl>
+    + fmt::Debug
+    + fmt::Display
+    + DynPartialEq
+    + DynHash
 {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
     /// Set the source location of this value
     fn set_span(&mut self, span: SourceSpan);
     /// Get the type of this value
@@ -106,17 +112,17 @@ pub trait Value:
 impl dyn Value {
     #[inline]
     pub fn is<T: Value>(&self) -> bool {
-        self.as_any().is::<T>()
+        (self as &dyn Any).is::<T>()
     }
 
     #[inline]
     pub fn downcast_ref<T: Value>(&self) -> Option<&T> {
-        self.as_any().downcast_ref::<T>()
+        (self as &dyn Any).downcast_ref::<T>()
     }
 
     #[inline]
     pub fn downcast_mut<T: Value>(&mut self) -> Option<&mut T> {
-        self.as_any_mut().downcast_mut::<T>()
+        (self as &mut dyn Any).downcast_mut::<T>()
     }
 
     /// Replace all uses of `self` with `replacement` if `should_replace` returns true
@@ -180,6 +186,7 @@ macro_rules! value_impl {
             ),*
         }
 
+
         impl $ValueKind {
             pub fn new(
                 span: SourceSpan,
@@ -216,14 +223,6 @@ macro_rules! value_impl {
         }
 
         impl Value for $ValueKind {
-            #[inline(always)]
-            fn as_any(&self) -> &dyn Any {
-                self
-            }
-            #[inline(always)]
-            fn as_any_mut(&mut self) -> &mut dyn Any {
-                self
-            }
             fn ty(&self) -> &Type {
                 &self.ty
             }
@@ -268,6 +267,33 @@ macro_rules! value_impl {
             #[inline(always)]
             fn uses_mut(&mut self) -> &mut OpOperandList {
                 &mut self.uses
+            }
+        }
+
+
+        impl Eq for $ValueKind {}
+
+        impl PartialEq for $ValueKind {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+
+        impl Ord for $ValueKind {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                self.id.cmp(&other.id)
+            }
+        }
+
+        impl PartialOrd for $ValueKind {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        impl core::hash::Hash for $ValueKind {
+            fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+                self.id.hash(state);
             }
         }
 
@@ -328,7 +354,7 @@ value_impl!(
 impl BlockArgument {
     #[inline]
     pub fn as_value_ref(&self) -> ValueRef {
-        self.as_block_argument_ref().upcast()
+        self.as_block_argument_ref() as ValueRef
     }
 
     #[inline]

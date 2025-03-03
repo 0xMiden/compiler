@@ -110,6 +110,24 @@ pub struct Operation {
     /// The set of regions belonging to this operation, if any
     pub regions: RegionList,
 }
+
+/// Equality over operations is determined by reference identity, i.e. two operations are only equal
+/// if they refer to the same address in memory, regardless of the content of the operation itself.
+impl Eq for Operation {}
+impl PartialEq for Operation {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::addr_eq(self, other)
+    }
+}
+
+/// The Hash implementation for operations is defined to match the equality implementation, i.e.
+/// the hash of an operation is the hash of its address in memory.
+impl core::hash::Hash for Operation {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        core::ptr::hash(self, state)
+    }
+}
+
 impl fmt::Debug for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Operation")
@@ -130,11 +148,13 @@ impl fmt::Debug for Operation {
             .finish_non_exhaustive()
     }
 }
+
 impl fmt::Debug for OperationRef {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         fmt::Debug::fmt(&self.borrow(), f)
     }
 }
+
 impl fmt::Display for OperationRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.borrow().name())
