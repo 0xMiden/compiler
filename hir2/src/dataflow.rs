@@ -22,7 +22,7 @@ pub use self::{
     config::DataFlowConfig,
     dense::{DenseBackwardDataFlowAnalysis, DenseForwardDataFlowAnalysis, DenseLattice},
     lattice::{Lattice, LatticeLike},
-    program_point::ProgramPoint,
+    program_point::{Position, ProgramPoint},
     solver::{AnalysisQueue, DataFlowSolver},
     sparse::{SparseBackwardDataFlowAnalysis, SparseForwardDataFlowAnalysis, SparseLattice},
 };

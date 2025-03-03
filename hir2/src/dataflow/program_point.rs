@@ -2,13 +2,19 @@ use core::fmt;
 
 use crate::{
     entity::{EntityProjection, EntityProjectionMut},
-    Block, BlockRef, EntityCursor, EntityCursorMut, EntityMut, EntityRef, Insert, Operation,
-    OperationRef, Spanned,
+    Block, BlockRef, EntityCursor, EntityCursorMut, EntityMut, EntityRef, Operation, OperationRef,
+    Spanned,
 };
 
 /// [ProgramPoint] represents a specific location in the execution of a program.
 ///
-/// A sequence of program points can be combined into a control flow graph.
+/// A program point consists of two parts:
+///
+/// * An anchor, either a block or operation
+/// * A position, i.e. the direction relative to the anchor to which the program point refers
+///
+/// A program point can be reified as a cursor within a block, such that an operation inserted at
+/// the cursor will be placed at the specified position relative to the anchor.
 #[derive(Default, Copy, Clone)]
 pub enum ProgramPoint {
     /// A program point which refers to nothing, and is always invalid if used
@@ -19,17 +25,24 @@ pub enum ProgramPoint {
         /// The block this program point refers to
         block: BlockRef,
         /// The placement of the cursor relative to `block`
-        point: Insert,
+        position: Position,
     },
     /// A program point referring to the entry or exit of an operation
     Op {
-        /// The block to which this operation belongs
-        block: Option<BlockRef>,
         /// The operation this program point refers to
         op: OperationRef,
         /// The placement of the cursor relative to `op`
-        point: Insert,
+        position: Position,
     },
+}
+
+/// Represents the placement of inserted items relative to a [ProgramPoint]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Position {
+    /// New items will be inserted before the current program point
+    Before,
+    /// New items will be inserted after the current program point
+    After,
 }
 
 impl<T> From<EntityRef<'_, T>> for ProgramPoint
@@ -64,11 +77,9 @@ impl From<&Operation> for ProgramPoint {
 impl From<OperationRef> for ProgramPoint {
     #[inline]
     fn from(op: OperationRef) -> Self {
-        let block = op.parent();
         Self::Op {
-            block,
             op,
-            point: Insert::Before,
+            position: Position::Before,
         }
     }
 }
@@ -87,21 +98,22 @@ impl From<BlockRef> for ProgramPoint {
     fn from(block: BlockRef) -> Self {
         Self::Block {
             block,
-            point: Insert::Before,
+            position: Position::Before,
         }
     }
 }
 
+#[doc(hidden)]
 #[derive(Copy, Clone)]
 pub struct BlockPoint {
     block: BlockRef,
-    point: Insert,
+    point: Position,
 }
 impl From<BlockPoint> for ProgramPoint {
     fn from(point: BlockPoint) -> Self {
         ProgramPoint::Block {
             block: point.block,
-            point: point.point,
+            position: point.point,
         }
     }
 }
@@ -109,7 +121,7 @@ impl From<BlockRef> for BlockPoint {
     fn from(block: BlockRef) -> Self {
         Self {
             block,
-            point: Insert::Before,
+            point: Position::Before,
         }
     }
 }
@@ -117,7 +129,7 @@ impl From<&Block> for BlockPoint {
     fn from(block: &Block) -> Self {
         Self {
             block: block.as_block_ref(),
-            point: Insert::Before,
+            point: Position::Before,
         }
     }
 }
@@ -134,8 +146,15 @@ impl ProgramPoint {
         let mut pp = entity.into();
         match &mut pp {
             Self::Invalid => (),
-            Self::Op { ref mut point, .. } | Self::Block { ref mut point, .. } => {
-                *point = Insert::After;
+            Self::Op {
+                position: ref mut point,
+                ..
+            }
+            | Self::Block {
+                position: ref mut point,
+                ..
+            } => {
+                *point = Position::After;
             }
         }
         pp
@@ -146,7 +165,7 @@ impl ProgramPoint {
         let BlockPoint { block, .. } = block.into();
         Self::Block {
             block,
-            point: Insert::Before,
+            position: Position::Before,
         }
     }
 
@@ -155,56 +174,52 @@ impl ProgramPoint {
         let BlockPoint { block, .. } = block.into();
         Self::Block {
             block,
-            point: Insert::After,
+            position: Position::After,
         }
     }
 
     /// Returns true if this program point is at the start of the containing block
     pub fn is_at_block_start(&self) -> bool {
-        match self {
-            Self::Invalid => false,
-            Self::Block {
-                point: Insert::Before,
-                ..
-            } => true,
-            Self::Block { block, .. } => block.borrow().body().is_empty(),
-            Self::Op { block: None, .. } => false,
-            Self::Op { op, .. } => op.prev().is_none(),
-        }
+        self.operation().is_some_and(|op| {
+            op.parent().is_some() && op.prev().is_none() && self.placement() == Position::Before
+        })
     }
 
     /// Returns true if this program point is at the end of the containing block
     pub fn is_at_block_end(&self) -> bool {
-        match self {
-            Self::Invalid => false,
-            Self::Block {
-                point: Insert::After,
-                ..
-            } => true,
-            Self::Block { block, .. } => block.borrow().body().is_empty(),
-            Self::Op { block: None, .. } => false,
-            Self::Op { op, .. } => op.next().is_none(),
-        }
+        self.operation().is_some_and(|op| {
+            op.parent().is_some() && op.next().is_none() && self.placement() == Position::After
+        })
     }
 
-    /// Returns the block containing this program point
+    /// Returns the block of the program point anchor.
     ///
     /// Returns `None`, if the program point is either invalid, or pointing to an orphaned operation
     pub fn block(&self) -> Option<BlockRef> {
         match self {
             Self::Invalid => None,
             Self::Block { block, .. } => Some(*block),
-            Self::Op { block, .. } => *block,
+            Self::Op { op, .. } => op.parent(),
         }
     }
 
-    /// Returns the operation from which this program point relates
+    /// Returns the program point anchor as an operation.
     ///
     /// Returns `None` if the program point is either invalid, or not pointing to a specific op
     pub fn operation(&self) -> Option<OperationRef> {
         match self {
+            Self::Invalid => None,
+            Self::Block {
+                position: Position::Before,
+                block,
+                ..
+            } => block.borrow().body().front().as_pointer(),
+            Self::Block {
+                position: Position::After,
+                block,
+                ..
+            } => block.borrow().body().back().as_pointer(),
             Self::Op { op, .. } => Some(*op),
-            Self::Block { .. } | Self::Invalid => None,
         }
     }
 
@@ -213,14 +228,20 @@ impl ProgramPoint {
     /// If the current program point is in an orphaned operation, this will return the current op.
     ///
     /// Returns `None` if the program point is either invalid, or not pointing to a specific op
+    #[track_caller]
     pub fn next_operation(&self) -> Option<OperationRef> {
+        assert!(!self.is_at_block_end());
         match self {
             Self::Op {
-                block: Some(_), op, ..
-            } => op.next(),
-            Self::Op {
-                block: None, op, ..
-            } => Some(*op),
+                position: Position::After,
+                op,
+                ..
+            } if op.parent().is_some() => op.next(),
+            Self::Op { op, .. } => Some(*op),
+            Self::Block {
+                position: Position::Before,
+                block,
+            } => block.borrow().front(),
             Self::Block { .. } | Self::Invalid => None,
         }
     }
@@ -230,14 +251,20 @@ impl ProgramPoint {
     /// If the current program point is in an orphaned operation, this will return the current op.
     ///
     /// Returns `None` if the program point is either invalid, or not pointing to a specific op
+    #[track_caller]
     pub fn prev_operation(&self) -> Option<OperationRef> {
+        assert!(!self.is_at_block_start());
         match self {
             Self::Op {
-                block: Some(_), op, ..
-            } => op.prev(),
-            Self::Op {
-                block: None, op, ..
-            } => Some(*op),
+                position: Position::Before,
+                op,
+                ..
+            } if op.parent().is_some() => op.prev(),
+            Self::Op { op, .. } => Some(*op),
+            Self::Block {
+                position: Position::After,
+                block,
+            } => block.borrow().back(),
             Self::Block { .. } | Self::Invalid => None,
         }
     }
@@ -254,10 +281,16 @@ impl ProgramPoint {
         matches!(self, Self::Invalid)
     }
 
-    pub fn point(&self) -> Option<Insert> {
+    /// The positioning relative to the program point anchor
+    pub fn placement(&self) -> Position {
         match self {
-            Self::Invalid => None,
-            Self::Block { point, .. } | Self::Op { point, .. } => Some(*point),
+            Self::Invalid => Position::After,
+            Self::Block {
+                position: point, ..
+            }
+            | Self::Op {
+                position: point, ..
+            } => *point,
         }
     }
 
@@ -287,25 +320,29 @@ impl ProgramPoint {
     ) -> Option<EntityProjection<'b, EntityCursor<'a, Operation>>> {
         match self {
             Self::Invalid => None,
-            Self::Block { block, point } => {
+            Self::Block {
+                block,
+                position: point,
+            } => Some(EntityRef::project(block.borrow(), |block| match point {
+                Position::Before => block.body().front(),
+                Position::After => block.body().back(),
+            })),
+            Self::Op {
+                op,
+                position: point,
+            } => {
+                let block = op.parent()?;
                 Some(EntityRef::project(block.borrow(), |block| match point {
-                    Insert::Before => block.body().front(),
-                    Insert::After => block.body().back(),
+                    Position::Before => {
+                        if let Some(placement) = op.prev() {
+                            unsafe { block.body().cursor_from_ptr(placement) }
+                        } else {
+                            block.body().cursor()
+                        }
+                    }
+                    Position::After => unsafe { block.body().cursor_from_ptr(*op) },
                 }))
             }
-            Self::Op { block: None, .. } => None,
-            Self::Op {
-                block: Some(block),
-                op,
-                point,
-            } => Some(EntityRef::project(block.borrow(), |block| match point {
-                Insert::Before => {
-                    let mut cursor = unsafe { block.body().cursor_from_ptr(*op) };
-                    cursor.move_prev();
-                    cursor
-                }
-                Insert::After => unsafe { block.body().cursor_from_ptr(*op) },
-            })),
         }
     }
 
@@ -318,25 +355,29 @@ impl ProgramPoint {
     ) -> Option<EntityProjectionMut<'b, EntityCursorMut<'a, Operation>>> {
         match self {
             Self::Invalid => None,
-            Self::Block { block, point } => {
+            Self::Block {
+                block,
+                position: point,
+            } => Some(EntityMut::project(block.borrow_mut(), |block| match point {
+                Position::Before => block.body_mut().cursor_mut(),
+                Position::After => block.body_mut().back_mut(),
+            })),
+            Self::Op {
+                op,
+                position: point,
+            } => {
+                let mut block = op.parent()?;
                 Some(EntityMut::project(block.borrow_mut(), |block| match point {
-                    Insert::Before => block.body_mut().cursor_mut(),
-                    Insert::After => block.body_mut().back_mut(),
+                    Position::Before => {
+                        if let Some(placement) = op.prev() {
+                            unsafe { block.body_mut().cursor_mut_from_ptr(placement) }
+                        } else {
+                            block.body_mut().cursor_mut()
+                        }
+                    }
+                    Position::After => unsafe { block.body_mut().cursor_mut_from_ptr(*op) },
                 }))
             }
-            Self::Op { block: None, .. } => None,
-            Self::Op {
-                block: Some(block),
-                op,
-                point,
-            } => Some(EntityMut::project(block.borrow_mut(), |block| match point {
-                Insert::Before => {
-                    let mut cursor = unsafe { block.body_mut().cursor_mut_from_ptr(*op) };
-                    cursor.move_prev();
-                    cursor
-                }
-                Insert::After => unsafe { block.body_mut().cursor_mut_from_ptr(*op) },
-            })),
         }
     }
 }
@@ -351,19 +392,23 @@ impl PartialEq for ProgramPoint {
             (
                 Self::Block {
                     block: x,
-                    point: xp,
+                    position: xp,
                 },
                 Self::Block {
                     block: y,
-                    point: yp,
+                    position: yp,
                 },
             ) => x == y && xp == yp,
             (
                 Self::Op {
-                    op: x, point: xp, ..
+                    op: x,
+                    position: xp,
+                    ..
                 },
                 Self::Op {
-                    op: y, point: yp, ..
+                    op: y,
+                    position: yp,
+                    ..
                 },
             ) => x == y && xp == yp,
             (..) => false,
@@ -376,11 +421,18 @@ impl core::hash::Hash for ProgramPoint {
         core::mem::discriminant(self).hash(state);
         match self {
             Self::Invalid => (),
-            Self::Block { block, point } => {
+            Self::Block {
+                block,
+                position: point,
+            } => {
                 core::ptr::hash(BlockRef::as_ptr(block), state);
                 point.hash(state);
             }
-            Self::Op { op, point, .. } => {
+            Self::Op {
+                op,
+                position: point,
+                ..
+            } => {
                 core::ptr::hash(OperationRef::as_ptr(op), state);
                 point.hash(state);
             }
@@ -394,11 +446,14 @@ impl Spanned for ProgramPoint {
 
         match self {
             Self::Invalid => SourceSpan::UNKNOWN,
-            Self::Block { block, point } => match point {
-                Insert::Before => {
+            Self::Block {
+                block,
+                position: point,
+            } => match point {
+                Position::Before => {
                     block.borrow().body().front().get().map(|op| op.span()).unwrap_or_default()
                 }
-                Insert::After => {
+                Position::After => {
                     block.borrow().body().back().get().map(|op| op.span()).unwrap_or_default()
                 }
             },
@@ -412,30 +467,31 @@ impl fmt::Display for ProgramPoint {
         use crate::EntityWithId;
         match self {
             Self::Invalid => f.write_str("<invalid>"),
-            Self::Block { block, point } => match point {
-                Insert::Before => write!(f, "start({})", &block.borrow().id()),
-                Insert::After => write!(f, "end({})", &block.borrow().id()),
+            Self::Block {
+                block,
+                position: point,
+            } => match point {
+                Position::Before => write!(f, "start({})", &block.borrow().id()),
+                Position::After => write!(f, "end({})", &block.borrow().id()),
             },
             Self::Op {
-                block: None,
                 op,
-                point,
-            } => match point {
-                Insert::Before => write!(f, "before({} in null)", &op.borrow().name()),
-                Insert::After => write!(f, "after({} in null)", &op.borrow().name()),
-            },
-            Self::Op {
-                block: Some(block),
-                op,
-                point,
-            } => match point {
-                Insert::Before => {
-                    write!(f, "before({} in {})", &op.borrow().name(), &block.borrow().id())
+                position: point,
+            } => {
+                use crate::formatter::{const_text, display};
+                let block = op
+                    .parent()
+                    .map(|blk| display(blk.borrow().id()))
+                    .unwrap_or_else(|| const_text("null"));
+                match point {
+                    Position::Before => {
+                        write!(f, "before({} in {block})", &op.borrow().name())
+                    }
+                    Position::After => {
+                        write!(f, "after({} in {block})", &op.borrow().name())
+                    }
                 }
-                Insert::After => {
-                    write!(f, "after({} in {})", &op.borrow().name(), &block.borrow().id())
-                }
-            },
+            }
         }
     }
 }
@@ -445,27 +501,20 @@ impl fmt::Debug for ProgramPoint {
         use crate::EntityWithId;
         match self {
             Self::Invalid => f.write_str("Invalid"),
-            Self::Block { block, point } => f
+            Self::Block {
+                block,
+                position: point,
+            } => f
                 .debug_struct("Block")
                 .field("block", &block.borrow().id())
                 .field("point", point)
                 .finish(),
             Self::Op {
-                block: None,
                 op,
-                point,
-            } => f
-                .debug_struct("Orphaned")
-                .field("point", point)
-                .field("op", &op.borrow())
-                .finish_non_exhaustive(),
-            Self::Op {
-                block: Some(block),
-                op,
-                point,
+                position: point,
             } => f
                 .debug_struct("Op")
-                .field("block", &block.borrow().id())
+                .field("block", &op.parent().map(|blk| blk.borrow().id()))
                 .field("point", point)
                 .field("op", &op.borrow())
                 .finish(),

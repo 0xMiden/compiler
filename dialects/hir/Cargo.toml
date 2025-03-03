@@ -16,6 +16,7 @@ default = ["std"]
 std = ["midenc-hir2/std"]
 
 [dependencies]
+log.workspace = true
 midenc-hir2.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-session.workspace = true

@@ -3,8 +3,8 @@ use super::{
     SymbolRef,
 };
 use crate::{
-    traits::Terminator, FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report,
-    UnsafeIntrusiveEntityRef,
+    traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
+    FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report, UnsafeIntrusiveEntityRef,
 };
 
 /// A type alias for [SymbolTable] implementations referenced via [UnsafeIntrusiveEntityRef]
@@ -566,7 +566,7 @@ impl<'a> SymbolManagerMut<'a> {
     /// # Panics
     ///
     /// This function will panic if `symbol` is already attached to another operation.
-    pub fn insert(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> SymbolName {
+    pub fn insert(&mut self, symbol: SymbolRef, mut ip: ProgramPoint) -> SymbolName {
         // The symbol cannot be the child of another op, and must be the child of the symbol table
         // after insertion.
         let (name, symbol_op) = {
@@ -583,66 +583,51 @@ impl<'a> SymbolManagerMut<'a> {
         };
 
         if symbol_op.borrow().parent().is_none() {
+            let requires_terminator = !self.symbol_table.implements::<dyn NoTerminator>()
+                && !self.symbol_table.implements::<dyn GraphRegionNoTerminator>();
             let mut body = self.symbol_table.region_mut(0);
             let mut block = body.entry_mut();
-            let has_terminator = block.has_terminator();
-            let block_ref = block.as_block_ref();
-            let ops = block.body_mut();
-            let (mut cursor, placement) = match ip {
-                ProgramPoint::Block { block: b, point } => {
-                    assert_eq!(
-                        b, block_ref,
-                        "invalid insertion point: referenced block is not in this symbol table"
-                    );
-                    // Move the insertion point before the terminator, if there is one
-                    match point {
-                        crate::Insert::After if has_terminator => {
-                            (ops.back_mut(), crate::Insert::Before)
-                        }
-                        crate::Insert::After => (ops.back_mut(), crate::Insert::After),
-                        crate::Insert::Before => (ops.front_mut(), crate::Insert::Before),
-                    }
-                }
-                ProgramPoint::Op {
-                    op,
-                    block: op_block,
-                    point,
-                    ..
-                } => {
-                    assert!(
-                        op_block.is_some_and(|b| b == block_ref),
-                        "invalid insertion point: referenced op is not a child of this symbol \
-                         table"
-                    );
-                    let is_terminator =
-                        has_terminator && ops.back().as_pointer().is_some_and(|o| o == op);
-                    match point {
-                        // The caller _explicitly_ requested this, raise an assertion if the op being
-                        // inserted is not a valid terminator
-                        crate::Insert::After if is_terminator => {
-                            assert!(
-                                op.borrow().implements::<dyn Terminator>(),
-                                "cannot insert a symbol after the terminator of its parent symbol \
-                                 table, if it is not itself a valid terminator"
-                            );
-                            (ops.back_mut(), crate::Insert::After)
-                        }
-                        placement => (unsafe { ops.cursor_mut_from_ptr(op) }, placement),
-                    }
-                }
-                ProgramPoint::Invalid => {
-                    if has_terminator {
-                        (ops.back_mut(), crate::Insert::Before)
-                    } else {
-                        (ops.back_mut(), crate::Insert::After)
-                    }
-                }
-            };
 
-            if matches!(placement, crate::Insert::Before) {
-                cursor.insert_before(symbol_op);
+            // If no terminator is required in the symbol table body, simply insert it at the
+            if requires_terminator {
+                let block_terminator = block
+                    .terminator()
+                    .expect("symbol table op requires a terminator, but one was not found");
+
+                if ip.is_unset() {
+                    let ops = block.body_mut();
+                    unsafe {
+                        let mut cursor = ops.cursor_mut_from_ptr(block_terminator);
+                        cursor.insert_before(symbol_op);
+                    }
+                } else {
+                    let ip_block = ip.block();
+                    assert_eq!(
+                        ip_block,
+                        Some(block.as_block_ref()),
+                        "invalid insertion point: not located in this symbol table"
+                    );
+                    if ip.is_at_block_end() {
+                        // If the insertion point would place the symbol after the region terminator
+                        // it must be itself a valid region terminator, or the insertion point is
+                        // not valid
+                        assert!(
+                            symbol_op.borrow().implements::<dyn Terminator>(),
+                            "cannot insert symbol after the region terminator"
+                        );
+                    }
+                    ip.cursor_mut().unwrap().insert_after(symbol_op);
+                }
+            } else if ip.is_unset() {
+                block.body_mut().push_back(symbol_op);
             } else {
-                cursor.insert_after(symbol_op);
+                let ip_block = ip.block();
+                assert_eq!(
+                    ip_block,
+                    Some(block.as_block_ref()),
+                    "invalid insertion point: not located in this symbol table"
+                );
+                ip.cursor_mut().unwrap().insert_after(symbol_op);
             }
         }
 
