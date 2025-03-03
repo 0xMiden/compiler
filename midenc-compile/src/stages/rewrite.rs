@@ -4,6 +4,7 @@ use midenc_dialect_hir::transforms::LiftControlFlowToSCF;
 use midenc_hir2::{
     pass::{Nesting, PassManager},
     transforms::Canonicalizer,
+    Op,
 };
 
 use super::*;
@@ -47,6 +48,10 @@ impl Stage for ApplyRewritesStage {
         // Construct a pass manager with the default pass pipeline
         let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
 
+        let mut rewrite_config = midenc_hir2::GreedyRewriteConfig::default();
+        rewrite_config
+            .with_region_simplification_level(midenc_hir2::RegionSimplificationLevel::Normal);
+
         // Component passes
         {
             let mut component_pm = pm.nest::<builtin::Component>();
@@ -54,24 +59,27 @@ impl Stage for ApplyRewritesStage {
             {
                 let mut module_pm = component_pm.nest::<builtin::Module>();
                 let mut func_pm = module_pm.nest::<builtin::Function>();
-                func_pm.add_pass(Canonicalizer::create());
+                func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
-                func_pm.add_pass(Canonicalizer::create());
+                func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
             }
             // Function passes for component-level functions
             {
                 let mut func_pm = component_pm.nest::<builtin::Function>();
-                func_pm.add_pass(Canonicalizer::create());
+                func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create());
             }
         }
 
+        log::trace!("before rewrites: {}", input.world.borrow().as_operation());
+
         // Run pass pipeline
         pm.run(input.world.as_operation_ref())?;
 
+        log::trace!("after rewrites: {}", input.world.borrow().as_operation());
         log::debug!("rewrites successful");
 
         if context.session().rewrite_only() {
