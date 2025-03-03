@@ -178,10 +178,7 @@ impl<'a> TransformationContext<'a> {
                 self.combine_exit(terminator)?;
             }
 
-            let region = self.region.borrow();
-            let mut cursor = unsafe { region.body().cursor_from_ptr(block_ref) };
-            cursor.move_next();
-            next = cursor.as_pointer();
+            next = block_ref.next();
         }
 
         // Invalidate any dominance tree on the region as the exit combiner has added new blocks and
@@ -397,9 +394,9 @@ impl<'a> TransformationContext<'a> {
         Ok(new_sub_regions)
     }
 
-    /// Transforms the first occurrence of conditional control flow in `regionEntry`
-    /// into conditionally executed regions. Returns the entry block of the created
-    /// regions and the region after the conditional control flow.
+    /// Transforms the first occurrence of conditional control flow in `region_entry` into
+    /// conditionally executed regions. Returns the entry block of the created regions and the
+    /// region after the conditional control flow.
     pub fn transform_to_structured_cf_branches(
         &mut self,
         mut region_entry: BlockRef,
@@ -465,7 +462,7 @@ impl<'a> TransformationContext<'a> {
             for (block_list, succ) in
                 successor_branch_regions.iter_mut().zip(terminator.successor_iter())
             {
-                let dest = succ.dest.borrow().successor();
+                let dest = succ.successor();
 
                 // If the region entry is not the only predecessor, then the edge does not dominate the
                 // block it leads to.

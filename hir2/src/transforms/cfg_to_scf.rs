@@ -112,8 +112,8 @@ use smallvec::SmallVec;
 use self::transform::TransformationContext;
 use crate::{
     adt::SmallSet, dominance::DominanceInfo, traits::BranchOpInterface, BlockRef, Builder,
-    OpBuilder, OpOperand, Operation, OperationRef, Region, RegionRef, Report, SourceSpan, Type,
-    Value, ValueRef, WalkResult,
+    OpBuilder, Operation, OperationRef, Region, RegionRef, Report, SourceSpan, Type, Value,
+    ValueRef, WalkResult,
 };
 
 /// This trait is used to abstract over the dialect-specific aspects of the control flow lifting
@@ -327,6 +327,7 @@ pub fn transform_cfg_to_scf(
             transform_ctx.invalidate_dominance_info_for_region(parent_region);
         }
         new_regions = transform_ctx.transform_to_structured_cf_branches(current)?;
+
         // Invalidating the dominance tree is generally not required by the transformation above as
         // the new region entries correspond to unaffected subtrees in the dominator tree. Only its
         // parent nodes have changed but won't be visited again.

@@ -76,6 +76,7 @@ impl Pass for Canonicalizer {
     }
 
     fn initialize(&mut self, context: Rc<Context>) -> Result<(), Report> {
+        log::trace!("initializing canonicalizer pass");
         let mut rewrites = RewritePatternSet::new(context.clone());
 
         for dialect in context.registered_dialects().values() {
@@ -95,10 +96,12 @@ impl Pass for Canonicalizer {
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         let Some(rewrites) = self.rewrites.as_ref() else {
+            log::debug!("skipping canonicalization as there are no rewrite patterns to apply");
             return Ok(());
         };
-        // TODO: Refactor `apply_patterns_and_fold_greedily` to take a mutable reference instead
         let op = {
+            log::debug!("applying canonicalization to {}", &*op);
+            log::debug!("  require_convergence = {}", self.require_convergence);
             let ptr = op.as_operation_ref();
             drop(op);
             ptr
@@ -106,6 +109,7 @@ impl Pass for Canonicalizer {
         let converged =
             patterns::apply_patterns_and_fold_greedily(op, rewrites.clone(), self.config.clone());
         if self.require_convergence && converged.is_err() {
+            log::debug!("canonicalization could not converge");
             let span = op.borrow().span();
             return Err(state
                 .context()
