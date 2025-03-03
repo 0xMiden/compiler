@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{convert::AsRef, fmt};
 
 use super::{
     AnalysisState, BuildableAnalysisState, ChangeResult, DenseLattice, LatticeAnchor,
@@ -62,7 +62,6 @@ pub trait LatticeLike: Default + Eq + fmt::Debug + 'static {
 }
 
 /// This type adapts a [LatticeLike] value for use as an [AnalysisState] by a [DataFlowAnalysis].
-#[derive(Debug)]
 pub struct Lattice<T> {
     anchor: LatticeAnchorRef,
     value: T,
@@ -82,6 +81,18 @@ impl<T> Lattice<T> {
     /// Get a mutable reference to the underlying lattice value
     pub fn value_mut(&mut self) -> &mut T {
         &mut self.value
+    }
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for Lattice<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(&self.value, f)
+    }
+}
+
+impl<T: core::fmt::Display> core::fmt::Display for Lattice<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.value, f)
     }
 }
 
@@ -109,7 +120,7 @@ impl<T: 'static> AnalysisState for Lattice<T> {
 
     #[inline(always)]
     fn anchor(&self) -> &dyn LatticeAnchor {
-        &self.anchor as &dyn LatticeAnchor
+        self.anchor.as_ref()
     }
 }
 

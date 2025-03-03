@@ -1,7 +1,7 @@
 mod allocator;
 
 use alloc::{collections::VecDeque, rc::Rc};
-use core::{any::TypeId, cell::RefCell, hash::Hash, ptr::NonNull};
+use core::{any::TypeId, cell::RefCell, ptr::NonNull};
 
 use smallvec::SmallVec;
 
@@ -60,7 +60,7 @@ pub struct DataFlowSolver {
     /// Uniqued [LatticeAnchor] values.
     ///
     /// Each lattice anchor will only be allocated a single time, uniqueness is established via Hash
-    anchors: FxHashMap<u64, LatticeAnchorRef>,
+    anchors: RefCell<FxHashMap<u64, LatticeAnchorRef>>,
     /// The current analysis being executed.
     current_analysis: Option<NonNull<dyn DataFlowAnalysis>>,
     /// A bump-allocator local to the solver, in which it allocates analyses, analysis states, and
@@ -97,11 +97,6 @@ impl DataFlowSolver {
     #[inline]
     pub fn config(&self) -> &DataFlowConfig {
         &self.config
-    }
-
-    /// Get the raw current_analysis reference
-    pub(super) fn current_analysis(&self) -> Option<NonNull<dyn DataFlowAnalysis>> {
-        self.current_analysis
     }
 
     /// Load an analysis of type `A` into the solver.
@@ -214,7 +209,7 @@ impl DataFlowSolver {
             // Log a warning when this happens, since the calling code might benefit from not
             // even instantiating the solver in the first place.
             let location = core::panic::Location::caller();
-            log::warn!("dataflow solver was run without any loaded analyses at {location}");
+            log::warn!(target: "dataflow-solver", "dataflow solver was run without any loaded analyses at {location}");
             return Ok(());
         }
 
@@ -231,15 +226,22 @@ impl DataFlowSolver {
     /// Once initialization is complete, every analysis has been run exactly once, but some may have
     /// been re-enqueued due to dependencies on analysis states which changed during initialization.
     fn analyze(&mut self, op: &Operation, analysis_manager: AnalysisManager) -> Result<(), Report> {
+        log::debug!(target: "dataflow-solver", "initializing loaded analyses");
+
         for mut analysis in core::mem::take(&mut self.child_analyses) {
             // priming analysis {analysis.debug_name()}
             assert!(self.current_analysis.is_none());
             self.current_analysis = Some(analysis);
             unsafe {
-                analysis.as_mut().initialize(op, self, analysis_manager.clone())?;
+                let analysis = analysis.as_mut();
+                log::debug!(target: analysis.debug_name(), "initializing analysis");
+                analysis.initialize(op, self, analysis_manager.clone())?;
+                log::debug!(target: analysis.debug_name(), "initialized successfully");
             }
             self.current_analysis = None;
         }
+
+        log::debug!(target: "dataflow-solver", "initialization complete!");
 
         Ok(())
     }
@@ -300,6 +302,8 @@ impl DataFlowSolver {
     /// value. The "most-maximal" state in this analysis however, is a conflict, i.e. the value is
     /// over specified, because we are able to observe a counter-example.
     fn run_to_fixpoint(&mut self) -> Result<(), Report> {
+        log::debug!(target: "dataflow-solver", "running queued dataflow analyses to fixpoint..");
+
         // Run the analysis until fixpoint
         while let Some(QueuedAnalysis {
             point,
@@ -309,9 +313,10 @@ impl DataFlowSolver {
             worklist.pop_front()
         } {
             self.current_analysis = Some(analysis);
-            // invoking {analysis.debug_name()} on {point}
             unsafe {
-                analysis.as_mut().visit(&point, self)?;
+                let analysis = analysis.as_mut();
+                log::debug!(target: analysis.debug_name(), "running analysis at {point}");
+                analysis.visit(&point, self)?;
             }
             self.current_analysis = None;
         }
@@ -324,11 +329,11 @@ impl DataFlowSolver {
     /// NOTE: The resulting [LatticeAnchorRef] has a lifetime that is implicitly bound to that of
     /// this solver. It is unlikely you would ever have a reason to dereference an anchor after the
     /// solver is destroyed, but it is undefined behavior to do so. See [LatticeAnchorRef] for more.
-    pub fn create_lattice_anchor<A>(&mut self, anchor: A) -> LatticeAnchorRef
+    pub fn create_lattice_anchor<A>(&self, anchor: A) -> LatticeAnchorRef
     where
-        A: LatticeAnchor + Hash,
+        A: LatticeAnchorExt,
     {
-        <A as LatticeAnchorExt>::intern(anchor, &self.alloc, &mut self.anchors)
+        LatticeAnchorRef::intern(&anchor, &self.alloc, &mut self.anchors.borrow_mut())
     }
 
     /// Get the [AnalysisState] attached to `anchor`, or `None` if not available.
@@ -340,9 +345,10 @@ impl DataFlowSolver {
     pub fn get<T, A>(&self, anchor: &A) -> Option<EntityRef<'_, T>>
     where
         T: BuildableAnalysisState,
-        A: LatticeAnchor + Hash,
+        A: LatticeAnchorExt + Copy,
     {
-        let key = AnalysisStateInfo::compute_key_for::<T, _>(anchor);
+        let anchor = self.create_lattice_anchor::<A>(*anchor);
+        let key = AnalysisStateKey::new::<T>(anchor);
         let analysis_state_info_ptr = self.analysis_state.borrow().get(&key).copied()?;
         Some(unsafe {
             let info = analysis_state_info_ptr.as_ref();
@@ -372,25 +378,36 @@ impl DataFlowSolver {
     /// guard is dropped (or consumed to produce an immutable reference), it will have the solver
     /// re-enqueue any dependent analyses, if changes were made to the state since they last
     /// observed it. See the docs of [AnalysisStateGuard] for more details on proper usage.
+    #[track_caller]
     pub fn get_or_create_mut<'a, T, A>(&mut self, anchor: A) -> AnalysisStateGuard<'a, T>
     where
         T: BuildableAnalysisState,
-        A: LatticeAnchor + Hash + Clone,
+        A: LatticeAnchorExt,
     {
         use hashbrown::hash_map::Entry;
 
-        let key = AnalysisStateInfo::compute_key_for::<T, _>(&anchor);
+        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        let anchor = self.create_lattice_anchor::<A>(anchor);
+        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        let key = AnalysisStateKey::new::<T>(anchor);
+        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
         match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
+                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
                 let info = *entry.get();
                 unsafe { AnalysisStateGuard::<T>::new(info, self.worklist.clone()) }
             }
             Entry::Vacant(entry) => {
+                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
                 use crate::dataflow::analysis::state::RawAnalysisStateInfo;
                 let raw_info = RawAnalysisStateInfo::<T>::alloc(
                     &self.alloc,
-                    &mut self.anchors,
                     &mut self.analysis_state_impls,
+                    key,
                     anchor,
                 );
                 let info = RawAnalysisStateInfo::as_info_ptr(raw_info);
@@ -412,10 +429,11 @@ impl DataFlowSolver {
     /// and returned. Typically, the resulting state will not be very useful, however, as mentioned
     /// above, this analysis will be re-run if the state is ever modified, at which point it may
     /// be able to do something more useful with the results.
+    #[track_caller]
     pub fn require<'a, T, A>(&mut self, anchor: A, dependent: ProgramPoint) -> EntityRef<'a, T>
     where
         T: BuildableAnalysisState,
-        A: LatticeAnchor + Hash + Clone,
+        A: LatticeAnchorExt,
     {
         use hashbrown::hash_map::Entry;
 
@@ -424,17 +442,28 @@ impl DataFlowSolver {
             AnalysisStateSubscriptionBehavior,
         };
 
-        let key = AnalysisStateInfo::compute_key_for::<T, _>(&anchor);
+        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        let anchor = self.create_lattice_anchor::<A>(anchor);
+        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        let key = AnalysisStateKey::new::<T>(anchor);
+        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
+        log::trace!(target: "dataflow-solver", "    dependent = {dependent}");
         let mut handle = match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
+                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
                 let info = *entry.get();
                 unsafe { RawAnalysisStateInfoHandle::new(info) }
             }
             Entry::Vacant(entry) => {
+                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
                 let raw_info = RawAnalysisStateInfo::<T>::alloc(
                     &self.alloc,
-                    &mut self.anchors,
                     &mut self.analysis_state_impls,
+                    key,
                     anchor,
                 );
                 let info = RawAnalysisStateInfo::as_info_ptr(raw_info);
@@ -458,15 +487,13 @@ impl DataFlowSolver {
     /// Erase any cached analysis states attached to `anchor`
     pub fn erase_state<A>(&mut self, anchor: &A)
     where
-        A: LatticeAnchor + Hash,
+        A: LatticeAnchorExt,
     {
-        // If we haven't uniqued this anchor, no states could possibly be associated with it
-        let hash = LatticeAnchorRef::compute_hash(anchor);
-        if let Some(anchor_ref) = self.anchors.get(&hash) {
-            self.analysis_state
-                .borrow_mut()
-                .retain(|_, v| unsafe { !core::ptr::addr_eq(v.as_ref().anchor(), anchor_ref) });
-        }
+        let anchor_id = anchor.anchor_id();
+        self.analysis_state.borrow_mut().retain(|_, v| unsafe {
+            let analysis_anchor_id = v.as_ref().anchor_ref().anchor_id();
+            analysis_anchor_id == anchor_id
+        });
     }
 }
 

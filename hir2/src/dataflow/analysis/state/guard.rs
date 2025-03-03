@@ -12,7 +12,7 @@ pub struct AnalysisStateGuard<'a, T: AnalysisState + 'static> {
     info: NonNull<AnalysisStateInfo>,
     state: NonNull<T>,
     _borrow: BorrowRefMut<'a>,
-    changed: bool,
+    changed: ChangeResult,
 }
 impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     pub(in crate::dataflow) unsafe fn new(
@@ -26,7 +26,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
             info,
             state,
             _borrow,
-            changed: false,
+            changed: ChangeResult::Unchanged,
         }
     }
 
@@ -57,8 +57,10 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     where
         F: FnMut(&mut T) -> ChangeResult,
     {
+        log::trace!("starting analysis state change of type {}", core::any::type_name::<T>());
         let result = callback(unsafe { self.state.as_mut() });
-        self.changed |= matches!(result, ChangeResult::Changed);
+        log::trace!("analysis state changed: {}", result.changed());
+        self.changed |= result;
         result
     }
 
@@ -91,26 +93,35 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
-    pub fn subscribe_nonnull(guard: &mut Self, analysis: NonNull<dyn DataFlowAnalysis>) {
+    fn subscribe_nonnull(guard: &mut Self, analysis: NonNull<dyn DataFlowAnalysis>) {
         let info = unsafe { guard.info.as_mut() };
         let state = unsafe { guard.state.as_ref() };
         <T as AnalysisStateSubscriptionBehavior>::on_subscribe(state, analysis, info);
     }
 
     fn notify_if_changed(&mut self) {
-        if self.changed {
+        if self.changed.changed() {
             // propagting update to {state.debug_name()} of {state.anchor} value {state}
             let mut info = self.info;
             let info = unsafe { info.as_mut() };
             info.increment_revision();
             let mut worklist = self.worklist.borrow_mut();
             let anchor = info.anchor();
+            log::trace!(
+                "committing changes to analysis state {} at {anchor}",
+                core::any::type_name::<T>()
+            );
             let state = unsafe { self.state.as_ref() };
             // Handle the change for each subscriber to this analysis state
+            log::trace!(
+                "there are {} subscriptions to notify of this change",
+                info.subscriptions().len()
+            );
             for subscription in info.subscriptions() {
-                subscription.handle_state_change(anchor, &mut *worklist);
+                subscription.handle_state_change::<T, _>(anchor, &mut *worklist);
             }
             // Invoke any custom on-update logic for this analysis state type
+            log::trace!("invoking on_update callback to notify user-defined subscriptions");
             <T as AnalysisStateSubscriptionBehavior>::on_update(state, info, &mut worklist);
         }
     }
@@ -130,7 +141,7 @@ impl<T: AnalysisState> AsMut<T> for AnalysisStateGuard<'_, T> {
         // changed. As a result, users of an AnalysisStateGuard are encouraged to either only take
         // a mutable reference after checking that the state actually changed, or use the
         // AnalysisStateGuard::change method.
-        self.changed = true;
+        self.changed = ChangeResult::Changed;
 
         unsafe { self.state.as_mut() }
     }
@@ -154,6 +165,16 @@ impl<T: AnalysisState + 'static> Drop for AnalysisStateGuard<'_, T> {
         self.notify_if_changed();
     }
 }
+impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuard<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_ref(), f)
+    }
+}
+impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuard<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(self.as_ref(), f)
+    }
+}
 impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
@@ -173,13 +194,13 @@ impl<T: DenseLattice> DenseLattice for AnalysisStateGuard<'_, T> {
 
     fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {
         let result = unsafe { self.state.as_mut().join(rhs) };
-        self.changed |= matches!(result, ChangeResult::Changed);
+        self.changed |= result;
         result
     }
 
     fn meet(&mut self, rhs: &Self::Lattice) -> ChangeResult {
         let result = unsafe { self.state.as_mut().meet(rhs) };
-        self.changed |= matches!(result, ChangeResult::Changed);
+        self.changed |= result;
         result
     }
 }
@@ -193,13 +214,13 @@ impl<T: SparseLattice> SparseLattice for AnalysisStateGuard<'_, T> {
 
     fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {
         let result = unsafe { self.state.as_mut().join(rhs) };
-        self.changed |= matches!(result, ChangeResult::Changed);
+        self.changed |= result;
         result
     }
 
     fn meet(&mut self, rhs: &Self::Lattice) -> ChangeResult {
         let result = unsafe { self.state.as_mut().join(rhs) };
-        self.changed |= matches!(result, ChangeResult::Changed);
+        self.changed |= result;
         result
     }
 }

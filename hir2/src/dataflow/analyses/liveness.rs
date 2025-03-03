@@ -6,13 +6,15 @@ use crate::{
     dataflow::{
         analyses::{dce::CfgEdge, LoopState},
         dense::DenseDataFlowAnalysis,
-        AnalysisStateGuard, Backward, BuildableDataFlowAnalysis, CallControlFlowAction,
-        DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice, Lattice,
+        AnalysisState, AnalysisStateGuard, Backward, BuildableDataFlowAnalysis,
+        CallControlFlowAction, DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice,
+        Lattice, LatticeLike,
     },
     dialects::builtin::Function,
     dominance::DominanceInfo,
     pass::Analysis,
-    BlockRef, EntityRef, Op, Operation, ProgramPoint, Report, Spanned, ValueRef,
+    BlockRef, EntityRef, Op, Operation, ProgramPoint, RegionBranchOpInterface, Report, Spanned,
+    ValueRef,
 };
 
 /// The distance penalty applied to an edge which exits a loop
@@ -94,24 +96,58 @@ impl LivenessAnalysis {
         &self.solver
     }
 
+    /// Returns true if `value` is live on entry to `block`
     pub fn is_live_at_start(&self, value: ValueRef, block: BlockRef) -> bool {
         let next_uses = self.next_uses_at(&ProgramPoint::at_start_of(block));
         next_uses.is_some_and(|nu| nu.is_live(&value))
     }
 
+    /// Returns true if `value` is live at the block terminator of `block`
     pub fn is_live_at_end(&self, value: ValueRef, block: BlockRef) -> bool {
         let next_uses = self.next_uses_at(&ProgramPoint::at_end_of(block));
         next_uses.is_some_and(|nu| nu.is_live(&value))
     }
 
+    /// Returns true if `value` is live at the entry of `op`
     pub fn is_live_before(&self, value: ValueRef, op: &Operation) -> bool {
         let next_uses = self.next_uses_at(&ProgramPoint::before(op));
         next_uses.is_some_and(|nu| nu.is_live(&value))
     }
 
+    /// Returns true if `value` is live on exit from `op`
     pub fn is_live_after(&self, value: ValueRef, op: &Operation) -> bool {
         let next_uses = self.next_uses_at(&ProgramPoint::after(op));
         next_uses.is_some_and(|nu| nu.is_live(&value))
+    }
+
+    /// Returns true if `value` is live after entering `op`, i.e. when executing any of its child
+    /// regions.
+    ///
+    /// This will return true if `value` is live after exiting from any of `op`'s regions, as well
+    /// as in the case where none of `op`'s regions are executed and control is transferred to the
+    /// next op in the containing block.
+    pub fn is_live_after_entry(&self, value: ValueRef, op: &Operation) -> bool {
+        if self.is_live_after(value, op) {
+            return true;
+        }
+
+        if let Some(br_op) = op.as_trait::<dyn RegionBranchOpInterface>() {
+            for succ in br_op.get_successor_regions(crate::RegionBranchPoint::Parent) {
+                if let Some(region) = succ.into_successor() {
+                    let entry = region.borrow().entry_block_ref().unwrap();
+                    if !self.is_block_executable(entry) {
+                        // Ignore dead regions
+                        continue;
+                    }
+
+                    if self.is_live_at_start(value, entry) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     pub fn next_use_after(&self, value: ValueRef, op: &Operation) -> u32 {
@@ -183,6 +219,10 @@ impl BuildableDataFlowAnalysis for Liveness {
 ///     than values inside the loop.
 impl DenseBackwardDataFlowAnalysis for Liveness {
     type Lattice = Lattice<NextUseSet>;
+
+    fn debug_name(&self) -> &'static str {
+        "liveness"
+    }
 
     fn symbol_table(&self) -> Option<&dyn crate::SymbolTable> {
         None
@@ -259,6 +299,11 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         let Some(parent_block) = op.parent() else {
             return Ok(());
         };
+        log::trace!(
+            "deriving live-in for {op} from live-out at {}: {:#?}",
+            live_out.anchor(),
+            live_out.value()
+        );
 
         // To compute the live-in set, we must start with a copy of the live-out set
         let mut temp_live_in = live_out.value().clone();
@@ -281,6 +326,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
         // Determine if the state has changed, if so, then overwrite `live_in` with what we've
         // computed. Otherwise, do nothing to avoid triggering re-analysis.
+        log::trace!("computed live-in for {op}: {:#?}", &temp_live_in);
         if live_in.value() == &temp_live_in {
             return Ok(());
         } else {
@@ -299,6 +345,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
         _solver: &mut DataFlowSolver,
     ) {
+        log::trace!("setting lattice to exit state: {:#?}", lattice.value());
         lattice.value_mut().clear();
     }
 
@@ -383,6 +430,15 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         before: &mut AnalysisStateGuard<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
+        log::trace!("visit region branch control flow for: {}", branch.as_operation());
+        log::trace!(
+            "region_from entry = {:?}",
+            region_from.and_then(|r| r.borrow().entry_block_ref())
+        );
+        log::trace!("region_to entry = {:?}", region_to.and_then(|r| r.borrow().entry_block_ref()));
+        log::trace!("after.value(): {:#?}", after.value());
+        log::trace!("before.value(): {:#?}", &before.value());
+
         match (region_from, region_to) {
             // 4.
             (None, None) => {
@@ -400,24 +456,36 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 // needed.
                 let mut live_in = after.value().clone();
                 let region_to = region_to.borrow();
-                for arg in region_to.entry().arguments().iter().copied() {
-                    let arg = arg as ValueRef;
-                    live_in.remove(&arg);
+                let region_to_entry = region_to.entry();
+                let op = branch.as_operation();
+
+                // Remove region entry arguments for `region_to`
+                for arg in region_to_entry.arguments() {
+                    live_in.remove(&(*arg as ValueRef));
                 }
 
-                // Add in all of the op operands with next-use distance of 0
-                let op = branch.as_operation();
+                // Remove operation results of `branch`
+                for result in op.results().iter() {
+                    live_in.remove(&(*result as ValueRef));
+                }
+
+                // Set next-use distance of all operands 0
                 for operand in op.operands().iter() {
                     let operand = operand.borrow().as_value_ref();
                     live_in.insert(operand, 0);
                 }
 
+                // Join the before/after lattices to ensure we propagate liveness from multi-exit
+                // regions, e.g. `hir.if`
+                let before_live_in = before.value().join(&live_in);
+
                 // Determine if the state has changed, if so, then overwrite `before` with what
                 // we've computed. Otherwise, do nothing to avoid triggering re-analysis.
-                if before.value() == &live_in {
+                log::trace!("newly computed before.value(): {:#?}", &before_live_in);
+                if before.value() == &before_live_in {
                     return;
                 } else {
-                    *before.value_mut() = live_in;
+                    *before.value_mut() = before_live_in;
                 }
 
                 let parent_block = op.parent().unwrap();
@@ -425,40 +493,50 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             }
             // 2.
             (Some(region_from), None) => {
-                // We're starting with the live-out set of `op`, which contains its results. We must
-                // do two things here to propagate liveness to the live-out set of the exit block:
+                // We're starting with the live-out set of `op`, which contains some/all of its
+                // results. We must do two things here to propagate liveness to the live-out set of
+                // the exit block (which is derived from its terminator op):
                 //
                 // 1. Remove `op`'s results from the set
-                // 2. If `op` contains a loop, we need to determine if the region we're exiting
-                //    from contains, or is part of, that loop. If so, we need to increment the
-                //    remaining next-use distances by LOOP_EXIT_DISTANCE
-                let op = branch.as_operation();
+                // 2. If `region_from` is a repetitive region (i.e. part of a loop), we need to
+                //    increment the remaining next-use distances by LOOP_EXIT_DISTANCE
+                //let op = branch.as_operation();
                 let mut live_out = after.value().clone();
-                for result in op.results().iter().copied() {
-                    let result = result as ValueRef;
-                    live_out.remove(&result);
-                }
-
-                let is_loop_exit = if branch.has_loop() {
-                    let region_index = region_from.borrow().region_number();
-                    branch.is_repetitive_region(region_index)
-                } else {
-                    false
-                };
+                let is_loop_exit =
+                    branch.is_repetitive_region(region_from.borrow().region_number());
                 if is_loop_exit {
-                    for next_use in live_out.iter_mut() {
-                        next_use.distance = next_use.distance.saturating_add(LOOP_EXIT_DISTANCE);
+                    for value in live_out.iter_mut() {
+                        value.distance = value.distance.saturating_add(LOOP_EXIT_DISTANCE);
                     }
                 }
 
+                // Take the join of before and after, so that we take the minimum distance across
+                // all successors of `branch_op`
+                let before_live_out = before.value().join(&live_out);
+
                 // Determine if the state has changed, if so, then overwrite `before` with what
                 // we've computed. Otherwise, do nothing to avoid triggering re-analysis.
-                if before.value() != &live_out {
-                    *before.value_mut() = live_out;
+                log::trace!("newly computed before.value(): {:#?}", &before_live_out);
+                if before.value() != &before_live_out {
+                    *before.value_mut() = before_live_out.clone();
+                }
+
+                // We need to attach the live-out information to the terminator of `region_from`
+                // that is exiting to the parent op so that it is picked up by the dense dataflow
+                // analysis framework prior to visit_operation being invoked
+                let pp = before.anchor().as_program_point().unwrap();
+                let terminator = pp.operation().expect("expected block terminator");
+
+                // Ensure the analysis state for `terminator` is initialized with `before_live_out`
+                let point = ProgramPoint::after(terminator);
+                let mut term_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
+                if term_liveness.value() != &before_live_out {
+                    *term_liveness.value_mut() = before_live_out;
                 }
             }
             // 3.
             (Some(region_from), Some(region_to)) => {
+                log::trace!("transferring control between regions");
                 // We're starting with the live-in set of `region_to`'s entry block, and propagating
                 // to the live-out set of `region_from`'s exit to `region_to`. We must do the
                 // following:
@@ -468,29 +546,41 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 //    distance of all live values by LOOP_EXIT_DISTANCE
                 let mut live_out = after.value().clone();
                 let region_to = region_to.borrow();
-                for arg in region_to.entry().arguments().iter().copied() {
-                    let arg = arg as ValueRef;
-                    live_out.remove(&arg);
+                let region_to_entry = region_to.entry();
+                let is_loop_exit = branch
+                    .is_repetitive_region(region_from.borrow().region_number())
+                    && !branch.is_repetitive_region(region_to.region_number());
+                for arg in region_to_entry.arguments() {
+                    live_out.remove(&(*arg as ValueRef));
                 }
-
-                let is_loop_exit = if branch.has_loop() {
-                    let region_from_index = region_from.borrow().region_number();
-                    let region_to_index = region_to.region_number();
-                    branch.is_repetitive_region(region_from_index)
-                        && !branch.is_repetitive_region(region_to_index)
-                } else {
-                    false
-                };
                 if is_loop_exit {
-                    for next_use in live_out.iter_mut() {
-                        next_use.distance = next_use.distance.saturating_add(LOOP_EXIT_DISTANCE);
+                    for value in live_out.iter_mut() {
+                        value.distance = value.distance.saturating_add(LOOP_EXIT_DISTANCE);
                     }
                 }
 
+                // Take the join of before and after, so that we take the minimum distance across
+                // all successors of `branch_op`
+                let before_live_out = before.value().join(&live_out);
+
                 // Determine if the state has changed, if so, then overwrite `before` with what
                 // we've computed. Otherwise, do nothing to avoid triggering re-analysis.
-                if before.value() != &live_out {
-                    *before.value_mut() = live_out;
+                log::trace!("newly computed before.value(): {:#?}", &before_live_out);
+                if before.value() != &before_live_out {
+                    *before.value_mut() = before_live_out.clone();
+                }
+
+                // We need to attach the live-out information to the terminator of `region_from`
+                // that is exiting to the parent op so that it is picked up by the dense dataflow
+                // analysis framework prior to visit_operation being invoked
+                let pp = before.anchor().as_program_point().unwrap();
+                let terminator = pp.operation().expect("expected block terminator");
+
+                // Ensure the analysis state for `terminator` is initialized with `before_live_out`
+                let point = ProgramPoint::after(terminator);
+                let mut term_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
+                if term_liveness.value() != &before_live_out {
+                    *term_liveness.value_mut() = before_live_out;
                 }
             }
         }

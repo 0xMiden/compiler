@@ -1,14 +1,16 @@
 use smallvec::SmallVec;
 
-use super::SparseLattice;
+use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
     dataflow::{
         analyses::dce::{CfgEdge, Executable, PredecessorState},
-        AnalysisStateGuard, BuildableAnalysisState, DataFlowSolver, ProgramPoint,
+        AnalysisState, AnalysisStateGuard, BuildableAnalysisState, DataFlowSolver, Forward,
+        ProgramPoint,
     },
+    formatter::DisplayValues,
     traits::BranchOpInterface,
     Block, BlockArgument, BlockArgumentRange, CallOpInterface, CallableOpInterface, EntityRef,
-    OpOperandRange, OpResult, OpResultRange, Operation, OperationRef, RegionBranchOpInterface,
+    EntityWithId, OpOperandRange, OpResult, OpResultRange, Operation, RegionBranchOpInterface,
     RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessor, Report, Spanned,
     StorableEntity, SuccessorOperands, ValueRef,
 };
@@ -25,6 +27,10 @@ use crate::{
 #[allow(unused_variables)]
 pub trait SparseForwardDataFlowAnalysis: 'static {
     type Lattice: BuildableAnalysisState + SparseLattice;
+
+    fn debug_name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+    }
 
     /// The operation transfer function.
     ///
@@ -87,7 +93,7 @@ pub fn set_all_to_entry_states<A>(
 
 /// Recursively initialize the analysis on nested operations and blocks.
 pub(super) fn initialize_recursively<A>(
-    analysis: &A,
+    analysis: &SparseDataFlowAnalysis<A, Forward>,
     op: &Operation,
     solver: &mut DataFlowSolver,
 ) -> Result<(), Report>
@@ -97,18 +103,29 @@ where
     // Initialize the analysis by visiting every owner of an SSA value (all operations and blocks).
     visit_operation(analysis, op, solver)?;
 
-    let current_analysis = solver.current_analysis().unwrap();
-    for region in op.regions() {
-        for block in region.body() {
-            {
-                let mut exec = solver.get_or_create_mut::<Executable, _>(block.as_block_ref());
-                AnalysisStateGuard::subscribe_nonnull(&mut exec, current_analysis);
+    if !op.regions().is_empty() {
+        log::trace!(target: analysis.debug_name(), "visiting regions of '{}'", op.name());
+        for region in op.regions() {
+            if region.is_empty() {
+                continue;
             }
 
-            visit_block(analysis, &block, solver);
+            for block in region.body() {
+                {
+                    let point = ProgramPoint::at_start_of(block.as_block_ref());
+                    let mut exec = solver.get_or_create_mut::<Executable, _>(point);
+                    log::trace!(
+                        target: analysis.debug_name(), "subscribing to changes in liveness for {block} (current={exec})",
+                    );
+                    AnalysisStateGuard::subscribe(&mut exec, analysis);
+                }
 
-            for op in block.body() {
-                initialize_recursively(analysis, &op, solver)?;
+                visit_block(analysis, &block, solver);
+
+                log::trace!(target: analysis.debug_name(), "visiting body of {} top-down", block.id());
+                for op in block.body() {
+                    initialize_recursively(analysis, &op, solver)?;
+                }
             }
         }
     }
@@ -120,15 +137,18 @@ where
 /// region control-flow, then its result lattices are set accordingly.
 /// Otherwise, the operation transfer function is invoked.
 pub(super) fn visit_operation<A>(
-    analysis: &A,
+    analysis: &SparseDataFlowAnalysis<A, Forward>,
     op: &Operation,
     solver: &mut DataFlowSolver,
 ) -> Result<(), Report>
 where
     A: SparseForwardDataFlowAnalysis,
 {
+    log::trace!(target: analysis.debug_name(), "visiting operation {op}");
+
     // Exit early on operations with no results.
     if !op.has_results() {
+        log::debug!(target: analysis.debug_name(), "skipping analysis for {}: op has no results", op.name());
         return Ok(());
     }
 
@@ -138,10 +158,16 @@ where
             .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
             .is_live()
     }) {
+        log::trace!(target: analysis.debug_name(), "skipping analysis for op in dead/non-executable block: {}", ProgramPoint::before(op));
         return Ok(());
     }
 
     // Get the result lattices.
+    log::trace!(
+        target: analysis.debug_name(),
+        "getting/initializing result lattices for {}",
+        DisplayValues::new(op.results().all().into_iter())
+    );
     let mut result_lattices = get_lattice_elements::<A>(op.results().all(), solver);
 
     // The results of a region branch operation are determined by control-flow.
@@ -159,15 +185,20 @@ where
     }
 
     // Grab the lattice elements of the operands.
-    let current_analysis = solver.current_analysis().unwrap();
     let mut operand_lattices = SmallVec::<[_; 4]>::with_capacity(op.num_operands());
     for operand in op.operands().iter() {
-        let mut operand_lattice = get_lattice_element::<A>(operand.borrow().as_value_ref(), solver);
-        AnalysisStateGuard::subscribe_nonnull(&mut operand_lattice, current_analysis);
+        log::trace!(target: analysis.debug_name(), "getting/initializing operand lattice for {}", operand.borrow().as_value_ref());
+        let operand = operand.borrow().as_value_ref();
+        let mut operand_lattice = get_lattice_element::<A>(operand, solver);
+        log::trace!(
+            target: analysis.debug_name(), "subscribing to changes of operand {operand} (current={operand_lattice:#?})",
+        );
+        AnalysisStateGuard::subscribe(&mut operand_lattice, analysis);
         operand_lattices.push(AnalysisStateGuard::into_entity_ref(operand_lattice));
     }
 
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
+        log::trace!(target: analysis.debug_name(), "{} is a call operation", op.name());
         // If the call operation is to an external function, attempt to infer the results from the
         // call arguments.
         //
@@ -180,24 +211,29 @@ where
         if !solver.config().is_interprocedural()
             || callable.is_some_and(|c| c.get_callable_region().is_none())
         {
+            log::trace!(target: analysis.debug_name(), "callee {} is external", call.callable_for_callee());
             analysis.visit_external_call(call, &operand_lattices, &mut result_lattices, solver);
             return Ok(());
         }
 
         // Otherwise, the results of a call operation are determined by the callgraph.
-        let predecessors = solver.require::<PredecessorState, _>(
-            ProgramPoint::after(call.as_operation()),
-            ProgramPoint::after(op),
-        );
+        log::trace!(target: analysis.debug_name(), "resolved callee as {}", call.callable_for_callee());
+        let return_point = ProgramPoint::after(op);
+        log::trace!(target: analysis.debug_name(), "getting/initializing predecessor state at {return_point}");
+        let predecessors = solver
+            .require::<PredecessorState, _>(ProgramPoint::after(call.as_operation()), return_point);
+        log::trace!(target: analysis.debug_name(), "found {} known predecessors", predecessors.known_predecessors().len());
 
         // If not all return sites are known, then conservatively assume we can't reason about the
         //data-flow.
         if !predecessors.all_predecessors_known() {
+            log::trace!(target: analysis.debug_name(), "not all predecessors are known - setting result lattices to entry state");
             set_all_to_entry_states(analysis, &mut result_lattices);
             return Ok(());
         }
 
         let current_point = ProgramPoint::after(op);
+        log::trace!(target: analysis.debug_name(), "joining lattices from all call site predecessors at {current_point}");
         for predecessor in predecessors.known_predecessors() {
             for (operand, result_lattice) in
                 predecessor.borrow().operands().all().iter().zip(result_lattices.iter_mut())
@@ -223,12 +259,16 @@ where
 /// "predecessors" as set by `PredecessorState`. The predecessors can be
 /// region terminators or callable callsites. Otherwise, the values are
 /// determined from block predecessors.
-pub(super) fn visit_block<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
-where
+pub(super) fn visit_block<A>(
+    analysis: &SparseDataFlowAnalysis<A, Forward>,
+    block: &Block,
+    solver: &mut DataFlowSolver,
+) where
     A: SparseForwardDataFlowAnalysis,
 {
     // Exit early on blocks with no arguments.
     if !block.has_arguments() {
+        log::debug!(target: analysis.debug_name(), "skipping {block}: no block arguments to process");
         return;
     }
 
@@ -237,46 +277,57 @@ where
         .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
         .is_live()
     {
+        log::debug!(target: analysis.debug_name(), "skipping {block}: it is dead/non-executable");
         return;
     }
 
     // Get the argument lattices.
     let mut arg_lattices = SmallVec::<[_; 4]>::with_capacity(block.num_arguments());
-    for argument in block.arguments() {
-        let lattice = get_lattice_element::<A>(argument.borrow().as_value_ref(), solver);
+    for argument in block.arguments().iter().copied() {
+        log::trace!(target: analysis.debug_name(), "getting/initializing lattice for {argument}");
+        let lattice = get_lattice_element::<A>(argument as ValueRef, solver);
         arg_lattices.push(lattice);
     }
 
     // The argument lattices of entry blocks are set by region control-flow or the callgraph.
     let current_point = ProgramPoint::at_start_of(block);
     if block.is_entry_block() {
+        log::trace!(target: analysis.debug_name(), "{block} is a region entry block");
         // Check if this block is the entry block of a callable region.
         let parent_op = block.parent_op().unwrap();
         let parent_op = parent_op.borrow();
         let callable = parent_op.as_trait::<dyn CallableOpInterface>();
         if callable.is_some_and(|c| c.get_callable_region() == block.parent()) {
             let callable = callable.unwrap();
+            log::trace!(
+                target: analysis.debug_name(),
+                "{block} is the entry of a callable region - analyzing call sites",
+            );
             let callsites = solver.require::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_operation()),
                 current_point,
             );
+            log::trace!(target: analysis.debug_name(), "found {} call sites", callsites.known_predecessors().len());
 
             // If not all callsites are known, conservatively mark all lattices as having reached
             // their pessimistic fixpoints.
             if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
+                log::trace!(
+                    target: analysis.debug_name(),
+                    "not all call sites are known - setting arguments to entry state"
+                );
                 return set_all_to_entry_states(analysis, &mut arg_lattices);
             }
 
+            log::trace!(target: analysis.debug_name(), "joining lattices from all call site predecessors at {current_point}");
             for callsite in callsites.known_predecessors() {
                 let callsite = callsite.borrow();
                 let call = callsite.as_trait::<dyn CallOpInterface>().unwrap();
                 for (arg, arg_lattice) in call.arguments().iter().zip(arg_lattices.iter_mut()) {
-                    let input = get_lattice_element_for::<A>(
-                        current_point,
-                        arg.borrow().as_value_ref(),
-                        solver,
-                    );
-                    arg_lattice.join(input.lattice());
+                    let arg = arg.borrow().as_value_ref();
+                    let input = get_lattice_element_for::<A>(current_point, arg, solver);
+                    let change_result = arg_lattice.join(input.lattice());
+                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {:#?}: {change_result}", arg_lattice);
                 }
             }
 
@@ -285,6 +336,10 @@ where
 
         // Check if the lattices can be determined from region control flow.
         if let Some(branch) = parent_op.as_trait::<dyn RegionBranchOpInterface>() {
+            log::trace!(
+                target: analysis.debug_name(),
+                "{block} is the entry of an region control flow op",
+            );
             return visit_region_successors(
                 analysis,
                 current_point,
@@ -296,6 +351,7 @@ where
         }
 
         // Otherwise, we can't reason about the data-flow.
+        log::trace!(target: analysis.debug_name(), "unable to reason about control flow for {block}");
         let successor = RegionSuccessor::new(
             RegionBranchPoint::Child(block.parent().unwrap()),
             OpOperandRange::empty(),
@@ -310,9 +366,10 @@ where
     }
 
     // Iterate over the predecessors of the non-entry block.
-    let current_analysis = solver.current_analysis().unwrap();
+    log::trace!(target: analysis.debug_name(), "visiting predecessors of non-entry block {block}");
     for pred in block.predecessors() {
         let predecessor = pred.predecessor().borrow();
+        log::trace!(target: analysis.debug_name(), "visiting control flow edge {predecessor} -> {block} (index {})", pred.index);
 
         // If the edge from the predecessor block to the current block is not live, bail out.
         let mut edge_executable = {
@@ -321,10 +378,15 @@ where
                 block.as_block_ref(),
                 predecessor.span(),
             ));
-            solver.get_or_create_mut::<Executable, _>(anchor)
+            let lattice = solver.get_or_create_mut::<Executable, _>(anchor);
+            log::trace!(
+                target: analysis.debug_name(), "subscribing to changes of control flow edge {anchor} (current={lattice})",
+            );
+            lattice
         };
-        AnalysisStateGuard::subscribe_nonnull(&mut edge_executable, current_analysis);
+        AnalysisStateGuard::subscribe(&mut edge_executable, analysis);
         if !edge_executable.is_live() {
+            log::trace!(target: analysis.debug_name(), "skipping {predecessor}: control flow edge is dead/non-executable");
             continue;
         }
 
@@ -332,20 +394,33 @@ where
         let terminator = pred.owner;
         let terminator = terminator.borrow();
         if let Some(branch) = terminator.as_trait::<dyn BranchOpInterface>() {
+            log::trace!(
+                target: analysis.debug_name(),
+                "joining operand lattices for successor {} of {predecessor}",
+                pred.index
+            );
             let operands = branch.get_successor_operands(pred.index());
             for (idx, lattice) in arg_lattices.iter_mut().enumerate() {
                 if let Some(operand) =
                     operands.get(idx).and_then(|operand| operand.into_value_ref())
                 {
+                    log::trace!(target: analysis.debug_name(), "joining lattice for {} with {operand}", lattice.anchor());
                     let operand_lattice =
                         get_lattice_element_for::<A>(current_point, operand, solver);
-                    lattice.join(operand_lattice.lattice());
+                    let change_result = lattice.join(operand_lattice.lattice());
+                    log::debug!(target: analysis.debug_name(), "updated lattice for {} to {:#?}: {change_result}", lattice.anchor(), lattice);
                 } else {
                     // Conservatively consider internally produced arguments as entry points.
+                    log::trace!(target: analysis.debug_name(), "setting lattice for internally-produced argument {} to entry state", lattice.anchor());
                     analysis.set_to_entry_state(lattice);
                 }
             }
         } else {
+            log::trace!(
+                target: analysis.debug_name(),
+                "unable to reason about predecessor control flow - setting argument lattices to \
+                 entry state"
+            );
             return set_all_to_entry_states(analysis, &mut arg_lattices);
         }
     }
@@ -356,7 +431,7 @@ where
 /// regions or the parent operation itself, and set either the argument or
 /// parent result lattices.
 fn visit_region_successors<A>(
-    analysis: &A,
+    analysis: &SparseDataFlowAnalysis<A, Forward>,
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
     successor: RegionBranchPoint,
@@ -365,17 +440,21 @@ fn visit_region_successors<A>(
 ) where
     A: SparseForwardDataFlowAnalysis,
 {
+    log::trace!(target: analysis.debug_name(), "getting/initializing predecessor state for {point}");
     let predecessors = solver.require::<PredecessorState, _>(point, point);
     assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
 
-    for op in predecessors.known_predecessors() {
+    log::debug!(target: analysis.debug_name(), "joining the lattices from {} known predecessors", predecessors.known_predecessors().len());
+    for op in predecessors.known_predecessors().iter().copied() {
         let operation = op.borrow();
 
         // Get the incoming successor operands.
         let mut operands = None;
 
         // Check if the predecessor is the parent op.
-        if core::ptr::addr_eq(OperationRef::as_ptr(op), branch.as_operation()) {
+        let predecessor_is_parent = op == branch.as_operation_ref();
+        log::debug!(target: analysis.debug_name(), "analyzing predecessor {} (is parent = {predecessor_is_parent})", ProgramPoint::after(&*operation));
+        if predecessor_is_parent {
             operands = Some(branch.get_entry_successor_operands(successor));
         } else if let Some(region_terminator) =
             operation.as_trait::<dyn RegionBranchTerminatorOpInterface>()
@@ -386,10 +465,11 @@ fn visit_region_successors<A>(
 
         let Some(operands) = operands else {
             // We can't reason about the data-flow
+            log::debug!(target: analysis.debug_name(), "unable to reason about predecessor dataflow - setting to entry state");
             return set_all_to_entry_states(analysis, lattices);
         };
 
-        let inputs = predecessors.successor_inputs(op);
+        let inputs = predecessors.successor_inputs(&op);
         assert_eq!(
             inputs.len(),
             operands.len(),
@@ -398,6 +478,7 @@ fn visit_region_successors<A>(
 
         let mut first_index = 0;
         if inputs.len() != lattices.len() {
+            log::trace!(target: analysis.debug_name(), "successor inputs and argument lattices have different lengths: {} vs {}", inputs.len(), lattices.len());
             if !point.is_at_block_start() {
                 if !inputs.is_empty() {
                     let input = inputs[0].borrow();
@@ -443,9 +524,11 @@ fn visit_region_successors<A>(
         for (operand, lattice) in
             operands.forwarded().iter().zip(lattices.iter_mut().skip(first_index))
         {
-            let operand_lattice =
-                get_lattice_element_for::<A>(point, operand.borrow().as_value_ref(), solver);
-            lattice.join(operand_lattice.lattice());
+            let operand = operand.borrow().as_value_ref();
+            log::trace!(target: analysis.debug_name(), "joining lattice for {} with {operand}", lattice.anchor());
+            let operand_lattice = get_lattice_element_for::<A>(point, operand, solver);
+            let change_result = lattice.join(operand_lattice.lattice());
+            log::debug!(target: analysis.debug_name(), "updated lattice for {} to {:#?}: {change_result}", lattice.anchor(), lattice);
         }
     }
 }
@@ -458,7 +541,9 @@ fn get_lattice_element<'guard, A>(
 where
     A: SparseForwardDataFlowAnalysis,
 {
-    solver.get_or_create_mut::<_, _>(value)
+    let lattice: AnalysisStateGuard<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice> =
+        solver.get_or_create_mut::<_, _>(value);
+    lattice
 }
 
 #[inline]
@@ -481,8 +566,8 @@ where
     A: SparseForwardDataFlowAnalysis,
 {
     let mut results = SmallVec::with_capacity(values.len());
-    for value in values.iter() {
-        let lattice = solver.get_or_create_mut::<_, _>(value.borrow().as_value_ref());
+    for value in values.iter().copied() {
+        let lattice = solver.get_or_create_mut::<_, _>(value as ValueRef);
         results.push(lattice);
     }
     results

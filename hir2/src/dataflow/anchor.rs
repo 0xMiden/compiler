@@ -1,7 +1,10 @@
 use core::{any::Any, fmt, hash::Hash, ptr::NonNull};
 
 use super::ProgramPoint;
-use crate::{BlockRef, DynHash, DynPartialEq, Insert, OperationRef, SourceSpan, Spanned, ValueRef};
+use crate::{
+    Block, BlockArgument, BlockArgumentRef, BlockRef, DynHash, DynPartialEq, OpResult, OpResultRef,
+    Operation, OperationRef, RawEntityRef, SourceSpan, Spanned, Value, ValueRef,
+};
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
 ///
@@ -18,19 +21,33 @@ pub struct LatticeAnchorRef(NonNull<dyn LatticeAnchor>);
 impl LatticeAnchorRef {
     /// Get a [LatticeAnchorRef] from a raw [LatticeAnchor] pointer.
     #[inline]
-    pub(super) fn new(raw: NonNull<dyn LatticeAnchor>) -> Self {
+    fn new(raw: NonNull<dyn LatticeAnchor>) -> Self {
         Self(raw)
     }
 
-    pub fn compute_hash<A>(anchor: &A) -> u64
+    fn compute_hash<A>(anchor: &A) -> u64
     where
-        A: LatticeAnchor + Hash,
+        A: ?Sized + LatticeAnchor,
     {
         use core::hash::Hasher;
 
         let mut hasher = rustc_hash::FxHasher::default();
-        anchor.hash(&mut hasher);
+        anchor.dyn_hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn intern<A>(
+        anchor: &A,
+        alloc: &blink_alloc::Blink,
+        interned: &mut crate::FxHashMap<u64, LatticeAnchorRef>,
+    ) -> LatticeAnchorRef
+    where
+        A: LatticeAnchorExt,
+    {
+        let hash = anchor.anchor_id();
+        *interned
+            .entry(hash)
+            .or_insert_with(|| <A as LatticeAnchorExt>::alloc(anchor, alloc))
     }
 }
 
@@ -39,6 +56,13 @@ impl core::ops::Deref for LatticeAnchorRef {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl core::convert::AsRef<dyn LatticeAnchor> for LatticeAnchorRef {
+    #[inline(always)]
+    fn as_ref(&self) -> &dyn LatticeAnchor {
         unsafe { self.0.as_ref() }
     }
 }
@@ -77,28 +101,6 @@ impl fmt::Display for LatticeAnchorRef {
     }
 }
 
-impl LatticeAnchor for LatticeAnchorRef {
-    fn as_any(&self) -> &dyn Any {
-        LatticeAnchor::as_any(unsafe { self.0.as_ref() })
-    }
-
-    fn is_value(&self) -> bool {
-        unsafe { self.0.as_ref().is_value() }
-    }
-
-    fn as_value(&self) -> Option<ValueRef> {
-        unsafe { self.0.as_ref().as_value() }
-    }
-
-    fn is_valid_program_point(&self) -> bool {
-        unsafe { self.0.as_ref().is_valid_program_point() }
-    }
-
-    fn as_program_point(&self) -> Option<ProgramPoint> {
-        unsafe { self.0.as_ref().as_program_point() }
-    }
-}
-
 /// An abstraction over lattice anchors.
 ///
 /// In classical data-flow analysis, lattice anchors represent positions in a program to which
@@ -109,178 +111,279 @@ impl LatticeAnchor for LatticeAnchorRef {
 pub trait LatticeAnchor:
     Any + Spanned + fmt::Debug + fmt::Display + DynPartialEq + DynHash
 {
-    fn as_any(&self) -> &dyn Any;
     fn is_value(&self) -> bool {
-        LatticeAnchor::as_any(self).is::<ValueRef>()
+        false
     }
+
     fn as_value(&self) -> Option<ValueRef> {
-        LatticeAnchor::as_any(self).downcast_ref::<ValueRef>().copied()
+        None
     }
+
     fn is_valid_program_point(&self) -> bool {
-        let any = LatticeAnchor::as_any(self);
-        any.is::<ProgramPoint>() || any.is::<OperationRef>() || any.is::<BlockRef>()
+        false
     }
+
     fn as_program_point(&self) -> Option<ProgramPoint> {
-        let any = LatticeAnchor::as_any(self);
-        if let Some(pp) = any.downcast_ref::<ProgramPoint>() {
-            Some(*pp)
-        } else if let Some(op) = any.downcast_ref::<OperationRef>().cloned() {
-            let block = op.parent();
-            Some(ProgramPoint::Op {
-                block,
-                op,
-                point: Insert::Before,
-            })
-        } else {
-            any.downcast_ref::<BlockRef>().copied().map(|block| ProgramPoint::Block {
-                block,
-                point: Insert::Before,
-            })
-        }
+        None
     }
 }
 
-impl dyn LatticeAnchor {
+impl LatticeAnchor for LatticeAnchorRef {
     #[inline]
-    pub fn is<T: 'static>(&self) -> bool {
-        self.as_any().is::<T>()
+    fn is_value(&self) -> bool {
+        self.as_ref().is_value()
     }
 
     #[inline]
-    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        self.as_any().downcast_ref()
+    fn as_value(&self) -> Option<ValueRef> {
+        self.as_ref().as_value()
+    }
+
+    #[inline]
+    fn is_valid_program_point(&self) -> bool {
+        self.as_ref().is_valid_program_point()
+    }
+
+    #[inline]
+    fn as_program_point(&self) -> Option<ProgramPoint> {
+        self.as_ref().as_program_point()
     }
 }
 
-pub(super) trait LatticeAnchorExt: LatticeAnchor {
-    fn intern(
-        self,
-        alloc: &blink_alloc::Blink,
-        interned: &mut crate::FxHashMap<u64, LatticeAnchorRef>,
-    ) -> LatticeAnchorRef;
-}
+impl LatticeAnchor for ProgramPoint {
+    fn is_valid_program_point(&self) -> bool {
+        true
+    }
 
-impl<A: LatticeAnchor + Hash> LatticeAnchorExt for A {
-    default fn intern(
-        self,
-        alloc: &blink_alloc::Blink,
-        interned: &mut crate::FxHashMap<u64, LatticeAnchorRef>,
-    ) -> LatticeAnchorRef {
-        let hash = LatticeAnchorRef::compute_hash(&self);
-        *interned.entry(hash).or_insert_with(|| {
-            let anchor = alloc.put(self);
-            LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(anchor) })
-        })
+    fn as_program_point(&self) -> Option<ProgramPoint> {
+        Some(*self)
     }
 }
-impl LatticeAnchorExt for LatticeAnchorRef {
-    #[inline(always)]
-    fn intern(
-        self,
-        _alloc: &blink_alloc::Blink,
-        _interned: &mut crate::FxHashMap<u64, LatticeAnchorRef>,
-    ) -> LatticeAnchorRef {
-        self
+
+impl LatticeAnchor for Operation {
+    fn is_valid_program_point(&self) -> bool {
+        true
+    }
+
+    fn as_program_point(&self) -> Option<ProgramPoint> {
+        Some(ProgramPoint::before(self))
+    }
+}
+
+impl LatticeAnchor for Block {
+    fn is_valid_program_point(&self) -> bool {
+        true
+    }
+
+    fn as_program_point(&self) -> Option<ProgramPoint> {
+        Some(ProgramPoint::at_start_of(self))
+    }
+}
+
+impl LatticeAnchor for BlockArgument {
+    fn is_value(&self) -> bool {
+        true
+    }
+
+    fn as_value(&self) -> Option<ValueRef> {
+        Some(self.as_value_ref())
+    }
+}
+
+impl LatticeAnchor for OpResult {
+    fn is_value(&self) -> bool {
+        true
+    }
+
+    fn as_value(&self) -> Option<ValueRef> {
+        Some(self.as_value_ref())
+    }
+}
+
+impl LatticeAnchor for dyn Value {
+    fn is_value(&self) -> bool {
+        true
+    }
+
+    fn as_value(&self) -> Option<ValueRef> {
+        Some(unsafe { ValueRef::from_raw(self) })
+    }
+}
+
+impl<A: ?Sized + LatticeAnchor, Metadata: 'static> LatticeAnchor for RawEntityRef<A, Metadata> {
+    default fn is_value(&self) -> bool {
+        false
+    }
+
+    default fn as_value(&self) -> Option<ValueRef> {
+        None
+    }
+
+    default fn is_valid_program_point(&self) -> bool {
+        false
+    }
+
+    default fn as_program_point(&self) -> Option<ProgramPoint> {
+        None
     }
 }
 
 impl LatticeAnchor for ValueRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    #[inline(always)]
     fn is_value(&self) -> bool {
         true
     }
 
-    #[inline(always)]
-    fn is_valid_program_point(&self) -> bool {
-        false
-    }
-
-    #[inline]
     fn as_value(&self) -> Option<ValueRef> {
         Some(*self)
     }
-
-    #[inline(always)]
-    fn as_program_point(&self) -> Option<ProgramPoint> {
-        None
-    }
 }
-impl LatticeAnchor for ProgramPoint {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
-    #[inline(always)]
+impl LatticeAnchor for BlockArgumentRef {
     fn is_value(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_valid_program_point(&self) -> bool {
         true
     }
 
-    #[inline(always)]
     fn as_value(&self) -> Option<ValueRef> {
-        None
-    }
-
-    #[inline]
-    fn as_program_point(&self) -> Option<ProgramPoint> {
         Some(*self)
     }
 }
+
+impl LatticeAnchor for OpResultRef {
+    fn is_value(&self) -> bool {
+        true
+    }
+
+    fn as_value(&self) -> Option<ValueRef> {
+        Some(*self)
+    }
+}
+
 impl LatticeAnchor for OperationRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    #[inline(always)]
-    fn is_value(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
     fn is_valid_program_point(&self) -> bool {
         true
     }
 
-    #[inline(always)]
-    fn as_value(&self) -> Option<ValueRef> {
-        None
-    }
-
-    #[inline]
     fn as_program_point(&self) -> Option<ProgramPoint> {
         Some(ProgramPoint::before(*self))
     }
 }
+
 impl LatticeAnchor for BlockRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    #[inline(always)]
-    fn is_value(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
     fn is_valid_program_point(&self) -> bool {
         true
     }
 
-    #[inline(always)]
-    fn as_value(&self) -> Option<ValueRef> {
-        None
+    fn as_program_point(&self) -> Option<ProgramPoint> {
+        Some(ProgramPoint::at_start_of(*self))
+    }
+}
+
+#[doc(hidden)]
+pub trait LatticeAnchorExt: sealed::IsLatticeAnchor {
+    fn anchor_id(&self) -> u64;
+
+    fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef;
+}
+
+mod sealed {
+    use super::LatticeAnchor;
+
+    pub trait IsLatticeAnchor: LatticeAnchor {}
+    impl<A: LatticeAnchor> IsLatticeAnchor for A {}
+}
+
+impl<A: LatticeAnchor + Clone> LatticeAnchorExt for A {
+    default fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(self)
     }
 
-    #[inline]
-    fn as_program_point(&self) -> Option<ProgramPoint> {
-        Some(ProgramPoint::before(*self))
+    default fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = alloc.put(self.clone());
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr) })
+    }
+}
+
+impl LatticeAnchorExt for LatticeAnchorRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(self.as_ref())
+    }
+
+    #[inline(always)]
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        *self
+    }
+}
+
+impl LatticeAnchorExt for ValueRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        // We do not need to allocate for IR entity refs, as by definition their context outlives
+        // the dataflow solver, so we only need to convert the reference to a &dyn LatticeAnchor.
+        let value = self.borrow();
+        let ptr = if let Some(result) = value.downcast_ref::<OpResult>() {
+            result as &dyn LatticeAnchor as *const dyn LatticeAnchor
+        } else {
+            let arg = value.downcast_ref::<BlockArgument>().unwrap();
+            arg as &dyn LatticeAnchor as *const dyn LatticeAnchor
+        };
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+}
+
+impl LatticeAnchorExt for BlockArgumentRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+}
+
+impl LatticeAnchorExt for OpResultRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+}
+
+impl LatticeAnchorExt for BlockRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+}
+
+impl LatticeAnchorExt for OperationRef {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+}
+
+impl LatticeAnchorExt for ProgramPoint {
+    fn anchor_id(&self) -> u64 {
+        LatticeAnchorRef::compute_hash(self)
+    }
+
+    fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
+        let ptr = alloc.put(*self);
+        LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr) })
     }
 }

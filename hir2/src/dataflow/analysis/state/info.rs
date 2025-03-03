@@ -1,5 +1,5 @@
 use alloc::collections::VecDeque;
-use core::{any::TypeId, hash::Hash, ptr::NonNull};
+use core::{any::TypeId, ptr::NonNull};
 
 use super::*;
 use crate::{
@@ -11,8 +11,6 @@ use crate::{
 pub type Revision = u32;
 
 pub struct AnalysisStateInfo {
-    /// The unique hash of this analysis state's identity (type id + anchor)
-    key: AnalysisStateKey,
     /// The immortal characteristics of the underlying analysis state:
     ///
     /// * The type id of the concrete `AnalysisState` implementation
@@ -33,12 +31,10 @@ pub struct AnalysisStateInfo {
 impl AnalysisStateInfo {
     #[inline]
     pub(super) fn new(
-        key: AnalysisStateKey,
         descriptor: NonNull<AnalysisStateDescriptor>,
         anchor: LatticeAnchorRef,
     ) -> Self {
         Self {
-            key,
             descriptor,
             anchor,
             revision: 0,
@@ -46,27 +42,14 @@ impl AnalysisStateInfo {
         }
     }
 
-    pub fn compute_key_for<T, A>(anchor: &A) -> AnalysisStateKey
-    where
-        T: BuildableAnalysisState,
-        A: LatticeAnchor + Hash,
-    {
-        use core::hash::{Hash, Hasher};
-
-        let type_id = TypeId::of::<T>();
-        let mut hasher = rustc_hash::FxHasher::default();
-        type_id.hash(&mut hasher);
-        anchor.hash(&mut hasher);
-        AnalysisStateKey(hasher.finish())
-    }
-
-    pub fn key(&self) -> AnalysisStateKey {
-        self.key
-    }
-
     #[inline]
     pub fn anchor(&self) -> &dyn LatticeAnchor {
-        &self.anchor
+        self.anchor.as_ref()
+    }
+
+    #[inline(always)]
+    pub const fn anchor_ref(&self) -> LatticeAnchorRef {
+        self.anchor
     }
 
     #[inline]
@@ -76,6 +59,11 @@ impl AnalysisStateInfo {
 
     pub(in crate::dataflow) fn increment_revision(&mut self) {
         self.revision += 1;
+    }
+
+    #[inline]
+    pub fn debug_name(&self) -> &'static str {
+        self.descriptor().debug_name()
     }
 
     #[inline(always)]
@@ -112,6 +100,15 @@ impl AnalysisStateInfo {
         self.subscriptions.as_slice()
     }
 
+    pub fn on_update_subscribers(
+        &self,
+    ) -> impl Iterator<Item = NonNull<dyn DataFlowAnalysis>> + '_ {
+        self.subscriptions.iter().filter_map(|sub| match sub {
+            AnalysisStateSubscription::OnUpdate { analysis } => Some(*analysis),
+            _ => None,
+        })
+    }
+
     /// Add a subscription for `analysis` at `point` to this state
     pub fn subscribe(&mut self, subscriber: AnalysisStateSubscription) {
         self.subscriptions.insert(subscriber);
@@ -146,20 +143,27 @@ pub enum AnalysisStateSubscription {
 }
 
 impl AnalysisStateSubscription {
-    pub fn handle_state_change<A>(
+    pub fn handle_state_change<T, A>(
         &self,
         anchor: &dyn LatticeAnchor,
         worklist: &mut VecDeque<QueuedAnalysis, A>,
     ) where
+        T: AnalysisState + 'static,
         A: alloc::alloc::Allocator,
     {
+        log::trace!(
+            "handling analysis state change to anchor '{anchor}' for {}",
+            core::any::type_name::<T>()
+        );
         match *self {
-            Self::OnUpdate { analysis: _ } => {
-                todo!()
-            }
+            // Delegated to [AnalysisStateSubscriptionBehavior::on_update]
+            Self::OnUpdate { analysis: _ } => (),
+            // Re-run `analysis` at `point`
             Self::AtPoint { analysis, point } => {
+                log::trace!("enqueuing {} at {point}", unsafe { analysis.as_ref().debug_name() });
                 worklist.push_back(QueuedAnalysis { point, analysis });
             }
+            // Re-run `analysis` for all uses of the current value
             Self::Uses { analysis } => {
                 let value = anchor
                     .as_value()
@@ -174,7 +178,7 @@ impl AnalysisStateSubscription {
     }
 }
 
-pub trait AnalysisStateSubscriptionBehavior {
+pub trait AnalysisStateSubscriptionBehavior: AnalysisState {
     /// Called when an [AnalysisState] is being queried by an analysis via [DataFlowSolver::require]
     ///
     /// This invokes state-specific logic for how to subscribe the dependent analysis to changes
@@ -190,14 +194,32 @@ pub trait AnalysisStateSubscriptionBehavior {
         info: &mut AnalysisStateInfo,
         current_analysis: NonNull<dyn DataFlowAnalysis>,
         dependent: ProgramPoint,
-    );
+    ) {
+        on_require_analysis_fallback(info, current_analysis, dependent);
+    }
 
-    fn on_subscribe(&self, subscriber: NonNull<dyn DataFlowAnalysis>, info: &mut AnalysisStateInfo);
+    /// Called when an analysis subscribes to any changes to the current [AnalysisState].
+    fn on_subscribe(
+        &self,
+        subscriber: NonNull<dyn DataFlowAnalysis>,
+        info: &mut AnalysisStateInfo,
+    ) {
+        log::trace!(
+            "subscribing {} to state updates for analysis state {} at {}",
+            unsafe { subscriber.as_ref().debug_name() },
+            info.debug_name(),
+            info.anchor()
+        );
+        info.subscribe(AnalysisStateSubscription::OnUpdate {
+            analysis: subscriber,
+        });
+    }
 
     /// Called when changes to an [AnalysisState] are being propagated. This callback has visibility
     /// into the modified state, and can use that information to modify other analysis states that
     /// may be directly/indirectly affected by the changes.
-    fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue);
+    #[allow(unused_variables)]
+    fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue) {}
 }
 
 impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
@@ -210,17 +232,51 @@ impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
         on_require_analysis_fallback(info, current_analysis, dependent);
     }
 
+    /// Called when an analysis subscribes to any changes to the current [AnalysisState].
     default fn on_subscribe(
         &self,
         subscriber: NonNull<dyn DataFlowAnalysis>,
         info: &mut AnalysisStateInfo,
     ) {
+        log::trace!(
+            "subscribing {} to state updates for analysis state {} at {}",
+            unsafe { subscriber.as_ref().debug_name() },
+            info.debug_name(),
+            info.anchor()
+        );
         info.subscribe(AnalysisStateSubscription::OnUpdate {
             analysis: subscriber,
         });
     }
 
-    default fn on_update(&self, _info: &mut AnalysisStateInfo, _worklist: &mut AnalysisQueue) {}
+    /// Called when changes to an [AnalysisState] are being propagated. This callback has visibility
+    /// into the modified state, and can use that information to modify other analysis states that
+    /// may be directly/indirectly affected by the changes.
+    default fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue) {
+        log::trace!(
+            "notifying {} subscribers of update to sparse lattice at {}",
+            info.on_update_subscribers().count(),
+            info.anchor()
+        );
+        if let Some(value) = info.anchor().as_value() {
+            for user in value.borrow().uses() {
+                let user = user.owner;
+                for subscriber in info.on_update_subscribers() {
+                    worklist.push_back(QueuedAnalysis {
+                        point: ProgramPoint::after(user),
+                        analysis: subscriber,
+                    });
+                }
+            }
+        } else if let Some(point) = info.anchor().as_program_point() {
+            for subscriber in info.on_update_subscribers() {
+                worklist.push_back(QueuedAnalysis {
+                    point,
+                    analysis: subscriber,
+                });
+            }
+        }
+    }
 }
 
 pub fn on_require_analysis_fallback(
@@ -228,6 +284,12 @@ pub fn on_require_analysis_fallback(
     current_analysis: NonNull<dyn DataFlowAnalysis>,
     dependent: ProgramPoint,
 ) {
+    log::trace!(
+        "applying default subscriptions for {} at {} for {dependent} for analysis state {}",
+        unsafe { current_analysis.as_ref().debug_name() },
+        info.anchor(),
+        info.debug_name()
+    );
     if info.anchor().is_value() {
         info.subscribe(AnalysisStateSubscription::AtPoint {
             analysis: current_analysis,

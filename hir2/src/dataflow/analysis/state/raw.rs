@@ -1,13 +1,14 @@
-use core::{any::TypeId, hash::Hash, ptr::NonNull};
+use core::{any::TypeId, ptr::NonNull};
 
 use super::*;
 use crate::{
-    dataflow::{LatticeAnchor, LatticeAnchorExt, LatticeAnchorRef},
+    dataflow::LatticeAnchorRef,
     ir::entity::{BorrowRefMut, EntityRef, RawEntity},
     FxHashMap,
 };
 
 pub struct AnalysisStateDescriptor {
+    type_name: &'static str,
     /// The unique id of the concrete analysis state type
     type_id: TypeId,
     /// The vtable pointer for the analysis state
@@ -22,11 +23,17 @@ impl AnalysisStateDescriptor {
         let offset = (core::mem::offset_of!(RawAnalysisStateInfo<T>, state)
             - core::mem::offset_of!(RawAnalysisStateInfo<T>, info)) as u32;
         let desc = alloc.put(Self {
+            type_name: core::any::type_name::<T>(),
             type_id: TypeId::of::<T>(),
             metadata: dyn_ptr.to_raw_parts().1,
             offset,
         });
         unsafe { NonNull::new_unchecked(desc) }
+    }
+
+    #[inline(always)]
+    pub const fn debug_name(&self) -> &'static str {
+        self.type_name
     }
 
     #[inline(always)]
@@ -54,29 +61,22 @@ impl<T: BuildableAnalysisState> RawAnalysisStateInfo<T> {
     /// Allocate a new instance of the analysis state `T` attached to `anchor`, using `alloc`.
     ///
     /// Returns the [AnalysisStateKey] which uniquely identifies this state.
-    pub fn alloc<A>(
+    pub fn alloc(
         alloc: &blink_alloc::Blink,
-        anchors: &mut FxHashMap<u64, LatticeAnchorRef>,
         descriptors: &mut FxHashMap<TypeId, NonNull<AnalysisStateDescriptor>>,
-        anchor: A,
-    ) -> NonNull<Self>
-    where
-        A: LatticeAnchor + Hash + Clone,
-    {
+        key: AnalysisStateKey,
+        anchor: LatticeAnchorRef,
+    ) -> NonNull<Self> {
+        debug_assert_eq!(key, AnalysisStateKey::new::<T>(anchor));
+
         let type_id = TypeId::of::<T>();
         let descriptor = *descriptors
             .entry(type_id)
             .or_insert_with(|| AnalysisStateDescriptor::new::<T>(alloc));
 
-        // Compute key
-        let key = AnalysisStateInfo::compute_key_for::<T, A>(&anchor);
-
-        // Unique anchor
-        let anchor_ref = <A as LatticeAnchorExt>::intern(anchor.clone(), alloc, anchors);
-
         let info = alloc.put(RawAnalysisStateInfo {
-            info: AnalysisStateInfo::new(key, descriptor, anchor_ref),
-            state: RawEntity::new(<T as BuildableAnalysisState>::create(anchor_ref)),
+            info: AnalysisStateInfo::new(descriptor, anchor),
+            state: RawEntity::new(<T as BuildableAnalysisState>::create(anchor)),
         });
         unsafe { NonNull::new_unchecked(info) }
     }

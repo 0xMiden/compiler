@@ -22,6 +22,10 @@ use crate::{
 pub trait DenseForwardDataFlowAnalysis: 'static {
     type Lattice: BuildableAnalysisState + DenseLattice;
 
+    fn debug_name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+    }
+
     /// Propagate the dense lattice before the execution of an operation to the lattice after its
     /// execution.
     fn visit_operation(
