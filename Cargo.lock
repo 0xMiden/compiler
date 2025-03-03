@@ -3365,6 +3365,7 @@ name = "midenc-dialect-hir"
 version = "0.0.7"
 dependencies = [
  "bitvec",
+ "log",
  "midenc-hir-symbol",
  "midenc-hir2",
  "midenc-session",
