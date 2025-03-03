@@ -112,6 +112,10 @@ impl<A: SparseBackwardDataFlowAnalysis> AnalysisStrategy<A>
 }
 
 impl<A: SparseForwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalysis<A, Forward> {
+    fn debug_name(&self) -> &'static str {
+        self.analysis.debug_name()
+    }
+
     fn analysis_id(&self) -> core::any::TypeId {
         core::any::TypeId::of::<Self>()
     }
@@ -123,12 +127,22 @@ impl<A: SparseForwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalys
         solver: &mut DataFlowSolver,
         _analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
+        log::trace!(
+            target: self.analysis.debug_name(),
+            "initializing analysis for {top}",
+        );
+
         // Mark the entry block arguments as having reached their pessimistic fixpoints.
         for region in top.regions() {
             if region.is_empty() {
                 continue;
             }
 
+            log::trace!(
+                target: self.analysis.debug_name(),
+                "initializing entry arguments of region {}",
+                region.region_number()
+            );
             for argument in region.entry().arguments() {
                 let argument = argument.borrow().as_value_ref();
                 let mut lattice = solver.get_or_create_mut::<_, _>(argument);
@@ -139,7 +153,7 @@ impl<A: SparseForwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalys
             }
         }
 
-        forward::initialize_recursively(&self.analysis, top, solver)
+        forward::initialize_recursively(self, top, solver)
     }
 
     /// Visit a program point.
@@ -151,19 +165,23 @@ impl<A: SparseForwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalys
     fn visit(&self, point: &ProgramPoint, solver: &mut DataFlowSolver) -> Result<(), Report> {
         if !point.is_at_block_start() {
             return forward::visit_operation(
-                &self.analysis,
+                self,
                 &point.prev_operation().unwrap().borrow(),
                 solver,
             );
         }
 
-        forward::visit_block(&self.analysis, &point.block().unwrap().borrow(), solver);
+        forward::visit_block(self, &point.block().unwrap().borrow(), solver);
 
         Ok(())
     }
 }
 
 impl<A: SparseBackwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnalysis<A, Backward> {
+    fn debug_name(&self) -> &'static str {
+        self.analysis.debug_name()
+    }
+
     fn analysis_id(&self) -> core::any::TypeId {
         core::any::TypeId::of::<Self>()
     }
@@ -175,7 +193,11 @@ impl<A: SparseBackwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnaly
         solver: &mut DataFlowSolver,
         _analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        backward::initialize_recursively(&self.analysis, top, solver)
+        log::trace!(
+            target: self.analysis.debug_name(),
+            "initializing analysis for {top}",
+        );
+        backward::initialize_recursively(self, top, solver)
     }
 
     /// Visit a program point.
@@ -189,11 +211,129 @@ impl<A: SparseBackwardDataFlowAnalysis> DataFlowAnalysis for SparseDataFlowAnaly
         if point.is_at_block_start() {
             Ok(())
         } else {
-            backward::visit_operation(
-                &self.analysis,
-                &point.prev_operation().unwrap().borrow(),
-                solver,
-            )
+            backward::visit_operation(self, &point.prev_operation().unwrap().borrow(), solver)
         }
+    }
+}
+
+impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
+    for SparseDataFlowAnalysis<A, Forward>
+{
+    type Lattice = <A as SparseForwardDataFlowAnalysis>::Lattice;
+
+    fn debug_name(&self) -> &'static str {
+        <A as SparseForwardDataFlowAnalysis>::debug_name(&self.analysis)
+    }
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        operands: &[crate::EntityRef<'_, Self::Lattice>],
+        results: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        <A as SparseForwardDataFlowAnalysis>::visit_operation(
+            &self.analysis,
+            op,
+            operands,
+            results,
+            solver,
+        )
+    }
+
+    fn set_to_entry_state(&self, lattice: &mut super::AnalysisStateGuard<'_, Self::Lattice>) {
+        <A as SparseForwardDataFlowAnalysis>::set_to_entry_state(&self.analysis, lattice);
+    }
+
+    fn visit_external_call(
+        &self,
+        call: &dyn crate::CallOpInterface,
+        arguments: &[crate::EntityRef<'_, Self::Lattice>],
+        results: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as SparseForwardDataFlowAnalysis>::visit_external_call(
+            &self.analysis,
+            call,
+            arguments,
+            results,
+            solver,
+        );
+    }
+
+    fn visit_non_control_flow_arguments(
+        &self,
+        op: &Operation,
+        successor: &crate::RegionSuccessor<'_>,
+        arguments: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        first_index: usize,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as SparseForwardDataFlowAnalysis>::visit_non_control_flow_arguments(
+            &self.analysis,
+            op,
+            successor,
+            arguments,
+            first_index,
+            solver,
+        );
+    }
+}
+
+impl<A: SparseBackwardDataFlowAnalysis> SparseBackwardDataFlowAnalysis
+    for SparseDataFlowAnalysis<A, Backward>
+{
+    type Lattice = <A as SparseBackwardDataFlowAnalysis>::Lattice;
+
+    fn debug_name(&self) -> &'static str {
+        <A as SparseBackwardDataFlowAnalysis>::debug_name(&self.analysis)
+    }
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        operands: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        results: &[crate::EntityRef<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        <A as SparseBackwardDataFlowAnalysis>::visit_operation(
+            &self.analysis,
+            op,
+            operands,
+            results,
+            solver,
+        )
+    }
+
+    fn set_to_exit_state(&self, lattice: &mut super::AnalysisStateGuard<'_, Self::Lattice>) {
+        <A as SparseBackwardDataFlowAnalysis>::set_to_exit_state(&self.analysis, lattice);
+    }
+
+    fn visit_call_operand(&self, operand: &crate::OpOperandImpl, solver: &mut DataFlowSolver) {
+        <A as SparseBackwardDataFlowAnalysis>::visit_call_operand(&self.analysis, operand, solver);
+    }
+
+    fn visit_external_call(
+        &self,
+        call: &dyn crate::CallOpInterface,
+        arguments: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        results: &[crate::EntityRef<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as SparseBackwardDataFlowAnalysis>::visit_external_call(
+            &self.analysis,
+            call,
+            arguments,
+            results,
+            solver,
+        );
+    }
+
+    fn visit_branch_operand(&self, operand: &crate::OpOperandImpl, solver: &mut DataFlowSolver) {
+        <A as SparseBackwardDataFlowAnalysis>::visit_branch_operand(
+            &self.analysis,
+            operand,
+            solver,
+        );
     }
 }

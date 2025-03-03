@@ -15,7 +15,7 @@ use crate::{
     dominance::DominanceInfo,
     loops::LoopForest,
     pass::AnalysisManager,
-    BlockRef, Operation, RegionKindInterface, Report, Spanned,
+    BlockRef, EntityWithId, Operation, RegionKindInterface, Report, Spanned,
 };
 
 /// This type provides an [AnalysisStrategy] for dense data-flow analyses.
@@ -115,6 +115,11 @@ impl<A: DenseBackwardDataFlowAnalysis> AnalysisStrategy<A> for DenseDataFlowAnal
 }
 
 impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis<A, Forward> {
+    #[inline]
+    fn debug_name(&self) -> &'static str {
+        self.analysis.debug_name()
+    }
+
     fn analysis_id(&self) -> core::any::TypeId {
         core::any::TypeId::of::<Self>()
     }
@@ -127,6 +132,11 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
         solver: &mut DataFlowSolver,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
+        log::debug!(
+            target: self.analysis.debug_name(),
+            "initializing analysis for {top}",
+        );
+
         forward::process_operation(&self.analysis, top, solver)?;
 
         // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
@@ -142,34 +152,48 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
         let is_ssa_cfg = top
             .as_trait::<dyn RegionKindInterface>()
             .is_none_or(|rki| rki.has_ssa_dominance());
+        log::trace!(target: self.analysis.debug_name(), "visiting regions of op (is cfg={is_ssa_cfg})");
         if is_ssa_cfg {
             let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
-            for region in top.regions() {
+            for (region_index, region) in top.regions().iter().enumerate() {
                 // Single-block regions do not require a dominance tree (and do not have one)
                 if region.has_one_block() {
                     let block = region.entry();
+                    log::trace!(target: self.analysis.debug_name(), "initializing single-block region {region_index} from entry: {block}");
                     forward::visit_block(&self.analysis, &block, solver);
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                     for op in block.body() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 } else {
+                    let entry_block = region.entry_block_ref().unwrap();
+                    log::trace!(target: self.analysis.debug_name(), "initializing multi-block region {region_index} with entry: {entry_block}");
+                    log::trace!(target: self.analysis.debug_name(), "computing region dominance tree");
                     let domtree = dominfo.info().dominance(region.as_region_ref());
+                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest");
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG reverse post-order
+                    log::trace!(
+                        target: self.analysis.debug_name(),
+                        "visiting region control flow graph in reverse post-order",
+                    );
                     for node in domtree.reverse_postorder() {
                         let Some(block) = node.block() else {
                             continue;
                         };
+                        log::trace!(target: self.analysis.debug_name(), "analyzing {block}");
 
                         // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
                         // if applicable for this block
                         if let Some(loop_info) = loop_forest.loop_for(block) {
                             // This block can exit a loop
                             if loop_info.is_loop_exiting(block) {
+                                log::trace!(target: self.analysis.debug_name(), "{block} is a loop exit");
                                 for succ in BlockRef::children(block) {
                                     if !loop_info.contains_block(succ) {
+                                        log::trace!(target: self.analysis.debug_name(), "{block} can exit loop to {succ}");
                                         let mut guard = solver.get_or_create_mut::<LoopState, _>(
                                             CfgEdge::new(block, succ, block.span()),
                                         );
@@ -181,6 +205,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
 
                         let block = block.borrow();
                         forward::visit_block(&self.analysis, &block, solver);
+                        log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                         for op in block.body() {
                             let child_analysis_manager =
                                 analysis_manager.nest(op.as_operation_ref());
@@ -190,9 +215,11 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                 }
             }
         } else {
-            for region in top.regions() {
+            for (region_index, region) in top.regions().iter().enumerate() {
                 for block in region.body() {
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} of region {region_index}");
                     forward::visit_block(&self.analysis, &block, solver);
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                     for op in block.body() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
@@ -225,6 +252,11 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
 }
 
 impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis<A, Backward> {
+    #[inline]
+    fn debug_name(&self) -> &'static str {
+        self.analysis.debug_name()
+    }
+
     fn analysis_id(&self) -> core::any::TypeId {
         core::any::TypeId::of::<Self>()
     }
@@ -237,6 +269,11 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
         solver: &mut DataFlowSolver,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
+        log::trace!(
+            target: self.analysis.debug_name(),
+            "initializing analysis for {top}",
+        );
+
         backward::process_operation(&self.analysis, top, solver)?;
 
         // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
@@ -252,34 +289,48 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
         let is_ssa_cfg = top
             .as_trait::<dyn RegionKindInterface>()
             .is_none_or(|rki| rki.has_ssa_dominance());
+        log::trace!(target: self.analysis.debug_name(), "visiting regions of op (is cfg={is_ssa_cfg})");
         if is_ssa_cfg {
             let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
-            for region in top.regions() {
+            for (region_index, region) in top.regions().iter().enumerate() {
                 // Single-block regions do not require a dominance tree (and do not have one)
                 if region.has_one_block() {
                     let block = region.entry();
+                    log::trace!(target: self.analysis.debug_name(), "initializing single-block region {region_index} from entry: {block}");
                     backward::visit_block(&self.analysis, &block, solver);
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                     for op in block.body().iter().rev() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;
                     }
                 } else {
+                    let entry_block = region.entry_block_ref().unwrap();
+                    log::trace!(target: self.analysis.debug_name(), "initializing multi-block region {region_index} with entry: {entry_block}");
+                    log::trace!(target: self.analysis.debug_name(), "computing region dominance tree");
                     let domtree = dominfo.info().dominance(region.as_region_ref());
+                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest");
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG postorder
+                    log::trace!(
+                        target: self.analysis.debug_name(),
+                        "visiting region control flow graph in post-order",
+                    );
                     for node in domtree.postorder() {
                         let Some(block) = node.block() else {
                             continue;
                         };
+                        log::trace!(target: self.analysis.debug_name(), "analyzing {block}");
 
                         // Anchor the fact that a loop is being exited to the CfgEdge of the exit,
                         // if applicable for this block
                         if let Some(loop_info) = loop_forest.loop_for(block) {
                             // This block can exit a loop
                             if loop_info.is_loop_exiting(block) {
+                                log::trace!(target: self.analysis.debug_name(), "{block} is a loop exit");
                                 for succ in BlockRef::children(block) {
                                     if !loop_info.contains_block(succ) {
+                                        log::trace!(target: self.analysis.debug_name(), "{block} can exit loop to {succ}");
                                         let mut guard = solver.get_or_create_mut::<LoopState, _>(
                                             CfgEdge::new(block, succ, block.span()),
                                         );
@@ -291,6 +342,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
 
                         let block = block.borrow();
                         backward::visit_block(&self.analysis, &block, solver);
+                        log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                         for op in block.body().iter().rev() {
                             let child_analysis_manager =
                                 analysis_manager.nest(op.as_operation_ref());
@@ -300,9 +352,11 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                 }
             }
         } else {
-            for region in top.regions() {
+            for (region_index, region) in top.regions().iter().enumerate() {
                 for block in region.body().iter().rev() {
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} of region {region_index}");
                     backward::visit_block(&self.analysis, &block, solver);
+                    log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                     for op in block.body().iter().rev() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
                         self.initialize(&op, solver, child_analysis_manager)?;

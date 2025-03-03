@@ -39,6 +39,10 @@ pub enum CallControlFlowAction {
 /// However, if the solver exhausts its worklist, and there are still uninitialized states, the
 /// solver "nudges" the analyses by default-initializing those states.
 pub trait DataFlowAnalysis {
+    /// A friendly name for this analysis in diagnostics
+    fn debug_name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+    }
     /// The unique type identifier of the concrete analysis type.
     fn analysis_id(&self) -> core::any::TypeId;
     /// Initialize the analysis from the provided top-level operation by building an initial

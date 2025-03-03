@@ -18,9 +18,9 @@ use crate::{
     },
     pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
-    AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, Operation, OperationRef,
-    RegionBranchOpInterface, RegionBranchTerminatorOpInterface, Report, SourceSpan, Spanned,
-    Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
+    AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, EntityWithId, Operation,
+    OperationRef, RegionBranchOpInterface, RegionBranchTerminatorOpInterface, Report, SourceSpan,
+    Spanned, Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
 };
 
 /// This is a simple analysis state that represents whether the associated lattice anchor
@@ -94,9 +94,6 @@ impl AnalysisStateSubscriptionBehavior for Executable {
             analysis: current_analysis,
             point: dependent,
         });
-
-        // Handle additional subscriptions depending on anchor type
-        self.on_subscribe(current_analysis, info);
     }
 
     fn on_subscribe(
@@ -104,35 +101,45 @@ impl AnalysisStateSubscriptionBehavior for Executable {
         subscriber: NonNull<dyn DataFlowAnalysis>,
         info: &mut AnalysisStateInfo,
     ) {
-        let anchor = info.anchor();
-        if let Some(pp) = anchor.as_program_point() {
-            if pp.is_at_block_start() {
-                // Re-invoke analyses on the block itself
-                info.subscribe(AnalysisStateSubscription::AtPoint {
-                    analysis: subscriber,
-                    point: pp,
-                });
-                // Re-invoke the analysis on all operations in the block
-                let block = pp.block().unwrap();
-                for op in block.borrow().body() {
-                    let point = ProgramPoint::after(&*op);
-                    info.subscribe(AnalysisStateSubscription::AtPoint {
-                        analysis: subscriber,
-                        point,
-                    });
-                }
-            }
-        } else if let Some(edge) = anchor.as_any().downcast_ref::<CfgEdge>() {
-            // Re-invoke the analysis on the successor block
-            let point = ProgramPoint::before(edge.to());
-            info.subscribe(AnalysisStateSubscription::AtPoint {
-                analysis: subscriber,
-                point,
-            });
-        }
+        info.subscribe(AnalysisStateSubscription::OnUpdate {
+            analysis: subscriber,
+        });
     }
 
-    fn on_update(&self, _info: &mut AnalysisStateInfo, _worklist: &mut AnalysisQueue) {}
+    fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue) {
+        use crate::dataflow::solver::QueuedAnalysis;
+
+        // If there are no on-update subscribers, we have nothing to do
+        let no_update_subscriptions = info.on_update_subscribers().next().is_none();
+        if no_update_subscriptions {
+            return;
+        }
+
+        // When the executable state changes, re-enqueue any of the on-update subscribers
+        let anchor = info.anchor();
+        if let Some(point) = anchor.as_program_point() {
+            if point.is_at_block_start() {
+                // Re-invoke analyses on the block itself
+                for analysis in info.on_update_subscribers() {
+                    worklist.push_back(QueuedAnalysis { point, analysis });
+                }
+                // Re-invoke analyses on all operations in the block
+                let block = point.block().unwrap();
+                for op in block.borrow().body() {
+                    let point = ProgramPoint::after(&*op);
+                    for analysis in info.on_update_subscribers() {
+                        worklist.push_back(QueuedAnalysis { point, analysis });
+                    }
+                }
+            }
+        } else if let Some(edge) = (anchor as &dyn Any).downcast_ref::<CfgEdge>() {
+            // Re-invoke the analysis on the successor block
+            let point = ProgramPoint::before(edge.to());
+            for analysis in info.on_update_subscribers() {
+                worklist.push_back(QueuedAnalysis { point, analysis });
+            }
+        }
+    }
 }
 
 /// This analysis state represents a set of live control-flow "predecessors" of a program point
@@ -158,6 +165,37 @@ pub struct PredecessorState {
     successor_inputs: SmallMap<OperationRef, SmallVec<[ValueRef; 4]>>,
     /// Whether all predecessors are known. Optimistically assume that we know all predecessors.
     all_known: bool,
+}
+
+impl fmt::Debug for PredecessorState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PredecessorState")
+            .field_with("anchor", |f| fmt::Display::fmt(&self.anchor, f))
+            .field_with("known_predecessors", |f| {
+                let mut builder = f.debug_list();
+                for pred in self.known_predecessors.iter() {
+                    let pred = pred.borrow();
+                    builder
+                        .entry_with(|f| write!(f, "{} in {}", pred.name(), pred.parent().unwrap()));
+                }
+                builder.finish()
+            })
+            .field_with("successor_inputs", |f| {
+                let mut builder = f.debug_list();
+                for (op, inputs) in self.successor_inputs.iter() {
+                    let op = op.borrow();
+                    builder.entry_with(|f| {
+                        f.debug_map()
+                            .key_with(|f| write!(f, "{} in {}", op.name(), op.parent().unwrap()))
+                            .value(inputs)
+                            .finish()
+                    });
+                }
+                builder.finish()
+            })
+            .field("all_known", &self.all_known)
+            .finish()
+    }
 }
 
 impl PredecessorState {
@@ -200,19 +238,14 @@ impl PredecessorState {
         predecessor: OperationRef,
         inputs: impl IntoIterator<Item = ValueRef>,
     ) -> ChangeResult {
-        if self.known_predecessors.insert(predecessor) {
-            self.successor_inputs.insert(predecessor, inputs.into_iter().collect());
-            ChangeResult::Changed
-        } else {
-            let prev_inputs = self.successor_inputs.get_mut(&predecessor).unwrap();
-            let mut new_inputs = inputs.into_iter().collect::<SmallVec<[ValueRef; 4]>>();
-            if *prev_inputs == new_inputs {
-                return ChangeResult::Unchanged;
-            }
-            prev_inputs.clear();
-            prev_inputs.append(&mut new_inputs);
-            ChangeResult::Changed
+        let mut result = self.join(predecessor);
+        let prev_inputs = self.successor_inputs.get_mut(&predecessor).unwrap();
+        let inputs = inputs.into_iter().collect::<SmallVec<[_; 4]>>();
+        if prev_inputs != &inputs {
+            *prev_inputs = inputs;
+            result |= ChangeResult::Changed;
         }
+        result
     }
 }
 
@@ -268,8 +301,8 @@ impl PartialEq for CfgEdge {
 }
 impl core::hash::Hash for CfgEdge {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        core::ptr::hash(BlockRef::as_ptr(&self.from), state);
-        core::ptr::hash(BlockRef::as_ptr(&self.from), state);
+        self.from.hash(state);
+        self.to.hash(state);
     }
 }
 impl fmt::Display for CfgEdge {
@@ -280,27 +313,7 @@ impl fmt::Display for CfgEdge {
         write!(f, "{from} -> {to}")
     }
 }
-impl LatticeAnchor for CfgEdge {
-    fn as_any(&self) -> &dyn core::any::Any {
-        self as &dyn Any
-    }
-
-    fn is_value(&self) -> bool {
-        false
-    }
-
-    fn as_value(&self) -> Option<crate::ValueRef> {
-        None
-    }
-
-    fn is_valid_program_point(&self) -> bool {
-        false
-    }
-
-    fn as_program_point(&self) -> Option<ProgramPoint> {
-        None
-    }
-}
+impl LatticeAnchor for CfgEdge {}
 
 /// Dead code analysis analyzes control-flow, as understood by [RegionBranchOpInterface] and
 /// [BranchOpInterface], and the callgraph, as understood by [CallableOpInterface] and
@@ -348,6 +361,10 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         core::any::TypeId::of::<Self>()
     }
 
+    fn debug_name(&self) -> &'static str {
+        "dead-code"
+    }
+
     fn initialize(
         &self,
         top: &crate::Operation,
@@ -355,22 +372,29 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         _analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
         // Mark the top-level blocks as executable.
+        log::trace!(target: self.debug_name(), "marking all non-empty region entry blocks as executable");
         for region in top.regions() {
             if region.is_empty() {
                 continue;
             }
 
-            let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(
-                region.entry_block_ref().unwrap(),
-            ));
-            state.change(|exec| exec.mark_live());
+            let entry = ProgramPoint::at_start_of(region.entry_block_ref().unwrap());
+            let mut state = solver.get_or_create_mut::<Executable, _>(entry);
+            let change_result = state.change(|exec| exec.mark_live());
+            log::debug!(
+                target: self.debug_name(),
+                "marking region {} at {entry} as executable: {change_result}",
+                region.region_number()
+            );
         }
 
         // Mark as overdefined the predecessors of callable symbols with potentially unknown
         // predecessors.
         self.initialize_callable_symbols(top, solver);
 
-        self.initialize_recursively(top, solver)
+        self.initialize_recursively(top, solver)?;
+
+        Ok(())
     }
 
     fn visit(
@@ -379,11 +403,14 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
         solver: &mut crate::dataflow::DataFlowSolver,
     ) -> Result<(), Report> {
         if point.is_at_block_start() {
+            log::debug!(target: self.debug_name(), "not visiting {point} as it is at block start");
             return Ok(());
         }
 
         let operation = point.prev_operation().unwrap();
         let op = operation.borrow();
+
+        log::debug!(target: self.debug_name(), "analyzing op preceding program point {point}: {op}");
 
         // If the parent block is not executable, there is nothing to do.
         if operation.parent().is_none_or(|block| {
@@ -391,6 +418,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
                 .get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block))
                 .is_live()
         }) {
+            log::debug!(target: self.debug_name(), "skipping analysis at {point} as parent block is dead/non-executable");
             return Ok(());
         }
 
@@ -404,25 +432,42 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
             // Check if we can reason about the region control-flow.
             if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
                 self.visit_region_branch_operation(branch, solver);
-            } else if let Some(callable) = op.as_trait::<dyn CallableOpInterface>() {
+            } else if op.implements::<dyn CallableOpInterface>() {
+                log::debug!(
+                    target: self.debug_name(),
+                    "{} is a callable operation: resolving call site predecessors..",
+                    op.name()
+                );
                 let callsites = solver.require::<PredecessorState, _>(
-                    ProgramPoint::after(callable.as_operation()),
+                    ProgramPoint::after(&*op),
                     ProgramPoint::after(&*op),
                 );
+                log::trace!(target: self.debug_name(), "found {} call sites", callsites.known_predecessors().len());
 
                 // If the callsites could not be resolved or are known to be non-empty, mark the
                 // callable as executable.
                 if !callsites.all_predecessors_known() || !callsites.known_predecessors().is_empty()
                 {
-                    self.mark_entry_blocks_live(callable.as_operation(), solver);
+                    log::trace!(
+                        target: self.debug_name(),
+                        "not all call site predecessors are known - marking callable entry blocks \
+                         as live"
+                    );
+                    self.mark_entry_blocks_live(&op, solver);
                 }
             } else {
                 // Otherwise, conservatively mark all entry blocks as executable.
+                log::debug!(
+                    target: self.debug_name(),
+                    "op has regions, but is not a call or region control flow op: conservatively \
+                     marking entry blocks live"
+                );
                 self.mark_entry_blocks_live(&op, solver);
             }
         }
 
         if is_region_or_callable_return(&op) {
+            log::debug!(target: self.debug_name(), "op is a return-like operation from a region or callable");
             let parent_op = op.parent_op().unwrap();
             let parent_op = parent_op.borrow();
             if let Some(branch) = parent_op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -436,20 +481,29 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
 
         // Visit the successors.
         if op.has_successors() {
+            log::debug!(target: self.debug_name(), "visiting successors of {}", op.name());
             // Check if we can reason about the control-flow.
             //
             // Otherwise, conservatively mark all successors as exectuable.
             if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
+                log::trace!(
+                    target: self.debug_name(), "we can reason about op's successors as it implements BranchOpInterface"
+                );
                 self.visit_branch_operation(branch, solver);
             } else {
+                log::trace!(
+                    target: self.debug_name(), "we can't reason about op's successors, so conservatively marking them live"
+                );
                 for successor in op.successors().all() {
-                    let succ = successor.block.borrow().successor();
+                    let succ = successor.successor();
                     let successor_block = succ.borrow();
                     let op_block = operation.parent().unwrap();
                     self.mark_edge_live(&op_block.borrow(), &successor_block, solver);
                 }
             }
         }
+
+        log::debug!(target: self.debug_name(), "finished analysis for {}", op.name());
 
         Ok(())
     }
@@ -461,24 +515,27 @@ impl DeadCodeAnalysis {
     /// Find and mark callable symbols with potentially unknown callsites as having overdefined
     /// predecessors. `top` is the top-level operation that the analysis is operating on.
     fn initialize_callable_symbols(&self, top: &Operation, solver: &mut DataFlowSolver) {
+        log::trace!(target: self.debug_name(), "initializing callable symbols in '{}'", top.name());
+
         self.analysis_scope.set(Some(top.as_operation_ref()));
 
         let walk_fn = |sym_table: &dyn SymbolTable, all_uses_visible: bool| {
             let symbol_table_op = sym_table.as_symbol_table_operation();
+            log::trace!(target: self.debug_name(), "analyzing symbol table '{}'", symbol_table_op.name());
             let symbol_table_region = symbol_table_op.region(0);
             let symbol_table_block = symbol_table_region.entry();
 
             let mut found_callable_symbol = false;
-            for callable_op in symbol_table_block
-                .body()
-                .iter()
-                .filter(|op| op.implements::<dyn CallableOpInterface>())
-            {
-                let callable = callable_op.as_trait::<dyn CallableOpInterface>().unwrap();
+            for candidate in symbol_table_block.body().iter() {
+                let Some(callable) = candidate.as_trait::<dyn CallableOpInterface>() else {
+                    continue;
+                };
+
                 // We're only interested in callables with definitions, not declarations
                 if callable.get_callable_region().is_none() {
                     continue;
                 }
+
                 // We're also only interested in callable symbols
                 let Some(symbol) = callable.as_operation().as_trait::<dyn Symbol>() else {
                     continue;
@@ -488,7 +545,12 @@ impl DeadCodeAnalysis {
                 // example the address of a function is taken, but not called), then we have
                 // potentially unknown callsites.
                 let visibility = symbol.visibility();
+                log::trace!(
+                    target: self.debug_name(), "found callable symbol '{}' with visibility {visibility}",
+                    symbol.name()
+                );
                 if visibility.is_public() || (!all_uses_visible && visibility.is_internal()) {
+                    log::trace!(target: self.debug_name(), "marking symbol as having unknown predecessors");
                     let mut state = solver.get_or_create_mut::<PredecessorState, _>(
                         ProgramPoint::after(callable.as_operation()),
                     );
@@ -499,10 +561,12 @@ impl DeadCodeAnalysis {
 
             // Exit early if no eligible callable symbols were found in the table.
             if !found_callable_symbol {
+                log::trace!(target: self.debug_name(), "no callable symbols found in this symbol table");
                 return;
             }
 
             // Walk the symbol table to check for non-call uses of symbols.
+            log::trace!(target: self.debug_name(), "looking for non-call uses of symbols in the symbol table region");
             let uses = Operation::all_symbol_uses_in_region(&symbol_table_region);
             let top_symbol_table = SymbolManager::from(top);
             for symbol_use in uses {
@@ -514,6 +578,10 @@ impl DeadCodeAnalysis {
                 // If a callable symbol has a non-call use, then we can't be guaranteed to know all
                 // callsites.
                 let symbol_attr = symbol_use.symbol();
+                log::trace!(
+                    target: self.debug_name(), "found symbol use whose user does not implement CallOpInterface - marking \
+                     symbol as having unknown predecessors"
+                );
                 if let Some(symbol) = top_symbol_table.lookup_symbol_ref(&symbol_attr.path) {
                     let mut state = solver
                         .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(symbol));
@@ -542,6 +610,11 @@ impl DeadCodeAnalysis {
             if let Some(block) = op.parent() {
                 let mut exec =
                     solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block));
+                log::trace!(
+                    target: self.debug_name(), "subscribing {} to changes in liveness of {block} (currently={})",
+                    self.debug_name(),
+                    exec.is_live()
+                );
                 AnalysisStateGuard::subscribe(&mut exec, self);
             }
 
@@ -551,10 +624,18 @@ impl DeadCodeAnalysis {
         }
 
         // Recurse on nested operations.
-        for region in op.regions() {
-            for block in region.body() {
-                for op in block.body() {
-                    self.initialize_recursively(&op, solver)?;
+        let regions = op.regions();
+        if !regions.is_empty() {
+            log::trace!(target: self.debug_name(), "visiting regions of '{}'", op.name());
+            for region in regions {
+                if region.is_empty() {
+                    continue;
+                }
+                for block in region.body() {
+                    log::trace!(target: self.debug_name(), "visiting body of {} top-down", block.id());
+                    for op in block.body() {
+                        self.initialize_recursively(&op, solver)?;
+                    }
                 }
             }
         }
@@ -565,7 +646,8 @@ impl DeadCodeAnalysis {
     /// Mark the edge between `from` and `to` as executable.
     fn mark_edge_live(&self, from: &Block, to: &Block, solver: &mut DataFlowSolver) {
         let mut state = solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(to));
-        state.change(|exec| exec.mark_live());
+        let change_result = state.change(|exec| exec.mark_live());
+        log::debug!(target: self.debug_name(), "marking control flow edge successor {} live: {change_result}", to.id());
 
         // Ensure change notifications for the block are flushed first
         drop(state);
@@ -575,7 +657,12 @@ impl DeadCodeAnalysis {
             to.as_block_ref(),
             from.span(),
         ));
-        edge_state.change(|exec| exec.mark_live());
+        let change_result = edge_state.change(|exec| exec.mark_live());
+        log::debug!(
+            target: self.debug_name(), "marking control flow edge live: {} -> {}: {change_result}",
+            from.id(),
+            to.id()
+        );
     }
 
     /// Mark the entry blocks of the operation as executable.
@@ -584,13 +671,16 @@ impl DeadCodeAnalysis {
             if let Some(entry) = region.entry_block_ref() {
                 let mut state =
                     solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(entry));
-                state.change(|exec| exec.mark_live());
+                let change_result = state.change(|exec| exec.mark_live());
+                log::trace!(target: self.debug_name(), "marking entry block {entry} live: {change_result}");
             }
         }
     }
 
     /// Visit the given call operation and compute any necessary lattice state.
     fn visit_call_operation(&self, call: &dyn CallOpInterface, solver: &mut DataFlowSolver) {
+        log::debug!(target: self.debug_name(), "visiting call operation: {}", call.as_operation().name());
+
         // TODO: Update this when symbol table changes are complete, e.g. call.resolve_in_symbol_table(&self.symbol_table_collection)
         let callable = call.resolve();
 
@@ -612,7 +702,11 @@ impl DeadCodeAnalysis {
         if callable.is_none() {
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
-            predecessors.set_has_unknown_predecessors();
+            let change_result = predecessors.set_has_unknown_predecessors();
+            log::debug!(
+                target: self.debug_name(), "marking call-site return at {} as having unknown predecessors: {change_result}",
+                call.as_operation()
+            );
             return;
         }
 
@@ -629,12 +723,21 @@ impl DeadCodeAnalysis {
             let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_symbol_operation()),
             );
-            callsites.change(|ps| ps.join(call.as_operation_ref()));
+            let change_result = callsites.change(|ps| ps.join(call.as_operation_ref()));
+            log::debug!(
+                target: self.debug_name(), "adding call-site {} to predecessor state for its callee: {change_result}",
+                call.as_operation()
+            );
         } else {
             // Mark this call op's predecessors as overdefined
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
-            predecessors.change(|ps| ps.set_has_unknown_predecessors());
+            let change_result = predecessors.change(|ps| ps.set_has_unknown_predecessors());
+            log::debug!(
+                target: self.debug_name(), "marking call-site return for external callable at {} as having unknown \
+                 predecessors: {change_result}",
+                call.as_operation()
+            );
         }
     }
 
@@ -643,6 +746,7 @@ impl DeadCodeAnalysis {
     fn visit_branch_operation(&self, branch: &dyn BranchOpInterface, solver: &mut DataFlowSolver) {
         // Try to deduce a single successor for the branch.
         let Some(operands) = self.get_operand_values(branch.as_operation(), solver) else {
+            log::trace!(target: self.debug_name(), "unable to prove liveness of successor blocks");
             return;
         };
 
@@ -671,11 +775,15 @@ impl DeadCodeAnalysis {
         branch: &dyn RegionBranchOpInterface,
         solver: &mut DataFlowSolver,
     ) {
+        log::trace!(target: self.debug_name(), "visiting region branch operation: {}", branch.as_operation().name());
+
         // Try to deduce which regions are executable.
         let Some(operands) = self.get_operand_values(branch.as_operation(), solver) else {
+            log::debug!(target: self.debug_name(), "unable to prove liveness of entry successor regions");
             return;
         };
 
+        log::trace!(target: self.debug_name(), "processing entry successor regions");
         for successor in branch.get_entry_successor_regions(&operands) {
             // The successor can be either an entry block or the parent operation.
             let point = if let Some(succ) = successor.successor() {
@@ -685,12 +793,17 @@ impl DeadCodeAnalysis {
             };
             // Mark the entry block as executable.
             let mut state = solver.get_or_create_mut::<Executable, _>(point);
-            state.change(|exec| exec.mark_live());
+            let change_result = state.change(|exec| exec.mark_live());
+            log::debug!(target: self.debug_name(), "marking region successor {point} live: {change_result}");
             // Add the parent op as a predecessor
             let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
-            predecessors.change(|ps| {
+            let change_result = predecessors.change(|ps| {
                 ps.join_with_inputs(branch.as_operation_ref(), successor.successor_inputs().iter())
             });
+            log::debug!(
+                target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}",
+                branch.as_operation().name()
+            );
         }
     }
 
@@ -703,7 +816,9 @@ impl DeadCodeAnalysis {
         branch: &dyn RegionBranchOpInterface,
         solver: &mut DataFlowSolver,
     ) {
+        log::debug!(target: self.debug_name(), "visiting region terminator: {op}");
         let Some(operands) = self.get_operand_values(op, solver) else {
+            log::debug!(target: self.debug_name(), "unable to prove liveness of region terminator successors");
             return;
         };
 
@@ -720,21 +835,25 @@ impl DeadCodeAnalysis {
         // Mark successor region entry blocks as executable and add this op to the list of
         // predecessors.
         for successor in successors {
-            let mut predecessors = if let Some(region) = successor.successor() {
+            let (mut predecessors, point) = if let Some(region) = successor.successor() {
                 let entry = region.borrow().entry_block_ref().unwrap();
                 let point = ProgramPoint::at_start_of(entry);
                 let mut state = solver.get_or_create_mut::<Executable, _>(point);
-                state.change(|exec| exec.mark_live());
-                solver.get_or_create_mut::<PredecessorState, _>(point)
+                let change_result = state.change(|exec| exec.mark_live());
+                log::debug!(
+                    target: self.debug_name(), "marking region successor {} entry {point} as live: {change_result}",
+                    successor.branch_point()
+                );
+                (solver.get_or_create_mut::<PredecessorState, _>(point), point)
             } else {
                 // Add this terminator as a predecessor to the parent op.
-                solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(
-                    branch.as_operation(),
-                ))
+                let point = ProgramPoint::after(branch.as_operation());
+                (solver.get_or_create_mut::<PredecessorState, _>(point), point)
             };
-            predecessors.change(|ps| {
+            let change_result = predecessors.change(|ps| {
                 ps.join_with_inputs(op.as_operation_ref(), successor.successor_inputs().iter())
             });
+            log::debug!(target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}", op.name());
         }
     }
 
@@ -746,6 +865,7 @@ impl DeadCodeAnalysis {
         callable: &dyn CallableOpInterface,
         solver: &mut DataFlowSolver,
     ) {
+        log::debug!(target: self.debug_name(), "visiting callable op terminator: {op}");
         // Add as predecessors to all callsites this return op.
         let callsites = solver.require::<PredecessorState, _>(
             ProgramPoint::after(callable.as_operation()),
@@ -755,14 +875,16 @@ impl DeadCodeAnalysis {
         for predecessor in callsites.known_predecessors().iter() {
             let predecessor = predecessor.borrow();
             assert!(predecessor.implements::<dyn CallOpInterface>());
-            let mut predecessors =
-                solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(&*predecessor));
+            let point = ProgramPoint::after(&*predecessor);
+            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
             if can_resolve {
-                predecessors.change(|ps| ps.join(op.as_operation_ref()));
+                let change_result = predecessors.change(|ps| ps.join(op.as_operation_ref()));
+                log::debug!(target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}", op.name())
             } else {
                 // If the terminator is not a return-like, then conservatively assume we can't
                 // resolve the predecessor.
-                predecessors.change(|ps| ps.set_has_unknown_predecessors());
+                let change_result = predecessors.change(|ps| ps.set_has_unknown_predecessors());
+                log::debug!(target: self.debug_name(), "marking {point} as having unknown predecessors: {change_result}")
             }
         }
     }
@@ -777,6 +899,10 @@ impl DeadCodeAnalysis {
     ) -> Option<MaybeConstOperands> {
         get_operand_values(op, |value: &ValueRef| {
             let mut lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(*value);
+            log::trace!(
+                target: self.debug_name(), "subscribing to constant propagation changes of operand {value} (current={})",
+                lattice.value()
+            );
             AnalysisStateGuard::subscribe(&mut lattice, self);
             lattice
         })
@@ -796,23 +922,16 @@ impl DeadCodeAnalysis {
 /// Returns true if `op` is a returning terminator in a inter-region control flow op, or of a
 /// callable region (i.e. return from a function).
 fn is_region_or_callable_return(op: &Operation) -> bool {
-    let Some(block) = op.parent() else {
-        return false;
-    };
-    if op.has_successors() {
-        return false;
-    }
-    let block = block.borrow();
-    let is_block_terminator =
-        block.terminator().is_some_and(|terminator| terminator == op.as_operation_ref());
-    if !is_block_terminator {
-        return false;
-    }
-    block.parent_op().is_some_and(|p| {
-        let parent = p.borrow();
-        parent.implements::<dyn RegionBranchOpInterface>()
-            || parent.implements::<dyn CallableOpInterface>()
-    })
+    let block = op.parent();
+    !op.has_successors()
+        && block.is_some_and(|block| {
+            let is_region_or_callable_op = block.grandparent().is_some_and(|parent_op| {
+                let parent_op = parent_op.borrow();
+                parent_op.implements::<dyn RegionBranchOpInterface>()
+                    || parent_op.implements::<dyn CallableOpInterface>()
+            });
+            is_region_or_callable_op && block.borrow().terminator() == Some(op.as_operation_ref())
+        })
 }
 
 /// Get the constant values of the operands of an operation.

@@ -6,8 +6,8 @@ use smallvec::SmallVec;
 use crate::{
     dataflow::{
         sparse::{self, SparseDataFlowAnalysis},
-        AnalysisStateGuard, BuildableDataFlowAnalysis, DataFlowSolver, Forward, Lattice,
-        LatticeLike, SparseForwardDataFlowAnalysis, SparseLattice,
+        AnalysisState, AnalysisStateGuard, BuildableDataFlowAnalysis, DataFlowSolver, Forward,
+        Lattice, LatticeLike, SparseForwardDataFlowAnalysis, SparseLattice,
     },
     traits::Foldable,
     AttributeValue, Dialect, EntityRef, OpFoldResult, Operation, Report,
@@ -17,35 +17,31 @@ use crate::{
 #[derive(Default)]
 pub struct ConstantValue {
     /// The constant value
-    constant: Option<Box<dyn AttributeValue>>,
+    constant: Option<Option<Box<dyn AttributeValue>>>,
     /// The dialect that can be used to materialize this constant
     dialect: Option<Rc<dyn Dialect>>,
-    /// A flag that indicates whether or not this value was explicitly initialized
-    initialized: bool,
+}
+impl fmt::Display for ConstantValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.constant.as_ref() {
+            None => f.write_str("uninitialized"),
+            Some(None) => f.write_str("unknown"),
+            Some(Some(value)) => fmt::Debug::fmt(value, f),
+        }
+    }
 }
 impl fmt::Debug for ConstantValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ConstantValue")
-            .field("value", &self.constant)
-            .field_with("dialect", |f| {
-                if let Some(dialect) = self.dialect.as_deref() {
-                    write!(f, "Some({})", dialect.name())
-                } else {
-                    f.write_str("None")
-                }
-            })
-            .field("initialized", &self.initialized)
-            .finish()
+        fmt::Display::fmt(self, f)
     }
 }
 
 impl Clone for ConstantValue {
     fn clone(&self) -> Self {
-        let constant = self.constant.as_deref().map(|c| c.clone_value());
+        let constant = self.constant.as_ref().map(|c| c.as_deref().map(|c| c.clone_value()));
         Self {
             constant,
             dialect: self.dialect.clone(),
-            initialized: self.initialized,
         }
     }
 }
@@ -54,15 +50,14 @@ impl Clone for ConstantValue {
 impl ConstantValue {
     pub fn new(constant: Box<dyn AttributeValue>, dialect: Rc<dyn Dialect>) -> Self {
         Self {
-            constant: Some(constant),
+            constant: Some(Some(constant)),
             dialect: Some(dialect),
-            initialized: true,
         }
     }
 
     pub fn unknown() -> Self {
         Self {
-            initialized: true,
+            constant: Some(None),
             ..Default::default()
         }
     }
@@ -74,12 +69,15 @@ impl ConstantValue {
 
     #[inline]
     pub const fn is_uninitialized(&self) -> bool {
-        !self.initialized
+        self.constant.is_none()
     }
 
     pub fn constant_value(&self) -> Option<Box<dyn AttributeValue>> {
-        assert!(self.initialized, "expected constant value to be initialized");
-        self.constant.as_deref().map(|c| c.clone_value())
+        self.constant
+            .as_ref()
+            .expect("expected constant value to be initialized")
+            .as_deref()
+            .map(|c| c.clone_value())
     }
 
     pub fn constant_dialect(&self) -> Option<Rc<dyn Dialect>> {
@@ -90,36 +88,38 @@ impl ConstantValue {
 impl Eq for ConstantValue {}
 impl PartialEq for ConstantValue {
     fn eq(&self, other: &Self) -> bool {
-        if !self.initialized && !other.initialized {
-            return true;
-        } else if self.initialized != other.initialized {
-            return false;
-        }
-
         self.constant == other.constant
     }
 }
 
 impl LatticeLike for ConstantValue {
-    /// The join of two constant values is:
-    ///
-    /// * `unknown` if they represent different values
-    /// * The identity function if they represent the same value
-    /// * The more defined value if one of the two is uninitialized
     fn join(&self, rhs: &Self) -> Self {
-        if self.is_uninitialized() {
-            return rhs.clone();
+        // The join of two constant values is:
+        //
+        // * `unknown` if they represent different values
+        // * The identity function if they represent the same value
+        // * The more defined value if one of the two is uninitialized
+        match (self.is_uninitialized(), rhs.is_uninitialized()) {
+            (false, false) => {
+                if self == rhs {
+                    self.clone()
+                } else {
+                    Self::unknown()
+                }
+            }
+            (true, true) | (false, true) => self.clone(),
+            (true, false) => rhs.clone(),
         }
-
-        if rhs.is_uninitialized() || self == rhs {
-            return self.clone();
-        }
-
-        Self::unknown()
     }
 
-    fn meet(&self, _other: &Self) -> Self {
-        self.clone()
+    fn meet(&self, rhs: &Self) -> Self {
+        if self.is_uninitialized() || rhs.is_uninitialized() {
+            Self::uninitialized()
+        } else if self == rhs {
+            self.clone()
+        } else {
+            Self::unknown()
+        }
     }
 }
 
@@ -144,6 +144,10 @@ impl BuildableDataFlowAnalysis for SparseConstantPropagation {
 impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
     type Lattice = Lattice<ConstantValue>;
 
+    fn debug_name(&self) -> &'static str {
+        "sparse-constant-propagation"
+    }
+
     fn visit_operation(
         &self,
         op: &Operation,
@@ -151,19 +155,25 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
         results: &mut [AnalysisStateGuard<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
-        log::debug!("sparse-constant-propagation: visiting operation '{}'", op.name());
+        log::debug!("visiting operation {op}");
 
         // Don't try to simulate the results of a region operation as we can't guarantee that
         // folding will be out-of-place. We don't allow in-place folds as the desire here is for
         // simulated execution, and not general folding.
         if op.has_regions() {
+            log::trace!("op has regions so conservatively setting results to entry state");
             sparse::set_all_to_entry_states(self, results);
             return Ok(());
         }
 
         let mut constant_operands =
             SmallVec::<[Option<Box<dyn AttributeValue>>; 8]>::with_capacity(op.num_operands());
-        for operand_lattice in operands.iter() {
+        for (index, operand_lattice) in operands.iter().enumerate() {
+            log::trace!(
+                "operand lattice for {} is {}",
+                op.operands()[index].borrow().as_value_ref(),
+                operand_lattice.value()
+            );
             if operand_lattice.value().is_uninitialized() {
                 return Ok(());
             }
@@ -189,16 +199,34 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
             // Merge in the result of the fold, either a constant or a value.
             match fold_result {
                 OpFoldResult::Attribute(value) => {
+                    let new_lattice = ConstantValue::new(value, op.dialect());
                     log::trace!(
-                        "folded to constant: {}",
-                        value.print(&crate::OpPrintingFlags::default(), op.context())
+                        "setting lattice for {} to {new_lattice} from {}",
+                        lattice.anchor(),
+                        lattice.value()
                     );
-                    lattice.join(&ConstantValue::new(value, op.dialect()));
+                    let change_result = lattice.join(&new_lattice);
+                    log::debug!(
+                        "setting constant value for {} to {new_lattice}: {change_result} as {}",
+                        lattice.anchor(),
+                        lattice.value()
+                    );
                 }
                 OpFoldResult::Value(value) => {
-                    log::trace!("folded to value: {value}");
-                    lattice
-                        .join(solver.get_or_create_mut::<Lattice<ConstantValue>, _>(value).value());
+                    let new_lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(value);
+                    log::trace!(
+                        "setting lattice for {} to {} from {}",
+                        lattice.anchor(),
+                        new_lattice.value(),
+                        lattice.value()
+                    );
+                    let change_result = lattice.join(new_lattice.value());
+                    log::debug!(
+                        "setting constant value for {} to {}: {change_result} as {}",
+                        lattice.anchor(),
+                        new_lattice.value(),
+                        lattice.value()
+                    );
                 }
             }
         }
@@ -207,6 +235,13 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
     }
 
     fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>) {
-        lattice.join(&ConstantValue::unknown());
+        log::trace!("setting lattice to entry state from {}", lattice.value());
+        let entry_state = ConstantValue::unknown();
+        let change_result = lattice.join(&entry_state);
+        log::debug!(
+            "setting constant value for {} to {entry_state}: {change_result} as {}",
+            lattice.anchor(),
+            lattice.value()
+        );
     }
 }
