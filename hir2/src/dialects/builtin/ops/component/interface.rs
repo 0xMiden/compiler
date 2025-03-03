@@ -40,24 +40,39 @@ impl ComponentId {
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
         use midenc_session::{LibraryNamespace, LibraryPath};
 
-        let ns = format!("{}:{}", &self.namespace, &self.name);
+        let ns = format!("{}:{}@{}", &self.namespace, &self.name, &self.version);
         let namespace = LibraryNamespace::User(ns.into_boxed_str().into());
-        // TODO(pauls): Need to add the version component to LibraryPath
         LibraryPath::new_from_components(namespace, [])
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum InvalidComponentIdError {
+    #[error("invalid component id: missing namespace identifier")]
     MissingNamespace,
+    #[error("invalid component id: missing component name")]
     MissingName,
+    #[error("invalid component version: {0}")]
+    InvalidVersion(#[from] crate::version::semver::Error),
 }
 
 impl core::str::FromStr for ComponentId {
     type Err = InvalidComponentIdError;
 
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        todo!()
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (version, rest) = match s.rsplit_once('@') {
+            None => (Version::new(1, 0, 0), s),
+            Some((rest, version)) => (version.parse::<Version>()?, rest),
+        };
+        let (ns, name) = match rest.split_once(':') {
+            Some((ns, name)) => (SymbolName::intern(ns), SymbolName::intern(name)),
+            None => return Err(InvalidComponentIdError::MissingNamespace),
+        };
+        Ok(Self {
+            namespace: ns,
+            name,
+            version,
+        })
     }
 }
 

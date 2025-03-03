@@ -1,6 +1,7 @@
 use crate::{
     dialects::builtin::{
-        ComponentRef, Module, ModuleRef, PrimComponentBuilder, PrimModuleBuilder, WorldRef,
+        ComponentId, ComponentRef, Module, ModuleRef, PrimComponentBuilder, PrimModuleBuilder,
+        WorldRef,
     },
     version::Version,
     Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolTable,
@@ -38,7 +39,22 @@ impl WorldBuilder {
         ver: Version,
     ) -> Result<ComponentRef, Report> {
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
-        builder(ns, name, ver)
+        let component_ref = builder(ns, name, ver.clone())?;
+        let is_new = self
+            .world
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(component_ref, crate::ProgramPoint::Invalid);
+        assert!(
+            is_new,
+            "component {} already exists in world",
+            ComponentId {
+                namespace: ns.name,
+                name: name.name,
+                version: ver
+            }
+        );
+        Ok(component_ref)
     }
 
     /// Declare a new world-level module `name`

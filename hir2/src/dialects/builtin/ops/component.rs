@@ -158,12 +158,23 @@ impl Symbol for Component {
     }
 
     fn name(&self) -> SymbolName {
-        Component::name(self).as_symbol()
+        let id = ComponentId {
+            namespace: self.namespace().as_symbol(),
+            name: Component::name(self).as_symbol(),
+            version: self.version().clone(),
+        };
+        SymbolName::intern(id)
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        let ComponentId {
+            name,
+            namespace,
+            version,
+        } = name.as_str().parse::<ComponentId>().expect("invalid component identifier");
+        self.name_mut().name = name;
+        self.namespace_mut().name = namespace;
+        *self.version_mut() = version;
     }
 
     fn visibility(&self) -> Visibility {
