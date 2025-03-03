@@ -446,18 +446,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
-name = "bitcode"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee1bce7608560cd4bf0296a4262d0dbf13e6bcec5ff2105724c8ab88cc7fc784"
-dependencies = [
- "arrayvec",
- "bytemuck",
- "glam",
- "serde",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -562,12 +550,6 @@ name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
-
-[[package]]
-name = "bytemuck"
-version = "1.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94bbb0ad554ad961ddc5da507a12a29b14e4ae5bda06b19f575a3e6079d2e2ae"
 
 [[package]]
 name = "byteorder"
@@ -1066,15 +1048,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "608697df725056feaccfa42cffdaeeec3fccc4ffc38358ecd19b243e716a78e0"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "cranelift-bforest"
-version = "0.108.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29daf137addc15da6bab6eae2c4a11e274b1d270bf2759508e62f6145e863ef6"
-dependencies = [
- "cranelift-entity",
 ]
 
 [[package]]
@@ -2112,12 +2085,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glam"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c28091a37a5d09b555cb6628fd954da299b536433834f5b8e59eba78e0cbbf8a"
-
-[[package]]
 name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2741,9 +2708,6 @@ name = "lalrpop-util"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507460a910eb7b32ee961886ff48539633b788a36b65692b95f225b844c82553"
-dependencies = [
- "regex-automata 0.4.7",
-]
 
 [[package]]
 name = "lazy_static"
@@ -3142,7 +3106,6 @@ dependencies = [
  "midenc-compile",
  "midenc-debug",
  "midenc-frontend-wasm2",
- "midenc-hir-transform",
  "midenc-hir2",
  "midenc-session",
  "proptest",
@@ -3261,36 +3224,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-codegen-masm"
-version = "0.0.7"
-dependencies = [
- "anyhow",
- "bitcode",
- "cranelift-entity",
- "env_logger 0.11.5",
- "hashbrown 0.14.5",
- "intrusive-collections",
- "inventory",
- "log",
- "miden-assembly",
- "miden-core",
- "miden-mast-package",
- "miden-processor",
- "miden-stdlib",
- "miden-thiserror",
- "midenc-hir",
- "midenc-hir-analysis",
- "midenc-hir-transform",
- "midenc-session",
- "paste",
- "petgraph",
- "proptest",
- "serde",
- "serde_bytes",
- "smallvec",
-]
-
-[[package]]
 name = "midenc-codegen-masm2"
 version = "0.0.7"
 dependencies = [
@@ -3387,29 +3320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-frontend-wasm"
-version = "0.0.7"
-dependencies = [
- "addr2line",
- "anyhow",
- "derive_more",
- "expect-test",
- "gimli",
- "hashbrown 0.14.5",
- "indexmap 2.7.1",
- "log",
- "miden-core",
- "miden-thiserror",
- "midenc-hir",
- "midenc-hir-type",
- "midenc-session",
- "rustc-hash",
- "smallvec",
- "wasmparser 0.214.0",
- "wat",
-]
-
-[[package]]
 name = "midenc-frontend-wasm2"
 version = "0.0.7"
 dependencies = [
@@ -3431,60 +3341,6 @@ dependencies = [
  "smallvec",
  "wasmparser 0.214.0",
  "wat",
-]
-
-[[package]]
-name = "midenc-hir"
-version = "0.0.7"
-dependencies = [
- "anyhow",
- "cranelift-entity",
- "derive_more",
- "either",
- "hashbrown 0.14.5",
- "indexmap 2.7.1",
- "intrusive-collections",
- "inventory",
- "lalrpop",
- "lalrpop-util",
- "log",
- "miden-assembly",
- "miden-core",
- "miden-thiserror",
- "midenc-hir-macros",
- "midenc-hir-symbol",
- "midenc-hir-type",
- "midenc-session",
- "num-bigint",
- "num-traits",
- "paste",
- "petgraph",
- "pretty_assertions",
- "rustc-demangle",
- "rustc-hash",
- "serde",
- "serde_bytes",
- "serde_repr",
- "smallvec",
- "typed-arena",
- "unicode-width 0.1.14",
-]
-
-[[package]]
-name = "midenc-hir-analysis"
-version = "0.0.7"
-dependencies = [
- "anyhow",
- "cranelift-bforest",
- "cranelift-entity",
- "hashbrown 0.14.5",
- "intrusive-collections",
- "inventory",
- "miden-thiserror",
- "midenc-hir",
- "midenc-session",
- "pretty_assertions",
- "smallvec",
 ]
 
 [[package]]
@@ -3511,20 +3367,6 @@ dependencies = [
  "rustc-hash",
  "serde",
  "toml",
-]
-
-[[package]]
-name = "midenc-hir-transform"
-version = "0.0.7"
-dependencies = [
- "anyhow",
- "inventory",
- "log",
- "midenc-hir",
- "midenc-hir-analysis",
- "midenc-session",
- "pretty_assertions",
- "smallvec",
 ]
 
 [[package]]
@@ -3562,7 +3404,6 @@ dependencies = [
  "rustc-hash",
  "semver 1.0.23",
  "serde",
- "serde_bytes",
  "serde_repr",
  "smallvec",
 ]
@@ -5131,15 +4972,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float",
- "serde",
-]
-
-[[package]]
-name = "serde_bytes"
-version = "0.11.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "387cc504cb06bb40a96c8e04e951fe01854cf6bc921053c954e4a606d9675c6a"
-dependencies = [
  "serde",
 ]
 

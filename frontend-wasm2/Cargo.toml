@@ -20,7 +20,7 @@ gimli = { version = "0.31", default-features = false, features = [
     'read',
     'std',
 ] }
-indexmap.workspace = true
+indexmap = "2.7"
 log.workspace = true
 hashbrown.workspace = true
 miden-core.workspace = true

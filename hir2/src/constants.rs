@@ -67,8 +67,7 @@ impl crate::AttrPrinter for ConstantId {
 ///
 /// The data is expected to be in little-endian order.
 #[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ConstantData(#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))] Vec<u8>);
+pub struct ConstantData(Vec<u8>);
 impl ConstantData {
     /// Return the number of bytes in the constant.
     pub fn len(&self) -> usize {
