@@ -15,6 +15,16 @@ pub enum RegionBranchPoint {
     /// A branch from the given region, within a parent `RegionBranchOpInterface` op
     Child(RegionRef),
 }
+impl fmt::Display for RegionBranchPoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Parent => f.write_str("parent"),
+            Self::Child(ref region) => {
+                write!(f, "child({})", region.borrow().region_number())
+            }
+        }
+    }
+}
 impl fmt::Debug for RegionBranchPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

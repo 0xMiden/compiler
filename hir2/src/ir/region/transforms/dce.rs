@@ -193,15 +193,19 @@ impl Region {
         regions: &[RegionRef],
         rewriter: &mut dyn Rewriter,
     ) -> Result<(), RegionTransformFailed> {
+        log::debug!("starting region dead code elimination");
         let mut live_map = LiveMap::default();
         loop {
             live_map.mark_unchanged();
+
+            log::trace!("propagating region liveness");
 
             for region in regions {
                 live_map.propagate_region_liveness(&region.borrow());
             }
 
             if !live_map.has_changed() {
+                log::trace!("liveness propagation has reached fixpoint");
                 break;
             }
         }
@@ -220,14 +224,18 @@ impl Region {
         let mut reachable = SmallSet::<_, 8>::default();
         let mut worklist = VecDeque::from_iter(regions.iter().cloned());
         while let Some(mut region) = worklist.pop_front() {
+            log::debug!("erasing unreachable blocks in region");
             let mut current_region = region.borrow_mut();
             let blocks = current_region.body_mut();
             if blocks.is_empty() {
+                log::debug!("skipping empty region");
                 continue;
             }
 
             // If this is a single block region, just collect nested regions.
-            if blocks.front().as_pointer() == blocks.back().as_pointer() {
+            let entry = blocks.front().as_pointer().unwrap();
+            if entry.next().is_none() {
+                log::trace!("region is a single-block region: adding nested regions to worklist");
                 for op in blocks.front().get().unwrap().body() {
                     worklist.extend(op.regions().iter().map(|r| r.as_region_ref()));
                 }
@@ -235,17 +243,19 @@ impl Region {
             }
 
             // Mark all reachable blocks.
+            log::trace!("locating reachable blocks from {entry}");
             reachable.clear();
-            let iter = PostOrderBlockIter::new(blocks.front().as_pointer().unwrap());
+            let iter = PostOrderBlockIter::new(entry);
             reachable.extend(iter);
 
             // Collect all of the dead blocks and push the live regions on the worklist
-            let mut cursor = blocks.front().as_pointer().and_then(|blk| blk.next());
+            let mut cursor = entry.next();
             drop(current_region);
             while let Some(mut block) = cursor.take() {
                 cursor = block.next();
 
                 if reachable.contains(&block) {
+                    log::trace!("{block} is reachable - adding nested regions to worklist");
                     // Walk any regions within this block
                     for op in block.borrow().body() {
                         worklist.extend(op.regions().iter().map(|r| r.as_region_ref()));
@@ -254,6 +264,7 @@ impl Region {
                 }
 
                 // The block is unreachable, erase it
+                log::trace!("{block} is unreachable - erasing block");
                 block.borrow_mut().drop_all_defined_value_uses();
                 rewriter.erase_block(block);
                 erased_dead_blocks = true;
@@ -272,10 +283,13 @@ impl Region {
         rewriter: &mut dyn Rewriter,
         live_map: &LiveMap,
     ) -> Result<(), RegionTransformFailed> {
+        log::debug!("cleaning up dead code");
+
         let mut erased_anything = false;
-        for mut region in regions.iter().copied() {
+        for region in regions {
             let current_region = region.borrow();
             if current_region.body().is_empty() {
+                log::trace!("skipping empty region");
                 continue;
             }
 
@@ -285,28 +299,45 @@ impl Region {
             // graph, so we must explicitly drop all uses from each operation as we erase it.
             // Visiting the operations in post-order guarantees that in SSA CFG regions, value uses
             // are removed before defs, which makes `drop_all_uses` a no-op.
-            let iter = PostOrderBlockIter::new(current_region.entry_block_ref().unwrap());
+            let region_entry = current_region.entry_block_ref().unwrap();
+            log::debug!("visiting reachable blocks from {region_entry}");
+            let iter = PostOrderBlockIter::new(region_entry);
             for block in iter {
+                log::trace!("visiting block {block}");
                 if !has_single_block {
                     Self::erase_terminator_successor_operands(
                         block.borrow().terminator().expect("expected block to have terminator"),
                         live_map,
                     );
                 }
+                log::trace!("visiting ops in {block} in post-order");
                 let mut next_op = block.borrow().body().back().as_pointer();
                 while let Some(mut child_op) = next_op.take() {
                     next_op = child_op.prev();
                     if !live_map.was_op_proven_live(&child_op) {
+                        log::trace!(
+                            "found '{}' that was not proven live - erasing",
+                            child_op.name()
+                        );
                         erased_anything = true;
                         child_op.borrow_mut().drop_all_uses();
                         rewriter.erase_op(child_op);
                     } else {
+                        let child_op = child_op.borrow();
+                        if child_op.regions().is_empty() {
+                            log::trace!("found '{}' that was proven live", child_op.name());
+                            continue;
+                        }
                         let child_regions = child_op
-                            .borrow()
                             .regions()
                             .iter()
                             .map(|r| r.as_region_ref())
                             .collect::<SmallVec<[RegionRef; 2]>>();
+                        log::trace!(
+                            "found '{}' that was proven live - cleaning up {} child regions",
+                            child_op.name(),
+                            child_regions.len()
+                        );
                         erased_anything |=
                             Self::cleanup_dead_code(&child_regions, rewriter, live_map).is_ok();
                     }
@@ -317,14 +348,17 @@ impl Region {
             //
             // The entry block has an unknown contract with their enclosing block, so leave it alone.
             drop(current_region);
-            let mut current_region = region.borrow_mut();
-            let mut blocks = current_region.body_mut().front_mut();
-            blocks.move_next();
-            while let Some(mut block) = blocks.as_pointer() {
-                blocks.move_next();
-                block
-                    .borrow_mut()
-                    .erase_arguments(|arg| !live_map.was_proven_live(&arg.as_value_ref()));
+            let mut current_block = region_entry.next();
+            while let Some(mut block) = current_block.take() {
+                log::debug!("deleting unused block arguments for {block}");
+                current_block = block.next();
+                block.borrow_mut().erase_arguments(|arg| {
+                    let is_dead = !live_map.was_proven_live(&arg.as_value_ref());
+                    if is_dead {
+                        log::trace!("{arg} was not proven live - erasing");
+                    }
+                    is_dead
+                });
             }
         }
 
@@ -341,16 +375,24 @@ impl Region {
             return;
         }
 
+        log::debug!(
+            "erasing branch successor operands for {op} ({} successors)",
+            op.num_successors()
+        );
+
         // Iterate successors in reverse to minimize the amount of operand shifting
         for succ_index in (0..op.num_successors()).rev() {
             let mut succ = op.successor_mut(succ_index);
             let block = succ.dest.borrow().successor();
             // Iterate arguments in reverse so that erasing an argument does not shift the others
             let num_arguments = succ.arguments.len();
+            log::trace!("checking successor {block} for unused arguments");
+            assert_eq!(num_arguments, block.borrow().num_arguments());
             for arg_index in (0..num_arguments).rev() {
                 let arg = block.borrow().get_argument(arg_index) as ValueRef;
                 let is_dead = !live_map.was_proven_live(&arg);
                 if is_dead {
+                    log::trace!("{arg} was not proven live - erasing");
                     succ.arguments.erase(arg_index);
                 }
             }

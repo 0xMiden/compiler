@@ -19,7 +19,11 @@ pub use self::{
     transforms::RegionTransformFailed,
 };
 use super::*;
-use crate::{adt::SmallSet, RegionSimplificationLevel};
+use crate::{
+    adt::SmallSet,
+    traits::{SingleBlock, SingleRegion},
+    RegionSimplificationLevel,
+};
 
 pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;
 /// An intrusive, doubly-linked list of [Region]s
@@ -573,6 +577,10 @@ impl Region {
         simplification_level: RegionSimplificationLevel,
     ) -> Result<(), RegionTransformFailed> {
         let merge_blocks = matches!(simplification_level, RegionSimplificationLevel::Aggressive);
+
+        log::debug!("running region simplification on {} regions", regions.len());
+        log::debug!("  simplification level = {simplification_level:?}");
+        log::debug!("  merge_blocks         = {merge_blocks}");
 
         let eliminated_blocks = Self::erase_unreachable_blocks(regions, rewriter).is_ok();
         let eliminated_ops_or_args = Self::dead_code_elimination(regions, rewriter).is_ok();
