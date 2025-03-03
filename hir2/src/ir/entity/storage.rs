@@ -513,6 +513,55 @@ impl<T: StorableEntity, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
         Some(removed)
     }
 }
+impl<T: StorableEntity + Copy, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
+    pub fn take(&mut self) -> SmallVec<[T; INLINE]> {
+        let mut taken = SmallVec::<[T; INLINE]>::with_capacity(self.len());
+        if self.range.is_empty() {
+            return taken;
+        }
+        let total_len = self.items.len();
+        let len = self.range.len();
+        let end = self.range.end;
+        self.range.end = self.range.start;
+        self.groups[self.group].shrink(len);
+        taken.extend_from_slice(&self.items[self.range.start..end]);
+        let trailing_items = total_len - end;
+        if trailing_items > 0 {
+            self.items.copy_within(end.., self.range.start);
+            self.items.truncate(self.range.start + trailing_items);
+        } else {
+            self.items.truncate(self.range.start);
+        }
+
+        // Unlink removed items
+        for item in taken.iter_mut() {
+            item.unlink();
+        }
+
+        // Shift groups
+        let next_group = self.group + 1;
+        if next_group < self.groups.len() {
+            let shift = -(len as isize);
+            for group in self.groups[next_group..].iter_mut() {
+                group.shift_start(shift);
+            }
+        }
+
+        // Shift item indices
+        if trailing_items > 0 {
+            for (offset, item) in self.items[self.range.start..(self.range.start + trailing_items)]
+                .iter_mut()
+                .enumerate()
+            {
+                unsafe {
+                    item.set_index(self.range.start + offset);
+                }
+            }
+        }
+
+        taken
+    }
+}
 impl<T, const INLINE: usize> core::ops::Index<usize> for EntityRangeMut<'_, T, INLINE> {
     type Output = T;
 
@@ -545,10 +594,15 @@ mod tests {
     struct Item {
         index: usize,
         value: usize,
+        linked: bool,
     }
     impl Item {
         pub fn new(value: usize) -> Self {
-            Self { index: 0, value }
+            Self {
+                index: 0,
+                value,
+                linked: true,
+            }
         }
     }
     impl StorableEntity for Item {
@@ -560,7 +614,9 @@ mod tests {
             self.index = index;
         }
 
-        fn unlink(&mut self) {}
+        fn unlink(&mut self) {
+            self.linked = false;
+        }
     }
 
     type ItemStorage = EntityStorage<Item, 1>;
@@ -619,14 +675,82 @@ mod tests {
         group_range.push(Item::new(0));
         group_range.push(Item::new(1));
 
+        assert_eq!(group_range[0].value, 0);
+        assert!(group_range[0].linked);
+        assert_eq!(group_range[1].value, 1);
+        assert!(group_range[1].linked);
+
         // Verify range reflects changes
         assert_eq!(group_range.len(), 2);
         assert!(!group_range.is_empty());
         assert_eq!(
             group_range.as_slice(),
-            &[Item { index: 0, value: 0 }, Item { index: 1, value: 1 }]
+            &[
+                Item {
+                    index: 0,
+                    value: 0,
+                    linked: true
+                },
+                Item {
+                    index: 1,
+                    value: 1,
+                    linked: true
+                }
+            ]
         );
-        assert_eq!(group_range.iter().next(), Some(&Item { index: 0, value: 0 }));
+        assert_eq!(
+            group_range.iter().next(),
+            Some(&Item {
+                index: 0,
+                value: 0,
+                linked: true
+            })
+        );
+    }
+
+    #[test]
+    fn entity_storage_extend_empty_group_entity_range() {
+        let mut storage = ItemStorage::default();
+
+        // Get group as mutable range
+        storage.push_to_group(0, Item::new(0));
+        let group_id = storage.push_group(None);
+        let mut group_range = storage.group_mut(group_id);
+
+        group_range.extend([Item::new(1), Item::new(2)]);
+
+        // Verify handling of empty group in EntityRangeMut
+        assert_eq!(group_range.len(), 2);
+        assert_eq!(group_range.range().start, 1);
+        assert_eq!(group_range.range().end, 3);
+        assert_eq!(
+            group_range.as_slice(),
+            &[
+                Item {
+                    index: 1,
+                    value: 1,
+                    linked: true
+                },
+                Item {
+                    index: 2,
+                    value: 2,
+                    linked: true
+                }
+            ]
+        );
+        assert_eq!(
+            group_range.iter().next(),
+            Some(&Item {
+                index: 1,
+                value: 1,
+                linked: true
+            })
+        );
+
+        assert_eq!(group_range[0].value, 1);
+        assert!(group_range[0].linked);
+        assert_eq!(group_range[1].value, 2);
+        assert!(group_range[1].linked);
     }
 
     #[test]
@@ -642,12 +766,33 @@ mod tests {
         let mut group_range = storage.group_mut(0);
         assert_eq!(group_range.len(), 1);
         assert!(!group_range.is_empty());
-        assert_eq!(group_range.as_slice(), &[Item { index: 0, value: 0 }]);
-        assert_eq!(group_range.iter().next(), Some(&Item { index: 0, value: 0 }));
+        assert_eq!(
+            group_range.as_slice(),
+            &[Item {
+                index: 0,
+                value: 0,
+                linked: true
+            }]
+        );
+        assert_eq!(
+            group_range.iter().next(),
+            Some(&Item {
+                index: 0,
+                value: 0,
+                linked: true
+            })
+        );
 
         // Pop item from range
         let item = group_range.pop();
-        assert_eq!(item, Some(Item { index: 0, value: 0 }));
+        assert_eq!(
+            item,
+            Some(Item {
+                index: 0,
+                value: 0,
+                linked: false
+            })
+        );
         assert_eq!(group_range.len(), 0);
         assert!(group_range.is_empty());
         assert_eq!(group_range.as_slice(), &[]);
@@ -701,9 +846,27 @@ mod tests {
             assert!(!group_range.is_empty());
             assert_eq!(
                 group_range.as_slice(),
-                &[Item { index: 2, value: 2 }, Item { index: 3, value: 3 }]
+                &[
+                    Item {
+                        index: 2,
+                        value: 2,
+                        linked: true
+                    },
+                    Item {
+                        index: 3,
+                        value: 3,
+                        linked: true
+                    }
+                ]
             );
-            assert_eq!(group_range.iter().next(), Some(&Item { index: 2, value: 2 }));
+            assert_eq!(
+                group_range.iter().next(),
+                Some(&Item {
+                    index: 2,
+                    value: 2,
+                    linked: true
+                })
+            );
         }
 
         // The subsequent empty group should still be empty, but at a new offset
@@ -721,9 +884,27 @@ mod tests {
         assert!(!group_range.is_empty());
         assert_eq!(
             group_range.as_slice(),
-            &[Item { index: 4, value: 4 }, Item { index: 5, value: 5 }]
+            &[
+                Item {
+                    index: 4,
+                    value: 4,
+                    linked: true
+                },
+                Item {
+                    index: 5,
+                    value: 5,
+                    linked: true
+                }
+            ]
         );
-        assert_eq!(group_range.iter().next(), Some(&Item { index: 4, value: 4 }));
+        assert_eq!(
+            group_range.iter().next(),
+            Some(&Item {
+                index: 4,
+                value: 4,
+                linked: true
+            })
+        );
     }
 
     #[test]
@@ -748,10 +929,24 @@ mod tests {
         {
             let mut group_range = storage.group_mut(0);
             let item = group_range.pop();
-            assert_eq!(item, Some(Item { index: 1, value: 1 }));
+            assert_eq!(
+                item,
+                Some(Item {
+                    index: 1,
+                    value: 1,
+                    linked: false
+                })
+            );
             assert_eq!(group_range.len(), 1);
             assert!(!group_range.is_empty());
-            assert_eq!(group_range.as_slice(), &[Item { index: 0, value: 0 }]);
+            assert_eq!(
+                group_range.as_slice(),
+                &[Item {
+                    index: 0,
+                    value: 0,
+                    linked: true
+                }]
+            );
         }
 
         // The subsequent empty group(s) should still be empty, but at a new offset
@@ -771,8 +966,26 @@ mod tests {
         assert!(!group_range.is_empty());
         assert_eq!(
             group_range.as_slice(),
-            &[Item { index: 1, value: 4 }, Item { index: 2, value: 5 }]
+            &[
+                Item {
+                    index: 1,
+                    value: 4,
+                    linked: true
+                },
+                Item {
+                    index: 2,
+                    value: 5,
+                    linked: true
+                }
+            ]
         );
-        assert_eq!(group_range.iter().next(), Some(&Item { index: 1, value: 4 }));
+        assert_eq!(
+            group_range.iter().next(),
+            Some(&Item {
+                index: 1,
+                value: 4,
+                linked: true
+            })
+        );
     }
 }
