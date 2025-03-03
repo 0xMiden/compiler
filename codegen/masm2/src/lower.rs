@@ -444,7 +444,7 @@ impl HirLowering for hir::While {
 
         // Ensure all of the input operands are on the stack, without consuming them
         {
-            let mut stack = emitter.stack.iter();
+            let mut stack = emitter.stack.iter().rev();
             for (index, input) in inputs.iter().copied().enumerate() {
                 let input = input.borrow().as_value_ref();
                 assert_eq!(
@@ -478,38 +478,27 @@ impl HirLowering for hir::While {
         // * Then, we emit the body of the 'while.true' op. This begins by emitting the "after"
         //   block first, then emitting the "before" block after renaming the region arguments
         //   passed from "after" to "before".
-        //
-        // 1. Rename region arguments to match corresponding "before" block parameters
         let before = self.before();
         let before_block = before.entry();
+
+        // Rename the 'hir.while' operands to match the 'before' region's entry block args
         for index in 0..inputs.len() {
             let param = before_block.arguments()[index] as ValueRef;
             emitter.stack.rename(index, param);
         }
 
-        // 2. Evaluate the condition block
+        // Emit the 'before' block, which represents the loop header
         emitter.emit_inline(&before_block);
 
-        // 3. Drop the condition value from the stack, as it will be consumed by 'while.true'
-        emitter.stack.drop();
-
-        // 4. Emit the 'while.true' body block
+        // Emit the 'while.true' body block to a new block
         let while_body = {
             let mut body_emitter = emitter.nest();
 
-            // The 'hir.condition' op of the "before" block will have placed the boolean condition
-            // on top of the stack, with all inputs from "before" to "after" immediately following.
-            //
-            // We must rename those inputs to match the correspondi8ng "after" block parameters here
-            //
-            // NOTE: We're assuming that the number of operands for the terminating 'hir.condition'
-            // match the number of block arguments for the "after" block. This is done by the
-            // verifier for 'hir.while', so this is a safe assumption to make.
+            // Rename the yielded 'before' operands on the operand stack
             let after = self.after();
             let after_block = after.entry();
             for (index, arg) in after_block.arguments().iter().enumerate() {
-                let arg = *arg as ValueRef;
-                body_emitter.stack.rename(index, arg);
+                body_emitter.stack.rename(index, *arg as ValueRef);
             }
 
             // Emit the "after" block
@@ -527,24 +516,26 @@ impl HirLowering for hir::While {
             body_emitter.emit(&before_block)
         };
 
-        // 5. Rename the operands yielded by 'hir.condition' to their corresponding result values
+        // The 'hir.condition' instruction we emitted in the unrolled first iteration will have
+        // popped the condition operand, but we need to rename the forwarded operands to the results
+        // produced by the 'hir.while' to represent the state after evaluation
         for (index, result) in self.results().all().iter().enumerate() {
             emitter.stack.rename(index, *result as ValueRef);
         }
 
-        // 6. Validate that the expected operand stack state and the actual state match. We are
-        //    expecting that there are no observable stack effects outside of the `hir::While`,
-        //    except that the inputs were consumed, and replaced with results (if any).
-        assert_eq!(
-            emitter.stack, stack,
-            "unexpected observable stack effect leaked from 'hir.while'"
-        );
-
-        // 7. Emit the 'while.true' op itself
+        // Emit the 'while.true' loop instruction
         emitter.emit_op(masm::Op::While {
             span,
             body: while_body,
         });
+
+        // Validate that the expected operand stack state and the actual state match. We are
+        // expecting that there are no observable stack effects outside of the `hir::While`,
+        // except that the inputs were consumed, and replaced with results (if any).
+        assert_eq!(
+            emitter.stack, stack,
+            "unexpected observable stack effect leaked from 'hir.while'"
+        );
 
         Ok(())
     }
@@ -560,13 +551,9 @@ impl HirLowering for hir::IndexSwitch {
 }
 
 impl HirLowering for hir::Yield {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
-
-        // Drop any unused stack operands at this point
-        emitter.drop_unused_operands_at(midenc_hir2::ProgramPoint::before(self.as_operation_ref()));
-
         Ok(())
     }
 }
@@ -576,8 +563,8 @@ impl HirLowering for hir::Condition {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
 
-        // Drop any unused stack operands at this point
-        emitter.drop_unused_operands_at(midenc_hir2::ProgramPoint::before(self.as_operation_ref()));
+        // Evaluating this is equivalent to consuming the condition operand
+        emitter.stack.drop();
 
         Ok(())
     }
