@@ -304,19 +304,13 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         // required multiplexer block arguments, and then to redirect the original entry block
         // arguments to their corresponding index in the multiplexer block parameter list. The
         // remaining arguments will either be undef, the discriminator value, or extra arguments.
-        let mut new_succ_operands = SmallVec::<[OpOperand; 4]>::with_capacity(multiplexer_argc);
+        let mut new_succ_operands = SmallVec::<[_; 4]>::with_capacity(multiplexer_argc);
         for arg in multiplexer_block.arguments().iter() {
             let arg = arg.borrow();
             let index = arg.index();
             if index >= result && index < result + succ.arguments.len() {
                 // Original block arguments to the entry block.
-                let mut operand = succ.arguments[index - result];
-                // Update the operand index now
-                {
-                    let mut operand = operand.borrow_mut();
-                    operand.index = index as u8;
-                }
-                new_succ_operands.push(operand);
+                new_succ_operands.push(succ.arguments[index - result].borrow().as_value_ref());
                 continue;
             }
 
@@ -326,38 +320,28 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
                     self.block_arg_mapping.iter().position(|(k, _)| k == &succ_block).unwrap()
                         as u32;
                 let value = self.transform_ctx.get_switch_value(succ_index);
-                let operand = context.make_operand(value, terminator_ref, index as u8);
-                new_succ_operands.push(operand);
+                new_succ_operands.push(value);
                 continue;
             }
 
             // Followed by the extra arguments.
             if index >= extra_args_begin_index {
-                let extra_arg = extra_args[index - extra_args_begin_index];
-                let operand = context.make_operand(extra_arg, terminator_ref, index as u8);
-                new_succ_operands.push(operand);
+                new_succ_operands.push(extra_args[index - extra_args_begin_index]);
                 continue;
             }
 
             // Otherwise undef values for any unused block arguments used by other entry blocks.
             let undef_value = self.transform_ctx.get_undef_value(arg.ty());
-            let operand = context.make_operand(undef_value, terminator_ref, index as u8);
-            new_succ_operands.push(operand);
+            assert_eq!(new_succ_operands.len(), index);
+            new_succ_operands.push(undef_value);
         }
 
         drop(multiplexer_block);
 
         succ.set(self.multiplexer_block);
+        succ.arguments.set_operands(new_succ_operands, terminator_ref, &context);
 
-        let num_operands = succ.arguments.len();
-        for (index, new_operand) in new_succ_operands.into_iter().enumerate() {
-            if index < num_operands {
-                succ.arguments[index] = new_operand;
-                continue;
-            }
-
-            succ.arguments.push(new_operand);
-        }
+        drop(terminator);
     }
 
     /// Creates a switch op using `builder` which dispatches to the original successors of the edges
