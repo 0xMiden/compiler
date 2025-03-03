@@ -173,8 +173,8 @@ impl<'a> OpEmitter<'a> {
         self.stack.len()
     }
 
-    #[cfg(test)]
     #[inline(always)]
+    #[allow(unused)]
     pub fn stack<'c, 'b: 'c>(&'b self) -> &'c OperandStack {
         self.stack
     }
