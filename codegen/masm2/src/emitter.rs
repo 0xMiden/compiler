@@ -67,21 +67,14 @@ impl BlockEmitter<'_> {
             .map(|operand| operand.borrow().as_value_ref())
             .collect::<SmallVec<[_; 2]>>();
 
-        // All of Miden's binary ops expect the right-hand operand on top of the stack, this
-        // requires us to invert the expected order of operands from the standard ordering in the
-        // IR
-        if op.implements::<dyn BinaryOp>() {
-            args.swap(0, 1);
-        }
-
-        let constraints = op
+        let mut constraints = op
             .operands()
             .group(0)
             .iter()
             .enumerate()
             .map(|(index, operand)| {
                 let value = operand.borrow().as_value_ref();
-                if self.liveness.is_live_after(value, op) {
+                if self.liveness.is_live_after_entry(value, op) {
                     Constraint::Copy
                 } else {
                     // Check if this is the last use of `value` by this operation
@@ -95,6 +88,14 @@ impl BlockEmitter<'_> {
                 }
             })
             .collect::<SmallVec<[_; 2]>>();
+
+        // All of Miden's binary ops expect the right-hand operand on top of the stack, this
+        // requires us to invert the expected order of operands from the standard ordering in the
+        // IR
+        if op.implements::<dyn BinaryOp>() {
+            args.swap(0, 1);
+            constraints.swap(0, 1);
+        }
 
         // If we're emitting a commutative binary op, and the operands are on top of the operand
         // stack, then we can skip any stack manipulation, so long as we can consume both of the
@@ -110,12 +111,11 @@ impl BlockEmitter<'_> {
             false
         };
 
-        if !preserve_stack {
+        if !preserve_stack && !args.is_empty() {
             self.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
                 panic!(
-                    "failed to schedule operands: {:?} \n for inst '{}'\n with error: {err:?}\n \
-                     stack: {:?}",
-                    args,
+                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                     op.name(),
                     self.stack,
                 )
