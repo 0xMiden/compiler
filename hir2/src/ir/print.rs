@@ -4,16 +4,22 @@ use super::{Context, Operation};
 use crate::{
     formatter::{Document, PrettyPrint},
     matchers::Matcher,
-    traits::{BranchOpInterface, SingleBlock, SingleRegion},
-    AttributeValue, CallableOpInterface, EntityWithId, Op, SuccessorOperands, Value,
+    traits::BranchOpInterface,
+    AttributeValue, CallableOpInterface, EntityWithId, SuccessorOperands, Value,
 };
 
-#[derive(Default)]
 pub struct OpPrintingFlags {
-    /// This field is here to silence warnings about using Default with this struct when it has
-    /// no fields. We plan on adding them in the future, so for future compatibility, we're
-    /// ensuring at least one field is present.
-    _placeholder: core::marker::PhantomData<()>,
+    pub print_entry_block_headers: bool,
+    pub print_intrinsic_attributes: bool,
+}
+
+impl Default for OpPrintingFlags {
+    fn default() -> Self {
+        Self {
+            print_entry_block_headers: true,
+            print_intrinsic_attributes: false,
+        }
+    }
 }
 
 /// The `OpPrinter` trait is expected to be implemented by all [Op] impls as a prequisite.
@@ -23,27 +29,19 @@ pub trait OpPrinter {
     fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document;
 }
 
-impl<T: Op> OpPrinter for T {
-    default fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
-        <Operation as OpPrinter>::print(self.as_operation(), flags, context)
-    }
-}
-
-impl<T: PrettyPrint + Op> OpPrinter for T {
-    default fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> Document {
-        PrettyPrint::render(self)
-    }
-}
-
 impl OpPrinter for Operation {
     #[inline]
     fn print(&self, flags: &OpPrintingFlags, context: &Context) -> Document {
-        let printer = OperationPrinter {
-            op: self,
-            flags,
-            context,
-        };
-        printer.render()
+        if let Some(op_printer) = self.as_trait::<dyn OpPrinter>() {
+            op_printer.print(flags, context)
+        } else {
+            let printer = OperationPrinter {
+                op: self,
+                flags,
+                context,
+            };
+            printer.render()
+        }
     }
 }
 
@@ -51,12 +49,8 @@ impl fmt::Display for Operation {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let flags = OpPrintingFlags::default();
         let context = self.context();
-        let printer = OperationPrinter {
-            op: self,
-            flags: &flags,
-            context,
-        };
-        write!(f, "{}", printer.render())
+        let doc = self.print(&flags, context);
+        write!(f, "{doc}")
     }
 }
 
@@ -114,6 +108,71 @@ impl<T: AttrPrinter> AttrPrinter for [T] {
     }
 }
 
+pub fn render_operation_results(op: &Operation) -> crate::formatter::Document {
+    use crate::formatter::*;
+
+    let results = op.results();
+    let doc = results.iter().fold(Document::Empty, |acc, result| {
+        if acc.is_empty() {
+            display(result.borrow().id())
+        } else {
+            acc + const_text(", ") + display(result.borrow().id())
+        }
+    });
+    if doc.is_empty() {
+        doc
+    } else {
+        doc + const_text(" = ")
+    }
+}
+
+pub fn render_operation_operands(op: &Operation) -> crate::formatter::Document {
+    use crate::formatter::*;
+
+    let operands = op.operands();
+    operands.iter().fold(Document::Empty, |acc, operand| {
+        let operand = operand.borrow();
+        let value = operand.value();
+        if acc.is_empty() {
+            display(value.id())
+        } else {
+            acc + const_text(", ") + display(value.id())
+        }
+    })
+}
+
+pub fn render_operation_result_types(op: &Operation) -> crate::formatter::Document {
+    use crate::formatter::*;
+
+    let results = op.results();
+    let result_types = results.iter().fold(Document::Empty, |acc, result| {
+        if acc.is_empty() {
+            text(format!("{}", result.borrow().ty()))
+        } else {
+            acc + const_text(", ") + text(format!("{}", result.borrow().ty()))
+        }
+    });
+    if result_types.is_empty() {
+        result_types
+    } else {
+        const_text(" : ") + result_types
+    }
+}
+
+pub fn render_regions(op: &Operation, flags: &OpPrintingFlags) -> crate::formatter::Document {
+    use crate::formatter::*;
+    const_text(" ")
+        + op.regions.iter().fold(Document::Empty, |acc, region| {
+            let doc = region.print(flags);
+            if acc.is_empty() {
+                doc
+            } else {
+                acc + const_text(" ") + doc
+            }
+        })
+        + const_text(";")
+}
+
 struct OperationPrinter<'a> {
     op: &'a Operation,
     flags: &'a OpPrintingFlags,
@@ -141,26 +200,11 @@ impl PrettyPrint for OperationPrinter<'_> {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
 
-        let is_single_region_single_block =
-            self.op.implements::<dyn SingleBlock>() && self.op.implements::<dyn SingleRegion>();
         let is_callable_op = self.op.implements::<dyn CallableOpInterface>();
         let is_symbol = self.op.is_symbol();
         let no_operands = self.op.operands().is_empty();
 
-        let results = self.op.results();
-        let mut doc = if !results.is_empty() {
-            let results = results.iter().enumerate().fold(Document::Empty, |doc, (i, result)| {
-                if i > 0 {
-                    doc + const_text(", ") + display(result.borrow().id())
-                } else {
-                    doc + display(result.borrow().id())
-                }
-            });
-            results + const_text(" = ")
-        } else {
-            Document::Empty
-        };
-        doc += display(self.op.name()) + const_text(" ");
+        let doc = render_operation_results(self.op) + display(self.op.name()) + const_text(" ");
         let doc = if is_callable_op && is_symbol && no_operands {
             let name = self.op.as_symbol().unwrap().name();
             let callable = self.op.as_trait::<dyn CallableOpInterface>().unwrap();
@@ -194,9 +238,7 @@ impl PrettyPrint for OperationPrinter<'_> {
             }
             doc
         } else {
-            let mut is_constant = false;
             let doc = if let Some(value) = crate::matchers::constant().matches(self.op) {
-                is_constant = true;
                 doc + value.print(self.flags, self.context)
             } else if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
                 // Print non-successor operands
@@ -215,23 +257,31 @@ impl PrettyPrint for OperationPrinter<'_> {
                     doc
                 };
                 // Print successors
-                branch.successors().iter().enumerate().fold(doc, |doc, (i, succ)| {
-                    let doc = if i > 0 {
+                branch.successors().iter().enumerate().fold(doc, |doc, (succ_index, succ)| {
+                    let doc = if succ_index > 0 {
                         doc + const_text(", ") + display(succ.block.borrow().successor())
                     } else {
                         doc + display(succ.block.borrow().successor())
                     };
 
-                    let operands = branch.get_successor_operands(i);
+                    let operands = branch.get_successor_operands(succ_index);
                     if !operands.is_empty() {
                         let doc = doc + const_text("(");
                         operands.forwarded().iter().enumerate().fold(doc, |doc, (i, operand)| {
-                            let operand = operand.borrow();
-                            let value = operand.value();
-                            if i > 0 {
-                                doc + const_text(", ") + display(value.id())
+                            if !operand.is_linked() {
+                                if i > 0 {
+                                    doc + const_text(", ") + const_text("<unlinked>")
+                                } else {
+                                    doc + const_text("<unlinked>")
+                                }
                             } else {
-                                doc + display(value.id())
+                                let operand = operand.borrow();
+                                let value = operand.value();
+                                if i > 0 {
+                                    doc + const_text(", ") + display(value.id())
+                                } else {
+                                    doc + display(value.id())
+                                }
                             }
                         }) + const_text(")")
                     } else {
@@ -239,101 +289,41 @@ impl PrettyPrint for OperationPrinter<'_> {
                     }
                 })
             } else {
-                let operands = self.op.operands();
-                if !operands.is_empty() {
-                    operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
-                        let operand = operand.borrow();
-                        let value = operand.value();
-                        if i > 0 {
-                            doc + const_text(", ") + display(value.id())
-                        } else {
-                            doc + display(value.id())
-                        }
-                    })
-                } else {
-                    doc
-                }
-            };
-            let doc = if !results.is_empty() {
-                let results =
-                    results.iter().enumerate().fold(Document::Empty, |doc, (i, result)| {
-                        if i > 0 {
-                            doc + const_text(", ") + text(format!("{}", result.borrow().ty()))
-                        } else {
-                            doc + text(format!("{}", result.borrow().ty()))
-                        }
-                    });
-                doc + const_text(" : ") + results
-            } else {
-                doc
+                doc + render_operation_operands(self.op)
             };
 
-            if is_constant {
+            let doc = doc + render_operation_result_types(self.op);
+
+            let attrs = self.op.attrs.iter().fold(Document::Empty, |acc, attr| {
+                // Do not print intrinsic attributes unless explicitly configured
+                if !self.flags.print_intrinsic_attributes && attr.intrinsic {
+                    return acc;
+                }
+                let doc = if let Some(value) = attr.value() {
+                    const_text("#[")
+                        + display(attr.name)
+                        + const_text(" = ")
+                        + value.print(self.flags, self.context)
+                        + const_text("]")
+                } else {
+                    text(format!("#[{}]", &attr.name))
+                };
+                if acc.is_empty() {
+                    doc
+                } else {
+                    acc + const_text(" ") + doc
+                }
+            });
+
+            if attrs.is_empty() {
                 doc
             } else {
-                self.op.attrs.iter().fold(doc, |doc, attr| {
-                    let doc = doc + const_text(" ");
-                    if let Some(value) = attr.value() {
-                        doc + const_text("#[")
-                            + display(attr.name)
-                            + const_text(" = ")
-                            + value.print(self.flags, self.context)
-                            + const_text("]")
-                    } else {
-                        doc + text(format!("#[{}]", &attr.name))
-                    }
-                })
+                doc + const_text(" ") + attrs
             }
         };
 
         if self.op.has_regions() {
-            self.op.regions.iter().fold(doc, |doc, region| {
-                let blocks = region.body().iter().enumerate().fold(
-                    Document::Empty,
-                    |mut doc, (block_index, block)| {
-                        if block_index > 0 {
-                            doc += nl();
-                        }
-                        let ops = block.body().iter().enumerate().fold(
-                            Document::Empty,
-                            |mut doc, (i, op)| {
-                                if i > 0 {
-                                    doc += nl();
-                                }
-                                doc + op.print(self.flags, self.context)
-                            },
-                        );
-                        if is_single_region_single_block && no_operands {
-                            doc + indent(4, nl() + ops)
-                        } else {
-                            let block_args = block.arguments().iter().enumerate().fold(
-                                Document::Empty,
-                                |doc, (i, arg)| {
-                                    if i > 0 {
-                                        doc + const_text(", ") + arg.borrow().render()
-                                    } else {
-                                        doc + arg.borrow().render()
-                                    }
-                                },
-                            );
-                            let block_args = if block_args.is_empty() {
-                                block_args
-                            } else {
-                                const_text("(") + block_args + const_text(")")
-                            };
-                            doc + indent(
-                                4,
-                                text(format!("^{}", block.id()))
-                                    + block_args
-                                    + const_text(":")
-                                    + nl()
-                                    + ops,
-                            )
-                        }
-                    },
-                );
-                doc + const_text(" {") + nl() + blocks + nl() + const_text("}")
-            }) + const_text(";")
+            doc + render_regions(self.op, self.flags)
         } else {
             doc + const_text(";")
         }

@@ -15,7 +15,7 @@ pub mod loops;
 mod op;
 mod operands;
 mod operation;
-mod print;
+pub mod print;
 mod region;
 mod successor;
 pub(crate) mod symbols;

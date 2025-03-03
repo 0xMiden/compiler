@@ -3,6 +3,7 @@ use core::fmt;
 use smallvec::SmallVec;
 
 use super::{entity::EntityParent, *};
+use crate::traits::SingleRegion;
 
 /// A pointer to a [Block]
 pub type BlockRef = UnsafeIntrusiveEntityRef<Block>;
@@ -38,12 +39,12 @@ impl EntityId for BlockId {
 }
 impl fmt::Debug for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "block{}", &self.0)
+        write!(f, "^block{}", &self.0)
     }
 }
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "block{}", &self.0)
+        write!(f, "^block{}", &self.0)
     }
 }
 
@@ -74,6 +75,19 @@ pub struct Block {
     /// The parameter list for this block
     arguments: Vec<BlockArgumentRef>,
 }
+
+impl Eq for Block {}
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl core::hash::Hash for Block {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl fmt::Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Block")
@@ -90,6 +104,88 @@ impl fmt::Debug for Block {
                 list.finish()
             })
             .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
+
+impl Block {
+    pub fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
+        use crate::formatter::PrettyPrint;
+
+        let printer = BlockPrinter { block: self, flags };
+        printer.render()
+    }
+}
+
+struct BlockPrinter<'a> {
+    block: &'a Block,
+    flags: &'a OpPrintingFlags,
+}
+
+impl crate::formatter::PrettyPrint for BlockPrinter<'_> {
+    fn render(&self) -> crate::formatter::Document {
+        use crate::{formatter::*, traits::SingleBlock};
+
+        let is_entry_block = self.block.is_entry_block() && !self.flags.print_entry_block_headers;
+        let mut is_parent_op_single_block_single_region = false;
+        let mut is_parent_op_symbol = false;
+        if let Some(parent_op) = self.block.parent_op() {
+            let parent_op = parent_op.borrow();
+            is_parent_op_single_block_single_region = parent_op.implements::<dyn SingleBlock>()
+                && parent_op.implements::<dyn SingleRegion>();
+            is_parent_op_symbol = parent_op.implements::<dyn Symbol>();
+        }
+
+        let block = self.block.body.iter().fold(Document::Empty, |acc, op| {
+            let context = op.context();
+            let doc = op.print(self.flags, context);
+            if acc.is_empty() {
+                doc
+            } else if is_parent_op_single_block_single_region && is_parent_op_symbol {
+                // For blocks that serve as containers for symbol ops, e.g. module/component,
+                // add extra spacing between symbol ops to aid in readability
+                acc + nl() + nl() + doc
+            } else {
+                acc + nl() + doc
+            }
+        });
+
+        if is_parent_op_single_block_single_region {
+            block
+        } else if !is_entry_block || self.flags.print_entry_block_headers {
+            let args = self.block.arguments().iter().fold(Document::Empty, |acc, arg| {
+                let arg = *arg;
+                let doc = text(format!("{arg}: {}", arg.borrow().ty()));
+                if acc.is_empty() {
+                    doc
+                } else {
+                    acc + const_text(", ") + doc
+                }
+            });
+            let args = if self.block.has_arguments() {
+                const_text("(") + args + const_text(")")
+            } else {
+                args
+            };
+
+            let header = display(self.block.id) + args + const_text(":");
+            header + indent(4, nl() + block)
+        } else {
+            block
+        }
+    }
+}
+
+impl crate::formatter::PrettyPrint for Block {
+    fn render(&self) -> crate::formatter::Document {
+        let flags = OpPrintingFlags::default();
+
+        self.print(&flags)
     }
 }
 
@@ -1139,7 +1235,6 @@ impl BlockOperand {
     /// Get the block this operand references
     #[inline]
     pub fn successor(&self) -> BlockRef {
-        //self.as_block_operand_ref().parent().expect("block operand is dead")
         self.as_block_operand_ref().parent().unwrap_or_else(|| {
             panic!(
                 "block operand is dead at index {} in {}",

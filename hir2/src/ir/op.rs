@@ -36,6 +36,11 @@ pub trait Op: AsAny + OpVerifier {
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
 
+    fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
+        let operation = self.as_operation();
+        operation.print(flags, operation.context())
+    }
+
     #[inline]
     fn as_operation_ref(&self) -> OperationRef {
         self.as_operation().as_operation_ref()

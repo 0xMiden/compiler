@@ -391,6 +391,19 @@ impl Operation {
         self.attrs.insert(name, value);
     }
 
+    /// Set the intrinsic attribute `name` with `value` for this function.
+    pub fn set_intrinsic_attribute(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+        value: Option<impl AttributeValue>,
+    ) {
+        self.attrs.set(crate::Attribute {
+            name: name.into(),
+            value: value.map(|v| Box::new(v) as Box<dyn AttributeValue>),
+            intrinsic: true,
+        });
+    }
+
     /// Remove any attribute with the given name from this function
     pub fn remove_attribute(&mut self, name: impl Into<interner::Symbol>) {
         self.attrs.remove(name.into());

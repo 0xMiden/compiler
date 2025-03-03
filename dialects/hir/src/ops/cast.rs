@@ -39,7 +39,7 @@ pub enum CastKind {
 pub struct PtrToInt {
     #[operand]
     operand: AnyPointer,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyInteger,
@@ -61,7 +61,7 @@ impl InferTypeOpInterface for PtrToInt {
 pub struct IntToPtr {
     #[operand]
     operand: AnyInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyPointer,
@@ -83,7 +83,7 @@ impl InferTypeOpInterface for IntToPtr {
 pub struct Cast {
     #[operand]
     operand: AnyInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyInteger,
@@ -105,7 +105,7 @@ impl InferTypeOpInterface for Cast {
 pub struct Bitcast {
     #[operand]
     operand: AnyPointerOrInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyPointerOrInteger,
@@ -127,7 +127,7 @@ impl InferTypeOpInterface for Bitcast {
 pub struct Trunc {
     #[operand]
     operand: AnyInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyInteger,
@@ -149,7 +149,7 @@ impl InferTypeOpInterface for Trunc {
 pub struct Zext {
     #[operand]
     operand: AnyUnsignedInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyUnsignedInteger,
@@ -171,7 +171,7 @@ impl InferTypeOpInterface for Zext {
 pub struct Sext {
     #[operand]
     operand: AnySignedInteger,
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnySignedInteger,

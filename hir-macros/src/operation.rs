@@ -207,10 +207,11 @@ impl OpDefinition {
                     });
                     continue;
                 }
-                Some(OperationFieldType::Attr) => {
+                Some(OperationFieldType::Attr(kind)) => {
                     let attr = OpAttribute {
                         name: field_name,
                         ty: field_ty,
+                        kind: *kind,
                     };
                     create_params.push(OpCreateParam {
                         param_ty: OpCreateParamType::Attr(attr.clone()),
@@ -383,11 +384,17 @@ struct WithAttrs<'a>(&'a OpDefinition);
 impl quote::ToTokens for WithAttrs<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         for param in self.0.op_builder_impl.create_params.iter() {
-            if let OpCreateParamType::Attr(OpAttribute { name, .. }) = &param.param_ty {
+            if let OpCreateParamType::Attr(OpAttribute { name, kind, .. }) = &param.param_ty {
                 let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
-                tokens.extend(quote! {
-                    op_builder.with_attr(#field_name, #name);
-                });
+                if matches!(kind, AttrKind::Hidden) {
+                    tokens.extend(quote! {
+                        op_builder.with_hidden_attr(#field_name, #name);
+                    });
+                } else {
+                    tokens.extend(quote! {
+                        op_builder.with_attr(#field_name, #name);
+                    });
+                }
             }
         }
     }
@@ -1088,6 +1095,7 @@ impl quote::ToTokens for OpAttrFns<'_> {
         for OpAttribute {
             name: ref attr,
             ty: ref attr_ty,
+            ..
         } in self.0.attrs.iter()
         {
             let attr_str = syn::Lit::Str(syn::LitStr::new(&attr.to_string(), attr.span()));
@@ -1129,7 +1137,7 @@ impl quote::ToTokens for OpAttrFns<'_> {
 
                 #[doc = #set_attr_doc]
                 pub fn #set_attr(&mut self, value: impl Into<#attr_ty>) {
-                    self.op.set_attribute(Self::#attr_symbol(), Some(value.into()));
+                    self.op.set_intrinsic_attribute(Self::#attr_symbol(), Some(value.into()));
                 }
             });
         }
@@ -1419,6 +1427,19 @@ pub struct OpAttribute {
     pub name: Ident,
     /// The value type of the attribute
     pub ty: syn::Type,
+    /// The attribute kind
+    pub kind: AttrKind,
+}
+
+/// Represents the type of a symbol
+#[derive(Default, Debug, darling::FromMeta, Copy, Clone)]
+#[darling(default)]
+pub enum AttrKind {
+    /// A normal attribute
+    #[default]
+    Default,
+    /// A hidden attribute
+    Hidden,
 }
 
 /// An abstraction over named vs unnamed groups of some IR entity
@@ -2019,7 +2040,7 @@ pub struct OperationFieldAttrs {
     /// an explicit order, or they will be assigned the next largest unallocated index in the order.
     order: Option<u32>,
     /// Was this an `#[attr]` field?
-    attr: Flag,
+    attr: Option<SpannedValue<Option<AttrKind>>>,
     /// Was this an `#[operand]` field?
     operand: Flag,
     /// Was this an `#[operands]` field?
@@ -2052,7 +2073,34 @@ impl OperationFieldAttrs {
                             ))
                             .with_span(&attr));
                         }
-                        result.attr = Flag::from_meta(&attr.meta).unwrap();
+                        let span = attr.span();
+                        let mut kind = None;
+                        match &attr.meta {
+                            // A bare #[attr], nothing to do
+                            syn::Meta::Path(_) => (),
+                            syn::Meta::List(ref list) => {
+                                list.parse_nested_meta(|meta| {
+                                    if meta.path.is_ident("hidden") {
+                                        kind = Some(AttrKind::Hidden);
+                                        Ok(())
+                                    } else {
+                                        Err(meta.error(format!(
+                                            "invalid #[attr] decorator: unrecognized key '{}'",
+                                            meta.path.get_ident().unwrap()
+                                        )))
+                                    }
+                                })
+                                .map_err(Error::from)?;
+                            }
+                            meta @ syn::Meta::NameValue(_) => {
+                                return Err(Error::custom(
+                                    "invalid #[attr] decorator: invalid format, expected either \
+                                     bare 'attr' or a meta list",
+                                )
+                                .with_span(meta));
+                            }
+                        }
+                        result.attr = Some(SpannedValue::new(kind, span));
                     }
                     "operand" => {
                         if let Some(prev) = prev_decorator.replace("operand") {
@@ -2208,8 +2256,10 @@ impl OperationFieldAttrs {
 impl OperationFieldAttrs {
     pub fn pseudo_type(&self) -> Option<darling::util::SpannedValue<OperationFieldType>> {
         use darling::util::SpannedValue;
-        if self.attr.is_present() {
-            Some(SpannedValue::new(OperationFieldType::Attr, self.attr.span()))
+        if self.attr.is_some() {
+            self.attr
+                .as_ref()
+                .map(|kind| kind.map_ref(|kind| OperationFieldType::Attr(kind.unwrap_or_default())))
         } else if self.operand.is_present() {
             Some(SpannedValue::new(OperationFieldType::Operand, self.operand.span()))
         } else if self.operands.is_present() {
@@ -2237,7 +2287,7 @@ impl OperationFieldAttrs {
 #[derive(Debug, Clone)]
 pub enum OperationFieldType {
     /// An operation attribute
-    Attr,
+    Attr(AttrKind),
     /// A named operand
     Operand,
     /// A named variadic operand group (zero or more operands)
@@ -2265,7 +2315,8 @@ pub enum OperationFieldType {
 impl core::fmt::Display for OperationFieldType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Attr => f.write_str("attr"),
+            Self::Attr(AttrKind::Default) => f.write_str("attr"),
+            Self::Attr(AttrKind::Hidden) => f.write_str("attr(hidden)"),
             Self::Operand => f.write_str("operand"),
             Self::Operands => f.write_str("operands"),
             Self::Result => f.write_str("result"),

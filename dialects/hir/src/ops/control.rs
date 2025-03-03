@@ -17,11 +17,20 @@ pub struct Ret {
 /// Returns from the enclosing function with the provided immediate value as its result.
 #[operation(
     dialect = HirDialect,
-    traits(Terminator, ReturnLike)
+    traits(Terminator, ReturnLike),
+    implements(OpPrinter)
 )]
 pub struct RetImm {
-    #[attr]
+    #[attr(hidden)]
     value: Immediate,
+}
+
+impl OpPrinter for RetImm {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        display(self.op.name()) + const_text(" ") + display(self.value()) + const_text(";")
+    }
 }
 
 /// An unstructured control flow primitive representing an unconditional branch to `target`
