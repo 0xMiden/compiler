@@ -8,7 +8,7 @@ use crate::{
     constants::{ConstantData, ConstantId},
     dialects::builtin::BuiltinDialect,
     traits::*,
-    Alignable, Op, UnsafeIntrusiveEntityRef,
+    Alignable, Op, OpPrinter, UnsafeIntrusiveEntityRef,
 };
 
 pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
@@ -38,6 +38,7 @@ pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
         NoRegionArguments,
         IsolatedFromAbove,
     ),
+    implements(OpPrinter)
 )]
 pub struct Segment {
     /// The offset from the start of linear memory where this segment starts
@@ -77,6 +78,26 @@ impl fmt::Debug for Segment {
             .field("init", &format_args!("{data}"))
             .field("readonly", self.readonly())
             .finish()
+    }
+}
+
+impl OpPrinter for Segment {
+    fn print(
+        &self,
+        _flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let header = display(self.op.name());
+        let header = if *self.readonly() {
+            header + const_text(" ") + const_text("readonly")
+        } else {
+            header
+        };
+        let header = header + const_text(" ") + text(format!("@{}", self.offset()));
+        let data = self.initializer();
+        header + const_text(" = ") + text(format!("0x{data};"))
     }
 }
 

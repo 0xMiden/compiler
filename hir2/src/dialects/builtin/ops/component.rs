@@ -11,7 +11,7 @@ use crate::{
         NoTerminator, SingleBlock, SingleRegion,
     },
     version::Version,
-    Ident, Op, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
     SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
@@ -70,7 +70,7 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable, Symbol)
+    implements(RegionKindInterface, SymbolTable, Symbol, OpPrinter)
 )]
 pub struct Component {
     #[attr]
@@ -90,6 +90,20 @@ pub struct Component {
     uses: SymbolUseList,
 }
 
+impl OpPrinter for Component {
+    fn print(
+        &self,
+        flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let header = display(self.op.name()) + const_text(" ") + display(self.id());
+        let body = crate::print::render_regions(&self.op, flags);
+        header + body
+    }
+}
+
 impl midenc_session::Emit for Component {
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
         Some(self.name().as_symbol())
@@ -106,8 +120,7 @@ impl midenc_session::Emit for Component {
         _session: &midenc_session::Session,
     ) -> std::io::Result<()> {
         let flags = crate::OpPrintingFlags::default();
-        let context = self.as_operation().context();
-        let document = self.print(&flags, context);
+        let document = <Component as OpPrinter>::print(self, &flags, self.op.context());
         writer.write_fmt(format_args!("{}", document))
     }
 }

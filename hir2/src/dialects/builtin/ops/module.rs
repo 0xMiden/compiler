@@ -5,9 +5,9 @@ use crate::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    Ident, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
@@ -58,7 +58,7 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable, Symbol)
+    implements(RegionKindInterface, SymbolTable, Symbol, OpPrinter)
 )]
 pub struct Module {
     #[attr]
@@ -81,6 +81,24 @@ impl Module {
     }
 }
 
+impl OpPrinter for Module {
+    fn print(
+        &self,
+        flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let header = display(self.op.name())
+            + const_text(" ")
+            + display(self.visibility())
+            + const_text(" @")
+            + display(self.name().as_str());
+        let body = crate::print::render_regions(&self.op, flags);
+        header + body
+    }
+}
+
 impl midenc_session::Emit for Module {
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
         Some(self.name().as_symbol())
@@ -96,11 +114,8 @@ impl midenc_session::Emit for Module {
         _mode: midenc_session::OutputMode,
         _session: &midenc_session::Session,
     ) -> std::io::Result<()> {
-        use crate::{Op, OpPrinter};
-
         let flags = crate::OpPrintingFlags::default();
-        let context = self.as_operation().context();
-        let document = self.print(&flags, context);
+        let document = <Module as OpPrinter>::print(self, &flags, self.op.context());
         writer.write_fmt(format_args!("{}", document))
     }
 }

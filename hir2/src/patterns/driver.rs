@@ -400,12 +400,12 @@ impl GreedyPatternRewriteDriver {
         if matches!(self.config.restrict, GreedyRewriteStrictness::Any)
             || self.filtered_ops.borrow().contains(&op)
         {
-            log::trace!("adding single op '{}' to worklist", op.borrow().name());
+            log::trace!("adding single op '{}' to worklist", op.name());
             self.worklist.borrow_mut().push(op);
         } else {
             log::trace!(
                 "skipped adding single op '{}' to worklist due to strictness level",
-                op.borrow().name()
+                op.name()
             );
         }
     }
@@ -424,10 +424,7 @@ impl GreedyPatternRewriteDriver {
                 }
                 return;
             } else {
-                log::trace!(
-                    "gathering ancestors of '{}' for worklist",
-                    ancestor_op.borrow().name()
-                );
+                log::trace!("gathering ancestors of '{}' for worklist", ancestor_op.name());
                 ancestors.push(ancestor_op);
             }
             if let Some(region) = region {

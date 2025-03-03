@@ -55,13 +55,23 @@ where
         self.op.borrow_mut().set_attribute(name, Some(value));
     }
 
+    /// Set attribute `name` on this op to `value`
+    #[inline]
+    pub fn with_hidden_attr<A>(&mut self, name: &'static str, value: A)
+    where
+        A: AttributeValue,
+    {
+        self.op.borrow_mut().set_intrinsic_attribute(name, Some(value));
+    }
+
     /// Set symbol `attr_name` on this op to `symbol`.
     ///
     /// Symbol references are stored as attributes, and have similar semantics to operands, i.e.
     /// they require tracking uses.
     #[inline]
     pub fn with_symbol(&mut self, attr_name: &'static str, symbol: impl AsSymbolRef) {
-        self.op.borrow_mut().set_symbol_attribute(attr_name, symbol);
+        let mut op = self.op.borrow_mut();
+        op.set_symbol_attribute(attr_name, symbol);
     }
 
     /// Like [with_symbol], but further constrains the range of valid input symbols to those which
@@ -73,7 +83,8 @@ where
         callable: impl AsCallableSymbolRef,
     ) {
         let callable = callable.as_callable_symbol_ref();
-        self.op.borrow_mut().set_symbol_attribute(attr_name, callable);
+        let mut op = self.op.borrow_mut();
+        op.set_symbol_attribute(attr_name, callable);
     }
 
     /// Add a new [Region] to this operation.

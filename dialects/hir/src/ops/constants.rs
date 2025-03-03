@@ -18,7 +18,7 @@ use crate::HirDialect;
     implements(InferTypeOpInterface, Foldable)
 )]
 pub struct Constant {
-    #[attr]
+    #[attr(hidden)]
     value: Immediate,
     #[result]
     result: AnyInteger,
@@ -63,7 +63,7 @@ impl Foldable for Constant {
     implements(InferTypeOpInterface, Foldable)
 )]
 pub struct ConstantBytes {
-    #[attr]
+    #[attr(hidden)]
     id: ConstantId,
     #[result]
     result: AnyArrayOf<UInt8>,

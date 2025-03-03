@@ -18,6 +18,7 @@ pub mod markers {
     pub const ENTRYPOINT: Attribute = Attribute {
         name: symbols::Entrypoint,
         value: None,
+        intrinsic: false,
     };
 }
 
@@ -31,9 +32,17 @@ impl FromIterator<Attribute> for AttributeSet {
     {
         let mut map = BTreeMap::default();
         for attr in attrs.into_iter() {
-            map.insert(attr.name, attr.value);
+            map.insert(attr.name, (attr.value, attr.intrinsic));
         }
-        Self(map.into_iter().map(|(name, value)| Attribute { name, value }).collect())
+        Self(
+            map.into_iter()
+                .map(|(name, (value, intrinsic))| Attribute {
+                    name,
+                    value,
+                    intrinsic,
+                })
+                .collect(),
+        )
     }
 }
 impl FromIterator<(Symbol, Option<Box<dyn AttributeValue>>)> for AttributeSet {
@@ -45,7 +54,15 @@ impl FromIterator<(Symbol, Option<Box<dyn AttributeValue>>)> for AttributeSet {
         for (name, value) in attrs.into_iter() {
             map.insert(name, value);
         }
-        Self(map.into_iter().map(|(name, value)| Attribute { name, value }).collect())
+        Self(
+            map.into_iter()
+                .map(|(name, value)| Attribute {
+                    name,
+                    value,
+                    intrinsic: false,
+                })
+                .collect(),
+        )
     }
 }
 impl AttributeSet {
@@ -59,6 +76,7 @@ impl AttributeSet {
         self.set(Attribute {
             name: name.into(),
             value: value.map(|v| Box::new(v) as Box<dyn AttributeValue>),
+            intrinsic: false,
         });
     }
 
@@ -75,6 +93,13 @@ impl AttributeSet {
                     self.0.insert(index, attr);
                 }
             }
+        }
+    }
+
+    pub fn mark_intrinsic(&mut self, key: impl Into<Symbol>) {
+        let key = key.into();
+        if let Ok(index) = self.0.binary_search_by_key(&key, |attr| attr.name) {
+            self.0[index].intrinsic = true;
         }
     }
 
@@ -183,12 +208,23 @@ pub struct Attribute {
     pub name: Symbol,
     /// The value associated with this attribute
     pub value: Option<Box<dyn AttributeValue>>,
+    /// This attribute represents an intrinsic property of an operation
+    pub intrinsic: bool,
 }
 impl Attribute {
     pub fn new(name: impl Into<Symbol>, value: Option<impl AttributeValue>) -> Self {
         Self {
             name: name.into(),
             value: value.map(|v| Box::new(v) as Box<dyn AttributeValue>),
+            intrinsic: false,
+        }
+    }
+
+    pub fn intrinsic(name: impl Into<Symbol>, value: Option<impl AttributeValue>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.map(|v| Box::new(v) as Box<dyn AttributeValue>),
+            intrinsic: true,
         }
     }
 

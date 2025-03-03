@@ -5,8 +5,8 @@ use crate::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
     },
-    AsSymbolRef, Context, Ident, Operation, Report, Spanned, Symbol, SymbolName, SymbolRef,
-    SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,
+    AsSymbolRef, Context, Ident, OpPrinter, Operation, Report, Spanned, Symbol, SymbolName,
+    SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,
 };
 
 pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
@@ -28,7 +28,7 @@ pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
         NoRegionArguments,
         IsolatedFromAbove,
     ),
-    implements(Symbol)
+    implements(Symbol, OpPrinter)
 )]
 pub struct GlobalVariable {
     #[attr]
@@ -104,6 +104,26 @@ impl Symbol for GlobalVariable {
 impl AsSymbolRef for GlobalVariable {
     fn as_symbol_ref(&self) -> SymbolRef {
         unsafe { SymbolRef::from_raw(self as &dyn Symbol) }
+    }
+}
+
+impl OpPrinter for GlobalVariable {
+    fn print(
+        &self,
+        flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let header = display(self.op.name())
+            + const_text(" ")
+            + display(self.visibility())
+            + const_text(" @")
+            + display(self.name())
+            + const_text(" : ")
+            + display(self.ty());
+        let body = crate::print::render_regions(&self.op, flags);
+        header + body
     }
 }
 
