@@ -749,13 +749,21 @@ impl RegionBranchTerminatorOpInterface for Condition {
         let after_region = while_op.after().as_region_ref();
 
         // We can't know the condition until runtime, so both the parent `while` op and
-        if cond.is_none_or(|v| v) {
-            regions.push(RegionSuccessorInfo::Entering(after_region));
-        }
-        if cond.is_none_or(|v| !v) {
-            regions.push(RegionSuccessorInfo::Returning(
-                while_op.results().all().iter().map(|r| r.borrow().as_value_ref()).collect(),
-            ));
+        match cond {
+            None => {
+                regions.push(RegionSuccessorInfo::Entering(after_region));
+                regions.push(RegionSuccessorInfo::Returning(
+                    while_op.results().all().iter().map(|r| r.borrow().as_value_ref()).collect(),
+                ));
+            }
+            Some(true) => {
+                regions.push(RegionSuccessorInfo::Entering(after_region));
+            }
+            Some(false) => {
+                regions.push(RegionSuccessorInfo::Returning(
+                    while_op.results().all().iter().map(|r| r.borrow().as_value_ref()).collect(),
+                ));
+            }
         }
 
         regions

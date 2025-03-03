@@ -128,17 +128,20 @@ pub trait Builder: Listener {
         let ip = self.insertion_point();
 
         match *ip {
-            ProgramPoint::Block { block, point } => match point {
-                crate::Insert::Before => op.borrow_mut().insert_at_start(block),
-                crate::Insert::After => op.borrow_mut().insert_at_end(block),
+            ProgramPoint::Block {
+                block,
+                position: point,
+            } => match point {
+                crate::Position::Before => op.borrow_mut().insert_at_start(block),
+                crate::Position::After => op.borrow_mut().insert_at_end(block),
             },
             ProgramPoint::Op {
                 op: other_op,
-                point,
+                position: point,
                 ..
             } => match point {
-                crate::Insert::Before => op.borrow_mut().insert_before(other_op),
-                crate::Insert::After => {
+                crate::Position::Before => op.borrow_mut().insert_before(other_op),
+                crate::Position::After => {
                     op.borrow_mut().insert_after(other_op);
                     self.set_insertion_point(ProgramPoint::after(op));
                 }

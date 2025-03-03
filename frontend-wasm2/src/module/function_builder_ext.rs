@@ -82,13 +82,7 @@ impl Listener for SSABuilderListener {
         let op = borrow.as_ref().as_operation();
         let mut builder = self.builder.borrow_mut();
 
-        let current_block = match prev {
-            ProgramPoint::Invalid => panic!("invalid program point"),
-            ProgramPoint::Block { block, point } => block,
-            ProgramPoint::Op { block, op, point } => block.expect("no block in ProgramPoint::Op"),
-        };
-
-        let block = current_block;
+        let block = prev.block().expect("invalid program point");
         if builder.is_pristine(&block) {
             builder.status.insert(block, BlockStatus::Partial);
         } else {
@@ -108,7 +102,7 @@ impl Listener for SSABuilderListener {
         }
 
         if op.implements::<dyn Terminator>() {
-            builder.status.insert(current_block, BlockStatus::Filled);
+            builder.status.insert(block, BlockStatus::Filled);
         }
     }
 

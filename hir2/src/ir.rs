@@ -9,7 +9,6 @@ pub mod dominance;
 pub(crate) mod entity;
 mod ident;
 mod immediates;
-mod insert;
 mod interface;
 pub mod loops;
 mod op;
@@ -47,7 +46,6 @@ pub use self::{
     },
     ident::{FunctionIdent, Ident},
     immediates::{Felt, FieldElement, Immediate, StarkField},
-    insert::Insert,
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,
