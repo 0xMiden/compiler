@@ -401,18 +401,21 @@ impl OperandStack {
 
     /// Pops the operand on top of the stack
     #[inline]
+    #[track_caller]
     pub fn pop(&mut self) -> Option<Operand> {
         self.stack.pop()
     }
 
     /// Drops the top operand on the stack
     #[allow(clippy::should_implement_trait)]
+    #[track_caller]
     pub fn drop(&mut self) {
         self.stack.pop().expect("operand stack is empty");
     }
 
     /// Drops the top `n` operands on the stack
     #[inline]
+    #[track_caller]
     pub fn dropn(&mut self, n: usize) {
         let len = self.stack.len();
         assert!(n <= len, "unable to drop {} operands, operand stack only has {}", n, len);
@@ -422,6 +425,7 @@ impl OperandStack {
     /// Duplicates the operand in the `n`th position on the stack
     ///
     /// If `n` is 0, duplicates the top of the stack.
+    #[track_caller]
     pub fn dup(&mut self, n: usize) {
         let operand = self[n].clone();
         self.stack.push(operand);
@@ -432,6 +436,7 @@ impl OperandStack {
     /// If `n` is 1, it swaps the first two operands on the stack.
     ///
     /// NOTE: This function will panic if `n` is 0, or out of bounds.
+    #[track_caller]
     pub fn swap(&mut self, n: usize) {
         assert_ne!(n, 0, "invalid swap, index must be in the range 1..=15");
         let len = self.stack.len();
@@ -499,6 +504,7 @@ impl OperandStack {
 impl Index<usize> for OperandStack {
     type Output = Operand;
 
+    #[track_caller]
     fn index(&self, index: usize) -> &Self::Output {
         let len = self.stack.len();
         assert!(
@@ -518,6 +524,7 @@ impl Index<usize> for OperandStack {
     }
 }
 impl IndexMut<usize> for OperandStack {
+    #[track_caller]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let len = self.stack.len();
         assert!(
