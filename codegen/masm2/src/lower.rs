@@ -313,6 +313,8 @@ impl MasmFunctionBuilder {
 
         use midenc_hir2::dataflow::analyses::LivenessAnalysis;
 
+        log::trace!(target: "codegen", "lowering {}", function.as_operation());
+
         let liveness =
             analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
 
@@ -410,22 +412,53 @@ impl HirLowering for hir::If {
         let then_dest = then_body.entry();
         let else_dest = self.else_body().entry_block_ref();
 
-        let then_blk = {
-            let then_emitter = emitter.nest();
-            then_emitter.emit(&then_dest)
+        let (then_stack, then_blk) = {
+            let mut then_emitter = emitter.nest();
+            then_emitter.emit_inline(&then_dest);
+            // Rename the yielded values on the stack for us to check against
+            let mut then_stack = then_emitter.stack.clone();
+            for (index, result) in self.results().all().into_iter().enumerate() {
+                then_stack.rename(index, *result as ValueRef);
+            }
+            let then_block = then_emitter.into_emitted_block(then_dest.span());
+            (then_stack, then_block)
         };
 
-        let else_blk = match else_dest {
-            None => masm::Block::new(span, Default::default()),
+        let (else_stack, else_blk) = match else_dest {
+            None => {
+                assert!(
+                    self.results().is_empty(),
+                    "an elided 'hir.if' else block requires the 'hir.if' to have no results"
+                );
+                let else_block = masm::Block::new(span, Default::default());
+                let mut else_stack = emitter.stack.clone();
+                for (index, result) in self.results().all().into_iter().enumerate() {
+                    else_stack.rename(index, *result as ValueRef);
+                }
+
+                (else_stack, else_block)
+            }
             Some(dest) => {
-                let else_emitter = emitter.nest();
-                else_emitter.emit(&dest.borrow())
+                let dest = dest.borrow();
+                let mut else_emitter = emitter.nest();
+                else_emitter.emit_inline(&dest);
+                // Rename the yielded values on the stack for us to check against
+                let mut else_stack = else_emitter.stack.clone();
+                for (index, result) in self.results().all().into_iter().enumerate() {
+                    else_stack.rename(index, *result as ValueRef);
+                }
+
+                let else_block = else_emitter.into_emitted_block(dest.span());
+                (else_stack, else_block)
             }
         };
 
-        for result in self.results().all().iter().rev().copied() {
-            emitter.stack.push(result as ValueRef);
-        }
+        assert_eq!(
+            then_stack, else_stack,
+            "unexpected observable stack effect leaked from 'hir.if' regions"
+        );
+
+        emitter.stack = then_stack;
 
         emitter.emit_op(masm::Op::If {
             span,
@@ -440,102 +473,128 @@ impl HirLowering for hir::If {
 impl HirLowering for hir::While {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
-        let inputs = self.operands().all();
 
-        // Ensure all of the input operands are on the stack, without consuming them
-        {
-            let mut stack = emitter.stack.iter().rev();
-            for (index, input) in inputs.iter().copied().enumerate() {
-                let input = input.borrow().as_value_ref();
-                assert_eq!(
-                    stack.next().map(|operand| operand.as_value()),
-                    Some(Some(input)),
-                    "expected {} at stack depth {index}",
-                    input,
-                );
-            }
-        }
-
-        // Save a snapshot of the operand stack at entry to the op, without any of the `hir::While`
-        // operands, and with the results (if any) added. This will be compared against the state of
-        // the operand stack on exit from the op, so that we can sanity check the operand stack
-        // state.
-        let mut stack = emitter.stack.clone();
-        stack.dropn(inputs.len());
-        for result in self.results().all().as_slice().iter().rev() {
-            stack.push(*result as ValueRef);
-        }
-
-        // We map `hir::While` semantics to Miden's 'while.true' semantics as follows:
+        // Emit as follows:
         //
-        // TODO(pauls): We can simplify the lowering here when it is known that a loop is in
-        // do-while form, by simply emitting a `true` to enter the loop the first time.
+        // hir.while <operands> {
+        //     <before>
+        // } do {
+        //     <after>
+        // }
         //
-        // * First, we must evaluate the "before" block unconditionally, to obtain the value of the
-        //   condition that determines whether or not to enter the loop. This is done by inlining
-        //   the body of the "before" block at the current position in the current block
-        // * Next, we emit the 'while.true' op itself in the current block
-        // * Then, we emit the body of the 'while.true' op. This begins by emitting the "after"
-        //   block first, then emitting the "before" block after renaming the region arguments
-        //   passed from "after" to "before".
-        let before = self.before();
-        let before_block = before.entry();
+        // to:
+        //
+        // push.1
+        // while.true
+        //     <before>
+        //     if.true
+        //         <after>
+        //         push.1
+        //     else
+        //         push.0
+        //     end
+        // end
+        let num_condition_forwarded_operands = self.condition_op().borrow().forwarded().len();
+        let (stack_on_loop_exit, loop_body) = {
+            let before = self.before();
+            let before_block = before.entry();
+            let input_stack = emitter.stack.clone();
 
-        // Rename the 'hir.while' operands to match the 'before' region's entry block args
-        for index in 0..inputs.len() {
-            let param = before_block.arguments()[index] as ValueRef;
-            emitter.stack.rename(index, param);
-        }
-
-        // Emit the 'before' block, which represents the loop header
-        emitter.emit_inline(&before_block);
-
-        // Emit the 'while.true' body block to a new block
-        let while_body = {
             let mut body_emitter = emitter.nest();
 
-            // Rename the yielded 'before' operands on the operand stack
-            let after = self.after();
-            let after_block = after.entry();
-            for (index, arg) in after_block.arguments().iter().enumerate() {
-                body_emitter.stack.rename(index, *arg as ValueRef);
+            // Rename the 'hir.while' operands to match the 'before' region's entry block args
+            assert_eq!(self.operands().len(), before_block.num_arguments());
+            for (index, arg) in before_block.arguments().iter().copied().enumerate() {
+                body_emitter.stack.rename(index, arg as ValueRef);
             }
 
-            // Emit the "after" block
-            body_emitter.emit_inline(&after_block);
+            // Emit the 'before' block, which represents the loop header
+            body_emitter.emit_inline(&before_block);
 
-            // At this point, control yields from "after" back to "before" to re-evaluate the loop
-            // condition. The "before" block will be emitted inline, but we must ensure that the
-            // yielded operands are renamed just as before
-            for (index, arg) in before_block.arguments().iter().enumerate() {
-                let arg = *arg as ValueRef;
-                body_emitter.stack.rename(index, arg);
+            // Remove the 'hir.condition' condition flag from the operand stack, but do not emit any
+            // instructions to do so, as this will be handled by the 'while.true' instruction
+            body_emitter.stack.drop();
+
+            // Take a snapshot of the stack at this point, as it represents the state of the stack
+            // on exit from the loop, and perform the following modifications:
+            //
+            // 1. Rename the forwarded condition operands to the 'hir.while' results
+            // 2. Check that all values on the operand stack at this point have definitions which
+            //    dominate the successor (i.e. the next op after the 'hir.while' op). We can do this
+            //    cheaply by asserting that all of the operands were present on the stack before the
+            //    'hir.while', or are a result, as any new operands are by definition something
+            //    introduced within the loop itself
+            let mut stack_on_loop_exit = body_emitter.stack.clone();
+            // 1
+            assert_eq!(num_condition_forwarded_operands, self.num_results());
+            for (index, result) in self.results().all().iter().copied().enumerate() {
+                stack_on_loop_exit.rename(index, result as ValueRef);
+            }
+            // 2
+            for (index, value) in stack_on_loop_exit.iter().rev().enumerate() {
+                let value = value.as_value().unwrap();
+                let is_result = self.results().all().iter().any(|r| *r as ValueRef == value);
+                let is_dominating_def = input_stack.find(&value).is_some();
+                assert!(
+                    is_result || is_dominating_def,
+                    "{value} at stack depth {index} incorrectly escapes its dominance frontier"
+                );
             }
 
-            // Emit the "before" block
-            body_emitter.emit(&before_block)
+            let enter_loop_body = {
+                let mut body_emitter = body_emitter.nest();
+
+                // Rename the `hir.condition` forwarded operands to match the 'after' region's entry block args
+                let after = self.after();
+                let after_block = after.entry();
+                assert_eq!(num_condition_forwarded_operands, after_block.num_arguments());
+                for (index, arg) in after_block.arguments().iter().copied().enumerate() {
+                    body_emitter.stack.rename(index, arg as ValueRef);
+                }
+
+                // Emit the "after" block
+                body_emitter.emit_inline(&after_block);
+
+                // At this point, control yields from "after" back to "before" to re-evaluate the loop
+                // condition. We must ensure that the yielded operands are renamed just as before, then
+                // push a `push.1` on the stack to re-enter the loop to retry the condition
+                assert_eq!(self.yield_op().borrow().yielded().len(), before_block.num_arguments());
+                for (index, arg) in before_block.arguments().iter().copied().enumerate() {
+                    body_emitter.stack.rename(index, arg as ValueRef);
+                }
+
+                // Re-enter the "before" block to retry the condition
+                body_emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(1))));
+
+                body_emitter.into_emitted_block(span)
+            };
+
+            let exit_loop_body = {
+                let mut body_emitter = body_emitter.nest();
+
+                // Exit the loop
+                body_emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(0))));
+
+                body_emitter.into_emitted_block(span)
+            };
+
+            body_emitter.emit_op(masm::Op::If {
+                span,
+                then_blk: enter_loop_body,
+                else_blk: exit_loop_body,
+            });
+
+            (stack_on_loop_exit, body_emitter.into_emitted_block(span))
         };
 
-        // The 'hir.condition' instruction we emitted in the unrolled first iteration will have
-        // popped the condition operand, but we need to rename the forwarded operands to the results
-        // produced by the 'hir.while' to represent the state after evaluation
-        for (index, result) in self.results().all().iter().enumerate() {
-            emitter.stack.rename(index, *result as ValueRef);
-        }
+        emitter.stack = stack_on_loop_exit;
 
-        // Emit the 'while.true' loop instruction
+        // Always enter loop on first iteration
+        emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(1))));
         emitter.emit_op(masm::Op::While {
             span,
-            body: while_body,
+            body: loop_body,
         });
-
-        // Validate that the expected operand stack state and the actual state match. We are
-        // expecting that there are no observable stack effects outside of the `hir::While`,
-        // except that the inputs were consumed, and replaced with results (if any).
-        assert_eq!(
-            emitter.stack, stack,
-            "unexpected observable stack effect leaked from 'hir.while'"
-        );
 
         Ok(())
     }
@@ -559,13 +618,9 @@ impl HirLowering for hir::Yield {
 }
 
 impl HirLowering for hir::Condition {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
-
-        // Evaluating this is equivalent to consuming the condition operand
-        emitter.stack.drop();
-
         Ok(())
     }
 }
