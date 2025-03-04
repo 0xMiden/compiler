@@ -7,9 +7,7 @@ builtin.component root_ns:root@1.0.0 {
             v5 = hir.lt v3, v4 : i1;
             v6 = hir.zext v5 : u32;
             v7 = hir.bitcast v6 : i32;
-            hir.br ^block7(v7);
-        ^block7(v2: i32):
-            hir.ret v2;
+            hir.ret v7;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

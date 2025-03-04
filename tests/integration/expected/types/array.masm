@@ -15,7 +15,11 @@ export.sum_arr
         neq
         if.true
 
-            movup.5
+            dropw
+            drop
+            movdn.2
+            drop
+            drop
         else
 
             dup.5
@@ -24,58 +28,7 @@ export.sum_arr
             movdn.2
             swap.1
             swap.7
-            dup.0
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
-            swap.1
-            u32div.4
-            movup.2
-            u32div.16
-            exec.::intrinsics::mem::load_sw
-            movup.2
-            u32wrapping_add
-            dup.5
-            swap.1
-            swap.2
-            swap.1
-            u32wrapping_add
-            dup.4
-            swap.1
-            swap.3
-            swap.1
-            u32wrapping_add
-            dup.0
-            dup.7
-            neq
-            dup.0
-            dup.9
-            swap.2
-            swap.1
-            swap.1
-            swap.5
-            swap.1
-            cdrop
-            dup.8
-            dup.3
-            dup.5
-            cdrop
-            dup.4
-            dup.10
-            swap.2
-            swap.1
-            swap.1
-            swap.4
-            swap.1
-            cdrop
-            dup.10
-            dup.6
-            swap.2
-            swap.6
-            cdrop
             push.1
-            u32and
             while.true
 
                 dup.0
@@ -90,52 +43,63 @@ export.sum_arr
                 exec.::intrinsics::mem::load_sw
                 movup.2
                 u32wrapping_add
-                dup.6
+                dup.5
                 swap.1
                 swap.2
                 swap.1
                 u32wrapping_add
-                dup.5
+                dup.4
                 swap.1
                 swap.3
                 swap.1
                 u32wrapping_add
                 dup.0
-                dup.8
+                dup.7
                 neq
                 dup.0
-                dup.10
+                dup.9
                 swap.2
-                swap.1
-                swap.1
                 swap.5
                 swap.1
                 cdrop
-                dup.9
+                dup.8
                 dup.3
                 dup.5
                 cdrop
                 dup.4
-                dup.11
+                dup.10
                 swap.2
-                swap.1
-                swap.1
                 swap.4
                 swap.1
                 cdrop
-                dup.11
-                dup.7
+                dup.10
+                dup.6
                 swap.2
                 swap.6
                 cdrop
                 push.1
                 u32and
+                movup.3
+                swap.4
+                movdn.3
+                if.true
+
+                    movup.3
+                    drop
+                    push.1
+                else
+
+                    push.0
+                end
             end
-            movup.3
+            drop
+            drop
+            drop
+            movdn.6
+            dropw
+            drop
+            drop
         end
-        movdn.8
-        dropw
-        dropw
 end
 
 

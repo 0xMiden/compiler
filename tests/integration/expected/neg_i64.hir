@@ -4,9 +4,7 @@ builtin.component root_ns:root@1.0.0 {
         ^block6(v0: i64):
             v2 = hir.constant 0 : i64;
             v3 = hir.sub v2, v0 : i64 #[overflow = wrapping];
-            hir.br ^block7(v3);
-        ^block7(v1: i64):
-            hir.ret v1;
+            hir.ret v3;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

@@ -1,45 +1,80 @@
-# mod collatz
+# mod root_ns:root@1.0.0::collatz
 
 export.entrypoint
-    push.0
-    swap.1
-    push.1
-    dup.1
-    swap.1
-    neq
-    neq.0
-    push.1
-    while.true
-        if.true
-            push.1
-            movup.2
-            swap.1
-            u32wrapping_add
-            dup.1
-            push.1
-            u32shr
-            push.3
-            dup.3
-            swap.1
-            exec.::intrinsics::i32::wrapping_mul
-            push.1
-            u32wrapping_add
-            push.1
-            movup.4
-            swap.1
-            u32and
-            neq.0
-            cdrop
-            push.1
-            dup.1
-            swap.1
+
+        push.0
+        push.1
+        push.3
+        push.0
+        push.1
+        push.3735929054
+        dup.5
+        swap.1
+        swap.7
+        push.1
+        while.true
+
+            dup.0
+            dup.6
             neq
-            neq.0
+            dup.7
+            neq
+            dup.4
+            dup.4
+            dup.2
+            cdrop
+            swap.1
+            if.true
+
+                dup.1
+                dup.6
+                exec.::intrinsics::i32::wrapping_mul
+                dup.7
+                u32wrapping_add
+                dup.2
+                dup.8
+                u32shr
+                dup.8
+                swap.1
+                swap.4
+                swap.1
+                u32and
+                dup.9
+                neq
+                movup.2
+                swap.3
+                movdn.2
+                cdrop
+                dup.2
+                dup.7
+                u32wrapping_add
+                swap.1
+            else
+
+                swap.1
+                drop
+                dup.7
+                dup.8
+            end
+            movup.2
             push.1
-        else
-            drop push.0
+            u32and
+            if.true
+
+                movup.2
+                drop
+                push.1
+            else
+
+                push.0
+            end
         end
-    end
+        drop
+        drop
+        movdn.6
+        dropw
+        drop
+        drop
 end
 
 

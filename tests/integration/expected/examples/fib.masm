@@ -1,33 +1,75 @@
-# mod fibonacci
+# mod root_ns:root@1.0.0::fibonacci
 
 export.entrypoint
-    push.0
-    push.1
-    movup.2
-    swap.1
-    dup.1
-    neq.0
-    push.1
-    while.true
-        if.true
-            push.4294967295
-            movup.2
-            swap.1
-            u32wrapping_add
+
+        push.1
+        push.0
+        push.4294967295
+        push.0
+        push.1
+        push.3735929054
+        dup.4
+        swap.1
+        swap.7
+        swap.1
+        swap.2
+        swap.6
+        push.1
+        while.true
+
             dup.1
-            swap.1
-            swap.3
-            swap.1
-            u32wrapping_add
+            dup.6
+            neq
+            dup.8
+            dup.2
+            dup.2
+            cdrop
+            dup.5
+            dup.9
+            dup.3
+            cdrop
             movup.2
-            swap.1
-            dup.1
-            neq.0
+            if.true
+
+                dup.6
+                swap.1
+                swap.4
+                swap.1
+                u32wrapping_add
+                dup.4
+                swap.1
+                swap.3
+                u32wrapping_add
+                movup.2
+                swap.1
+            else
+
+                swap.3
+                movup.2
+                drop
+                drop
+                dup.7
+                dup.8
+            end
+            movup.3
             push.1
-        else
-            drop drop push.0
+            u32and
+            if.true
+
+                movup.3
+                drop
+                push.1
+            else
+
+                push.0
+            end
         end
-    end
+        drop
+        drop
+        drop
+        movdn.5
+        dropw
+        drop
 end
 
 

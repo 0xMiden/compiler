@@ -1,8 +1,8 @@
 builtin.function public @test_wrapper() {
 ^block4:
     v0 = hir.constant 1 : i64;
-    v1 = hir.trunc v0 : i32 #[ty = i32];
-    hir.br block5;
+    v1 = hir.trunc v0 : i32;
+    hir.br ^block5;
 ^block5:
     hir.ret ;
 };

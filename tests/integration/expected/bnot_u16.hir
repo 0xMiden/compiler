@@ -4,9 +4,7 @@ builtin.component root_ns:root@1.0.0 {
         ^block6(v0: i32):
             v2 = hir.constant 65535 : i32;
             v3 = hir.bxor v0, v2 : i32;
-            hir.br ^block7(v3);
-        ^block7(v1: i32):
-            hir.ret v1;
+            hir.ret v3;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

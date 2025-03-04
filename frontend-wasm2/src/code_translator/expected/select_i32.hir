@@ -6,7 +6,7 @@ builtin.function public @test_wrapper() {
     v3 = hir.constant 0 : i32;
     v4 = hir.neq v2, v3 : i1;
     v5 = hir.select v4, v0, v1 : i64;
-    hir.br block5;
+    hir.br ^block5;
 ^block5:
     hir.ret ;
 };
