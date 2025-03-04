@@ -38,15 +38,33 @@ pub enum Action {
 /// Aliases of a value are treated as unique values for purposes of operand
 /// stack management, but are associated with multiple copies of a value
 /// on the stack.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone)]
 pub struct ValueOrAlias {
     value: hir::ValueRef,
+    value_id: hir::ValueId,
     id: u8,
+}
+impl Eq for ValueOrAlias {}
+impl PartialEq for ValueOrAlias {
+    fn eq(&self, other: &Self) -> bool {
+        self.value_id == other.value_id && self.id == other.id
+    }
+}
+impl core::hash::Hash for ValueOrAlias {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.value_id.hash(state);
+        self.id.hash(state);
+    }
 }
 impl ValueOrAlias {
     /// Create a new [ValueOrAlias] from the given [hir::ValueRef]
     pub fn new(value: hir::ValueRef) -> Self {
-        Self { value, id: 0 }
+        let value_id = value.borrow().id();
+        Self {
+            value,
+            value_id,
+            id: 0,
+        }
     }
 
     /// Create an aliased copy of this value, using `id` to uniquely identify the alias.
@@ -96,7 +114,7 @@ impl ValueOrAlias {
 }
 impl Ord for ValueOrAlias {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.value().cmp(&other.value()).then(self.id.cmp(&other.id))
+        self.value_id.cmp(&other.value_id).then(self.id.cmp(&other.id))
     }
 }
 impl PartialEq<hir::ValueRef> for ValueOrAlias {
@@ -125,23 +143,12 @@ impl From<ValueOrAlias> for hir::ValueRef {
 impl fmt::Debug for ValueOrAlias {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.alias() {
-            None => write!(f, "{}", &self.value),
-            Some(alias) => write!(f, "{}.{alias}", &self.value),
+            None => write!(f, "{}", &self.value_id),
+            Some(alias) => write!(f, "{}.{alias}", &self.value_id),
         }
     }
 }
-/*
-#[cfg(test)]
-impl proptest::arbitrary::Arbitrary for ValueOrAlias {
-    type Parameters = ();
-    type Strategy = proptest::strategy::Map<proptest::arbitrary::StrategyFor<u8>, fn(u8) -> Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        use proptest::strategy::Strategy;
-        proptest::arbitrary::any::<u8>().prop_map(|id| ValueOrAlias(id as u32))
-    }
-}
- */
 /// This is an simple representation of an operand on the operand stack
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operand {
