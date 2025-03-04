@@ -210,6 +210,7 @@ impl<'a> TransformationContext<'a> {
                     operands.iter().copied().map(|o| o.borrow().as_value_ref()),
                 );
                 let span = return_like_op.span();
+                drop(return_like_op);
                 self.interface.create_single_destination_branch(
                     span,
                     &mut builder,
