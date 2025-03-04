@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use super::constant_propagation::ConstantValue;
 use crate::{
-    adt::{SmallMap, SmallSet},
+    adt::{SmallDenseMap, SmallSet},
     dataflow::{
         AnalysisQueue, AnalysisState, AnalysisStateGuard, AnalysisStateInfo,
         AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, AnalysisStrategy,
@@ -162,7 +162,7 @@ pub struct PredecessorState {
     /// The known control-flow predecessors of this program point.
     known_predecessors: SmallSet<OperationRef, 4>,
     /// The successor inputs when branching from a given predecessor.
-    successor_inputs: SmallMap<OperationRef, SmallVec<[ValueRef; 4]>>,
+    successor_inputs: SmallDenseMap<OperationRef, SmallVec<[ValueRef; 4]>>,
     /// Whether all predecessors are known. Optimistically assume that we know all predecessors.
     all_known: bool,
 }

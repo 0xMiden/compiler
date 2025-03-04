@@ -11,7 +11,7 @@ use super::{
     RegionKindInterface, RegionRef,
 };
 use crate::{
-    adt::{SmallMap, SmallSet},
+    adt::{SmallDenseMap, SmallSet},
     cfg::{Graph, Inverse, InvertibleGraph},
     pass::Analysis,
     BlockRef, EntityWithId, Operation, OperationRef, PostOrderBlockIter, Report,
@@ -483,10 +483,10 @@ impl LoopForest {
             // Build a map we can use to move from our forest to the newly computed one. This allows
             // us to ignore the particular order in any layer of the loop forest while still
             // comparing the structure.
-            let mut other_headers = SmallMap::<BlockRef, Rc<Loop>, 8>::default();
+            let mut other_headers = SmallDenseMap::<BlockRef, Rc<Loop>, 8>::default();
 
             fn add_inner_loops_to_headers_map(
-                headers: &mut SmallMap<BlockRef, Rc<Loop>, 8>,
+                headers: &mut SmallDenseMap<BlockRef, Rc<Loop>, 8>,
                 l: &Rc<Loop>,
             ) {
                 let header = l.header();
@@ -535,7 +535,7 @@ impl LoopForest {
     fn compare_loops(
         l: Rc<Loop>,
         other_l: Rc<Loop>,
-        other_loop_headers: &mut SmallMap<BlockRef, Rc<Loop>, 8>,
+        other_loop_headers: &mut SmallDenseMap<BlockRef, Rc<Loop>, 8>,
     ) -> Result<(), Report> {
         let header = l.header();
         let other_header = other_l.header();
@@ -614,7 +614,7 @@ impl LoopForest {
     fn compare_loops(
         _l: Rc<Loop>,
         _other_l: Rc<Loop>,
-        _other_loop_headers: &mut SmallMap<BlockRef, Rc<Loop>, 8>,
+        _other_loop_headers: &mut SmallDenseMap<BlockRef, Rc<Loop>, 8>,
     ) -> Result<(), Report> {
         Ok(())
     }

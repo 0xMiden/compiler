@@ -6,8 +6,12 @@ pub mod smallprio;
 pub mod smallset;
 
 pub use self::{
-    arena::Arena, smalldeque::SmallDeque, smallmap::SmallMap, smallordset::SmallOrdSet,
-    smallprio::SmallPriorityQueue, smallset::SmallSet,
+    arena::Arena,
+    smalldeque::SmallDeque,
+    smallmap::{SmallDenseMap, SmallOrdMap},
+    smallordset::SmallOrdSet,
+    smallprio::SmallPriorityQueue,
+    smallset::SmallSet,
 };
 
 #[doc(hidden)]

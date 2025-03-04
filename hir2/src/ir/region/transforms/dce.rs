@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeSet, VecDeque};
+use alloc::collections::VecDeque;
 
 use smallvec::SmallVec;
 
@@ -19,8 +19,8 @@ use crate::{
 /// increases monotonically to a fixed-point.
 #[derive(Default)]
 struct LiveMap {
-    values: BTreeSet<ValueRef>,
-    ops: BTreeSet<OperationRef>,
+    values: SmallSet<ValueRef, 16>,
+    ops: SmallSet<OperationRef, 16>,
     changed: bool,
 }
 impl LiveMap {

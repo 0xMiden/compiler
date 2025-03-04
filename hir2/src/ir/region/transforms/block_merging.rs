@@ -1,10 +1,8 @@
 #![allow(unused)]
-use alloc::collections::BTreeMap;
-
 use super::RegionTransformFailed;
 use crate::{
-    BlockArgument, BlockRef, DynHash, OpResult, Operation, OperationRef, Region, RegionRef,
-    Rewriter, ValueRef,
+    adt::SmallDenseMap, BlockArgument, BlockRef, DynHash, OpResult, Operation, OperationRef,
+    Region, RegionRef, Rewriter, ValueRef,
 };
 
 bitflags::bitflags! {
@@ -205,13 +203,13 @@ struct BlockEquivalenceData {
     /// A map of result producing operations to their relative orders within this block. The order
     /// of an operation is the number of defined values that are produced within the block before
     /// this operation.
-    op_order_index: BTreeMap<OperationRef, u32>,
+    op_order_index: SmallDenseMap<OperationRef, u32>,
 }
 impl BlockEquivalenceData {
     pub fn new(block: BlockRef) -> Self {
         use core::hash::Hasher;
 
-        let mut op_order_index = BTreeMap::default();
+        let mut op_order_index = SmallDenseMap::default();
 
         let b = block.borrow();
         let mut order = b.num_arguments() as u32;

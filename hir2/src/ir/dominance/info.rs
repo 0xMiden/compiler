@@ -1,12 +1,12 @@
-use alloc::{collections::BTreeMap, rc::Rc};
+use alloc::rc::Rc;
 use core::cell::{LazyCell, Ref, RefCell};
 
 use smallvec::SmallVec;
 
 use super::*;
 use crate::{
-    pass::Analysis, Block, BlockRef, Operation, OperationRef, RegionKindInterface, RegionRef,
-    Report,
+    adt::SmallDenseMap, pass::Analysis, Block, BlockRef, Operation, OperationRef,
+    RegionKindInterface, RegionRef, Report,
 };
 
 /// [DominanceInfo] provides a high-level API for querying dominance information.
@@ -283,7 +283,7 @@ pub(crate) struct DominanceInfoBase<const IS_POST_DOM: bool> {
     ///
     /// This map does not contain dominator trees for empty or single block regions, however we
     /// still compute whether or not they have SSA dominance regardless.
-    dominance_infos: RefCell<BTreeMap<RegionRef, RegionDominanceInfo<IS_POST_DOM>>>,
+    dominance_infos: RefCell<SmallDenseMap<RegionRef, RegionDominanceInfo<IS_POST_DOM>>>,
 }
 
 impl<const IS_POST_DOM: bool> Clone for DominanceInfoBase<IS_POST_DOM> {

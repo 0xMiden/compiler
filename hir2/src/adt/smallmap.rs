@@ -7,7 +7,7 @@ use core::{
 
 use smallvec::SmallVec;
 
-/// [SmallMap] is a [BTreeMap]-like structure that can store a specified number
+/// [SmallOrdMap] is a [BTreeMap]-like structure that can store a specified number
 /// of elements inline (i.e. on the stack) without allocating memory from the heap.
 ///
 /// This data structure is designed with two goals in mind:
@@ -21,17 +21,72 @@ use smallvec::SmallVec;
 /// when all of the data is stored inline, but may not be a good fit for all use cases.
 ///
 /// Due to its design constraints, it only supports keys which implement [Ord].
-pub struct SmallMap<K, V, const N: usize = 4> {
+pub type SmallOrdMap<K, V, const N: usize = 4> = SmallMap<K, V, Ordered, N>;
+
+/// [SmallDenseMap] is a [HashMap]-like structure that can store a specified number of elements inline
+/// (i.e. on the stack) without allocating memory from the heap.
+///
+/// This data structure is designed with two goals in mind:
+///
+/// * Support efficient key/value operations over a small set of keys
+/// * Preserve the insertion order of keys
+/// * Avoid allocating data on the heap for the typical case
+///
+/// Internally, [SmallDenseMap] is implemented on top of [SmallVec], and uses linear search to locate
+/// elements. This is quite efficient for small numbers of keys, and is particularly fast when all
+/// of the data is stored inline, but may not be a good fit for all use cases.
+///
+/// Due to its design constraints, it only supports keys which implement [Eq].
+pub type SmallDenseMap<K, V, const N: usize = 4> = SmallMap<K, V, Unordered, N>;
+
+/// Marker type for Ord-based maps
+#[derive(Copy, Clone, Default)]
+#[doc(hidden)]
+pub struct Ordered;
+
+/// Marker type for Eq-based maps
+#[derive(Copy, Clone, Default)]
+#[doc(hidden)]
+pub struct Unordered;
+
+pub struct SmallMap<K, V, T, const N: usize = 4> {
     items: SmallVec<[KeyValuePair<K, V>; N]>,
+    finder: T,
 }
-impl<K, V, const N: usize> SmallMap<K, V, N>
+
+pub trait SmallMapKind<K, V, Q: ?Sized> {
+    fn find(items: &[KeyValuePair<K, V>], item: &Q) -> Result<usize, usize>;
+}
+
+impl<K, V, Q> SmallMapKind<K, V, Q> for Unordered
 where
-    K: Ord,
+    K: Eq + Borrow<Q>,
+    Q: Eq + ?Sized,
 {
+    fn find(items: &[KeyValuePair<K, V>], item: &Q) -> Result<usize, usize> {
+        match items.iter().position(|kv| kv.key.borrow() == item) {
+            None => Err(items.len()),
+            Some(pos) => Ok(pos),
+        }
+    }
+}
+
+impl<K, V, Q> SmallMapKind<K, V, Q> for Ordered
+where
+    K: Ord + Borrow<Q>,
+    Q: Ord + ?Sized,
+{
+    fn find(items: &[KeyValuePair<K, V>], item: &Q) -> Result<usize, usize> {
+        items.binary_search_by(|probe| Ord::cmp(probe.key.borrow(), item))
+    }
+}
+
+impl<K: Eq, V, const N: usize> SmallMap<K, V, Unordered, N> {
     /// Returns a new, empty [SmallMap]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             items: SmallVec::new_const(),
+            finder: Unordered,
         }
     }
 
@@ -39,9 +94,30 @@ where
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             items: SmallVec::with_capacity(capacity),
+            finder: Unordered,
+        }
+    }
+}
+
+impl<K: Ord, V, const N: usize> SmallMap<K, V, Ordered, N> {
+    /// Returns a new, empty [SmallMap]
+    pub fn new() -> Self {
+        Self {
+            items: SmallVec::new_const(),
+            finder: Ordered,
         }
     }
 
+    /// Returns a new, empty [SmallMap], with capacity for `capacity` nodes without reallocating.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            items: SmallVec::with_capacity(capacity),
+            finder: Ordered,
+        }
+    }
+}
+
+impl<T, K, V, const N: usize> SmallMap<K, V, T, N> {
     /// Returns true if this map is empty
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
@@ -62,11 +138,19 @@ where
         self.items.iter_mut().map(|pair| (&pair.key, &mut pair.value))
     }
 
+    /// Clear the content of the map
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+}
+
+impl<T, K, V, const N: usize> SmallMap<K, V, T, N> {
     /// Returns true if `key` has been inserted in this map
-    pub fn contains<Q>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
+        T: SmallMapKind<K, V, Q>,
         K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         self.find(key).is_ok()
     }
@@ -74,8 +158,9 @@ where
     /// Returns the value under `key` in this map, if it exists
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
+        T: SmallMapKind<K, V, Q>,
         K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         match self.find(key) {
             Ok(idx) => Some(&self.items[idx].value),
@@ -86,8 +171,9 @@ where
     /// Returns a mutable reference to the value under `key` in this map, if it exists
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
     where
+        T: SmallMapKind<K, V, Q>,
         K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         match self.find(key) {
             Ok(idx) => Some(&mut self.items[idx].value),
@@ -95,6 +181,34 @@ where
         }
     }
 
+    /// Removes the value inserted under `key`, if it exists
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        T: SmallMapKind<K, V, Q>,
+        K: Borrow<Q>,
+        Q: ?Sized,
+    {
+        match self.find(key) {
+            Ok(idx) => Some(self.items.remove(idx).value),
+            Err(_) => None,
+        }
+    }
+
+    #[inline(always)]
+    fn find<Q>(&self, item: &Q) -> Result<usize, usize>
+    where
+        T: SmallMapKind<K, V, Q>,
+        K: Borrow<Q>,
+        Q: ?Sized,
+    {
+        <T as SmallMapKind<K, V, Q>>::find(&self.items, item)
+    }
+}
+
+impl<T, K, V, const N: usize> SmallMap<K, V, T, N>
+where
+    T: SmallMapKind<K, V, K>,
+{
     /// Inserts a new entry in this map using `key` and `value`.
     ///
     /// Returns the previous value, if `key` was already present in the map.
@@ -108,54 +222,32 @@ where
         }
     }
 
-    /// Removes the value inserted under `key`, if it exists
-    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
-    where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        match self.find(key) {
-            Ok(idx) => Some(self.items.remove(idx).value),
-            Err(_) => None,
-        }
-    }
-
-    /// Clear the content of the map
-    pub fn clear(&mut self) {
-        self.items.clear();
-    }
-
     /// Returns an [Entry] which can be used to combine `contains`+`insert` type operations.
-    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, N> {
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, T, N> {
         match self.find(&key) {
             Ok(idx) => Entry::occupied(self, idx),
             Err(idx) => Entry::vacant(self, idx, key),
         }
     }
-
-    #[inline]
-    fn find<Q>(&self, item: &Q) -> Result<usize, usize>
-    where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        self.items.binary_search_by(|probe| Ord::cmp(probe.key.borrow(), item))
-    }
 }
-impl<K, V, const N: usize> Default for SmallMap<K, V, N> {
+
+impl<T: Default, K, V, const N: usize> Default for SmallMap<K, V, T, N> {
     fn default() -> Self {
         Self {
             items: Default::default(),
+            finder: T::default(),
         }
     }
 }
-impl<K, V, const N: usize> Eq for SmallMap<K, V, N>
+
+impl<T, K, V, const N: usize> Eq for SmallMap<K, V, T, N>
 where
     K: Eq,
     V: Eq,
 {
 }
-impl<K, V, const N: usize> PartialEq for SmallMap<K, V, N>
+
+impl<T, K, V, const N: usize> PartialEq for SmallMap<K, V, T, N>
 where
     K: PartialEq,
     V: PartialEq,
@@ -168,7 +260,8 @@ where
             .eq(other.items.iter().map(|pair| (&pair.key, &pair.value)))
     }
 }
-impl<K, V, const N: usize> fmt::Debug for SmallMap<K, V, N>
+
+impl<T, K, V, const N: usize> fmt::Debug for SmallMap<K, V, T, N>
 where
     K: fmt::Debug + Ord,
     V: fmt::Debug,
@@ -179,8 +272,10 @@ where
             .finish()
     }
 }
-impl<K, V, const N: usize> Clone for SmallMap<K, V, N>
+
+impl<T, K, V, const N: usize> Clone for SmallMap<K, V, T, N>
 where
+    T: Copy,
     K: Clone,
     V: Clone,
 {
@@ -188,13 +283,12 @@ where
     fn clone(&self) -> Self {
         Self {
             items: self.items.clone(),
+            finder: self.finder,
         }
     }
 }
-impl<K, V, const N: usize> IntoIterator for SmallMap<K, V, N>
-where
-    K: Ord,
-{
+
+impl<T, K, V, const N: usize> IntoIterator for SmallMap<K, V, T, N> {
     type IntoIter = SmallMapIntoIter<K, V, N>;
     type Item = (K, V);
 
@@ -205,9 +299,10 @@ where
         }
     }
 }
-impl<K, V, const N: usize> FromIterator<(K, V)> for SmallMap<K, V, N>
+
+impl<T, K, V, const N: usize> FromIterator<(K, V)> for SmallMap<K, V, T, N>
 where
-    K: Ord,
+    T: Default + SmallMapKind<K, V, K>,
 {
     fn from_iter<I>(iter: I) -> Self
     where
@@ -220,10 +315,11 @@ where
         map
     }
 }
-impl<K, V, Q, const N: usize> Index<&Q> for SmallMap<K, V, N>
+impl<T, K, V, Q, const N: usize> Index<&Q> for SmallMap<K, V, T, N>
 where
-    K: Borrow<Q> + Ord,
-    Q: Ord + ?Sized,
+    T: SmallMapKind<K, V, Q>,
+    K: Borrow<Q>,
+    Q: ?Sized,
 {
     type Output = V;
 
@@ -231,10 +327,11 @@ where
         self.get(key).unwrap()
     }
 }
-impl<K, V, Q, const N: usize> IndexMut<&Q> for SmallMap<K, V, N>
+impl<T, K, V, Q, const N: usize> IndexMut<&Q> for SmallMap<K, V, T, N>
 where
-    K: Borrow<Q> + Ord,
-    Q: Ord + ?Sized,
+    T: SmallMapKind<K, V, Q>,
+    K: Borrow<Q>,
+    Q: ?Sized,
 {
     fn index_mut(&mut self, key: &Q) -> &mut Self::Output {
         self.get_mut(key).unwrap()
@@ -292,11 +389,11 @@ impl<K, V, const N: usize> DoubleEndedIterator for SmallMapIntoIter<K, V, N> {
 }
 
 /// Represents an key/value pair entry in a [SmallMap]
-pub enum Entry<'a, K, V, const N: usize> {
-    Occupied(OccupiedEntry<'a, K, V, N>),
-    Vacant(VacantEntry<'a, K, V, N>),
+pub enum Entry<'a, K, V, T, const N: usize> {
+    Occupied(OccupiedEntry<'a, K, V, T, N>),
+    Vacant(VacantEntry<'a, K, V, T, N>),
 }
-impl<'a, K, V: Default, const N: usize> Entry<'a, K, V, N> {
+impl<'a, K, V: Default, T, const N: usize> Entry<'a, K, V, T, N> {
     pub fn or_default(self) -> &'a mut V {
         match self {
             Self::Occupied(entry) => entry.into_mut(),
@@ -304,12 +401,15 @@ impl<'a, K, V: Default, const N: usize> Entry<'a, K, V, N> {
         }
     }
 }
-impl<'a, K, V, const N: usize> Entry<'a, K, V, N> {
-    fn occupied(map: &'a mut SmallMap<K, V, N>, idx: usize) -> Self {
+impl<'a, K, V, T, const N: usize> Entry<'a, K, V, T, N>
+where
+    T: SmallMapKind<K, V, K>,
+{
+    fn occupied(map: &'a mut SmallMap<K, V, T, N>, idx: usize) -> Self {
         Self::Occupied(OccupiedEntry { map, idx })
     }
 
-    fn vacant(map: &'a mut SmallMap<K, V, N>, idx: usize, key: K) -> Self {
+    fn vacant(map: &'a mut SmallMap<K, V, T, N>, idx: usize, key: K) -> Self {
         Self::Vacant(VacantEntry { map, idx, key })
     }
 
@@ -352,11 +452,11 @@ impl<'a, K, V, const N: usize> Entry<'a, K, V, N> {
 }
 
 /// Represents an occupied entry in a [SmallMap]
-pub struct OccupiedEntry<'a, K, V, const N: usize> {
-    map: &'a mut SmallMap<K, V, N>,
+pub struct OccupiedEntry<'a, K, V, T, const N: usize> {
+    map: &'a mut SmallMap<K, V, T, N>,
     idx: usize,
 }
-impl<'a, K, V, const N: usize> OccupiedEntry<'a, K, V, N> {
+impl<'a, K, V, T, const N: usize> OccupiedEntry<'a, K, V, T, N> {
     #[inline(always)]
     fn get_entry(&self) -> &KeyValuePair<K, V> {
         &self.map.items[self.idx]
@@ -384,12 +484,12 @@ impl<'a, K, V, const N: usize> OccupiedEntry<'a, K, V, N> {
 }
 
 /// Represents a vacant entry in a [SmallMap]
-pub struct VacantEntry<'a, K, V, const N: usize> {
-    map: &'a mut SmallMap<K, V, N>,
+pub struct VacantEntry<'a, K, V, T, const N: usize> {
+    map: &'a mut SmallMap<K, V, T, N>,
     idx: usize,
     key: K,
 }
-impl<'a, K, V, const N: usize> VacantEntry<'a, K, V, N> {
+impl<'a, K, V, T, const N: usize> VacantEntry<'a, K, V, T, N> {
     pub fn key(&self) -> &K {
         &self.key
     }
@@ -424,7 +524,8 @@ impl<'a, K, V, const N: usize> VacantEntry<'a, K, V, N> {
     }
 }
 
-struct KeyValuePair<K, V> {
+#[doc(hidden)]
+pub struct KeyValuePair<K, V> {
     key: K,
     value: V,
 }

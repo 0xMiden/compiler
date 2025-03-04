@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::{adt::SmallMap, *};
+use midenc_hir2::{adt::SmallDenseMap, *};
 
 use crate::{
     builders::{DefaultInstBuilder, InstBuilder},
@@ -120,7 +120,8 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         assert_eq!(else_yield.borrow().num_operands(), num_results);
         let mut true_yields = SmallVec::<[ValueRef; 4]>::default();
         let mut false_yields = SmallVec::<[ValueRef; 4]>::default();
-        let mut deduplicated_selections = SmallMap::<(ValueRef, ValueRef), ValueRef, 4>::default();
+        let mut deduplicated_selections =
+            SmallDenseMap::<(ValueRef, ValueRef), ValueRef, 4>::default();
         let anchor_op = anchor.borrow();
         let new_then_region = anchor_op.then_body().as_region_ref();
         let new_else_region = anchor_op.else_body().as_region_ref();

@@ -1,8 +1,9 @@
-use alloc::{collections::BTreeMap, rc::Rc};
+use alloc::rc::Rc;
 
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    adt::SmallDenseMap,
     matchers::Matcher,
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
@@ -69,10 +70,10 @@ type ConstantMap = FxHashMap<UniquedConstant, OperationRef>;
 pub struct OperationFolder {
     rewriter: Box<dyn Rewriter>,
     /// A mapping between an insertion region and the constants that have been created within it.
-    scopes: BTreeMap<RegionRef, ConstantMap>,
+    scopes: SmallDenseMap<RegionRef, ConstantMap>,
     /// This map tracks all of the dialects that an operation is referenced by; given that multiple
     /// dialects may generate the same constant.
-    referenced_dialects: BTreeMap<OperationRef, SmallVec<[Rc<dyn Dialect>; 1]>>,
+    referenced_dialects: SmallDenseMap<OperationRef, SmallVec<[Rc<dyn Dialect>; 1]>>,
     /// The location to use for folder-owned constants
     erased_folded_location: SourceSpan,
 }

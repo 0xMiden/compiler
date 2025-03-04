@@ -624,18 +624,16 @@ impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
         Self::ptr_eq(self, other)
     }
 }
-impl<T: ?Sized, Metadata> PartialOrd for RawEntityRef<T, Metadata> {
+impl<T: ?Sized + EntityWithId, Metadata> PartialOrd for RawEntityRef<T, Metadata> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<T: ?Sized, Metadata> Ord for RawEntityRef<T, Metadata> {
+impl<T: ?Sized + EntityWithId, Metadata> Ord for RawEntityRef<T, Metadata> {
     #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        let a = self.inner.as_ptr() as *const () as usize;
-        let b = other.inner.as_ptr() as *const () as usize;
-        a.cmp(&b)
+        self.borrow().id().cmp(&other.borrow().id())
     }
 }
 impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {

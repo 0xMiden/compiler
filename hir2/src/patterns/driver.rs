@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeSet, rc::Rc};
+use alloc::rc::Rc;
 use core::cell::RefCell;
 
 use smallvec::SmallVec;
@@ -8,6 +8,7 @@ use super::{
     RewriterListener,
 };
 use crate::{
+    adt::SmallSet,
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttrPrinter, BlockRef, Builder, Context, InsertionGuard, Listener, OpFoldResult,
     OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report,
@@ -369,7 +370,7 @@ pub struct GreedyPatternRewriteDriver {
     worklist: RefCell<Worklist>,
     config: GreedyRewriteConfig,
     /// Not maintained when `config.restrict` is `GreedyRewriteStrictness::Any`
-    filtered_ops: RefCell<BTreeSet<OperationRef>>,
+    filtered_ops: RefCell<SmallSet<OperationRef, 8>>,
     matcher: RefCell<PatternApplicator>,
 }
 
@@ -944,7 +945,7 @@ pub struct MultiOpPatternRewriteDriver {
 }
 
 struct MultiOpPatternRewriteDriverImpl {
-    surviving_ops: RefCell<BTreeSet<OperationRef>>,
+    surviving_ops: RefCell<SmallSet<OperationRef, 8>>,
 }
 
 impl MultiOpPatternRewriteDriver {
@@ -954,7 +955,7 @@ impl MultiOpPatternRewriteDriver {
         mut config: GreedyRewriteConfig,
         ops: &[OperationRef],
     ) -> Self {
-        let surviving_ops = BTreeSet::from_iter(ops.iter().copied());
+        let surviving_ops = SmallSet::from_iter(ops.iter().copied());
         let inner = Rc::new(MultiOpPatternRewriteDriverImpl {
             surviving_ops: RefCell::new(surviving_ops),
         });

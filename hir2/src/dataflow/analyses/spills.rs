@@ -3,7 +3,7 @@ use alloc::collections::VecDeque;
 use smallvec::SmallVec;
 
 use crate::{
-    adt::{SmallMap, SmallSet},
+    adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     dataflow::{
         analyses::{
@@ -1141,7 +1141,7 @@ impl SpillAnalysis {
         w_in: &SmallSet<Operand, 4>,
         liveness: &LivenessAnalysis,
     ) -> SmallSet<Operand, 4> {
-        let mut freq = SmallMap::<Operand, u8, 4>::default();
+        let mut freq = SmallOrdMap::<Operand, u8, 4>::default();
         let mut take = SmallSet::<Operand, 4>::default();
         let mut cand = SmallSet::<Operand, 4>::default();
 
@@ -1401,7 +1401,7 @@ impl SpillAnalysis {
         w_in: &SmallSet<Operand, 4>,
         liveness: &LivenessAnalysis,
     ) -> SmallSet<Operand, 4> {
-        let mut freq = SmallMap::<Operand, u8, 4>::default();
+        let mut freq = SmallOrdMap::<Operand, u8, 4>::default();
         let mut take = SmallSet::<Operand, 4>::default();
         let mut cand = SmallSet::<Operand, 4>::default();
 

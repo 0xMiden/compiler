@@ -7,7 +7,7 @@ use super::{
     *,
 };
 use crate::{
-    adt::{SmallMap, SmallSet},
+    adt::{SmallDenseMap, SmallSet},
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef, Region, RegionRef,
     Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
@@ -873,7 +873,7 @@ impl<'a> TransformationContext<'a> {
             // Cache dominance queries for loop_block_ref.
             // There are likely to be many duplicate queries as there can be many value definitions
             // within a block.
-            let mut dominance_cache = SmallMap::<BlockRef, bool>::default();
+            let mut dominance_cache = SmallDenseMap::<BlockRef, bool>::default();
             // Returns true if `loop_block_ref` dominates `block`.
             let mut loop_block_dominates = |block: BlockRef, dominance_info: &DominanceInfo| {
                 use crate::adt::smallmap::Entry;

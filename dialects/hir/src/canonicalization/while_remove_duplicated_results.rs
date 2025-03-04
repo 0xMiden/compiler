@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 
 use midenc_hir2::{
-    adt::{SmallMap, SmallSet},
+    adt::{SmallDenseMap, SmallSet},
     *,
 };
 
@@ -74,11 +74,11 @@ impl RewritePattern for WhileRemoveDuplicatedResults {
             return Ok(false);
         }
 
-        let mut args_map = SmallMap::<_, _, 4>::with_capacity(cond_op_args.len());
+        let mut args_map = SmallDenseMap::<_, _, 4>::with_capacity(cond_op_args.len());
         let mut new_args = SmallVec::<[ValueRef; 4]>::with_capacity(cond_op_args.len());
 
         for arg in cond_op_args.iter().copied() {
-            if !args_map.contains(&arg) {
+            if !args_map.contains_key(&arg) {
                 args_map.insert(arg, args_map.len());
                 new_args.push(arg);
             }

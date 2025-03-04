@@ -2,7 +2,7 @@ use core::fmt;
 
 use smallvec::SmallVec;
 
-use crate::{adt::SmallMap, BlockRef};
+use crate::{adt::SmallDenseMap, BlockRef};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum CfgUpdateKind {
@@ -91,8 +91,8 @@ pub trait GraphDiff {
 /// InverseEdge is false and the predecessors when InverseEdge is true.
 #[derive(Clone)]
 pub struct CfgDiff<const INVERSE_GRAPH: bool = false> {
-    succ: SmallMap<BlockRef, DeletesInserts>,
-    pred: SmallMap<BlockRef, DeletesInserts>,
+    succ: SmallDenseMap<BlockRef, DeletesInserts>,
+    pred: SmallDenseMap<BlockRef, DeletesInserts>,
     /// By default, it is assumed that, given a CFG and a set of updates, we wish
     /// to apply these updates as given. If UpdatedAreReverseApplied is set, the
     /// updates will be applied in reverse: deleted edges are considered re-added
@@ -228,7 +228,7 @@ where
     // Otherwise, the sequence of updates contains multiple updates of the same kind and we assert
     // for that case.
     let mut operations =
-        SmallMap::<(BlockRef, BlockRef), UpdateOp, 4>::with_capacity(all_updates.len());
+        SmallDenseMap::<(BlockRef, BlockRef), UpdateOp, 4>::with_capacity(all_updates.len());
 
     for (
         i,

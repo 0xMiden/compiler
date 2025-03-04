@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use super::*;
-use crate::{BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
+use crate::{adt::SmallDenseMap, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
 
 /// Type representing an edge in the CFG.
 ///
@@ -147,39 +147,6 @@ pub fn calculate_cycle_edges(cycles: &[BlockRef]) -> CycleEdges {
     }
 
     result
-}
-
-struct SmallDenseMap<K, V>(SmallVec<[(K, V); 4]>);
-impl<K, V> Default for SmallDenseMap<K, V> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-impl<K, V> SmallDenseMap<K, V>
-where
-    K: Eq,
-{
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        match self.0.iter_mut().find(|(k, _)| k == &key) {
-            None => {
-                self.0.push((key, value));
-                None
-            }
-            Some((_, prev)) => Some(core::mem::replace(prev, value)),
-        }
-    }
-
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.0.iter().find_map(|(k, v)| if k == key { Some(v) } else { None })
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn iter(&self) -> core::slice::Iter<'_, (K, V)> {
-        self.0.iter()
-    }
 }
 
 /// Typed used to orchestrate creation of so-called edge multiplexers.
