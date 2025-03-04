@@ -10,6 +10,7 @@ mod stages;
 
 use alloc::{rc::Rc, vec::Vec};
 
+use midenc_hir2::dialects::builtin;
 pub use midenc_hir2::Context;
 use midenc_session::{
     diagnostics::{miette, Diagnostic, IntoDiagnostic, Report, WrapErr},
@@ -87,6 +88,13 @@ where
 
     let inputs = context.session().inputs.clone();
     stages.run(inputs, context)
+}
+
+pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<builtin::ComponentRef> {
+    let mut stages = ParseStage.collect(LinkStage).next_optional(ApplyRewritesStage);
+
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context).map(|link_output| link_output.component)
 }
 
 fn compile_inputs(
