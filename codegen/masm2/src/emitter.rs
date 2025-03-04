@@ -4,7 +4,7 @@ use midenc_hir2::{
     dataflow::analyses::LivenessAnalysis,
     dialects::builtin,
     traits::{BinaryOp, Commutative},
-    Block, Operation, ValueRef,
+    Block, Operation, ProgramPoint, ValueRef,
 };
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -55,6 +55,8 @@ impl BlockEmitter<'_> {
 
     fn emit_inst(&mut self, op: &Operation) {
         use crate::HirLowering;
+
+        self.drop_unused_operands_at(op);
 
         // Move instruction operands into place, minimizing unnecessary stack manipulation ops
         //
@@ -131,11 +133,10 @@ impl BlockEmitter<'_> {
     }
 
     /// Drop the operands on the stack which are no longer live upon entry into
-    /// the current block.
+    /// the current program point.
     ///
-    /// This is intended to be called before scheduling any instructions in the block.
-    #[allow(unused)]
-    pub fn drop_unused_operands_at(&mut self, pp: midenc_hir2::ProgramPoint) {
+    /// This is intended to be called before scheduling `op`
+    pub fn drop_unused_operands_at(&mut self, op: &Operation) {
         // We start by computing the set of unused operands on the stack at this point
         // in the program. We will use the resulting vectors to schedule instructions
         // that will move those operands to the top of the stack to be discarded
@@ -143,10 +144,11 @@ impl BlockEmitter<'_> {
         let mut constraints = SmallVec::<[Constraint; 4]>::default();
         for operand in self.stack.iter().rev() {
             let value = operand.as_value().expect("unexpected non-ssa value on stack");
-            // If the given value is not live on entry to this block, it should be dropped
-            let liveness = self.liveness.next_uses_at(&pp).unwrap();
-            if !liveness.is_live(&value) {
-                log::trace!("should drop {value} at {}", pp);
+            // If the given value is not live at or through this op, it should be dropped
+            let is_live = self.liveness.is_live_before(value, op)
+                || self.liveness.is_live_after_entry(value, op);
+            if !is_live {
+                log::trace!("should drop {value} at {}", ProgramPoint::before(op));
                 unused.push(value);
                 constraints.push(Constraint::Move);
             }
@@ -261,7 +263,10 @@ impl BlockEmitter<'_> {
             } else {
                 self.schedule_operands(&unused, &constraints, SourceSpan::default())
                     .unwrap_or_else(|err| {
-                        panic!("failed to schedule unused operands for {}: {err:?}", pp)
+                        panic!(
+                            "failed to schedule unused operands for {}: {err:?}",
+                            ProgramPoint::before(op)
+                        )
                     });
                 let mut emitter = self.emitter();
                 emitter.dropn(unused.len(), SourceSpan::default());
