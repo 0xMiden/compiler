@@ -40,9 +40,7 @@ impl BlockEmitter<'_> {
 
     pub fn emit(mut self, block: &Block) -> masm::Block {
         self.emit_inline(block);
-
-        let ops = core::mem::take(&mut self.target);
-        masm::Block::new(block.span(), ops)
+        self.into_emitted_block(block.span())
     }
 
     pub fn emit_inline(&mut self, block: &Block) {
@@ -51,6 +49,11 @@ impl BlockEmitter<'_> {
             self.emit_inst(&op);
             // TODO?: Drop unused results of the instruction immediately
         }
+    }
+
+    pub fn into_emitted_block(mut self, span: SourceSpan) -> masm::Block {
+        let ops = core::mem::take(&mut self.target);
+        masm::Block::new(span, ops)
     }
 
     fn emit_inst(&mut self, op: &Operation) {
