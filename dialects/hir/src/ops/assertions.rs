@@ -4,31 +4,60 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite)
+    traits(HasSideEffects, MemoryWrite),
+    implements(OpPrinter)
 )]
 pub struct Assert {
     #[operand]
     value: Bool,
-    #[attr]
+    #[attr(hidden)]
     #[default]
     code: u32,
 }
 
+impl OpPrinter for Assert {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
+        let code = *self.code();
+        if code == 0 {
+            doc + const_text(";")
+        } else {
+            doc + const_text(" #[code = ") + display(code) + const_text("];")
+        }
+    }
+}
+
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite)
+    traits(HasSideEffects, MemoryWrite),
+    implements(OpPrinter)
 )]
 pub struct Assertz {
     #[operand]
     value: Bool,
-    #[attr]
+    #[attr(hidden)]
     #[default]
     code: u32,
+}
+impl OpPrinter for Assertz {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
+        let code = *self.code();
+        if code == 0 {
+            doc + const_text(";")
+        } else {
+            doc + const_text(" #[code = ") + display(code) + const_text("];")
+        }
+    }
 }
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite, Commutative, SameTypeOperands)
+    traits(BinaryOp, HasSideEffects, MemoryWrite, Commutative, SameTypeOperands)
 )]
 pub struct AssertEq {
     #[operand]
@@ -39,13 +68,27 @@ pub struct AssertEq {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite)
+    traits(HasSideEffects, MemoryWrite),
+    implements(OpPrinter)
 )]
 pub struct AssertEqImm {
     #[operand]
     lhs: AnyInteger,
-    #[attr]
+    #[attr(hidden)]
     rhs: Immediate,
+}
+
+impl OpPrinter for AssertEqImm {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        display(self.op.name())
+            + const_text(" ")
+            + display(self.lhs().as_value_ref())
+            + const_text(", ")
+            + display(self.rhs())
+            + const_text(";")
+    }
 }
 
 #[operation(
@@ -60,7 +103,7 @@ pub struct Unreachable {}
     implements(InferTypeOpInterface, Foldable)
 )]
 pub struct Poison {
-    #[attr]
+    #[attr(hidden)]
     ty: Type,
     #[result]
     result: AnyType,

@@ -9,7 +9,7 @@ use crate::{derive::operation, dialects::test::TestDialect, traits::*, *};
     implements(InferTypeOpInterface, Foldable)
 )]
 pub struct Constant {
-    #[attr]
+    #[attr(hidden)]
     value: Immediate,
     #[result]
     result: AnyInteger,
