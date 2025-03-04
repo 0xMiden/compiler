@@ -64,14 +64,12 @@ impl BlockEmitter<'_> {
         // handled separately within the specific handlers for those instructions
         let mut args = op
             .operands()
-            .group(0)
             .iter()
             .map(|operand| operand.borrow().as_value_ref())
             .collect::<SmallVec<[_; 2]>>();
 
         let mut constraints = op
             .operands()
-            .group(0)
             .iter()
             .enumerate()
             .map(|(index, operand)| {
@@ -80,7 +78,7 @@ impl BlockEmitter<'_> {
                     Constraint::Copy
                 } else {
                     // Check if this is the last use of `value` by this operation
-                    let operands = op.operands().group(0);
+                    let operands = op.operands().all();
                     let remaining = &operands.as_slice()[..index];
                     if remaining.iter().any(|o| o.borrow().as_value_ref() == value) {
                         Constraint::Copy
@@ -94,6 +92,9 @@ impl BlockEmitter<'_> {
         // All of Miden's binary ops expect the right-hand operand on top of the stack, this
         // requires us to invert the expected order of operands from the standard ordering in the
         // IR
+        //
+        // TODO(pauls): We should probably assign a dedicated trait for this type of argument
+        // ordering override, rather than assuming that all BinaryOp impls need it
         if op.implements::<dyn BinaryOp>() {
             args.swap(0, 1);
             constraints.swap(0, 1);
@@ -114,6 +115,11 @@ impl BlockEmitter<'_> {
         };
 
         if !preserve_stack && !args.is_empty() {
+            log::trace!(target: "codegen", "scheduling operands for {op}");
+            for arg in args.iter() {
+                log::trace!(target: "codegen", "{arg} is live after: {}", self.liveness.is_live_after(*arg, op));
+            }
+            log::trace!(target: "codegen", "starting with stack: {:#?}", &self.stack);
             self.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
                 panic!(
                     "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
@@ -122,6 +128,7 @@ impl BlockEmitter<'_> {
                     self.stack,
                 )
             });
+            log::trace!(target: "codegen", "stack after scheduling: {:#?}", &self.stack);
         }
 
         let lowering = op.as_trait::<dyn HirLowering>().unwrap_or_else(|| {
