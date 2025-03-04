@@ -47,7 +47,7 @@ fn fibonacci() {
             prop_assert_eq!(rust_out, output);
             Ok(())
         })
-        .unwrap();
+        .unwrap_or_else(|err| panic!("{err}"));
 }
 
 #[test]
@@ -93,5 +93,7 @@ fn collatz() {
             prop_assert_eq!(rust_out, output);
             Ok(())
         })
-        .unwrap();
+        .unwrap_or_else(|err| {
+            panic!("{err}");
+        });
 }
