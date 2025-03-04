@@ -2,11 +2,12 @@ builtin.function public @test_wrapper() {
 ^block4:
     v0 = hir.constant 2 : i32;
     v1 = hir.constant 1 : i32;
-    v2 = hir.bitcast v0 : u32 #[ty = u32];
-    v3 = hir.bitcast v1 : u32 #[ty = u32];
+    v2 = hir.bitcast v0 : u32;
+    v3 = hir.bitcast v1 : u32;
     v4 = hir.gt v2, v3 : i1;
-    v5 = hir.zext v4 : u32 #[ty = u32];
-    hir.br block5;
+    v5 = hir.zext v4 : u32;
+    v6 = hir.bitcast v5 : i32;
+    hir.br ^block5;
 ^block5:
     hir.ret ;
 };

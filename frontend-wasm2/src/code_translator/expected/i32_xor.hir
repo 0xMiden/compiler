@@ -3,7 +3,7 @@ builtin.function public @test_wrapper() {
     v0 = hir.constant 2 : i32;
     v1 = hir.constant 1 : i32;
     v2 = hir.bxor v0, v1 : i32;
-    hir.br block5;
+    hir.br ^block5;
 ^block5:
     hir.ret ;
 };

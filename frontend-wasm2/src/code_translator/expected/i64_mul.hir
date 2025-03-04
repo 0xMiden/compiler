@@ -3,7 +3,7 @@ builtin.function public @test_wrapper() {
     v0 = hir.constant 2 : i64;
     v1 = hir.constant 1 : i64;
     v2 = hir.mul v0, v1 : i64 #[overflow = wrapping];
-    hir.br block5;
+    hir.br ^block5;
 ^block5:
     hir.ret ;
 };
