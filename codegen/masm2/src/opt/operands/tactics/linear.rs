@@ -1,6 +1,5 @@
 use midenc_hir2::adt::SmallSet;
 use petgraph::prelude::{DiGraphMap, Direction};
-use smallvec::SmallVec;
 
 use super::*;
 
@@ -140,7 +139,6 @@ impl Tactic for Linear {
                 "found the following connected components when analyzing required operand moves: \
                  {components:?}"
             );
-            dbg!(&graph, &components);
             for component in components.into_iter() {
                 // A component of two or more elements indicates a cycle of operands.
                 //
@@ -183,7 +181,6 @@ impl Tactic for Linear {
                 // 0    1    2    3
                 // A    C    D    B
                 //
-                dbg!(&component, builder.context().expected());
                 if component.len() > 1 {
                     // Find the operand at the shallowest depth on the stack to move.
                     let start = component.iter().min_by(|a, b| a.pos.cmp(&b.pos)).copied().unwrap();
@@ -201,12 +198,6 @@ impl Tactic for Linear {
                     }
 
                     // Do the initial swap to set up our state for the remaining swaps
-                    dbg!(graph
-                        .neighbors_directed(start, Direction::Outgoing)
-                        .collect::<SmallVec<[_; 2]>>());
-                    dbg!(graph
-                        .neighbors_directed(start, Direction::Incoming)
-                        .collect::<SmallVec<[_; 2]>>());
                     let mut child =
                         graph.neighbors_directed(start, Direction::Outgoing).next().unwrap();
                     // Swap each child with its parent until we reach the edge that forms a cycle
@@ -218,12 +209,6 @@ impl Tactic for Linear {
                             child.pos
                         );
                         builder.swap(child.pos);
-                        dbg!(graph
-                            .neighbors_directed(child, Direction::Outgoing)
-                            .collect::<SmallVec<[_; 2]>>());
-                        dbg!(graph
-                            .neighbors_directed(child, Direction::Incoming)
-                            .collect::<SmallVec<[_; 2]>>());
                         changed = true;
                         if let Some(next_child) =
                             graph.neighbors_directed(child, Direction::Outgoing).next()
@@ -254,5 +239,32 @@ impl Tactic for Linear {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use crate::opt::operands::{
+        tactics::Linear,
+        testing::{self, ProblemInputs},
+    };
+
+    prop_compose! {
+        fn generate_linear_problem()
+        (stack_size in 0usize..16)
+        (problem in testing::generate_stack_subset_copy_any_problem(stack_size)) -> ProblemInputs {
+            problem
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2000))]
+
+        #[test]
+        fn operand_tactics_linear_proptest(problem in generate_linear_problem()) {
+            testing::solve_problem_with_tactic::<Linear>(problem)?
+        }
     }
 }

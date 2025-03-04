@@ -2,8 +2,10 @@ mod context;
 mod solver;
 mod stack;
 mod tactics;
+#[cfg(test)]
+mod testing;
 
-use std::{fmt, num::NonZeroU8};
+use core::{fmt, num::NonZeroU8};
 
 use midenc_hir2 as hir;
 
