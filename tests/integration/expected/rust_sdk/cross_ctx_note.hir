@@ -1,6 +1,6 @@
 (component 
     ;; Component Imports
-    (lower ((miden:cross-ctx-account/foo@1.0.0#process-felt)  (type (func (abi wasm)  (param (struct felt)) (result (struct felt))))) (#cross_ctx_note #cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import)
+    (lower ((miden:cross-ctx-account/foo@1.0.0#process-felt)  (type (func (abi wasm)  (param (struct felt)) (result (struct felt))))) (#cross_ctx_note #cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1)
     (lower ( (type (func (abi canon)  (result u32)))) (#cross_ctx_note #miden_sdk_alloc::heap_base)
 
     ;; Modules

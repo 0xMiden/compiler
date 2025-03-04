@@ -28,10 +28,8 @@ env_logger.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-cargo-component = { version = "0.17.0-dev", git = "https://github.com/greenhat/cargo-component", branch = "use-as-lib" }
-cargo-component-core = { version = "0.17.0-dev", git = "https://github.com/greenhat/cargo-component", branch = "use-as-lib" }
-# cargo-component = { version = "0.17.0-dev", path = "../../../cargo-component" }
-# cargo-component-core = { version = "0.17.0-dev", path = "../../../cargo-component/crates/core" }
+cargo-component = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "093ee4ce75e67814e9ec912faed87160e9a762ca" }
+cargo-component-core = { version = "0.20.0-dev", git = "https://github.com/greenhat/cargo-component", rev = "093ee4ce75e67814e9ec912faed87160e9a762ca" }
 cargo_metadata = "0.18"
 cargo-generate = "0.22"
 semver = "1.0.20"
