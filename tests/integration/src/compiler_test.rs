@@ -187,7 +187,10 @@ pub struct CompilerTestBuilder {
 impl CompilerTestBuilder {
     /// Construct a new [CompilerTestBuilder] for the given source type configuration
     pub fn new(source: impl Into<CompilerTestInputType>) -> Self {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE").format_timestamp(None).try_init();
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
 
         let workspace_dir = get_workspace_dir();
         let mut source = source.into();
@@ -1004,7 +1007,10 @@ impl CompilerTest {
     /// Get the compiled IR, compiling the Wasm if it has not been compiled yet
     pub fn hir(&mut self) -> builtin::ComponentRef {
         if self.hir.is_none() {
-            self.hir = Some(self.wasm_to_ir());
+            self.hir = Some(
+                self.compile_wasm_to_optimized_ir()
+                    .expect("failed to translate wasm to hir component"),
+            );
         }
         self.hir.unwrap()
     }
@@ -1063,6 +1069,12 @@ impl CompilerTest {
                 .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display())),
             InputType::Stdin { name: _, input } => input.clone(),
         }
+    }
+
+    pub(crate) fn compile_wasm_to_optimized_ir(&mut self) -> Result<builtin::ComponentRef, String> {
+        use midenc_compile::compile_to_optimized_hir;
+
+        compile_to_optimized_hir(self.context.clone()).map_err(format_report)
     }
 
     pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {

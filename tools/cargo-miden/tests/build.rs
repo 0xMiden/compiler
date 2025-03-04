@@ -21,7 +21,10 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 
 #[test]
 fn test_templates() {
-    // let _ = env_logger::builder().is_test(true).try_init();
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .is_test(true)
+        .format_timestamp(None)
+        .try_init();
     // Signal to `cargo-miden` that we're running in a test harness.
     //
     // This is necessary because cfg!(test) does not work for integration tests, so we're forced
@@ -29,8 +32,8 @@ fn test_templates() {
     env::set_var("TEST", "1");
 
     // empty template means no template option is passing, thus using the default project template
-    let default = build_new_project_from_template("");
-    assert!(default.is_program());
+    let r#default = build_new_project_from_template("");
+    assert!(r#default.is_program());
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
 
