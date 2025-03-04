@@ -30,7 +30,11 @@ pub struct CompilerStopped;
 /// Run the compiler using the provided [Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir2::formatter::DisplayHex;
+
     log::info!("starting compilation session");
+
+    midenc_codegen_masm2::register_dialect_hooks(&context);
+
     let session = context.session();
     match compile_inputs(session.inputs.clone(), context.clone())? {
         Artifact::Assembled(ref package) => {
