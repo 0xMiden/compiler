@@ -402,8 +402,6 @@ impl SSABuilder {
             self.ssa_blocks.get_mut(&block).unwrap().single_predecessor = Some(pred);
         }
 
-        let block = block.borrow();
-
         // Note that begin_predecessors_lookup requires visiting these variables in the same order
         // that they were defined by find_var, because it appends arguments to the jump instructions
         // in all the predecessor blocks one variable at a time.
@@ -414,20 +412,24 @@ impl SSABuilder {
             // up as a result from any of our predecessors, then it never got assigned on the loop
             // through that block. We get the value from the next block param, where it was first
             // allocated in find_var.
-            let block_params = block.arguments();
-
+            //
             // On each iteration through this loop, there are (ssa_params - idx) undefined variables
             // left to process. Previous iterations through the loop may have removed earlier block
             // parameters, but the last (ssa_params - idx) block parameters always correspond to the
             // remaining undefined variables. So index from the end of the current block params.
-            let val = block_params[block_params.len() - (ssa_params - idx)];
+            let (val, val_ty) = {
+                let block = block.borrow();
+                let block_args = block.arguments();
+                let val = block_args[block_args.len() - (ssa_params - idx)] as ValueRef;
+                (val, val.borrow().ty().clone())
+            };
 
             debug_assert!(self.calls.is_empty());
             debug_assert!(self.results.is_empty());
             // self.side_effects may be non-empty here so that callers can
             // accumulate side effects over multiple calls.
-            self.begin_predecessors_lookup(val, block.as_block_ref());
-            self.run_state_machine(var, val.borrow().as_value_ref().borrow().ty().clone());
+            self.begin_predecessors_lookup(val, block);
+            self.run_state_machine(var, val_ty);
         }
 
         undef_variables.clear(&mut self.variable_pool);
