@@ -4,10 +4,11 @@ use alloc::sync::Arc;
 
 use midenc_dialect_hir as hir;
 use midenc_hir2::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Immediate, Op, OpExt, Operation, Span,
-    SymbolTable, Value, ValueRef,
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Immediate, Op, OpExt, Operation,
+    Region, RegionRef, Span, SymbolTable, Value, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
+use smallvec::SmallVec;
 
 pub use self::native_ptr::NativePtr;
 use crate::{
@@ -397,7 +398,6 @@ impl HirLowering for hir::RetImm {
 
 impl HirLowering for hir::If {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let span = self.span();
         let cond = self.condition().as_value_ref();
 
         // Ensure `cond` is on top of the stack, and remove it at the same time
@@ -409,65 +409,84 @@ impl HirLowering for hir::If {
         );
 
         let then_body = self.then_body();
-        let then_dest = then_body.entry();
-        let else_dest = self.else_body().entry_block_ref();
+        let else_body = self.else_body();
 
-        let (then_stack, then_blk) = {
-            let mut then_emitter = emitter.nest();
-            then_emitter.emit_inline(&then_dest);
-            // Rename the yielded values on the stack for us to check against
-            let mut then_stack = then_emitter.stack.clone();
-            for (index, result) in self.results().all().into_iter().enumerate() {
-                then_stack.rename(index, *result as ValueRef);
-            }
-            let then_block = then_emitter.into_emitted_block(then_dest.span());
-            (then_stack, then_block)
-        };
-
-        let (else_stack, else_blk) = match else_dest {
-            None => {
-                assert!(
-                    self.results().is_empty(),
-                    "an elided 'hir.if' else block requires the 'hir.if' to have no results"
-                );
-                let else_block = masm::Block::new(span, Default::default());
-                let mut else_stack = emitter.stack.clone();
-                for (index, result) in self.results().all().into_iter().enumerate() {
-                    else_stack.rename(index, *result as ValueRef);
-                }
-
-                (else_stack, else_block)
-            }
-            Some(dest) => {
-                let dest = dest.borrow();
-                let mut else_emitter = emitter.nest();
-                else_emitter.emit_inline(&dest);
-                // Rename the yielded values on the stack for us to check against
-                let mut else_stack = else_emitter.stack.clone();
-                for (index, result) in self.results().all().into_iter().enumerate() {
-                    else_stack.rename(index, *result as ValueRef);
-                }
-
-                let else_block = else_emitter.into_emitted_block(dest.span());
-                (else_stack, else_block)
-            }
-        };
-
-        assert_eq!(
-            then_stack, else_stack,
-            "unexpected observable stack effect leaked from 'hir.if' regions"
-        );
-
-        emitter.stack = then_stack;
-
-        emitter.emit_op(masm::Op::If {
-            span,
-            then_blk,
-            else_blk,
-        });
-
-        Ok(())
+        emit_if(emitter, self.as_operation(), &then_body, &else_body)
     }
+}
+
+fn emit_if(
+    emitter: &mut BlockEmitter<'_>,
+    op: &Operation,
+    then_body: &Region,
+    else_body: &Region,
+) -> Result<(), Report> {
+    let span = op.span();
+    let then_dest = then_body.entry();
+    let else_dest = else_body.entry_block_ref();
+
+    let (then_stack, then_blk) = {
+        let mut then_emitter = emitter.nest();
+        then_emitter.emit_inline(&then_dest);
+        // Rename the yielded values on the stack for us to check against
+        let mut then_stack = then_emitter.stack.clone();
+        for (index, result) in op.results().all().into_iter().enumerate() {
+            then_stack.rename(index, *result as ValueRef);
+        }
+        let then_block = then_emitter.into_emitted_block(then_dest.span());
+        (then_stack, then_block)
+    };
+
+    let (else_stack, else_blk) = match else_dest {
+        None => {
+            assert!(
+                op.results().is_empty(),
+                "an elided 'hir.if' else block requires the '{}' to have no results",
+                op.name()
+            );
+            let else_block = masm::Block::new(span, Default::default());
+            let mut else_stack = emitter.stack.clone();
+            for (index, result) in op.results().all().into_iter().enumerate() {
+                else_stack.rename(index, *result as ValueRef);
+            }
+
+            (else_stack, else_block)
+        }
+        Some(dest) => {
+            let dest = dest.borrow();
+            let mut else_emitter = emitter.nest();
+            else_emitter.emit_inline(&dest);
+            // Rename the yielded values on the stack for us to check against
+            let mut else_stack = else_emitter.stack.clone();
+            for (index, result) in op.results().all().into_iter().enumerate() {
+                else_stack.rename(index, *result as ValueRef);
+            }
+
+            let else_block = else_emitter.into_emitted_block(dest.span());
+            (else_stack, else_block)
+        }
+    };
+
+    if then_stack != else_stack {
+        panic!(
+            "unexpected observable stack effect leaked from regions of {op}
+
+stack on exit from 'then': {then_stack:#?}
+stack on exit from 'else': {else_stack:#?}
+        "
+        );
+    }
+
+    println!("stack on exit from {op}: {then_stack:#?}");
+    emitter.stack = then_stack;
+
+    emitter.emit_op(masm::Op::If {
+        span,
+        then_blk,
+        else_blk,
+    });
+
+    Ok(())
 }
 
 impl HirLowering for hir::While {
@@ -507,6 +526,7 @@ impl HirLowering for hir::While {
             for (index, arg) in before_block.arguments().iter().copied().enumerate() {
                 body_emitter.stack.rename(index, arg as ValueRef);
             }
+            let before_stack = body_emitter.stack.clone();
 
             // Emit the 'before' block, which represents the loop header
             body_emitter.emit_inline(&before_block);
@@ -561,6 +581,30 @@ impl HirLowering for hir::While {
                 assert_eq!(self.yield_op().borrow().yielded().len(), before_block.num_arguments());
                 for (index, arg) in before_block.arguments().iter().copied().enumerate() {
                     body_emitter.stack.rename(index, arg as ValueRef);
+                }
+
+                // TODO: Until spills pass is reintroduced, we need to emit code at region terminators
+                // that ensures the stack content is uniform across all exits. Previously, the spills
+                // pass performed a type of register allocation and coalesced live register sets at
+                // basic block boundaries, so the stack was always ordered to keep those sets aligned.
+                // Currently, without that pass, anything that is not explicitly returned from a
+                // region can be in different orders when exiting from different regions of the same
+                // op.
+                //
+                // In order to determine the order, we must first emit all of the instructions of
+                // the block and update the stack for exit, and then we ask the operand stack solver
+                // to solve for the whole stack, so that it will emit the necessary instructions to
+                // fix up any parts of the stack that are out of place.
+                if before_stack != body_emitter.stack {
+                    panic!(
+                        "unexpected observable stack effect leaked from regions of {}
+
+stack on entry to 'before': {before_stack:#?}
+stack on exit from 'after': {:#?}
+                            ",
+                        self.as_operation(),
+                        &body_emitter.stack
+                    );
                 }
 
                 // Re-enter the "before" block to retry the condition
