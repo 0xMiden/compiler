@@ -222,4 +222,9 @@ impl Component {
             version,
         }
     }
+
+    #[inline(always)]
+    pub fn as_component_ref(&self) -> ComponentRef {
+        unsafe { ComponentRef::from_raw(self) }
+    }
 }

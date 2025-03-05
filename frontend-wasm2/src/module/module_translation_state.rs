@@ -17,6 +17,7 @@ use super::{
     EntityIndex, FuncIndex, Module, ModuleTypes,
 };
 use crate::{
+    component::lower_imports::generate_import_lowering_function,
     error::WasmResult,
     intrinsics::{
         intrinsics_conversion_result, is_miden_intrinsics_module, IntrinsicsConversionResult,
@@ -51,49 +52,29 @@ impl<'a> ModuleTranslationState<'a> {
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypesBuilder,
-        module_args: Vec<ModuleArgument>,
+        module_args: FxHashMap<FunctionIdent, ModuleArgument>,
         diagnostics: &DiagnosticsHandler,
-    ) -> Self {
+    ) -> WasmResult<Self> {
         // TODO: extract into `fn process_module_imports` after component translation is
         // implemented
-        let mut function_import_subst = FxHashMap::default();
-        if module.imports.len() == module_args.len() {
-            for (import, arg) in module.imports.iter().zip(module_args) {
-                match (import.index, arg) {
-                    (EntityIndex::Function(func_idx), ModuleArgument::Function(func_id)) => {
-                        // Substitutes the function import with concrete function exported from
-                        // another module
-                        function_import_subst.insert(func_idx, func_id);
-                    }
-                    (EntityIndex::Function(_), ModuleArgument::ComponentImport(_)) => {
-                        // Do nothing, the local function id will be used
-                    }
-                    (EntityIndex::Function(_), module_arg) => {
-                        panic!(
-                            "Unexpected {module_arg:?} module argument for function import \
-                             {import:?}"
-                        )
-                    }
-                    (..) => (), // Do nothing, we interested only in function imports
-                }
-            }
-        }
+
         let mut functions = FxHashMap::default();
         for (index, func_type) in &module.functions {
             let wasm_func_type = mod_types[func_type.signature].clone();
-            let ir_func_type = ir_func_type(&wasm_func_type, diagnostics).unwrap();
+            let ir_func_type = ir_func_type(&wasm_func_type, diagnostics)?;
             let func_name = module.func_name(index);
             let func_id = FunctionIdent {
                 module: Ident::from(module.name().as_str()),
                 function: Ident::from(func_name.as_str()),
             };
             let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, Visibility::Public);
-            if let Some(subst) = function_import_subst.get(&index) {
-                // functions.insert(index, (*subst, sig));
-                todo!("define the import in some symbol table");
-            } else if module.is_imported_function(index) {
+            if module.is_imported_function(index) {
                 assert!((index.as_u32() as usize) < module.num_imported_funcs);
                 let import = &module.imports[index.as_u32() as usize];
+                let wasm_import_func_id = FunctionIdent {
+                    module: Ident::from(import.module.as_str()),
+                    function: Ident::from(import.field.as_str()),
+                };
                 let import_func_id =
                     recover_imported_masm_function_id(import.module.as_str(), &import.field);
                 let callable_function =
@@ -115,8 +96,29 @@ impl<'a> ModuleTranslationState<'a> {
                             sig,
                             import_func_id,
                         )
+                    } else if let Some(module_arg) = module_args.get(&wasm_import_func_id) {
+                        match module_arg {
+                            ModuleArgument::Function(function_ident) => {
+                                todo!("core Wasm function import is not implemented yet");
+                                //generate the internal function and call the import argument  function"
+                            }
+                            ModuleArgument::ComponentImport(signature) => {
+                                generate_import_lowering_function(
+                                    world_builder,
+                                    module_builder,
+                                    wasm_import_func_id,
+                                    signature,
+                                    func_id,
+                                    sig,
+                                    diagnostics,
+                                )?
+                            }
+                            ModuleArgument::Table => {
+                                todo!("implement the table import module arguments")
+                            }
+                        }
                     } else {
-                        todo!("no intrinsics and no abi transformation import");
+                        panic!("unexpected import {import:?}");
                     };
                 functions.insert(index, callable_function);
             } else {
@@ -131,10 +133,10 @@ impl<'a> ModuleTranslationState<'a> {
                 functions.insert(index, defined_function);
             };
         }
-        Self {
+        Ok(Self {
             functions,
             module_builder,
-        }
+        })
     }
 
     /// Get the `FunctionIdent` that should be used to make a direct call to function
@@ -149,6 +151,7 @@ impl<'a> ModuleTranslationState<'a> {
     }
 }
 
+// TODO: move to abi_transform module
 fn define_func_for_miden_abi_trans(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
@@ -219,6 +222,7 @@ fn define_func_for_miden_abi_trans(
     }
 }
 
+// TODO: move to intrinsics module
 fn define_func_for_intrinsic(
     world_builder: &mut WorldBuilder,
     sig: Signature,

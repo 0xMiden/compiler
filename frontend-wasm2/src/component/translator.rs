@@ -39,6 +39,7 @@ use crate::{
     miden_abi::{is_miden_abi_module, recover_imported_masm_module},
     module::{
         build_ir::build_ir_module,
+        instance::ModuleArgument,
         module_env::{ModuleEnvironment, ParsedModule},
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
@@ -81,9 +82,6 @@ impl<'a> ComponentTranslator<'a> {
         config: &'a WasmTranslationConfig,
         context: Rc<Context>,
     ) -> Self {
-        // let mut builder = context.clone().builder();
-        // let component_builder =
-        //     builder.create::<Component, (hir2::Ident, hir2::Ident, Version)>(Default::default());
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
 
@@ -95,7 +93,6 @@ impl<'a> ComponentTranslator<'a> {
         };
         let mut world_builder = WorldBuilder::new(world_ref);
 
-        // let mut raw_entity_ref = component_builder(ns, name, id.version).unwrap();
         let mut raw_entity_ref = world_builder
             .define_component(ns, name, id.version)
             .expect("failed to define component");
@@ -131,6 +128,7 @@ impl<'a> ComponentTranslator<'a> {
         types: &mut ComponentTypesBuilder,
         init: &'a LocalInitializer<'a>,
     ) -> WasmResult<()> {
+        log::trace!("init: {init:?}");
         match init {
             LocalInitializer::Import(name, ty) => {
                 match frame.args.get(name.0) {
@@ -398,7 +396,8 @@ impl<'a> ComponentTranslator<'a> {
             args: args.clone(),
         });
 
-        let mut import_canon_lower_args: FxHashMap<FunctionIdent, Signature> = FxHashMap::default();
+        let mut import_canon_lower_args: FxHashMap<FunctionIdent, ModuleArgument> =
+            FxHashMap::default();
         match &frame.modules[*module_idx] {
             ModuleDef::Static(static_module_idx) => {
                 let parsed_module = self.nested_modules.get_mut(*static_module_idx).unwrap();
@@ -429,12 +428,17 @@ impl<'a> ComponentTranslator<'a> {
                         }
                         ModuleInstanceDef::Synthetic(entities) => {
                             // module with CanonLower synthetic functions
-                            todo!("CanonLower synthetic functions");
-                            // for (func_name, entity) in entities.iter() {
-                            //     let (signature, func_id) =
-                            //         canon_lower_func(frame, types, module_ident, func_name, entity);
-                            //     import_canon_lower_args.insert(func_id, signature);
-                            // }
+                            for (func_name, entity) in entities.iter() {
+                                let (signature, func_id) = canon_lower_func(
+                                    frame,
+                                    types,
+                                    module_ident,
+                                    func_name,
+                                    entity,
+                                )?;
+                                import_canon_lower_args
+                                    .insert(func_id, ModuleArgument::ComponentImport(signature));
+                            }
                         }
                     }
                 }
@@ -453,9 +457,10 @@ impl<'a> ComponentTranslator<'a> {
                     &mut module_builder,
                     &mut self.world_builder,
                     module_types,
-                    vec![],
+                    import_canon_lower_args,
                     self.context.diagnostics(),
-                );
+                )?;
+
                 build_ir_module(
                     parsed_module,
                     module_types,
@@ -463,40 +468,6 @@ impl<'a> ComponentTranslator<'a> {
                     self.config,
                     self.context.clone(),
                 )?;
-
-                // TODO: the part below happens inside `build_ir` while translating the
-                // core module with `import_canon_lower_args` passed as a parameter.
-                //
-                // for import in &parsed_module.module.imports {
-                //     // find the CanonLower function signature in the instantiation args for
-                //     // every core module function import
-                //     let internal_import_func_name = match import.index {
-                //         EntityIndex::Function(func_idx) => parsed_module.module.func_name(func_idx),
-                //         _ => panic!(
-                //             "only function import supported in Wasm core modules yet, got {:?}",
-                //             import.index
-                //         ),
-                //     };
-                //     let import_func_id = FunctionIdent {
-                //         module: Ident::new(Symbol::intern(&import.module), SourceSpan::default()),
-                //         function: Ident::new(Symbol::intern(&import.field), SourceSpan::default()),
-                //     };
-                //     let import_canon_lower_func_sig =
-                //         &import_canon_lower_args.remove(&import_func_id).unwrap();
-                //
-                //     // let internal_func_id = FunctionIdent {
-                //     //     module: module.name,
-                //     //     function: Ident::new(internal_import_func_name, SourceSpan::default()),
-                //     // };
-                //     // let function = hir2_sketch::SyntheticFunction {
-                //     //     id: internal_func_id,
-                //     //     signature: import_canon_lower_func_sig.clone(),
-                //     //     inner_function: import_func_id,
-                //     // };
-                //     // module.functions.push(function);
-                // }
-
-                // self.result.root_mut().modules.push(module);
             }
             ModuleDef::Import(_) => {
                 panic!("Module import instantiation is not supported yet")
@@ -524,50 +495,6 @@ impl<'a> ComponentTranslator<'a> {
                 ty,
             }));
 
-        let interface_name = name.0.to_string();
-        let recovered_module_name = recover_imported_masm_module(interface_name.clone());
-        if is_miden_intrinsics_module(recovered_module_name)
-            || is_miden_abi_module(recovered_module_name)
-        {
-            // Skip processing component import if its an intrinsics, stdlib, tx-kernel, etc.
-            // They are processed in the core Wasm module translation
-            dbg!(&name);
-            return Ok(());
-        }
-
-        // TODO: get or create a component for real CM imports
-        // stdlib and tx-kernel imports creating a module are handled at ModuleState*
-
-        let module = Ident::new(Symbol::intern(interface_name.clone()), SourceSpan::default());
-        let inner_function_empty = FunctionIdent {
-            module: Ident::new(Symbol::intern(""), SourceSpan::default()),
-            function: Ident::new(Symbol::intern(""), SourceSpan::default()),
-        };
-        let component_types = types.resources_mut_and_types().1;
-        let instance_type = &component_types[ty];
-        for (name, ty) in instance_type
-            // TODO: need `exports` to have a stable order or find a different source for the
-            // function list
-            //
-            .exports
-            .iter()
-        {
-            if let TypeDef::ComponentFunc(_) = ty {
-                let component_import = format!("{module}::{name}");
-                dbg!(component_import);
-            }
-        }
-
-        // let interface = Interface {
-        //     name: interface_name.clone(),
-        //     functions,
-        // };
-        // let import_component = Component {
-        //     name: interface_name,
-        //     interfaces: vec![interface],
-        //     modules: Default::default(),
-        // };
-        // self.result.add_import(import_component);
         Ok(())
     }
 }
@@ -594,62 +521,28 @@ fn convert_lifted_func_ty(
     }
 }
 
-// fn import_component_export_func(
-//     module: Ident,
-//     inner_function_empty: FunctionIdent,
-//     component_types: &super::ComponentTypes,
-//     name: &String,
-//     ty: &TypeDef,
-// ) -> Option<hir2_sketch::SyntheticFunction> {
-//     if let TypeDef::ComponentFunc(func_ty) = ty {
-//         let func_ty = convert_lifted_func_ty(func_ty, component_types);
-//         let signature = Signature {
-//             params: func_ty.params.into_iter().map(AbiParam::new).collect(),
-//             results: func_ty.results.into_iter().map(AbiParam::new).collect(),
-//             cc: CallConv::CanonLift,
-//             visibility: Visibility::Public,
-//         };
-//         Some(hir2_sketch::SyntheticFunction {
-//             id: FunctionIdent {
-//                 module,
-//                 function: Ident::new(Symbol::intern(name), SourceSpan::default()),
-//             },
-//             signature,
-//             inner_function: inner_function_empty,
-//         })
-//     } else {
-//         None
-//     }
-// }
-
 fn canon_lower_func(
     frame: &mut ComponentFrame,
     types: &mut ComponentTypesBuilder,
     module_ident: Ident,
     func_name: &str,
     entity: &EntityIndex,
-) -> (Signature, FunctionIdent) {
+) -> WasmResult<(FunctionType, FunctionIdent)> {
     let func_id = entity.unwrap_func();
     let canon_lower = frame.funcs[func_id].unwrap_canon_lower();
     let func_name_ident = Ident::new(Symbol::intern(func_name), SourceSpan::default());
-    // TODO: handle error
-    let type_func_idx =
-        types.convert_component_func_type(frame.types, canon_lower.lower_ty).unwrap();
+    let type_func_idx = types
+        .convert_component_func_type(frame.types, canon_lower.lower_ty)
+        .map_err(Report::msg)?;
 
     let component_types = types.resources_mut_and_types().1;
     let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
-    let signature = Signature {
-        params: func_ty.params.into_iter().map(AbiParam::new).collect(),
-        results: func_ty.results.into_iter().map(AbiParam::new).collect(),
-        cc: CallConv::CanonLower,
-        visibility: Visibility::Public,
-    };
 
     let func_id = FunctionIdent {
         module: module_ident,
         function: func_name_ident,
     };
-    (signature, func_id)
+    Ok((func_ty, func_id))
 }
 
 #[derive(Clone, Debug)]
@@ -864,8 +757,7 @@ impl<'a> ComponentFrame<'a> {
             }
             ComponentItem::Module(i) => ComponentItemDef::Module(self.modules[i].clone()),
             ComponentItem::Type(t) => {
-                // TODO: handle error
-                ComponentItemDef::Type(types.convert_type(self.types, t).unwrap())
+                ComponentItemDef::Type(types.convert_type(self.types, t).map_err(Report::msg)?)
             }
         })
     }

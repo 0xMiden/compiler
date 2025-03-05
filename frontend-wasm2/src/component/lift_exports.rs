@@ -81,7 +81,7 @@ pub fn generate_export_lifting_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    // NOTE: handle lifting/lowering for non-scalar types
+    // NOTE: handle CC lifting/lowering for non-scalar types
     // see https://github.com/0xPolygonMiden/compiler/issues/369
 
     let exec = fb

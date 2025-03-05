@@ -9,7 +9,8 @@ use midenc_hir::{
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
+    Builder, BuilderExt, CallConv, Context, FunctionIdent, FxHashMap, Ident, Immediate, Op,
+    OpBuilder, Signature, Visibility,
 };
 use midenc_session::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
@@ -78,9 +79,9 @@ pub fn translate_module_as_component(
         &mut module_builder,
         &mut world_builder,
         &module_types,
-        vec![],
+        FxHashMap::default(),
         context.diagnostics(),
-    );
+    )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
 
     Ok(component_ref)
