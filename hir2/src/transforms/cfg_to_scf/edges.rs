@@ -186,6 +186,10 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         assert!(!entry_blocks.is_empty(), "require at least one entry block");
 
         let mut multiplexer_block = transform_ctx.create_block();
+        log::trace!(
+            target: "cfg-to-scf",
+            "creating edge multiplexer {multiplexer_block} for {entry_blocks:?} with extra arguments {extra_args:?}"
+        );
         {
             let mut mb = multiplexer_block.borrow_mut();
             mb.insert_after(entry_blocks[0]);
@@ -199,8 +203,15 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         let mut block_arg_mapping = SmallDenseMap::default();
         for entry_block in entry_blocks.iter().copied() {
             let argc = multiplexer_block.borrow().num_arguments();
-            if block_arg_mapping.insert(entry_block, argc).is_none() {
+            if block_arg_mapping.insert_new(entry_block, argc) {
+                log::trace!(
+                    target: "cfg-to-scf",
+                    "adding {} multiplexer arguments at offset {argc} for {entry_block}",
+                    entry_block.borrow().num_arguments()
+                );
                 transform_ctx.add_block_arguments_from_other(multiplexer_block, entry_block);
+            } else {
+                log::trace!(target: "cfg-to-scf", "{entry_block} is already present in the multiplexer, reusing");
             }
         }
 
@@ -209,11 +220,13 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         // passed using `get_switch_value`.
         let discriminator = if block_arg_mapping.len() > 1 {
             let val = transform_ctx.get_switch_value(0);
-            Some(transform_ctx.append_block_argument(
+            let discriminator_arg = transform_ctx.append_block_argument(
                 multiplexer_block,
                 val.borrow().ty().clone(),
                 span,
-            ))
+            );
+            log::trace!(target: "cfg-to-scf", "discriminator required by multiplexer, {discriminator_arg} was added");
+            Some(discriminator_arg)
         } else {
             None
         };
@@ -247,13 +260,20 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
     /// to the `create` function. `extraArgs` must be used to pass along any additional values
     /// corresponding to `extraArgs` in `create`.
     pub fn redirect_edge(&mut self, edge: &Edge, extra_args: &[ValueRef]) {
-        let result = self
+        let edge_argv_offset = self
             .block_arg_mapping
             .get(&edge.get_successor())
             .copied()
             .expect("edge was not originally passed to `create`");
 
         let succ_block = edge.get_successor();
+        log::trace!(
+            target: "cfg-to-scf",
+            "redirecting edge {} -> {succ_block} with {} arguments starting at offset {edge_argv_offset}",
+            edge.from_block,
+            edge.from_block.borrow().num_arguments()
+        );
+
         let mut terminator_ref = edge.get_predecessor();
         let mut terminator = terminator_ref.borrow_mut();
         let context = terminator.context_rc();
@@ -266,40 +286,55 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         // If a discriminator exists, it is right before the extra arguments.
         let discriminator_index = self.discriminator.map(|_| extra_args_begin_index - 1);
 
+        log::trace!(target: "cfg-to-scf", "multiplexer block {multiplexer_block} has {multiplexer_argc} arguments");
+        log::trace!(target: "cfg-to-scf", "extra arguments for edge will begin at {extra_args_begin_index}");
+        log::trace!(target: "cfg-to-scf", "discriminator index, if present, will be {discriminator_index:?}");
+
         // NOTE: Here, we're redirecting the edge from the entry block, to the multiplexer block.
         // This requires us to ensure the successor operand vector is large enough for all of the
         // required multiplexer block arguments, and then to redirect the original entry block
         // arguments to their corresponding index in the multiplexer block parameter list. The
         // remaining arguments will either be undef, the discriminator value, or extra arguments.
         let mut new_succ_operands = SmallVec::<[_; 4]>::with_capacity(multiplexer_argc);
+        log::trace!(target: "cfg-to-scf", "visiting multiplexer block arguments for edge");
         for arg in multiplexer_block.arguments().iter() {
             let arg = arg.borrow();
             let index = arg.index();
-            if index >= result && index < result + succ.arguments.len() {
+            assert_eq!(new_succ_operands.len(), index);
+            log::trace!(target: "cfg-to-scf", "visiting multiplexer block argument {arg} at index {index}");
+            if index >= edge_argv_offset && index < edge_argv_offset + succ.arguments.len() {
+                log::trace!(target: "cfg-to-scf", "arg corresponds to original block argument at index {}", index - edge_argv_offset);
+                log::trace!(target: "cfg-to-scf", "new successor operand is {}", succ.arguments[index - edge_argv_offset].borrow().as_value_ref());
                 // Original block arguments to the entry block.
-                new_succ_operands.push(succ.arguments[index - result].borrow().as_value_ref());
+                new_succ_operands
+                    .push(succ.arguments[index - edge_argv_offset].borrow().as_value_ref());
                 continue;
             }
 
             // Discriminator value if it exists.
             if discriminator_index.is_some_and(|di| di == index) {
+                log::trace!(target: "cfg-to-scf", "arg corresponds to discriminator index");
                 let succ_index =
                     self.block_arg_mapping.iter().position(|(k, _)| k == &succ_block).unwrap()
                         as u32;
                 let value = self.transform_ctx.get_switch_value(succ_index);
+                log::trace!(target: "cfg-to-scf", "new successor operand is {value}");
                 new_succ_operands.push(value);
                 continue;
             }
 
             // Followed by the extra arguments.
             if index >= extra_args_begin_index {
+                log::trace!(target: "cfg-to-scf", "arg corresponds to extra argument at index {}", index - extra_args_begin_index);
+                log::trace!(target: "cfg-to-scf", "new successor operand is {}", extra_args[index - extra_args_begin_index]);
                 new_succ_operands.push(extra_args[index - extra_args_begin_index]);
                 continue;
             }
 
+            log::trace!(target: "cfg-to-scf", "arg is undef on this edge");
             // Otherwise undef values for any unused block arguments used by other entry blocks.
             let undef_value = self.transform_ctx.get_undef_value(arg.ty());
-            assert_eq!(new_succ_operands.len(), index);
+            log::trace!(target: "cfg-to-scf", "new successor operand is {}", undef_value);
             new_succ_operands.push(undef_value);
         }
 
@@ -334,6 +369,12 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
         let mut case_values = SmallVec::<[u32; 4]>::default();
         let mut case_destinations = SmallVec::<[BlockRef; 4]>::default();
 
+        log::trace!(
+            target: "cfg-to-scf",
+            "creating switch, exclusions = {excluded:?}, multiplexer argc = {}",
+            multiplexer_block_args.len()
+        );
+
         for (index, (succ, offset)) in self.block_arg_mapping.iter().enumerate() {
             if excluded.contains(succ) {
                 continue;
@@ -343,6 +384,12 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
             case_destinations.push(*succ);
             let succ = succ.borrow();
             let offset = *offset;
+            log::trace!(
+                target: "cfg-to-scf",
+                "adding target {succ} (at index {index}) with {} arguments from offset {offset}",
+                succ.num_arguments()
+            );
+
             case_arguments.push(&multiplexer_block_args[offset..(offset + succ.num_arguments())]);
         }
 

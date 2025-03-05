@@ -209,7 +209,7 @@ impl<T, K, V, const N: usize> SmallMap<K, V, T, N>
 where
     T: SmallMapKind<K, V, K>,
 {
-    /// Inserts a new entry in this map using `key` and `value`.
+    /// Inserts or updates the entry in this map for `key` with `value`.
     ///
     /// Returns the previous value, if `key` was already present in the map.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
@@ -218,6 +218,19 @@ where
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 None
+            }
+        }
+    }
+
+    /// Inserts a new entry in this map for `key` and `value`.
+    ///
+    /// Returns `true` if `key` was not yet present in the map, otherwise `false`
+    pub fn insert_new(&mut self, key: K, value: V) -> bool {
+        match self.entry(key) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+                true
             }
         }
     }

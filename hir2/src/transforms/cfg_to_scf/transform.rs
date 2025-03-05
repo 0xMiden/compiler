@@ -193,14 +193,17 @@ impl<'a> TransformationContext<'a> {
     fn combine_exit(&mut self, mut return_like_op_ref: OperationRef) -> Result<(), Report> {
         use hashbrown::hash_map::Entry;
 
+        log::trace!(target: "cfg-to-scf", "combining exit for {}", return_like_op_ref.borrow());
         let key = ReturnLikeOpKey(return_like_op_ref);
         match self.return_like_to_combined_exit.entry(key) {
             Entry::Occupied(entry) => {
                 if OperationRef::ptr_eq(&entry.key().0, &return_like_op_ref) {
+                    log::trace!(target: "cfg-to-scf", "exit already combined for {}", return_like_op_ref.borrow());
                     return Ok(());
                 }
 
                 let exit_block = *entry.get();
+                log::trace!(target: "cfg-to-scf", "found equivalent return-like exit in {exit_block}");
                 let mut builder = OpBuilder::new(self.context.clone());
                 builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
@@ -210,6 +213,7 @@ impl<'a> TransformationContext<'a> {
                     operands.iter().copied().map(|o| o.borrow().as_value_ref()),
                 );
                 let span = return_like_op.span();
+                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {}", return_like_op.parent().unwrap());
                 drop(return_like_op);
                 self.interface.create_single_destination_branch(
                     span,
@@ -232,8 +236,10 @@ impl<'a> TransformationContext<'a> {
 
                 let mut builder = OpBuilder::new(self.context.clone());
                 let exit_block = builder.create_block(self.region, None, &args);
+                log::trace!(target: "cfg-to-scf", "no equivalent return-like exit exists yet, created {exit_block} for this purpose");
                 entry.insert(exit_block);
 
+                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {}", return_like_op_ref.parent().unwrap());
                 builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
                 let span = return_like_op.span();
@@ -245,6 +251,7 @@ impl<'a> TransformationContext<'a> {
                     &operands,
                 )?;
 
+                log::trace!(target: "cfg-to-scf", "moving original return-like op to {exit_block}");
                 return_like_op.move_to(crate::ProgramPoint::at_end_of(exit_block));
                 let exit_block = exit_block.borrow();
                 return_like_op.set_operands(
