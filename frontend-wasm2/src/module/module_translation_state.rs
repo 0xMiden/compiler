@@ -4,8 +4,8 @@ use midenc_dialect_hir::InstBuilder;
 use midenc_hir2::{
     dialects::builtin::{Function, FunctionRef, ModuleBuilder, WorldBuilder},
     AbiParam, CallConv, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, Symbol,
-    SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
-    ValueRef, Visibility,
+    SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, ValueRef, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
@@ -203,12 +203,27 @@ fn define_func_for_miden_abi_trans(
         &mut func_builder,
     );
 
+    assert_eq!(
+        synth_func_sig.results().len(),
+        results.len(),
+        "After ABI tranformation call, results quantity are not the same as the original Wasm \
+         function results quantity for function {}",
+        synth_func_id
+    );
+    assert_eq!(
+        synth_func_sig.results().iter().map(|p| p.ty.clone()).collect::<Vec<Type>>(),
+        results.iter().map(|v| v.borrow().ty().clone()).collect::<Vec<Type>>(),
+        "After ABI tranformation function call result types are not the same as the original Wasm \
+         function result types for function {}",
+        synth_func_id
+    );
     let exit_block = func_builder.create_block();
-    func_builder.append_block_params_for_function_returns(exit_block);
-    func_builder.ins().br(exit_block, results, span);
+    func_builder.ins().br(exit_block, vec![], span);
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
-    func_builder.ins().ret(None, span).expect("failed ret");
+    assert!(results.len() <= 1, "expected a single result or none");
+    let returning = results.first().cloned();
+    func_builder.ins().ret(returning, span).expect("failed ret");
 
     CallableFunction {
         wasm_id: synth_func_id,

@@ -2,19 +2,20 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_tx_kernel_get_id {
         builtin.function public @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
         ^block3:
-            hir.ret ;
+            v0 = hir.exec @miden::account/get_id() : felt
+            hir.ret v0;
         };
 
         builtin.function public @entrypoint() -> felt {
         ^block7:
-            v3 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id() : felt
-            hir.ret v3;
+            v2 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id() : felt
+            hir.ret v2;
         };
 
         builtin.function public @miden_base_sys::bindings::account::get_id() -> felt {
         ^block9:
-            v5 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id() : felt
-            hir.ret v5;
+            v4 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id() : felt
+            hir.ret v4;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
