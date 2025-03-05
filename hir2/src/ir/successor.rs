@@ -398,6 +398,14 @@ impl<'a, T> KeyedSuccessorRange<'a, T> {
         })
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.range.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.range.len()
+    }
+
     pub fn iter(&self) -> KeyedSuccessorRangeIter<'a, '_, T> {
         KeyedSuccessorRangeIter {
             range: self,
