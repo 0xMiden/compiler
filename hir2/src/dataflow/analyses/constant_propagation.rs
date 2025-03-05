@@ -6,11 +6,12 @@ use smallvec::SmallVec;
 use crate::{
     dataflow::{
         sparse::{self, SparseDataFlowAnalysis},
-        AnalysisState, AnalysisStateGuard, BuildableDataFlowAnalysis, DataFlowSolver, Forward,
-        Lattice, LatticeLike, SparseForwardDataFlowAnalysis, SparseLattice,
+        AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis,
+        DataFlowSolver, Forward, Lattice, LatticeLike, SparseForwardDataFlowAnalysis,
+        SparseLattice,
     },
     traits::Foldable,
-    AttributeValue, Dialect, EntityRef, OpFoldResult, Operation, Report,
+    AttributeValue, Dialect, OpFoldResult, Operation, Report,
 };
 
 /// This lattice value represents a known constant value of a lattice.
@@ -151,8 +152,8 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
     fn visit_operation(
         &self,
         op: &Operation,
-        operands: &[EntityRef<'_, Self::Lattice>],
-        results: &mut [AnalysisStateGuard<'_, Self::Lattice>],
+        operands: &[AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         log::debug!("visiting operation {op}");
@@ -234,7 +235,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
         Ok(())
     }
 
-    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>) {
+    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>) {
         log::trace!("setting lattice to entry state from {}", lattice.value());
         let entry_state = ConstantValue::unknown();
         let change_result = lattice.join(&entry_state);

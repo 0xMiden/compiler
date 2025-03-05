@@ -3,6 +3,7 @@ use core::{any::TypeId, ptr::NonNull};
 use super::*;
 use crate::{
     dataflow::LatticeAnchorRef,
+    entity::BorrowRef,
     ir::entity::{BorrowRefMut, EntityRef, RawEntity},
     FxHashMap,
 };
@@ -104,6 +105,7 @@ impl<T: 'static> RawAnalysisStateInfoHandle<T> {
 
     #[track_caller]
     #[inline]
+    #[allow(unused)]
     pub fn into_entity_ref<'a>(self) -> EntityRef<'a, T> {
         unsafe { self.state.as_ref().borrow() }
     }
@@ -112,6 +114,12 @@ impl<T: 'static> RawAnalysisStateInfoHandle<T> {
     #[inline]
     pub(super) unsafe fn state_mut<'a>(self) -> (NonNull<T>, BorrowRefMut<'a>) {
         unsafe { self.state.as_ref().borrow_mut_unsafe() }
+    }
+
+    #[track_caller]
+    #[inline]
+    pub(super) unsafe fn state_ref<'a>(self) -> (NonNull<T>, BorrowRef<'a>) {
+        unsafe { self.state.as_ref().borrow_unsafe() }
     }
 
     pub fn with<F>(&mut self, callback: F)

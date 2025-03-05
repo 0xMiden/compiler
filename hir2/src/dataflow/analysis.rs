@@ -1,8 +1,8 @@
 pub(super) mod state;
 
 pub use self::state::{
-    AnalysisState, AnalysisStateGuard, AnalysisStateInfo, AnalysisStateSubscription,
-    AnalysisStateSubscriptionBehavior, BuildableAnalysisState, Revision,
+    AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, AnalysisStateInfo,
+    AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, BuildableAnalysisState, Revision,
 };
 use super::{DataFlowSolver, ProgramPoint};
 use crate::{pass::AnalysisManager, Operation, Report};

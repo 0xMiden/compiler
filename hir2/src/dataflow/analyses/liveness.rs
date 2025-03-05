@@ -6,7 +6,7 @@ use crate::{
     dataflow::{
         analyses::{dce::CfgEdge, LoopState},
         dense::DenseDataFlowAnalysis,
-        AnalysisState, AnalysisStateGuard, Backward, BuildableDataFlowAnalysis,
+        AnalysisState, AnalysisStateGuardMut, Backward, BuildableDataFlowAnalysis,
         CallControlFlowAction, DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice,
         Lattice, LatticeLike,
     },
@@ -247,7 +247,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         from: &crate::Block,
         to: crate::BlockRef,
         live_in_to: &Self::Lattice,
-        live_out_from: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        live_out_from: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         // Start with the live-in set
@@ -292,7 +292,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         &self,
         op: &crate::Operation,
         live_out: &Self::Lattice,
-        live_in: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        live_in: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         // If this op is orphaned, skip the analysis
@@ -343,7 +343,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
     /// empty set, i.e. nothing is live.
     fn set_to_exit_state(
         &self,
-        lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         _solver: &mut DataFlowSolver,
     ) {
         lattice.value_mut().clear();
@@ -376,7 +376,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         call: &dyn crate::CallOpInterface,
         action: CallControlFlowAction,
         after: &Self::Lattice,
-        before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        before: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         assert!(
@@ -428,7 +428,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         region_from: Option<crate::RegionRef>,
         region_to: Option<crate::RegionRef>,
         after: &Self::Lattice,
-        before: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        before: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         log::trace!(target: self.debug_name(), "visit region branch operation: {}", branch.as_operation());

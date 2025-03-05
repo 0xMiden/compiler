@@ -228,8 +228,8 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
     fn visit_operation(
         &self,
         op: &Operation,
-        operands: &[crate::EntityRef<'_, Self::Lattice>],
-        results: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        operands: &[super::AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         <A as SparseForwardDataFlowAnalysis>::visit_operation(
@@ -241,15 +241,15 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
         )
     }
 
-    fn set_to_entry_state(&self, lattice: &mut super::AnalysisStateGuard<'_, Self::Lattice>) {
+    fn set_to_entry_state(&self, lattice: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>) {
         <A as SparseForwardDataFlowAnalysis>::set_to_entry_state(&self.analysis, lattice);
     }
 
     fn visit_external_call(
         &self,
         call: &dyn crate::CallOpInterface,
-        arguments: &[crate::EntityRef<'_, Self::Lattice>],
-        results: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        arguments: &[super::AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) {
         <A as SparseForwardDataFlowAnalysis>::visit_external_call(
@@ -265,7 +265,7 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
         &self,
         op: &Operation,
         successor: &crate::RegionSuccessor<'_>,
-        arguments: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
+        arguments: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
         first_index: usize,
         solver: &mut DataFlowSolver,
     ) {
@@ -292,8 +292,8 @@ impl<A: SparseBackwardDataFlowAnalysis> SparseBackwardDataFlowAnalysis
     fn visit_operation(
         &self,
         op: &Operation,
-        operands: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
-        results: &[crate::EntityRef<'_, Self::Lattice>],
+        operands: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
+        results: &[super::AnalysisStateGuard<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         <A as SparseBackwardDataFlowAnalysis>::visit_operation(
@@ -305,7 +305,7 @@ impl<A: SparseBackwardDataFlowAnalysis> SparseBackwardDataFlowAnalysis
         )
     }
 
-    fn set_to_exit_state(&self, lattice: &mut super::AnalysisStateGuard<'_, Self::Lattice>) {
+    fn set_to_exit_state(&self, lattice: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>) {
         <A as SparseBackwardDataFlowAnalysis>::set_to_exit_state(&self.analysis, lattice);
     }
 
@@ -316,8 +316,8 @@ impl<A: SparseBackwardDataFlowAnalysis> SparseBackwardDataFlowAnalysis
     fn visit_external_call(
         &self,
         call: &dyn crate::CallOpInterface,
-        arguments: &mut [super::AnalysisStateGuard<'_, Self::Lattice>],
-        results: &[crate::EntityRef<'_, Self::Lattice>],
+        arguments: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
+        results: &[super::AnalysisStateGuard<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) {
         <A as SparseBackwardDataFlowAnalysis>::visit_external_call(

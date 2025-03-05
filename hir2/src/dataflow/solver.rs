@@ -359,27 +359,18 @@ impl DataFlowSolver {
     /// Get the [AnalysisState] attached to `anchor`, or allocate a default instance if not yet
     /// created.
     ///
-    /// This is expected to be used by the current analysis to write changes it computes. In a
-    /// sense, this implies ownership by the current analysis - however in some cases multiple
-    /// analyses share ownership over some state (i.e. they can all make changes to it). Any
-    /// writer to some state is considered an owner for our purposes here.
+    /// This is expected to be used by the current analysis to initialize state it needs. The
+    /// resulting handle represents an immutable borrow of the analysis state.
     ///
-    /// Because the current analysis "owns" this state, it is not treated as a dependent of this
-    /// state, i.e. no edge is added to the analysis state dependency graph for the current
-    /// analysis. This is because the current analysis will necessarily be changing the state, and
-    /// thus re-enqueueing it when changes occur would result in a cyclical dependency on itself.
+    /// Because the current analysis "owns" this state in a sense, albeit readonly, it is not
+    /// treated as a dependent of this state, i.e. no edge is added to the analysis state
+    /// dependency graph for the current analysis, and is instead left up to the caller, to
+    /// avoid unintentional cyclical dependencies.
     ///
-    /// Instead, it is expected that the current analysis will be re-enqueued only if it depends
-    /// on _other_ analyses which run and make changes to their states of which this analysis
-    /// is a dependent.
-    ///
-    /// This function returns an [AnalysisStateGuard], which guards both the mutable reference to
-    /// this solver, as well as a mutable reference to the underlying [AnalysisState]. When the
-    /// guard is dropped (or consumed to produce an immutable reference), it will have the solver
-    /// re-enqueue any dependent analyses, if changes were made to the state since they last
-    /// observed it. See the docs of [AnalysisStateGuard] for more details on proper usage.
+    /// This function returns an [AnalysisStateGuard], which guards the immutable reference to
+    /// the underlying [AnalysisState].
     #[track_caller]
-    pub fn get_or_create_mut<'a, T, A>(&mut self, anchor: A) -> AnalysisStateGuard<'a, T>
+    pub fn get_or_create<'a, T, A>(&mut self, anchor: A) -> AnalysisStateGuard<'a, T>
     where
         T: BuildableAnalysisState,
         A: LatticeAnchorExt,
@@ -399,7 +390,7 @@ impl DataFlowSolver {
             Entry::Occupied(entry) => {
                 log::trace!(target: "dataflow-solver", "found existing analysis state entry");
                 let info = *entry.get();
-                unsafe { AnalysisStateGuard::<T>::new(info, self.worklist.clone()) }
+                unsafe { AnalysisStateGuard::<T>::new(info) }
             }
             Entry::Vacant(entry) => {
                 log::trace!(target: "dataflow-solver", "creating new analysis state entry");
@@ -412,7 +403,68 @@ impl DataFlowSolver {
                 );
                 let info = RawAnalysisStateInfo::as_info_ptr(raw_info);
                 entry.insert(info);
-                unsafe { AnalysisStateGuard::<T>::new(info, self.worklist.clone()) }
+                unsafe { AnalysisStateGuard::<T>::new(info) }
+            }
+        }
+    }
+
+    /// Get the [AnalysisState] attached to `anchor`, or allocate a default instance if not yet
+    /// created.
+    ///
+    /// This is expected to be used by the current analysis to write changes it computes. In a
+    /// sense, this implies ownership by the current analysis - however in some cases multiple
+    /// analyses share ownership over some state (i.e. they can all make changes to it). Any
+    /// writer to some state is considered an owner for our purposes here.
+    ///
+    /// Because the current analysis "owns" this state, it is not treated as a dependent of this
+    /// state, i.e. no edge is added to the analysis state dependency graph for the current
+    /// analysis. This is because the current analysis will necessarily be changing the state, and
+    /// thus re-enqueueing it when changes occur would result in a cyclical dependency on itself.
+    ///
+    /// Instead, it is expected that the current analysis will be re-enqueued only if it depends
+    /// on _other_ analyses which run and make changes to their states of which this analysis
+    /// is a dependent.
+    ///
+    /// This function returns an [AnalysisStateGuardMut], which guards both the mutable reference
+    /// to this solver, as well as a mutable reference to the underlying [AnalysisState]. When the
+    /// guard is dropped (or consumed to produce an immutable reference), it will have the solver
+    /// re-enqueue any dependent analyses, if changes were made to the state since they last
+    /// observed it. See the docs of [AnalysisStateGuardMut] for more details on proper usage.
+    #[track_caller]
+    pub fn get_or_create_mut<'a, T, A>(&mut self, anchor: A) -> AnalysisStateGuardMut<'a, T>
+    where
+        T: BuildableAnalysisState,
+        A: LatticeAnchorExt,
+    {
+        use hashbrown::hash_map::Entry;
+
+        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        let anchor = self.create_lattice_anchor::<A>(anchor);
+        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        let key = AnalysisStateKey::new::<T>(anchor);
+        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
+        match self.analysis_state.borrow_mut().entry(key) {
+            Entry::Occupied(entry) => {
+                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
+                let info = *entry.get();
+                unsafe { AnalysisStateGuardMut::<T>::new(info, self.worklist.clone()) }
+            }
+            Entry::Vacant(entry) => {
+                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
+                use crate::dataflow::analysis::state::RawAnalysisStateInfo;
+                let raw_info = RawAnalysisStateInfo::<T>::alloc(
+                    &self.alloc,
+                    &mut self.analysis_state_impls,
+                    key,
+                    anchor,
+                );
+                let info = RawAnalysisStateInfo::as_info_ptr(raw_info);
+                entry.insert(info);
+                unsafe { AnalysisStateGuardMut::<T>::new(info, self.worklist.clone()) }
             }
         }
     }
@@ -430,7 +482,11 @@ impl DataFlowSolver {
     /// above, this analysis will be re-run if the state is ever modified, at which point it may
     /// be able to do something more useful with the results.
     #[track_caller]
-    pub fn require<'a, T, A>(&mut self, anchor: A, dependent: ProgramPoint) -> EntityRef<'a, T>
+    pub fn require<'a, T, A>(
+        &mut self,
+        anchor: A,
+        dependent: ProgramPoint,
+    ) -> AnalysisStateGuard<'a, T>
     where
         T: BuildableAnalysisState,
         A: LatticeAnchorExt,
@@ -452,11 +508,11 @@ impl DataFlowSolver {
         log::trace!(target: "dataflow-solver", "    key       = {key:?}");
         log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
         log::trace!(target: "dataflow-solver", "    dependent = {dependent}");
-        let mut handle = match self.analysis_state.borrow_mut().entry(key) {
+        let (info, mut handle) = match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
                 log::trace!(target: "dataflow-solver", "found existing analysis state entry");
                 let info = *entry.get();
-                unsafe { RawAnalysisStateInfoHandle::new(info) }
+                (info, unsafe { RawAnalysisStateInfoHandle::new(info) })
             }
             Entry::Vacant(entry) => {
                 log::trace!(target: "dataflow-solver", "creating new analysis state entry");
@@ -468,7 +524,7 @@ impl DataFlowSolver {
                 );
                 let info = RawAnalysisStateInfo::as_info_ptr(raw_info);
                 entry.insert(info);
-                unsafe { RawAnalysisStateInfoHandle::new(info) }
+                (info, unsafe { RawAnalysisStateInfoHandle::new(info) })
             }
         };
 
@@ -481,7 +537,8 @@ impl DataFlowSolver {
                 dependent,
             );
         });
-        handle.into_entity_ref()
+
+        unsafe { AnalysisStateGuard::new(info) }
     }
 
     /// Erase any cached analysis states attached to `anchor`

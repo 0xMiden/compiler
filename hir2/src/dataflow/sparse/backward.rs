@@ -5,10 +5,11 @@ use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
     dataflow::{
         analyses::dce::{Executable, PredecessorState},
-        AnalysisStateGuard, Backward, BuildableAnalysisState, DataFlowSolver, ProgramPoint,
+        AnalysisStateGuard, AnalysisStateGuardMut, Backward, BuildableAnalysisState,
+        DataFlowSolver, ProgramPoint,
     },
     traits::{BranchOpInterface, ReturnLike},
-    AttributeValue, CallOpInterface, CallableOpInterface, EntityRef, EntityWithId, OpOperandImpl,
+    AttributeValue, CallOpInterface, CallableOpInterface, EntityWithId, OpOperandImpl,
     OpOperandRange, OpResultRange, Operation, OperationRef, RegionBranchOpInterface,
     RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, StorableEntity,
     SuccessorOperands, ValueRef,
@@ -34,8 +35,8 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     fn visit_operation(
         &self,
         op: &Operation,
-        operands: &mut [AnalysisStateGuard<'_, Self::Lattice>],
-        results: &[EntityRef<'_, Self::Lattice>],
+        operands: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
+        results: &[AnalysisStateGuard<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
@@ -46,8 +47,8 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     fn visit_external_call(
         &self,
         call: &dyn CallOpInterface,
-        arguments: &mut [AnalysisStateGuard<'_, Self::Lattice>],
-        results: &[EntityRef<'_, Self::Lattice>],
+        arguments: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
+        results: &[AnalysisStateGuard<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) {
         for operand in call.arguments() {
@@ -63,12 +64,12 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     fn visit_call_operand(&self, operand: &OpOperandImpl, solver: &mut DataFlowSolver);
 
     /// Set the given lattice element(s) at control flow exit point(s).
-    fn set_to_exit_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
+    fn set_to_exit_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>);
 }
 
 pub fn set_all_to_exit_states<A>(
     analysis: &A,
-    lattices: &mut [AnalysisStateGuard<'_, <A as SparseBackwardDataFlowAnalysis>::Lattice>],
+    lattices: &mut [AnalysisStateGuardMut<'_, <A as SparseBackwardDataFlowAnalysis>::Lattice>],
 ) where
     A: SparseBackwardDataFlowAnalysis,
 {
@@ -93,9 +94,9 @@ where
         for block in region.body() {
             log::trace!("initializing analysis for block {}", block.id());
             {
-                let mut state =
-                    solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(&*block));
-                AnalysisStateGuard::subscribe(&mut state, analysis);
+                let state =
+                    solver.get_or_create::<Executable, _>(ProgramPoint::at_start_of(&*block));
+                AnalysisStateGuard::subscribe(&state, analysis);
             }
 
             // Initialize ops in reverse order, so we can do as much initial propagation as possible
@@ -138,7 +139,7 @@ where
     }
 
     let current_point = ProgramPoint::after(op);
-    let mut operands = get_lattice_elements::<A>(op.operands().all(), solver);
+    let mut operands = get_lattice_elements_mut::<A>(op.operands().all(), solver);
     let results = get_lattice_elements_for::<A>(current_point, op.results().all(), solver);
 
     // Block arguments of region branch operations flow back into the operands of the parent op
@@ -168,7 +169,7 @@ where
                         branch.get_successor_block_argument(operand_index + num_produced)
                     {
                         let mut operand_lattice =
-                            get_lattice_element::<A>(operand.borrow().as_value_ref(), solver);
+                            get_lattice_element_mut::<A>(operand.borrow().as_value_ref(), solver);
                         let result_lattice = get_lattice_element_for::<A>(
                             current_point,
                             block_arg.borrow().as_value_ref(),
@@ -227,7 +228,7 @@ where
                 let block = region.entry();
                 for (block_arg, arg_operand) in block.arguments().iter().zip(arg_operands.iter()) {
                     let mut arg_lattice =
-                        get_lattice_element::<A>(arg_operand.borrow().as_value_ref(), solver);
+                        get_lattice_element_mut::<A>(arg_operand.borrow().as_value_ref(), solver);
                     let result_lattice = get_lattice_element_for::<A>(
                         current_point,
                         block_arg.borrow().as_value_ref(),
@@ -337,7 +338,7 @@ fn visit_region_successors<A>(
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
             let operand_index = operand.index as usize;
-            let mut operand_lattice = get_lattice_element::<A>(operand.as_value_ref(), solver);
+            let mut operand_lattice = get_lattice_element_mut::<A>(operand.as_value_ref(), solver);
             let point = ProgramPoint::after(op);
             let input_lattice = get_lattice_element_for::<A>(point, input, solver);
             operand_lattice.meet(input_lattice.lattice());
@@ -390,7 +391,7 @@ fn visit_region_successors_from_terminator<A>(
         let operands = terminator.get_successor_operands(*successor.branch_point());
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
-            let mut operand_lattice = get_lattice_element::<A>(operand.as_value_ref(), solver);
+            let mut operand_lattice = get_lattice_element_mut::<A>(operand.as_value_ref(), solver);
             let point = ProgramPoint::after(terminator_op);
             let input_lattice = get_lattice_element_for::<A>(point, input, solver);
             operand_lattice.meet(input_lattice.lattice());
@@ -406,10 +407,10 @@ fn visit_region_successors_from_terminator<A>(
 }
 
 #[inline]
-fn get_lattice_element<'guard, A>(
+fn get_lattice_element_mut<'guard, A>(
     value: ValueRef,
     solver: &mut DataFlowSolver,
-) -> AnalysisStateGuard<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>
+) -> AnalysisStateGuardMut<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>
 where
     A: SparseBackwardDataFlowAnalysis,
 {
@@ -422,7 +423,7 @@ fn get_lattice_element_for<'guard, A>(
     point: ProgramPoint,
     value: ValueRef,
     solver: &mut DataFlowSolver,
-) -> EntityRef<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>
+) -> AnalysisStateGuard<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>
 where
     A: SparseBackwardDataFlowAnalysis,
 {
@@ -430,10 +431,10 @@ where
     solver.require::<_, _>(value, point)
 }
 
-fn get_lattice_elements<'guard, A>(
+fn get_lattice_elements_mut<'guard, A>(
     values: OpOperandRange<'_>,
     solver: &mut DataFlowSolver,
-) -> SmallVec<[AnalysisStateGuard<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>; 2]>
+) -> SmallVec<[AnalysisStateGuardMut<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>; 2]>
 where
     A: SparseBackwardDataFlowAnalysis,
 {
@@ -452,7 +453,7 @@ fn get_lattice_elements_for<'guard, A>(
     point: ProgramPoint,
     values: OpResultRange<'_>,
     solver: &mut DataFlowSolver,
-) -> SmallVec<[EntityRef<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>; 2]>
+) -> SmallVec<[AnalysisStateGuard<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>; 2]>
 where
     A: SparseBackwardDataFlowAnalysis,
 {

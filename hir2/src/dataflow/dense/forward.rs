@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     dataflow::{
         analyses::dce::{CfgEdge, Executable, PredecessorState},
-        AnalysisStateGuard, BuildableAnalysisState, CallControlFlowAction, DataFlowSolver,
+        AnalysisStateGuardMut, BuildableAnalysisState, CallControlFlowAction, DataFlowSolver,
         ProgramPoint,
     },
     Block, CallOpInterface, CallableOpInterface, Operation, RegionBranchOpInterface, RegionRef,
@@ -32,7 +32,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         &self,
         op: &Operation,
         before: &Self::Lattice,
-        after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
@@ -51,7 +51,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
     /// to simply propagate the state from 1 to 2.
     fn set_to_entry_state(
         &self,
-        lattice: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     );
 
@@ -79,7 +79,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         from: BlockRef,
         to: &Block,
         before: &Self::Lattice,
-        after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         after.join(before.lattice());
@@ -116,7 +116,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         region_from: Option<RegionRef>,
         region_to: Option<RegionRef>,
         before: &Self::Lattice,
-        after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         after.join(before.lattice());
@@ -148,7 +148,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         call: &dyn CallOpInterface,
         action: CallControlFlowAction,
         before: &Self::Lattice,
-        after: &mut AnalysisStateGuard<'_, Self::Lattice>,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         solver: &mut DataFlowSolver,
     ) {
         after.join(before.lattice());
@@ -320,7 +320,7 @@ pub fn visit_call_operation<A>(
     analysis: &A,
     call: &dyn CallOpInterface,
     before: &<A as DenseForwardDataFlowAnalysis>::Lattice,
-    after: &mut AnalysisStateGuard<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
+    after: &mut AnalysisStateGuardMut<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
     solver: &mut DataFlowSolver,
 ) where
     A: DenseForwardDataFlowAnalysis,
@@ -389,7 +389,7 @@ pub fn visit_region_branch_operation<A>(
     analysis: &A,
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
-    after: &mut AnalysisStateGuard<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
+    after: &mut AnalysisStateGuardMut<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
     solver: &mut DataFlowSolver,
 ) where
     A: DenseForwardDataFlowAnalysis,

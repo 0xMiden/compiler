@@ -4,17 +4,113 @@ use core::{cell::RefCell, ptr::NonNull};
 use super::*;
 use crate::{
     dataflow::{solver::AnalysisQueue, ChangeResult, DenseLattice, SparseLattice},
+    entity::BorrowRef,
     ir::entity::BorrowRefMut,
 };
 
+/// An immmutable handle/guard for some analysis state T
 pub struct AnalysisStateGuard<'a, T: AnalysisState + 'static> {
+    #[allow(unused)]
+    info: NonNull<AnalysisStateInfo>,
+    state: NonNull<T>,
+    _borrow: BorrowRef<'a>,
+}
+impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
+    pub(in crate::dataflow) unsafe fn new(info: NonNull<AnalysisStateInfo>) -> Self {
+        let handle = RawAnalysisStateInfoHandle::new(info);
+        let (state, _borrow) = handle.state_ref();
+        Self {
+            info,
+            state,
+            _borrow,
+        }
+    }
+
+    pub fn into_entity_ref(guard: Self) -> crate::EntityRef<'a, T> {
+        let guard = core::mem::ManuallyDrop::new(guard);
+        let state = guard.state;
+        let borrow_ref = unsafe { core::ptr::read(&guard._borrow) };
+        crate::EntityRef::from_raw_parts(state, borrow_ref)
+    }
+
+    /// Subscribe `analysis` to any changes of the lattice anchor.
+    ///
+    /// This is handled by invoking the [AnalysisStateSubscriptionBehavior::on_subscribe] callback,
+    /// leaving the handling for ad-hoc subscriptions of this kind to each [AnalysisState]
+    /// implementation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// only situation in which it is safe for us to take the address of the analysis for later use.
+    pub fn subscribe<A>(guard: &Self, analysis: &A)
+    where
+        A: DataFlowAnalysis + 'static,
+    {
+        let analysis = analysis as *const dyn DataFlowAnalysis;
+        let analysis = unsafe { NonNull::new_unchecked(analysis.cast_mut()) };
+        Self::subscribe_nonnull(guard, analysis);
+    }
+
+    /// Subscribe `analysis` to any changes of the lattice anchor.
+    ///
+    /// This is handled by invoking the [AnalysisStateSubscriptionBehavior::on_subscribe] callback,
+    /// leaving the handling for ad-hoc subscriptions of this kind to each [AnalysisState]
+    /// implementation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// only situation in which it is safe for us to take the address of the analysis for later use.
+    fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
+        let info = unsafe { guard.info.as_ref() };
+        let state = unsafe { guard.state.as_ref() };
+        <T as AnalysisStateSubscriptionBehavior>::on_subscribe(state, analysis, info);
+    }
+}
+impl<T: AnalysisState> AsRef<T> for AnalysisStateGuard<'_, T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &T {
+        unsafe { self.state.as_ref() }
+    }
+}
+impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuard<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_ref(), f)
+    }
+}
+impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuard<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(self.as_ref(), f)
+    }
+}
+impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
+    fn as_any(&self) -> &dyn Any {
+        self.as_ref().as_any()
+    }
+
+    fn anchor(&self) -> &dyn LatticeAnchor {
+        self.as_ref().anchor()
+    }
+}
+
+/// A mutable handle/guard for some analysis state T
+pub struct AnalysisStateGuardMut<'a, T: AnalysisState + 'static> {
     worklist: Rc<RefCell<AnalysisQueue>>,
     info: NonNull<AnalysisStateInfo>,
     state: NonNull<T>,
     _borrow: BorrowRefMut<'a>,
     changed: ChangeResult,
 }
-impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
+impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     pub(in crate::dataflow) unsafe fn new(
         info: NonNull<AnalysisStateInfo>,
         worklist: Rc<RefCell<AnalysisQueue>>,
@@ -27,6 +123,21 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
             state,
             _borrow,
             changed: ChangeResult::Unchanged,
+        }
+    }
+
+    pub fn freeze(mut guard: Self) -> AnalysisStateGuard<'a, T> {
+        guard.notify_if_changed();
+
+        let guard = core::mem::ManuallyDrop::new(guard);
+        let info = guard.info;
+        let state = guard.state;
+        let _worklist = unsafe { core::ptr::read(&guard.worklist) };
+        let borrow_ref_mut = unsafe { core::ptr::read(&guard._borrow) };
+        AnalysisStateGuard {
+            info,
+            state,
+            _borrow: borrow_ref_mut.into_borrow_ref(),
         }
     }
 
@@ -74,7 +185,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
-    pub fn subscribe<A>(guard: &mut Self, analysis: &A)
+    pub fn subscribe<A>(guard: &Self, analysis: &A)
     where
         A: DataFlowAnalysis + 'static,
     {
@@ -93,8 +204,8 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
-    fn subscribe_nonnull(guard: &mut Self, analysis: NonNull<dyn DataFlowAnalysis>) {
-        let info = unsafe { guard.info.as_mut() };
+    fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
+        let info = unsafe { guard.info.as_ref() };
         let state = unsafe { guard.state.as_ref() };
         <T as AnalysisStateSubscriptionBehavior>::on_subscribe(state, analysis, info);
     }
@@ -117,8 +228,11 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
                 "there are {} subscriptions to notify of this change",
                 info.subscriptions().len()
             );
-            for subscription in info.subscriptions() {
-                subscription.handle_state_change::<T, _>(anchor, &mut *worklist);
+            {
+                let subscriptions = info.subscriptions();
+                for subscription in subscriptions.iter() {
+                    subscription.handle_state_change::<T, _>(anchor, &mut *worklist);
+                }
             }
             // Invoke any custom on-update logic for this analysis state type
             log::trace!("invoking on_update callback to notify user-defined subscriptions");
@@ -126,13 +240,13 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
         }
     }
 }
-impl<T: AnalysisState> AsRef<T> for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState> AsRef<T> for AnalysisStateGuardMut<'_, T> {
     #[inline(always)]
     fn as_ref(&self) -> &T {
         unsafe { self.state.as_ref() }
     }
 }
-impl<T: AnalysisState> AsMut<T> for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState> AsMut<T> for AnalysisStateGuardMut<'_, T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
         // This is overly conservative, but we assume that a mutable borrow of the underlying state
@@ -146,7 +260,7 @@ impl<T: AnalysisState> AsMut<T> for AnalysisStateGuard<'_, T> {
         unsafe { self.state.as_mut() }
     }
 }
-impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuardMut<'_, T> {
     type Target = T;
 
     #[inline(always)]
@@ -154,28 +268,28 @@ impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
         self.as_ref()
     }
 }
-impl<T: AnalysisState> core::ops::DerefMut for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState> core::ops::DerefMut for AnalysisStateGuardMut<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
 }
-impl<T: AnalysisState + 'static> Drop for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState + 'static> Drop for AnalysisStateGuardMut<'_, T> {
     fn drop(&mut self) {
         self.notify_if_changed();
     }
 }
-impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuardMut<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(self.as_ref(), f)
     }
 }
-impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuardMut<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Display::fmt(self.as_ref(), f)
     }
 }
-impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
+impl<T: AnalysisState> AnalysisState for AnalysisStateGuardMut<'_, T> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
     }
@@ -184,7 +298,7 @@ impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
         self.as_ref().anchor()
     }
 }
-impl<T: DenseLattice> DenseLattice for AnalysisStateGuard<'_, T> {
+impl<T: DenseLattice> DenseLattice for AnalysisStateGuardMut<'_, T> {
     type Lattice = <T as DenseLattice>::Lattice;
 
     #[inline]
@@ -204,7 +318,7 @@ impl<T: DenseLattice> DenseLattice for AnalysisStateGuard<'_, T> {
         result
     }
 }
-impl<T: SparseLattice> SparseLattice for AnalysisStateGuard<'_, T> {
+impl<T: SparseLattice> SparseLattice for AnalysisStateGuardMut<'_, T> {
     type Lattice = <T as SparseLattice>::Lattice;
 
     #[inline]

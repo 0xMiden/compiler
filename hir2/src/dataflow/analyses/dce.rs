@@ -11,7 +11,7 @@ use super::constant_propagation::ConstantValue;
 use crate::{
     adt::{SmallDenseMap, SmallSet},
     dataflow::{
-        AnalysisQueue, AnalysisState, AnalysisStateGuard, AnalysisStateInfo,
+        AnalysisQueue, AnalysisState, AnalysisStateGuardMut, AnalysisStateInfo,
         AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, AnalysisStrategy,
         BuildableAnalysisState, BuildableDataFlowAnalysis, ChangeResult, DataFlowAnalysis,
         DataFlowSolver, Dense, Forward, Lattice, LatticeAnchor, LatticeAnchorRef, ProgramPoint,
@@ -96,11 +96,7 @@ impl AnalysisStateSubscriptionBehavior for Executable {
         });
     }
 
-    fn on_subscribe(
-        &self,
-        subscriber: NonNull<dyn DataFlowAnalysis>,
-        info: &mut AnalysisStateInfo,
-    ) {
+    fn on_subscribe(&self, subscriber: NonNull<dyn DataFlowAnalysis>, info: &AnalysisStateInfo) {
         info.subscribe(AnalysisStateSubscription::OnUpdate {
             analysis: subscriber,
         });
@@ -110,7 +106,7 @@ impl AnalysisStateSubscriptionBehavior for Executable {
         use crate::dataflow::solver::QueuedAnalysis;
 
         // If there are no on-update subscribers, we have nothing to do
-        let no_update_subscriptions = info.on_update_subscribers().next().is_none();
+        let no_update_subscriptions = info.on_update_subscribers_count() == 0;
         if no_update_subscriptions {
             return;
         }
@@ -608,14 +604,14 @@ impl DeadCodeAnalysis {
             // When the liveness of the parent block changes, make sure to re-invoke the analysis on
             // the op.
             if let Some(block) = op.parent() {
-                let mut exec =
+                let exec =
                     solver.get_or_create_mut::<Executable, _>(ProgramPoint::at_start_of(block));
                 log::trace!(
                     target: self.debug_name(), "subscribing {} to changes in liveness of {block} (currently={})",
                     self.debug_name(),
                     exec.is_live()
                 );
-                AnalysisStateGuard::subscribe(&mut exec, self);
+                AnalysisStateGuardMut::subscribe(&exec, self);
             }
 
             // Visit the op.
@@ -898,12 +894,12 @@ impl DeadCodeAnalysis {
         solver: &mut DataFlowSolver,
     ) -> Option<MaybeConstOperands> {
         get_operand_values(op, |value: &ValueRef| {
-            let mut lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(*value);
+            let lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(*value);
             log::trace!(
                 target: self.debug_name(), "subscribing to constant propagation changes of operand {value} (current={})",
                 lattice.value()
             );
-            AnalysisStateGuard::subscribe(&mut lattice, self);
+            AnalysisStateGuardMut::subscribe(&lattice, self);
             lattice
         })
     }
@@ -940,7 +936,7 @@ fn is_region_or_callable_return(op: &Operation) -> bool {
 /// should bail out.
 fn get_operand_values<F>(op: &Operation, mut get_lattice: F) -> Option<MaybeConstOperands>
 where
-    F: FnMut(&ValueRef) -> AnalysisStateGuard<'_, Lattice<ConstantValue>>,
+    F: FnMut(&ValueRef) -> AnalysisStateGuardMut<'_, Lattice<ConstantValue>>,
 {
     let mut operands =
         SmallVec::<[Option<Box<dyn AttributeValue>>; 2]>::with_capacity(op.num_operands());

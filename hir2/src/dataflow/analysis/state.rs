@@ -8,7 +8,7 @@ pub(in crate::dataflow) use self::raw::{
     AnalysisStateDescriptor, RawAnalysisStateInfo, RawAnalysisStateInfoHandle,
 };
 pub use self::{
-    guard::AnalysisStateGuard,
+    guard::{AnalysisStateGuard, AnalysisStateGuardMut},
     info::{
         AnalysisStateInfo, AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, Revision,
     },

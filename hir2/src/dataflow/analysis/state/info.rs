@@ -1,5 +1,11 @@
 use alloc::collections::VecDeque;
-use core::{any::TypeId, ptr::NonNull};
+use core::{
+    any::TypeId,
+    cell::{Ref, RefCell},
+    ptr::NonNull,
+};
+
+use smallvec::SmallVec;
 
 use super::*;
 use crate::{
@@ -26,7 +32,10 @@ pub struct AnalysisStateInfo {
     revision: Revision,
     /// The set of dependent program points and associated analyses which are to be re-analyzed
     /// whenever the state changes.
-    pub(super) subscriptions: SmallSet<AnalysisStateSubscription, 4>,
+    ///
+    /// This is dynamically borrow-checked so that subscriptions can be recorded without requiring
+    /// a mutable borrow of the analysis state itself.
+    pub(super) subscriptions: RefCell<SmallSet<AnalysisStateSubscription, 4>>,
 }
 impl AnalysisStateInfo {
     #[inline]
@@ -96,22 +105,32 @@ impl AnalysisStateInfo {
     }
 
     #[inline]
-    pub fn subscriptions(&self) -> &[AnalysisStateSubscription] {
-        self.subscriptions.as_slice()
+    pub fn subscriptions(&self) -> Ref<'_, [AnalysisStateSubscription]> {
+        Ref::map(self.subscriptions.borrow(), |subs| subs.as_slice())
     }
 
-    pub fn on_update_subscribers(
-        &self,
-    ) -> impl Iterator<Item = NonNull<dyn DataFlowAnalysis>> + '_ {
-        self.subscriptions.iter().filter_map(|sub| match sub {
-            AnalysisStateSubscription::OnUpdate { analysis } => Some(*analysis),
-            _ => None,
-        })
+    pub fn on_update_subscribers_count(&self) -> usize {
+        self.subscriptions
+            .borrow()
+            .iter()
+            .filter(|sub| matches!(sub, AnalysisStateSubscription::OnUpdate { .. }))
+            .count()
+    }
+
+    pub fn on_update_subscribers(&self) -> SmallVec<[NonNull<dyn DataFlowAnalysis>; 4]> {
+        self.subscriptions
+            .borrow()
+            .iter()
+            .filter_map(|sub| match sub {
+                AnalysisStateSubscription::OnUpdate { analysis } => Some(*analysis),
+                _ => None,
+            })
+            .collect::<SmallVec<[_; 4]>>()
     }
 
     /// Add a subscription for `analysis` at `point` to this state
-    pub fn subscribe(&mut self, subscriber: AnalysisStateSubscription) {
-        self.subscriptions.insert(subscriber);
+    pub fn subscribe(&self, subscriber: AnalysisStateSubscription) {
+        self.subscriptions.borrow_mut().insert(subscriber);
     }
 }
 
@@ -199,11 +218,7 @@ pub trait AnalysisStateSubscriptionBehavior: AnalysisState {
     }
 
     /// Called when an analysis subscribes to any changes to the current [AnalysisState].
-    fn on_subscribe(
-        &self,
-        subscriber: NonNull<dyn DataFlowAnalysis>,
-        info: &mut AnalysisStateInfo,
-    ) {
+    fn on_subscribe(&self, subscriber: NonNull<dyn DataFlowAnalysis>, info: &AnalysisStateInfo) {
         log::trace!(
             "subscribing {} to state updates for analysis state {} at {}",
             unsafe { subscriber.as_ref().debug_name() },
@@ -236,7 +251,7 @@ impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
     default fn on_subscribe(
         &self,
         subscriber: NonNull<dyn DataFlowAnalysis>,
-        info: &mut AnalysisStateInfo,
+        info: &AnalysisStateInfo,
     ) {
         log::trace!(
             "subscribing {} to state updates for analysis state {} at {}",
@@ -255,7 +270,7 @@ impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
     default fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue) {
         log::trace!(
             "notifying {} subscribers of update to sparse lattice at {}",
-            info.on_update_subscribers().count(),
+            info.on_update_subscribers_count(),
             info.anchor()
         );
         if let Some(value) = info.anchor().as_value() {

@@ -4,15 +4,15 @@ use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
     dataflow::{
         analyses::dce::{CfgEdge, Executable, PredecessorState},
-        AnalysisState, AnalysisStateGuard, BuildableAnalysisState, DataFlowSolver, Forward,
-        ProgramPoint,
+        AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableAnalysisState,
+        DataFlowSolver, Forward, ProgramPoint,
     },
     formatter::DisplayValues,
     traits::BranchOpInterface,
-    Block, BlockArgument, BlockArgumentRange, CallOpInterface, CallableOpInterface, EntityRef,
-    EntityWithId, OpOperandRange, OpResult, OpResultRange, Operation, RegionBranchOpInterface,
-    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessor, Report, Spanned,
-    StorableEntity, SuccessorOperands, ValueRef,
+    Block, BlockArgument, BlockArgumentRange, CallOpInterface, CallableOpInterface, EntityWithId,
+    OpOperandRange, OpResult, OpResultRange, Operation, RegionBranchOpInterface, RegionBranchPoint,
+    RegionBranchTerminatorOpInterface, RegionSuccessor, Report, Spanned, StorableEntity,
+    SuccessorOperands, ValueRef,
 };
 
 /// The base trait for sparse forward data-flow analyses.
@@ -38,8 +38,8 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
     fn visit_operation(
         &self,
         op: &Operation,
-        operands: &[EntityRef<'_, Self::Lattice>],
-        results: &mut [AnalysisStateGuard<'_, Self::Lattice>],
+        operands: &[AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
@@ -47,8 +47,8 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
     fn visit_external_call(
         &self,
         call: &dyn CallOpInterface,
-        arguments: &[EntityRef<'_, Self::Lattice>],
-        results: &mut [AnalysisStateGuard<'_, Self::Lattice>],
+        arguments: &[AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) {
         set_all_to_entry_states(self, results);
@@ -66,7 +66,7 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
         &self,
         op: &Operation,
         successor: &RegionSuccessor<'_>,
-        arguments: &mut [AnalysisStateGuard<'_, Self::Lattice>],
+        arguments: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         first_index: usize,
         solver: &mut DataFlowSolver,
     ) {
@@ -77,12 +77,12 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
     }
 
     /// Set the given lattice element(s) at control flow entry point(s).
-    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuard<'_, Self::Lattice>);
+    fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>);
 }
 
 pub fn set_all_to_entry_states<A>(
     analysis: &A,
-    lattices: &mut [AnalysisStateGuard<'_, <A as SparseForwardDataFlowAnalysis>::Lattice>],
+    lattices: &mut [AnalysisStateGuardMut<'_, <A as SparseForwardDataFlowAnalysis>::Lattice>],
 ) where
     A: ?Sized + SparseForwardDataFlowAnalysis,
 {
@@ -113,11 +113,11 @@ where
             for block in region.body() {
                 {
                     let point = ProgramPoint::at_start_of(block.as_block_ref());
-                    let mut exec = solver.get_or_create_mut::<Executable, _>(point);
+                    let exec = solver.get_or_create::<Executable, _>(point);
                     log::trace!(
                         target: analysis.debug_name(), "subscribing to changes in liveness for {block} (current={exec})",
                     );
-                    AnalysisStateGuard::subscribe(&mut exec, analysis);
+                    AnalysisStateGuard::subscribe(&exec, analysis);
                 }
 
                 visit_block(analysis, &block, solver);
@@ -168,7 +168,7 @@ where
         "getting/initializing result lattices for {}",
         DisplayValues::new(op.results().all().into_iter())
     );
-    let mut result_lattices = get_lattice_elements::<A>(op.results().all(), solver);
+    let mut result_lattices = get_lattice_elements_mut::<A>(op.results().all(), solver);
 
     // The results of a region branch operation are determined by control-flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -186,15 +186,16 @@ where
 
     // Grab the lattice elements of the operands.
     let mut operand_lattices = SmallVec::<[_; 4]>::with_capacity(op.num_operands());
+    // TODO: Visit unique operands first to initialize analysis state and subscribe to changes
     for operand in op.operands().iter() {
-        log::trace!(target: analysis.debug_name(), "getting/initializing operand lattice for {}", operand.borrow().as_value_ref());
-        let operand = operand.borrow().as_value_ref();
-        let mut operand_lattice = get_lattice_element::<A>(operand, solver);
+        let operand = { operand.borrow().as_value_ref() };
+        log::trace!(target: analysis.debug_name(), "getting/initializing operand lattice for {operand}");
+        let operand_lattice = get_lattice_element::<A>(operand, solver);
         log::trace!(
             target: analysis.debug_name(), "subscribing to changes of operand {operand} (current={operand_lattice:#?})",
         );
-        AnalysisStateGuard::subscribe(&mut operand_lattice, analysis);
-        operand_lattices.push(AnalysisStateGuard::into_entity_ref(operand_lattice));
+        AnalysisStateGuard::subscribe(&operand_lattice, analysis);
+        operand_lattices.push(operand_lattice);
     }
 
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
@@ -285,7 +286,7 @@ pub(super) fn visit_block<A>(
     let mut arg_lattices = SmallVec::<[_; 4]>::with_capacity(block.num_arguments());
     for argument in block.arguments().iter().copied() {
         log::trace!(target: analysis.debug_name(), "getting/initializing lattice for {argument}");
-        let lattice = get_lattice_element::<A>(argument as ValueRef, solver);
+        let lattice = get_lattice_element_mut::<A>(argument as ValueRef, solver);
         arg_lattices.push(lattice);
     }
 
@@ -372,19 +373,19 @@ pub(super) fn visit_block<A>(
         log::trace!(target: analysis.debug_name(), "visiting control flow edge {predecessor} -> {block} (index {})", pred.index);
 
         // If the edge from the predecessor block to the current block is not live, bail out.
-        let mut edge_executable = {
+        let edge_executable = {
             let anchor = solver.create_lattice_anchor(CfgEdge::new(
                 predecessor.as_block_ref(),
                 block.as_block_ref(),
                 predecessor.span(),
             ));
-            let lattice = solver.get_or_create_mut::<Executable, _>(anchor);
+            let lattice = solver.get_or_create::<Executable, _>(anchor);
             log::trace!(
                 target: analysis.debug_name(), "subscribing to changes of control flow edge {anchor} (current={lattice})",
             );
             lattice
         };
-        AnalysisStateGuard::subscribe(&mut edge_executable, analysis);
+        AnalysisStateGuard::subscribe(&edge_executable, analysis);
         if !edge_executable.is_live() {
             log::trace!(target: analysis.debug_name(), "skipping {predecessor}: control flow edge is dead/non-executable");
             continue;
@@ -435,7 +436,7 @@ fn visit_region_successors<A>(
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
     successor: RegionBranchPoint,
-    lattices: &mut [AnalysisStateGuard<'_, <A as SparseForwardDataFlowAnalysis>::Lattice>],
+    lattices: &mut [AnalysisStateGuardMut<'_, <A as SparseForwardDataFlowAnalysis>::Lattice>],
     solver: &mut DataFlowSolver,
 ) where
     A: SparseForwardDataFlowAnalysis,
@@ -542,6 +543,19 @@ where
     A: SparseForwardDataFlowAnalysis,
 {
     let lattice: AnalysisStateGuard<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice> =
+        solver.get_or_create::<_, _>(value);
+    lattice
+}
+
+#[inline]
+fn get_lattice_element_mut<'guard, A>(
+    value: ValueRef,
+    solver: &mut DataFlowSolver,
+) -> AnalysisStateGuardMut<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice>
+where
+    A: SparseForwardDataFlowAnalysis,
+{
+    let lattice: AnalysisStateGuardMut<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice> =
         solver.get_or_create_mut::<_, _>(value);
     lattice
 }
@@ -551,17 +565,17 @@ fn get_lattice_element_for<'guard, A>(
     point: ProgramPoint,
     value: ValueRef,
     solver: &mut DataFlowSolver,
-) -> EntityRef<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice>
+) -> AnalysisStateGuard<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice>
 where
     A: SparseForwardDataFlowAnalysis,
 {
     solver.require::<_, _>(value, point)
 }
 
-fn get_lattice_elements<'guard, A>(
+fn get_lattice_elements_mut<'guard, A>(
     values: OpResultRange<'_>,
     solver: &mut DataFlowSolver,
-) -> SmallVec<[AnalysisStateGuard<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice>; 2]>
+) -> SmallVec<[AnalysisStateGuardMut<'guard, <A as SparseForwardDataFlowAnalysis>::Lattice>; 2]>
 where
     A: SparseForwardDataFlowAnalysis,
 {
