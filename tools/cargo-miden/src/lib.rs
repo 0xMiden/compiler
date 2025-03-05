@@ -5,10 +5,7 @@ use cargo_component::{
     config::{CargoArguments, Config},
     load_component_metadata, load_metadata, run_cargo_command,
 };
-use cargo_component_core::{
-    command::{CACHE_DIR_ENV_VAR, CONFIG_FILE_ENV_VAR},
-    terminal::{Color, Terminal, Verbosity},
-};
+use cargo_component_core::terminal::{Color, Terminal, Verbosity};
 use clap::{CommandFactory, Parser};
 use commands::NewCommand;
 use compile_masm::wasm_to_masm;
@@ -142,22 +139,6 @@ where
             let args = args.into_iter().skip_while(|arg| arg == "miden").collect::<Vec<_>>();
             let cargo_args = CargoArguments::parse_from(args.clone().into_iter())?;
             // dbg!(&cargo_args);
-            let cache_dir = std::env::var(CACHE_DIR_ENV_VAR).map(PathBuf::from).ok();
-            let config_file = std::env::var(CONFIG_FILE_ENV_VAR).map(PathBuf::from).ok();
-            let config = Config::new(
-                Terminal::new(
-                    if cargo_args.quiet {
-                        Verbosity::Quiet
-                    } else {
-                        match cargo_args.verbose {
-                            0 => Verbosity::Normal,
-                            _ => Verbosity::Verbose,
-                        }
-                    },
-                    cargo_args.color.unwrap_or_default(),
-                ),
-                config_file,
-            )?;
             let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
             let mut packages = load_component_metadata(
                 &metadata,
@@ -220,16 +201,24 @@ where
                 .map(|s| s.to_string()),
             );
 
-            let env_vars =
-                vec![("RUSTFLAGS".to_string(), "-C target-feature=+bulk-memory".to_string())]
-                    .into_iter()
-                    .collect();
-
+            std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory");
+            let terminal = Terminal::new(
+                if cargo_args.quiet {
+                    Verbosity::Quiet
+                } else {
+                    match cargo_args.verbose {
+                        0 => Verbosity::Normal,
+                        _ => Verbosity::Verbose,
+                    }
+                },
+                cargo_args.color.unwrap_or_default(),
+            );
             let mut builder = tokio::runtime::Builder::new_current_thread();
             let rt = builder.enable_all().build()?;
             // dbg!(&packages);
             let mut wasm_outputs = rt.block_on(async {
-                let client = config.client(cache_dir, cargo_args.offline).await?;
+                let config = Config::new(terminal, None).await?;
+                let client = config.client(None, cargo_args.offline).await?;
                 run_cargo_command(
                     client,
                     &config,
@@ -238,7 +227,6 @@ where
                     subcommand.as_deref(),
                     &cargo_args,
                     &spawn_args,
-                    &env_vars,
                 )
                 .await
             })?;
@@ -248,11 +236,9 @@ where
                 // `cargo-component` run_cargo_command and return no outputs.
                 // Build them with our own version of run_cargo_command
                 wasm_outputs = run_cargo_command_for_non_component(
-                    &config,
                     subcommand.as_deref(),
                     &cargo_args,
                     &spawn_args,
-                    &env_vars,
                 )?;
             }
             match build_output_type {
