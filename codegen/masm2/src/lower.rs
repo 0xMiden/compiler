@@ -645,11 +645,281 @@ stack on exit from 'after': {:#?}
 }
 
 impl HirLowering for hir::IndexSwitch {
-    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
         // the selector against each non-default case to determine whether control should enter
         // that block. The final else contains the default case.
-        todo!()
+        log::trace!(target: "index_switch", "{}", self.as_operation());
+        let span = self.span();
+        let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
+        cases.sort();
+
+        // We have N cases, plus a default case
+        //
+        // 1. If we have exactly 1 non-default case, we can lower to an `hir.if`
+        // 2. If we have N non-default non-contiguous (or N < 3 contiguous) cases, lower to:
+        //
+        //      if selector == case1 {
+        //          <case1 body>
+        //      } else {
+        //          if selector == case2 {
+        //              <case2 body>
+        //          } else {
+        //              if selector == caseN {
+        //                  <caseN body>
+        //              } else {
+        //                  <default>
+        //              }
+        //          }
+        //      }
+        //
+        //      if selector < case3 {
+        //         if selector == case1 {
+        //             <case1 body>
+        //         } else {
+        //             <case2 body>
+        //         }
+        //      } else {
+        //         if selector < case4 {
+        //            <case3 body>
+        //         } else {
+        //            if selector == case4 {
+        //               <case4 body>
+        //            } else {
+        //               <default>
+        //            }
+        //         }
+        //      }
+        //
+        // 3. If we have N non-default contiguous cases, use binary search to reduce search space:
+        //
+        //      if selector < case3 {
+        //         if selector == case1 {
+        //             <case1 body>
+        //         } else {
+        //             <case2 body>
+        //         }
+        //      } else {
+        //         if selector < case4 {
+        //            <case3 body>
+        //         } else {
+        //            if selector == case4 {
+        //               <case4 body>
+        //            } else {
+        //               <default>
+        //            }
+        //         }
+        //      }
+        //
+        // We do not try to use the binary search approach with non-contiguous cases, as we would
+        // be forced to emit duplicate copies of the fallback branch, and it isn't clear the size
+        // tradeoff would be worth it without branch hints.
+
+        assert!(!cases.is_empty());
+        if cases.len() == 1 {
+            // Emit `selector == case0`
+            emitter.emit_op(masm::Op::Inst(Span::new(
+                span,
+                masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(span, cases[0].into()))),
+            )));
+
+            // Emit as 'hir.if'
+            let then_body = self.get_case_region(0);
+            let else_body = self.default_region();
+            return emit_if(emitter, self.as_operation(), &then_body.borrow(), &else_body);
+        }
+
+        /*
+               let (_, is_contiguous) =
+                   cases.iter().skip(1).copied().fold((cases[0], true), |(prev_case, acc), case| {
+                       let is_succ = prev_case + 1 == case;
+                       (case, is_succ && acc)
+                   });
+        */
+        // Emit binary-search-optimized 'hir.if' sequence
+        //
+        // Partition such that the condition for the `then` branch guarantees that no fallback
+        // branch is needed, i.e. an even number of cases must be in the first partition
+        let midpoint = cases[0].midpoint(cases[cases.len() - 1]);
+        let partition_point = core::cmp::min(
+            cases.len(),
+            cases.partition_point(|item| *item < midpoint).next_multiple_of(2),
+        );
+        let (a, b) = cases.split_at(partition_point);
+        emit_binary_search(self, emitter, a, b, midpoint)
+    }
+}
+
+fn emit_binary_search(
+    op: &hir::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    a: &[u32],
+    b: &[u32],
+    midpoint: u32,
+) -> Result<(), Report> {
+    let span = op.span();
+
+    match a {
+        [] => {
+            match b {
+                [] => {
+                    // There is only a single case to emit, so we can just emit an 'hir.if' with fallback
+                    //
+                    // Emit `selector == b[0]`
+                    emitter.emit_op(masm::Op::Inst(Span::new(
+                        span,
+                        masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
+                            span,
+                            b[0].into(),
+                        ))),
+                    )));
+
+                    // Emit as 'hir.if'
+                    let then_index = op.get_case_index_for_selector(b[0]).unwrap();
+                    let then_body = op.get_case_region(then_index);
+                    let else_body = op.default_region();
+                    emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body)
+                }
+                [then_case, else_case] => {
+                    // We can emit 'b' as an 'hir.if' with no fallback
+                    //
+                    // Emit `selector == then_case`
+                    emitter.emit_op(masm::Op::Inst(Span::new(
+                        span,
+                        masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
+                            span,
+                            (*then_case).into(),
+                        ))),
+                    )));
+
+                    // Emit as 'hir.if'
+                    let then_index = op.get_case_index_for_selector(*then_case).unwrap();
+                    let then_body = op.get_case_region(then_index);
+                    let else_index = op.get_case_index_for_selector(*else_case).unwrap();
+                    let else_body = op.get_case_region(else_index);
+                    emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
+                }
+                _ => panic!(
+                    "unexpected partitioning of switch cases: a = empty, b = {b:#?}, midpoint = \
+                     {midpoint}"
+                ),
+            }
+        }
+        [then_case, else_case] if b.is_empty() => {
+            // We can emit 'a' as an 'hir.if' with no fallback
+            //
+            // Emit `selector == then_case`
+            emitter.emit_op(masm::Op::Inst(Span::new(
+                span,
+                masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
+                    span,
+                    (*then_case).into(),
+                ))),
+            )));
+
+            // Emit as 'hir.if'
+            let then_index = op.get_case_index_for_selector(*then_case).unwrap();
+            let then_body = op.get_case_region(then_index);
+            let else_index = op.get_case_index_for_selector(*else_case).unwrap();
+            let else_body = op.get_case_region(else_index);
+            emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
+        }
+        [_then_case, _else_case] => {
+            // We need to emit an 'hir.if' to split the search at the midpoint, and emit 'a' in
+            // the then region, and then recurse with 'b' on the else region
+            //
+            // Emit `selector < partition_point`
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU32(midpoint))));
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lt)));
+            let (then_blk, then_stack) = {
+                let mut then_emitter = emitter.nest();
+                emit_binary_search(op, &mut then_emitter, a, &[], midpoint)?;
+                let then_stack = then_emitter.stack.clone();
+                (then_emitter.into_emitted_block(span), then_stack)
+            };
+            let (else_blk, else_stack) = {
+                let mut else_emitter = emitter.nest();
+                let midpoint = b[0].midpoint(b[b.len() - 1]);
+                let partition_point = core::cmp::min(
+                    b.len(),
+                    b.partition_point(|item| *item < midpoint).next_multiple_of(2),
+                );
+                let (b_then, b_else) = b.split_at(partition_point);
+                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint)?;
+                let else_stack = else_emitter.stack.clone();
+                (else_emitter.into_emitted_block(span), else_stack)
+            };
+
+            if then_stack != else_stack {
+                panic!(
+                    "unexpected observable stack effect leaked from regions of {}
+
+stack on exit from 'then': {then_stack:#?}
+stack on exit from 'else': {else_stack:#?}
+                ",
+                    op.as_operation()
+                );
+            }
+
+            emitter.stack = then_stack;
+
+            emitter.emit_op(masm::Op::If {
+                span,
+                then_blk,
+                else_blk,
+            });
+
+            Ok(())
+        }
+        a => {
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU32(midpoint))));
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lt)));
+            let (then_blk, then_stack) = {
+                let mut then_emitter = emitter.nest();
+                let midpoint = a[0].midpoint(a[a.len() - 1]);
+                let partition_point = core::cmp::min(
+                    a.len(),
+                    a.partition_point(|item| *item < midpoint).next_multiple_of(2),
+                );
+                let (a_then, a_else) = a.split_at(partition_point);
+                emit_binary_search(op, &mut then_emitter, a_then, a_else, midpoint)?;
+                let then_stack = then_emitter.stack.clone();
+                (then_emitter.into_emitted_block(span), then_stack)
+            };
+            let (else_blk, else_stack) = {
+                let mut else_emitter = emitter.nest();
+                let midpoint = b[0].midpoint(b[b.len() - 1]);
+                let partition_point = core::cmp::min(
+                    b.len(),
+                    b.partition_point(|item| *item < midpoint).next_multiple_of(2),
+                );
+                let (b_then, b_else) = b.split_at(partition_point);
+                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint)?;
+                let else_stack = else_emitter.stack.clone();
+                (else_emitter.into_emitted_block(span), else_stack)
+            };
+
+            if then_stack != else_stack {
+                panic!(
+                    "unexpected observable stack effect leaked from regions of {}
+
+stack on exit from 'then': {then_stack:#?}
+stack on exit from 'else': {else_stack:#?}
+                ",
+                    op.as_operation()
+                );
+            }
+
+            emitter.stack = then_stack;
+
+            emitter.emit_op(masm::Op::If {
+                span,
+                then_blk,
+                else_blk,
+            });
+
+            Ok(())
+        }
     }
 }
 
