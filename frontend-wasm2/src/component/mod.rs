@@ -4,6 +4,8 @@
 //! translate the component model.
 
 pub mod build_ir;
+mod flat;
+mod lift_exports;
 mod parser;
 mod translator;
 mod types;

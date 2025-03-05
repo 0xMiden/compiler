@@ -4,9 +4,9 @@
 //! and https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
-use midenc_hir::{
-    types::Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Linkage,
-    Signature, StructType, Type,
+use midenc_hir2::{
+    Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Signature,
+    StructType, Type, Visibility,
 };
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
@@ -130,7 +130,7 @@ pub fn flatten_function_type(func_ty: &FunctionType, cc: CallConv) -> Result<Sig
         params: flat_params,
         results: flat_results,
         cc,
-        linkage: Linkage::External,
+        visibility: Visibility::Public,
     })
 }
 

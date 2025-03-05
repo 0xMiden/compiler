@@ -274,4 +274,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
 
         builtin.segment readonly @1048576 = 0x000000020000000100000001000000010000000100000001000000010000000100000001;
     };
+
+    builtin.function public @process-felt(v187: felt) -> felt {
+    ^block44(v187: felt):
+        v188 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/miden:cross-ctx-account/foo@1.0.0#process-felt(v187) : felt
+        hir.br ^block45;
+    ^block45:
+        hir.ret v188;
+    };
 };

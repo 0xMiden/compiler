@@ -1,0 +1,106 @@
+use std::{cell::RefCell, rc::Rc};
+
+use midenc_dialect_hir::InstBuilder;
+use midenc_hir2::{
+    dialects::builtin::{ComponentBuilder, Function, ModuleBuilder},
+    interner::Symbol,
+    AbiParam, CallConv, FunctionIdent, FunctionType, Ident, Op, Signature, SourceSpan, ValueRef,
+    Visibility,
+};
+use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
+
+use super::flat::{
+    assert_core_wasm_signature_equivalence, flatten_function_type, needs_transformation,
+};
+use crate::{
+    error::WasmResult,
+    module::function_builder_ext::{
+        FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
+    },
+};
+
+pub fn generate_export_lifting_function(
+    component_builder: &mut ComponentBuilder,
+    export_func_name: &str,
+    export_func_ty: FunctionType,
+    core_export_func_id: FunctionIdent,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    let cross_ctx_export_sig = flatten_function_type(&export_func_ty, CallConv::CanonLift)
+        .map_err(|e| {
+            let message = format!(
+                "Miden CCABI export lifting generation. Signature for exported function {} \
+                 requires flattening. Error: {}",
+                core_export_func_id, e
+            );
+            diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+        })?;
+    if needs_transformation(&cross_ctx_export_sig) {
+        let message = format!(
+            "Miden CCABI export lifting generation. Signature for exported function {} requires \
+             lifting. This is not yet supported",
+            core_export_func_id
+        );
+        return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
+    }
+
+    let export_func_ident =
+        Ident::new(Symbol::intern(export_func_name.to_string()), SourceSpan::default());
+    let mut export_func_ref =
+        component_builder.define_function(export_func_ident, cross_ctx_export_sig.clone())?;
+
+    let core_module_ref = component_builder
+        .find_module(core_export_func_id.module.as_symbol())
+        .expect("failed to find the core module");
+
+    let core_module_builder = ModuleBuilder::new(core_module_ref);
+    let core_export_func_ref = core_module_builder
+        .get_function(core_export_func_id.function.as_str())
+        .expect("failed to find the core module function");
+    let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
+    assert_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig);
+
+    let mut export_func = export_func_ref.borrow_mut();
+    let context = export_func.as_operation().context_rc();
+    let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+    let mut op_builder =
+        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+    let span = export_func.name().span;
+    let mut fb = FunctionBuilderExt::new(
+        export_func.as_mut().downcast_mut::<Function>().unwrap(),
+        &mut op_builder,
+    );
+
+    let entry_block = fb.current_block();
+    fb.seal_block(entry_block); // Declare all predecessors known.
+    let args: Vec<ValueRef> = entry_block
+        .borrow()
+        .arguments()
+        .iter()
+        .copied()
+        .map(|ba| ba as ValueRef)
+        .collect();
+
+    // NOTE: handle lifting/lowering for non-scalar types
+    // see https://github.com/0xPolygonMiden/compiler/issues/369
+
+    let exec = fb
+        .ins()
+        .exec(core_export_func_ref, core_export_func_sig, args.to_vec(), span)
+        .expect("failed to build an exec op");
+
+    let borrow = exec.borrow();
+    let results_storage = borrow.as_ref().results();
+    let results: Vec<ValueRef> =
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    assert!(results.len() <= 1, "expected a single result or none");
+
+    let exit_block = fb.create_block();
+    fb.ins().br(exit_block, vec![], span);
+    fb.seal_block(exit_block);
+    fb.switch_to_block(exit_block);
+    let returning = results.first().cloned();
+    fb.ins().ret(returning, span).expect("failed ret");
+
+    Ok(())
+}

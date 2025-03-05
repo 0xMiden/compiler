@@ -1,7 +1,11 @@
+use miden_core::debuginfo::Spanned;
+
 use super::BuiltinOpBuilder;
 use crate::{
-    dialects::builtin::{ComponentRef, InterfaceRef, Module, ModuleRef},
-    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolTable,
+    dialects::builtin::{
+        ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef, PrimFunctionBuilder,
+    },
+    Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolTable,
 };
 
 pub struct ComponentBuilder {
@@ -50,5 +54,23 @@ impl ComponentBuilder {
             let op = symbol_ref.borrow();
             op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
         })
+    }
+
+    /// Declare a new [crate::dialects::hir::Function] in this component with the given name and
+    /// signature.
+    pub fn define_function(
+        &mut self,
+        name: Ident,
+        signature: Signature,
+    ) -> Result<FunctionRef, Report> {
+        let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
+        let function_ref = builder(name, signature)?;
+        let is_new = self
+            .component
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(function_ref, crate::ProgramPoint::Invalid);
+        assert!(is_new, "function with the name {name} already exists");
+        Ok(function_ref)
     }
 }
