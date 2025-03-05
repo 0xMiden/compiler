@@ -74,8 +74,8 @@ pub use self::{
     usable::Usable,
     value::{
         BlockArgument, BlockArgumentRange, BlockArgumentRangeMut, BlockArgumentRef, OpResult,
-        OpResultRange, OpResultRangeMut, OpResultRef, OpResultStorage, Value, ValueId, ValueRange,
-        ValueRef,
+        OpResultRange, OpResultRangeMut, OpResultRef, OpResultStorage, StackOperand, Value,
+        ValueId, ValueOrAlias, ValueRange, ValueRef,
     },
     verifier::{OpVerifier, Verify},
     visit::{

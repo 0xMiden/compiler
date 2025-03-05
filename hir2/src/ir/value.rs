@@ -1,8 +1,10 @@
+mod aliasing;
 mod range;
+mod stack;
 
 use core::{any::Any, fmt};
 
-pub use self::range::ValueRange;
+pub use self::{aliasing::ValueOrAlias, range::ValueRange, stack::StackOperand};
 use super::*;
 use crate::{DynHash, DynPartialEq};
 

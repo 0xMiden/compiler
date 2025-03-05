@@ -22,7 +22,7 @@ use crate::{
     AttributeValue, Block, BlockArgument, BlockOperand, BlockRef, EntityWithId, FxHashMap,
     FxHashSet, LoopLikeOpInterface, Op, Operation, OperationRef, ProgramPoint, Region,
     RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, SourceSpan, Spanned,
-    SuccessorOperands, Value, ValueRef,
+    SuccessorOperands, Value, ValueOrAlias, ValueRef,
 };
 
 /// This analysis is responsible for simulating the state of the operand stack at each program
@@ -227,11 +227,11 @@ pub struct SpillAnalysis {
     // The set of instructions corresponding to the reload of a spilled value
     pub reloads: SmallVec<[ReloadInfo; 4]>,
     // The set of operands in registers on entry to a given block
-    w_entries: FxHashMap<BlockRef, SmallSet<Operand, 4>>,
+    w_entries: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
     // The set of operands in registers on exit from a given block
-    w_exits: FxHashMap<BlockRef, SmallSet<Operand, 4>>,
+    w_exits: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled so far, on exit from a given block
-    s_exits: FxHashMap<BlockRef, SmallSet<Operand, 4>>,
+    s_exits: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
 }
 
 impl Analysis for SpillAnalysis {
@@ -274,8 +274,8 @@ impl Analysis for SpillAnalysis {
 #[derive(Debug)]
 struct BlockInfo {
     block_id: BlockRef,
-    w_entry: SmallSet<Operand, 4>,
-    s_entry: SmallSet<Operand, 4>,
+    w_entry: SmallSet<ValueOrAlias, 4>,
+    s_entry: SmallSet<ValueOrAlias, 4>,
 }
 
 /// Uniquely identifies a [SplitInfo]
@@ -395,36 +395,6 @@ pub enum Placement {
     Split(Split),
 }
 
-/// An [Operand] is a possibly-aliased [Value], combined with the size of that value on the
-/// Miden operand stack. This extra information is used to not only compute whether or not we
-/// need to spill values during execution of a function, and how to prioritize those spills;
-/// but also to track aliases of a [Value] introduced when we insert reloads of a spilled value.
-///
-/// Once a spilled value is reloaded, the SSA property of the CFG is broken, as we now have two
-/// definitions of the same [Value]. To restore the SSA property, we have to assign the reloaded
-/// value a new id, and then update all uses of the reloaded value dominated by that reload to
-/// refer to the new [Value]. We use the `alias` field of [Operand] to track distinct reloads of
-/// a given [Value] during the initial insertion of reloads.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Operand {
-    /// The SSA value of this operand
-    pub value: ValueRef,
-    /// When an SSA value is used multiple times by an instruction, each use must be accounted for
-    /// on the operand stack in order to properly determine whether a spill is needed or not.
-    /// We assign each unique copy an integer id in the register file to ensure this.
-    pub alias: u16,
-}
-
-impl Operand {
-    pub fn new(value: ValueRef) -> Self {
-        Self { value, alias: 0 }
-    }
-
-    pub fn size(&self) -> usize {
-        self.value.borrow().ty().size_in_felts()
-    }
-}
-
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
 
@@ -527,17 +497,17 @@ impl SpillAnalysis {
     }
 
     /// Returns the operands in W upon entry to `block`
-    pub fn w_entry(&self, block: &BlockRef) -> &[Operand] {
+    pub fn w_entry(&self, block: &BlockRef) -> &[ValueOrAlias] {
         self.w_entries[block].as_slice()
     }
 
     /// Returns the operands in W upon exit from `block`
-    pub fn w_exit(&self, block: &BlockRef) -> &[Operand] {
+    pub fn w_exit(&self, block: &BlockRef) -> &[ValueOrAlias] {
         self.w_exits[block].as_slice()
     }
 
     /// Returns the operands in S upon exit from `block`
-    pub fn s_exit(&self, block: &BlockRef) -> &[Operand] {
+    pub fn s_exit(&self, block: &BlockRef) -> &[ValueOrAlias] {
         self.s_exits[block].as_slice()
     }
 
@@ -619,8 +589,8 @@ impl SpillAnalysis {
         op: &Operation,
         liveness: &LivenessAnalysis,
         analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<Operand, 4>,
-        s: &mut SmallSet<Operand, 4>,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
     ) -> Result<(), Report> {
         // If this op is a loop-like operation, we must handle it differently than non-looping
         // region control flow ops.
@@ -662,8 +632,8 @@ impl SpillAnalysis {
         loop_like: &dyn LoopLikeOpInterface,
         liveness: &LivenessAnalysis,
         analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<Operand, 4>,
-        s: &mut SmallSet<Operand, 4>,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
     ) -> Result<(), Report> {
         let op = loop_like.as_operation();
         let branch = op
@@ -719,8 +689,8 @@ impl SpillAnalysis {
         branch: &dyn RegionBranchOpInterface,
         liveness: &LivenessAnalysis,
         analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<Operand, 4>,
-        s: &mut SmallSet<Operand, 4>,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
     ) -> Result<(), Report> {
         let op = branch.as_operation();
 
@@ -799,8 +769,8 @@ impl SpillAnalysis {
         is_loop_header: bool,
         liveness: &LivenessAnalysis,
         analysis_manager: &AnalysisManager,
-        w_op: &SmallSet<Operand, 4>,
-        s_op: &SmallSet<Operand, 4>,
+        w_op: &SmallSet<ValueOrAlias, 4>,
+        s_op: &SmallSet<ValueOrAlias, 4>,
     ) -> Result<(), Report> {
         // Compute the reverse post-order traversal of the region graph from `entry`. We will then
         // visit all regions of the graph in order to propagate W and S through them, just like we
@@ -976,8 +946,8 @@ impl SpillAnalysis {
         loops: &LoopInfo,
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
-        w_op: &mut SmallSet<Operand, 4>,
-        s_op: &mut SmallSet<Operand, 4>,
+        w_op: &mut SmallSet<ValueOrAlias, 4>,
+        s_op: &mut SmallSet<ValueOrAlias, 4>,
     ) -> Result<(), Report> {
         // Get the analysis data we need for this CFG
         let body = region.as_region_ref();
@@ -1138,22 +1108,22 @@ impl SpillAnalysis {
     fn compute_w_entry_for_op_exit(
         &mut self,
         op: &Operation,
-        w_in: &SmallSet<Operand, 4>,
+        w_in: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
-        let mut freq = SmallOrdMap::<Operand, u8, 4>::default();
-        let mut take = SmallSet::<Operand, 4>::default();
-        let mut cand = SmallSet::<Operand, 4>::default();
+    ) -> SmallSet<ValueOrAlias, 4> {
+        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
+        let mut take = SmallSet::<ValueOrAlias, 4>::default();
+        let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Result of `op` are always in W^exit(op) by definition
         for result in op.results().iter().copied() {
-            take.insert(Operand::new(result as ValueRef));
+            take.insert(ValueOrAlias::new(result as ValueRef));
         }
 
         // Not sure how to handle too many results from a region control-flow op, for now we just
         // assert.
         assert!(
-            take.iter().map(|o| o.size()).sum::<usize>() <= K,
+            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
             "unhandled spills implied by op results"
         );
 
@@ -1177,7 +1147,7 @@ impl SpillAnalysis {
                 // that precisely represents what is in W on entry to `op`.
                 if pred == &op_ref {
                     for o in w_in.iter().copied() {
-                        if next_uses.is_live(&o.value) {
+                        if next_uses.is_live(o) {
                             *freq.entry(o).or_insert(0) += 1;
                             cand.insert(o);
                         }
@@ -1194,7 +1164,7 @@ impl SpillAnalysis {
                     //
                     // 1. Defined within `op`
                     // 2. Are not live after `op`
-                    if next_uses.is_live(&o.value) {
+                    if next_uses.is_live(o) {
                         *freq.entry(o).or_insert(0) += 1;
                         cand.insert(o);
                     }
@@ -1211,7 +1181,7 @@ impl SpillAnalysis {
 
         // We currently do not have a sane way to handle paths to the exit of `op` containing more
         // than K values. We simply bail for now.
-        let taken = take.iter().map(|o| o.size()).sum::<usize>();
+        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
         assert!(
             taken <= K,
             "implicit operand stack overflow along exiting control flow edges of '{}'",
@@ -1224,16 +1194,16 @@ impl SpillAnalysis {
         let mut cand = cand.into_vec();
         cand.sort_by(|a, b| {
             next_uses
-                .distance(&a.value)
-                .cmp(&next_uses.distance(&b.value))
-                .then(a.size().cmp(&b.size()))
+                .distance(a)
+                .cmp(&next_uses.distance(b))
+                .then(a.stack_size().cmp(&b.stack_size()))
         });
 
         let mut available = K - taken;
         let mut cand = cand.into_iter();
         while available > 0 {
             if let Some(candidate) = cand.next() {
-                let size = candidate.size();
+                let size = candidate.stack_size();
                 if size <= available {
                     take.insert(candidate);
                     available -= size;
@@ -1249,11 +1219,11 @@ impl SpillAnalysis {
     fn compute_s_entry_for_op_exit(
         &mut self,
         op: &Operation,
-        s_in: &SmallSet<Operand, 4>,
-        w_entry: &SmallSet<Operand, 4>,
+        s_in: &SmallSet<ValueOrAlias, 4>,
+        w_entry: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
-        let mut s_entry = SmallSet::<Operand, 4>::default();
+    ) -> SmallSet<ValueOrAlias, 4> {
+        let mut s_entry = SmallSet::<ValueOrAlias, 4>::default();
 
         let Some(pred_state) =
             liveness.solver().get::<PredecessorState, _>(&ProgramPoint::after(op))
@@ -1273,12 +1243,11 @@ impl SpillAnalysis {
                     // Union any spills of values defined above `op`
                     for spilled in s_exitp.iter().copied() {
                         let is_visible =
-                            if let Some(defining_op) = spilled.value.borrow().get_defining_op() {
+                            if let Some(defining_op) = spilled.borrow_value().get_defining_op() {
                                 defining_op.borrow().is_proper_ancestor_of(op)
                             } else {
                                 let defining_region = spilled
-                                    .value
-                                    .borrow()
+                                    .borrow_value()
                                     .downcast_ref::<BlockArgument>()
                                     .unwrap()
                                     .parent_region()
@@ -1301,11 +1270,11 @@ impl SpillAnalysis {
         &mut self,
         op: &Operation,
         block: &Block,
-        s_in: &SmallSet<Operand, 4>,
-        w_entry: &SmallSet<Operand, 4>,
+        s_in: &SmallSet<ValueOrAlias, 4>,
+        w_entry: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
-        let mut s_entry = SmallSet::<Operand, 4>::default();
+    ) -> SmallSet<ValueOrAlias, 4> {
+        let mut s_entry = SmallSet::<ValueOrAlias, 4>::default();
 
         if op.implements::<dyn RegionBranchOpInterface>() && block.is_entry_block() {
             let pred_state =
@@ -1323,13 +1292,12 @@ impl SpillAnalysis {
                             // Union any spills of values defined above `op`
                             for spilled in s_exitp.iter().copied() {
                                 let is_visible = if let Some(defining_op) =
-                                    spilled.value.borrow().get_defining_op()
+                                    spilled.borrow_value().get_defining_op()
                                 {
                                     defining_op.borrow().is_proper_ancestor_of(op)
                                 } else {
                                     let defining_region = spilled
-                                        .value
-                                        .borrow()
+                                        .borrow_value()
                                         .downcast_ref::<BlockArgument>()
                                         .unwrap()
                                         .parent_region()
@@ -1364,10 +1332,10 @@ impl SpillAnalysis {
         &mut self,
         op: &Operation,
         block: &Block,
-        w_in: &SmallSet<Operand, 4>,
+        w_in: &SmallSet<ValueOrAlias, 4>,
         loops: Option<&LoopForest>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
+    ) -> SmallSet<ValueOrAlias, 4> {
         // If this is the entry block for an IsolatedFromAbove region, then the operands in w_entry
         // are guaranteed to be equal to the set of block arguments, and thus we don't need to do
         // anything further.
@@ -1378,7 +1346,7 @@ impl SpillAnalysis {
                     .arguments()
                     .iter()
                     .copied()
-                    .map(|arg| Operand::new(arg as ValueRef))
+                    .map(|arg| ValueOrAlias::new(arg as ValueRef))
                     .collect();
             }
         }
@@ -1398,16 +1366,16 @@ impl SpillAnalysis {
         &mut self,
         op: &Operation,
         block: &Block,
-        w_in: &SmallSet<Operand, 4>,
+        w_in: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
-        let mut freq = SmallOrdMap::<Operand, u8, 4>::default();
-        let mut take = SmallSet::<Operand, 4>::default();
-        let mut cand = SmallSet::<Operand, 4>::default();
+    ) -> SmallSet<ValueOrAlias, 4> {
+        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
+        let mut take = SmallSet::<ValueOrAlias, 4>::default();
+        let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Block arguments are always in w_entry by definition
         for arg in block.arguments().iter().copied() {
-            take.insert(Operand::new(arg as ValueRef));
+            take.insert(ValueOrAlias::new(arg as ValueRef));
         }
 
         // TODO(pauls): We likely need to account for the implicit spilling that occurs when the
@@ -1420,7 +1388,7 @@ impl SpillAnalysis {
         //
         // NOTE: It should never be the case that the set of block arguments consumes more than K
         assert!(
-            take.iter().map(|o| o.size()).sum::<usize>() <= K,
+            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
             "unhandled spills implied by function/block parameter list"
         );
 
@@ -1447,7 +1415,7 @@ impl SpillAnalysis {
             let next_uses = liveness.next_uses_at(&ProgramPoint::at_end_of(pred)).unwrap();
             for o in self.w_exits[&pred].iter().copied() {
                 // Do not add candidates which are not live-after the predecessor
-                if next_uses.is_live(&o.value) {
+                if next_uses.is_live(o) {
                     *freq.entry(o).or_insert(0) += 1;
                     cand.insert(o);
                 }
@@ -1476,7 +1444,7 @@ impl SpillAnalysis {
                     // Is `pred` the operation itself?
                     if pred == &op_ref {
                         for o in w_in.iter().copied() {
-                            if next_uses.is_live(&o.value) {
+                            if next_uses.is_live(o) {
                                 *freq.entry(o).or_insert(0) += 1;
                                 cand.insert(o);
                             }
@@ -1487,7 +1455,7 @@ impl SpillAnalysis {
                     // Otherwise, `pred` is one of the regions of the current op
                     let pred_block = pred.parent().unwrap();
                     for o in self.w_exits[&pred_block].iter().copied() {
-                        if next_uses.is_live(&o.value) {
+                        if next_uses.is_live(o) {
                             *freq.entry(o).or_insert(0) += 1;
                             cand.insert(o);
                         }
@@ -1514,7 +1482,7 @@ impl SpillAnalysis {
         //
         // Since that is extraordinarily unlikely to occur, and we want to catch any situations in which
         // this assertion fails, we do not attempt to handle it automatically.
-        let taken = take.iter().map(|o| o.size()).sum::<usize>();
+        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
         assert!(
             taken <= K,
             "implicit operand stack overflow along incoming control flow edges of {}",
@@ -1530,16 +1498,16 @@ impl SpillAnalysis {
         let mut cand = cand.into_vec();
         cand.sort_by(|a, b| {
             entry_next_uses
-                .distance(&a.value)
-                .cmp(&entry_next_uses.distance(&b.value))
-                .then(a.size().cmp(&b.size()))
+                .distance(a)
+                .cmp(&entry_next_uses.distance(b))
+                .then(a.stack_size().cmp(&b.stack_size()))
         });
 
         let mut available = K - taken;
         let mut cand = cand.into_iter();
         while available > 0 {
             if let Some(candidate) = cand.next() {
-                let size = candidate.size();
+                let size = candidate.stack_size();
                 if size <= available {
                     take.insert(candidate);
                     available -= size;
@@ -1557,7 +1525,7 @@ impl SpillAnalysis {
         region: &Region,
         header: &Block,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
+    ) -> SmallSet<ValueOrAlias, 4> {
         // Compute the maximum pressure in the loop-like op's regions
         let mut max_pressure = 0;
         Region::traverse_region_graph(region, |region, visited| {
@@ -1578,7 +1546,7 @@ impl SpillAnalysis {
         block: &Block,
         loop_info: &Loop,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<Operand, 4> {
+    ) -> SmallSet<ValueOrAlias, 4> {
         let max_pressure = max_loop_pressure(loop_info, liveness);
         self.compute_w_entry_loop_impl(block, liveness, max_pressure)
     }
@@ -1588,7 +1556,7 @@ impl SpillAnalysis {
         block: &Block,
         liveness: &LivenessAnalysis,
         max_pressure_in_loop: usize,
-    ) -> SmallSet<Operand, 4> {
+    ) -> SmallSet<ValueOrAlias, 4> {
         let entry = block.body().front().as_pointer().expect("unexpected empty block");
         let block_start_next_uses =
             liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
@@ -1597,16 +1565,16 @@ impl SpillAnalysis {
             .arguments()
             .iter()
             .copied()
-            .map(|v| Operand::new(v as ValueRef))
-            .collect::<SmallSet<Operand, 4>>();
-        alive.extend(block_start_next_uses.live().map(Operand::new));
+            .map(|v| ValueOrAlias::new(v as ValueRef))
+            .collect::<SmallSet<ValueOrAlias, 4>>();
+        alive.extend(block_start_next_uses.live().map(ValueOrAlias::new));
 
         // Initial candidates are values live at block entry which are used in the loop body
         let mut cand = alive
             .iter()
-            .filter(|o| block_start_next_uses.distance(&o.value) < LOOP_EXIT_DISTANCE)
+            .filter(|o| block_start_next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
             .cloned()
-            .collect::<SmallSet<Operand, 4>>();
+            .collect::<SmallSet<ValueOrAlias, 4>>();
 
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,
@@ -1614,21 +1582,21 @@ impl SpillAnalysis {
         let live_through = alive.difference(&cand);
 
         let entry_next_uses = liveness.next_uses_at(&ProgramPoint::before(entry)).unwrap();
-        let w_used = cand.iter().map(|o| o.size()).sum::<usize>();
+        let w_used = cand.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_used < K {
             if let Some(mut free_in_loop) = K.checked_sub(max_pressure_in_loop) {
                 let mut live_through = live_through.into_vec();
                 live_through.sort_by(|a, b| {
                     entry_next_uses
-                        .distance(&a.value)
-                        .cmp(&entry_next_uses.distance(&b.value))
-                        .then(a.size().cmp(&b.size()))
+                        .distance(a)
+                        .cmp(&entry_next_uses.distance(b))
+                        .then(a.stack_size().cmp(&b.stack_size()))
                 });
 
                 let mut live_through = live_through.into_iter();
                 while free_in_loop > 0 {
                     if let Some(operand) = live_through.next() {
-                        if let Some(new_free) = free_in_loop.checked_sub(operand.size()) {
+                        if let Some(new_free) = free_in_loop.checked_sub(operand.stack_size()) {
                             if cand.insert(operand) {
                                 free_in_loop = new_free;
                             }
@@ -1643,23 +1611,23 @@ impl SpillAnalysis {
         } else {
             // We require the block parameters to be in W on entry
             let mut take = SmallSet::<_, 4>::from_iter(
-                block.arguments().iter().copied().map(|v| Operand::new(v as ValueRef)),
+                block.arguments().iter().copied().map(|v| ValueOrAlias::new(v as ValueRef)),
             );
 
             // So remove them from the set of candidates, then sort remaining by next-use and size
             let mut cand = cand.into_vec();
-            cand.retain(|o| !block.arguments().iter().any(|arg| *arg as ValueRef == o.value));
+            cand.retain(|o| !block.arguments().iter().any(|arg| *arg as ValueRef == o.value()));
             cand.sort_by(|a, b| {
                 entry_next_uses
-                    .distance(&a.value)
-                    .cmp(&entry_next_uses.distance(&b.value))
-                    .then(a.size().cmp(&b.size()))
+                    .distance(a)
+                    .cmp(&entry_next_uses.distance(b))
+                    .then(a.stack_size().cmp(&b.stack_size()))
             });
 
             // Fill `take` with as many of the candidates as we can
-            let mut taken = take.iter().map(|o| o.size()).sum::<usize>();
+            let mut taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
             take.extend(cand.into_iter().take_while(|operand| {
-                let size = operand.size();
+                let size = operand.stack_size();
                 let new_size = taken + size;
                 if new_size <= K {
                     taken = new_size;
@@ -1677,10 +1645,10 @@ impl SpillAnalysis {
         branch: &dyn RegionBranchOpInterface,
         pred: OperationRef,
         pred_inputs: &[ValueRef],
-        w_entry: &SmallSet<Operand, 4>,
-        s_entry: &SmallSet<Operand, 4>,
-        w_in: &SmallSet<Operand, 4>,
-        s_in: &SmallSet<Operand, 4>,
+        w_entry: &SmallSet<ValueOrAlias, 4>,
+        s_entry: &SmallSet<ValueOrAlias, 4>,
+        w_in: &SmallSet<ValueOrAlias, 4>,
+        s_in: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
     ) {
         let op_ref = branch.as_operation().as_operation_ref();
@@ -1699,15 +1667,15 @@ impl SpillAnalysis {
         let next_uses = liveness.next_uses_at(&ProgramPoint::after(op_ref)).unwrap();
 
         let must_spill = w_exitp.difference(w_entry).into_difference(s_exitp);
-        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(&o.value)));
+        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(o)));
 
         for (i, result) in branch.results().iter().copied().enumerate() {
-            let result = Operand::new(result as ValueRef);
+            let result = ValueOrAlias::new(result as ValueRef);
             to_reload.remove(&result);
             // Match up this result with its source argument, and if the source value is not in
             // W^exit(P), then a reload is needed
             let src = pred_inputs.get(i).copied().expect("index out of range");
-            let src = Operand::new(src);
+            let src = ValueOrAlias::new(src);
             if !w_exitp.contains(&src) {
                 to_reload.insert(src);
             }
@@ -1736,7 +1704,7 @@ impl SpillAnalysis {
             to_reload.is_empty(),
             "unexpected reload(s) required on edge from {pred_block} to '{}': {}",
             &branch.name(),
-            DisplayValues::new(to_reload.iter().map(|o| &o.value))
+            DisplayValues::new(to_reload.iter().map(|o| o.value()))
         );
 
         // TODO: Insert spill+reload immediately before predecessor op to ensure that spilled value
@@ -1748,17 +1716,17 @@ impl SpillAnalysis {
             to_spill.is_empty(),
             "unexpected spill(s) required on edge from {pred_block} to '{}': {}",
             &branch.name(),
-            DisplayValues::new(to_spill.iter().map(|o| &o.value))
+            DisplayValues::new(to_spill.iter().map(|o| o.value()))
         );
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
-            self.spill(place, spill.value, span);
+            self.spill(place, spill.value(), span);
         }
 
         // Then insert needed reloads
         for reload in to_reload {
-            self.reload(place, reload.value, span);
+            self.reload(place, reload.value(), span);
         }
     }
 
@@ -1826,8 +1794,8 @@ impl SpillAnalysis {
         block_info: &BlockInfo,
         pred: OperationRef,
         pred_inputs: &[ValueRef],
-        w_in: &SmallSet<Operand, 4>,
-        s_in: &SmallSet<Operand, 4>,
+        w_in: &SmallSet<ValueOrAlias, 4>,
+        s_in: &SmallSet<ValueOrAlias, 4>,
         deferred: &mut SmallVec<[BlockRef; 2]>,
         liveness: &LivenessAnalysis,
     ) {
@@ -1862,7 +1830,7 @@ impl SpillAnalysis {
         // in scope for B, i.e. no values that are local to P's region leak into B's region unless
         // P is an ancestor of B.
         let must_spill = w_exitp.difference(&block_info.w_entry).into_difference(s_exitp);
-        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(&o.value)));
+        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(o)));
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
         // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
@@ -1897,12 +1865,12 @@ impl SpillAnalysis {
         // Remove block params from `to_reload`, and replace them, as needed, with reloads of the value
         // in the predecessor which was used as the successor argument
         for (i, param) in block_info.block_id.borrow().arguments().iter().copied().enumerate() {
-            let param = Operand::new(param as ValueRef);
+            let param = ValueOrAlias::new(param as ValueRef);
             to_reload.remove(&param);
             // Match up this parameter with its source argument, and if the source value is not in
             // W^exit(P), then a reload is needed
             let src = pred_inputs.get(i).copied().expect("index out of range");
-            let src = Operand::new(src);
+            let src = ValueOrAlias::new(src);
             if !w_exitp.contains(&src) {
                 to_reload.insert(src);
             }
@@ -1931,7 +1899,7 @@ impl SpillAnalysis {
             to_reload.is_empty(),
             "unexpected reload(s) required on edge from {pred_block} to {}: {}",
             &block_info.block_id,
-            DisplayValues::new(to_reload.iter().map(|o| &o.value))
+            DisplayValues::new(to_reload.iter().map(|o| o.value()))
         );
 
         // TODO: Insert spill+reload immediately before predecessor op to ensure that spilled value
@@ -1943,17 +1911,17 @@ impl SpillAnalysis {
             to_spill.is_empty(),
             "unexpected spill(s) required on edge from {pred_block} to {}: {}",
             &block_info.block_id,
-            DisplayValues::new(to_spill.iter().map(|o| &o.value))
+            DisplayValues::new(to_spill.iter().map(|o| o.value()))
         );
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
-            self.spill(place, spill.value, span);
+            self.spill(place, spill.value(), span);
         }
 
         // Then insert needed reloads
         for reload in to_reload {
-            self.reload(place, reload.value, span);
+            self.reload(place, reload.value(), span);
         }
     }
 
@@ -2003,7 +1971,7 @@ impl SpillAnalysis {
         let must_spill = w_exitp
             .difference(&block_info.w_entry)
             .into_difference(&self.s_exits[&predecessor]);
-        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(&o.value)));
+        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(o)));
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
         // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
@@ -2034,14 +2002,14 @@ impl SpillAnalysis {
         // Remove block params from `to_reload`, and replace them, as needed, with reloads of the value
         // in the predecessor which was used as the successor argument
         for (i, param) in block_info.block_id.borrow().arguments().iter().copied().enumerate() {
-            let param = Operand::new(param as ValueRef);
+            let param = ValueOrAlias::new(param as ValueRef);
             to_reload.remove(&param);
             // Match up this parameter with its source argument, and if the source value is not in
             // W^exit(P), then a reload is needed
             let src = pred_args.get(i).expect("index out of range").into_value_ref().expect(
                 "internally-produced successor arguments are not yet supported by this analysis",
             );
-            let src = Operand::new(src);
+            let src = ValueOrAlias::new(src);
             if !w_exitp.contains(&src) {
                 to_reload.insert(src);
             }
@@ -2060,12 +2028,12 @@ impl SpillAnalysis {
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
-            self.spill(place, spill.value, span);
+            self.spill(place, spill.value(), span);
         }
 
         // Then insert needed reloads
         for reload in to_reload {
-            self.reload(place, reload.value, span);
+            self.reload(place, reload.value(), span);
         }
     }
 
@@ -2085,8 +2053,8 @@ impl SpillAnalysis {
     fn min(
         &mut self,
         op: &Operation,
-        w: &mut SmallSet<Operand, 4>,
-        s: &mut SmallSet<Operand, 4>,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
     ) {
         let ip = ProgramPoint::before(op);
@@ -2110,11 +2078,11 @@ impl SpillAnalysis {
             .map(|operand| operand.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
         if op.implements::<dyn Terminator>() && !op.implements::<dyn BranchOpInterface>() {
-            w.retain(|o| liveness.is_live_before(o.value, op));
-            let to_reload = operands.iter().copied().map(Operand::new);
+            w.retain(|o| liveness.is_live_before(o, op));
+            let to_reload = operands.iter().copied().map(ValueOrAlias::new);
             for reload in to_reload {
                 if w.insert(reload) {
-                    self.reload(place, reload.value, span);
+                    self.reload(place, reload.value(), span);
                 }
             }
             return;
@@ -2128,8 +2096,11 @@ impl SpillAnalysis {
         // independently, as if they occur on exit from this instruction. The result is that
         // we may or may not have all successor arguments in W on exit from I, but by the time
         // each successor block is reached, all block parameters are guaranteed to be in W
-        let mut to_reload =
-            operands.iter().copied().map(Operand::new).collect::<SmallVec<[Operand; 4]>>();
+        let mut to_reload = operands
+            .iter()
+            .copied()
+            .map(ValueOrAlias::new)
+            .collect::<SmallVec<[ValueOrAlias; 4]>>();
 
         // Remove the first occurrance of any operand already in W, remaining uses
         // must be considered against the stack usage calculation (but will not
@@ -2141,11 +2112,11 @@ impl SpillAnalysis {
         }
 
         // Precompute the starting stack usage of W
-        let w_used = w.iter().map(|o| o.size()).sum::<usize>();
+        let w_used = w.iter().map(|o| o.stack_size()).sum::<usize>();
 
         // Compute the needed operand stack space for all operands not currently
         // in W, i.e. those which must be reloaded from a spill slot
-        let in_needed = to_reload.iter().map(|o| o.size()).sum::<usize>();
+        let in_needed = to_reload.iter().map(|o| o.stack_size()).sum::<usize>();
 
         // Compute the needed operand stack space for results of I
         let results = op
@@ -2171,7 +2142,7 @@ impl SpillAnalysis {
 
         // If we have room for operands and results in W, then no spills are needed,
         // otherwise we require two passes to compute the spills we will need to issue
-        let mut to_spill = SmallSet::<Operand, 4>::default();
+        let mut to_spill = SmallSet::<ValueOrAlias, 4>::default();
 
         // First pass: compute spills for entry to I (making room for operands)
         //
@@ -2187,7 +2158,7 @@ impl SpillAnalysis {
             let mut candidates = w
                 .iter()
                 .copied()
-                .filter(|o| !operands.contains(&o.value))
+                .filter(|o| !operands.contains(&o.value()))
                 .collect::<SmallVec<[_; 16]>>();
             // We order the candidates such that those whose next-use distance is greatest, are
             // placed last, and thus will be selected first. We further break ties between
@@ -2195,9 +2166,9 @@ impl SpillAnalysis {
             // effective size on the operand stack, so that larger values are
             // spilled first.
             candidates.sort_by(|a, b| {
-                let a_dist = liveness.next_use_after(a.value, op);
-                let b_dist = liveness.next_use_after(b.value, op);
-                a_dist.cmp(&b_dist).then(a.size().cmp(&b.size()))
+                let a_dist = liveness.next_use_after(a, op);
+                let b_dist = liveness.next_use_after(b, op);
+                a_dist.cmp(&b_dist).then(a.stack_size().cmp(&b.stack_size()))
             });
             // Spill until we have made enough room
             while must_spill > 0 {
@@ -2208,13 +2179,13 @@ impl SpillAnalysis {
                         op.name()
                     )
                 });
-                must_spill = must_spill.saturating_sub(candidate.size());
+                must_spill = must_spill.saturating_sub(candidate.stack_size());
                 to_spill.insert(candidate);
             }
         }
 
         // Second pass: compute spills for exit from I (making room for results)
-        let spilled = to_spill.iter().map(|o| o.size()).sum::<usize>();
+        let spilled = to_spill.iter().map(|o| o.stack_size()).sum::<usize>();
         // The max usage out is computed by adding the space required for all results of I, to
         // the max usage in, then subtracting the size of all operands which are consumed by I,
         // as well as the size of those values in W which we have spilled.
@@ -2232,20 +2203,20 @@ impl SpillAnalysis {
             let mut candidates = w
                 .iter()
                 .filter(|o| {
-                    if !operands.contains(&o.value) {
+                    if !operands.contains(&o.value()) {
                         // Not an argument, not yet spilled
                         !to_spill.contains(*o)
                     } else {
                         // A spillable argument
-                        liveness.is_live_after(o.value, op)
+                        liveness.is_live_after(*o, op)
                     }
                 })
                 .copied()
                 .collect::<SmallVec<[_; 16]>>();
             candidates.sort_by(|a, b| {
-                let a_dist = liveness.next_use_after(a.value, op);
-                let b_dist = liveness.next_use_after(b.value, op);
-                a_dist.cmp(&b_dist).then(a.size().cmp(&b.size()))
+                let a_dist = liveness.next_use_after(a, op);
+                let b_dist = liveness.next_use_after(b, op);
+                a_dist.cmp(&b_dist).then(a.stack_size().cmp(&b.stack_size()))
             });
             while must_spill > 0 {
                 let candidate = candidates.pop().unwrap_or_else(|| {
@@ -2258,8 +2229,8 @@ impl SpillAnalysis {
                 // If we're spilling an operand of I, we can multiple the amount of space
                 // freed by the spill by the number of uses of the spilled value in I
                 let num_uses =
-                    core::cmp::max(1, operands.iter().filter(|v| *v == &candidate.value).count());
-                let freed = candidate.size() * num_uses;
+                    core::cmp::max(1, operands.iter().filter(|v| *v == &candidate.value()).count());
+                let freed = candidate.stack_size() * num_uses;
                 must_spill = must_spill.saturating_sub(freed);
                 to_spill.insert(candidate);
             }
@@ -2268,7 +2239,7 @@ impl SpillAnalysis {
         // Emit spills first, to make space for reloaded values on the operand stack
         for spill in to_spill.iter() {
             if s.insert(*spill) {
-                self.spill(place, spill.value, span);
+                self.spill(place, spill.value(), span);
             }
 
             // Remove spilled values from W
@@ -2281,7 +2252,7 @@ impl SpillAnalysis {
             if w.insert(reload) {
                 // By definition, if we are emitting a reload, the value must have been spilled
                 s.insert(reload);
-                self.reload(place, reload.value, span);
+                self.reload(place, reload.value(), span);
             }
         }
 
@@ -2318,8 +2289,8 @@ impl SpillAnalysis {
                     op.operands()
                         .group(succ.operand_group as usize)
                         .iter()
-                        .any(|arg| arg.borrow().as_value_ref() == o.value)
-                        || liveness.is_live_after(o.value, op)
+                        .any(|arg| arg.borrow().as_value_ref() == o.value())
+                        || liveness.is_live_after(o, op)
                 });
             } else {
                 let successor_operand_groups = op
@@ -2339,15 +2310,15 @@ impl SpillAnalysis {
                         op.operands()
                             .group(succ)
                             .iter()
-                            .any(|arg| arg.borrow().as_value_ref() == o.value)
+                            .any(|arg| arg.borrow().as_value_ref() == o.value())
                     });
-                    is_succ_arg || liveness.is_live_after(o.value, op)
+                    is_succ_arg || liveness.is_live_after(o, op)
                 });
             }
         } else {
             // This is a simple operation
-            w.retain(|o| liveness.is_live_after(o.value, op));
-            w.extend(results.iter().copied().map(Operand::new));
+            w.retain(|o| liveness.is_live_after(o, op));
+            w.extend(results.iter().copied().map(ValueOrAlias::new));
         }
     }
 }
@@ -2400,7 +2371,7 @@ fn max_block_pressure(block: &Block, liveness: &LivenessAnalysis) -> usize {
             if operands.contains(&live) {
                 continue;
             }
-            if live_out.get(&live).is_none_or(|v| !v.is_live()) {
+            if live_out.get(live).is_none_or(|v| !v.is_live()) {
                 continue;
             }
             live_in_pressure += live.borrow().ty().size_in_felts();

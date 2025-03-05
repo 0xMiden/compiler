@@ -1,5 +1,7 @@
 mod next_use_set;
 
+use core::borrow::Borrow;
+
 pub use self::next_use_set::NextUseSet;
 use super::{dce::Executable, DeadCodeAnalysis, SparseConstantPropagation};
 use crate::{
@@ -97,27 +99,39 @@ impl LivenessAnalysis {
     }
 
     /// Returns true if `value` is live on entry to `block`
-    pub fn is_live_at_start(&self, value: ValueRef, block: BlockRef) -> bool {
+    pub fn is_live_at_start<V>(&self, value: V, block: BlockRef) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         let next_uses = self.next_uses_at(&ProgramPoint::at_start_of(block));
-        next_uses.is_some_and(|nu| nu.is_live(&value))
+        next_uses.is_some_and(|nu| nu.is_live(value))
     }
 
     /// Returns true if `value` is live at the block terminator of `block`
-    pub fn is_live_at_end(&self, value: ValueRef, block: BlockRef) -> bool {
+    pub fn is_live_at_end<V>(&self, value: V, block: BlockRef) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         let next_uses = self.next_uses_at(&ProgramPoint::at_end_of(block));
-        next_uses.is_some_and(|nu| nu.is_live(&value))
+        next_uses.is_some_and(|nu| nu.is_live(value))
     }
 
     /// Returns true if `value` is live at the entry of `op`
-    pub fn is_live_before(&self, value: ValueRef, op: &Operation) -> bool {
+    pub fn is_live_before<V>(&self, value: V, op: &Operation) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         let next_uses = self.next_uses_at(&ProgramPoint::before(op));
-        next_uses.is_some_and(|nu| nu.is_live(&value))
+        next_uses.is_some_and(|nu| nu.is_live(value))
     }
 
     /// Returns true if `value` is live on exit from `op`
-    pub fn is_live_after(&self, value: ValueRef, op: &Operation) -> bool {
+    pub fn is_live_after<V>(&self, value: V, op: &Operation) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         let next_uses = self.next_uses_at(&ProgramPoint::after(op));
-        next_uses.is_some_and(|nu| nu.is_live(&value))
+        next_uses.is_some_and(|nu| nu.is_live(value))
     }
 
     /// Returns true if `value` is live after entering `op`, i.e. when executing any of its child
@@ -126,7 +140,11 @@ impl LivenessAnalysis {
     /// This will return true if `value` is live after exiting from any of `op`'s regions, as well
     /// as in the case where none of `op`'s regions are executed and control is transferred to the
     /// next op in the containing block.
-    pub fn is_live_after_entry(&self, value: ValueRef, op: &Operation) -> bool {
+    pub fn is_live_after_entry<V>(&self, value: V, op: &Operation) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
+        let value = value.borrow();
         if self.is_live_after(value, op) {
             return true;
         }
@@ -150,9 +168,12 @@ impl LivenessAnalysis {
         false
     }
 
-    pub fn next_use_after(&self, value: ValueRef, op: &Operation) -> u32 {
+    pub fn next_use_after<V>(&self, value: V, op: &Operation) -> u32
+    where
+        V: Borrow<ValueRef>,
+    {
         let next_uses = self.next_uses_at(&ProgramPoint::after(op));
-        next_uses.map(|nu| nu.distance(&value)).unwrap_or(u32::MAX)
+        next_uses.map(|nu| nu.distance(value)).unwrap_or(u32::MAX)
     }
 
     pub fn is_block_executable(&self, block: BlockRef) -> bool {
@@ -257,7 +278,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         let succ = to.borrow();
         for param in succ.arguments() {
             let param = param.borrow().as_value_ref();
-            live_out.remove(&param);
+            live_out.remove(param);
         }
 
         // Increment the next-use distances by LOOP_EXIT_DISTANCE if this edge exits
@@ -317,7 +338,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         // Remove the op results from the set
         for result in op.results().all().iter() {
             let result = result.borrow().as_value_ref();
-            temp_live_in.remove(&result);
+            temp_live_in.remove(result);
         }
 
         // Set the next-use distance of any operands to 0
@@ -469,12 +490,12 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
                 // Remove region entry arguments for `region_to`
                 for arg in region_to_entry.arguments() {
-                    live_in.remove(&(*arg as ValueRef));
+                    live_in.remove(*arg as ValueRef);
                 }
 
                 // Remove operation results of `branch`
                 for result in op.results().iter() {
-                    live_in.remove(&(*result as ValueRef));
+                    live_in.remove(*result as ValueRef);
                 }
 
                 // Set next-use distance of all operands 0
@@ -534,7 +555,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
                 // Remove results of branch op
                 for result in branch.as_operation().results().iter() {
-                    live_out.remove(&(*result as ValueRef));
+                    live_out.remove(*result as ValueRef);
                 }
 
                 // Take the join of before and after, so that we take the minimum distance across
@@ -588,7 +609,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                     .is_repetitive_region(region_from.borrow().region_number())
                     && !branch.is_repetitive_region(region_to.region_number());
                 for arg in region_to_entry.arguments() {
-                    live_in.remove(&(*arg as ValueRef));
+                    live_in.remove(*arg as ValueRef);
                 }
                 if is_loop_exit {
                     log::debug!(
@@ -661,7 +682,7 @@ impl Liveness {
             let prev_op = prev.borrow();
             for result in prev_op.results().iter() {
                 let result = result.borrow().as_value_ref();
-                if live_out_prev.contains(&result) {
+                if live_out_prev.contains(result) {
                     continue;
                 }
                 // This op result has no known uses
@@ -693,7 +714,7 @@ impl Liveness {
             let block = parent_block.borrow();
             for arg in block.arguments().iter().copied() {
                 let arg = arg as ValueRef;
-                if live_in_block.contains(&arg) {
+                if live_in_block.contains(arg) {
                     continue;
                 }
                 // This block argument has no known uses

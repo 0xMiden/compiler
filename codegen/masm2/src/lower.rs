@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use midenc_dialect_hir as hir;
 use midenc_hir2::{
     dialects::builtin, pass::AnalysisManager, FunctionIdent, Immediate, Op, OpExt, Operation,
-    Region, RegionRef, Span, SymbolTable, Value, ValueRef,
+    Region, Span, SymbolTable, Value, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::SmallVec;

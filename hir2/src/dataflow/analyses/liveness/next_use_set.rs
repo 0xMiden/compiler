@@ -1,3 +1,5 @@
+use core::borrow::Borrow;
+
 use smallvec::SmallVec;
 
 use crate::{
@@ -176,37 +178,58 @@ impl NextUseSet {
 
     /// Returns `true` if `value` is live in this set
     #[inline]
-    pub fn is_live(&self, value: &ValueRef) -> bool {
+    pub fn is_live<V>(&self, value: V) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         self.distance(value) < u32::MAX
     }
 
     /// Returns the distance to the next use of `value` as an integer.
     ///
     /// If `value` is not live, or the distance is unknown, returns `u32::MAX`
-    pub fn distance(&self, value: &ValueRef) -> u32 {
+    pub fn distance<V>(&self, value: V) -> u32
+    where
+        V: Borrow<ValueRef>,
+    {
         self.get(value).map(|next_use| next_use.distance).unwrap_or(u32::MAX)
     }
 
     /// Returns `true` if `value` is in this set
     #[inline]
-    pub fn contains(&self, value: &ValueRef) -> bool {
+    pub fn contains<V>(&self, value: V) -> bool
+    where
+        V: Borrow<ValueRef>,
+    {
         self.get(value).is_none()
     }
 
     /// Gets the [NextUse] associated with the given `value`, if known
     #[inline]
-    pub fn get(&self, value: &ValueRef) -> Option<&NextUse> {
+    pub fn get<V>(&self, value: V) -> Option<&NextUse>
+    where
+        V: Borrow<ValueRef>,
+    {
+        let value = value.borrow();
         self.0.iter().find(|next_use| &next_use.value == value)
     }
 
     /// Gets a mutable reference to the distance associated with the given `value`, if known
     #[inline]
-    pub fn get_mut(&mut self, value: &ValueRef) -> Option<&mut NextUse> {
+    pub fn get_mut<V>(&mut self, value: V) -> Option<&mut NextUse>
+    where
+        V: Borrow<ValueRef>,
+    {
+        let value = value.borrow();
         self.0.iter_mut().find(|next_use| &next_use.value == value)
     }
 
     /// Removes the entry for `value` from this set
-    pub fn remove(&mut self, value: &ValueRef) -> Option<u32> {
+    pub fn remove<V>(&mut self, value: V) -> Option<u32>
+    where
+        V: Borrow<ValueRef>,
+    {
+        let value = value.borrow();
         self.0
             .iter()
             .position(|next_use| &next_use.value == value)
@@ -262,12 +285,12 @@ impl NextUseSet {
     pub fn symmetric_difference(&self, other: &Self) -> Self {
         let mut result = Self::default();
         for next_use in self.iter() {
-            if !other.contains(&next_use.value) {
+            if !other.contains(next_use.value) {
                 result.0.push(*next_use);
             }
         }
         for next_use in other.iter() {
-            if !self.contains(&next_use.value) {
+            if !self.contains(next_use.value) {
                 result.0.push(*next_use);
             }
         }
