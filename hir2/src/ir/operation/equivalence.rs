@@ -106,12 +106,14 @@ impl Operation {
         }
 
         // Operands
+        self.operands().len().hash(hasher);
         for operand in self.operands().iter() {
             let operand = operand.borrow();
             operand_hasher.hash_value(operand.as_value_ref(), hasher);
         }
 
         // Results
+        self.results().len().hash(hasher);
         for result in self.results().iter() {
             let result = result.borrow();
             result_hasher.hash_value(result.as_value_ref(), hasher);
