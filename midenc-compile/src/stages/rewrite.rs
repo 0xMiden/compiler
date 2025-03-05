@@ -20,7 +20,7 @@ impl Stage for ApplyRewritesStage {
     }
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
-        log::debug!("applying rewrite passes");
+        log::debug!(target: "driver", "applying rewrite passes");
         // TODO(pauls): Set up pass registration for new pass infra
         /*
         // Get all registered module rewrites and apply them in the order they appear
@@ -74,16 +74,16 @@ impl Stage for ApplyRewritesStage {
             }
         }
 
-        log::trace!("before rewrites: {}", input.world.borrow().as_operation());
+        log::trace!(target: "driver", "before rewrites: {}", input.world.borrow().as_operation());
 
         // Run pass pipeline
         pm.run(input.world.as_operation_ref())?;
 
-        log::trace!("after rewrites: {}", input.world.borrow().as_operation());
-        log::debug!("rewrites successful");
+        log::trace!(target: "driver", "after rewrites: {}", input.world.borrow().as_operation());
+        log::debug!(target: "driver", "rewrites successful");
 
         if context.session().rewrite_only() {
-            log::debug!("stopping compiler early (rewrite-only=true)");
+            log::debug!(target: "driver", "stopping compiler early (rewrite-only=true)");
             Err(CompilerStopped.into())
         } else {
             Ok(input)
