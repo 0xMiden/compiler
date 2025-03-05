@@ -410,6 +410,11 @@ impl OpResult {
     pub fn as_value_ref(&self) -> ValueRef {
         unsafe { ValueRef::from_raw(self as &dyn Value) }
     }
+
+    #[inline]
+    pub fn as_op_result_ref(&self) -> OpResultRef {
+        unsafe { OpResultRef::from_raw(self) }
+    }
 }
 
 impl crate::formatter::PrettyPrint for OpResult {

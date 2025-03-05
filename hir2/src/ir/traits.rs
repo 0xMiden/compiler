@@ -19,26 +19,6 @@ pub trait Commutative {}
 /// Marker trait for constant-like ops
 pub trait ConstantLike {}
 
-/// Marker trait for ops with side effects
-pub trait HasSideEffects {}
-
-/// Marker trait for ops with recursive memory effects, i.e. the effects of the operation includes
-/// the effects of operations nested within its regions. If the operation does not implement any
-/// effect markers, e.g. `MemoryWrite`, then it can be assumed to have no memory effects itself.
-pub trait HasRecursiveMemoryEffects {}
-
-/// Marker trait for ops which allocate memory
-pub trait MemoryAlloc {}
-
-/// Marker trait for ops which free memory
-pub trait MemoryFree {}
-
-/// Marker trait for ops which read memory
-pub trait MemoryRead {}
-
-/// Marker trait for ops which write memory
-pub trait MemoryWrite {}
-
 /// Marker trait for return-like ops
 pub trait ReturnLike {}
 

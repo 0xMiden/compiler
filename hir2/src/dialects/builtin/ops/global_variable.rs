@@ -1,6 +1,12 @@
+use smallvec::smallvec;
+
 use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
+    effects::{
+        AlwaysSpeculatable, ConditionallySpeculatable, EffectIterator, EffectOpInterface,
+        MemoryEffect, Pure,
+    },
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
@@ -135,7 +141,7 @@ impl OpPrinter for GlobalVariable {
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
 #[operation(
     dialect = BuiltinDialect,
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, Pure)
 )]
 pub struct GlobalSymbol {
     /// The name of the global variable that is referenced
@@ -147,6 +153,23 @@ pub struct GlobalSymbol {
     offset: i32,
     #[result]
     addr: PointerOf<UInt8>,
+}
+
+impl Pure for GlobalSymbol {}
+impl ConditionallySpeculatable for GlobalSymbol {
+    fn speculatability(&self) -> crate::effects::Speculatability {
+        crate::effects::Speculatability::Speculatable
+    }
+}
+impl AlwaysSpeculatable for GlobalSymbol {}
+impl EffectOpInterface<MemoryEffect> for GlobalSymbol {
+    fn effects(&self) -> crate::effects::EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![])
+    }
+
+    fn has_no_effect(&self) -> bool {
+        true
+    }
 }
 
 impl InferTypeOpInterface for GlobalSymbol {

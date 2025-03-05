@@ -1,11 +1,10 @@
-use midenc_hir2::{derive::operation, traits::*, *};
+use midenc_hir2::{derive::operation, effects::*, traits::*, *};
 
 use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite),
-    implements(OpPrinter)
+    implements(OpPrinter, MemoryEffectOpInterface)
 )]
 pub struct Assert {
     #[operand]
@@ -13,6 +12,12 @@ pub struct Assert {
     #[attr(hidden)]
     #[default]
     code: u32,
+}
+
+impl EffectOpInterface<MemoryEffect> for Assert {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
+    }
 }
 
 impl OpPrinter for Assert {
@@ -31,8 +36,7 @@ impl OpPrinter for Assert {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite),
-    implements(OpPrinter)
+    implements(OpPrinter, MemoryEffectOpInterface)
 )]
 pub struct Assertz {
     #[operand]
@@ -41,6 +45,13 @@ pub struct Assertz {
     #[default]
     code: u32,
 }
+
+impl EffectOpInterface<MemoryEffect> for Assertz {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
+    }
+}
+
 impl OpPrinter for Assertz {
     fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
         use formatter::*;
@@ -57,7 +68,8 @@ impl OpPrinter for Assertz {
 
 #[operation(
     dialect = HirDialect,
-    traits(BinaryOp, HasSideEffects, MemoryWrite, Commutative, SameTypeOperands)
+    traits(BinaryOp, Commutative, SameTypeOperands),
+    implements(MemoryEffectOpInterface)
 )]
 pub struct AssertEq {
     #[operand]
@@ -66,16 +78,27 @@ pub struct AssertEq {
     rhs: AnyInteger,
 }
 
+impl EffectOpInterface<MemoryEffect> for AssertEq {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
+    }
+}
+
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite),
-    implements(OpPrinter)
+    implements(OpPrinter, MemoryEffectOpInterface)
 )]
 pub struct AssertEqImm {
     #[operand]
     lhs: AnyInteger,
     #[attr(hidden)]
     rhs: Immediate,
+}
+
+impl EffectOpInterface<MemoryEffect> for AssertEqImm {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
+    }
 }
 
 impl OpPrinter for AssertEqImm {
@@ -93,9 +116,16 @@ impl OpPrinter for AssertEqImm {
 
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, Terminator)
+    traits(Terminator),
+    implements(MemoryEffectOpInterface)
 )]
 pub struct Unreachable {}
+
+impl EffectOpInterface<MemoryEffect> for Unreachable {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
+    }
+}
 
 #[operation(
     dialect = HirDialect,

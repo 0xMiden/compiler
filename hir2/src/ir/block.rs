@@ -875,7 +875,7 @@ impl Block {
 /// Ancestors
 impl Block {
     pub fn is_legal_to_hoist_into(&self) -> bool {
-        use crate::traits::{HasSideEffects, ReturnLike};
+        use crate::traits::ReturnLike;
 
         // No terminator means the block is under construction, and thus legal to hoist into
         let Some(terminator) = self.terminator() else {
@@ -896,7 +896,7 @@ impl Block {
         // there are instructions like `catch_ret`, which semantically are return-like, but which
         // have a successor block (the landing pad).
         let terminator = terminator.borrow();
-        terminator.implements::<dyn HasSideEffects>() || terminator.implements::<dyn ReturnLike>()
+        !terminator.is_memory_effect_free() || terminator.implements::<dyn ReturnLike>()
     }
 
     pub fn has_ssa_dominance(&self) -> bool {

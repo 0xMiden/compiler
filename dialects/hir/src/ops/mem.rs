@@ -1,17 +1,27 @@
-use midenc_hir2::{derive::operation, traits::*, *};
+use midenc_hir2::{derive::operation, effects::*, traits::*, *};
+use smallvec::smallvec;
 
 use crate::HirDialect;
 
 /// Store `value` on the heap at `addr`
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryWrite)
+    implements(MemoryEffectOpInterface)
 )]
 pub struct Store {
     #[operand]
     addr: AnyPointer,
     #[operand]
     value: AnyType,
+}
+
+impl EffectOpInterface<MemoryEffect> for Store {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
+            MemoryEffect::Write,
+            self.addr().as_value_ref()
+        )])
+    }
 }
 
 // TODO(pauls): StoreLocal
@@ -23,14 +33,22 @@ pub struct Store {
 /// language.
 #[operation(
     dialect = HirDialect,
-    traits(HasSideEffects, MemoryRead),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct Load {
     #[operand]
     addr: AnyPointer,
     #[result]
     result: AnyType,
+}
+
+impl EffectOpInterface<MemoryEffect> for Load {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
+            MemoryEffect::Read,
+            self.addr().as_value_ref()
+        )])
+    }
 }
 
 impl InferTypeOpInterface for Load {

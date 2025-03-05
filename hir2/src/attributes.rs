@@ -23,7 +23,7 @@ pub mod markers {
 }
 
 /// An [AttributeSet] is a uniqued collection of attributes associated with some IR entity
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AttributeSet(Vec<Attribute>);
 impl FromIterator<Attribute> for AttributeSet {
     fn from_iter<T>(attrs: T) -> Self
@@ -67,8 +67,8 @@ impl FromIterator<(Symbol, Option<Box<dyn AttributeValue>>)> for AttributeSet {
 }
 impl AttributeSet {
     /// Get a new, empty [AttributeSet]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self(Vec::new())
     }
 
     /// Insert a new [Attribute] in this set by `name` and `value`
@@ -210,6 +210,15 @@ pub struct Attribute {
     pub value: Option<Box<dyn AttributeValue>>,
     /// This attribute represents an intrinsic property of an operation
     pub intrinsic: bool,
+}
+impl Clone for Attribute {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name,
+            value: self.value.as_ref().map(|v| v.clone_value()),
+            intrinsic: self.intrinsic,
+        }
+    }
 }
 impl Attribute {
     pub fn new(name: impl Into<Symbol>, value: Option<impl AttributeValue>) -> Self {

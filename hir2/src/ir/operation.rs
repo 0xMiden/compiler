@@ -13,10 +13,10 @@ use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
 use super::{
-    traits::{HasRecursiveMemoryEffects, MemoryAlloc, MemoryFree, MemoryRead, MemoryWrite},
+    effects::{HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface},
     *,
 };
-use crate::{AttributeSet, AttributeValue, ProgramPoint};
+use crate::{adt::SmallSet, AttributeSet, AttributeValue, ProgramPoint};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
@@ -888,47 +888,66 @@ impl Operation {
     pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
         // The set of operations to consider when checking for side effects
         let mut effecting_ops = SmallVec::<[OperationRef; 4]>::default();
-        let visit_children_with_recursive_effects =
-            |op: &Operation, effecting_ops: &mut SmallVec<[OperationRef; 4]>| {
-                // If the operation has recursive effects, push all of the nested operations on to the
-                // stack to consider.
-                let has_recursive_effects =
-                    op.implements::<dyn crate::traits::HasRecursiveMemoryEffects>();
-
-                if has_recursive_effects {
-                    for region in self.regions() {
-                        for block in region.body() {
-                            let mut cursor = block.body().front();
-                            while let Some(op) = cursor.as_pointer() {
-                                effecting_ops.push(op);
-                                cursor.move_next();
-                            }
-                        }
-                    }
-                }
-            };
-
-        visit_children_with_recursive_effects(self, &mut effecting_ops);
-
         while let Some(op) = effecting_ops.pop() {
             let op = op.borrow();
 
-            visit_children_with_recursive_effects(&op, &mut effecting_ops);
+            // If the operation has recursive effects, push all of the nested operations on to the
+            // stack to consider
+            let has_recursive_effects = op.implements::<dyn HasRecursiveMemoryEffects>();
+            if has_recursive_effects {
+                for region in op.regions() {
+                    for block in region.body() {
+                        for op in block.body() {
+                            effecting_ops.push(op.as_operation_ref());
+                        }
+                    }
+                }
+            }
 
             // If the op has memory effects, try to characterize them to see if the op is trivially
             // dead here.
-            if op.implements::<dyn crate::traits::MemoryWrite>()
-                || op.implements::<dyn crate::traits::MemoryFree>()
-            {
-                return false;
+            if let Some(effect_interface) = op.as_trait::<dyn MemoryEffectOpInterface>() {
+                let mut effects = effect_interface.effects();
+
+                // Gather all results of this op that are allocated
+                let mut alloc_results = SmallSet::<ValueRef, 4>::default();
+                for effect in effects.as_slice() {
+                    let allocates = matches!(effect.effect(), MemoryEffect::Allocate);
+                    if let Some(value) = effect.value() {
+                        let is_defined_by_op = value
+                            .borrow()
+                            .get_defining_op()
+                            .is_some_and(|op| self.as_operation_ref() == op);
+                        if allocates && is_defined_by_op {
+                            alloc_results.insert(value);
+                        }
+                    }
+                }
+
+                if !effects.all(|effect| {
+                    // We can drop effects if the value is an allocation and is a result of
+                    // the operation
+                    if effect.value().is_some_and(|v| alloc_results.contains(&v)) {
+                        true
+                    } else {
+                        // Otherwise, the effect must be a read
+                        matches!(effect.effect(), MemoryEffect::Read)
+                    }
+                }) {
+                    return false;
+                }
+                continue;
             }
 
-            // If there were no effect interfaces, we treat this op as conservatively having effects
-            if !op.implements::<dyn crate::traits::MemoryRead>()
-                && !op.implements::<dyn crate::traits::MemoryAlloc>()
-            {
-                return false;
+            // Otherwise, if the op has recursive side effects we can treat the operation itself
+            // as having no effects
+            if has_recursive_effects {
+                continue;
             }
+
+            // If there were no effect interfaces, we treat this op as conservatively having
+            // effects
+            return false;
         }
 
         // If we get here, none of the operations had effects that prevented marking this operation
@@ -946,24 +965,22 @@ impl Operation {
     /// If the operation has both, then it is free of memory effects if both conditions are
     /// satisfied.
     pub fn is_memory_effect_free(&self) -> bool {
-        let has_effects = self.implements::<dyn MemoryRead>()
-            || self.implements::<dyn MemoryWrite>()
-            || self.implements::<dyn MemoryAlloc>()
-            || self.implements::<dyn MemoryFree>();
-        if has_effects {
-            return false;
+        if let Some(mem_interface) = self.as_trait::<dyn MemoryEffectOpInterface>() {
+            if !mem_interface.has_no_effect() {
+                return false;
+            }
+
+            // If the op does not have recursive side effects, then it is memory effect free
+            if !self.implements::<dyn HasRecursiveMemoryEffects>() {
+                return true;
+            }
         } else if !self.implements::<dyn HasRecursiveMemoryEffects>() {
-            // TODO(pauls): We should implement the effect interface at some point, in which case
-            // if the op does not implement the interface, and does not have recursive side effects,
-            // we would need to return `false` here instead, as it cannot be known that the op is
-            // moveable.
-            //
-            // For now, we can return true here as there are no known effects, and no recursive
-            // effects
-            return true;
+            // Otherwise, if the op does not implement the memory effect interface and it does not
+            // have recursive side effects, then it cannot be known that the op is moveable.
+            return false;
         }
 
-        // Recurse into the regions and ensure that all nested ops are memory effect free.
+        // Recurse into the regions and ensure that all nested ops are memory effect free
         for region in self.regions() {
             let walk_result = region.prewalk(|op| {
                 if !op.is_memory_effect_free() {

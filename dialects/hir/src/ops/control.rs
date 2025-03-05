@@ -1,13 +1,13 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
-use midenc_hir2::{derive::operation, traits::*, *};
+use midenc_hir2::{derive::operation, effects::*, traits::*, *};
 
 use crate::HirDialect;
 
 /// Returns from the enclosing function with the provided operands as its results.
 #[operation(
     dialect = HirDialect,
-    traits(Terminator, ReturnLike)
+    traits(Terminator, ReturnLike),
 )]
 pub struct Ret {
     #[operands]
