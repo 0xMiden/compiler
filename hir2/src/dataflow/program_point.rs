@@ -182,14 +182,14 @@ impl ProgramPoint {
     pub fn is_at_block_start(&self) -> bool {
         self.operation().is_some_and(|op| {
             op.parent().is_some() && op.prev().is_none() && self.placement() == Position::Before
-        })
+        }) || matches!(self, Self::Block { position: Position::Before, block, .. } if block.borrow().body().is_empty())
     }
 
     /// Returns true if this program point is at the end of the containing block
     pub fn is_at_block_end(&self) -> bool {
         self.operation().is_some_and(|op| {
             op.parent().is_some() && op.next().is_none() && self.placement() == Position::After
-        })
+        }) || matches!(self, Self::Block { position: Position::After, block, .. } if block.borrow().body().is_empty())
     }
 
     /// Returns the block of the program point anchor.
