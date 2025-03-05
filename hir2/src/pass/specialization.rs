@@ -15,6 +15,7 @@ impl<T: 'static> PassTarget for T {
     }
 
     #[inline]
+    #[track_caller]
     default fn into_target(op: &OperationRef) -> EntityRef<'_, T> {
         EntityRef::map(op.borrow(), |t| {
             t.downcast_ref::<T>().unwrap_or_else(|| expected_type::<T>(op))
@@ -22,6 +23,7 @@ impl<T: 'static> PassTarget for T {
     }
 
     #[inline]
+    #[track_caller]
     default fn into_target_mut(op: &mut OperationRef) -> EntityMut<'_, T> {
         EntityMut::map(op.borrow_mut(), |t| {
             t.downcast_mut::<T>().unwrap_or_else(|| expected_type::<T>(op))
@@ -35,11 +37,13 @@ impl PassTarget for Operation {
     }
 
     #[inline]
+    #[track_caller]
     fn into_target(op: &OperationRef) -> EntityRef<'_, Operation> {
         op.borrow()
     }
 
     #[inline]
+    #[track_caller]
     fn into_target_mut(op: &mut OperationRef) -> EntityMut<'_, Operation> {
         op.borrow_mut()
     }
@@ -64,6 +68,7 @@ impl PassTarget for dyn BranchOpInterface {
         None
     }
 
+    #[track_caller]
     fn into_target(op: &OperationRef) -> EntityRef<'_, dyn BranchOpInterface> {
         EntityRef::map(op.borrow(), |t| {
             t.as_trait::<dyn BranchOpInterface>()
@@ -71,6 +76,7 @@ impl PassTarget for dyn BranchOpInterface {
         })
     }
 
+    #[track_caller]
     fn into_target_mut(op: &mut OperationRef) -> EntityMut<'_, dyn BranchOpInterface> {
         EntityMut::map(op.borrow_mut(), |t| {
             t.as_trait_mut::<dyn BranchOpInterface>()
@@ -84,6 +90,7 @@ impl PassTarget for dyn Symbol {
         None
     }
 
+    #[track_caller]
     fn into_target(op: &OperationRef) -> EntityRef<'_, dyn Symbol> {
         EntityRef::map(op.borrow(), |t| {
             t.as_trait::<dyn Symbol>()
@@ -91,6 +98,7 @@ impl PassTarget for dyn Symbol {
         })
     }
 
+    #[track_caller]
     fn into_target_mut(op: &mut OperationRef) -> EntityMut<'_, dyn Symbol> {
         EntityMut::map(op.borrow_mut(), |t| {
             t.as_trait_mut::<dyn Symbol>()
@@ -104,6 +112,7 @@ impl PassTarget for dyn SymbolTable + 'static {
         None
     }
 
+    #[track_caller]
     fn into_target(op: &OperationRef) -> EntityRef<'_, dyn SymbolTable + 'static> {
         EntityRef::map(op.borrow(), |t| {
             t.as_trait::<dyn SymbolTable>()
@@ -111,6 +120,7 @@ impl PassTarget for dyn SymbolTable + 'static {
         })
     }
 
+    #[track_caller]
     fn into_target_mut(op: &mut OperationRef) -> EntityMut<'_, dyn SymbolTable + 'static> {
         EntityMut::map(op.borrow_mut(), |t| {
             t.as_trait_mut::<dyn SymbolTable>()
