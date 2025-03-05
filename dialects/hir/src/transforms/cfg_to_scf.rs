@@ -49,13 +49,13 @@ impl Pass for LiftControlFlowToSCF {
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
-        log::debug!("applying control flow lifting transformation pass starting from {}", &*op);
-
         let mut transformation = ControlFlowToSCFTransformation;
         let mut changed = false;
 
         let root = op.as_operation_ref();
         drop(op);
+
+        log::debug!(target: "cfg-to-scf", "applying control flow lifting transformation pass starting from {}", root.borrow());
 
         let result = root.raw_prewalk(|operation: OperationRef| -> WalkResult {
             let op = operation.borrow();
@@ -77,7 +77,7 @@ impl Pass for LiftControlFlowToSCF {
                 let dominfo = Rc::make_mut(&mut dominfo);
 
                 let visitor = |inner: OperationRef| -> WalkResult {
-                    log::debug!("applying control flow lifting to {}", inner.borrow());
+                    log::debug!(target: "cfg-to-scf", "applying control flow lifting to {}", inner.borrow());
                     let mut next_region = inner.borrow().regions().front().as_pointer();
                     while let Some(region) = next_region.take() {
                         next_region = region.next();
@@ -87,6 +87,7 @@ impl Pass for LiftControlFlowToSCF {
                         match result {
                             Ok(did_change) => {
                                 log::trace!(
+                                    target: "cfg-to-scf",
                                     "control flow lifting completed for region \
                                      (did_change={did_change})"
                                 );
@@ -113,6 +114,7 @@ impl Pass for LiftControlFlowToSCF {
             {
                 // We only care to recurse into ops that can contain functions
                 log::trace!(
+                    target: "cfg-to-scf",
                     "looking for functions to apply control flow lifting to in '{}'",
                     op.name()
                 );
@@ -129,6 +131,7 @@ impl Pass for LiftControlFlowToSCF {
         }
 
         log::debug!(
+            target: "cfg-to-scf",
             "control flow lifting transformation pass completed successfully (changed = {changed}"
         );
         if !changed {
@@ -173,12 +176,15 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         if let Some(switch) = cf_op.downcast_ref::<crate::ops::Switch>() {
             let span = switch.span();
             let cases = switch.cases();
+            assert_eq!(regions.len(), cases.len() + 1);
             let cases = cases.iter().map(|case| *case.key().unwrap());
             let mut switch_op =
                 ins.index_switch(switch.selector().as_value_ref(), cases, result_types, span)?;
             let mut op = switch_op.borrow_mut();
             let operation = op.as_operation_ref();
 
+            // The order of the regions match the original 'hir.switch', hence the fallback region
+            // coming first.
             op.default_region_mut().take_body(regions[0]);
             for (index, source_region) in regions.iter().copied().skip(1).enumerate() {
                 let mut case_region = op.get_case_region(index);
@@ -360,6 +366,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         builder: &mut midenc_hir2::OpBuilder,
         _region: midenc_hir2::RegionRef,
     ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
+        log::trace!(target: "cfg-to-scf", "creating unreachable terminator at {}", builder.insertion_point());
         let ins = DefaultInstBuilder::new(builder);
         let op = ins.unreachable(span)?;
         Ok(op.as_operation_ref())

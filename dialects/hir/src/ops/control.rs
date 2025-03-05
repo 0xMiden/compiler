@@ -119,10 +119,10 @@ impl BranchOpInterface for CondBr {
 pub struct Switch {
     #[operand]
     selector: UInt32,
-    #[successors(keyed)]
-    cases: SwitchCase,
     #[successor]
     fallback: Successor,
+    #[successors(keyed)]
+    cases: SwitchCase,
 }
 
 impl Canonicalizable for Switch {

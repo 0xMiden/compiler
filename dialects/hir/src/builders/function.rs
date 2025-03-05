@@ -1220,8 +1220,8 @@ pub trait InstBuilder: InstBuilderBase {
     {
         let op_builder = self
             .builder_mut()
-            .create::<crate::ops::Switch, (_, TCases, _, TFallbackArgs)>(span);
-        op_builder(selector, cases, fallback, fallback_args)
+            .create::<crate::ops::Switch, (_, _, TFallbackArgs, TCases)>(span);
+        op_builder(selector, fallback, fallback_args, cases)
     }
 
     fn condition<T>(
