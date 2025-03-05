@@ -815,9 +815,10 @@ impl RegionBranchTerminatorOpInterface for Yield {
         //
         // * [While] may only have a yield to its `before` region
         // * [If] may only yield to its parent
+        // * [IndexSwitch] may only yield to its parent
         let parent_op = self.parent_op().unwrap();
         let parent_op = parent_op.borrow();
-        if parent_op.is::<If>() {
+        if parent_op.is::<If>() || parent_op.is::<IndexSwitch>() {
             smallvec![RegionSuccessorInfo::Returning(
                 parent_op.results().all().iter().map(|v| v.borrow().as_value_ref()).collect()
             )]
