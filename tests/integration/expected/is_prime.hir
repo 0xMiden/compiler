@@ -1,0 +1,194 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @is_prime {
+        builtin.function public @entrypoint(v0: i32) -> i32 {
+        ^block4(v0: i32):
+            v3 = hir.constant 2 : i32;
+            v2 = hir.constant 0 : i32;
+            v11 = hir.constant 1 : i32;
+            v12 = hir.constant 4 : i32;
+            v20 = hir.constant 3 : i32;
+            v40 = hir.constant 5 : i32;
+            v86 = hir.constant 0 : u32;
+            v91 = hir.constant 1 : u32;
+            v93 = hir.constant 2 : u32;
+            v94 = hir.constant 3 : u32;
+            v95 = hir.constant 4 : u32;
+            v96 = hir.constant 5 : u32;
+            v104 = hir.poison  : u32;
+            v92 = hir.poison  : i32;
+            v4 = hir.bitcast v0 : u32;
+            v5 = hir.bitcast v3 : u32;
+            v6 = hir.lt v4, v5 : i1;
+            v7 = hir.zext v6 : u32;
+            v8 = hir.bitcast v7 : i32;
+            v10 = hir.neq v8, v2 : i1;
+            v128, v129, v130 = hir.if v10 : i32, i32, u32 {
+            ^block6:
+                hir.yield v2, v92, v86;
+            } {
+            ^block7:
+                v13 = hir.bitcast v0 : u32;
+                v14 = hir.bitcast v12 : u32;
+                v15 = hir.lt v13, v14 : i1;
+                v16 = hir.zext v15 : u32;
+                v17 = hir.bitcast v16 : i32;
+                v19 = hir.neq v17, v2 : i1;
+                v145, v146, v147, v148, v149 = hir.if v19 : i32, i32, i32, u32, u32 {
+                ^block27:
+                    hir.yield v11, v92, v92, v104, v86;
+                } {
+                ^block10:
+                    v21 = hir.bitcast v0 : u32;
+                    v22 = hir.bitcast v20 : u32;
+                    v23 = hir.mod v21, v22 : u32;
+                    v24 = hir.bitcast v23 : i32;
+                    v26 = hir.band v0, v11 : i32;
+                    v28 = hir.eq v26, v2 : i1;
+                    v29 = hir.zext v28 : u32;
+                    v30 = hir.bitcast v29 : i32;
+                    v32 = hir.neq v30, v2 : i1;
+                    v158, v159, v160, v161, v162 = hir.if v32 : i32, i32, i32, u32, u32 {
+                    ^block26:
+                        hir.yield v92, v2, v92, v86, v91;
+                    } {
+                    ^block11:
+                        v35 = hir.eq v24, v2 : i1;
+                        v36 = hir.zext v35 : u32;
+                        v37 = hir.bitcast v36 : i32;
+                        v39 = hir.neq v37, v2 : i1;
+                        v168, v169, v170, v171, v172 = hir.if v39 : i32, i32, i32, u32, u32 {
+                        ^block25:
+                            hir.yield v2, v92, v92, v104, v86;
+                        } {
+                        ^block12:
+                            v252, v253, v254, v255 = hir.while v40, v0 : i32, i32, i32, u32 {
+                            ^block56(v256: i32, v257: i32):
+                                v42 = hir.mul v256, v256 : i32 #[overflow = wrapping];
+                                v44 = hir.bitcast v42 : u32;
+                                v45 = hir.bitcast v257 : u32;
+                                v46 = hir.gt v44, v45 : i1;
+                                v47 = hir.zext v46 : u32;
+                                v48 = hir.bitcast v47 : i32;
+                                v50 = hir.neq v48, v2 : i1;
+                                v195, v196, v197, v198, v199 = hir.if v50 : i32, i32, u32, u32, i32 {
+                                ^block47:
+                                    hir.yield v92, v92, v96, v86, v48;
+                                } {
+                                ^block15:
+                                    v52 = hir.eq v256, v2 : i1;
+                                    v53 = hir.zext v52 : u32;
+                                    v54 = hir.bitcast v53 : i32;
+                                    v56 = hir.neq v54, v2 : i1;
+                                    v251 = hir.select v56, v48, v92 : i32;
+                                    v247, v248, v249, v250 = hir.if v56 : i32, i32, u32, u32 {
+                                    ^block49:
+                                        hir.yield v92, v92, v95, v86;
+                                    } {
+                                    ^block16:
+                                        v57 = hir.bitcast v257 : u32;
+                                        v58 = hir.bitcast v256 : u32;
+                                        v59 = hir.mod v57, v58 : u32;
+                                        v60 = hir.bitcast v59 : i32;
+                                        v62 = hir.eq v60, v2 : i1;
+                                        v63 = hir.zext v62 : u32;
+                                        v64 = hir.bitcast v63 : i32;
+                                        v66 = hir.neq v64, v2 : i1;
+                                        v243, v244, v245, v246 = hir.if v66 : i32, i32, u32, u32 {
+                                        ^block51:
+                                            hir.yield v92, v92, v94, v86;
+                                        } {
+                                        ^block17:
+                                            v68 = hir.add v256, v3 : i32 #[overflow = wrapping];
+                                            v70 = hir.eq v68, v2 : i1;
+                                            v71 = hir.zext v70 : u32;
+                                            v72 = hir.bitcast v71 : i32;
+                                            v74 = hir.neq v72, v2 : i1;
+                                            v239, v240, v241, v242 = hir.if v74 : i32, i32, u32, u32 {
+                                            ^block53:
+                                                hir.yield v92, v92, v93, v86;
+                                            } {
+                                            ^block18:
+                                                v76 = hir.add v68, v12 : i32 #[overflow = wrapping];
+                                                v77 = hir.bitcast v257 : u32;
+                                                v78 = hir.bitcast v68 : u32;
+                                                v79 = hir.mod v77, v78 : u32;
+                                                v80 = hir.bitcast v79 : i32;
+                                                v82 = hir.neq v80, v2 : i1;
+                                                v235 = hir.select v82, v76, v92 : i32;
+                                                v236 = hir.select v82, v257, v92 : i32;
+                                                v237 = hir.select v82, v86, v91 : u32;
+                                                v238 = hir.select v82, v91, v86 : u32;
+                                                hir.yield v235, v236, v237, v238;
+                                            };
+                                            hir.yield v239, v240, v241, v242;
+                                        };
+                                        hir.yield v243, v244, v245, v246;
+                                    };
+                                    hir.yield v247, v248, v249, v250, v251;
+                                };
+                                v121 = hir.trunc v198 : i1;
+                                hir.condition v121, v195, v196, v199, v197;
+                            } {
+                            ^block57(v258: i32, v259: i32, v260: i32, v261: u32):
+                                hir.yield v258, v259;
+                            };
+                            v179, v180, v181, v182, v183, v184 = hir.index_switch v255 : i32, i32, i32, u32, u32, u32 #[cases = [1, 2, 3, 4]] {
+                            ^block24:
+                                hir.yield v254, v92, v92, v104, v86, v86;
+                            } {
+                            ^block19:
+                                hir.yield v254, v92, v92, v104, v86, v86;
+                            } {
+                            ^block21:
+                                hir.yield v92, v92, v92, v104, v104, v91;
+                            } {
+                            ^block22:
+                                hir.yield v254, v92, v92, v104, v86, v86;
+                            } {
+                            ^block23:
+                                hir.yield v92, v92, v92, v104, v104, v91;
+                            };
+                            v185, v186, v187, v188, v189 = hir.index_switch v184 : i32, i32, i32, u32, u32 #[cases = [0]] {
+                            ^block8:
+                                hir.yield v92, v92, v92, v91, v91;
+                            } {
+                            ^block46:
+                                hir.yield v179, v180, v181, v182, v183;
+                            };
+                            hir.yield v185, v186, v187, v188, v189;
+                        };
+                        hir.yield v168, v169, v170, v171, v172;
+                    };
+                    hir.yield v158, v159, v160, v161, v162;
+                };
+                v150, v151, v152 = hir.index_switch v149 : i32, i32, u32 #[cases = [0]] {
+                ^block42:
+                    hir.yield v146, v147, v148;
+                } {
+                ^block9:
+                    hir.yield v92, v145, v93;
+                };
+                hir.yield v150, v151, v152;
+            };
+            v133, v134 = hir.index_switch v130 : i32, u32 #[cases = [0, 1]] {
+            ^block38:
+                hir.yield v129, v86;
+            } {
+            ^block5:
+                hir.yield v128, v86;
+            } {
+            ^block39:
+                hir.yield v92, v91;
+            };
+            hir.switch v134 ^block29, ^block28(v133);
+        ^block28(v85: i32):
+            hir.ret v85;
+        ^block29:
+            hir.unreachable ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            hir.ret_imm 1048576;
+        };
+    };
+};
