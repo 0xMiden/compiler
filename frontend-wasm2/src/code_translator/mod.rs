@@ -142,9 +142,9 @@ pub fn translate_operator<B: ?Sized + Builder>(
                     state.push1(builder.select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I64 => {
-                    todo!()
-                    // let cond = builder.neq_imm(cond, Immediate::I64(0), span);
-                    // state.push1(builder.select(cond, arg1, arg2, span)?);
+                    let imm = builder.imm(Immediate::I64(0), span);
+                    let cond = builder.neq(cond, imm, span)?;
+                    state.push1(builder.select(cond, arg1, arg2, span)?);
                 }
                 ty => panic!("unsupported value type for 'select': {ty}"),
             };
