@@ -5,7 +5,7 @@ builtin.component root_ns:root@1.0.0 {
             v4 = arith.constant 255 : i32;
             v5 = arith.band v2, v4 : i32;
             v6 = hir.cast v5 : u32;
-            v27 = scf.index_switch v6 : i32 
+            v27 = scf.index_switch v6 : i32
             case 1 {
             ^block9:
                 v8 = arith.sub v0, v1 : i32 #[overflow = wrapping];
