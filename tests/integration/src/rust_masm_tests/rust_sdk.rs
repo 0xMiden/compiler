@@ -123,7 +123,6 @@ fn rust_sdk_p2id_note_script() {
 }
 
 #[test]
-#[ignore = "requires component translation"]
 fn rust_sdk_cross_ctx_account() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
@@ -155,7 +154,6 @@ fn rust_sdk_cross_ctx_account() {
 }
 
 #[test]
-#[ignore = "requires component translation"]
 fn rust_sdk_cross_ctx_note() {
     // Build cross-ctx-account package
     let args: Vec<String> = [
