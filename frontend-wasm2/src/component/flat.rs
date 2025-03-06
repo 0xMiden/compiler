@@ -62,7 +62,7 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, String> {
         Type::Array(elem_ty, len) => vec![AbiParam::new(*elem_ty.clone()); *len],
         Type::List(elem_ty) => vec![
             // pointer to the list element type
-            AbiParam::sret(*elem_ty.clone()),
+            AbiParam::sret(Type::Ptr(elem_ty.clone())),
             // length of the list
             AbiParam::new(Type::I32),
         ],

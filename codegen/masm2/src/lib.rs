@@ -23,6 +23,8 @@ pub mod masm {
     };
 }
 
+use midenc_hir2::dialects::builtin;
+
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
@@ -33,6 +35,10 @@ pub use self::{
 
 pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
     use midenc_dialect_hir as hir;
+
+    context.register_dialect_hook::<builtin::BuiltinDialect, _>(|info, _context| {
+        info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
+    });
 
     context.register_dialect_hook::<hir::HirDialect, _>(|info, _context| {
         info.register_operation_trait::<hir::Assert, dyn HirLowering>();
