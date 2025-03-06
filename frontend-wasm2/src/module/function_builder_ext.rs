@@ -418,43 +418,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         old_block: BlockRef,
         new_block: BlockRef,
     ) {
-        todo!()
-        // self.func_ctx.ssa.remove_block_predecessor(old_block, inst);
-        // match &mut *self.data_flow_graph_mut().insts[inst].data {
-        //     Instruction::Br(Br {
-        //         ref mut successor, ..
-        //     }) if successor.destination == old_block => {
-        //         successor.destination = new_block;
-        //     }
-        //     Instruction::CondBr(CondBr {
-        //         ref mut then_dest,
-        //         ref mut else_dest,
-        //         ..
-        //     }) => {
-        //         if then_dest.destination == old_block {
-        //             then_dest.destination = new_block;
-        //         } else if else_dest.destination == old_block {
-        //             else_dest.destination = new_block;
-        //         }
-        //     }
-        //     Instruction::Switch(Switch {
-        //         op: _,
-        //         arg: _,
-        //         ref mut arms,
-        //         ref mut default,
-        //     }) => {
-        //         for arm in arms.iter_mut() {
-        //             if arm.successor.destination == old_block {
-        //                 arm.successor.destination = new_block;
-        //             }
-        //         }
-        //         if default.destination == old_block {
-        //             default.destination = new_block;
-        //         }
-        //     }
-        //     _ => panic!("{} must be a branch instruction", inst),
-        // }
-        // self.func_ctx.ssa.declare_block_predecessor(new_block, inst);
+        self.func_ctx.borrow_mut().ssa.remove_block_predecessor(old_block, inst);
+        self.inner
+            .builder()
+            .context()
+            .change_branch_destination(inst, old_block, new_block);
+        self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, inst);
     }
 }
 
