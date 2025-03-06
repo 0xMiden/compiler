@@ -272,22 +272,6 @@ impl FuncTranslationState {
         self.stack.pop().expect("attempted to pop a value from an empty stack")
     }
 
-    /// Pop one value and cast it to the specified type.
-    pub(crate) fn pop1_casted<B: ?Sized + Builder>(
-        &mut self,
-        ty: Type,
-        builder: &mut FunctionBuilderExt<'_, B>,
-        span: SourceSpan,
-    ) -> ValueRef {
-        todo!()
-        // let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
-        // if builder.data_flow_graph().value_type(val) != &ty {
-        //     builder.ins().cast(val, ty, span)
-        // } else {
-        //     val
-        // }
-    }
-
     /// Pop one value and bitcast it to the specified type.
     pub(crate) fn pop1_bitcasted<B: ?Sized + Builder>(
         &mut self,
@@ -315,29 +299,6 @@ impl FuncTranslationState {
         let v2 = self.stack.pop().unwrap();
         let v1 = self.stack.pop().unwrap();
         (v1, v2)
-    }
-
-    /// Pop two values. Cast them to the specified type. Return them in the order they were pushed.
-    pub(crate) fn pop2_casted<B: ?Sized + Builder>(
-        &mut self,
-        ty: Type,
-        builder: &mut FunctionBuilderExt<'_, B>,
-        span: SourceSpan,
-    ) -> (ValueRef, ValueRef) {
-        todo!()
-        // let v2 = self.stack.pop().unwrap();
-        // let v1 = self.stack.pop().unwrap();
-        // let v1 = if builder.data_flow_graph().value_type(v1) != &ty {
-        //     builder.ins().cast(v1, ty.clone(), span)
-        // } else {
-        //     v1
-        // };
-        // let v2 = if builder.data_flow_graph().value_type(v2) != &ty {
-        //     builder.ins().cast(v2, ty, span)
-        // } else {
-        //     v2
-        // };
-        // (v1, v2)
     }
 
     /// Pop two values. Bitcast them to the specified type. Return them in the order they were
