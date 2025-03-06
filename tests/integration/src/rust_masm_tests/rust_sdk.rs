@@ -134,8 +134,7 @@ fn rust_sdk_cross_ctx_account() {
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
 
-    // TODO: uncomment after `unsupported parent operation for 'hir.yield': 'hir.index_switch'`
-    // error is fixed
+    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/427 is fixed
     //
     // test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     // let package = test.compiled_package();
@@ -213,7 +212,7 @@ fn rust_sdk_cross_ctx_note() {
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
-    // TODO: uncomment when compilation is fixed
+    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/427 is fixed
     //
     // test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     // Run it in the VM (output is checked via assert_eq in the note code)
