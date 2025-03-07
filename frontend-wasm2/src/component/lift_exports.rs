@@ -4,8 +4,7 @@ use midenc_dialect_hir::InstBuilder;
 use midenc_hir2::{
     dialects::builtin::{ComponentBuilder, Function, ModuleBuilder},
     interner::Symbol,
-    AbiParam, CallConv, FunctionIdent, FunctionType, Ident, Op, Signature, SourceSpan, ValueRef,
-    Visibility,
+    CallConv, FunctionIdent, FunctionType, Ident, Op, SourceSpan, ValueRef,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
@@ -29,15 +28,15 @@ pub fn generate_export_lifting_function(
     let cross_ctx_export_sig = flatten_function_type(&export_func_ty, CallConv::CanonLift)
         .map_err(|e| {
             let message = format!(
-                "Miden CCABI export lifting generation. Signature for exported function {} \
-                 requires flattening. Error: {}",
+                "Component export lifting generation. Signature for exported function {} requires \
+                 flattening. Error: {}",
                 core_export_func_id, e
             );
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
     if needs_transformation(&cross_ctx_export_sig) {
         let message = format!(
-            "Miden CCABI export lifting generation. Signature for exported function {} requires \
+            "Component export lifting generation. Signature for exported function {} requires \
              lifting. This is not yet supported",
             core_export_func_id
         );
@@ -96,7 +95,7 @@ pub fn generate_export_lifting_function(
     assert!(results.len() <= 1, "expected a single result or none");
 
     let exit_block = fb.create_block();
-    fb.ins().br(exit_block, vec![], span);
+    fb.ins().br(exit_block, vec![], span).expect("failed br");
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
     let returning = results.first().cloned();

@@ -188,7 +188,7 @@ pub fn define_func_for_miden_abi_transformation(
 
     let exit_block = func_builder.create_block();
     func_builder.append_block_params_for_function_returns(exit_block);
-    func_builder.ins().br(exit_block, results, span);
+    func_builder.ins().br(exit_block, results, span).expect("failed br");
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
     func_builder.ins().ret(None, span).expect("failed ret");

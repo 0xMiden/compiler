@@ -7,25 +7,16 @@ use midenc_hir::{
     SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
     ValueRef, Visibility,
 };
-use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
+use midenc_session::diagnostics::DiagnosticsHandler;
 
-use super::{
-    function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
-    instance::ModuleArgument,
-    ir_func_type,
-    types::ModuleTypesBuilder,
-    EntityIndex, FuncIndex, Module, ModuleTypes,
-};
+use super::{instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder, FuncIndex, Module};
 use crate::{
     component::lower_imports::generate_import_lowering_function,
     error::WasmResult,
-    intrinsics::{
-        intrinsics_conversion_result, is_miden_intrinsics_module, process_intrinsics_import,
-        IntrinsicsConversionResult,
-    },
+    intrinsics::{is_miden_intrinsics_module, process_intrinsics_import},
     miden_abi::{
-        define_func_for_miden_abi_transformation, is_miden_abi_module, miden_abi_function_type,
-        recover_imported_masm_function_id, transform::transform_miden_abi_call,
+        define_func_for_miden_abi_transformation, is_miden_abi_module,
+        recover_imported_masm_function_id,
     },
     translation_utils::sig_from_func_type,
 };
@@ -100,11 +91,7 @@ impl<'a> ModuleTranslationState<'a> {
 
     /// Get the `FunctionIdent` that should be used to make a direct call to function
     /// `index`.
-    pub(crate) fn get_direct_func(
-        &mut self,
-        index: FuncIndex,
-        diagnostics: &DiagnosticsHandler,
-    ) -> WasmResult<CallableFunction> {
+    pub(crate) fn get_direct_func(&mut self, index: FuncIndex) -> WasmResult<CallableFunction> {
         let defined_func = self.functions[&index].clone();
         Ok(defined_func)
     }
@@ -161,7 +148,7 @@ fn process_module_arg(
     module_arg: &ModuleArgument,
 ) -> Result<CallableFunction, midenc_hir2::Report> {
     Ok(match module_arg {
-        ModuleArgument::Function(function_ident) => {
+        ModuleArgument::Function(_function_ident) => {
             todo!("core Wasm function import is not implemented yet");
             //generate the internal function and call the import argument  function"
         }

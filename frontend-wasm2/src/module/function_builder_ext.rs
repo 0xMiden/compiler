@@ -8,9 +8,8 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     traits::{BranchOpInterface, Terminator},
-    Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener,
-    ListenerType, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
-    ValueRef,
+    BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, ListenerType, OpBuilder,
+    OperationRef, ProgramPoint, RegionRef, Signature, ValueRef,
 };
 use midenc_hir_type::Type;
 use midenc_session::diagnostics::SourceSpan;
@@ -93,7 +92,7 @@ impl Listener for SSABuilderListener {
             debug_assert!(!is_filled, "you cannot add an instruction to a block already filled");
         }
 
-        if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
+        if op.as_trait::<dyn BranchOpInterface>().is_some() {
             let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
             for succ in op.successors().iter() {
                 let successor = succ.block.borrow().successor();
@@ -111,9 +110,9 @@ impl Listener for SSABuilderListener {
 
     fn notify_block_inserted(
         &self,
-        block: BlockRef,
-        prev: Option<RegionRef>,
-        ip: Option<BlockRef>,
+        _block: BlockRef,
+        _prev: Option<RegionRef>,
+        _ip: Option<BlockRef>,
     ) {
     }
 }
@@ -230,14 +229,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     pub fn seal_block(&mut self, block: BlockRef) {
         let side_effects = self.func_ctx.borrow_mut().ssa.seal_block(block);
         self.handle_ssa_side_effects(side_effects);
-    }
-
-    /// A Block is 'filled' when a terminator instruction is present.
-    fn fill_current_block(&mut self) {
-        self.func_ctx
-            .borrow_mut()
-            .status
-            .insert(self.inner.current_block(), BlockStatus::Filled);
     }
 
     fn handle_ssa_side_effects(&mut self, side_effects: SideEffects) {

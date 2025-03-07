@@ -31,7 +31,7 @@ use crate::{
         func_translation_state::FuncTranslationState,
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt},
         module_env::DwarfReader,
-        types::{convert_valtype, ir_type, ModuleTypes},
+        types::{convert_valtype, ir_type},
     },
     ssa::Variable,
     translation_utils::emit_zero,

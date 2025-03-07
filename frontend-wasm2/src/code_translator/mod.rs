@@ -31,12 +31,11 @@ use wasmparser::{MemArg, Operator};
 use crate::{
     error::WasmResult,
     intrinsics::{convert_intrinsics_call, is_miden_intrinsics_module},
-    miden_abi::{is_miden_abi_module, transform::transform_miden_abi_call},
     module::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
         module_translation_state::ModuleTranslationState,
-        types::{ir_type, BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
+        types::{BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
         Module,
     },
     ssa::Variable,
@@ -165,10 +164,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_if(blockty, state, builder, mod_types, diagnostics, span)?;
         }
         Operator::Else => translate_else(state, builder, span)?,
-        Operator::End => translate_end(state, builder, span),
+        Operator::End => translate_end(state, builder, span)?,
 
         /**************************** Branch instructions *********************************/
-        Operator::Br { relative_depth } => translate_br(state, relative_depth, builder, span),
+        Operator::Br { relative_depth } => translate_br(state, relative_depth, builder, span)?,
         Operator::BrIf { relative_depth } => {
             translate_br_if(*relative_depth, builder, state, span)?
         }
@@ -267,7 +266,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::I64Store { memarg } => translate_store(I64, memarg, state, builder, span)?,
         Operator::F32Store { memarg } => translate_store(Felt, memarg, state, builder, span)?,
         Operator::I32Store8 { memarg } | Operator::I64Store8 { memarg } => {
-            translate_store(U8, memarg, state, builder, span);
+            translate_store(U8, memarg, state, builder, span)?;
         }
         Operator::I32Store16 { memarg } | Operator::I64Store16 { memarg } => {
             translate_store(U16, memarg, state, builder, span)?;
@@ -696,9 +695,9 @@ fn translate_call<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
     function_index: FuncIndex,
     span: SourceSpan,
-    diagnostics: &DiagnosticsHandler,
+    _diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let defined_func = module_state.get_direct_func(function_index, diagnostics)?;
+    let defined_func = module_state.get_direct_func(function_index)?;
     let wasm_sig = defined_func.signature.clone();
     let num_wasm_args = wasm_sig.params().len();
     let args = func_state.peekn(num_wasm_args);
@@ -706,27 +705,7 @@ fn translate_call<B: ?Sized + Builder>(
         let results = convert_intrinsics_call(&defined_func, args, builder, span)?;
         func_state.popn(num_wasm_args);
         func_state.pushn(&results);
-    }
-    // else if is_miden_abi_module(func_id.module.as_symbol()) {
-    //     // Miden SDK function call, transform the call to the Miden ABI if needed
-    //     let results = transform_miden_abi_call(func_id, args, builder, span, diagnostics);
-    //     assert_eq!(
-    //         wasm_sig.results().len(),
-    //         results.len(),
-    //         "Adapted function call results quantity are not the same as the original Wasm \
-    //          function results quantity for function {}",
-    //         func_id
-    //     );
-    //     assert_eq!(
-    //         wasm_sig.results().iter().map(|p| p.ty).collect::<Vec<Type>>(),
-    //         results.iter().map(|r| (*r).borrow().ty().clone()).collect::<Vec<Type>>(),
-    //         "Adapted function call result types are not the same as the original Wasm function \
-    //          result types for function {}",
-    //         func_id
-    //     );
-    //     func_state.popn(num_wasm_args);
-    //     func_state.pushn(&results);
-    else {
+    } else {
         let func_ref = defined_func
             .function_ref
             .expect("expected DefinedFunction::function_ref to be set");
@@ -772,7 +751,7 @@ fn translate_br<B: ?Sized + Builder>(
     relative_depth: &u32,
     builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
-) {
+) -> WasmResult<()> {
     let i = state.control_stack.len() - 1 - (*relative_depth as usize);
     let (return_count, br_destination) = {
         let frame = &mut state.control_stack[i];
@@ -789,6 +768,7 @@ fn translate_br<B: ?Sized + Builder>(
     builder.br(br_destination, destination_args, span);
     state.popn(return_count);
     state.reachable = false;
+    Ok(())
 }
 
 fn translate_br_if<B: ?Sized + Builder>(
@@ -918,7 +898,7 @@ fn translate_end<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
-) {
+) -> WasmResult<()> {
     // The `End` instruction pops the last control frame from the control stack, seals
     // the destination block (since `br` instructions targeting it only appear inside the
     // block and have already been translated) and modify the value stack to use the
@@ -953,6 +933,7 @@ fn translate_end<B: ?Sized + Builder>(
         .map(|ba| ba.borrow().as_value_ref())
         .collect();
     state.stack.extend_from_slice(&next_block_args);
+    Ok(())
 }
 
 fn translate_else<B: ?Sized + Builder>(
@@ -1003,7 +984,7 @@ fn translate_else<B: ?Sized + Builder>(
                             destination,
                             state.peekn(num_return_values).iter().copied(),
                             span,
-                        );
+                        )?;
                         state.popn(num_return_values);
                         else_block
                     }

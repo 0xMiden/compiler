@@ -470,7 +470,7 @@ impl SSABuilder {
         // When this `Drain` is dropped, these elements will get truncated.
         let results = self.results.drain(self.results.len() - num_predecessors..);
         // Keep the block argument.
-        let mut preds = &mut self.ssa_blocks.get_mut(&dest_block).unwrap().predecessors;
+        let preds = &mut self.ssa_blocks.get_mut(&dest_block).unwrap().predecessors;
         for (idx, &val) in results.as_slice().iter().enumerate() {
             let pred = preds.get_mut(idx).unwrap();
             let branch = *pred;

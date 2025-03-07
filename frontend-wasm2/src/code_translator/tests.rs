@@ -1,5 +1,5 @@
 use core::fmt::Write;
-use std::{any::Any, rc::Rc};
+use std::rc::Rc;
 
 use expect_test::expect_file;
 use midenc_hir::{

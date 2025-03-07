@@ -115,17 +115,17 @@ pub(crate) fn convert_felt_intrinsics<B: ?Sized + Builder>(
         // Assert operations
         "assert" => {
             assert_eq!(args.len(), 1, "{} takes exactly one argument", func_id);
-            builder.assert(args[0], span);
+            builder.assert(args[0], span)?;
             Ok(vec![])
         }
         "assertz" => {
             assert_eq!(args.len(), 1, "{} takes exactly one argument", func_id);
-            builder.assertz(args[0], span);
+            builder.assertz(args[0], span)?;
             Ok(vec![])
         }
         "assert_eq" => {
             assert_eq!(args.len(), 2, "{} takes exactly two arguments", func_id);
-            builder.assert_eq(args[0], args[1], span);
+            builder.assert_eq(args[0], args[1], span)?;
             Ok(vec![])
         }
         _ => panic!("No felt op intrinsics found for {}", func_id),

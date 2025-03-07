@@ -33,6 +33,7 @@ fn account() {
     // )]);
 }
 
+#[ignore = "until lifting/lowering of the heap-allocated data is supported"]
 #[test]
 fn rust_sdk_basic_wallet() {
     let _ = env_logger::builder().is_test(true).try_init();

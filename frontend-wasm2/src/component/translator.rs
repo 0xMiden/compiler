@@ -1,26 +1,14 @@
-// TODO:remove after its completed
-#![allow(unused)]
-
-// TODO: document
-
-use std::{borrow::BorrowMut, rc::Rc};
+use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
     self as hir2,
-    dialects::builtin::{
-        self, Component, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder,
-    },
+    dialects::builtin::{self, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
     interner::Symbol,
-    version::Version,
-    Abi, AbiParam, BuilderExt, CallConv, Context, EntityMut, FunctionIdent, FunctionType,
-    FxHashMap, Ident, OpBuilder, Signature, SourceSpan, Visibility,
+    Abi, BuilderExt, Context, FunctionIdent, FunctionType, FxHashMap, Ident, SourceSpan,
 };
-use midenc_session::{diagnostics::Report, DiagnosticsHandler, Session};
-use wasmparser::{
-    types::{ComponentEntityType, TypesRef},
-    Validator,
-};
+use midenc_session::diagnostics::Report;
+use wasmparser::types::{ComponentEntityType, TypesRef};
 
 use super::{
     interface_type_to_ir, CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule,
@@ -40,7 +28,7 @@ use crate::{
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
-        module_env::{ModuleEnvironment, ParsedModule},
+        module_env::ParsedModule,
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
@@ -93,7 +81,7 @@ impl<'a> ComponentTranslator<'a> {
         };
         let mut world_builder = WorldBuilder::new(world_ref);
 
-        let mut raw_entity_ref = world_builder
+        let raw_entity_ref = world_builder
             .define_component(ns, name, id.version)
             .expect("failed to define component");
         let result = ComponentBuilder::new(raw_entity_ref);
@@ -270,15 +258,14 @@ impl<'a> ComponentTranslator<'a> {
                     "Component aliases are not yet supported"
                 )
             }
-            LocalInitializer::Export(name, component_item) => {
+            LocalInitializer::Export(_name, component_item) => {
                 match component_item {
                     ComponentItem::Func(i) => {
                         frame.component_funcs.push(frame.component_funcs[*i].clone());
                     }
                     ComponentItem::ComponentInstance(_) => {
                         let unwrap_instance = component_item.unwrap_instance();
-                        let interface_name = name.to_string();
-                        self.component_export(frame, types, unwrap_instance, interface_name)?;
+                        self.component_export(frame, types, unwrap_instance)?;
                     }
                     ComponentItem::Type(_) => {
                         // do nothing
@@ -299,7 +286,6 @@ impl<'a> ComponentTranslator<'a> {
         frame: &mut ComponentFrame<'a>,
         types: &mut ComponentTypesBuilder,
         component_instance_idx: ComponentInstanceIndex,
-        interface_name: String,
     ) -> WasmResult<()> {
         let instance = &frame.component_instances[component_instance_idx].unwrap_instantiated();
         let static_component_idx = frame.components[instance.component].index;
@@ -312,7 +298,7 @@ impl<'a> ComponentTranslator<'a> {
                     component_instance_idx,
                     name,
                     f,
-                );
+                )?;
             } else {
                 // we're only interested in exported functions
             }
@@ -450,7 +436,7 @@ impl<'a> ComponentTranslator<'a> {
                 }
 
                 let module_name = parsed_module.module.name().as_str();
-                let mut module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
+                let module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
                 let mut module_builder = ModuleBuilder::new(module_ref);
                 let mut module_state = ModuleTranslationState::new(
                     &parsed_module.module,

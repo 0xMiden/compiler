@@ -1,19 +1,13 @@
 //! lowering the imports into the Miden ABI for the cross-context calls
 
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, VecDeque},
-    rc::Rc,
-    str::FromStr,
-};
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
 use midenc_dialect_hir::InstBuilder;
 use midenc_hir2::{
     dialects::builtin::{ComponentBuilder, ComponentId, Function, ModuleBuilder, WorldBuilder},
-    interner::Symbol,
-    Abi, CallConv, FunctionIdent, FunctionType, Op, Signature, SourceSpan, ValueRef,
+    CallConv, FunctionIdent, FunctionType, Op, Signature, ValueRef,
 };
-use midenc_session::{diagnostics::Severity, DiagnosticsHandler, Session};
+use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
 use super::flat::{
     assert_core_wasm_signature_equivalence, flatten_function_type, needs_transformation,
@@ -39,7 +33,7 @@ pub fn generate_import_lowering_function(
     let import_lowered_sig =
         flatten_function_type(import_func_ty, CallConv::CanonLower).map_err(|e| {
             let message = format!(
-                "Miden CCABI import lowering generation. Signature for imported function {} \
+                "Component import lowering generation. Signature for imported function {} \
                  requires flattening. Error: {}",
                 import_func_id.function, e
             );
@@ -48,7 +42,7 @@ pub fn generate_import_lowering_function(
 
     if needs_transformation(&import_lowered_sig) {
         let message = format!(
-            "Miden CCABI export lowering generation. Signature for exported function {} requires \
+            "Component import lowering generation. Signature for imported function {} requires \
              lowering. This is not supported yet.",
             import_func_id
         );
@@ -111,7 +105,7 @@ pub fn generate_import_lowering_function(
     assert!(results.len() <= 1, "expected a single result or none");
 
     let exit_block = fb.create_block();
-    fb.ins().br(exit_block, vec![], span);
+    fb.ins().br(exit_block, vec![], span)?;
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
     let returning = results.first().cloned();
