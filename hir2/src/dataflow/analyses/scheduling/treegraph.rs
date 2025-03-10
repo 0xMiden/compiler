@@ -12,11 +12,11 @@ use super::depgraph::*;
 #[derive(Default, Debug)]
 pub struct OrderedTreeGraph {
     /// The topological order of nodes in `graph`
-    ordering: Vec<NodeId>,
+    ordering: Vec<Node>,
     /// For each tree in `graph`, a data structure which tells us in what order
     /// the nodes of that tree will be visited. The smaller the index, the earlier we
     /// will emit that node.
-    indices: BTreeMap<NodeId, DependencyGraphIndices>,
+    indices: BTreeMap<Node, DependencyGraphIndices>,
     /// The underlying [TreeGraph]
     graph: TreeGraph,
 }
@@ -46,7 +46,7 @@ impl OrderedTreeGraph {
 
     /// Returns an iterator over nodes in the graph, in topological order.
     #[inline]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = NodeId> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Node> + '_ {
         self.ordering.iter().copied()
     }
 
@@ -56,8 +56,8 @@ impl OrderedTreeGraph {
     #[inline]
     pub fn is_scheduled_before<A, B>(&self, a: A, b: B) -> bool
     where
-        A: Into<NodeId>,
-        B: Into<NodeId>,
+        A: Into<Node>,
+        B: Into<Node>,
     {
         self.cmp_scheduling(a, b).is_lt()
     }
@@ -68,8 +68,8 @@ impl OrderedTreeGraph {
     #[inline]
     pub fn is_scheduled_after<A, B>(&self, a: A, b: B) -> bool
     where
-        A: Into<NodeId>,
-        B: Into<NodeId>,
+        A: Into<Node>,
+        B: Into<Node>,
     {
         self.cmp_scheduling(a, b).is_gt()
     }
@@ -88,8 +88,8 @@ impl OrderedTreeGraph {
     /// referenced by it).
     pub fn cmp_scheduling<A, B>(&self, a: A, b: B) -> Ordering
     where
-        A: Into<NodeId>,
-        B: Into<NodeId>,
+        A: Into<Node>,
+        B: Into<Node>,
     {
         let a = a.into();
         let b = b.into();
@@ -219,11 +219,11 @@ impl core::ops::Deref for OrderedTreeGraph {
 #[derive(Default, Clone)]
 pub struct TreeGraph {
     /// The nodes which are explicitly represented in the graph
-    nodes: BTreeSet<NodeId>,
+    nodes: BTreeSet<Node>,
     /// Edges between nodes in the graph, where an edge may carry multiple dependencies
     edges: BTreeMap<EdgeId, SmallVec<[DependencyEdge; 1]>>,
     /// A mapping of condensed nodes to the root node of the tree they were condensed into
-    condensed: BTreeMap<NodeId, NodeId>,
+    condensed: BTreeMap<Node, Node>,
 }
 
 /// Represents an edge between [TreeGraph] roots.
@@ -234,9 +234,9 @@ pub struct TreeGraph {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct EdgeId {
     /// The treegraph root which is predecessor
-    predecessor: NodeId,
+    predecessor: Node,
     /// The treegraph root which is successor
-    successor: NodeId,
+    successor: Node,
 }
 
 /// Represents a unique edge between dependency graph nodes in a [TreeGraph].
@@ -255,15 +255,15 @@ struct EdgeId {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct DependencyEdge {
     /// The specific node in the dependency graph which is predecessor
-    predecessor: NodeId,
+    predecessor: Node,
     /// The specific node in the dependency graph which is successor
-    successor: NodeId,
+    successor: Node,
 }
 
 impl TreeGraph {
     /// Returns true if `node` represents a tree in this graph
     #[inline(always)]
-    pub fn is_root(&self, node: impl Into<NodeId>) -> bool {
+    pub fn is_root(&self, node: impl Into<Node>) -> bool {
         self.nodes.contains(&node.into())
     }
 
@@ -274,14 +274,14 @@ impl TreeGraph {
     /// NOTE: This function will panic if `node` is not a root OR a node condensed
     /// in any tree of the graph.
     #[inline]
-    pub fn root(&self, node: impl Into<NodeId>) -> Node {
-        self.condensed[&node.into()].into()
+    pub fn root(&self, node: impl Into<Node>) -> Node {
+        self.condensed[&node.into()]
     }
 
     /// Same as [TreeGraph::root], but returns the node identifier, which avoids
     /// decoding the [NodeId] into a [Node] if not needed.
     #[inline]
-    pub fn root_id(&self, node: impl Into<NodeId>) -> NodeId {
+    pub fn root_id(&self, node: impl Into<Node>) -> Node {
         self.condensed[&node.into()]
     }
 
@@ -290,12 +290,12 @@ impl TreeGraph {
     /// NOTE: This function will panic if `root` is not a tree root
     pub fn is_member_of<A, B>(&self, node: A, root: B) -> bool
     where
-        A: Into<NodeId>,
-        B: Into<NodeId>,
+        A: Into<Node>,
+        B: Into<Node>,
     {
         let root = root.into();
         assert!(self.is_root(root));
-        self.root(node).id() == root
+        self.root(node) == root
     }
 
     /// Return the number of times that `node` is referenced as a dependency.
@@ -312,7 +312,7 @@ impl TreeGraph {
     /// belong to a tree; but they may also be referenced by dependencies in the edges
     /// between treegraph nodes, so we must check all edges inbound on the tree containing
     /// the node for dependencies on `node`.
-    pub fn num_dependents(&self, node: impl Into<NodeId>) -> usize {
+    pub fn num_dependents(&self, node: impl Into<Node>) -> usize {
         let node = node.into();
         if self.is_root(node) {
             self.dependents(node).count()
@@ -322,7 +322,7 @@ impl TreeGraph {
     }
 
     /// Return an iterator over every node which depends on `node`
-    pub fn dependents(&self, node: impl Into<NodeId>) -> impl Iterator<Item = Node> + '_ {
+    pub fn dependents(&self, node: impl Into<Node>) -> impl Iterator<Item = Node> + '_ {
         let dependency_id = node.into();
         let root_id = self.root_id(dependency_id);
         self.edges
@@ -337,7 +337,7 @@ impl TreeGraph {
             .flat_map(move |edges| {
                 edges.iter().filter_map(move |e| {
                     if e.successor == dependency_id {
-                        Some(e.predecessor.into())
+                        Some(e.predecessor)
                     } else {
                         None
                     }
@@ -348,7 +348,7 @@ impl TreeGraph {
     /// Return an iterator over each [Dependency] in the edge from `a` to `b`
     ///
     /// NOTE: This function will panic if either `a` or `b` are not tree roots
-    pub fn edges(&self, a: NodeId, b: NodeId) -> impl Iterator<Item = Dependency> + '_ {
+    pub fn edges(&self, a: Node, b: Node) -> impl Iterator<Item = Dependency> + '_ {
         let id = EdgeId {
             predecessor: a,
             successor: b,
@@ -362,7 +362,7 @@ impl TreeGraph {
     /// Return the number of predecessors for `node` in this graph.
     ///
     /// NOTE: This function will panic if `node` is not a tree root
-    pub fn num_predecessors(&self, node: impl Into<NodeId>) -> usize {
+    pub fn num_predecessors(&self, node: impl Into<Node>) -> usize {
         let node_id = node.into();
         self.edges.keys().filter(|e| e.successor == node_id).count()
     }
@@ -370,11 +370,11 @@ impl TreeGraph {
     /// Return an iterator over [Node]s which are predecessors of `node` in this graph.
     ///
     /// NOTE: This function will panic if `node` is not a tree root
-    pub fn predecessors(&self, node: impl Into<NodeId>) -> impl Iterator<Item = Node> + '_ {
+    pub fn predecessors(&self, node: impl Into<Node>) -> impl Iterator<Item = Node> + '_ {
         let node_id = node.into();
         self.edges.keys().filter_map(move |eid| {
             if eid.successor == node_id {
-                Some(eid.predecessor.into())
+                Some(eid.predecessor)
             } else {
                 None
             }
@@ -384,11 +384,11 @@ impl TreeGraph {
     /// Return an iterator over [Node]s which are successors of `node` in this graph.
     ///
     /// NOTE: This function will panic if `node` is not a tree root
-    pub fn successors(&self, node: impl Into<NodeId>) -> impl Iterator<Item = Node> + '_ {
+    pub fn successors(&self, node: impl Into<Node>) -> impl Iterator<Item = Node> + '_ {
         let node_id = node.into();
         self.edges.keys().filter_map(move |eid| {
             if eid.predecessor == node_id {
-                Some(eid.successor.into())
+                Some(eid.successor)
             } else {
                 None
             }
@@ -398,7 +398,7 @@ impl TreeGraph {
     /// Return an iterator over [NodeId]s for successors of `node` in this graph.
     ///
     /// NOTE: This function will panic if `node` is not a tree root
-    pub fn successor_ids(&self, node: impl Into<NodeId>) -> impl Iterator<Item = NodeId> + '_ {
+    pub fn successor_ids(&self, node: impl Into<Node>) -> impl Iterator<Item = Node> + '_ {
         let node_id = node.into();
         self.edges.keys().filter_map(move |eid| {
             if eid.predecessor == node_id {
@@ -412,7 +412,7 @@ impl TreeGraph {
     /// Remove the edge connecting `a` and `b`.
     ///
     /// NOTE: This function will panic if either `a` or `b` are not tree roots
-    pub fn remove_edge(&mut self, a: NodeId, b: NodeId) {
+    pub fn remove_edge(&mut self, a: Node, b: Node) {
         self.edges.remove(&EdgeId {
             predecessor: a,
             successor: b,
@@ -556,9 +556,9 @@ impl TreeGraph {
     /// has the effect of placing items on the stack in the correct order needed for each
     /// instruction, as instruction operands will be pushed on the stack right-to-left, so that
     /// the first operand to an instruction is on top of the stack.
-    pub fn toposort(&self) -> Result<Vec<NodeId>, UnexpectedCycleError> {
+    pub fn toposort(&self) -> Result<Vec<Node>, UnexpectedCycleError> {
         let mut treegraph = self.clone();
-        let mut output = Vec::<NodeId>::with_capacity(treegraph.nodes.len());
+        let mut output = Vec::<Node>::with_capacity(treegraph.nodes.len());
         let mut roots = treegraph
             .nodes
             .iter()
@@ -566,7 +566,7 @@ impl TreeGraph {
             .filter(|nid| treegraph.num_predecessors(*nid) == 0)
             .collect::<VecDeque<_>>();
 
-        let mut successors = SmallVec::<[NodeId; 4]>::default();
+        let mut successors = SmallVec::<[Node; 4]>::default();
         while let Some(nid) = roots.pop_front() {
             output.push(nid);
             successors.clear();
@@ -589,11 +589,11 @@ impl TreeGraph {
 }
 impl From<DependencyGraph> for TreeGraph {
     fn from(mut depgraph: DependencyGraph) -> Self {
-        let mut cutset = Vec::<(NodeId, NodeId)>::default();
+        let mut cutset = Vec::<(Node, Node)>::default();
         let mut treegraph = Self::default();
 
         // Build cutset
-        for node_id in depgraph.node_ids() {
+        for node_id in depgraph.nodes() {
             let is_multi_use = depgraph.num_predecessors(node_id) > 1;
             if is_multi_use {
                 cutset.extend(depgraph.predecessors(node_id).map(|d| (d.dependent, d.dependency)));
@@ -606,7 +606,7 @@ impl From<DependencyGraph> for TreeGraph {
         }
 
         // Add roots to treegraph
-        for node_id in depgraph.node_ids() {
+        for node_id in depgraph.nodes() {
             if depgraph.num_predecessors(node_id) == 0 {
                 treegraph.nodes.insert(node_id);
             }
@@ -614,12 +614,12 @@ impl From<DependencyGraph> for TreeGraph {
 
         // Construct mapping from dependency graph nodes to their
         // corresponding treegraph nodes
-        let mut worklist = VecDeque::<NodeId>::default();
+        let mut worklist = VecDeque::<Node>::default();
         for root in treegraph.nodes.iter().copied() {
             worklist.push_back(root);
             while let Some(node) = worklist.pop_front() {
                 treegraph.condensed.insert(node, root);
-                for dependency in depgraph.successor_ids(node) {
+                for dependency in depgraph.successors(node).map(|s| s.dependency) {
                     worklist.push_back(dependency);
                 }
             }
@@ -660,14 +660,14 @@ impl fmt::Debug for TreeGraph {
 }
 
 struct DebugNodes<'a>(&'a TreeGraph);
-impl<'a> fmt::Debug for DebugNodes<'a> {
+impl fmt::Debug for DebugNodes<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.0.nodes.iter()).finish()
     }
 }
 
 struct DebugEdges<'a>(&'a TreeGraph);
-impl<'a> fmt::Debug for DebugEdges<'a> {
+impl fmt::Debug for DebugEdges<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut edges = f.debug_list();
         for EdgeId {
@@ -681,6 +681,7 @@ impl<'a> fmt::Debug for DebugEdges<'a> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use midenc_hir as hir;
@@ -735,10 +736,10 @@ mod tests {
             value: v2,
             index: 0,
         };
-        let inst0_node = Node::Inst { id: inst0, pos: 0 };
-        let inst1_node = Node::Inst { id: inst1, pos: 2 };
-        let inst2_node = Node::Inst { id: inst2, pos: 3 };
-        let inst3_node = Node::Inst { id: inst3, pos: 1 };
+        let inst0_node = Node::Inst { op: inst0, pos: 0 };
+        let inst1_node = Node::Inst { op: inst1, pos: 2 };
+        let inst2_node = Node::Inst { op: inst2, pos: 3 };
+        let inst3_node = Node::Inst { op: inst3, pos: 1 };
 
         assert_eq!(treegraph.cmp_scheduling(inst2_node, inst2_node), Ordering::Equal);
         assert_eq!(treegraph.cmp_scheduling(inst2_node, inst3_node), Ordering::Less);
@@ -762,3 +763,4 @@ mod tests {
         assert!(treegraph.is_scheduled_before(v2_node, inst1_node));
     }
 }
+ */

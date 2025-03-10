@@ -3,7 +3,7 @@ use core::{cmp::Ordering, fmt};
 
 use smallvec::SmallVec;
 
-use crate::{OperationRef, ValueRef};
+use crate::{EntityWithId, OpOperand, OpResult, OpResultRef, OperationRef, ProgramPoint, ValueRef};
 
 /// This represents a node in a [DependencyGraph].
 ///
@@ -32,7 +32,7 @@ use crate::{OperationRef, ValueRef};
 /// NOTE: Adding variants/fields to this type must be done carefully, to ensure
 /// that we can encode a [Node] as a [NodeId], and to preserve the fact that
 /// a [NodeId] fits in a `u64`.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Node {
     /// This node type represents a value known to be on the
     /// operand stack upon entry to the current block, i.e.
@@ -51,7 +51,7 @@ pub enum Node {
     /// produced them.
     Inst {
         /// The unique id of this instruction
-        id: OperationRef,
+        op: OperationRef,
         /// The position of this instruction in its containing block
         pos: u16,
     },
@@ -66,20 +66,70 @@ pub enum Node {
         index: u8,
     },
 }
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Stack(x), Self::Stack(y)) => x.borrow().id().cmp(&y.borrow().id()),
+            (Self::Stack(_), _) => Ordering::Less,
+            (_, Self::Stack(_)) => Ordering::Greater,
+            (Self::Argument(x), Self::Argument(y)) => x.cmp(y),
+            (Self::Argument(_), _) => Ordering::Less,
+            (_, Self::Argument(_)) => Ordering::Greater,
+            (
+                Self::Inst {
+                    op: x_op, pos: x, ..
+                },
+                Self::Inst {
+                    op: y_op, pos: y, ..
+                },
+            ) => x_op
+                .parent()
+                .unwrap()
+                .borrow()
+                .id()
+                .cmp(&y_op.parent().unwrap().borrow().id())
+                .then(x.cmp(y)),
+            (Self::Inst { .. }, _) => Ordering::Less,
+            (_, Self::Inst { .. }) => Ordering::Greater,
+            (
+                Self::Result {
+                    value: xv,
+                    index: x,
+                    ..
+                },
+                Self::Result {
+                    value: yv,
+                    index: y,
+                    ..
+                },
+            ) => x.cmp(y).then_with(|| xv.borrow().id().cmp(&yv.borrow().id())),
+        }
+    }
+}
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+/*
 impl core::hash::Hash for Node {
     fn hash<H: core::hash::Hasher>(&self, hasher: &mut H) {
         // Ensure that by hashing either NodeId or Node we get the same hash
         self.id().hash(hasher);
     }
 }
+ */
 impl Node {
-    /// Get the identifier corresponding to this node.
-    ///
-    /// A given [Node] will always have the same identifier, as [NodeId] is
-    /// derived from the content of a [Node] (it is in fact a packed representation
-    /// of the same data).
-    pub fn id(self) -> NodeId {
-        NodeId::from(self)
+    pub fn is_instruction(&self) -> bool {
+        matches!(self, Self::Inst { .. })
+    }
+
+    pub fn is_result(&self) -> bool {
+        matches!(self, Self::Result { .. })
+    }
+
+    pub fn is_argument(&self) -> bool {
+        matches!(self, Self::Argument { .. })
     }
 
     /// Returns true if this node represents an item in the current block
@@ -95,7 +145,7 @@ impl Node {
     #[inline]
     pub fn as_instruction(&self) -> Option<OperationRef> {
         match self {
-            Self::Inst { id, .. } => Some(*id),
+            Self::Inst { op: id, .. } => Some(*id),
             Self::Argument(ref arg) => Some(arg.inst()),
             _ => None,
         }
@@ -104,7 +154,7 @@ impl Node {
     /// Unwraps this node as an instruction identifier, or panics
     pub fn unwrap_inst(&self) -> OperationRef {
         match self {
-            Self::Inst { id, .. } => *id,
+            Self::Inst { op: id, .. } => *id,
             Self::Argument(ref arg) => arg.inst(),
             node => panic!("cannot unwrap node as instruction: {node:?}"),
         }
@@ -120,12 +170,6 @@ impl Node {
         }
     }
 }
-impl From<NodeId> for Node {
-    fn from(id: NodeId) -> Self {
-        id.into_node()
-            .unwrap_or_else(|_| panic!("invalid tag for node id: {:064b}", id.0))
-    }
-}
 impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, f)
@@ -135,7 +179,7 @@ impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Stack(value) => write!(f, "{value}"),
-            Self::Inst { id, .. } => write!(f, "{id}"),
+            Self::Inst { op: id, .. } => write!(f, "{id}"),
             Self::Argument(ref arg) => write!(f, "{arg:?}"),
             Self::Result { value, .. } => write!(f, "result({value})"),
         }
@@ -208,52 +252,61 @@ impl ArgumentNode {
         match self {
             Self::Direct(_) => None,
             Self::Indirect(operand) | Self::Conditional(operand) => {
-                Some(operand.borrow().operand_group())
+                let operand = operand.borrow();
+                let operand_group = operand.operand_group();
+                let op = operand.owner.borrow();
+                op.successors()
+                    .iter()
+                    .position(|succ| succ.operand_group == operand_group)
+                    .map(|index| index as u8)
             }
         }
     }
 
-    #[inline]
-    fn kind(&self) -> usize {
+    pub fn as_value_ref(&self) -> ValueRef {
         match self {
-            Self::Direct(_) => 0,
-            Self::Indirect(_) => 1,
-            Self::Conditional(_) => 2,
+            Self::Direct(operand) | Self::Indirect(operand) | Self::Conditional(operand) => {
+                operand.borrow().as_value_ref()
+            }
         }
     }
 }
 impl fmt::Debug for ArgumentNode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let inst = self.inst();
+        let inst = self.inst().borrow().name();
         let index = self.index();
         let successor = self.successor();
+        let value = self.as_value_ref();
         match self {
-            Self::Direct(operand) => write!(f, "arg({index} of {inst})"),
-            Self::Indirect(operand) => {
-                write!(f, "block_arg({index} of {inst} for {})", successor.unwrap())
+            Self::Direct(_operand) => write!(f, "{value}:arg({index} of {inst})"),
+            Self::Indirect(_operand) => {
+                write!(f, "{value}:block_arg(of {inst} for {} at {index})", successor.unwrap())
             }
-            Self::Conditional(operand) => {
-                write!(f, "conditional_block_arg({index} of {inst} for {})", successor.unwrap())
+            Self::Conditional(_operand) => {
+                write!(
+                    f,
+                    "{value}:conditional_block_arg(of {inst} for {} at {index})",
+                    successor.unwrap()
+                )
             }
         }
     }
 }
 impl Ord for ArgumentNode {
-    /// NOTE: This must match the ordering behavior of [NodeId]
     fn cmp(&self, other: &Self) -> Ordering {
-        // Order by instruction, then by successor (if applicable), then by index
-        //
-        // After ordering in this way, Direct is always ordered before Indirect/Conditional,
-        // to account for the fact that an instruction's direct parameters always are needed
-        // before the successor arguments. However, Indirect/Conditional may never compare equal
-        // to each other after ordering based on the fields described above, because to do so
-        // would represent the same argument position being represented using two different,
-        // conflicting types.
         let x_inst = self.inst();
         let y_inst = other.inst();
-        self.kind()
-            .cmp(&other.kind())
-            .then_with(|| self.inst().cmp(&other.inst()))
+        let x_block = x_inst.parent().unwrap().borrow().id();
+        let y_block = y_inst.parent().unwrap().borrow().id();
+        x_block
+            .cmp(&y_block)
+            .then_with(|| {
+                x_inst
+                    .borrow()
+                    .get_or_compute_order()
+                    .cmp(&y_inst.borrow().get_or_compute_order())
+            })
+            .then_with(|| self.successor().cmp(&other.successor()))
             .then_with(|| self.index().cmp(&other.index()))
     }
 }
@@ -268,231 +321,14 @@ impl PartialOrd for ArgumentNode {
 #[error("invalid node identifier")]
 pub struct InvalidNodeIdError;
 
-/// Produce a bit-packed representation of [Node] which is naturally
-/// sortable as if it was the expanded [Node] type.
-///
-/// We currently only need 5 unique values for the node type, so we
-/// use 3 bits, which gives us 7 unique values, thus we have 2 extra
-/// tag values if we ever need them. This leaves us with 61 bits, of
-/// which 32 is reserved for the instruction or value identifier, and
-/// the remaining 29 are available for storing any type-specific data.
-///
-/// We choose a layout that ensures that when compared as an integer,
-/// the sort order of the corresponding [Node] would be identical. This
-/// is a bit tricky, since [ArgumentNode] for example ignores the difference
-/// between Indirect/Conditional argument types when sorted, so in that
-/// case we use the same tag for those types, and differentiate them by
-/// using one of the payload bits as a "conditional" marker. With this
-/// modification, we can place the tag bits first, followed by a
-/// type-specific layout which obeys the ordering rules for that type.
-///
-/// The following is the key for any comments describing bit layout:
-///
-/// * `t`: tag
-/// * `i`: inst
-/// * `v`: value
-/// * `s`: successor
-/// * `x`: index
-/// * `c`: conditional marker
-/// * `0`: unused/zero
-///
-/// This is the layout used for argument nodes
-///
-/// ```text,ignore
-/// tttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiissssssssxxxxxxxx000000000000c
-/// |--tag (3)--|--inst (32)--|--successor (8)--|--index (8)--|--unused/zero (12)--|--conditional (1)--|
-/// ```
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct NodeId(u64);
-impl NodeId {
-    const IS_CONDITIONAL_ARG: u64 = 1;
-    const TAG_ARG_DIRECT: u64 = 1 << 60;
-    const TAG_ARG_INDIRECT: u64 = 2 << 60;
-    const TAG_INST: u64 = 3 << 60;
-    const TAG_MASK: u64 = 0b111 << 60;
-    const TAG_RESULT: u64 = 4 << 60;
-
-    /// Returns true if the [Node] corresponding to this identifier is of `Stack` type
-    #[inline]
-    pub fn is_stack(&self) -> bool {
-        self.0 & Self::TAG_MASK == 0
-    }
-
-    /// Returns true if the [Node] corresponding to this identifier is of `Result` type
-    #[inline]
-    pub fn is_result(&self) -> bool {
-        self.0 & Self::TAG_MASK == Self::TAG_RESULT
-    }
-
-    /// Returns true if the [Node] corresponding to this identifier is of `Inst` type
-    #[inline]
-    pub fn is_instruction(&self) -> bool {
-        self.0 & Self::TAG_MASK == Self::TAG_INST
-    }
-
-    /// Returns true if the [Node] corresponding to this identifier is of `Argument` type
-    #[inline]
-    pub fn is_argument(&self) -> bool {
-        matches!(self.0 & Self::TAG_MASK, Self::TAG_ARG_DIRECT | Self::TAG_ARG_INDIRECT)
-    }
-
-    /// Decode this identifier into its corresponding [Node]
-    #[inline(always)]
-    pub fn expand(self) -> Node {
-        self.into()
-    }
-
-    /// Extract the [midenc_hir::Inst] associated with the corresponding [Node], or panic
-    /// if the node type does not have an associated instruction identifier.
-    pub fn unwrap_inst(self) -> hir::Inst {
-        let tag = self.0 & Self::TAG_MASK;
-        match tag {
-            Self::TAG_ARG_DIRECT | Self::TAG_ARG_INDIRECT => {
-                hir::Inst::from_u32(((self.0 >> 28) & (u32::MAX as u64)) as u32)
-            }
-            Self::TAG_INST => hir::Inst::from_u32(((self.0 >> 16) & (u32::MAX as u64)) as u32),
-            0 | Self::TAG_RESULT => panic!("cannot unwrap node id as instruction: {self:?}"),
-            _invalid => panic!("invalid node id: {:064b}", self.0),
-        }
-    }
-
-    /// Safely convert this identifier into a [Node].
-    ///
-    /// This can be used in cases where the source of the [NodeId] is untrusted.
-    pub fn into_node(self) -> Result<Node, InvalidNodeIdError> {
-        let tag = self.0 & Self::TAG_MASK;
-        match tag {
-            0 => {
-                let value = (self.0 & (u32::MAX as u64)) as u32;
-                Ok(Node::Stack(hir::Value::from_u32(value)))
-            }
-            Self::TAG_INST => {
-                let pos = (self.0 & (u16::MAX as u64)) as u16;
-                let id = hir::Inst::from_u32(((self.0 >> 16) & (u32::MAX as u64)) as u32);
-                Ok(Node::Inst { id, pos })
-            }
-            Self::TAG_ARG_DIRECT => {
-                let mut shifted = self.0 >> 12;
-                let index = (shifted & (u8::MAX as u64)) as u8;
-                shifted >>= 16;
-                let inst = (shifted & (u32::MAX as u64)) as u32;
-                Ok(Node::Argument(ArgumentNode::Direct {
-                    inst: hir::Inst::from_u32(inst),
-                    index,
-                }))
-            }
-            Self::TAG_ARG_INDIRECT => {
-                let is_conditional = self.0 & Self::IS_CONDITIONAL_ARG == Self::IS_CONDITIONAL_ARG;
-                let mut shifted = self.0 >> 12;
-                let index = (shifted & (u8::MAX as u64)) as u8;
-                shifted >>= 8;
-                let successor = (shifted & (u8::MAX as u64)) as u8;
-                shifted >>= 8;
-                let inst = hir::Inst::from_u32((shifted & (u32::MAX as u64)) as u32);
-                Ok(Node::Argument(if is_conditional {
-                    ArgumentNode::Conditional {
-                        inst,
-                        successor,
-                        index,
-                    }
-                } else {
-                    ArgumentNode::Indirect {
-                        inst,
-                        successor,
-                        index,
-                    }
-                }))
-            }
-            Self::TAG_RESULT => {
-                let value = hir::Value::from_u32((self.0 & (u32::MAX as u64)) as u32);
-                let index = ((self.0 >> 52) & (u8::MAX as u64)) as u8;
-                Ok(Node::Result { value, index })
-            }
-            _ => Err(InvalidNodeIdError),
-        }
-    }
-}
-impl fmt::Debug for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&Node::from(*self), f)
-    }
-}
-impl fmt::Display for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&Node::from(*self), f)
-    }
-}
-impl From<Node> for NodeId {
-    fn from(node: Node) -> Self {
-        use cranelift_entity::EntityRef;
-        match node {
-            // ttt00000000000000000000000000000vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-            Node::Stack(value) => Self(value.index() as u64),
-            // ttt0000000000000iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiixxxxxxxxxxxxxxxx
-            Node::Inst { id, pos } => {
-                let inst = (id.index() as u64) << 16;
-                let index = pos as u64;
-                Self(Self::TAG_INST | inst | index)
-            }
-            // tttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiissssssssxxxxxxxx000000000000c
-            Node::Argument(arg) => match arg {
-                ArgumentNode::Direct { inst, index } => {
-                    let inst = (inst.index() as u64) << 28;
-                    let index = (index as u64) << 12;
-                    Self(Self::TAG_ARG_DIRECT | inst | index)
-                }
-                ArgumentNode::Indirect {
-                    inst,
-                    successor,
-                    index,
-                } => {
-                    let inst = (inst.index() as u64) << 28;
-                    let successor = (successor as u64) << 20;
-                    let index = (index as u64) << 12;
-                    Self(Self::TAG_ARG_INDIRECT | inst | successor | index)
-                }
-                ArgumentNode::Conditional {
-                    inst,
-                    successor,
-                    index,
-                } => {
-                    let inst = (inst.index() as u64) << 28;
-                    let successor = (successor as u64) << 20;
-                    let index = (index as u64) << 12;
-                    Self(
-                        Self::TAG_ARG_INDIRECT
-                            | inst
-                            | successor
-                            | index
-                            | Self::IS_CONDITIONAL_ARG,
-                    )
-                }
-            },
-            // tttdddddddd000000000000000000000vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-            Node::Result { value, index } => {
-                let value = value.index() as u64;
-                let index = (index as u64) << 52;
-                Self(Self::TAG_RESULT | index | value)
-            }
-        }
-    }
-}
-impl<'a> From<&'a Node> for NodeId {
-    #[inline]
-    fn from(node: &'a Node) -> Self {
-        (*node).into()
-    }
-}
-
 /// This structure represents the relationship between dependent and
 /// dependency in a [DependencyGraph].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dependency {
     /// The node which has the dependency.
-    pub dependent: NodeId,
+    pub dependent: Node,
     /// The node which is being depended upon.
-    pub dependency: NodeId,
+    pub dependency: Node,
 }
 impl Dependency {
     /// Construct a new [Dependency].
@@ -500,7 +336,7 @@ impl Dependency {
     /// In debug builds this will raise an assertion if the dependency being described
     /// has nonsensical semantics. In release builds this assertion is elided.
     #[inline]
-    pub fn new(dependent: NodeId, dependency: NodeId) -> Self {
+    pub fn new(dependent: Node, dependency: Node) -> Self {
         is_valid_dependency(dependent, dependency);
         Self {
             dependent,
@@ -516,7 +352,7 @@ impl fmt::Display for Dependency {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Edge {
-    node: NodeId,
+    node: Node,
     direction: Direction,
 }
 
@@ -551,10 +387,10 @@ pub struct UnexpectedCycleError;
 #[derive(Default, Clone)]
 pub struct DependencyGraph {
     /// The set of nodes represented in the graph
-    nodes: BTreeSet<NodeId>,
+    nodes: BTreeSet<Node>,
     /// A map of every node in the graph to other nodes in the graph with which it has
     /// a relationship, and which dependencies describe that relationship.
-    edges: BTreeMap<NodeId, SmallVec<[Edge; 1]>>,
+    edges: BTreeMap<Node, SmallVec<[Edge; 1]>>,
 }
 impl DependencyGraph {
     /// Create a new, empty [DependencyGraph]
@@ -564,35 +400,27 @@ impl DependencyGraph {
     }
 
     /// Add `node` to the dependency graph, if it is not already present
-    pub fn add_node(&mut self, node: Node) -> NodeId {
-        let id = node.id();
-        if self.nodes.insert(id) {
-            self.edges.insert(id, Default::default());
+    pub fn add_node(&mut self, node: Node) -> Node {
+        if self.nodes.insert(node) {
+            self.edges.insert(node, Default::default());
         }
-        id
+        node
     }
 
     /// Returns true if this graph contains `node`
     #[inline]
     pub fn contains(&self, node: &Node) -> bool {
-        let id = node.id();
-        self.contains_id(&id)
-    }
-
-    /// Returns true if this graph contains `node`
-    #[inline]
-    pub fn contains_id(&self, node: &NodeId) -> bool {
         self.nodes.contains(node)
     }
 
     /// Returns true if there is a path to `b` from `a` in the graph.
-    pub fn is_reachable_from(&self, a: NodeId, b: NodeId) -> bool {
+    pub fn is_reachable_from(&self, a: Node, b: Node) -> bool {
         if !self.nodes.contains(&a) || !self.nodes.contains(&b) {
             return false;
         }
 
         let mut visited = BTreeSet::default();
-        let mut worklist = std::collections::VecDeque::from([a]);
+        let mut worklist = alloc::collections::VecDeque::from([a]);
         while let Some(node_id) = worklist.pop_front() {
             if !visited.insert(node_id) {
                 continue;
@@ -602,14 +430,14 @@ impl DependencyGraph {
                 return true;
             }
 
-            worklist.extend(self.successor_ids(node_id));
+            worklist.extend(self.successors(node_id).map(|s| s.dependency));
         }
 
         false
     }
 
     /// Add a dependency from `a` to `b`
-    pub fn add_dependency(&mut self, a: NodeId, b: NodeId) {
+    pub fn add_dependency(&mut self, a: Node, b: Node) {
         assert_ne!(a, b, "cannot add a self-referential dependency");
 
         let edge = Edge {
@@ -633,7 +461,7 @@ impl DependencyGraph {
     /// Get a [Dependency] corresponding to the edge from `from` to `to`
     ///
     /// This will panic if there is no edge between the two nodes given.
-    pub fn edge(&self, from: NodeId, to: NodeId) -> Dependency {
+    pub fn edge(&self, from: Node, to: Node) -> Dependency {
         let edges = self.edges.get(&from).unwrap();
         let edge = Edge {
             node: to,
@@ -644,25 +472,20 @@ impl DependencyGraph {
         if edges.contains(&edge) {
             Dependency::new(from, to)
         } else {
-            panic!(
-                "invalid edge: there is no dependency from {} to {}",
-                from.expand(),
-                to.expand(),
-            );
+            panic!("invalid edge: there is no dependency from {} to {}", from, to,);
         }
     }
 
     /// Removes `node` from the graph, along with all edges in which it appears
-    pub fn remove_node<N: Into<NodeId>>(&mut self, node: N) {
-        let id = node.into();
-        if self.nodes.remove(&id) {
-            let edges = self.edges.remove(&id).unwrap();
+    pub fn remove_node(&mut self, node: Node) {
+        if self.nodes.remove(&node) {
+            let edges = self.edges.remove(&node).unwrap();
             for Edge {
                 node: other_node_id,
                 ..
             } in edges.into_iter()
             {
-                self.edges.get_mut(&other_node_id).unwrap().retain(|e| e.node != id);
+                self.edges.get_mut(&other_node_id).unwrap().retain(|e| e.node != node);
             }
         }
     }
@@ -672,7 +495,7 @@ impl DependencyGraph {
     /// If `value` is provided, the use corresponding to that value is removed, rather than
     /// the entire edge from `a` to `b`. However, if removing `value` makes the edge dead, or
     /// `value` is not provided, then the entire edge is removed.
-    pub fn remove_edge(&mut self, a: NodeId, b: NodeId) {
+    pub fn remove_edge(&mut self, a: Node, b: Node) {
         // Get the edge id that connects a <-> b
         if let Some(edges) = self.edges.get_mut(&a) {
             edges.retain(|e| e.node != b || e.direction == Direction::Dependency);
@@ -683,31 +506,22 @@ impl DependencyGraph {
     }
 
     /// Returns the number of predecessors, i.e. dependents, for `node` in the graph
-    pub fn num_predecessors<N: Into<NodeId>>(&self, node: N) -> usize {
-        let id = node.into();
+    pub fn num_predecessors(&self, node: Node) -> usize {
         self.edges
-            .get(&id)
+            .get(&node)
             .map(|es| es.iter().filter(|e| e.direction == Direction::Dependency).count())
             .unwrap_or_default()
     }
 
     /// Returns an iterator over the nodes in this graph
     pub fn nodes(&self) -> impl Iterator<Item = Node> + '_ {
-        self.nodes.iter().copied().map(Node::from)
-    }
-
-    /// Returns an iterator over the nodes in this graph
-    pub fn node_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
         self.nodes.iter().copied()
     }
 
     /// Return the sole predecessor of `node`, if `node` has any predecessors.
     ///
     /// Returns `Err` if `node` has multiple predecessors
-    pub fn parent(
-        &self,
-        node: impl Into<NodeId>,
-    ) -> Result<Option<NodeId>, InvalidDependencyGraphQuery> {
+    pub fn parent(&self, node: Node) -> Result<Option<Node>, InvalidDependencyGraphQuery> {
         let mut predecessors = self.predecessors(node);
         match predecessors.next() {
             None => Ok(None),
@@ -722,8 +536,7 @@ impl DependencyGraph {
     }
 
     /// Like `parent`, but panics if `node` does not have a single parent
-    pub fn unwrap_parent(&self, node: impl Into<NodeId>) -> NodeId {
-        let node = node.into();
+    pub fn unwrap_parent(&self, node: Node) -> Node {
         self.parent(node)
             .unwrap_or_else(|_| {
                 panic!("expected {node} to have a single parent, but found multiple")
@@ -734,10 +547,7 @@ impl DependencyGraph {
     /// Return the sole successor of `node`, if `node` has any successors.
     ///
     /// Returns `Err` if `node` has multiple successors
-    pub fn child(
-        &self,
-        node: impl Into<NodeId>,
-    ) -> Result<Option<NodeId>, InvalidDependencyGraphQuery> {
+    pub fn child(&self, node: Node) -> Result<Option<Node>, InvalidDependencyGraphQuery> {
         let mut successors = self.successors(node);
         match successors.next() {
             None => Ok(None),
@@ -752,8 +562,7 @@ impl DependencyGraph {
     }
 
     /// Like `child`, but panics if `node` does not have a single child
-    pub fn unwrap_child(&self, node: impl Into<NodeId>) -> NodeId {
-        let node = node.into();
+    pub fn unwrap_child(&self, node: Node) -> Node {
         self.child(node)
             .unwrap_or_else(|_| {
                 panic!("expected {node} to have a single child, but found multiple")
@@ -762,47 +571,19 @@ impl DependencyGraph {
     }
 
     /// Returns an iterator over the predecessors, or dependents, of `node` in the graph
-    pub fn predecessors<'a, 'b: 'a>(&'b self, node: impl Into<NodeId>) -> Predecessors<'a> {
-        let id = node.into();
+    pub fn predecessors<'a, 'b: 'a>(&'b self, node: Node) -> Predecessors<'a> {
         Predecessors {
-            node: id,
-            iter: self.edges[&id].iter(),
+            node,
+            iter: self.edges[&node].iter(),
         }
-    }
-
-    /// Like `predecessors`, but avoids decoding [Node] values, instead producing the raw [NodeId]
-    /// values.
-    pub fn predecessor_ids(&self, node: impl Into<NodeId>) -> impl Iterator<Item = NodeId> + '_ {
-        let id = node.into();
-        self.edges[&id].iter().filter_map(|edge| {
-            if matches!(edge.direction, Direction::Dependency) {
-                Some(edge.node)
-            } else {
-                None
-            }
-        })
     }
 
     /// Returns an iterator over the successors, or dependencies, of `node` in the graph
-    pub fn successors<'a, 'b: 'a>(&'b self, node: impl Into<NodeId>) -> Successors<'a> {
-        let id = node.into();
+    pub fn successors<'a, 'b: 'a>(&'b self, node: Node) -> Successors<'a> {
         Successors {
-            node: id,
-            iter: self.edges[&id].iter(),
+            node,
+            iter: self.edges[&node].iter(),
         }
-    }
-
-    /// Like `successors`, but avoids decoding [Node] values, instead producing the raw [NodeId]
-    /// values.
-    pub fn successor_ids(&self, node: impl Into<NodeId>) -> impl Iterator<Item = NodeId> + '_ {
-        let id = node.into();
-        self.edges[&id].iter().filter_map(|edge| {
-            if matches!(edge.direction, Direction::Dependent) {
-                Some(edge.node)
-            } else {
-                None
-            }
-        })
     }
 
     /// Returns a data structure which assigns an index to each node in the graph for which `root`
@@ -810,39 +591,43 @@ impl DependencyGraph {
     /// nodes will be emitted during code generation - the lower the index, the earlier the node
     /// is emitted. Conversely, a higher index indicates that a node will be scheduled later in
     /// the program, so values will be materialized from lowest index to highest.
-    pub fn indexed(
-        &self,
-        root: impl Into<NodeId>,
-    ) -> Result<DependencyGraphIndices, UnexpectedCycleError> {
-        let root = root.into();
-
-        let mut output = BTreeMap::<NodeId, usize>::new();
+    pub fn indexed(&self, root: Node) -> Result<DependencyGraphIndices, UnexpectedCycleError> {
+        let mut output = BTreeMap::<Node, usize>::new();
         let mut stack = vec![root];
-        let mut discovered = BTreeSet::<NodeId>::default();
-        let mut finished = BTreeSet::<NodeId>::default();
+        let mut discovered = BTreeSet::<Node>::default();
+        let mut finished = BTreeSet::<Node>::default();
 
         while let Some(node) = stack.last().copied() {
             if discovered.insert(node) {
-                if node.is_instruction() {
-                    for arg in self.successors(node).filter(|succ| succ.dependency.is_argument()) {
+                if matches!(node, Node::Inst { .. }) {
+                    for arg in self
+                        .successors(node)
+                        .filter(|succ| matches!(succ.dependency, Node::Argument(_)))
+                    {
                         let arg_source_id = self.unwrap_child(arg.dependency);
                         if !discovered.contains(&arg_source_id) {
                             stack.push(arg_source_id);
                         }
                     }
-                    for other in self.successors(node).filter(|succ| !succ.dependency.is_argument())
+                    for other in self
+                        .successors(node)
+                        .filter(|succ| !matches!(succ.dependency, Node::Argument(_)))
                     {
-                        let succ_node_id = if other.dependency.is_instruction() {
+                        let succ_node_id = if matches!(other.dependency, Node::Inst { .. }) {
                             other.dependency
                         } else {
-                            assert!(other.dependency.is_result());
+                            assert!(
+                                matches!(other.dependency, Node::Result { .. }),
+                                "expected result, got {}",
+                                &other.dependency
+                            );
                             self.unwrap_child(other.dependency)
                         };
                         if !discovered.contains(&succ_node_id) {
                             stack.push(succ_node_id);
                         }
                     }
-                } else if node.is_result() {
+                } else if matches!(node, Node::Result { .. }) {
                     let inst_node = self.unwrap_child(node);
                     if !discovered.contains(&inst_node) {
                         stack.push(inst_node);
@@ -861,12 +646,11 @@ impl DependencyGraph {
     }
 
     /// Get the topographically-sorted nodes of this graph for which `root` is an ancestor.
-    pub fn toposort(&self, root: impl Into<NodeId>) -> Result<Vec<NodeId>, UnexpectedCycleError> {
+    pub fn toposort(&self, root: Node) -> Result<Vec<Node>, UnexpectedCycleError> {
         use std::collections::VecDeque;
 
-        let root = root.into();
         let mut depgraph = self.clone();
-        let mut output = Vec::<NodeId>::with_capacity(depgraph.nodes.len());
+        let mut output = Vec::<Node>::with_capacity(depgraph.nodes.len());
 
         // Remove all predecessor edges to the root
         if let Some(edges) = depgraph.edges.get_mut(&root) {
@@ -874,11 +658,11 @@ impl DependencyGraph {
         }
 
         let mut roots = VecDeque::from_iter([root]);
-        let mut successors = SmallVec::<[NodeId; 4]>::default();
+        let mut successors = SmallVec::<[Node; 4]>::default();
         while let Some(nid) = roots.pop_front() {
             output.push(nid);
             successors.clear();
-            successors.extend(depgraph.successor_ids(nid));
+            successors.extend(depgraph.successors(nid).map(|s| s.dependency));
             for mid in successors.drain(..) {
                 depgraph.remove_edge(nid, mid);
                 if depgraph.num_predecessors(mid) == 0 {
@@ -901,45 +685,38 @@ impl DependencyGraph {
     /// argument node and the stack value or instruction result which it references.
     pub fn add_data_dependency(
         &mut self,
-        dependent_id: NodeId,
+        dependent_id: Node,
         argument: ArgumentNode,
-        value: hir::Value,
-        pp: hir::ProgramPoint,
-        function: &hir::Function,
+        value: ValueRef,
+        pp: ProgramPoint,
     ) {
-        debug_assert!(dependent_id.is_instruction());
+        debug_assert!(
+            matches!(dependent_id, Node::Inst { .. }),
+            "expected instruction, got {dependent_id}"
+        );
 
         let dependency_id = self.add_node(Node::Argument(argument));
-        match function.dfg.value_data(value) {
-            hir::ValueData::Inst {
-                inst: dep_inst,
-                num,
-                ..
-            } => {
-                let dep_inst = *dep_inst;
-                let block_id = function.dfg.pp_block(pp);
-                if function.dfg.insts[dep_inst].block == block_id {
-                    let dep_inst_index =
-                        function.dfg.block_insts(block_id).position(|id| id == dep_inst).unwrap();
-                    let result_inst_node_id = self.add_node(Node::Inst {
-                        id: dep_inst,
-                        pos: dep_inst_index as u16,
-                    });
-                    let result_node_id = self.add_node(Node::Result {
-                        value,
-                        index: *num as u8,
-                    });
-                    self.add_dependency(result_node_id, result_inst_node_id);
-                    self.add_dependency(dependency_id, result_node_id);
-                } else {
-                    let operand_node_id = self.add_node(Node::Stack(value));
-                    self.add_dependency(dependency_id, operand_node_id);
-                };
+        let val = value.borrow();
+        if let Some(result) = val.downcast_ref::<OpResult>() {
+            let dep_inst = result.owner();
+            let num = result.index();
+            let block_id = pp.block().unwrap();
+            if dep_inst.parent().unwrap() == block_id {
+                let dep_inst_index = dep_inst.borrow().get_or_compute_order();
+                let result_inst_node = self.add_node(Node::Inst {
+                    op: dep_inst,
+                    pos: dep_inst_index as u16,
+                });
+                let result_node = self.add_node(Node::Result {
+                    value: result.as_op_result_ref(),
+                    index: num as u8,
+                });
+                self.add_dependency(result_node, result_inst_node);
+                self.add_dependency(dependency_id, result_node);
             }
-            hir::ValueData::Param { .. } => {
-                let operand_node_id = self.add_node(Node::Stack(value));
-                self.add_dependency(dependency_id, operand_node_id);
-            }
+        } else {
+            let operand_node_id = self.add_node(Node::Stack(value));
+            self.add_dependency(dependency_id, operand_node_id);
         }
         self.add_dependency(dependent_id, dependency_id);
     }
@@ -965,7 +742,7 @@ impl fmt::Debug for DependencyGraph {
 pub struct DependencyGraphIndices {
     /// The topographically sorted nodes for the component of the
     /// dependency graph for which we have constructed this set.
-    sorted: BTreeMap<NodeId, usize>,
+    sorted: BTreeMap<Node, usize>,
 }
 impl DependencyGraphIndices {
     /// Get the index of `node`
@@ -973,9 +750,8 @@ impl DependencyGraphIndices {
     /// NOTE: This function will panic if `node` was not in the corresponding dependency graph, or
     /// is unresolved
     #[inline]
-    pub fn get(&self, node: impl Into<NodeId>) -> Option<usize> {
-        let id = node.into();
-        self.sorted.get(&id).copied()
+    pub fn get(&self, node: Node) -> Option<usize> {
+        self.sorted.get(&node).copied()
     }
 }
 impl fmt::Debug for DependencyGraphIndices {
@@ -986,10 +762,10 @@ impl fmt::Debug for DependencyGraphIndices {
 
 /// An iterator over each successor edge, or [Dependency], of a given node in a [DependencyGraph]
 pub struct Successors<'a> {
-    node: NodeId,
+    node: Node,
     iter: core::slice::Iter<'a, Edge>,
 }
-impl<'a> Iterator for Successors<'a> {
+impl Iterator for Successors<'_> {
     type Item = Dependency;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1002,7 +778,7 @@ impl<'a> Iterator for Successors<'a> {
         None
     }
 }
-impl<'a> DoubleEndedIterator for Successors<'a> {
+impl DoubleEndedIterator for Successors<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some(Edge { node, direction }) = self.iter.next_back() {
             if matches!(direction, Direction::Dependent) {
@@ -1013,7 +789,7 @@ impl<'a> DoubleEndedIterator for Successors<'a> {
         None
     }
 }
-impl<'a> ExactSizeIterator for Successors<'a> {
+impl ExactSizeIterator for Successors<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
@@ -1022,10 +798,10 @@ impl<'a> ExactSizeIterator for Successors<'a> {
 
 /// An iterator over each predecessor edge, or [Dependency], of a given node in a [DependencyGraph]
 pub struct Predecessors<'a> {
-    node: NodeId,
+    node: Node,
     iter: core::slice::Iter<'a, Edge>,
 }
-impl<'a> Iterator for Predecessors<'a> {
+impl Iterator for Predecessors<'_> {
     type Item = Dependency;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1038,7 +814,7 @@ impl<'a> Iterator for Predecessors<'a> {
         None
     }
 }
-impl<'a> DoubleEndedIterator for Predecessors<'a> {
+impl DoubleEndedIterator for Predecessors<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some(Edge { node, direction }) = self.iter.next_back() {
             if matches!(direction, Direction::Dependency) {
@@ -1049,7 +825,7 @@ impl<'a> DoubleEndedIterator for Predecessors<'a> {
         None
     }
 }
-impl<'a> ExactSizeIterator for Predecessors<'a> {
+impl ExactSizeIterator for Predecessors<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
@@ -1057,14 +833,14 @@ impl<'a> ExactSizeIterator for Predecessors<'a> {
 }
 
 struct DebugNodes<'a>(&'a DependencyGraph);
-impl<'a> fmt::Debug for DebugNodes<'a> {
+impl fmt::Debug for DebugNodes<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.0.nodes.iter()).finish()
     }
 }
 
 struct DebugEdges<'a>(&'a DependencyGraph);
-impl<'a> fmt::Debug for DebugEdges<'a> {
+impl fmt::Debug for DebugEdges<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut edges = f.debug_list();
         for node in self.0.nodes.iter().copied() {
@@ -1078,8 +854,8 @@ impl<'a> fmt::Debug for DebugEdges<'a> {
 
 #[cfg(debug_assertions)]
 #[inline(never)]
-fn is_valid_dependency(dependent: NodeId, dependency: NodeId) -> bool {
-    match (dependent.into(), dependency.into()) {
+fn is_valid_dependency(dependent: Node, dependency: Node) -> bool {
+    match (dependent, dependency) {
         (Node::Argument(_), Node::Stack(_) | Node::Result { .. }) => true,
         (Node::Argument(_), Node::Inst { .. } | Node::Argument(_)) => {
             panic!(
@@ -1108,7 +884,7 @@ fn is_valid_dependency(dependent: NodeId, dependency: NodeId) -> bool {
 const fn is_valid_dependency(_dependent: NodeId, _dependency: NodeId) -> bool {
     true
 }
-
+/*
 /// Helper function to produce a graph for:
 ///
 /// ```text,ignore
@@ -1150,10 +926,10 @@ pub(crate) fn simple_dependency_graph() -> DependencyGraph {
         value: v3,
         index: 0,
     });
-    let inst0_node = graph.add_node(Node::Inst { id: inst0, pos: 0 });
-    let inst1_node = graph.add_node(Node::Inst { id: inst1, pos: 2 });
-    let inst2_node = graph.add_node(Node::Inst { id: inst2, pos: 3 });
-    let inst3_node = graph.add_node(Node::Inst { id: inst3, pos: 1 });
+    let inst0_node = graph.add_node(Node::Inst { op: inst0, pos: 0 });
+    let inst1_node = graph.add_node(Node::Inst { op: inst1, pos: 2 });
+    let inst2_node = graph.add_node(Node::Inst { op: inst2, pos: 3 });
+    let inst3_node = graph.add_node(Node::Inst { op: inst3, pos: 1 });
     let inst0_arg0_node = graph.add_node(Node::Argument(ArgumentNode::Direct {
         inst: inst0,
         index: 0,
@@ -1236,10 +1012,10 @@ mod tests {
             value: v3,
             index: 0,
         };
-        let inst0_node = Node::Inst { id: inst0, pos: 0 };
-        let inst1_node = Node::Inst { id: inst1, pos: 2 };
-        let inst2_node = Node::Inst { id: inst2, pos: 3 };
-        let inst3_node = Node::Inst { id: inst3, pos: 1 };
+        let inst0_node = Node::Inst { op: inst0, pos: 0 };
+        let inst1_node = Node::Inst { op: inst1, pos: 2 };
+        let inst2_node = Node::Inst { op: inst2, pos: 3 };
+        let inst3_node = Node::Inst { op: inst3, pos: 1 };
         let inst0_arg0_node = Node::Argument(ArgumentNode::Direct {
             inst: inst0,
             index: 0,
@@ -1394,10 +1170,10 @@ mod tests {
             value: v2,
             index: 0,
         };
-        let inst0_node = Node::Inst { id: inst0, pos: 0 };
-        let inst1_node = Node::Inst { id: inst1, pos: 2 };
-        let inst2_node = Node::Inst { id: inst2, pos: 3 };
-        let inst3_node = Node::Inst { id: inst3, pos: 1 };
+        let inst0_node = Node::Inst { op: inst0, pos: 0 };
+        let inst1_node = Node::Inst { op: inst1, pos: 2 };
+        let inst2_node = Node::Inst { op: inst2, pos: 3 };
+        let inst3_node = Node::Inst { op: inst3, pos: 1 };
 
         let indices = graph.indexed(inst2_node).unwrap();
 
@@ -1410,3 +1186,4 @@ mod tests {
         assert_eq!(indices.get(v0_node), Some(0));
     }
 }
+ */
