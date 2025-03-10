@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     adt::{SmallDenseMap, SmallSet},
+    cfg::Graph,
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef, Region, RegionRef,
     Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
@@ -379,6 +380,9 @@ impl<'a> TransformationContext<'a> {
                 loop_body_ref,
             )?;
 
+            // The old terminator has been replaced, erase it now
+            old_terminator.borrow_mut().erase();
+
             new_sub_regions.push(loop_header);
 
             let structured_loop = structured_loop_op.borrow();
@@ -396,6 +400,7 @@ impl<'a> TransformationContext<'a> {
             // Merge the exit block right after the loop operation.
             new_loop_parent_block_ref.borrow_mut().splice_block(&mut exit_block);
 
+            assert!(exit_block.is_empty());
             exit_block.erase();
         }
 
@@ -448,6 +453,7 @@ impl<'a> TransformationContext<'a> {
             region_entry.borrow_mut().splice_block(&mut succ);
 
             // Erase the successor block now that we have emptied it
+            assert!(succ.is_empty());
             succ.erase();
 
             return Ok(smallvec![region_entry]);
@@ -776,6 +782,7 @@ impl<'a> TransformationContext<'a> {
         region_entry.borrow_mut().splice_block(&mut cont);
 
         // Remove the empty continuation block
+        assert!(cont.is_empty());
         cont.erase();
 
         // After splicing the continuation, the region has to be reprocessed as it has new
