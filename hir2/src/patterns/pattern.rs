@@ -205,35 +205,20 @@ impl Pattern for PatternInfo {
 ///   else.
 /// * A rewrite which replaces IR that maches the pattern, with new IR, i.e. a DAG-to-DAG
 ///   replacement
-///
-/// Implementations must provide `matches` and `rewrite` implementations, from which the
-/// `match_and_rewrite` implementation is derived.
 pub trait RewritePattern: Pattern {
-    /// Rewrite the IR rooted at the specified operation with the result of this pattern, generating
-    /// any new operations with the specified builder. If an unexpected error is encountered, i.e.
-    /// an internal compiler error, it is emitted through the normal diagnostic system, and the IR
-    /// is left in a valid state.
-    fn rewrite(&self, op: OperationRef, rewriter: &mut dyn Rewriter);
-
-    /// Attempt to match this pattern against the IR rooted at the specified operation,
-    /// which is the same operation as [Pattern::kind].
-    fn matches(&self, op: OperationRef) -> Result<bool, Report>;
-
-    /// Attempt to match this pattern against the IR rooted at the specified operation. If
-    /// matching is successful, the rewrite is automatically applied.
+    /// Attempt to match this pattern against the IR rooted at the specified operation, and rewrite
+    /// it if the match is successful.
+    ///
+    /// If applied, this rewrites the IR rooted at the matched operation, using the provided
+    /// [Rewriter] to generate new blocks and/or operations, or apply any modifications.
+    ///
+    /// If an unexpected error is encountered, i.e. an internal compiler error, it is emitted
+    /// through the normal diagnostic system, and the IR is left in a valid state.
     fn match_and_rewrite(
         &self,
         op: OperationRef,
         rewriter: &mut dyn Rewriter,
-    ) -> Result<bool, Report> {
-        if self.matches(op)? {
-            self.rewrite(op, rewriter);
-
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
+    ) -> Result<bool, Report>;
 }
 
 #[cfg(test)]
@@ -244,7 +229,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        dialects::{builtin::Function, test::*},
+        dialects::{builtin::*, test::*},
         *,
     };
 
@@ -275,7 +260,11 @@ mod tests {
         }
     }
     impl RewritePattern for ConvertShiftLeftBy1ToMultiply {
-        fn matches(&self, op: OperationRef) -> Result<bool, Report> {
+        fn match_and_rewrite(
+            &self,
+            op: OperationRef,
+            rewriter: &mut dyn Rewriter,
+        ) -> Result<bool, Report> {
             use crate::matchers::{self, match_chain, match_op, MatchWith, Matcher};
 
             let binder = MatchWith(|op: &UnsafeIntrusiveEntityRef<Shl>| {
@@ -301,10 +290,11 @@ mod tests {
             log::trace!("attempting to match '{}'", self.name());
             let matched = match_chain(match_op::<Shl>(), binder).matches(&op.borrow()).is_some();
             log::trace!("'{}' matched: {matched}", self.name());
-            Ok(matched)
-        }
 
-        fn rewrite(&self, op: OperationRef, rewriter: &mut dyn Rewriter) {
+            if !matched {
+                return Ok(false);
+            }
+
             log::trace!("found match, rewriting '{}'", op.borrow().name());
             let (span, lhs) = {
                 let shl = op.borrow();
@@ -322,6 +312,8 @@ mod tests {
             let mul = mul.as_operation_ref();
             log::trace!("replacing shl with mul");
             rewriter.replace_op(op, mul);
+
+            Ok(true)
         }
     }
 
