@@ -49,6 +49,10 @@ fn get_transform_strategy(module_id: &str, function_id: &str) -> TransformStrate
             tx_kernel::account::ADD_ASSET => return TransformStrategy::ReturnViaPointer,
             tx_kernel::account::REMOVE_ASSET => return TransformStrategy::ReturnViaPointer,
             tx_kernel::account::GET_ID => return TransformStrategy::NoTransform,
+            tx_kernel::account::GET_STORAGE_ITEM => return TransformStrategy::ReturnViaPointer,
+            tx_kernel::account::SET_STORAGE_ITEM => return TransformStrategy::ReturnViaPointer,
+            tx_kernel::account::GET_STORAGE_MAP_ITEM => return TransformStrategy::ReturnViaPointer,
+            tx_kernel::account::SET_STORAGE_MAP_ITEM => return TransformStrategy::ReturnViaPointer,
             _ => (),
         },
         tx_kernel::tx::MODULE_ID => match function_id {

@@ -14,10 +14,12 @@ use std::{
 };
 
 use miden_assembly::LibraryPath;
-use midenc_compile::compile_link_output_to_masm_with_pre_assembly_stage;
+use midenc_compile::{
+    compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
+};
 use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
 use midenc_hir::{
-    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident,
+    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident, Op,
 };
 use midenc_session::{InputFile, InputType, Session};
 
@@ -412,7 +414,12 @@ impl CompilerTestBuilder {
                     args.extend(cmd_args);
                     let wasm_artifacts =
                         cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
-                    assert_eq!(wasm_artifacts.len(), 1);
+                    assert_eq!(
+                        wasm_artifacts.len(),
+                        1,
+                        "expected one Wasm artifact, got {:?}",
+                        wasm_artifacts
+                    );
                     wasm_artifacts.first().unwrap().clone()
                 } else {
                     drop(command);
@@ -1050,11 +1057,22 @@ impl CompilerTest {
         self.hir.as_ref().unwrap()
     }
 
-    /// Compare the compiled IR against the expected output
+    /// Compare the compiled(optimized) IR against the expected output
     pub fn expect_ir(&mut self, expected_hir_file: expect_test::ExpectFile) {
         use midenc_hir::Op;
 
         let ir = demangle(self.hir().borrow().as_operation().to_string());
+        expected_hir_file.assert_eq(&ir);
+    }
+
+    /// Compare the compiled(unoptimized) IR against the expected output
+    pub fn expect_ir_unoptimized(&mut self, expected_hir_file: expect_test::ExpectFile) {
+        let component = compile_to_unoptimized_hir(self.context.clone())
+            .map_err(format_report)
+            .expect("failed to translate wasm to hir component")
+            .component;
+
+        let ir = demangle(component.borrow().as_operation().to_string());
         expected_hir_file.assert_eq(&ir);
     }
 
