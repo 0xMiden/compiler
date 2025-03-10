@@ -21,6 +21,7 @@
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]
 #![feature(clone_to_uninit)]
+#![feature(new_range_api)]
 // The following are used in impls of custom collection types based on SmallVec
 #![feature(std_internals)] // for ByRefSized
 #![feature(extend_one)]
