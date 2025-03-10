@@ -56,7 +56,44 @@ impl<T> FoldResult<T> {
         }
     }
 }
+impl<T> From<Option<T>> for FoldResult<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            None => FoldResult::Failed,
+            Some(value) => FoldResult::Ok(value),
+        }
+    }
+}
+impl<T> core::ops::FromResidual for FoldResult<T> {
+    fn from_residual(residual: <Self as core::ops::Try>::Residual) -> Self {
+        match residual {
+            FoldResult::Failed => FoldResult::Failed,
+            _ => unreachable!(),
+        }
+    }
+}
+impl<T> core::ops::Residual<T> for FoldResult<core::convert::Infallible> {
+    type TryType = FoldResult<T>;
+}
+impl<T> core::ops::Try for FoldResult<T> {
+    type Output = T;
+    type Residual = FoldResult<core::convert::Infallible>;
 
+    #[inline]
+    fn from_output(output: Self::Output) -> Self {
+        FoldResult::Ok(output)
+    }
+
+    #[inline]
+    fn branch(self) -> core::ops::ControlFlow<Self::Residual, Self::Output> {
+        use core::ops::ControlFlow;
+        match self {
+            FoldResult::Ok(c) => ControlFlow::Continue(c),
+            FoldResult::InPlace => ControlFlow::Break(FoldResult::InPlace),
+            FoldResult::Failed => ControlFlow::Break(FoldResult::Failed),
+        }
+    }
+}
 #[cold]
 #[track_caller]
 #[inline(never)]
