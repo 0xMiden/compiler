@@ -2,7 +2,7 @@ mod builders;
 mod ops;
 
 pub use self::{
-    builders::{ComponentBuilder, ModuleBuilder, WorldBuilder},
+    builders::{BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder},
     ops::*,
 };
 use crate::{
@@ -38,6 +38,8 @@ impl DialectRegistration for BuiltinDialect {
         info.register_operation::<ops::GlobalVariable>();
         info.register_operation::<ops::GlobalSymbol>();
         info.register_operation::<ops::Segment>();
+        info.register_operation::<ops::Ret>();
+        info.register_operation::<ops::RetImm>();
     }
 }
 

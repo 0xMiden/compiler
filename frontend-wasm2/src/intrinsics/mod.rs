@@ -3,7 +3,7 @@ pub mod mem;
 
 use std::{collections::HashSet, sync::OnceLock};
 
-use midenc_hir2::{interner::Symbol, FunctionIdent, FunctionType, SourceSpan, ValueRef};
+use midenc_hir2::{interner::Symbol, Builder, FunctionIdent, FunctionType, SourceSpan, ValueRef};
 
 use crate::{
     error::WasmResult,
@@ -28,10 +28,10 @@ fn modules() -> &'static HashSet<&'static str> {
 }
 
 /// Convert a call to a Miden intrinsic function into instruction(s)
-pub fn convert_intrinsics_call(
+pub fn convert_intrinsics_call<B: ?Sized + Builder>(
     def_func: &CallableFunction,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     match def_func.wasm_id.module.as_symbol().as_str() {

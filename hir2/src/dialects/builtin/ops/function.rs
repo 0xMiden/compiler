@@ -1,10 +1,10 @@
 use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
-    traits::{IsolatedFromAbove, SingleRegion},
-    BlockRef, CallableOpInterface, Ident, Op, Operation, RegionKind, RegionKindInterface,
-    RegionRef, Signature, Symbol, SymbolName, SymbolUse, SymbolUseList, Type,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
+    BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter, OpPrintingFlags,
+    Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol, SymbolName,
+    SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
@@ -188,5 +188,34 @@ impl CallableOpInterface for Function {
     #[inline]
     fn signature(&self) -> &Signature {
         Function::signature(self)
+    }
+}
+
+/// Returns from the enclosing function with the provided operands as its results.
+#[operation(
+    dialect = BuiltinDialect,
+    traits(Terminator, ReturnLike),
+)]
+pub struct Ret {
+    #[operands]
+    values: AnyType,
+}
+
+/// Returns from the enclosing function with the provided immediate value as its result.
+#[operation(
+    dialect = BuiltinDialect,
+    traits(Terminator, ReturnLike),
+    implements(OpPrinter)
+)]
+pub struct RetImm {
+    #[attr(hidden)]
+    value: Immediate,
+}
+
+impl OpPrinter for RetImm {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        display(self.op.name()) + const_text(" ") + display(self.value()) + const_text(";")
     }
 }

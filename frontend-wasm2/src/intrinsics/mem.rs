@@ -1,5 +1,7 @@
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir2::{AbiParam, FunctionIdent, FunctionType, Signature, SourceSpan, Type, ValueRef};
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir2::{
+    AbiParam, Builder, FunctionIdent, FunctionType, Signature, SourceSpan, Type, ValueRef,
+};
 
 use crate::{
     error::WasmResult,
@@ -31,10 +33,10 @@ fn signature(func_id: &FunctionIdent) -> Signature {
 }
 
 /// Convert a call to a memory intrinsic function
-pub(crate) fn convert_mem_intrinsics(
+pub(crate) fn convert_mem_intrinsics<B: ?Sized + Builder>(
     def_func: &CallableFunction,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     match def_func.wasm_id.function.as_symbol().as_str() {
@@ -44,8 +46,7 @@ pub(crate) fn convert_mem_intrinsics(
             let func_ref = def_func.function_ref.unwrap_or_else(|| {
                 panic!("expected DefinedFunction::function_ref to be set for {}", def_func.wasm_id)
             });
-            let exec =
-                builder.ins().exec(func_ref, def_func.signature.clone(), args.to_vec(), span)?;
+            let exec = builder.exec(func_ref, def_func.signature.clone(), args.to_vec(), span)?;
             let borrow = exec.borrow();
             let results = borrow.as_ref().results();
             let result_vals: Vec<ValueRef> =

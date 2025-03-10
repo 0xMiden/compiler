@@ -1,8 +1,8 @@
 use std::{cell::RefCell, rc::Rc};
 
-use midenc_dialect_hir::InstBuilder;
+use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir2::{
-    dialects::builtin::{Function, FunctionRef, ModuleBuilder, WorldBuilder},
+    dialects::builtin::{BuiltinOpBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder},
     AbiParam, CallConv, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, Symbol,
     SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
     ValueRef, Visibility,
@@ -205,10 +205,10 @@ fn define_func_for_miden_abi_trans(
 
     let exit_block = func_builder.create_block();
     func_builder.append_block_params_for_function_returns(exit_block);
-    func_builder.ins().br(exit_block, results, span);
+    func_builder.br(exit_block, results, span);
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
-    func_builder.ins().ret(None, span).expect("failed ret");
+    func_builder.ret(None, span).expect("failed ret");
 
     CallableFunction {
         wasm_id: synth_func_id,

@@ -1,12 +1,11 @@
 use core::mem;
 use std::rc::Rc;
 
-use midenc_dialect_hir::{Constant, FunctionBuilder};
 use midenc_hir2::{
     constants::ConstantData,
     dialects::builtin::{
-        self, Component, ComponentBuilder, Function, Module, ModuleBuilder, ModuleRef, World,
-        WorldBuilder, WorldRef,
+        self, BuiltinOpBuilder, Component, ComponentBuilder, Function, Module, ModuleBuilder,
+        ModuleRef, World, WorldBuilder, WorldRef,
     },
     interner::Symbol,
     version::Version,
@@ -209,9 +208,7 @@ fn build_globals(
         };
         let mut op_builder = OpBuilder::new(context);
         op_builder.create_block(init_region_ref, None, &[]);
-        op_builder.create::<midenc_dialect_hir::RetImm, _>(span)(
-            global_init.to_imm(wasm_module, diagnostics)?,
-        );
+        op_builder.ret_imm(global_init.to_imm(wasm_module, diagnostics)?, span);
     }
     Ok(())
 }

@@ -614,10 +614,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        dialects::{
-            builtin::*,
-            test::{InstBuilder, *},
-        },
+        dialects::{builtin::*, test::*},
         *,
     };
 
@@ -763,12 +760,12 @@ mod tests {
 
         // Define function body
         let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func);
-        let lhs = builder.ins().u32(1, SourceSpan::default()).unwrap();
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let lhs = builder.u32(1, SourceSpan::default()).unwrap();
         let block = builder.current_block();
         let rhs = block.borrow().arguments()[0].upcast();
-        let sum = builder.ins().add(lhs, rhs, SourceSpan::default()).unwrap();
-        builder.ins().ret(Some(sum), SourceSpan::default()).unwrap();
+        let sum = builder.add(lhs, rhs, SourceSpan::default()).unwrap();
+        builder.ret(Some(sum), SourceSpan::default()).unwrap();
 
         (lhs, rhs, sum)
     }

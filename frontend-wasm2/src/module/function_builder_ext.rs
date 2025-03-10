@@ -1,9 +1,12 @@
 use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::{EntitySet, SecondaryMap};
-use midenc_dialect_hir::{FunctionBuilder, InstBuilderBase};
+use midenc_dialect_arith::ArithOpBuilder;
+use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir2::{
-    dialects::builtin::Function,
+    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     traits::{BranchOpInterface, Terminator},
     Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener,
     ListenerType, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
@@ -117,12 +120,12 @@ impl Listener for SSABuilderListener {
 
 /// A wrapper around Miden's `FunctionBuilder` and `SSABuilder` which provides
 /// additional API for dealing with variables and SSA construction.
-pub struct FunctionBuilderExt<'c> {
-    inner: FunctionBuilder<'c, OpBuilder<SSABuilderListener>>,
+pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
+    inner: FunctionBuilder<'c, B>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
 }
 
-impl<'c> FunctionBuilderExt<'c> {
+impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
     pub fn new(func: &'c mut Function, builder: &'c mut OpBuilder<SSABuilderListener>) -> Self {
         let func_ctx = builder.listener().map(|l| l.builder.clone()).unwrap();
         debug_assert!(func_ctx.borrow().is_empty());
@@ -131,19 +134,15 @@ impl<'c> FunctionBuilderExt<'c> {
 
         Self { inner, func_ctx }
     }
+}
 
+impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     pub fn name(&self) -> Ident {
         *self.inner.func.name()
     }
 
     pub fn signature(&self) -> &Signature {
         self.inner.func.signature()
-    }
-
-    pub fn ins<'b: 'a, 'a>(
-        &'b mut self,
-    ) -> midenc_dialect_hir::DefaultInstBuilder<'a, OpBuilder<SSABuilderListener>> {
-        midenc_dialect_hir::DefaultInstBuilder::new(self.inner.builder_mut())
     }
 
     #[inline]
@@ -456,6 +455,66 @@ impl<'c> FunctionBuilderExt<'c> {
         //     _ => panic!("{} must be a branch instruction", inst),
         // }
         // self.func_ctx.ssa.declare_block_predecessor(new_block, inst);
+    }
+}
+
+impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> ControlFlowOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> UndefinedBehaviorOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> BuiltinOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> HirOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
     }
 }
 

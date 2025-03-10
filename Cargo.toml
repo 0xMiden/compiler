@@ -93,7 +93,11 @@ miden-stdlib = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/mi
 ] }
 miden-mast-package = { version = "0.12.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 midenc-codegen-masm2 = { version = "0.0.7", path = "codegen/masm2" }
+midenc-dialect-arith = { version = "0.0.7", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }
+midenc-dialect-scf = { version = "0.0.7", path = "dialects/scf" }
+midenc-dialect-cf = { version = "0.0.7", path = "dialects/cf" }
+midenc-dialect-ub = { version = "0.0.7", path = "dialects/ub" }
 midenc-hir2 = { version = "0.0.7", path = "hir2" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }

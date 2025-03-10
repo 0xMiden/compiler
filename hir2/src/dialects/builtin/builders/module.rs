@@ -1,11 +1,11 @@
+use super::BuiltinOpBuilder;
 use crate::{
     constants::ConstantData,
     dialects::builtin::{
-        Function, FunctionRef, GlobalVariable, GlobalVariableBuilder, GlobalVariableRef, ModuleRef,
-        PrimFunctionBuilder, Segment, SegmentBuilder,
+        Function, FunctionRef, GlobalVariable, GlobalVariableRef, ModuleRef, Segment,
     },
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
-    Type, UnsafeIntrusiveEntityRef, Visibility,
+    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, SymbolName, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, Visibility,
 };
 
 /// A specialized builder for constructing/modifying [crate::dialects::hir::Module]
@@ -50,8 +50,7 @@ impl ModuleBuilder {
         name: Ident,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
-        let function_ref = builder(name, signature)?;
+        let function_ref = self.builder.create_function(name, signature)?;
         let is_new = self
             .module
             .borrow_mut()
@@ -71,8 +70,7 @@ impl ModuleBuilder {
         visibility: Visibility,
         ty: Type,
     ) -> Result<UnsafeIntrusiveEntityRef<GlobalVariable>, Report> {
-        let builder = GlobalVariableBuilder::new(&mut self.builder, name.span());
-        let global_var_ref = builder(name, visibility, ty)?;
+        let global_var_ref = self.builder.create_global_variable(name, visibility, ty)?;
         let is_new = self
             .module
             .borrow_mut()
@@ -89,9 +87,7 @@ impl ModuleBuilder {
         readonly: bool,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
-        let data = self.builder.context().create_constant(data);
-        let builder = SegmentBuilder::new(&mut self.builder, span);
-        builder(offset, data, readonly)
+        self.builder.create_data_segment(offset, data, readonly, span)
     }
 
     pub fn get_function(&self, name: &str) -> Option<FunctionRef> {

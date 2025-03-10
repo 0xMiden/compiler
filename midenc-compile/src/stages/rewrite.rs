@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_dialect_hir::transforms::LiftControlFlowToSCF;
+use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir2::{
     pass::{Nesting, PassManager},
     transforms::Canonicalizer,

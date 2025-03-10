@@ -9,8 +9,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
-use midenc_dialect_hir::{FunctionBuilder, InstBuilder};
-use midenc_hir2::{dialects::builtin::Function, BlockRef, Context, Op};
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir2::{
+    dialects::builtin::{BuiltinOpBuilder, Function},
+    BlockRef, Builder, Context, Op,
+};
 use midenc_session::{
     diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
     Session,
@@ -113,7 +116,10 @@ impl FuncTranslator {
 /// Declare local variables for the signature parameters that correspond to WebAssembly locals.
 ///
 /// Return the number of local variables declared.
-fn declare_parameters(builder: &mut FunctionBuilderExt, entry_block: BlockRef) -> usize {
+fn declare_parameters<B: ?Sized + Builder>(
+    builder: &mut FunctionBuilderExt<'_, B>,
+    entry_block: BlockRef,
+) -> usize {
     let sig_len = builder.signature().params().len();
     let mut next_local = 0;
     for i in 0..sig_len {
@@ -131,9 +137,9 @@ fn declare_parameters(builder: &mut FunctionBuilderExt, entry_block: BlockRef) -
 /// Parse the local variable declarations that precede the function body.
 ///
 /// Declare local variables, starting from `num_params`.
-fn parse_local_decls(
+fn parse_local_decls<B: ?Sized + Builder>(
     reader: &mut wasmparser::LocalsReader<'_>,
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
     num_params: usize,
     validator: &mut FuncValidator<impl WasmModuleResources>,
     diagnostics: &DiagnosticsHandler,
@@ -154,8 +160,8 @@ fn parse_local_decls(
 /// Declare `count` local variables of the same type, starting from `next_local`.
 ///
 /// Fail if too many locals are declared in the function, or if the type is not valid for a local.
-fn declare_locals(
-    builder: &mut FunctionBuilderExt,
+fn declare_locals<B: ?Sized + Builder>(
+    builder: &mut FunctionBuilderExt<'_, B>,
     count: u32,
     wasm_type: wasmparser::ValType,
     next_local: &mut usize,
@@ -178,9 +184,9 @@ fn declare_locals(
 /// This assumes that the local variable declarations have already been parsed and function
 /// arguments and locals are declared in the builder.
 #[allow(clippy::too_many_arguments)]
-fn parse_function_body(
+fn parse_function_body<B: ?Sized + Builder>(
     reader: &mut wasmparser::OperatorsReader<'_>,
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &ParsedModule<'_>,
@@ -252,7 +258,7 @@ fn parse_function_body(
     // If the exit block is unreachable, it may not have the correct arguments, so we would
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
-        builder.ins().ret(state.stack.first().cloned(), end_span);
+        builder.ret(state.stack.first().cloned(), end_span);
     }
 
     // Discard any remaining values on the stack. Either we just returned them,

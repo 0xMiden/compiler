@@ -3236,7 +3236,11 @@ dependencies = [
  "miden-processor",
  "miden-stdlib",
  "miden-thiserror",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
  "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-dialect-ub",
  "midenc-hir2",
  "midenc-session",
  "petgraph",
@@ -3256,7 +3260,7 @@ dependencies = [
  "miden-mast-package",
  "miden-thiserror",
  "midenc-codegen-masm2",
- "midenc-dialect-hir",
+ "midenc-dialect-scf",
  "midenc-frontend-wasm2",
  "midenc-hir2",
  "midenc-session",
@@ -3294,7 +3298,71 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-dialect-arith"
+version = "0.0.7"
+dependencies = [
+ "bitvec",
+ "log",
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-dialect-cf"
+version = "0.0.7"
+dependencies = [
+ "bitvec",
+ "log",
+ "midenc-dialect-ub",
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
+ "smallvec",
+]
+
+[[package]]
 name = "midenc-dialect-hir"
+version = "0.0.7"
+dependencies = [
+ "bitvec",
+ "log",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-scf",
+ "midenc-dialect-ub",
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-dialect-scf"
+version = "0.0.7"
+dependencies = [
+ "bitvec",
+ "log",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-ub",
+ "midenc-hir-symbol",
+ "midenc-hir2",
+ "midenc-session",
+ "paste",
+ "pretty_assertions",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-dialect-ub"
 version = "0.0.7"
 dependencies = [
  "bitvec",
@@ -3335,7 +3403,10 @@ dependencies = [
  "log",
  "miden-core",
  "miden-thiserror",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
  "midenc-dialect-hir",
+ "midenc-dialect-ub",
  "midenc-hir-type",
  "midenc-hir2",
  "midenc-session",

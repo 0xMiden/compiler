@@ -1,0 +1,28 @@
+[package]
+name = "midenc-dialect-ub"
+description = "Miden IR Undefined Behavior Dialect"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir2/std"]
+
+[dependencies]
+log.workspace = true
+midenc-hir2.workspace = true
+midenc-hir-symbol.workspace = true
+midenc-session.workspace = true
+paste.workspace = true
+bitvec.workspace = true
+smallvec.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1.0"

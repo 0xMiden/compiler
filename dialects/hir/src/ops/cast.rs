@@ -1,6 +1,10 @@
-use midenc_hir2::{derive::operation, traits::*, *};
+use alloc::boxed::Box;
 
-use crate::HirDialect;
+use midenc_hir2::{
+    derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
+};
+
+use crate::{HirDialect, PointerAttr};
 
 /*
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -34,7 +38,7 @@ pub enum CastKind {
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
  )]
 pub struct PtrToInt {
     #[operand]
@@ -45,6 +49,8 @@ pub struct PtrToInt {
     result: AnyInteger,
 }
 
+has_no_effects!(PtrToInt);
+
 impl InferTypeOpInterface for PtrToInt {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let ty = self.ty().clone();
@@ -53,10 +59,53 @@ impl InferTypeOpInterface for PtrToInt {
     }
 }
 
+impl Foldable for PtrToInt {
+    #[inline]
+    fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        if let Some(value) =
+            matchers::foldable_operand_of::<PointerAttr>().matches(&self.operand().as_operand_ref())
+        {
+            // Support folding just pointer -> 32-bit integer types for now
+            let value = match self.ty() {
+                Type::U32 => value.addr().as_u32().map(Immediate::U32),
+                Type::I32 => value.addr().as_u32().map(|v| Immediate::I32(v as i32)),
+                _ => return FoldResult::Failed,
+            };
+            if let Some(value) = value {
+                results.push(OpFoldResult::Attribute(Box::new(value)));
+                return FoldResult::Ok(());
+            }
+        }
+
+        FoldResult::Failed
+    }
+
+    #[inline(always)]
+    fn fold_with(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<PointerAttr>()) {
+            // Support folding just pointer -> 32-bit integer types for now
+            let value = match self.ty() {
+                Type::U32 => value.addr().as_u32().map(Immediate::U32),
+                Type::I32 => value.addr().as_u32().map(|v| Immediate::I32(v as i32)),
+                _ => return FoldResult::Failed,
+            };
+            if let Some(value) = value {
+                results.push(OpFoldResult::Attribute(Box::new(value)));
+                return FoldResult::Ok(());
+            }
+        }
+        FoldResult::Failed
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
 )]
 pub struct IntToPtr {
     #[operand]
@@ -67,6 +116,8 @@ pub struct IntToPtr {
     result: AnyPointer,
 }
 
+has_no_effects!(IntToPtr);
+
 impl InferTypeOpInterface for IntToPtr {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let ty = self.ty().clone();
@@ -75,10 +126,39 @@ impl InferTypeOpInterface for IntToPtr {
     }
 }
 
+impl Foldable for IntToPtr {
+    #[inline]
+    fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        if let Some(value) =
+            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        {
+            results.push(OpFoldResult::Attribute(value));
+            FoldResult::Ok(())
+        } else {
+            FoldResult::Failed
+        }
+    }
+
+    #[inline(always)]
+    fn fold_with(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
+            let attr = PointerAttr::new(*value, Type::Ptr(Box::new(self.ty().clone())));
+            results.push(OpFoldResult::Attribute(Box::new(attr)));
+            FoldResult::Ok(())
+        } else {
+            FoldResult::Failed
+        }
+    }
+}
+
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct Cast {
     #[operand]
@@ -88,6 +168,8 @@ pub struct Cast {
     #[result]
     result: AnyInteger,
 }
+
+has_no_effects!(Cast);
 
 impl InferTypeOpInterface for Cast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -100,7 +182,7 @@ impl InferTypeOpInterface for Cast {
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
 )]
 pub struct Bitcast {
     #[operand]
@@ -111,6 +193,8 @@ pub struct Bitcast {
     result: AnyPointerOrInteger,
 }
 
+has_no_effects!(Bitcast);
+
 impl InferTypeOpInterface for Bitcast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let ty = self.ty().clone();
@@ -119,68 +203,34 @@ impl InferTypeOpInterface for Bitcast {
     }
 }
 
-#[operation(
-    dialect = HirDialect,
-    traits(UnaryOp),
-    implements(InferTypeOpInterface)
-)]
-pub struct Trunc {
-    #[operand]
-    operand: AnyInteger,
-    #[attr(hidden)]
-    ty: Type,
-    #[result]
-    result: AnyInteger,
-}
+impl Foldable for Bitcast {
+    #[inline]
+    fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        if let Some(value) = matchers::foldable_operand().matches(&self.operand().as_operand_ref())
+        {
+            if value.is::<Immediate>() || value.is::<PointerAttr>() {
+                // Lean on materialize_constant to handle the conversion details
+                results.push(OpFoldResult::Attribute(value));
+                return FoldResult::Ok(());
+            }
+        }
 
-impl InferTypeOpInterface for Trunc {
-    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
-        self.result_mut().set_type(ty);
-        Ok(())
+        FoldResult::Failed
     }
-}
 
-#[operation(
-    dialect = HirDialect,
-    traits(UnaryOp),
-    implements(InferTypeOpInterface)
-)]
-pub struct Zext {
-    #[operand]
-    operand: AnyUnsignedInteger,
-    #[attr(hidden)]
-    ty: Type,
-    #[result]
-    result: AnyUnsignedInteger,
-}
-
-impl InferTypeOpInterface for Zext {
-    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
-        self.result_mut().set_type(ty);
-        Ok(())
-    }
-}
-
-#[operation(
-    dialect = HirDialect,
-    traits(UnaryOp),
-    implements(InferTypeOpInterface)
-)]
-pub struct Sext {
-    #[operand]
-    operand: AnySignedInteger,
-    #[attr(hidden)]
-    ty: Type,
-    #[result]
-    result: AnySignedInteger,
-}
-
-impl InferTypeOpInterface for Sext {
-    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
-        self.result_mut().set_type(ty);
-        Ok(())
+    #[inline(always)]
+    fn fold_with(
+        &self,
+        operands: &[Option<Box<dyn AttributeValue>>],
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        if let Some(value) =
+            operands[0].as_deref().filter(|o| o.is::<Immediate>() || o.is::<PointerAttr>())
+        {
+            results.push(OpFoldResult::Attribute(value.clone_value()));
+            FoldResult::Ok(())
+        } else {
+            FoldResult::Failed
+        }
     }
 }

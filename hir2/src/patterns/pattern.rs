@@ -336,12 +336,12 @@ mod tests {
         // Define function body
         {
             let mut func = function.borrow_mut();
-            let mut builder = FunctionBuilder::new(&mut func);
-            let shift = builder.ins().u32(1, SourceSpan::default()).unwrap();
+            let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+            let shift = builder.u32(1, SourceSpan::default()).unwrap();
             let block = builder.current_block();
             let lhs = block.borrow().arguments()[0].upcast();
-            let result = builder.ins().shl(lhs, shift, SourceSpan::default()).unwrap();
-            builder.ins().ret(Some(result), SourceSpan::default()).unwrap();
+            let result = builder.shl(lhs, shift, SourceSpan::default()).unwrap();
+            builder.ret(Some(result), SourceSpan::default()).unwrap();
         }
 
         // Construct pattern set

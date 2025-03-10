@@ -2,10 +2,14 @@ mod native_ptr;
 
 use alloc::sync::Arc;
 
+use midenc_dialect_arith as arith;
+use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
+use midenc_dialect_scf as scf;
+use midenc_dialect_ub as ub;
 use midenc_hir2::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Immediate, Op, OpExt, Operation,
-    Region, Span, SymbolTable, Value, ValueRef,
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, OpExt, Operation, Region, Span,
+    SymbolTable, Value, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::SmallVec;
@@ -354,7 +358,7 @@ impl MasmFunctionBuilder {
     }
 }
 
-impl HirLowering for hir::Ret {
+impl HirLowering for builtin::Ret {
     fn emit(&self, block_emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
         let argc = self.num_operands();
@@ -374,7 +378,7 @@ impl HirLowering for hir::Ret {
     }
 }
 
-impl HirLowering for hir::RetImm {
+impl HirLowering for builtin::RetImm {
     fn emit(&self, block_emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
         let loop_level = self.loop_depth();
@@ -396,7 +400,7 @@ impl HirLowering for hir::RetImm {
     }
 }
 
-impl HirLowering for hir::If {
+impl HirLowering for scf::If {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let cond = self.condition().as_value_ref();
 
@@ -489,7 +493,7 @@ stack on exit from 'else': {else_stack:#?}
     Ok(())
 }
 
-impl HirLowering for hir::While {
+impl HirLowering for scf::While {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
 
@@ -644,7 +648,7 @@ stack on exit from 'after': {:#?}
     }
 }
 
-impl HirLowering for hir::IndexSwitch {
+impl HirLowering for scf::IndexSwitch {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
         // the selector against each non-default case to determine whether control should enter
@@ -751,7 +755,7 @@ impl HirLowering for hir::IndexSwitch {
 }
 
 fn emit_binary_search(
-    op: &hir::IndexSwitch,
+    op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
     a: &[u32],
     b: &[u32],
@@ -923,7 +927,7 @@ stack on exit from 'else': {else_stack:#?}
     }
 }
 
-impl HirLowering for hir::Yield {
+impl HirLowering for scf::Yield {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
@@ -931,7 +935,7 @@ impl HirLowering for hir::Yield {
     }
 }
 
-impl HirLowering for hir::Condition {
+impl HirLowering for scf::Condition {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
@@ -939,7 +943,7 @@ impl HirLowering for hir::Condition {
     }
 }
 
-impl HirLowering for hir::Constant {
+impl HirLowering for arith::Constant {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let value = *self.value();
 
@@ -987,7 +991,7 @@ impl HirLowering for hir::AssertEqImm {
     }
 }
 
-impl HirLowering for hir::Unreachable {
+impl HirLowering for ub::Unreachable {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // This instruction, if reached, must cause the VM to trap, so we emit an assertion that
         // always fails to guarantee this, i.e. assert(false)
@@ -1000,7 +1004,7 @@ impl HirLowering for hir::Unreachable {
     }
 }
 
-impl HirLowering for hir::Poison {
+impl HirLowering for ub::Poison {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir2::Type;
 
@@ -1017,20 +1021,9 @@ impl HirLowering for hir::Poison {
         let mut op_emitter = emitter.inst_emitter(self.as_operation());
         op_emitter.literal(
             {
-                match self.ty() {
-                    Type::I1 => Immediate::I1(false),
-                    Type::U8 => Immediate::U8(0xde),
-                    Type::I8 => Immediate::I8(0xdeu8 as i8),
-                    Type::U16 => Immediate::U16(0xdead),
-                    Type::I16 => Immediate::I16(0xdeadu16 as i16),
-                    Type::U32 => Immediate::U32(0xdeadc0de),
-                    Type::I32 => Immediate::I32(0xdeadc0deu32 as i32),
-                    Type::U64 => Immediate::U64(0xdeadc0dedeadc0de),
-                    Type::I64 => Immediate::I64(0xdeadc0dedeadc0deu64 as i64),
-                    Type::Felt => Immediate::Felt(miden_core::Felt::new(0xdeadc0de)),
-                    Type::U128 => Immediate::U128(0xdeadc0dedeadc0dedeadc0dedeadc0de),
-                    Type::I128 => Immediate::I128(0xdeadc0dedeadc0dedeadc0dedeadc0deu128 as i128),
-                    Type::U256 => {
+                match self.value().as_immediate() {
+                    Ok(imm) => imm,
+                    Err(Type::U256) => {
                         return Err(self
                             .as_operation()
                             .context()
@@ -1043,7 +1036,7 @@ impl HirLowering for hir::Poison {
                             )
                             .into_report());
                     }
-                    Type::F64 => {
+                    Err(Type::F64) => {
                         return Err(self
                             .as_operation()
                             .context()
@@ -1056,9 +1049,7 @@ impl HirLowering for hir::Poison {
                             )
                             .into_report());
                     }
-                    // We emit a pointer that can never refer to a valid object in memory
-                    Type::Ptr(_) => Immediate::U32(u32::MAX),
-                    ty => panic!("unexpected poison type: {ty}"),
+                    Err(ty) => panic!("unexpected poison type: {ty}"),
                 }
             },
             span,
@@ -1068,14 +1059,14 @@ impl HirLowering for hir::Poison {
     }
 }
 
-impl HirLowering for hir::Add {
+impl HirLowering for arith::Add {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).add(*self.overflow(), self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::AddOverflowing {
+impl HirLowering for arith::AddOverflowing {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter
             .inst_emitter(self.as_operation())
@@ -1084,14 +1075,14 @@ impl HirLowering for hir::AddOverflowing {
     }
 }
 
-impl HirLowering for hir::Sub {
+impl HirLowering for arith::Sub {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).sub(*self.overflow(), self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::SubOverflowing {
+impl HirLowering for arith::SubOverflowing {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter
             .inst_emitter(self.as_operation())
@@ -1100,14 +1091,14 @@ impl HirLowering for hir::SubOverflowing {
     }
 }
 
-impl HirLowering for hir::Mul {
+impl HirLowering for arith::Mul {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).mul(*self.overflow(), self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::MulOverflowing {
+impl HirLowering for arith::MulOverflowing {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter
             .inst_emitter(self.as_operation())
@@ -1116,102 +1107,102 @@ impl HirLowering for hir::MulOverflowing {
     }
 }
 
-impl HirLowering for hir::Exp {
+impl HirLowering for arith::Exp {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).exp(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Div {
+impl HirLowering for arith::Div {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).checked_div(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Sdiv {
+impl HirLowering for arith::Sdiv {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         todo!("signed division lowering not implemented yet");
     }
 }
 
-impl HirLowering for hir::Mod {
+impl HirLowering for arith::Mod {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).checked_mod(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Smod {
+impl HirLowering for arith::Smod {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         todo!("signed modular division lowering not implemented yet");
     }
 }
 
-impl HirLowering for hir::Divmod {
+impl HirLowering for arith::Divmod {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).checked_divmod(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Sdivmod {
+impl HirLowering for arith::Sdivmod {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         todo!("signed division + modular division lowering not implemented yet");
     }
 }
 
-impl HirLowering for hir::And {
+impl HirLowering for arith::And {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).and(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Or {
+impl HirLowering for arith::Or {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).or(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Xor {
+impl HirLowering for arith::Xor {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).xor(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Band {
+impl HirLowering for arith::Band {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).band(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Bor {
+impl HirLowering for arith::Bor {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).bor(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Bxor {
+impl HirLowering for arith::Bxor {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).bxor(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Shl {
+impl HirLowering for arith::Shl {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).shl(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::ShlImm {
+impl HirLowering for arith::ShlImm {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let rhs = *self.shift();
         emitter.inst_emitter(self.as_operation()).shl_imm(rhs, self.span());
@@ -1219,83 +1210,83 @@ impl HirLowering for hir::ShlImm {
     }
 }
 
-impl HirLowering for hir::Shr {
+impl HirLowering for arith::Shr {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).shr(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Ashr {
+impl HirLowering for arith::Ashr {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         todo!("arithmetic shift right not yet implemented");
     }
 }
 
-impl HirLowering for hir::Rotl {
+impl HirLowering for arith::Rotl {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).rotl(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Rotr {
+impl HirLowering for arith::Rotr {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).rotr(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Eq {
+impl HirLowering for arith::Eq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).eq(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Neq {
+impl HirLowering for arith::Neq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).neq(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Gt {
+impl HirLowering for arith::Gt {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).gt(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Gte {
+impl HirLowering for arith::Gte {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).gte(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Lt {
+impl HirLowering for arith::Lt {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).lt(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Lte {
+impl HirLowering for arith::Lte {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).lte(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Min {
+impl HirLowering for arith::Min {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).min(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Max {
+impl HirLowering for arith::Max {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).max(self.span());
         Ok(())
@@ -1335,7 +1326,7 @@ impl HirLowering for hir::Bitcast {
     }
 }
 
-impl HirLowering for hir::Trunc {
+impl HirLowering for arith::Trunc {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
         emitter.inst_emitter(self.as_operation()).trunc(result.ty(), self.span());
@@ -1343,7 +1334,7 @@ impl HirLowering for hir::Trunc {
     }
 }
 
-impl HirLowering for hir::Zext {
+impl HirLowering for arith::Zext {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
         emitter.inst_emitter(self.as_operation()).zext(result.ty(), self.span());
@@ -1351,7 +1342,7 @@ impl HirLowering for hir::Zext {
     }
 }
 
-impl HirLowering for hir::Sext {
+impl HirLowering for arith::Sext {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
         emitter.inst_emitter(self.as_operation()).sext(result.ty(), self.span());
@@ -1510,98 +1501,98 @@ impl HirLowering for hir::MemCpy {
     }
 }
 
-impl HirLowering for hir::Select {
+impl HirLowering for cf::Select {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).select(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Incr {
+impl HirLowering for arith::Incr {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).incr(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Neg {
+impl HirLowering for arith::Neg {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).neg(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Inv {
+impl HirLowering for arith::Inv {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).inv(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Ilog2 {
+impl HirLowering for arith::Ilog2 {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).ilog2(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Pow2 {
+impl HirLowering for arith::Pow2 {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).pow2(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Not {
+impl HirLowering for arith::Not {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).not(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Bnot {
+impl HirLowering for arith::Bnot {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).bnot(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::IsOdd {
+impl HirLowering for arith::IsOdd {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).is_odd(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Popcnt {
+impl HirLowering for arith::Popcnt {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).popcnt(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Clz {
+impl HirLowering for arith::Clz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).clz(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Ctz {
+impl HirLowering for arith::Ctz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).ctz(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Clo {
+impl HirLowering for arith::Clo {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).clo(self.span());
         Ok(())
     }
 }
 
-impl HirLowering for hir::Cto {
+impl HirLowering for arith::Cto {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).cto(self.span());
         Ok(())
@@ -1681,7 +1672,7 @@ fn compute_loop_depth(op: &Operation) -> usize {
     let mut next = op.parent_op();
     while let Some(parent) = next.take() {
         let parent = parent.borrow();
-        if parent.is::<hir::While>() {
+        if parent.is::<scf::While>() {
             depth += 1;
         } else if parent.is::<builtin::Function>() {
             break;

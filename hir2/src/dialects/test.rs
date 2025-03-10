@@ -1,10 +1,7 @@
 mod builders;
 mod ops;
 
-pub use self::{
-    builders::{DefaultInstBuilder, FunctionBuilder, InstBuilder, InstBuilderBase},
-    ops::*,
-};
+pub use self::{builders::TestOpBuilder, ops::*};
 use crate::{
     AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
     OperationRef, SourceSpan, Type,

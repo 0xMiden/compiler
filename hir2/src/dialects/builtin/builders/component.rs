@@ -1,8 +1,7 @@
+use super::BuiltinOpBuilder;
 use crate::{
-    dialects::builtin::{
-        ComponentRef, InterfaceRef, Module, ModuleRef, PrimInterfaceBuilder, PrimModuleBuilder,
-    },
-    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolTable,
+    dialects::builtin::{ComponentRef, InterfaceRef, Module, ModuleRef},
+    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolTable,
 };
 
 pub struct ComponentBuilder {
@@ -28,13 +27,11 @@ impl ComponentBuilder {
     }
 
     pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
-        let builder = PrimInterfaceBuilder::new(&mut self.builder, name.span());
-        builder(name)
+        self.builder.create_interface(name)
     }
 
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
-        let module_ref = builder(name)?;
+        let module_ref = self.builder.create_module(name)?;
         let is_new = self
             .component
             .borrow_mut()
