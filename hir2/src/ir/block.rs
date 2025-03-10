@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, sync::atomic::AtomicBool};
 
 use smallvec::SmallVec;
 
@@ -67,7 +67,7 @@ pub struct Block {
     /// The unique id of this block
     id: BlockId,
     /// Flag that indicates whether the ops in this block have a valid ordering
-    valid_op_ordering: bool,
+    valid_op_ordering: AtomicBool,
     /// The set of uses of this block
     uses: BlockOperandList,
     /// The list of [Operation]s that comprise this block
@@ -591,7 +591,7 @@ impl Block {
     pub fn new(id: BlockId) -> Self {
         Self {
             id,
-            valid_op_ordering: true,
+            valid_op_ordering: AtomicBool::new(true),
             uses: Default::default(),
             body: Default::default(),
             arguments: Default::default(),
@@ -1115,25 +1115,31 @@ impl Block {
     }
 
     #[inline(always)]
-    pub(super) const fn is_op_order_valid(&self) -> bool {
-        self.valid_op_ordering
+    pub(super) fn is_op_order_valid(&self) -> bool {
+        use core::sync::atomic::Ordering;
+
+        self.valid_op_ordering.load(Ordering::Acquire)
     }
 
     #[inline(always)]
-    pub(super) fn mark_op_order_valid(&mut self) {
-        self.valid_op_ordering = true;
+    pub(super) fn mark_op_order_valid(&self) {
+        use core::sync::atomic::Ordering;
+
+        self.valid_op_ordering.store(true, Ordering::Release);
     }
 
     pub(super) fn invalidate_op_order(&mut self) {
+        use core::sync::atomic::Ordering;
+
         // Validate the current ordering
         assert!(self.verify_op_order());
-        self.valid_op_ordering = false;
+        self.valid_op_ordering.store(false, Ordering::Release);
     }
 
     /// Returns true if the current operation ordering in this block is valid
     pub(super) fn verify_op_order(&self) -> bool {
         // The order is already known to be invalid
-        if !self.valid_op_ordering {
+        if !self.is_op_order_valid() {
             return false;
         }
 

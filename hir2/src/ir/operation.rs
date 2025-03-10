@@ -1283,10 +1283,10 @@ impl Operation {
         self.order.store(prev + ((next - prev) / 2), Ordering::Release);
     }
 
-    fn recompute_block_order(mut block: BlockRef) {
+    fn recompute_block_order(block: BlockRef) {
         use core::sync::atomic::Ordering;
 
-        let mut block = block.borrow_mut();
+        let block = block.borrow();
         let mut cursor = block.body().front();
         let mut index = 0;
         while let Some(op) = cursor.as_pointer() {
@@ -1310,6 +1310,22 @@ impl Operation {
             Self::INVALID_ORDER => None,
             order => Some(order),
         }
+    }
+
+    /// Returns `None` if this operation has invalid ordering
+    #[inline]
+    pub(crate) fn get_or_compute_order(&self) -> u32 {
+        use core::sync::atomic::Ordering;
+
+        if let Some(order) = self.order() {
+            return order;
+        }
+
+        Self::recompute_block_order(
+            self.parent().expect("cannot compute block ordering for orphaned operation"),
+        );
+
+        self.order.load(Ordering::Acquire)
     }
 
     /// Returns true if this operation has a valid order
