@@ -289,7 +289,9 @@ impl crate::StorableEntity for SuccessorInfo {
 
     #[inline(always)]
     fn unlink(&mut self) {
-        self.block.unlink();
+        if self.block.is_linked() {
+            self.block.unlink();
+        }
     }
 }
 impl fmt::Debug for SuccessorInfo {
