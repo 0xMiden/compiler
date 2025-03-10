@@ -51,23 +51,23 @@ pub trait Rewriter: Builder + RewriterListener {
         assert!(!op.borrow().is_used(), "expected op to have no uses");
 
         // If no listener is attached, the op can be dropped all at once.
-        if self.has_listener() {
+        if !self.has_listener() {
             op.borrow_mut().erase();
             return;
         }
 
         // Helper function that erases a single operation
         fn erase_single_op<R: ?Sized + RewriterListener>(
-            mut op: OperationRef,
+            mut operation: OperationRef,
             rewrite_listener: &mut R,
         ) {
-            let mut op_mut = op.borrow_mut();
+            let op = operation.borrow();
             if cfg!(debug_assertions) {
                 // All nested ops should have been erased already
-                assert!(op_mut.regions().iter().all(|r| r.is_empty()), "expected empty regions");
+                assert!(op.regions().iter().all(|r| r.is_empty()), "expected empty regions");
                 // All users should have been erased already if the op is in a region with SSA dominance
-                if op_mut.is_used() {
-                    if let Some(region) = op_mut.parent_region() {
+                if op.is_used() {
+                    if let Some(region) = op.parent_region() {
                         assert!(
                             region.borrow().may_be_graph_region(),
                             "expected that op has no uses"
@@ -76,36 +76,39 @@ pub trait Rewriter: Builder + RewriterListener {
                 }
             }
 
-            rewrite_listener.notify_operation_erased(op);
+            rewrite_listener.notify_operation_erased(operation);
 
             // Explicitly drop all uses in case the op is in a graph region
-            op_mut.drop_all_uses();
-            op_mut.erase();
+            drop(op);
+            let mut op = operation.borrow_mut();
+            op.drop_all_uses();
+            op.erase();
         }
 
         // Nested ops must be erased one-by-one, so that listeners have a consistent view of the
         // IR every time a notification is triggered. Users must be erased before definitions, i.e.
         // in post-order, reverse dominance.
-        fn erase_tree<R: ?Sized + Rewriter>(op_ref: OperationRef, rewriter: &mut R) {
+        fn erase_tree<R: ?Sized + Rewriter>(op: OperationRef, rewriter: &mut R) {
             // Erase nested ops
-            let op = op_ref.borrow();
-            for region in op.regions() {
+            let mut next_region = op.borrow().regions().front().as_pointer();
+            while let Some(region) = next_region.take() {
+                next_region = region.next();
                 // Erase all blocks in the right order. Successors should be erased before
                 // predecessors because successor blocks may use values defined in predecessor
                 // blocks. A post-order traversal of blocks within a region visits successors before
                 // predecessors. Repeat the traversal until the region is empty. (The block graph
                 // could be disconnected.)
                 let mut erased_blocks = SmallVec::<[BlockRef; 4]>::default();
-                while !region.is_empty() {
+                let mut region_entry = region.borrow().entry_block_ref();
+                while let Some(entry) = region_entry.take() {
                     erased_blocks.clear();
-                    for block_ref in PostOrderBlockIter::new(region.entry_block_ref().unwrap()) {
-                        let block = block_ref.borrow();
-                        let mut cursor = block.body().front();
-                        while let Some(op) = cursor.as_pointer() {
+                    for block in PostOrderBlockIter::new(entry) {
+                        let mut next_op = block.borrow().body().front().as_pointer();
+                        while let Some(op) = next_op.take() {
+                            next_op = op.next();
                             erase_tree(op, rewriter);
-                            cursor.move_next();
                         }
-                        erased_blocks.push(block_ref);
+                        erased_blocks.push(block);
                     }
                     for mut block in erased_blocks.drain(..) {
                         // Explicitly drop all uses in case there is a cycle in the block
@@ -116,21 +119,23 @@ pub trait Rewriter: Builder + RewriterListener {
                         block.borrow_mut().drop_all_uses();
                         rewriter.erase_block(block);
                     }
+
+                    region_entry = region.borrow().entry_block_ref();
                 }
             }
-            erase_single_op(op_ref, rewriter);
+            erase_single_op(op, rewriter);
         }
 
         erase_tree(op, self);
     }
 
     /// This method erases all operations in a block.
-    fn erase_block(&mut self, mut block: BlockRef) {
+    fn erase_block(&mut self, block: BlockRef) {
         assert!(!block.borrow().is_used(), "expected 'block' to be unused");
 
-        let mut blk = block.borrow_mut();
-        let mut cursor = blk.body_mut().back_mut();
-        while let Some(op) = cursor.remove() {
+        let mut next_op = block.borrow().body().back().as_pointer();
+        while let Some(op) = next_op.take() {
+            next_op = op.prev();
             assert!(!op.borrow().is_used(), "expected 'op' to be unused");
             self.erase_op(op);
         }
@@ -139,7 +144,7 @@ pub trait Rewriter: Builder + RewriterListener {
         self.notify_block_erased(block);
 
         // Remove block from parent region
-        let mut region = blk.parent().expect("expected 'block' to have a parent region");
+        let mut region = block.parent().expect("expected 'block' to have a parent region");
         let mut region_mut = region.borrow_mut();
         let mut cursor = unsafe { region_mut.body_mut().cursor_mut_from_ptr(block) };
         cursor.remove();
