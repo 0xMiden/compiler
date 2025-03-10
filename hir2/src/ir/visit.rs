@@ -7,7 +7,10 @@ pub use core::ops::ControlFlow;
 pub use self::{
     searcher::Searcher,
     visitor::{OpVisitor, OperationVisitor, SymbolVisitor, Visitor},
-    walkable::{RawWalk, Walk, WalkMut, WalkOrder, WalkStage},
+    walkable::{
+        Backward, Forward, RawWalk, ReverseBlock, Walk, WalkDirection, WalkMut, WalkOrder,
+        WalkStage,
+    },
 };
 use crate::Report;
 

@@ -17,7 +17,7 @@ pub use self::{
     table::*,
 };
 use super::{Region, RegionRef, WalkResult};
-use crate::{Operation, OperationRef, UnsafeIntrusiveEntityRef, Walk};
+use crate::{Operation, OperationRef, UnsafeIntrusiveEntityRef};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidSymbolRefError {

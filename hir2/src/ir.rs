@@ -79,7 +79,7 @@ pub use self::{
     },
     verifier::{OpVerifier, Verify},
     visit::{
-        OpVisitor, OperationVisitor, RawWalk, Searcher, SymbolVisitor, Visitor, Walk, WalkMut,
-        WalkOrder, WalkResult, WalkStage,
+        Backward, Forward, OpVisitor, OperationVisitor, RawWalk, ReverseBlock, Searcher,
+        SymbolVisitor, Visitor, Walk, WalkDirection, WalkMut, WalkOrder, WalkResult, WalkStage,
     },
 };

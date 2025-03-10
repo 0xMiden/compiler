@@ -1,5 +1,7 @@
 use super::WalkResult;
-use crate::{BlockRef, Operation, OperationRef, Region, RegionRef, UnsafeIntrusiveEntityRef};
+use crate::{
+    Block, BlockRef, Operation, OperationRef, Region, RegionRef, UnsafeIntrusiveEntityRef,
+};
 
 /// The traversal order for a walk of a region, block, or operation
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -73,6 +75,12 @@ impl WalkStage {
     }
 }
 
+pub trait Direction = WalkDirection<Region, BlockRef>
+    + WalkDirection<Block, OperationRef>
+    + WalkDirection<Operation, RegionRef>;
+
+pub use crate::dataflow::{Backward, Forward};
+
 /// [Walk] represents an implementation of a depth-first traversal (pre- or post-order) from some
 /// root object in the entity graph, to children of a given entity type.
 ///
@@ -91,11 +99,12 @@ pub trait Walk<T> {
     ///
     /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
     /// over the traversal, and must be infallible.
-    fn walk_all<F>(&self, order: WalkOrder, mut callback: F)
+    fn walk_all<D, F>(&self, order: WalkOrder, mut callback: F)
     where
+        D: Direction,
         F: FnMut(&T),
     {
-        let _ = self.walk(order, |t| {
+        let _ = self.walk::<D, _, _>(order, |t| {
             callback(t);
 
             WalkResult::<()>::Continue(())
@@ -105,21 +114,23 @@ pub trait Walk<T> {
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn prewalk_all<F>(&self, callback: F)
+    fn prewalk_all<D, F>(&self, callback: F)
     where
+        D: Direction,
         F: FnMut(&T),
     {
-        self.walk_all(WalkOrder::PreOrder, callback)
+        self.walk_all::<D, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn postwalk_all<F>(&self, callback: F)
+    fn postwalk_all<D, F>(&self, callback: F)
     where
+        D: Direction,
         F: FnMut(&T),
     {
-        self.walk_all(WalkOrder::PostOrder, callback)
+        self.walk_all::<D, _>(WalkOrder::PostOrder, callback)
     }
 
     /// Walk `self` in the given order, visiting each `T` and applying the given callback to them.
@@ -130,28 +141,31 @@ pub trait Walk<T> {
     ///   have not been visited already, continuing with the next item.
     /// * `WalkResult::Break` will interrupt the walk, and no more items will be visited
     /// * `WalkResult::Continue` will continue the walk
-    fn walk<F, B>(&self, order: WalkOrder, callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&T) -> WalkResult<B>;
 
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn prewalk<F, B>(&self, callback: F) -> WalkResult<B>
+    fn prewalk<D, F, B>(&self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&T) -> WalkResult<B>,
     {
-        self.walk(WalkOrder::PreOrder, callback)
+        self.walk::<D, _, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn postwalk<F, B>(&self, callback: F) -> WalkResult<B>
+    fn postwalk<D, F, B>(&self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&T) -> WalkResult<B>,
     {
-        self.walk(WalkOrder::PostOrder, callback)
+        self.walk::<D, _, _>(WalkOrder::PostOrder, callback)
     }
 }
 
@@ -161,11 +175,12 @@ pub trait WalkMut<T> {
     ///
     /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
     /// over the traversal, and must be infallible.
-    fn walk_all_mut<F>(&mut self, order: WalkOrder, mut callback: F)
+    fn walk_all_mut<D, F>(&mut self, order: WalkOrder, mut callback: F)
     where
+        D: Direction,
         F: FnMut(&mut T),
     {
-        let _ = self.walk_mut(order, |t| {
+        let _ = self.walk_mut::<D, _, _>(order, |t| {
             callback(t);
 
             WalkResult::<()>::Continue(())
@@ -175,21 +190,23 @@ pub trait WalkMut<T> {
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn prewalk_all_mut<F>(&mut self, callback: F)
+    fn prewalk_all_mut<D, F>(&mut self, callback: F)
     where
+        D: Direction,
         F: FnMut(&mut T),
     {
-        self.walk_all_mut(WalkOrder::PreOrder, callback)
+        self.walk_all_mut::<D, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn postwalk_all_mut<F>(&mut self, callback: F)
+    fn postwalk_all_mut<D, F>(&mut self, callback: F)
     where
+        D: Direction,
         F: FnMut(&mut T),
     {
-        self.walk_all_mut(WalkOrder::PostOrder, callback)
+        self.walk_all_mut::<D, _>(WalkOrder::PostOrder, callback)
     }
 
     /// Walk `self` in the given order, visiting each `T` and applying the given callback to them.
@@ -200,28 +217,31 @@ pub trait WalkMut<T> {
     ///   have not been visited already, continuing with the next item.
     /// * `WalkResult::Break` will interrupt the walk, and no more items will be visited
     /// * `WalkResult::Continue` will continue the walk
-    fn walk_mut<F, B>(&mut self, order: WalkOrder, callback: F) -> WalkResult<B>
+    fn walk_mut<D, F, B>(&mut self, order: WalkOrder, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut T) -> WalkResult<B>;
 
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn prewalk_mut_interruptible<F, B>(&mut self, callback: F) -> WalkResult<B>
+    fn prewalk_mut_interruptible<D, F, B>(&mut self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut T) -> WalkResult<B>,
     {
-        self.walk_mut(WalkOrder::PreOrder, callback)
+        self.walk_mut::<D, _, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn postwalk_mut_interruptible<F, B>(&mut self, callback: F) -> WalkResult<B>
+    fn postwalk_mut_interruptible<D, F, B>(&mut self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut T) -> WalkResult<B>,
     {
-        self.walk_mut(WalkOrder::PostOrder, callback)
+        self.walk_mut::<D, _, _>(WalkOrder::PostOrder, callback)
     }
 }
 
@@ -234,11 +254,12 @@ pub trait RawWalk<T> {
     ///
     /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
     /// over the traversal, and must be infallible.
-    fn raw_walk_all<F>(&self, order: WalkOrder, mut callback: F)
+    fn raw_walk_all<D, F>(&self, order: WalkOrder, mut callback: F)
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>),
     {
-        let _ = self.raw_walk(order, |t| {
+        let _ = self.raw_walk::<D, _, _>(order, |t| {
             callback(t);
 
             WalkResult::<()>::Continue(())
@@ -248,21 +269,23 @@ pub trait RawWalk<T> {
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn raw_prewalk_all<F>(&self, callback: F)
+    fn raw_prewalk_all<D, F>(&self, callback: F)
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>),
     {
-        self.raw_walk_all(WalkOrder::PreOrder, callback)
+        self.raw_walk_all::<D, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`.
     #[inline]
-    fn raw_postwalk_all<F>(&self, callback: F)
+    fn raw_postwalk_all<D, F>(&self, callback: F)
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>),
     {
-        self.raw_walk_all(WalkOrder::PostOrder, callback)
+        self.raw_walk_all::<D, _>(WalkOrder::PostOrder, callback)
     }
 
     /// Walk `self` in the given order, visiting each `T` and applying the given callback to them.
@@ -273,114 +296,126 @@ pub trait RawWalk<T> {
     ///   have not been visited already, continuing with the next item.
     /// * `WalkResult::Break` will interrupt the walk, and no more items will be visited
     /// * `WalkResult::Continue` will continue the walk
-    fn raw_walk<F, B>(&self, order: WalkOrder, callback: F) -> WalkResult<B>
+    fn raw_walk<D, F, B>(&self, order: WalkOrder, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>) -> WalkResult<B>;
 
     /// Walk all `T` in `self` using a pre-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn raw_prewalk<F, B>(&self, callback: F) -> WalkResult<B>
+    fn raw_prewalk<D, F, B>(&self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>) -> WalkResult<B>,
     {
-        self.raw_walk(WalkOrder::PreOrder, callback)
+        self.raw_walk::<D, _, _>(WalkOrder::PreOrder, callback)
     }
 
     /// Walk all `T` in `self` using a post-order, depth-first traversal, applying the given callback
     /// to each `T`, and determining how to proceed based on the returned [WalkResult].
     #[inline]
-    fn raw_postwalk<F, B>(&self, callback: F) -> WalkResult<B>
+    fn raw_postwalk<D, F, B>(&self, callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<T>) -> WalkResult<B>,
     {
-        self.raw_walk(WalkOrder::PostOrder, callback)
+        self.raw_walk::<D, _, _>(WalkOrder::PostOrder, callback)
     }
 }
 
 /// Walking operations nested within an [Operation], including itself
 impl RawWalk<Operation> for OperationRef {
-    fn raw_walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn raw_walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<Operation>) -> WalkResult<B>,
     {
-        raw_walk_operations(*self, order, &mut callback)
+        raw_walk_operations::<D, _, _>(*self, order, &mut callback)
     }
 }
 
 impl Walk<Operation> for OperationRef {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Operation) -> WalkResult<B>,
     {
         let mut wrapper = |op: OperationRef| callback(&op.borrow());
-        raw_walk_operations(*self, order, &mut wrapper)
+        raw_walk_operations::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl WalkMut<Operation> for OperationRef {
-    fn walk_mut<F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk_mut<D, F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut Operation) -> WalkResult<B>,
     {
         let mut wrapper = |mut op: OperationRef| callback(&mut op.borrow_mut());
-        raw_walk_operations(*self, order, &mut wrapper)
+        raw_walk_operations::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl Walk<Operation> for Operation {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Operation) -> WalkResult<B>,
     {
         let mut wrapper = |op: OperationRef| callback(&op.borrow());
-        raw_walk_operations(self.as_operation_ref(), order, &mut wrapper)
+        raw_walk_operations::<D, _, _>(self.as_operation_ref(), order, &mut wrapper)
     }
 }
 
 /// Walking regions of an [Operation], and those of all nested operations
 impl RawWalk<Region> for OperationRef {
-    fn raw_walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn raw_walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<Region>) -> WalkResult<B>,
     {
-        raw_walk_regions(*self, order, &mut callback)
+        raw_walk_regions::<D, _, _>(*self, order, &mut callback)
     }
 }
 
 impl Walk<Region> for OperationRef {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Region) -> WalkResult<B>,
     {
         let mut wrapper = |region: RegionRef| callback(&region.borrow());
-        raw_walk_regions(*self, order, &mut wrapper)
+        raw_walk_regions::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl WalkMut<Region> for OperationRef {
-    fn walk_mut<F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk_mut<D, F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut Region) -> WalkResult<B>,
     {
         let mut wrapper = |mut region: RegionRef| callback(&mut region.borrow_mut());
-        raw_walk_regions(*self, order, &mut wrapper)
+        raw_walk_regions::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl Walk<Region> for Operation {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Region) -> WalkResult<B>,
     {
         let mut wrapper = |region: RegionRef| callback(&region.borrow());
-        raw_walk_regions(self.as_operation_ref(), order, &mut wrapper)
+        raw_walk_regions::<D, _, _>(self.as_operation_ref(), order, &mut wrapper)
     }
 }
 
 #[allow(unused)]
-pub fn raw_walk<F, B>(op: OperationRef, callback: &mut F) -> WalkResult<B>
+pub fn raw_walk<D, F, B>(op: OperationRef, callback: &mut F) -> WalkResult<B>
 where
+    D: Direction,
     F: FnMut(OperationRef, &WalkStage) -> WalkResult<B>,
 {
     let mut stage = WalkStage::new(op);
@@ -396,15 +431,15 @@ where
             WalkResult::Continue(_) => {
                 stage.advance();
 
-                let mut next_block = region.borrow().body().front().as_pointer();
+                let mut next_block = D::start(&*region.borrow());
                 while let Some(block) = next_block.take() {
-                    next_block = block.next();
+                    next_block = D::continue_walk(block);
 
-                    let mut next_op = block.borrow().body().front().as_pointer();
+                    let mut next_op = D::start(&*block.borrow());
                     while let Some(op) = next_op.take() {
-                        next_op = op.next();
+                        next_op = D::continue_walk(op);
 
-                        raw_walk(op, callback)?;
+                        raw_walk::<D, _, _>(op, callback)?;
                     }
                 }
             }
@@ -415,13 +450,14 @@ where
     callback(op, &stage)
 }
 
-fn raw_walk_regions<F, B>(op: OperationRef, order: WalkOrder, callback: &mut F) -> WalkResult<B>
+fn raw_walk_regions<D, F, B>(op: OperationRef, order: WalkOrder, callback: &mut F) -> WalkResult<B>
 where
+    D: Direction,
     F: FnMut(RegionRef) -> WalkResult<B>,
 {
-    let mut next_region = op.borrow().regions().front().as_pointer();
+    let mut next_region = D::start(&*op.borrow());
     while let Some(region) = next_region.take() {
-        next_region = region.next();
+        next_region = D::continue_walk(region);
 
         if matches!(order, WalkOrder::PreOrder) {
             let result = callback(region);
@@ -432,15 +468,15 @@ where
             }
         }
 
-        let mut next_block = region.borrow().body().front().as_pointer();
+        let mut next_block = D::start(&*region.borrow());
         while let Some(block) = next_block.take() {
-            next_block = block.next();
+            next_block = D::continue_walk(block);
 
-            let mut next_op = block.borrow().body().front().as_pointer();
+            let mut next_op = D::start(&*block.borrow());
             while let Some(op) = next_op.take() {
-                next_op = op.next();
+                next_op = D::continue_walk(op);
 
-                raw_walk_regions(op, order, callback)?;
+                raw_walk_regions::<D, _, _>(op, order, callback)?;
             }
         }
 
@@ -453,17 +489,18 @@ where
 }
 
 #[allow(unused)]
-fn raw_walk_blocks<F, B>(op: OperationRef, order: WalkOrder, callback: &mut F) -> WalkResult<B>
+fn raw_walk_blocks<D, F, B>(op: OperationRef, order: WalkOrder, callback: &mut F) -> WalkResult<B>
 where
+    D: Direction,
     F: FnMut(BlockRef) -> WalkResult<B>,
 {
-    let mut next_region = op.borrow().regions().front().as_pointer();
+    let mut next_region = D::start(&*op.borrow());
     while let Some(region) = next_region.take() {
-        next_region = region.next();
+        next_region = D::continue_walk(region);
 
-        let mut next_block = region.borrow().body().front().as_pointer();
+        let mut next_block = D::start(&*region.borrow());
         while let Some(block) = next_block.take() {
-            next_block = block.next();
+            next_block = D::continue_walk(block);
 
             if matches!(order, WalkOrder::PreOrder) {
                 let result = callback(block);
@@ -474,11 +511,11 @@ where
                 }
             }
 
-            let mut next_op = block.borrow().body().front().as_pointer();
+            let mut next_op = D::start(&*block.borrow());
             while let Some(op) = next_op.take() {
-                next_op = op.next();
+                next_op = D::continue_walk(op);
 
-                raw_walk_blocks(op, order, callback)?;
+                raw_walk_blocks::<D, _, _>(op, order, callback)?;
             }
 
             if matches!(order, WalkOrder::PostOrder) {
@@ -490,8 +527,13 @@ where
     WalkResult::Continue(())
 }
 
-fn raw_walk_operations<F, B>(op: OperationRef, order: WalkOrder, callback: &mut F) -> WalkResult<B>
+fn raw_walk_operations<D, F, B>(
+    op: OperationRef,
+    order: WalkOrder,
+    callback: &mut F,
+) -> WalkResult<B>
 where
+    D: Direction,
     F: FnMut(OperationRef) -> WalkResult<B>,
 {
     if matches!(order, WalkOrder::PreOrder) {
@@ -503,19 +545,19 @@ where
         }
     }
 
-    let mut next_region = op.borrow().regions().front().as_pointer();
+    let mut next_region = D::start(&*op.borrow());
     while let Some(region) = next_region.take() {
-        next_region = region.next();
+        next_region = D::continue_walk(region);
 
-        let mut next_block = region.borrow().body().front().as_pointer();
+        let mut next_block = D::start(&*region.borrow());
         while let Some(block) = next_block.take() {
-            next_block = block.next();
+            next_block = D::continue_walk(block);
 
-            let mut next_op = block.borrow().body().front().as_pointer();
+            let mut next_op = D::start(&*block.borrow());
             while let Some(op) = next_op.take() {
-                next_op = op.next();
+                next_op = D::continue_walk(op);
 
-                raw_walk_operations(op, order, callback)?;
+                raw_walk_operations::<D, _, _>(op, order, callback)?;
             }
         }
     }
@@ -527,23 +569,24 @@ where
     WalkResult::Continue(())
 }
 
-fn raw_walk_region_operations<F, B>(
+fn raw_walk_region_operations<D, F, B>(
     region: RegionRef,
     order: WalkOrder,
     callback: &mut F,
 ) -> WalkResult<B>
 where
+    D: Direction,
     F: FnMut(OperationRef) -> WalkResult<B>,
 {
-    let mut next_block = region.borrow().body().front().as_pointer();
+    let mut next_block = D::start(&*region.borrow());
     while let Some(block) = next_block.take() {
-        next_block = block.next();
+        next_block = D::continue_walk(block);
 
-        let mut next_op = block.borrow().body().front().as_pointer();
+        let mut next_op = D::start(&*block.borrow());
         while let Some(op) = next_op.take() {
-            next_op = op.next();
+            next_op = D::continue_walk(op);
 
-            raw_walk_operations(op, order, callback)?;
+            raw_walk_operations::<D, _, _>(op, order, callback)?;
         }
     }
 
@@ -552,40 +595,149 @@ where
 
 /// Walking operations nested within a [Region]
 impl RawWalk<Operation> for RegionRef {
-    fn raw_walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn raw_walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(UnsafeIntrusiveEntityRef<Operation>) -> WalkResult<B>,
     {
-        raw_walk_region_operations(*self, order, &mut callback)
+        raw_walk_region_operations::<D, _, _>(*self, order, &mut callback)
     }
 }
 
 impl Walk<Operation> for RegionRef {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Operation) -> WalkResult<B>,
     {
         let mut wrapper = |op: OperationRef| callback(&op.borrow());
-        raw_walk_region_operations(*self, order, &mut wrapper)
+        raw_walk_region_operations::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl WalkMut<Operation> for RegionRef {
-    fn walk_mut<F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk_mut<D, F, B>(&mut self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&mut Operation) -> WalkResult<B>,
     {
         let mut wrapper = |mut op: OperationRef| callback(&mut op.borrow_mut());
-        raw_walk_region_operations(*self, order, &mut wrapper)
+        raw_walk_region_operations::<D, _, _>(*self, order, &mut wrapper)
     }
 }
 
 impl Walk<Operation> for Region {
-    fn walk<F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
+    fn walk<D, F, B>(&self, order: WalkOrder, mut callback: F) -> WalkResult<B>
     where
+        D: Direction,
         F: FnMut(&Operation) -> WalkResult<B>,
     {
         let mut wrapper = |op: OperationRef| callback(&op.borrow());
-        raw_walk_region_operations(self.as_region_ref(), order, &mut wrapper)
+        raw_walk_region_operations::<D, _, _>(self.as_region_ref(), order, &mut wrapper)
+    }
+}
+
+pub trait WalkDirection<Parent, Child> {
+    fn start(entity: &Parent) -> Option<Child>;
+    fn continue_walk(child: Child) -> Option<Child>;
+}
+
+/// A custom [WalkDirection] that is the same as [Forward], except the operations of each block
+/// are visited bottom-up, i.e. as if [Backward] applied just to [Block].
+pub struct ReverseBlock;
+
+impl WalkDirection<Region, BlockRef> for ReverseBlock {
+    #[inline(always)]
+    fn start(entity: &Region) -> Option<BlockRef> {
+        entity.body().front().as_pointer()
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: BlockRef) -> Option<BlockRef> {
+        child.next()
+    }
+}
+
+impl WalkDirection<Block, OperationRef> for ReverseBlock {
+    #[inline(always)]
+    fn start(entity: &Block) -> Option<OperationRef> {
+        entity.body().back().as_pointer()
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: OperationRef) -> Option<OperationRef> {
+        child.prev()
+    }
+}
+
+impl WalkDirection<Operation, RegionRef> for ReverseBlock {
+    #[inline(always)]
+    fn start(entity: &Operation) -> Option<RegionRef> {
+        entity.regions().front().as_pointer()
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: RegionRef) -> Option<RegionRef> {
+        child.next()
+    }
+}
+
+impl<D: crate::dataflow::AnalysisDirection> WalkDirection<Region, BlockRef> for D {
+    #[inline(always)]
+    fn start(entity: &Region) -> Option<BlockRef> {
+        if const { D::IS_FORWARD } {
+            entity.body().front().as_pointer()
+        } else {
+            entity.body().back().as_pointer()
+        }
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: BlockRef) -> Option<BlockRef> {
+        if const { D::IS_FORWARD } {
+            child.next()
+        } else {
+            child.prev()
+        }
+    }
+}
+
+impl<D: crate::dataflow::AnalysisDirection> WalkDirection<Block, OperationRef> for D {
+    #[inline(always)]
+    fn start(entity: &Block) -> Option<OperationRef> {
+        if const { D::IS_FORWARD } {
+            entity.body().front().as_pointer()
+        } else {
+            entity.body().back().as_pointer()
+        }
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: OperationRef) -> Option<OperationRef> {
+        if const { D::IS_FORWARD } {
+            child.next()
+        } else {
+            child.prev()
+        }
+    }
+}
+
+impl<D: crate::dataflow::AnalysisDirection> WalkDirection<Operation, RegionRef> for D {
+    #[inline(always)]
+    fn start(entity: &Operation) -> Option<RegionRef> {
+        if const { D::IS_FORWARD } {
+            entity.regions().front().as_pointer()
+        } else {
+            entity.regions().back().as_pointer()
+        }
+    }
+
+    #[inline(always)]
+    fn continue_walk(child: RegionRef) -> Option<RegionRef> {
+        if const { D::IS_FORWARD } {
+            child.next()
+        } else {
+            child.prev()
+        }
     }
 }

@@ -163,6 +163,37 @@ impl Region {
     }
 }
 
+/// Traversal
+impl Region {
+    pub fn prewalk_all<F>(&self, callback: F)
+    where
+        F: FnMut(&Operation),
+    {
+        Walk::<Operation>::prewalk_all::<Forward, _>(self, callback);
+    }
+
+    pub fn prewalk<F, B>(&self, callback: F) -> WalkResult<B>
+    where
+        F: FnMut(&Operation) -> WalkResult<B>,
+    {
+        Walk::<Operation>::prewalk::<Forward, _, _>(self, callback)
+    }
+
+    pub fn postwalk_all<F>(&self, callback: F)
+    where
+        F: FnMut(&Operation),
+    {
+        Walk::<Operation>::postwalk_all::<Forward, _>(self, callback);
+    }
+
+    pub fn postwalk<F, B>(&self, callback: F) -> WalkResult<B>
+    where
+        F: FnMut(&Operation) -> WalkResult<B>,
+    {
+        Walk::<Operation>::postwalk::<Forward, _, _>(self, callback)
+    }
+}
+
 /// Metadata
 impl Region {
     #[inline]

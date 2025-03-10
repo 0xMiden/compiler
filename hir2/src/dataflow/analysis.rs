@@ -200,17 +200,17 @@ mod sealed {
         const IS_SPARSE: bool = true;
     }
 
-    pub(super) trait AnalysisDirection {
+    pub trait AnalysisDirection: Default {
         const IS_FORWARD: bool;
     }
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, Default)]
     pub struct Forward;
     impl AnalysisDirection for Forward {
         const IS_FORWARD: bool = true;
     }
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, Default)]
     pub struct Backward;
     impl AnalysisDirection for Backward {
         const IS_FORWARD: bool = false;

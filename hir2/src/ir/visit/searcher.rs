@@ -1,4 +1,4 @@
-use super::{OpVisitor, OperationVisitor, SymbolVisitor, Visitor, Walk, WalkResult};
+use super::{OpVisitor, OperationVisitor, SymbolVisitor, Visitor, WalkResult};
 use crate::{Op, Operation, OperationRef, Symbol};
 
 /// [Searcher] is a driver for [Visitor] impls as applied to some root [Operation].

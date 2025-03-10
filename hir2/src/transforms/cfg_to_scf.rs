@@ -348,7 +348,7 @@ pub fn transform_cfg_to_scf(
 ///
 /// Returns failure if any precondition is violated.
 fn check_transformation_preconditions(region: &Region) -> Result<(), Report> {
-    use crate::{SuccessorOperands, Walk};
+    use crate::SuccessorOperands;
 
     for block in region.body() {
         if !block.has_predecessors() && !block.is_entry_block() {
