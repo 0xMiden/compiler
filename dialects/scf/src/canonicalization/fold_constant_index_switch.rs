@@ -55,14 +55,6 @@ impl Pattern for FoldConstantIndexSwitch {
 }
 
 impl RewritePattern for FoldConstantIndexSwitch {
-    fn matches(&self, op: OperationRef) -> Result<bool, Report> {
-        Ok(self.match_constant_selector(op).is_some())
-    }
-
-    fn rewrite(&self, _op: OperationRef, _rewriter: &mut dyn Rewriter) {
-        panic!("call match_and_rewrite")
-    }
-
     fn match_and_rewrite(
         &self,
         op: OperationRef,

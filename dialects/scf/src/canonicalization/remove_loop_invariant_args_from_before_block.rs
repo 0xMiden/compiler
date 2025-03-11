@@ -85,14 +85,6 @@ impl Pattern for RemoveLoopInvariantArgsFromBeforeBlock {
 }
 
 impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
-    fn matches(&self, _op: OperationRef) -> Result<bool, Report> {
-        panic!("call match_and_rewrite")
-    }
-
-    fn rewrite(&self, _op: OperationRef, _rewriter: &mut dyn Rewriter) {
-        panic!("call match_and_rewrite")
-    }
-
     fn match_and_rewrite(
         &self,
         operation: OperationRef,
