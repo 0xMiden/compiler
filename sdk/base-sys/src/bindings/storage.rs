@@ -52,10 +52,10 @@ extern "C" {
 ///
 /// Panics if:
 /// - the index of the requested item is out of bounds.
-pub fn get_item(index: Felt) -> Word {
+pub fn get_item(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_get_storage_item(index, ret_area.as_mut_ptr());
+        extern_get_storage_item(index.into(), ret_area.as_mut_ptr());
         ret_area.assume_init()
     }
 }
@@ -73,11 +73,11 @@ pub fn get_item(index: Felt) -> Word {
 ///
 /// Panics if:
 /// - the index of the item is out of bounds.
-pub fn set_item(index: Felt, value: Word) -> (Word, Word) {
+pub fn set_item(index: u8, value: Word) -> (Word, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(Word, Word)>::uninit();
         extern_set_storage_item(
-            index,
+            index.into(),
             value[0],
             value[1],
             value[2],
@@ -101,10 +101,17 @@ pub fn set_item(index: Felt, value: Word) -> (Word, Word) {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
-pub fn get_map_item(index: Felt, key: Word) -> Word {
+pub fn get_map_item(index: u8, key: Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_get_storage_map_item(index, key[0], key[1], key[2], key[3], ret_area.as_mut_ptr());
+        extern_get_storage_map_item(
+            index.into(),
+            key[0],
+            key[1],
+            key[2],
+            key[3],
+            ret_area.as_mut_ptr(),
+        );
         ret_area.assume_init()
     }
 }
@@ -124,11 +131,11 @@ pub fn get_map_item(index: Felt, key: Word) -> Word {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
-pub fn set_map_item(index: Felt, key: Word, value: Word) -> (Word, Word) {
+pub fn set_map_item(index: u8, key: Word, value: Word) -> (Word, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(Word, Word)>::uninit();
         extern_set_storage_map_item(
-            index,
+            index.into(),
             key[0],
             key[1],
             key[2],

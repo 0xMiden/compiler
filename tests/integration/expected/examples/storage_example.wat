@@ -45,12 +45,12 @@
     (type (;5;) (func))
     (type (;6;) (func (param i32 i32) (result i32)))
     (type (;7;) (func (param i32 i32 i32 i32) (result i32)))
-    (type (;8;) (func (param f32 f32 f32 f32 f32) (result f32)))
-    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
+    (type (;8;) (func (param i32 f32 f32 f32 f32) (result f32)))
+    (type (;9;) (func (param i32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
     (type (;10;) (func (param i32 i32 i32) (result i32)))
-    (type (;11;) (func (param i32 f32)))
-    (type (;12;) (func (param i32 f32 i32)))
-    (type (;13;) (func (param i32 f32 i32 i32)))
+    (type (;11;) (func (param i32 i32)))
+    (type (;12;) (func (param i32 i32 i32)))
+    (type (;13;) (func (param i32 i32 i32 i32)))
     (import "miden:core-import/intrinsics-felt@1.0.0" "eq" (func $miden_stdlib_sys::intrinsics::felt::extern_eq (;0;) (type 0)))
     (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;1;) (type 1)))
     (import "miden:core-import/account@1.0.0" "get-storage-item" (func $miden_base_sys::bindings::storage::extern_get_storage_item (;2;) (type 2)))
@@ -139,7 +139,7 @@
       end
       local.get 2
     )
-    (func $miden:storage-example/foo@1.0.0#test-storage-item (;11;) (type 8) (param f32 f32 f32 f32 f32) (result f32)
+    (func $miden:storage-example/foo@1.0.0#test-storage-item (;11;) (type 8) (param i32 f32 f32 f32 f32) (result f32)
       (local i32 i32)
       global.get $__stack_pointer
       local.tee 5
@@ -186,12 +186,12 @@
       end
       local.get 5
       f32.load offset=32
-      local.set 0
+      local.set 4
       local.get 6
       global.set $__stack_pointer
-      local.get 0
+      local.get 4
     )
-    (func $miden:storage-example/foo@1.0.0#test-storage-map-item (;12;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden:storage-example/foo@1.0.0#test-storage-map-item (;12;) (type 9) (param i32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       (local i32 i32)
       global.get $__stack_pointer
       local.tee 9
@@ -256,10 +256,10 @@
       end
       local.get 9
       f32.load offset=64
-      local.set 0
+      local.set 4
       local.get 10
       global.set $__stack_pointer
-      local.get 0
+      local.get 4
     )
     (func $cabi_realloc_wit_bindgen_0_28_0 (;13;) (type 7) (param i32 i32 i32 i32) (result i32)
       local.get 0
@@ -382,13 +382,19 @@
       end
       unreachable
     )
-    (func $miden_base_sys::bindings::storage::get_item (;17;) (type 11) (param i32 f32)
+    (func $miden_base_sys::bindings::storage::get_item (;17;) (type 11) (param i32 i32)
       local.get 1
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
       local.get 0
       call $miden_base_sys::bindings::storage::extern_get_storage_item
     )
-    (func $miden_base_sys::bindings::storage::set_item (;18;) (type 12) (param i32 f32 i32)
+    (func $miden_base_sys::bindings::storage::set_item (;18;) (type 12) (param i32 i32 i32)
       local.get 1
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
       local.get 2
       f32.load
       local.get 2
@@ -400,8 +406,11 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_set_storage_item
     )
-    (func $miden_base_sys::bindings::storage::get_map_item (;19;) (type 12) (param i32 f32 i32)
+    (func $miden_base_sys::bindings::storage::get_map_item (;19;) (type 12) (param i32 i32 i32)
       local.get 1
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
       local.get 2
       f32.load
       local.get 2
@@ -413,8 +422,11 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_get_storage_map_item
     )
-    (func $miden_base_sys::bindings::storage::set_map_item (;20;) (type 13) (param i32 f32 i32 i32)
+    (func $miden_base_sys::bindings::storage::set_map_item (;20;) (type 13) (param i32 i32 i32 i32)
       local.get 1
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
       local.get 2
       f32.load
       local.get 2
@@ -482,13 +494,13 @@
     )
   )
   (alias core export 3 "memory" (core memory (;0;)))
-  (alias export 3 "felt" (type (;4;)))
-  (alias export 3 "word" (type (;5;)))
-  (type (;6;) (func (param "index" 4) (param "value" 5) (result 4)))
+  (alias export 3 "word" (type (;4;)))
+  (alias export 3 "felt" (type (;5;)))
+  (type (;6;) (func (param "index" u8) (param "value" 4) (result 5)))
   (alias core export 3 "miden:storage-example/foo@1.0.0#test-storage-item" (core func (;6;)))
   (alias core export 3 "cabi_realloc" (core func (;7;)))
   (func (;6;) (type 6) (canon lift (core func 6)))
-  (type (;7;) (func (param "index" 4) (param "key" 5) (param "value" 5) (result 4)))
+  (type (;7;) (func (param "index" u8) (param "key" 4) (param "value" 4) (result 5)))
   (alias core export 3 "miden:storage-example/foo@1.0.0#test-storage-map-item" (core func (;8;)))
   (func (;7;) (type 7) (canon lift (core func 8)))
   (alias export 3 "felt" (type (;8;)))
@@ -499,17 +511,17 @@
     (type (;2;) (tuple 1 1 1 1))
     (type (;3;) (record (field "inner" 2)))
     (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-felt0" (type (;5;) (eq 1)))
-    (import "import-type-word0" (type (;6;) (eq 4)))
-    (type (;7;) (func (param "index" 5) (param "value" 6) (result 5)))
+    (import "import-type-word0" (type (;5;) (eq 4)))
+    (import "import-type-felt0" (type (;6;) (eq 1)))
+    (type (;7;) (func (param "index" u8) (param "value" 5) (result 6)))
     (import "import-func-test-storage-item" (func (;0;) (type 7)))
-    (type (;8;) (func (param "index" 5) (param "key" 6) (param "value" 6) (result 5)))
+    (type (;8;) (func (param "index" u8) (param "key" 5) (param "value" 5) (result 6)))
     (import "import-func-test-storage-map-item" (func (;1;) (type 8)))
     (export (;9;) "felt" (type 1))
     (export (;10;) "word" (type 4))
-    (type (;11;) (func (param "index" 9) (param "value" 10) (result 9)))
+    (type (;11;) (func (param "index" u8) (param "value" 10) (result 9)))
     (export (;2;) "test-storage-item" (func 0) (func (type 11)))
-    (type (;12;) (func (param "index" 9) (param "key" 10) (param "value" 10) (result 9)))
+    (type (;12;) (func (param "index" u8) (param "key" 10) (param "value" 10) (result 9)))
     (export (;3;) "test-storage-map-item" (func 1) (func (type 12)))
   )
   (instance (;4;) (instantiate 0
@@ -517,8 +529,8 @@
       (with "import-func-test-storage-map-item" (func 7))
       (with "import-type-felt" (type 8))
       (with "import-type-word" (type 9))
-      (with "import-type-felt0" (type 4))
-      (with "import-type-word0" (type 5))
+      (with "import-type-word0" (type 4))
+      (with "import-type-felt0" (type 5))
     )
   )
   (export (;5;) "miden:storage-example/foo@1.0.0" (instance 4))

@@ -25,7 +25,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     account.insert(GET_STORAGE_ITEM, FunctionType::new([Felt], [Felt, Felt, Felt, Felt]));
     account.insert(
         SET_STORAGE_ITEM,
-        FunctionType::new([Felt, Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            [Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+        ),
     );
     account.insert(
         GET_STORAGE_MAP_ITEM,
