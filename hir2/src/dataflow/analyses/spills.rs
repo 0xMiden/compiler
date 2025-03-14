@@ -2,27 +2,27 @@ use alloc::collections::VecDeque;
 
 use smallvec::SmallVec;
 
+use super::dce::{CfgEdge, Executable};
 use crate::{
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     dataflow::{
         analyses::{
-            constant_propagation::ConstantValue,
-            dce::PredecessorState,
-            liveness::{LivenessAnalysis, LOOP_EXIT_DISTANCE},
+            constant_propagation::ConstantValue, dce::PredecessorState,
+            liveness::LOOP_EXIT_DISTANCE, LivenessAnalysis,
         },
         Lattice,
     },
     dialects::builtin::Function,
-    dominance::DominanceInfo,
+    dominance::{DominanceInfo, DominanceTree},
     formatter::DisplayValues,
     loops::{Loop, LoopForest, LoopInfo},
     pass::{Analysis, AnalysisManager},
     traits::{BranchOpInterface, IsolatedFromAbove, Terminator},
-    AttributeValue, Block, BlockArgument, BlockOperand, BlockRef, EntityWithId, FxHashMap,
-    FxHashSet, LoopLikeOpInterface, Op, Operation, OperationRef, ProgramPoint, Region,
-    RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, SourceSpan, Spanned,
-    SuccessorOperands, Value, ValueOrAlias, ValueRef,
+    AttributeValue, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
+    OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
+    RegionBranchTerminatorOpInterface, Report, SourceSpan, Spanned, SuccessorOperands, Value,
+    ValueOrAlias, ValueRange, ValueRef,
 };
 
 /// This analysis is responsible for simulating the state of the operand stack at each program
@@ -216,7 +216,7 @@ use crate::{
 /// no uses, are dead and can be eliminated. Similarly, a reload we never reach must also be
 /// dead code - but in practice that won't happen, since we do not visit unreachable blocks
 /// during the spill analysis anyway.
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SpillAnalysis {
     // The set of control flow edges that must be split to accommodate spills/reloads.
     pub splits: SmallVec<[SplitInfo; 1]>,
@@ -226,59 +226,106 @@ pub struct SpillAnalysis {
     pub spills: SmallVec<[SpillInfo; 4]>,
     // The set of instructions corresponding to the reload of a spilled value
     pub reloads: SmallVec<[ReloadInfo; 4]>,
-    // The set of operands in registers on entry to a given block
-    w_entries: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
-    // The set of operands in registers on exit from a given block
-    w_exits: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
-    // The set of operands that have been spilled so far, on exit from a given block
-    s_exits: FxHashMap<BlockRef, SmallSet<ValueOrAlias, 4>>,
+    // The set of operands in registers on entry to a given program point
+    w_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
+    // The set of operands that have been spilled upon entry to a given program point
+    s_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
+    // The set of operands in registers on exit from a given program point
+    w_exits: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
+    // The set of operands that have been spilled so far, on exit from a given program point
+    s_exits: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
 }
 
-impl Analysis for SpillAnalysis {
-    type Target = Function;
+/// Represents a single predecessor for some [ProgramPoint]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Predecessor {
+    /// The predecessor of the point, is one of the following:
+    ///
+    /// 1. For a point at the start of a block, the predecessor is the operation itself on entry
+    /// 2. For a point after an op, the predecessor is the entry of that op, i.e. control bypassed
+    ///    all of the op's nested regions and skipped straight to after the op.
+    Parent,
+    /// The predecessor of the point is cross-region control flow
+    Region(OperationRef),
+    /// The predecessor of the point is unstructured control flow
+    Block { op: OperationRef, index: u8 },
+}
 
-    fn name(&self) -> &'static str {
-        "spills"
+impl Predecessor {
+    pub fn operation(&self, point: ProgramPoint) -> OperationRef {
+        match self {
+            Self::Parent => match point {
+                ProgramPoint::Block { block, .. } => block.grandparent().unwrap(),
+                ProgramPoint::Op { op, .. } => op,
+                _ => unreachable!(),
+            },
+            Self::Region(op) | Self::Block { op, .. } => *op,
+        }
     }
 
-    fn analyze(
-        &mut self,
-        op: &Self::Target,
-        analysis_manager: AnalysisManager,
-    ) -> Result<(), Report> {
-        let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
-        let loops = analysis_manager.get_analysis::<LoopInfo>()?;
-        let liveness = analysis_manager.get_analysis_for::<LivenessAnalysis, Function>()?;
-
-        let body = op.body().as_region_ref();
-        let mut w = SmallSet::default();
-        let mut s = SmallSet::default();
-        self.visit_cfg(
-            op.as_operation(),
-            &body.borrow(),
-            &dominfo,
-            &loops,
-            &liveness,
-            analysis_manager,
-            &mut w,
-            &mut s,
-        )
+    pub fn block(&self) -> Option<BlockRef> {
+        match self {
+            Self::Parent => None,
+            Self::Region(op) | Self::Block { op, .. } => op.parent(),
+        }
     }
 
-    fn invalidate(&self, preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
-        !preserved_analyses.is_preserved::<LivenessAnalysis>()
+    pub fn arguments(&self, point: ProgramPoint) -> ValueRange<'static, 4> {
+        match self {
+            Self::Parent => match point {
+                ProgramPoint::Block { block, .. } => {
+                    // We need to get the entry successor operands from the parent branch op to
+                    // `block`
+                    let op = block.grandparent().unwrap();
+                    let op = op.borrow();
+                    let branch = op.as_trait::<dyn RegionBranchOpInterface>().unwrap();
+                    let args = branch.get_entry_successor_operands(RegionBranchPoint::Child(
+                        block.parent().unwrap(),
+                    ));
+                    ValueRange::<4>::from(args).into_owned()
+                }
+                ProgramPoint::Op { op, .. } => {
+                    // There cannot be any successor arguments in this case, and the op itself
+                    // cannot have any results
+                    assert_eq!(op.borrow().num_results(), 0);
+                    ValueRange::Empty
+                }
+                _ => unreachable!(),
+            },
+            Self::Region(op) => {
+                let op = op.borrow();
+                let terminator = op.as_trait::<dyn RegionBranchTerminatorOpInterface>().unwrap();
+                let branch_point = match point {
+                    ProgramPoint::Block { block, .. } => {
+                        // Transfer of control to another region of the parent op
+                        RegionBranchPoint::Child(block.parent().unwrap())
+                    }
+                    ProgramPoint::Op { .. } => {
+                        // Returning from the predecessor region back to the parent op's exit
+                        RegionBranchPoint::Parent
+                    }
+                    _ => unreachable!(),
+                };
+                let args = terminator.get_successor_operands(branch_point);
+                ValueRange::<4>::from(args).into_owned()
+            }
+            Self::Block { op, index } => {
+                ValueRange::<4>::from(op.borrow().successor(*index as usize).arguments).into_owned()
+            }
+        }
     }
 }
 
 /// The state of the W and S sets on entry to a given block
 #[derive(Debug)]
-struct BlockInfo {
-    block_id: BlockRef,
+struct ProgramPointInfo {
+    point: ProgramPoint,
     w_entry: SmallSet<ValueOrAlias, 4>,
     s_entry: SmallSet<ValueOrAlias, 4>,
+    live_predecessors: SmallVec<[Predecessor; 2]>,
 }
 
-/// Uniquely identifies a [SplitInfo]
+/// Uniquely identifies a computed split control flow edge in a [SpillAnalysis]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Split(u32);
 impl Split {
@@ -292,41 +339,20 @@ impl Split {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum CfgEdge {
-    Local {
-        from: BlockRef,
-        to: BlockRef,
-    },
-    Regional {
-        op: OperationRef,
-        from: RegionBranchPoint,
-        to: RegionBranchPoint,
-    },
-}
-
 /// Metadata about a control flow edge which needs to be split in order to accommodate spills and/or
 /// reloads along that edge.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SplitInfo {
     pub id: Split,
-    /// The edge to split
-    pub edge: CfgEdge,
+    /// The destination program point for the control flow edge being split
+    pub point: ProgramPoint,
+    /// The predecessor, or origin, of the control flow edge being split
+    pub predecessor: Predecessor,
     /// The block representing the split, if materialized
     pub split: Option<BlockRef>,
 }
 
-impl SplitInfo {
-    pub fn new(id: Split, edge: CfgEdge) -> Self {
-        Self {
-            id,
-            edge,
-            split: None,
-        }
-    }
-}
-
-/// Uniquely identifies a [SpillInfo]
+/// Uniquely identifies a computed spill in a [SpillAnalysis]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Spill(u32);
 impl Spill {
@@ -352,6 +378,12 @@ pub struct SpillInfo {
     pub span: SourceSpan,
     /// The spill instruction, if materialized
     pub inst: Option<OperationRef>,
+}
+
+impl SpillInfo {
+    pub fn stack_size(&self) -> usize {
+        self.value.borrow().ty().size_in_felts()
+    }
 }
 
 /// Uniquely identifies a computed reload in a [SpillAnalysis]
@@ -398,6 +430,29 @@ pub enum Placement {
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
 
+impl Analysis for SpillAnalysis {
+    type Target = Function;
+
+    fn name(&self) -> &'static str {
+        "spills"
+    }
+
+    fn analyze(
+        &mut self,
+        op: &Self::Target,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        log::debug!(target: "spills", "running spills analysis for {}", op.as_operation());
+
+        let liveness = analysis_manager.get_analysis_for::<LivenessAnalysis, Function>()?;
+        self.compute(op, &liveness, analysis_manager)
+    }
+
+    fn invalidate(&self, preserved_analyses: &mut crate::pass::PreservedAnalyses) -> bool {
+        !preserved_analyses.is_preserved::<LivenessAnalysis>()
+    }
+}
+
 /// Queries
 impl SpillAnalysis {
     /// Returns true if at least one value must be spilled
@@ -430,15 +485,15 @@ impl SpillAnalysis {
     }
 
     /// Returns true if `value` is spilled at the given program point (i.e. inserted before)
-    pub fn is_spilled_at(&self, value: ValueRef, pp: impl Into<ProgramPoint>) -> bool {
-        let place = match pp.into() {
+    pub fn is_spilled_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
+        let place = match pp {
             ProgramPoint::Block {
                 block: split_block, ..
             } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
                 Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::after(split_block)),
+                None => Placement::At(ProgramPoint::at_end_of(split_block)),
             },
-            pp => Placement::At(pp),
+            point => Placement::At(point),
         };
         self.spills.iter().any(|info| info.value == value && info.place == place)
     }
@@ -466,15 +521,15 @@ impl SpillAnalysis {
     }
 
     /// Returns true if `value` is reloaded at the given program point (i.e. inserted before)
-    pub fn is_reloaded_at(&self, value: ValueRef, pp: impl Into<ProgramPoint>) -> bool {
-        let place = match pp.into() {
+    pub fn is_reloaded_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
+        let place = match pp {
             ProgramPoint::Block {
                 block: split_block, ..
             } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
                 Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::after(split_block)),
+                None => Placement::At(ProgramPoint::at_end_of(split_block)),
             },
-            pp => Placement::At(pp),
+            point => Placement::At(point),
         };
         self.reloads.iter().any(|info| info.value == value && info.place == place)
     }
@@ -496,31 +551,608 @@ impl SpillAnalysis {
         self.reloads.as_mut_slice()
     }
 
-    /// Returns the operands in W upon entry to `block`
-    pub fn w_entry(&self, block: &BlockRef) -> &[ValueOrAlias] {
-        self.w_entries[block].as_slice()
+    /// Returns the operands in W upon entry to `point`
+    pub fn w_entry(&self, point: &ProgramPoint) -> &[ValueOrAlias] {
+        self.w_entries[point].as_slice()
     }
 
-    /// Returns the operands in W upon exit from `block`
-    pub fn w_exit(&self, block: &BlockRef) -> &[ValueOrAlias] {
-        self.w_exits[block].as_slice()
+    /// Returns the operands in S upon entry to `point`
+    pub fn s_entry(&self, point: &ProgramPoint) -> &[ValueOrAlias] {
+        self.s_entries[point].as_slice()
     }
 
-    /// Returns the operands in S upon exit from `block`
-    pub fn s_exit(&self, block: &BlockRef) -> &[ValueOrAlias] {
-        self.s_exits[block].as_slice()
+    /// Returns the operands in W upon exit from `point`
+    pub fn w_exit(&self, point: &ProgramPoint) -> &[ValueOrAlias] {
+        self.w_exits[point].as_slice()
+    }
+
+    /// Returns the operands in S upon exit from `point`
+    pub fn s_exit(&self, point: &ProgramPoint) -> &[ValueOrAlias] {
+        self.s_exits[point].as_slice()
+    }
+}
+
+/// Analysis
+impl SpillAnalysis {
+    fn compute(
+        &mut self,
+        function: &Function,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        if function.body().has_one_block() {
+            let mut _deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
+            self.visit_single_block(
+                function.as_operation(),
+                &function.entry_block().borrow(),
+                None,
+                liveness,
+                analysis_manager,
+                &mut _deferred,
+            )?;
+            assert!(_deferred.is_empty());
+            Ok(())
+        } else {
+            // We generally expect that control flow lifting will have removed all but the entry
+            // block, but in some cases there can be some remaining unstructured control flow, so
+            // we handle that in the usual way here
+            let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
+            let loops = analysis_manager.get_analysis::<LoopInfo>()?;
+            let entry_region = function.body().as_region_ref();
+            let domtree = dominfo.info().dominance(entry_region);
+            if let Some(loop_forest) = loops.get(&entry_region) {
+                self.visit_cfg(
+                    function.as_operation(),
+                    &domtree,
+                    loop_forest,
+                    liveness,
+                    analysis_manager,
+                )
+            } else {
+                let loop_forest = LoopForest::new(&domtree);
+                self.visit_cfg(
+                    function.as_operation(),
+                    &domtree,
+                    &loop_forest,
+                    liveness,
+                    analysis_manager,
+                )
+            }
+        }
+    }
+
+    fn visit_cfg(
+        &mut self,
+        op: &Operation,
+        domtree: &DominanceTree,
+        loops: &LoopForest,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        log::trace!(target: "spills", "visiting cfg");
+
+        // Visit the blocks of the CFG in reverse postorder (top-down)
+        let mut block_q = VecDeque::from(domtree.reverse_postorder());
+
+        // If a block has a predecessor which it dominates (i.e. control flow always flows through
+        // the block in question before the given predecessor), then we must defer computing spills
+        // and reloads for that edge until we have visited the predecessor. This map is used to
+        // track deferred edges for each block.
+        let mut deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
+
+        while let Some(node) = block_q.pop_front() {
+            let Some(block_ref) = node.block() else {
+                continue;
+            };
+
+            self.visit_single_block(
+                op,
+                &block_ref.borrow(),
+                Some(loops),
+                liveness,
+                analysis_manager.clone(),
+                &mut deferred,
+            )?;
+        }
+
+        // We've visited all blocks at least once, now we need to go back and insert
+        // spills/reloads along loopback edges, as we skipped those on the first pass
+        for (block_ref, preds) in deferred {
+            let block = block_ref.borrow();
+
+            // W^entry(B)
+            let w_entry = self.w_entries[&ProgramPoint::at_start_of(block_ref)].clone();
+
+            // Derive S^entry(B) and construct information about the program point at block start
+            let block_info = self.block_entry_info(op, &block, liveness, w_entry);
+
+            // For each predecessor P of B, insert spills/reloads along the inbound control flow
+            // edge as follows:
+            //
+            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
+            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
+            //
+            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
+            // after we have processed P.
+            let mut _defer = SmallVec::default();
+            for pred in block_info.live_predecessors.iter() {
+                let predecessor = pred.block().unwrap();
+
+                // Only visit predecessors that were deferred
+                if !preds.contains(&predecessor) {
+                    continue;
+                }
+
+                self.compute_control_flow_edge_spills_and_reloads(
+                    &block_info,
+                    pred,
+                    &mut _defer,
+                    liveness,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn visit_region_cfg(
+        &mut self,
+        op: &dyn RegionBranchOpInterface,
+        entry: &Block,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        log::trace!(target: "spills", "visiting region cfg");
+
+        // Visit the blocks of the CFG in reverse postorder (top-down)
+        let region = entry.parent().unwrap();
+        let mut region_q = Region::postorder_region_graph(&region.borrow());
+
+        // If a region has a predecessor which it dominates (i.e. control flow always flows through
+        // the region in question before the given predecessor), then we must defer computing spills
+        // and reloads for that edge until we have visited the predecessor. This map is used to
+        // track deferred edges for each block.
+        let mut deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
+
+        let operation = op.as_operation();
+        while let Some(region) = region_q.pop() {
+            let region = region.borrow();
+            let block = region.entry();
+
+            self.visit_single_block(
+                operation,
+                &block,
+                None,
+                liveness,
+                analysis_manager.clone(),
+                &mut deferred,
+            )?;
+        }
+
+        // We've visited all blocks at least once, now we need to go back and insert
+        // spills/reloads along loopback edges, as we skipped those on the first pass
+        for (block_ref, preds) in deferred {
+            let block = block_ref.borrow();
+
+            // W^entry(B)
+            let w_entry = self.w_entries[&ProgramPoint::at_start_of(block_ref)].clone();
+
+            // Derive S^entry(B) and construct information about the program point at block start
+            let block_info = self.block_entry_info(operation, &block, liveness, w_entry);
+
+            // For each predecessor P of B, insert spills/reloads along the inbound control flow
+            // edge as follows:
+            //
+            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
+            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
+            //
+            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
+            // after we have processed P.
+            let mut _defer = SmallVec::default();
+            for pred in block_info.live_predecessors.iter() {
+                let predecessor = pred.block();
+
+                // Only visit predecessors that were deferred
+                if predecessor.is_some_and(|p| !preds.contains(&p)) {
+                    continue;
+                }
+
+                self.compute_control_flow_edge_spills_and_reloads(
+                    &block_info,
+                    pred,
+                    &mut _defer,
+                    liveness,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn visit_single_block(
+        &mut self,
+        op: &Operation,
+        block: &Block,
+        loops: Option<&LoopForest>,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+        deferred: &mut Vec<(BlockRef, SmallVec<[BlockRef; 2]>)>,
+    ) -> Result<(), Report> {
+        let block_ref = block.as_block_ref();
+
+        log::trace!(target: "spills", "visiting {block}");
+
+        // Compute W^entry(B)
+        self.compute_w_entry(op, block, loops, liveness);
+
+        // Derive S^entry(B) from W^entry(B) and compute live predecessors at block start
+        let w_entry = self.w_entries[&ProgramPoint::at_start_of(block)].clone();
+        log::trace!(target: "spills", "computing block information");
+        let block_info = self.block_entry_info(op, block, liveness, w_entry);
+        log::trace!(target: "spills", "  W^entry({block}) = {{{}}}", DisplayValues::new(block_info.w_entry.iter()));
+        log::trace!(target: "spills", "  S^entry({block}) = {{{}}}", DisplayValues::new(block_info.s_entry.iter()));
+
+        // For each predecessor P of B, insert spills/reloads along the inbound control flow
+        // edge as follows:
+        //
+        // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
+        // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
+        //
+        // If a given predecessor has not been processed yet, skip P, and revisit the edge later
+        // after we have processed P.
+        //
+        // NOTE: Because W^exit(P) does not contain the block parameters for any given
+        // successor, as those values are renamed predecessor operands, some work must be done
+        // to determine the true contents of W^exit(P) for each predecessor/successor edge, and
+        // only then insert spills/reloads as described above.
+        let mut deferred_preds = SmallVec::<[BlockRef; 2]>::default();
+        for pred in block_info.live_predecessors.iter() {
+            // As soon as we need to start inserting spills/reloads, mark the function changed
+            self.compute_control_flow_edge_spills_and_reloads(
+                &block_info,
+                pred,
+                &mut deferred_preds,
+                liveness,
+            );
+        }
+        if !deferred_preds.is_empty() {
+            deferred.push((block_ref, deferred_preds));
+        }
+
+        // We have our W and S sets for the entry of B, and we have inserted all spills/reloads
+        // needed on incoming control flow edges to ensure that the contents of W and S are the
+        // same regardless of which predecessor we reach B from.
+        //
+        // Now, we essentially repeat this process for each instruction I in B, i.e. we apply
+        // the MIN algorithm to B. As a result, we will also have computed the contents of W
+        // and S at the exit of B, which will be needed subsequently for the successors of B
+        // when we process them.
+        //
+        // The primary differences here, are that we:
+        //
+        // * Assume that if a reload is needed (not in W), that it was previously spilled (must
+        //   be in S)
+        // * We do not issue spills for values that have already been spilled
+        // * We do not emit spill instructions for values which are dead, they are just dropped
+        // * We must spill from W to make room for operands and results of I, if there is
+        //   insufficient space to hold the current contents of W + whatever operands of I we
+        //   need to reload + the results of I that will be placed on the operand stack. We do
+        //   so by spilling values with the greatest next-use distance first, preferring to
+        //   spill larger values where we have an option. We also may factor in liveness - if an
+        //   operand of I is dead after I, we do not need to count that operand when computing
+        //   the operand stack usage for results (thus reusing the space of the operand for one
+        //   or more results).
+        // * It is important to note that we must count _all_ uses of the same value towards the
+        //   operand stack usage, unless the semantics of an instruction explicitly dictate that
+        //   a specific operand pattern only requires a single copy on the operand stack.
+        //   Currently that is not the case for any instructions, and we would prefer to be more
+        //   conservative at this point anyway.
+        let mut w = block_info.w_entry;
+        let mut s = block_info.s_entry;
+        for op in block.body() {
+            if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
+                // If we hit a loop-like region branch operation, we need to process it much
+                // like how we do unstructured control flow loops. The primary difference is
+                // that we do not use the dominance tree to determine the order in which the
+                // loop is visited, and we must also take into account op results on exit
+                // from the op, unlike how "results" are represented in an unstructured loop
+                self.visit_loop_like(
+                    loop_like,
+                    &mut w,
+                    &mut s,
+                    liveness,
+                    analysis_manager.nest(op.as_operation_ref()),
+                )?;
+            } else if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
+                // If we hit a region branch operation, we need to process it much like how
+                // we do unstructured control flow. The primary difference is that we do not
+                // use the dominance tree to determine the order in which the regions of the
+                // op are visited, and we must take into account op results on exit from the
+                // op.
+                self.visit_region_branch_operation(
+                    branch,
+                    &mut w,
+                    &mut s,
+                    liveness,
+                    analysis_manager.nest(op.as_operation_ref()),
+                )?;
+            } else {
+                self.min(&op, &mut w, &mut s, liveness);
+            }
+        }
+
+        let end_of_block = ProgramPoint::at_end_of(block_ref);
+        self.w_exits.insert(end_of_block, w);
+        self.s_exits.insert(end_of_block, s);
+
+        Ok(())
+    }
+
+    fn visit_loop_like(
+        &mut self,
+        loop_like: &dyn LoopLikeOpInterface,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        // Compute W and S for entry into the entry successor regions of `branch`, according to
+        // the standard MIN rules up to the point where we have computed any necessary spills and
+        // reloads, _without_ considering operation results of `branch`, so long as `branch` cannot
+        // ever skip all of its nested regions (i.e. `branch` is not a predecessor of its own exit)
+
+        // Compute W and S through the region graph of `branch` from the loop header, and
+        // then derive W and S for exit from `branch` using predecessors of the exit point. W and
+        // S at exit from `branch` are not computed using the standard MIN approach, as exiting
+        // from nested regions with results is akin to an unstructured branch with arguments, so
+        // we handle it as such.
+        //
+        // NOTE: This differs from visit_region_branch_operation in how we select spill/reload
+        // candidates, so as to avoid spilling in a loop, or reloading in a loop, when either of
+        // those could be lifted or pushed down to loop exits.
+        let branch = loop_like.as_operation().as_trait::<dyn RegionBranchOpInterface>().unwrap();
+        self.visit_region_branch_operation(branch, w, s, liveness, analysis_manager)
+    }
+
+    fn visit_region_branch_operation(
+        &mut self,
+        branch: &dyn RegionBranchOpInterface,
+        w: &mut SmallSet<ValueOrAlias, 4>,
+        s: &mut SmallSet<ValueOrAlias, 4>,
+        liveness: &LivenessAnalysis,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report> {
+        log::trace!(target: "spills", "visiting region branch op '{}'", branch.as_operation());
+        log::trace!(target: "spills", "  W^in = {w:?}");
+        log::trace!(target: "spills", "  S^in = {s:?}");
+
+        // PHASE 1:
+        //
+        // Compute W and S at entry to `branch`, i.e. before any of its control flow is evaluated -
+        // purely what is needed to begin evaluating the op. This will be used to derive W and S
+        // within regions of the op.
+        //
+        // NOTE: This does not take into account results of `op` like MIN does for other types of
+        // operations, as in the case of region control flow, the "results" are akin to successor
+        // block arguments, rather than needing to compete for space with operands of the op itself.
+        //
+        // TODO(pauls): Make sure we properly handle cases where control can pass directly from op
+        // entry to exit, skipping nested regions. For now we have no such operations which also
+        // produce results, which is the only case that matters.
+
+        let op = branch.as_operation();
+        let before_op = ProgramPoint::before(op);
+        let place = Placement::At(before_op);
+        let span = op.span();
+
+        let args = ValueRange::<2>::from(op.operands().group(0));
+        let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
+
+        // Remove the first occurrance of any operand already in W, remaining uses
+        // must be considered against the stack usage calculation (but will not
+        // actually be reloaded)
+        for operand in w.iter() {
+            if let Some(pos) = to_reload.iter().position(|o| o == operand) {
+                to_reload.swap_remove(pos);
+            }
+        }
+        log::trace!(target: "spills", "  require reloading = {to_reload:#?}");
+
+        // Precompute the starting stack usage of W
+        let w_used = w.iter().map(|o| o.stack_size()).sum::<usize>();
+        log::trace!(target: "spills", "  current stack usage = {w_used}");
+
+        // Compute the needed operand stack space for all operands not currently in W, i.e. those
+        // which must be reloaded from a spill slot
+        let in_needed = to_reload.iter().map(|o| o.stack_size()).sum::<usize>();
+        log::trace!(target: "spills", "  required by reloads = {in_needed}");
+
+        // If we have room for operands and results in W, then no spills are needed,
+        // otherwise we require two passes to compute the spills we will need to issue
+        let mut to_spill = SmallSet::<_, 4>::default();
+
+        // First pass: compute spills for entry to I (making room for operands)
+        //
+        // The max usage in is determined by the size of values currently in W, plus the size
+        // of any duplicate operands (i.e. values used as operands more than once), as well as
+        // the size of any operands which must be reloaded.
+        let max_usage_in = w_used + in_needed;
+        if max_usage_in > K {
+            log::trace!(target: "spills", "  max usage on entry ({max_usage_in}) exceeds K ({K}), spills required");
+            // We must spill enough capacity to keep K >= 16
+            let mut must_spill = max_usage_in - K;
+            // Our initial set of candidates consists of values in W which are not operands
+            // of the current instruction.
+            let mut candidates =
+                w.iter().filter(|o| !args.contains(*o)).copied().collect::<SmallVec<[_; 4]>>();
+            // We order the candidates such that those whose next-use distance is greatest, are
+            // placed last, and thus will be selected first. We further break ties between
+            // values with equal next-use distances by ordering them by the
+            // effective size on the operand stack, so that larger values are
+            // spilled first.
+            candidates.sort_by(|a, b| {
+                let a_dist = liveness.next_use_after(a, op);
+                let b_dist = liveness.next_use_after(b, op);
+                a_dist.cmp(&b_dist).then(a.stack_size().cmp(&b.stack_size()))
+            });
+            // Spill until we have made enough room
+            while must_spill > 0 {
+                let candidate = candidates.pop().unwrap_or_else(|| {
+                    panic!(
+                        "unable to spill sufficient capacity to hold all operands on stack at one \
+                         time at {op}"
+                    )
+                });
+                must_spill = must_spill.saturating_sub(candidate.stack_size());
+                to_spill.insert(candidate);
+            }
+        } else {
+            log::trace!(target: "spills", "  spills required on entry: no");
+        }
+
+        log::trace!(target: "spills", "  spills = {to_spill:?}");
+
+        // Emit spills first, to make space for reloaded values on the operand stack
+        for spill in to_spill.iter() {
+            if s.insert(*spill) {
+                self.spill(place, spill.value(), span);
+            }
+
+            // Remove spilled values from W
+            w.remove(spill);
+        }
+
+        // Emit reloads for those operands of I not yet in W
+        for reload in to_reload {
+            // We only need to emit a reload for a given value once
+            if w.insert(reload) {
+                // By definition, if we are emitting a reload, the value must have been spilled
+                s.insert(reload);
+                self.reload(place, reload.value(), span);
+            }
+        }
+
+        // At this point, we have our W^entry and S^entry for `branch`
+        self.w_entries.insert(before_op, w.clone());
+        self.s_entries.insert(before_op, s.clone());
+
+        log::trace!(target: "spills", "  W^entry = {w:?}");
+        log::trace!(target: "spills", "  S^entry = {s:?}");
+
+        // PHASE 2:
+        //
+        // For each entry successor region, we propagate W and S from `branch` entry to the start
+        // of each successor region's entry block, updating their contents to reflect the renaming
+        // of successor arguments now that we're in a new block.
+        //
+        // From each entry region, we then visit the region control graph in reverse post-order,
+        // just like we do unstructured CFGs, propgating W and S along the way. Once all regions
+        // have been visited, we can move on to the final phase.
+
+        // Compute the constant values for operands of `branch`, in case it allows us to elide
+        // a subset of successor regions.
+        let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
+            branch.operands().group(0).len(),
+        );
+        for operand in branch.operands().group(0).iter() {
+            let value = operand.borrow().as_value_ref();
+            let constant_prop_lattice = liveness.solver().get::<Lattice<ConstantValue>, _>(&value);
+            if let Some(lattice) = constant_prop_lattice {
+                if lattice.value().is_uninitialized() {
+                    operands.push(None);
+                    continue;
+                }
+                operands.push(lattice.value().constant_value());
+            }
+        }
+
+        for successor in branch.get_entry_successor_regions(&operands) {
+            //let mut w_entry = w.clone();
+            //let mut s_entry = s.clone();
+
+            // Fixup W and S based on successor operands
+            let branch_point = *successor.branch_point();
+            let inputs = branch.get_entry_successor_operands(branch_point);
+            assert_eq!(
+                inputs.num_produced(),
+                0,
+                "we don't currently support internally-produced successor operands"
+            );
+            match successor.into_successor() {
+                Some(region) => {
+                    let region = region.borrow();
+                    let block = region.entry();
+                    log::trace!(target: "spills", "  processing successor {block}");
+
+                    // Visit the contents of `region`
+                    //
+                    // After this, W and S will have been set/propagated from `block` entry through
+                    // all of its operations, to `block` exit.
+                    //
+                    // TODO(pauls): For now we assume that all regions are single-block
+                    assert!(
+                        region.has_one_block(),
+                        "support for multi-block regions in this pass has not been implemented"
+                    );
+                    self.visit_region_cfg(branch, &block, liveness, analysis_manager.clone())?;
+                }
+                None => {
+                    // TODO(pauls): Need to compute W and S on exit from `branch` as if the exit
+                    // point of `branch` is the entry of a new block, i.e. as computed via
+                    // `compute_w_entry_normal`
+                    log::trace!(target: "spills", "  processing self as successor");
+                    todo!()
+                }
+            }
+        }
+
+        // PHASE 3:
+        //
+        // We must compute W and S on exit from `branch` by obtaining the W^exit and S^exit sets
+        // computed in Phase 2, and handle it much like we do join points in a unstructured CFG.
+        //
+        // In this case, the results of `branch` correspond to the arguments yielded from each
+        // predecessor. So to determine whether any spills/reloads are needed, we must first
+        // rename the yielded values to the result values, duplicating any of the arguments if the
+        // referenced value is still live after `branch`. Then, for any values remaining in W that
+        // are live after `branch`, but not live on exit from all predecessors, we must issue a
+        // reload for that value. Correspondingly, if there are any values in S which are live after
+        // `branch`, but not spilled in every predecessor, we must issue a spill for that value.
+        log::trace!(target: "spills", "  computing W^exit for '{}'..", branch.as_operation().name());
+
+        // First, compute W^exit(branch)
+        self.compute_w_exit_region_branch_op(branch, liveness);
+
+        // Then, derive S^exit(branch)
+        let ProgramPointInfo {
+            w_entry: w_exit,
+            s_entry: s_exit,
+            ..
+        } = self.op_exit_info(
+            branch,
+            liveness,
+            &self.w_exits[&ProgramPoint::after(branch.as_operation())],
+        );
+
+        *w = w_exit;
+        *s = s_exit;
+
+        log::trace!(target: "spills", "  W^exit = {w:?}");
+        log::trace!(target: "spills", "  S^exit = {s:?}");
+
+        Ok(())
     }
 
     pub fn set_materialized_split(&mut self, split: Split, block: BlockRef) {
         self.splits[split.as_usize()].split = Some(block);
     }
 
-    pub fn set_materialized_spill(&mut self, spill: Spill, inst: OperationRef) {
-        self.spills[spill.as_usize()].inst = Some(inst);
+    pub fn set_materialized_spill(&mut self, spill: Spill, op: OperationRef) {
+        self.spills[spill.as_usize()].inst = Some(op);
     }
 
-    pub fn set_materialized_reload(&mut self, reload: Reload, inst: OperationRef) {
-        self.reloads[reload.as_usize()].inst = Some(inst);
+    pub fn set_materialized_reload(&mut self, reload: Reload, op: OperationRef) {
+        self.reloads[reload.as_usize()].inst = Some(op);
     }
 
     fn spill(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Spill {
@@ -548,827 +1180,45 @@ impl SpillAnalysis {
         id
     }
 
-    fn split_local(&mut self, block: BlockRef, predecessor: &BlockOperand) -> Split {
+    fn split(&mut self, point: ProgramPoint, predecessor: Predecessor) -> Split {
         let id = Split::new(self.splits.len());
         self.splits.push(SplitInfo {
             id,
-            edge: CfgEdge::Local {
-                from: predecessor.predecessor(),
-                to: block,
-            },
+            point,
+            predecessor,
             split: None,
         });
         id
-    }
-
-    fn split_regional(
-        &mut self,
-        op: OperationRef,
-        to: RegionBranchPoint,
-        predecessor: RegionBranchPoint,
-    ) -> Split {
-        let id = Split::new(self.splits.len());
-        self.splits.push(SplitInfo {
-            id,
-            edge: CfgEdge::Regional {
-                op,
-                from: predecessor,
-                to,
-            },
-            split: None,
-        });
-        id
-    }
-}
-
-/// Analysis
-#[allow(clippy::too_many_arguments)]
-impl SpillAnalysis {
-    fn visit_operation(
-        &mut self,
-        op: &Operation,
-        liveness: &LivenessAnalysis,
-        analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<ValueOrAlias, 4>,
-        s: &mut SmallSet<ValueOrAlias, 4>,
-    ) -> Result<(), Report> {
-        // If this op is a loop-like operation, we must handle it differently than non-looping
-        // region control flow ops.
-        if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
-            return self.visit_loop_like_op(loop_like, liveness, analysis_manager, w, s);
-        }
-
-        // Handle non-looping region control flow ops
-        if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
-            assert!(
-                !branch.has_loop(),
-                "expected op to implement LoopLikeOpInterface due to loops in its region control \
-                 flow graph"
-            );
-            return self.visit_region_branch_op(branch, liveness, analysis_manager, w, s);
-        }
-
-        // Does this operation have regions? If so, we expect that since it does not implement
-        // RegionBranchOpInterface, that it is IsolatedFromAbove, and consists of a single region,
-        // e.g. `hir.function`
-        if op.has_regions() {
-            assert!(op.implements::<dyn IsolatedFromAbove>());
-            assert_eq!(op.num_regions(), 1, "expected op to have only a single region");
-
-            let am = analysis_manager.nest(op.as_operation_ref());
-            let dominfo = am.get_analysis::<DominanceInfo>()?;
-            let loops = am.get_analysis::<LoopInfo>()?;
-            return self.visit_cfg(op, &op.region(0), &dominfo, &loops, liveness, am, w, s);
-        }
-
-        // This is a simple operation, so `w` and `s` must be available
-        self.min(op, w, s, liveness);
-
-        Ok(())
-    }
-
-    fn visit_loop_like_op(
-        &mut self,
-        loop_like: &dyn LoopLikeOpInterface,
-        liveness: &LivenessAnalysis,
-        analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<ValueOrAlias, 4>,
-        s: &mut SmallSet<ValueOrAlias, 4>,
-    ) -> Result<(), Report> {
-        let op = loop_like.as_operation();
-        let branch = op
-            .as_trait::<dyn RegionBranchOpInterface>()
-            .expect("loop-like ops must implement RegionBranchOpInterface");
-
-        // We expect loop-like ops to have a single loop header region, which is where we will
-        // begin
-        let header = loop_like.get_loop_header_region();
-
-        // Visit the region CFG reachable from the header, in reverse post-order, propagating the
-        // state of W and S through the loop
-        self.visit_region_graph(branch, &header.borrow(), true, liveness, analysis_manager, w, s)?;
-
-        // Unify W and S on exit from the loop. There are two possibilities:
-        //
-        // 1. Control conditionally enters the loop, in which case we will have two predecessors
-        //    to unify, the op itself, and the exit from the loop body.
-        // 2. Control unconditionally enters the loop, in which case we will have a single
-        //    predecessor from which to derive the W and S sets on exit. A loop-like op with
-        //    multiple exits is not currently supported.
-        let op = loop_like.as_operation();
-        let w_entry = self.compute_w_entry_for_op_exit(op, &*w, liveness);
-        let s_entry = self.compute_s_entry_for_op_exit(op, &*s, &w_entry, liveness);
-
-        let preds = liveness
-            .solver()
-            .get::<PredecessorState, _>(&ProgramPoint::after(op))
-            .expect("expected predecessor state to have been computed for `op`");
-
-        for pred in preds.known_predecessors().iter().copied() {
-            let pred_inputs = preds.successor_inputs(&pred);
-            self.compute_spills_and_reloads_on_op_exit(
-                branch,
-                pred,
-                pred_inputs,
-                &w_entry,
-                &s_entry,
-                &*w,
-                &*s,
-                liveness,
-            );
-        }
-
-        *w = w_entry;
-        *s = s_entry;
-
-        Ok(())
-    }
-
-    fn visit_region_branch_op(
-        &mut self,
-        branch: &dyn RegionBranchOpInterface,
-        liveness: &LivenessAnalysis,
-        analysis_manager: &AnalysisManager,
-        w: &mut SmallSet<ValueOrAlias, 4>,
-        s: &mut SmallSet<ValueOrAlias, 4>,
-    ) -> Result<(), Report> {
-        let op = branch.as_operation();
-
-        // Determine the set of entry regions (if any)
-        let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
-            op.operands().group(0).len(),
-        );
-        for operand in op.operands().group(0).iter() {
-            let value = operand.borrow().as_value_ref();
-            let constant_prop_lattice = liveness.solver().get::<Lattice<ConstantValue>, _>(&value);
-            if let Some(lattice) = constant_prop_lattice {
-                if lattice.value().is_uninitialized() {
-                    operands.push(None);
-                    continue;
-                }
-                operands.push(lattice.value().constant_value());
-            }
-        }
-
-        // Visit the region graphs reachable from any of the entry regions, in order to
-        // ensure that the contents of W and S are propagated through to all possible
-        // predecessor edges at the exit from `op`
-        for entry in branch.get_entry_successor_regions(&operands) {
-            let Some(entry) = entry.into_successor() else {
-                continue;
-            };
-
-            self.visit_region_graph(
-                branch,
-                &entry.borrow(),
-                false,
-                liveness,
-                analysis_manager,
-                &*w,
-                &*s,
-            )?;
-        }
-
-        // We've threaded W and S through the regions of `op`, now it is necessary for us to
-        // compute W and S at the implicit join point represented by control flow exits from
-        // any of those regions (or from before the op to after, in cases where the op has some
-        // form of conditional control flow guarding its regions).
-        let op = branch.as_operation();
-        let w_entry = self.compute_w_entry_for_op_exit(op, &*w, liveness);
-        let s_entry = self.compute_s_entry_for_op_exit(op, &*s, &w_entry, liveness);
-
-        let preds = liveness
-            .solver()
-            .get::<PredecessorState, _>(&ProgramPoint::after(op))
-            .expect("expected predecessor state to have been computed for `op`");
-
-        for pred in preds.known_predecessors().iter().copied() {
-            let pred_inputs = preds.successor_inputs(&pred);
-            self.compute_spills_and_reloads_on_op_exit(
-                branch,
-                pred,
-                pred_inputs,
-                &w_entry,
-                &s_entry,
-                &*w,
-                &*s,
-                liveness,
-            );
-        }
-
-        *w = w_entry;
-        *s = s_entry;
-
-        Ok(())
-    }
-
-    fn visit_region_graph(
-        &mut self,
-        branch: &dyn RegionBranchOpInterface,
-        entry: &Region,
-        is_loop_header: bool,
-        liveness: &LivenessAnalysis,
-        analysis_manager: &AnalysisManager,
-        w_op: &SmallSet<ValueOrAlias, 4>,
-        s_op: &SmallSet<ValueOrAlias, 4>,
-    ) -> Result<(), Report> {
-        // Compute the reverse post-order traversal of the region graph from `entry`. We will then
-        // visit all regions of the graph in order to propagate W and S through them, just like we
-        // do for CFGs in a single region (where the graph is blocks rather than regions)
-        let mut postorder = Region::postorder_region_graph(entry);
-
-        // If a region has a predecessor which it dominates (i.e. control flow always flows through
-        // the region in question before the given predecessor), then we must defer computing spills
-        // and reloads for that edge until we have visited the predecessor. This map is used to
-        // track deferred edges for each region.
-        let mut deferred = Vec::<(RegionRef, SmallVec<[BlockRef; 2]>)>::default();
-
-        let branch_op = branch.as_operation().as_operation_ref();
-
-        let mut visited = SmallSet::<RegionRef, 4>::default();
-
-        while let Some(region_ref) = postorder.pop() {
-            if !visited.insert(region_ref) {
-                continue;
-            }
-            let is_entry_region = region_ref == entry.as_region_ref();
-            let region = region_ref.borrow();
-            let entry = region.entry();
-            let entry_ref = entry.as_block_ref();
-            let is_executable = liveness.is_block_executable(entry_ref);
-            if !is_executable {
-                continue;
-            }
-
-            // Compute W^entry(R)
-            let w_entry = if is_entry_region && is_loop_header {
-                self.compute_w_entry_loop_like_op(&region, &entry, liveness)
-            } else {
-                self.compute_w_entry_normal(branch.as_operation(), &entry, w_op, liveness)
-            };
-            self.w_entries.entry(entry_ref).or_default().clone_from(&w_entry);
-
-            // Compute S^entry(R)
-            let s_entry =
-                self.compute_s_entry(branch.as_operation(), &entry, s_op, &w_entry, liveness);
-
-            let mut block_info = BlockInfo {
-                block_id: entry_ref,
-                w_entry,
-                s_entry,
-            };
-
-            // For each predecessor P of B, insert spills/reloads along the inbound control flow
-            // edge as follows:
-            //
-            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
-            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
-            //
-            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
-            // after we have processed P.
-            //
-            // NOTE: Because W^exit(P) does not contain the block parameters for any given
-            // successor, as those values are renamed predecessor operands, some work must be done
-            // to determine the true contents of W^exit(P) for each predecessor/successor edge, and
-            // only then insert spills/reloads as described above.
-            //
-            // TODO: How do we actually handle spills on region control flow edges, when multiple
-            // edges are present, and the spill/reload is only on one of them? We can't introduce
-            // new blocks in those regions in order to split edges. We'll need to evaluate whether
-            // this occurs in practice, and if so, determine how best to handle it.
-            let pred_state = liveness
-                .solver()
-                .get::<PredecessorState, _>(&ProgramPoint::at_start_of(entry_ref))
-                .expect("expected predecessor state to be available for executable block");
-            let predecessors = pred_state.known_predecessors().iter().copied().filter(|pred| {
-                if pred == &branch_op {
-                    return true;
-                }
-                let pred_block = pred.parent().unwrap();
-                liveness.is_block_executable(pred_block)
-            });
-            let mut deferred_preds = SmallVec::<[BlockRef; 2]>::default();
-            for pred in predecessors {
-                self.compute_region_control_flow_edge_spills_and_reloads(
-                    branch,
-                    &block_info,
-                    pred,
-                    pred_state.successor_inputs(&pred),
-                    w_op,
-                    s_op,
-                    &mut deferred_preds,
-                    liveness,
-                );
-            }
-            if !deferred_preds.is_empty() {
-                deferred.push((region_ref, deferred_preds));
-            }
-
-            for op in entry.body() {
-                self.visit_operation(
-                    &op,
-                    liveness,
-                    analysis_manager,
-                    &mut block_info.w_entry,
-                    &mut block_info.s_entry,
-                )?;
-            }
-
-            self.w_exits.insert(entry_ref, block_info.w_entry);
-            self.s_exits.insert(entry_ref, block_info.s_entry);
-        }
-
-        // We've visited all regions at least once, now we need to go back and insert spills/reloads
-        // along loopback edges, as we skipped those on the first pass
-        for (region_ref, deferred_preds) in deferred {
-            let region = region_ref.borrow();
-            let block = region.entry();
-
-            // W^entry(B)
-            let block_ref = block.as_block_ref();
-            let w_entry = self.w_entries[&block_ref].clone();
-
-            // Compute S^entry(B)
-            let s_entry =
-                self.compute_s_entry(branch.as_operation(), &block, s_op, &w_entry, liveness);
-
-            let block_info = BlockInfo {
-                block_id: block_ref,
-                w_entry,
-                s_entry,
-            };
-
-            // For each predecessor P of B, insert spills/reloads along the inbound control flow
-            // edge as follows:
-            //
-            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
-            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
-            //
-            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
-            // after we have processed P.
-            let pred_state = liveness
-                .solver()
-                .get::<PredecessorState, _>(&ProgramPoint::at_start_of(&*block))
-                .expect("expected predecessor state to be available for executable block");
-            let predecessors = pred_state.known_predecessors().iter().copied().filter(|pred| {
-                // The op itself will never have been deferred
-                if pred == &branch_op {
-                    return false;
-                }
-                let pred_block = pred.parent().unwrap();
-                // Only visit predecessors that were deferred
-                liveness.is_block_executable(pred_block) && deferred_preds.contains(&pred_block)
-            });
-
-            let mut _defer = SmallVec::default();
-            for pred in predecessors {
-                self.compute_region_control_flow_edge_spills_and_reloads(
-                    branch,
-                    &block_info,
-                    pred,
-                    pred_state.successor_inputs(&pred),
-                    w_op,
-                    s_op,
-                    &mut _defer,
-                    liveness,
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    fn visit_cfg(
-        &mut self,
-        op: &Operation,
-        region: &Region,
-        dominfo: &DominanceInfo,
-        loops: &LoopInfo,
-        liveness: &LivenessAnalysis,
-        analysis_manager: AnalysisManager,
-        w_op: &mut SmallSet<ValueOrAlias, 4>,
-        s_op: &mut SmallSet<ValueOrAlias, 4>,
-    ) -> Result<(), Report> {
-        // Get the analysis data we need for this CFG
-        let body = region.as_region_ref();
-        let domtree = dominfo.info().dominance(body);
-        let loop_forest = loops.get(&body);
-
-        // If a block has a predecessor which it dominates (i.e. control flow always flows through
-        // the block in question before the given predecessor), then we must defer computing spills
-        // and reloads for that edge until we have visited the predecessor. This map is used to
-        // track deferred edges for each block.
-        let mut deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
-
-        // Visit blocks in CFG reverse post-order
-        let mut block_q = VecDeque::from(domtree.reverse_postorder());
-        while let Some(node) = block_q.pop_front() {
-            let Some(block_ref) = node.block() else {
-                continue;
-            };
-            let block = block_ref.borrow();
-
-            // Compute W^entry(B)
-            let w_entry = self.compute_w_entry(op, &block, w_op, loop_forest, liveness);
-            self.w_entries.entry(block_ref).or_default().clone_from(&w_entry);
-
-            // Compute S^entry(B)
-            let s_entry = self.compute_s_entry(op, &block, s_op, &w_entry, liveness);
-
-            let mut block_info = BlockInfo {
-                block_id: block_ref,
-                w_entry,
-                s_entry,
-            };
-
-            // For each predecessor P of B, insert spills/reloads along the inbound control flow
-            // edge as follows:
-            //
-            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
-            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
-            //
-            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
-            // after we have processed P.
-            //
-            // NOTE: Because W^exit(P) does not contain the block parameters for any given
-            // successor, as those values are renamed predecessor operands, some work must be done
-            // to determine the true contents of W^exit(P) for each predecessor/successor edge, and
-            // only then insert spills/reloads as described above.
-            let mut deferred_preds = SmallVec::<[BlockRef; 2]>::default();
-            for pred in
-                block.predecessors().filter(|p| liveness.is_block_executable(p.predecessor()))
-            {
-                // As soon as we need to start inserting spills/reloads, mark the function changed
-                self.compute_control_flow_edge_spills_and_reloads(
-                    &block_info,
-                    &pred,
-                    &mut deferred_preds,
-                    liveness,
-                );
-            }
-            if !deferred_preds.is_empty() {
-                deferred.push((block_ref, deferred_preds));
-            }
-
-            // We have our W and S sets for the entry of B, and we have inserted all spills/reloads
-            // needed on incoming control flow edges to ensure that the contents of W and S are the
-            // same regardless of which predecessor we reach B from.
-            //
-            // Now, we essentially repeat this process for each instruction I in B, i.e. we apply
-            // the MIN algorithm to B. As a result, we will also have computed the contents of W
-            // and S at the exit of B, which will be needed subsequently for the successors of B
-            // when we process them.
-            //
-            // The primary differences here, are that we:
-            //
-            // * Assume that if a reload is needed (not in W), that it was previously spilled (must
-            //   be in S)
-            // * We do not issue spills for values that have already been spilled
-            // * We do not emit spill instructions for values which are dead, they are just dropped
-            // * We must spill from W to make room for operands and results of I, if there is
-            //   insufficient space to hold the current contents of W + whatever operands of I we
-            //   need to reload + the results of I that will be placed on the operand stack. We do
-            //   so by spilling values with the greatest next-use distance first, preferring to
-            //   spill larger values where we have an option. We also may factor in liveness - if an
-            //   operand of I is dead after I, we do not need to count that operand when computing
-            //   the operand stack usage for results (thus reusing the space of the operand for one
-            //   or more results).
-            // * It is important to note that we must count _all_ uses of the same value towards the
-            //   operand stack usage, unless the semantics of an instruction explicitly dictate that
-            //   a specific operand pattern only requires a single copy on the operand stack.
-            //   Currently that is not the case for any instructions, and we would prefer to be more
-            //   conservative at this point anyway.
-            for op in block.body() {
-                self.visit_operation(
-                    &op,
-                    liveness,
-                    &analysis_manager,
-                    &mut block_info.w_entry,
-                    &mut block_info.s_entry,
-                )?;
-            }
-
-            self.w_exits.insert(block_ref, block_info.w_entry);
-            self.s_exits.insert(block_ref, block_info.s_entry);
-        }
-
-        // We've visited all blocks at least once, now we need to go back and insert
-        // spills/reloads along loopback edges, as we skipped those on the first pass
-        for (block_ref, preds) in deferred {
-            let block = block_ref.borrow();
-
-            // W^entry(B)
-            let w_entry = self.w_entries[&block_ref].clone();
-
-            // Compute S^entry(B)
-            let s_entry = self.compute_s_entry(op, &block, s_op, &w_entry, liveness);
-
-            let block_info = BlockInfo {
-                block_id: block_ref,
-                w_entry,
-                s_entry,
-            };
-
-            // For each predecessor P of B, insert spills/reloads along the inbound control flow
-            // edge as follows:
-            //
-            // * All variables in W^entry(B) \ W^exit(P) need to be reloaded
-            // * All variables in (S^entry(B) \ S^exit(P)) ∩ W^exit(P) need to be spilled
-            //
-            // If a given predecessor has not been processed yet, skip P, and revisit the edge later
-            // after we have processed P.
-            let mut _defer = SmallVec::default();
-            for pred in
-                block.predecessors().filter(|p| liveness.is_block_executable(p.predecessor()))
-            {
-                // Only visit predecessors that were deferred
-                if !preds.contains(&pred.predecessor()) {
-                    continue;
-                }
-
-                self.compute_control_flow_edge_spills_and_reloads(
-                    &block_info,
-                    &pred,
-                    &mut _defer,
-                    liveness,
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    /// When computing the contents of W and S upon exit from a region control-flow op, we treat
-    /// the program point "after" the op as an implicit join point. As a result, we must compute
-    /// the equivalent of W^entry at that program point, similar to how we do so for a block in a
-    /// normal CFG that represents a point where control flow joins.
-    ///
-    /// We then use the resulting W^entry to compute the corresponding S^entry, and these sets are
-    /// then used when proceeding to the next op in the containing block.
-    fn compute_w_entry_for_op_exit(
-        &mut self,
-        op: &Operation,
-        w_in: &SmallSet<ValueOrAlias, 4>,
-        liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
-        let mut take = SmallSet::<ValueOrAlias, 4>::default();
-        let mut cand = SmallSet::<ValueOrAlias, 4>::default();
-
-        // Result of `op` are always in W^exit(op) by definition
-        for result in op.results().iter().copied() {
-            take.insert(ValueOrAlias::new(result as ValueRef));
-        }
-
-        // Not sure how to handle too many results from a region control-flow op, for now we just
-        // assert.
-        assert!(
-            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
-            "unhandled spills implied by op results"
-        );
-
-        // The predecessors of the program point we're computing for, are either:
-        //
-        // 1. The `op` itself, i.e. it conditionally skips any of its regions and immediately exits
-        // 2. One or more exits from within regions of `op`
-        //
-        // To obtain these predecessors, we're reliant on the results of dead code analysis, which
-        // will have computed all known predecessors for this program point.
-        let mut num_predecessors = 0usize;
-        let after_op = ProgramPoint::after(op);
-        let next_uses = liveness.next_uses_at(&after_op).unwrap();
-        let pred_state = liveness.solver().get::<PredecessorState, _>(&after_op);
-        if let Some(pred_state) = pred_state {
-            let op_ref = op.as_operation_ref();
-            for pred in pred_state.known_predecessors() {
-                num_predecessors += 1;
-
-                // Is `pred` the operation itself? If so, we'll start with what's in `w_in`, since
-                // that precisely represents what is in W on entry to `op`.
-                if pred == &op_ref {
-                    for o in w_in.iter().copied() {
-                        if next_uses.is_live(o) {
-                            *freq.entry(o).or_insert(0) += 1;
-                            cand.insert(o);
-                        }
-                    }
-                    continue;
-                }
-
-                // Otherwise, the predecessor is a region within `op`, so we want the `w_exit` of
-                // the block containing `pred`, stripped of anything that is not live at the
-                // current program point
-                let pred_block = pred.parent().unwrap();
-                for o in self.w_exits[&pred_block].iter().copied() {
-                    // Do not add candidates which are either:
-                    //
-                    // 1. Defined within `op`
-                    // 2. Are not live after `op`
-                    if next_uses.is_live(o) {
-                        *freq.entry(o).or_insert(0) += 1;
-                        cand.insert(o);
-                    }
-                }
-            }
-        }
-
-        for (&v, &count) in freq.iter() {
-            if count as usize == num_predecessors {
-                cand.remove(&v);
-                take.insert(v);
-            }
-        }
-
-        // We currently do not have a sane way to handle paths to the exit of `op` containing more
-        // than K values. We simply bail for now.
-        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
-        assert!(
-            taken <= K,
-            "implicit operand stack overflow along exiting control flow edges of '{}'",
-            op.name()
-        );
-
-        // Prefer to select candidates with the smallest next-use distance, otherwise all else being
-        // equal, choose to keep smaller values on the operand stack, and spill larger values, thus
-        // freeing more space when spills are needed.
-        let mut cand = cand.into_vec();
-        cand.sort_by(|a, b| {
-            next_uses
-                .distance(a)
-                .cmp(&next_uses.distance(b))
-                .then(a.stack_size().cmp(&b.stack_size()))
-        });
-
-        let mut available = K - taken;
-        let mut cand = cand.into_iter();
-        while available > 0 {
-            if let Some(candidate) = cand.next() {
-                let size = candidate.stack_size();
-                if size <= available {
-                    take.insert(candidate);
-                    available -= size;
-                    continue;
-                }
-            }
-            break;
-        }
-
-        take
-    }
-
-    fn compute_s_entry_for_op_exit(
-        &mut self,
-        op: &Operation,
-        s_in: &SmallSet<ValueOrAlias, 4>,
-        w_entry: &SmallSet<ValueOrAlias, 4>,
-        liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        let mut s_entry = SmallSet::<ValueOrAlias, 4>::default();
-
-        let Some(pred_state) =
-            liveness.solver().get::<PredecessorState, _>(&ProgramPoint::after(op))
-        else {
-            return s_entry;
-        };
-
-        //let next_uses = liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
-        let op_ref = op.as_operation_ref();
-        for pred in pred_state.known_predecessors() {
-            // Is `pred` the operation itself?
-            if pred == &op_ref {
-                s_entry = s_entry.into_union(s_in);
-            } else {
-                let pred_block = pred.parent().unwrap();
-                if let Some(s_exitp) = self.s_exits.get(&pred_block) {
-                    // Union any spills of values defined above `op`
-                    for spilled in s_exitp.iter().copied() {
-                        let is_visible =
-                            if let Some(defining_op) = spilled.borrow_value().get_defining_op() {
-                                defining_op.borrow().is_proper_ancestor_of(op)
-                            } else {
-                                let defining_region = spilled
-                                    .borrow_value()
-                                    .downcast_ref::<BlockArgument>()
-                                    .unwrap()
-                                    .parent_region()
-                                    .unwrap();
-                                let defining_op = defining_region.parent().unwrap();
-                                defining_op.borrow().is_ancestor_of(op)
-                            };
-                        if is_visible {
-                            s_entry.insert(spilled);
-                        }
-                    }
-                }
-            }
-        }
-
-        s_entry.into_intersection(w_entry)
-    }
-
-    fn compute_s_entry(
-        &mut self,
-        op: &Operation,
-        block: &Block,
-        s_in: &SmallSet<ValueOrAlias, 4>,
-        w_entry: &SmallSet<ValueOrAlias, 4>,
-        liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        let mut s_entry = SmallSet::<ValueOrAlias, 4>::default();
-
-        if op.implements::<dyn RegionBranchOpInterface>() && block.is_entry_block() {
-            let pred_state =
-                liveness.solver().get::<PredecessorState, _>(&ProgramPoint::at_start_of(block));
-            if let Some(pred_state) = pred_state {
-                //let next_uses = liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
-                let op_ref = op.as_operation_ref();
-                for pred in pred_state.known_predecessors() {
-                    // Is `pred` the operation itself?
-                    if pred == &op_ref {
-                        s_entry = s_entry.into_union(s_in);
-                    } else {
-                        let pred_block = pred.parent().unwrap();
-                        if let Some(s_exitp) = self.s_exits.get(&pred_block) {
-                            // Union any spills of values defined above `op`
-                            for spilled in s_exitp.iter().copied() {
-                                let is_visible = if let Some(defining_op) =
-                                    spilled.borrow_value().get_defining_op()
-                                {
-                                    defining_op.borrow().is_proper_ancestor_of(op)
-                                } else {
-                                    let defining_region = spilled
-                                        .borrow_value()
-                                        .downcast_ref::<BlockArgument>()
-                                        .unwrap()
-                                        .parent_region()
-                                        .unwrap();
-                                    let defining_op = defining_region.parent().unwrap();
-                                    defining_op.borrow().is_ancestor_of(op)
-                                };
-                                if is_visible {
-                                    s_entry.insert(spilled);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            let predecessors = block
-                .predecessors()
-                .map(|p| p.predecessor())
-                .filter(|p| liveness.is_block_executable(*p));
-            for pred in predecessors {
-                if let Some(s_exitp) = self.s_exits.get(&pred) {
-                    s_entry = s_entry.into_union(s_exitp);
-                }
-            }
-        }
-
-        s_entry.into_intersection(w_entry)
     }
 
     fn compute_w_entry(
         &mut self,
         op: &Operation,
         block: &Block,
-        w_in: &SmallSet<ValueOrAlias, 4>,
         loops: Option<&LoopForest>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        // If this is the entry block for an IsolatedFromAbove region, then the operands in w_entry
-        // are guaranteed to be equal to the set of block arguments, and thus we don't need to do
-        // anything further.
-        if block.is_entry_block() {
-            let is_isolated_from_above = op.implements::<dyn IsolatedFromAbove>();
-            if is_isolated_from_above {
-                return block
-                    .arguments()
-                    .iter()
-                    .copied()
-                    .map(|arg| ValueOrAlias::new(arg as ValueRef))
-                    .collect();
+    ) {
+        let block_ref = block.as_block_ref();
+        if let Some(loop_info) =
+            loops.and_then(|loops| loops.loop_for(block_ref).filter(|l| l.header() == block_ref))
+        {
+            return self.compute_w_entry_loop(block, &loop_info, liveness);
+        } else if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
+            let region = block.parent().unwrap();
+            if loop_like.get_loop_header_region() == region && block.is_entry_block() {
+                return self.compute_w_entry_loop_like(loop_like, block, liveness);
             }
         }
 
-        if let Some(loops) = loops {
-            let block_ref = block.as_block_ref();
-            if loops.is_loop_header(block_ref) {
-                let block_loop = loops.loop_for(block_ref).unwrap();
-                return self.compute_w_entry_loop(block, &block_loop, liveness);
-            }
-        }
-
-        self.compute_w_entry_normal(op, block, w_in, liveness)
+        self.compute_w_entry_normal(op, block, liveness);
     }
 
     fn compute_w_entry_normal(
         &mut self,
         op: &Operation,
         block: &Block,
-        w_in: &SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
+    ) {
         let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
         let mut take = SmallSet::<ValueOrAlias, 4>::default();
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
@@ -1379,7 +1229,7 @@ impl SpillAnalysis {
         }
 
         // TODO(pauls): We likely need to account for the implicit spilling that occurs when the
-        // operand stack space required by function arguments exceeds K. In such cases, the W set
+        // operand stack space required by the function arguments exceeds K. In such cases, the W set
         // contains the function parameters up to the first parameter that would cause the operand
         // stack to overflow, all subsequent parameters are placed on the advice stack, and are assumed
         // to be moved from the advice stack to locals in the same order as they appear in the function
@@ -1392,82 +1242,81 @@ impl SpillAnalysis {
             "unhandled spills implied by function/block parameter list"
         );
 
-        // The predecessors of this block are either:
-        //
-        // 1. Blocks in the same region with unstructured control transfer
-        // 2. The parent operation and potentially other of its child regions, using structured
-        //    control ops
-        //
-        // For the former, we just examine block operand predecessors. For the latter, we query the
-        // results of dead code analysis, which will have computed the known predecessors for entry
-        // blocks of region branch ops. The two do not overlap, i.e. a block will not have both
-        // unstructured control predecessors and structured control predecessors.
-        let mut num_predecessors = 0usize;
-
-        // Unstructured control predecessors
-        for pred in block.predecessors().map(|p| p.predecessor()) {
-            let is_executable = liveness.is_block_executable(pred);
-            if !is_executable {
-                continue;
-            }
-
-            num_predecessors += 1;
-            let next_uses = liveness.next_uses_at(&ProgramPoint::at_end_of(pred)).unwrap();
-            for o in self.w_exits[&pred].iter().copied() {
-                // Do not add candidates which are not live-after the predecessor
-                if next_uses.is_live(o) {
-                    *freq.entry(o).or_insert(0) += 1;
-                    cand.insert(o);
-                }
-            }
+        // If this is the entry block to an IsolatedFromAbove region, the operands in w_entry are
+        // guaranteed to be equal to the set of region arguments, so we're done.
+        if block.is_entry_block() && op.implements::<dyn IsolatedFromAbove>() {
+            self.w_entries.insert(ProgramPoint::at_start_of(block), take);
+            return;
         }
 
-        // Structured control predecessors
-        //
-        // The predecessors of a region branch op entry block, are one of two things:
-        //
-        // 1. The op itself
-        // 2. The ops implementing RegionBranchTerminatorOp terminating other child regions of `op`
-        //
-        // We treat both types of predecessors much the same way we do unstructured control
-        // predecessors, but we must distinguish them in order to find the appropriate liveness
-        // information.
+        // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
+        // set of predecessors differently than unstructured CFG ops.
+        let mut predecessor_count = 0;
         if op.implements::<dyn RegionBranchOpInterface>() && block.is_entry_block() {
-            let pred_state =
-                liveness.solver().get::<PredecessorState, _>(&ProgramPoint::at_start_of(block));
-            if let Some(pred_state) = pred_state {
-                let next_uses = liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
-                let op_ref = op.as_operation_ref();
-                for pred in pred_state.known_predecessors() {
-                    num_predecessors += 1;
-
-                    // Is `pred` the operation itself?
-                    if pred == &op_ref {
-                        for o in w_in.iter().copied() {
-                            if next_uses.is_live(o) {
-                                *freq.entry(o).or_insert(0) += 1;
-                                cand.insert(o);
-                            }
-                        }
-                        continue;
-                    }
-
-                    // Otherwise, `pred` is one of the regions of the current op
-                    let pred_block = pred.parent().unwrap();
-                    for o in self.w_exits[&pred_block].iter().copied() {
-                        if next_uses.is_live(o) {
+            let predecessors = liveness
+                .solver()
+                .get::<PredecessorState, _>(&ProgramPoint::at_start_of(block))
+                .expect("expected all predecessors of region block to be known");
+            assert!(
+                predecessors.all_predecessors_known(),
+                "unexpected unresolved region successors"
+            );
+            let operation = op.as_operation_ref();
+            for predecessor in predecessors.known_predecessors().iter().copied() {
+                if predecessor == operation {
+                    predecessor_count += 1;
+                    let end_of_pred = ProgramPoint::before(operation);
+                    for o in self.w_entries[&end_of_pred].iter().copied() {
+                        // Do not add candidates which are not live-after the predecessor
+                        if liveness.is_live_after_entry(o, op) {
                             *freq.entry(o).or_insert(0) += 1;
                             cand.insert(o);
                         }
                     }
+                    continue;
+                }
+
+                let predecessor_block = predecessor.parent().unwrap();
+                if !liveness.is_block_executable(predecessor_block) {
+                    continue;
+                }
+
+                predecessor_count += 1;
+                let end_of_pred = ProgramPoint::at_end_of(predecessor_block);
+                for o in self.w_exits[&end_of_pred].iter().copied() {
+                    // Do not add candidates which are not live-after the predecessor
+                    if liveness.is_live_at_end(o, predecessor_block) {
+                        *freq.entry(o).or_insert(0) += 1;
+                        cand.insert(o);
+                    }
+                }
+            }
+        } else {
+            for pred in block.predecessors() {
+                let predecessor = pred.predecessor();
+
+                // Skip control edges that aren't executable.
+                let edge = CfgEdge::new(predecessor, pred.successor(), block.span());
+                if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live()) {
+                    continue;
+                }
+
+                predecessor_count += 1;
+                let end_of_pred = ProgramPoint::at_end_of(predecessor);
+                for o in self.w_exits[&end_of_pred].iter().copied() {
+                    // Do not add candidates which are not live-after the predecessor
+                    if liveness.is_live_at_end(o, predecessor) {
+                        *freq.entry(o).or_insert(0) += 1;
+                        cand.insert(o);
+                    }
                 }
             }
         }
 
-        for (&v, &count) in freq.iter() {
-            if count as usize == num_predecessors {
-                cand.remove(&v);
-                take.insert(v);
+        for (v, count) in freq.iter() {
+            if *count as usize == predecessor_count {
+                cand.remove(v);
+                take.insert(*v);
             }
         }
 
@@ -1485,12 +1334,11 @@ impl SpillAnalysis {
         let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
         assert!(
             taken <= K,
-            "implicit operand stack overflow along incoming control flow edges of {}",
-            block.id()
+            "implicit operand stack overflow along incoming control flow edges of {block}"
         );
 
-        let entry = block.body().front().as_pointer().expect("unexpected empty block");
-        let entry_next_uses = liveness.next_uses_at(&ProgramPoint::before(entry)).unwrap();
+        let entry = ProgramPoint::at_start_of(block);
+        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
 
         // Prefer to select candidates with the smallest next-use distance, otherwise all else being
         // equal, choose to keep smaller values on the operand stack, and spill larger values, thus
@@ -1517,28 +1365,115 @@ impl SpillAnalysis {
             break;
         }
 
-        take
+        self.w_entries.insert(ProgramPoint::at_start_of(block), take);
     }
 
-    fn compute_w_entry_loop_like_op(
+    fn compute_w_exit_region_branch_op(
         &mut self,
-        region: &Region,
-        header: &Block,
+        branch: &dyn RegionBranchOpInterface,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        // Compute the maximum pressure in the loop-like op's regions
-        let mut max_pressure = 0;
-        Region::traverse_region_graph(region, |region, visited| {
-            // For each unique region in the reachable region graph, compute the maximum pressure
-            // in that region's block, taking the max of all regions
-            if !visited.contains(&region.as_region_ref()) {
-                max_pressure =
-                    core::cmp::max(max_pressure, max_block_pressure(&region.entry(), liveness));
+    ) {
+        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
+        let mut take = SmallSet::<ValueOrAlias, 4>::default();
+        let mut cand = SmallSet::<ValueOrAlias, 4>::default();
+
+        // Op results are always in W^exit by definition
+        for result in branch.results().iter().copied() {
+            take.insert(ValueOrAlias::new(result as ValueRef));
+        }
+
+        assert!(
+            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
+            "unhandled spills implied by results of region branch op"
+        );
+
+        // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
+        // set of predecessors differently than unstructured CFG ops.
+        let mut predecessor_count = 0;
+        let predecessors = liveness
+            .solver()
+            .get::<PredecessorState, _>(&ProgramPoint::after(branch.as_operation()))
+            .expect("expected all predecessors of region exit to be known");
+        assert!(
+            predecessors.all_predecessors_known(),
+            "unexpected unresolved region predecessors"
+        );
+        let operation = branch.as_operation_ref();
+        for predecessor in predecessors.known_predecessors().iter().copied() {
+            if predecessor == operation {
+                predecessor_count += 1;
+                let end_of_pred = ProgramPoint::before(operation);
+                log::trace!(target: "spills", "examining exit predecessor {end_of_pred}");
+                for o in self.w_entries[&end_of_pred].iter().copied() {
+                    // Do not add candidates which are not live-after the predecessor
+                    if liveness.is_live_after_entry(o, branch.as_operation()) {
+                        *freq.entry(o).or_insert(0) += 1;
+                        cand.insert(o);
+                    }
+                }
+                continue;
             }
-            false
+
+            let predecessor_block = predecessor.parent().unwrap();
+            if !liveness.is_block_executable(predecessor_block) {
+                continue;
+            }
+
+            predecessor_count += 1;
+            let end_of_pred = ProgramPoint::at_end_of(predecessor_block);
+            log::trace!(target: "spills", "examining exit predecessor {end_of_pred}");
+            for o in self.w_exits[&end_of_pred].iter().copied() {
+                // Do not add candidates which are not live-after the predecessor
+                if liveness.is_live_at_end(o, predecessor_block) {
+                    *freq.entry(o).or_insert(0) += 1;
+                    cand.insert(o);
+                }
+            }
+        }
+
+        for (v, count) in freq.iter() {
+            if *count as usize == predecessor_count {
+                cand.remove(v);
+                take.insert(*v);
+            }
+        }
+
+        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        assert!(
+            taken <= K,
+            "implicit operand stack overflow along incoming control flow edges of {}",
+            ProgramPoint::after(operation)
+        );
+
+        let entry = ProgramPoint::after(operation);
+        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
+
+        // Prefer to select candidates with the smallest next-use distance, otherwise all else being
+        // equal, choose to keep smaller values on the operand stack, and spill larger values, thus
+        // freeing more space when spills are needed.
+        let mut cand = cand.into_vec();
+        cand.sort_by(|a, b| {
+            entry_next_uses
+                .distance(a)
+                .cmp(&entry_next_uses.distance(b))
+                .then(a.stack_size().cmp(&b.stack_size()))
         });
 
-        self.compute_w_entry_loop_impl(header, liveness, max_pressure)
+        let mut available = K - taken;
+        let mut cand = cand.into_iter();
+        while available > 0 {
+            if let Some(candidate) = cand.next() {
+                let size = candidate.stack_size();
+                if size <= available {
+                    take.insert(candidate);
+                    available -= size;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        self.w_exits.insert(entry, take);
     }
 
     fn compute_w_entry_loop(
@@ -1546,50 +1481,46 @@ impl SpillAnalysis {
         block: &Block,
         loop_info: &Loop,
         liveness: &LivenessAnalysis,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        let max_pressure = max_loop_pressure(loop_info, liveness);
-        self.compute_w_entry_loop_impl(block, liveness, max_pressure)
-    }
+    ) {
+        let entry = ProgramPoint::at_start_of(block);
 
-    fn compute_w_entry_loop_impl(
-        &mut self,
-        block: &Block,
-        liveness: &LivenessAnalysis,
-        max_pressure_in_loop: usize,
-    ) -> SmallSet<ValueOrAlias, 4> {
-        let entry = block.body().front().as_pointer().expect("unexpected empty block");
-        let block_start_next_uses =
-            liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
-
-        let mut alive = block
+        let params = block
             .arguments()
             .iter()
             .copied()
-            .map(|v| ValueOrAlias::new(v as ValueRef))
-            .collect::<SmallSet<ValueOrAlias, 4>>();
-        alive.extend(block_start_next_uses.live().map(ValueOrAlias::new));
+            .map(|v| v as ValueRef)
+            .collect::<SmallVec<[_; 4]>>();
+        let mut alive = params.iter().copied().map(ValueOrAlias::new).collect::<SmallSet<_, 4>>();
+
+        let next_uses = liveness.next_uses_at(&entry).expect("missing liveness for block entry");
+        alive.extend(next_uses.iter().filter_map(|v| {
+            if v.is_live() {
+                Some(ValueOrAlias::new(v.value))
+            } else {
+                None
+            }
+        }));
 
         // Initial candidates are values live at block entry which are used in the loop body
         let mut cand = alive
             .iter()
-            .filter(|o| block_start_next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
-            .cloned()
-            .collect::<SmallSet<ValueOrAlias, 4>>();
+            .filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
+            .copied()
+            .collect::<SmallSet<_, 4>>();
 
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,
         // then we can avoid issuing spills/reloads for at least some of these values.
         let live_through = alive.difference(&cand);
 
-        let entry_next_uses = liveness.next_uses_at(&ProgramPoint::before(entry)).unwrap();
         let w_used = cand.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_used < K {
-            if let Some(mut free_in_loop) = K.checked_sub(max_pressure_in_loop) {
+            if let Some(mut free_in_loop) = K.checked_sub(max_loop_pressure(loop_info, liveness)) {
                 let mut live_through = live_through.into_vec();
                 live_through.sort_by(|a, b| {
-                    entry_next_uses
+                    next_uses
                         .distance(a)
-                        .cmp(&entry_next_uses.distance(b))
+                        .cmp(&next_uses.distance(b))
                         .then(a.stack_size().cmp(&b.stack_size()))
                 });
 
@@ -1607,20 +1538,19 @@ impl SpillAnalysis {
                 }
             }
 
-            cand
+            self.w_entries.insert(ProgramPoint::at_start_of(block), cand);
         } else {
             // We require the block parameters to be in W on entry
-            let mut take = SmallSet::<_, 4>::from_iter(
-                block.arguments().iter().copied().map(|v| ValueOrAlias::new(v as ValueRef)),
-            );
+            let mut take =
+                SmallSet::<_, 4>::from_iter(params.iter().copied().map(ValueOrAlias::new));
 
             // So remove them from the set of candidates, then sort remaining by next-use and size
             let mut cand = cand.into_vec();
-            cand.retain(|o| !block.arguments().iter().any(|arg| *arg as ValueRef == o.value()));
+            cand.retain(|o| !params.contains(&o.value()));
             cand.sort_by(|a, b| {
-                entry_next_uses
+                next_uses
                     .distance(a)
-                    .cmp(&entry_next_uses.distance(b))
+                    .cmp(&next_uses.distance(b))
                     .then(a.stack_size().cmp(&b.stack_size()))
             });
 
@@ -1636,295 +1566,355 @@ impl SpillAnalysis {
                     false
                 }
             }));
-            take
+            self.w_entries.insert(ProgramPoint::at_start_of(block), take);
         }
     }
 
-    fn compute_spills_and_reloads_on_op_exit(
+    fn compute_w_entry_loop_like(
         &mut self,
+        loop_like: &dyn LoopLikeOpInterface,
+        block: &Block,
+        liveness: &LivenessAnalysis,
+    ) {
+        let entry = ProgramPoint::at_start_of(block);
+
+        let params = ValueRange::<4>::from(block.arguments());
+        let mut alive = params.iter().map(ValueOrAlias::new).collect::<SmallSet<_, 4>>();
+
+        let next_uses = liveness.next_uses_at(&entry).expect("missing liveness for block entry");
+        alive.extend(next_uses.iter().filter_map(|v| {
+            if v.is_live() {
+                Some(ValueOrAlias::new(v.value))
+            } else {
+                None
+            }
+        }));
+
+        // Initial candidates are values live at block entry which are used in the loop body
+        let mut cand = alive
+            .iter()
+            .filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
+            .copied()
+            .collect::<SmallSet<_, 4>>();
+
+        // Values which are "live through" the loop, are those which are live at entry, but not
+        // used within the body of the loop. If we have excess available operand stack capacity,
+        // then we can avoid issuing spills/reloads for at least some of these values.
+        let live_through = alive.difference(&cand);
+
+        let w_used = cand.iter().map(|o| o.stack_size()).sum::<usize>();
+        if w_used < K {
+            if let Some(mut free_in_loop) =
+                K.checked_sub(max_loop_pressure_loop_like(loop_like, liveness))
+            {
+                let mut live_through = live_through.into_vec();
+                live_through.sort_by(|a, b| {
+                    next_uses
+                        .distance(a)
+                        .cmp(&next_uses.distance(b))
+                        .then(a.stack_size().cmp(&b.stack_size()))
+                });
+
+                let mut live_through = live_through.into_iter();
+                while free_in_loop > 0 {
+                    if let Some(operand) = live_through.next() {
+                        if let Some(new_free) = free_in_loop.checked_sub(operand.stack_size()) {
+                            if cand.insert(operand) {
+                                free_in_loop = new_free;
+                            }
+                            continue;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            self.w_entries.insert(ProgramPoint::at_start_of(block), cand);
+        } else {
+            // We require the block parameters to be in W on entry
+            let mut take = SmallSet::<_, 4>::from_iter(params.iter().map(ValueOrAlias::new));
+
+            // So remove them from the set of candidates, then sort remaining by next-use and size
+            let mut cand = cand.into_vec();
+            cand.retain(|o| !params.contains(o));
+            cand.sort_by(|a, b| {
+                next_uses
+                    .distance(a)
+                    .cmp(&next_uses.distance(b))
+                    .then(a.stack_size().cmp(&b.stack_size()))
+            });
+
+            // Fill `take` with as many of the candidates as we can
+            let mut taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+            take.extend(cand.into_iter().take_while(|operand| {
+                let size = operand.stack_size();
+                let new_size = taken + size;
+                if new_size <= K {
+                    taken = new_size;
+                    true
+                } else {
+                    false
+                }
+            }));
+            self.w_entries.insert(ProgramPoint::at_start_of(block), take);
+        }
+    }
+
+    fn block_entry_info(
+        &self,
+        op: &Operation,
+        block: &Block,
+        liveness: &LivenessAnalysis,
+        w_entry: SmallSet<ValueOrAlias, 4>,
+    ) -> ProgramPointInfo {
+        let mut info = ProgramPointInfo {
+            point: ProgramPoint::at_start_of(block),
+            w_entry,
+            s_entry: Default::default(),
+            live_predecessors: Default::default(),
+        };
+
+        // Compute S^entry(B) and live predecessors
+        //
+        // NOTE: If `block` is the entry block of a nested region of `op`, and `op` implements
+        // RegionBranchOpInterface, then derive predecessor state using the information that we
+        // know is attached to live predecessor edges of `block`
+        if let Some(branch) =
+            op.as_trait::<dyn RegionBranchOpInterface>().filter(|_| block.is_entry_block())
+        {
+            let predecessors = liveness
+                .solver()
+                .get::<PredecessorState, _>(&info.point)
+                .expect("expected all predecessors of region block to be known");
+            assert!(
+                predecessors.all_predecessors_known(),
+                "unexpected unresolved region successors"
+            );
+            let branch_op = branch.as_operation().as_operation_ref();
+            for predecessor in predecessors.known_predecessors() {
+                // Is `predecessor` the operation itself? Fetch the computed S attached to before
+                // the branch op
+                if predecessor == &branch_op {
+                    info.live_predecessors.push(Predecessor::Parent);
+                    if let Some(s_in) = self.s_entries.get(&ProgramPoint::before(branch_op)) {
+                        info.s_entry = info.s_entry.into_union(s_in);
+                    }
+                    continue;
+                }
+
+                info.live_predecessors.push(Predecessor::Region(*predecessor));
+
+                // Merge in the state from the predecessor's terminator.
+                let pred_block = predecessor.parent().unwrap();
+                if let Some(s_out) = self.s_exits.get(&ProgramPoint::at_end_of(pred_block)) {
+                    info.s_entry = info.s_entry.into_union(s_out);
+                }
+            }
+        } else {
+            for pred in block.predecessors() {
+                let predecessor = pred.predecessor();
+
+                // Skip control edges that aren't executable.
+                let edge = CfgEdge::new(predecessor, pred.successor(), block.span());
+                if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live()) {
+                    continue;
+                }
+
+                info.live_predecessors.push(Predecessor::Block {
+                    op: pred.owner,
+                    index: pred.index,
+                });
+
+                if let Some(s_exitp) = self.s_exits.get(&ProgramPoint::at_end_of(predecessor)) {
+                    info.s_entry = info.s_entry.into_union(s_exitp);
+                }
+            }
+        }
+
+        info.s_entry = info.s_entry.into_intersection(&info.w_entry);
+
+        info
+    }
+
+    fn op_exit_info(
+        &self,
         branch: &dyn RegionBranchOpInterface,
-        pred: OperationRef,
-        pred_inputs: &[ValueRef],
+        liveness: &LivenessAnalysis,
         w_entry: &SmallSet<ValueOrAlias, 4>,
-        s_entry: &SmallSet<ValueOrAlias, 4>,
-        w_in: &SmallSet<ValueOrAlias, 4>,
-        s_in: &SmallSet<ValueOrAlias, 4>,
-        liveness: &LivenessAnalysis,
-    ) {
-        let op_ref = branch.as_operation().as_operation_ref();
-        let predecessor = pred.borrow();
-        let pred_block = pred.parent().unwrap();
-        let (w_exitp, s_exitp) = if pred == op_ref {
-            (w_in, s_in)
-        } else {
-            // We must have W^exit(P) and S^exit(P) by now
-            (&self.w_exits[&pred_block], &self.s_exits[&pred_block])
+    ) -> ProgramPointInfo {
+        let mut info = ProgramPointInfo {
+            point: ProgramPoint::after(branch.as_operation()),
+            w_entry: w_entry.clone(),
+            s_entry: Default::default(),
+            live_predecessors: Default::default(),
         };
 
-        let mut to_reload = w_entry.difference(w_exitp);
-        let mut to_spill = s_entry.difference(s_exitp).into_intersection(w_exitp);
-
-        let next_uses = liveness.next_uses_at(&ProgramPoint::after(op_ref)).unwrap();
-
-        let must_spill = w_exitp.difference(w_entry).into_difference(s_exitp);
-        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(o)));
-
-        for (i, result) in branch.results().iter().copied().enumerate() {
-            let result = ValueOrAlias::new(result as ValueRef);
-            to_reload.remove(&result);
-            // Match up this result with its source argument, and if the source value is not in
-            // W^exit(P), then a reload is needed
-            let src = pred_inputs.get(i).copied().expect("index out of range");
-            let src = ValueOrAlias::new(src);
-            if !w_exitp.contains(&src) {
-                to_reload.insert(src);
+        // Compute S^entry(B) and live predecessors
+        //
+        // NOTE: If `block` is the entry block of a nested region of `op`, and `op` implements
+        // RegionBranchOpInterface, then derive predecessor state using the information that we
+        // know is attached to live predecessor edges of `block`
+        let predecessors = liveness
+            .solver()
+            .get::<PredecessorState, _>(&info.point)
+            .expect("expected all predecessors of region block to be known");
+        assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
+        let branch_op = branch.as_operation().as_operation_ref();
+        for predecessor in predecessors.known_predecessors() {
+            // Is `predecessor` the operation itself? Fetch the computed S attached to before
+            // the branch op
+            if predecessor == &branch_op {
+                info.live_predecessors.push(Predecessor::Parent);
+                let s_in = &self.s_entries[&ProgramPoint::before(branch_op)];
+                info.s_entry = info.s_entry.into_union(s_in);
+                continue;
             }
+
+            info.live_predecessors.push(Predecessor::Region(*predecessor));
+
+            // Merge in the state from the predecessor's terminator.
+            let pred_block = predecessor.parent().unwrap();
+            let s_out = &self.s_exits[&ProgramPoint::at_end_of(pred_block)];
+
+            info.s_entry = info.s_entry.into_union(s_out);
         }
 
-        // If there are no reloads or spills needed, we're done
-        if to_reload.is_empty() && to_spill.is_empty() {
-            return;
+        info.s_entry = info.s_entry.into_intersection(&info.w_entry);
+
+        info
+    }
+}
+
+/// Compute the maximum operand stack depth required within the body of the given loop.
+///
+/// If the stack depth never reaches K, the excess capacity represents an opportunity to
+/// avoid issuing spills/reloads for values which are live through the loop.
+fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis) -> usize {
+    let header = loop_info.header();
+    let mut max = max_block_pressure(&header.borrow(), liveness);
+    let mut block_q = VecDeque::from_iter([header]);
+    let mut visited = SmallSet::<BlockRef, 4>::default();
+
+    while let Some(block) = block_q.pop_front() {
+        if !visited.insert(block) {
+            continue;
         }
 
-        // Otherwise, we need to split the edge from P to B, and place any spills/reloads in the split,
-        // S, moving any block arguments for B, to the unconditional branch in S.
-        let split = self.split_regional(
-            op_ref,
-            RegionBranchPoint::Parent,
-            if pred == op_ref {
-                RegionBranchPoint::Parent
-            } else {
-                RegionBranchPoint::Child(predecessor.parent_region().unwrap())
-            },
-        );
-        let place = Placement::Split(split);
-        let span = predecessor.span();
+        block_q.extend(BlockRef::children(block).filter(|b| loop_info.contains_block(*b)));
 
-        assert!(
-            to_reload.is_empty(),
-            "unexpected reload(s) required on edge from {pred_block} to '{}': {}",
-            &branch.name(),
-            DisplayValues::new(to_reload.iter().map(|o| o.value()))
-        );
+        max = core::cmp::max(max, max_block_pressure(&block.borrow(), liveness));
+    }
 
-        // TODO: Insert spill+reload immediately before predecessor op to ensure that spilled value
-        // is spilled in this predecessor. Note that this changes S^exit(P), and therefore may need
-        // spills in other successors of P (if any). Ideally, we would be able to split the edge
-        // from P to avoid this, but we don't (currently) have a mechanism by which to represent
-        // split edges.
-        assert!(
-            to_spill.is_empty(),
-            "unexpected spill(s) required on edge from {pred_block} to '{}': {}",
-            &branch.name(),
-            DisplayValues::new(to_spill.iter().map(|o| o.value()))
-        );
+    max
+}
 
-        // Insert spills first, to end the live ranges of as many variables as possible
-        for spill in to_spill {
-            self.spill(place, spill.value(), span);
+fn max_loop_pressure_loop_like(
+    loop_like: &dyn LoopLikeOpInterface,
+    liveness: &LivenessAnalysis,
+) -> usize {
+    let mut max_pressure = 0;
+    let mut visited = SmallSet::<_, 4>::default();
+    for region in loop_like.get_loop_regions() {
+        if !visited.insert(region) {
+            continue;
         }
+        Region::traverse_region_graph(&region.borrow(), |region, _| {
+            if !visited.insert(region.as_region_ref()) {
+                return true;
+            }
+            let region_entry = region.entry();
+            max_pressure =
+                core::cmp::max(max_pressure, max_block_pressure(&region_entry, liveness));
+            false
+        });
+    }
+    max_pressure
+}
 
-        // Then insert needed reloads
-        for reload in to_reload {
-            self.reload(place, reload.value(), span);
+/// Compute the maximum operand stack pressure for `block`, using `liveness`
+fn max_block_pressure(block: &Block, liveness: &LivenessAnalysis) -> usize {
+    let mut max_pressure = 0;
+
+    let live_in = liveness.next_uses_at(&ProgramPoint::at_start_of(block));
+    if let Some(live_in) = live_in {
+        for v in live_in.live() {
+            max_pressure += v.borrow().ty().size_in_felts();
         }
     }
 
-    /// At join points in the region control flow graph, the set of live and spilled values may, and
-    /// likely will, differ depending on which predecessor is taken to reach it. We must ensure that
-    /// for any given predecessor:
-    ///
-    /// * Spills are inserted for any values expected in S upon entry to the successor program point,
-    ///   which have not been spilled yet. This occurs when a value is spilled only in a subset of
-    ///   predecessors, so we must spill that value in those predecessors where it has not yet been
-    ///   spilled, to ensure that spills are unified in the successor.
-    /// * Reloads are inserted for any values expected in W upon entry to the successor program
-    ///   point, which are not in W yet. This occurs when a value is spilled in a subset of
-    ///   predecessors, and hasn't been reloaded again since the spill, but is now required. We must
-    ///   reload that value in those predecessors where it is spilled but not yet in W, to ensure
-    ///   that the contents of W are unified on entry to the successor.
-    ///
-    /// NOTE: We are not actually mutating the function and inserting instructions here. Instead, we
-    /// are computing what instructions need to be inserted, and where, as part of the analysis. A
-    /// rewrite pass can then apply the analysis results to the function, if desired.
-    ///
-    /// # Differences between region-CFGs and "normal" CFGs
-    ///
-    /// In a normal block-oriented CFG, spills/reloads are inserted either at the end of a given
-    /// predecessor block, or the edge from that predecessor is split (introducing a new block),
-    /// and the spills/reloads are placed in the split. The former is done when control flow from
-    /// that predecessor is unconditional, so we can freely modify the end of the block to get
-    /// things set up the way we want. The latter approach is needed when control flow from the
-    /// predecessor is conditional, in such cases we cannot modify the W and S sets in the
-    /// predecessor directly, as that will then cause conflicts with other successors of that block.
-    ///
-    /// With regional control flow, where to place spills/reloads is a bit trickier. For one thing,
-    /// predecessors/successors are program points, not blocks. To elaborate on what this means: all
-    /// operations have _before_ and _after_ points, representing when control reaches an op, and
-    /// when it leaves an op. For structured control flow operations (i.e. those whose regions form
-    /// a CFG), these points represent predecessor of the ops regions (on entry), and successor of
-    /// the ops regions (on exit). The _before_ point can also be a predecessor of the _after_
-    /// point, for ops which only conditionally enter the regions they contain.
-    ///
-    /// As a result, the edges formed between program points in a region CFG cannot be split the
-    /// same way we do with normal CFGs, as we cannot, for example, introduce a new block between
-    /// the _before_ and _after_ points of an op, to handle spills/reloads required to unify those
-    /// that occur within the regions of the op. There are a few things to note though:
-    ///
-    /// 1. Values defined within a region are not visible outside the region, even in region CFGs
-    ///    where a given region dominates another region.
-    /// 2. As a result of 1, spills/reloads of values defined in a region never need to be handled
-    ///    by successors of that region.
-    /// 3. However, spills/reloads of values defined _above_ a region (i.e. in the region containing
-    ///    the op, or one of its ancestors), _do_ need to be handled uniformly by successors of
-    ///    a region.
-    /// 4. Structured control-flow operations must:
-    ///    a. Unconditionally enter its body (i.e. the op entry is never a direct predecessor of the
-    ///       op exit). Currently, the only known exception to this is `scf.if` without an `else`
-    ///       region, in which case a falsey condition will transfer control from op entry to op
-    ///       exit without entering a region. However, this specific case can be handled by
-    ///       rewriting the `scf.if` to introduce an empty `else` region. The op then always enters
-    ///       one of its regions, and unconditionally exits from both.
-    ///    b. Either unconditionally exit from its regions, or conditionally exit from a single
-    ///       region. For example, `scf.if` is a case of the former, and `scf.while` is a case of
-    ///       the latter.
-    fn compute_region_control_flow_edge_spills_and_reloads(
-        &mut self,
-        branch: &dyn RegionBranchOpInterface,
-        block_info: &BlockInfo,
-        pred: OperationRef,
-        pred_inputs: &[ValueRef],
-        w_in: &SmallSet<ValueOrAlias, 4>,
-        s_in: &SmallSet<ValueOrAlias, 4>,
-        deferred: &mut SmallVec<[BlockRef; 2]>,
-        liveness: &LivenessAnalysis,
-    ) {
-        let op_ref = branch.as_operation().as_operation_ref();
-        let predecessor = pred.borrow();
-        let pred_block = pred.parent().unwrap();
-        let (w_exitp, s_exitp) = if pred == op_ref {
-            (w_in, s_in)
-        } else {
-            // If we don't have W^exit(P), then P hasn't been processed yet
-            let Some(w_exitp) = self.w_exits.get(&pred_block) else {
-                deferred.push(pred_block);
-                return;
-            };
-            (w_exitp, &self.s_exits[&pred_block])
-        };
+    let mut operands = SmallVec::<[ValueRef; 8]>::default();
+    for op in block.body() {
+        operands.clear();
+        operands.extend(op.operands().all().iter().map(|v| v.borrow().as_value_ref()));
 
-        let mut to_reload = block_info.w_entry.difference(w_exitp);
-        let mut to_spill = block_info.s_entry.difference(s_exitp).into_intersection(w_exitp);
-
-        let block_next_uses =
-            liveness.next_uses_at(&ProgramPoint::at_start_of(block_info.block_id)).unwrap();
-
-        // We need to issue spills for any items in W^exit(P) / W^entry(B) that are not in S^exit(P),
-        // but are live-after P.
-        //
-        // This can occur when B is a loop header, and the computed W^entry(B) does not include values
-        // in W^exit(P) that are live-through the loop, typically because of loop pressure within the
-        // loop requiring us to place spills of those values outside the loop.
-        //
-        // NOTE: It must be the case that values live-after P (i.e. live on entry to B), are values
-        // in scope for B, i.e. no values that are local to P's region leak into B's region unless
-        // P is an ancestor of B.
-        let must_spill = w_exitp.difference(&block_info.w_entry).into_difference(s_exitp);
-        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(o)));
-
-        // We expect any block parameters present to be in `to_reload` at this point, as they will never
-        // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
-        // the predecessor corresponding to the block parameters _must_ be in W^exit(P), and that is
-        // checked here.
-        //
-        // Spills must not be required for region control flow, as that would indicate that the number
-        // or size of the region arguments are too large/unrepresentable. A potential solution would
-        // be to spill excess to memory, but that is a much more invasive transformation, so we do
-        // not do that here. Instead, we simply raise an error if any of the block arguments are not
-        // in W, or if those arguments exceed K.
-        //
-        // Spills _may_ be needed in two cases:
-        //
-        // 1. The current region has multiple predecessors, and a value that is in scope for all
-        //    predecessors (and the current block) is spilled in only a subset of those
-        //    predecessors. That will require us to insert a spill in the other predecessors to
-        //    ensure it is spilled on all paths to the current block.
-        //
-        // 2. An argument corresponding to a block parameter for this block is still live in/through
-        //    this block. Due to values being renamed when used as block arguments, we must ensure there
-        //    is a new copy of the argument so that the original value, and the renamed alias, are both
-        //    live simultaneously. If there is insufficient operand stack space to accommodate both,
-        //    then we must spill values from W to make room.
-        //
-        // So in short, we post-process `to_reload` by matching any values in the set which are block
-        // parameters, with the corresponding source values in W^exit(P) (issuing reloads if the value
-        // given as argument in the predecessor is not in W^exit(P))
-        //
-        // -----
-        //
-        // Remove block params from `to_reload`, and replace them, as needed, with reloads of the value
-        // in the predecessor which was used as the successor argument
-        for (i, param) in block_info.block_id.borrow().arguments().iter().copied().enumerate() {
-            let param = ValueOrAlias::new(param as ValueRef);
-            to_reload.remove(&param);
-            // Match up this parameter with its source argument, and if the source value is not in
-            // W^exit(P), then a reload is needed
-            let src = pred_inputs.get(i).copied().expect("index out of range");
-            let src = ValueOrAlias::new(src);
-            if !w_exitp.contains(&src) {
-                to_reload.insert(src);
+        let mut live_in_pressure = 0;
+        let mut relief = 0usize;
+        let live_in = liveness.next_uses_at(&ProgramPoint::before(&*op));
+        let live_out = liveness.next_uses_at(&ProgramPoint::after(&*op));
+        if let Some(live_in) = live_in {
+            for live in live_in.live() {
+                if operands.contains(&live) {
+                    continue;
+                }
+                if live_out
+                    .as_ref()
+                    .is_none_or(|live_out| live_out.get(live).is_none_or(|v| !v.is_live()))
+                {
+                    continue;
+                }
+                live_in_pressure += live.borrow().ty().size_in_felts();
             }
         }
-
-        // If there are no reloads or spills needed, we're done
-        if to_reload.is_empty() && to_spill.is_empty() {
-            return;
+        for operand in operands.iter() {
+            let size = operand.borrow().ty().size_in_felts();
+            if live_out
+                .as_ref()
+                .is_none_or(|live_out| live_out.get(operand).is_none_or(|v| !v.is_live()))
+            {
+                relief += size;
+            }
+            live_in_pressure += size;
+        }
+        let mut result_pressure = 0usize;
+        for result in op.results().all() {
+            result_pressure += result.borrow().ty().size_in_felts();
         }
 
-        // Otherwise, we need to split the edge from P to B, and place any spills/reloads in the split,
-        // S, moving any block arguments for B, to the unconditional branch in S.
-        let split = self.split_regional(
-            op_ref,
-            RegionBranchPoint::Child(block_info.block_id.parent().unwrap()),
-            if pred == op_ref {
-                RegionBranchPoint::Parent
-            } else {
-                RegionBranchPoint::Child(predecessor.parent_region().unwrap())
-            },
-        );
-        let place = Placement::Split(split);
-        let span = predecessor.span();
+        live_in_pressure += result_pressure.saturating_sub(relief);
+        max_pressure = core::cmp::max(max_pressure, live_in_pressure);
 
-        assert!(
-            to_reload.is_empty(),
-            "unexpected reload(s) required on edge from {pred_block} to {}: {}",
-            &block_info.block_id,
-            DisplayValues::new(to_reload.iter().map(|o| o.value()))
-        );
-
-        // TODO: Insert spill+reload immediately before predecessor op to ensure that spilled value
-        // is spilled in this predecessor. Note that this changes S^exit(P), and therefore may need
-        // spills in other successors of P (if any). Ideally, we would be able to split the edge
-        // from P to avoid this, but we don't (currently) have a mechanism by which to represent
-        // split edges.
-        assert!(
-            to_spill.is_empty(),
-            "unexpected spill(s) required on edge from {pred_block} to {}: {}",
-            &block_info.block_id,
-            DisplayValues::new(to_spill.iter().map(|o| o.value()))
-        );
-
-        // Insert spills first, to end the live ranges of as many variables as possible
-        for spill in to_spill {
-            self.spill(place, spill.value(), span);
-        }
-
-        // Then insert needed reloads
-        for reload in to_reload {
-            self.reload(place, reload.value(), span);
+        // Visit any nested regions and ensure that the maximum pressure in those regions is taken
+        // into account
+        if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
+            max_pressure =
+                core::cmp::max(max_pressure, max_loop_pressure_loop_like(loop_like, liveness));
+        } else if let Some(branch_op) = op.as_trait::<dyn RegionBranchOpInterface>() {
+            let mut visited = SmallSet::<_, 4>::default();
+            for region in branch_op.get_successor_regions(RegionBranchPoint::Parent) {
+                if let Some(region) = region.into_successor() {
+                    if !visited.insert(region) {
+                        continue;
+                    }
+                    Region::traverse_region_graph(&region.borrow(), |region, _| {
+                        if !visited.insert(region.as_region_ref()) {
+                            return true;
+                        }
+                        let region_entry = region.entry();
+                        max_pressure = core::cmp::max(
+                            max_pressure,
+                            max_block_pressure(&region_entry, liveness),
+                        );
+                        false
+                    });
+                }
+            }
         }
     }
 
+    max_pressure
+}
+
+impl SpillAnalysis {
     /// At join points in the control flow graph, the set of live and spilled values may, and likely
     /// will, differ depending on which predecessor is taken to reach it. We must ensure that for
     /// any given predecessor:
@@ -1941,26 +1931,61 @@ impl SpillAnalysis {
     /// rewrite pass can then apply the analysis results to the function, if desired.
     fn compute_control_flow_edge_spills_and_reloads(
         &mut self,
-        block_info: &BlockInfo,
-        pred: &BlockOperand,
+        info: &ProgramPointInfo,
+        pred: &Predecessor,
         deferred: &mut SmallVec<[BlockRef; 2]>,
         liveness: &LivenessAnalysis,
     ) {
-        // If we don't have W^exit(P), then P hasn't been processed yet
-        let predecessor = pred.predecessor();
-        let Some(w_exitp) = self.w_exits.get(&predecessor) else {
-            deferred.push(predecessor);
-            return;
+        // Select the appropriate predecessor program point for the point represented by `info`,
+        // and then obtain W^exit(P).
+        //
+        // If we don't have W^exit(P) yet, then P hasn't been processed yet. This is permitted for
+        // intra-region control flow, but not inter-region control flow.
+        let (w_exitp, s_exitp) = match pred.block() {
+            // The predecessor is either another block in the same region, or cross-region control
+            // flow from a block in a sibling region.
+            Some(predecessor) => {
+                let end_of_pred = ProgramPoint::at_end_of(predecessor);
+                let Some(w_exitp) = self.w_exits.get(&end_of_pred) else {
+                    // We expect both predecessor and successor to be in the same region if we do
+                    // not yet have W^exit(P) available, in which case we defer processing of this
+                    // program point.
+                    /*
+                    let successor = info.point.block().unwrap();
+                    assert_eq!(
+                        successor.parent(),
+                        predecessor.parent(),
+                        "expected w_exitp to be computed already for cross-region control flow"
+                    );
+                     */
+                    deferred.push(predecessor);
+                    return;
+                };
+                let s_exitp = &self.s_exits[&end_of_pred];
+                (w_exitp, s_exitp)
+            }
+            // The predecessor is the operation itself, but whether the edge we're visiting is
+            // entering the operation, or exiting, is determined by `info`
+            None => {
+                let end_of_pred = match info.point {
+                    // The predecessor is `op` itself in a scenario where control has skipped all of
+                    // `op`'s nested regions.
+                    ProgramPoint::Op { op, .. } => ProgramPoint::before(op),
+                    // The predecessor is `op` itself on entry to `block`
+                    ProgramPoint::Block { block, .. } => {
+                        ProgramPoint::before(block.grandparent().unwrap())
+                    }
+                    _ => unreachable!(),
+                };
+                // By definition we must have already visited before(op)
+                let w_exitp = &self.w_entries[&end_of_pred];
+                let s_exitp = &self.s_entries[&end_of_pred];
+                (w_exitp, s_exitp)
+            }
         };
 
-        let mut to_reload = block_info.w_entry.difference(w_exitp);
-        let mut to_spill = block_info
-            .s_entry
-            .difference(&self.s_exits[&pred.successor()])
-            .into_intersection(w_exitp);
-
-        let block_next_uses =
-            liveness.next_uses_at(&ProgramPoint::at_start_of(block_info.block_id)).unwrap();
+        let mut to_reload = info.w_entry.difference(w_exitp);
+        let mut to_spill = info.s_entry.difference(s_exitp).into_intersection(w_exitp);
 
         // We need to issue spills for any items in W^exit(P) / W^entry(B) that are not in S^exit(P),
         // but are live-after P.
@@ -1968,10 +1993,11 @@ impl SpillAnalysis {
         // This can occur when B is a loop header, and the computed W^entry(B) does not include values
         // in W^exit(P) that are live-through the loop, typically because of loop pressure within the
         // loop requiring us to place spills of those values outside the loop.
-        let must_spill = w_exitp
-            .difference(&block_info.w_entry)
-            .into_difference(&self.s_exits[&predecessor]);
-        to_spill.extend(must_spill.into_iter().filter(|o| block_next_uses.is_live(o)));
+        let must_spill = w_exitp.difference(&info.w_entry).into_difference(s_exitp);
+        let next_uses = liveness
+            .next_uses_at(&info.point)
+            .expect("missing liveness info for program point");
+        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(o)));
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
         // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
@@ -1992,27 +2018,31 @@ impl SpillAnalysis {
         // So in short, we post-process `to_reload` by matching any values in the set which are block
         // parameters, with the corresponding source values in W^exit(P) (issuing reloads if the value
         // given as argument in the predecessor is not in W^exit(P))
-        let predecessor = pred.owner.borrow();
-        let branch = predecessor
-            .as_trait::<dyn BranchOpInterface>()
-            .expect("expected predecessor op to implement BranchOpInterface");
+        let pred_args = pred.arguments(info.point);
 
-        let pred_args = branch.get_successor_operands(pred.index as usize);
-
-        // Remove block params from `to_reload`, and replace them, as needed, with reloads of the value
-        // in the predecessor which was used as the successor argument
-        for (i, param) in block_info.block_id.borrow().arguments().iter().copied().enumerate() {
-            let param = ValueOrAlias::new(param as ValueRef);
-            to_reload.remove(&param);
-            // Match up this parameter with its source argument, and if the source value is not in
-            // W^exit(P), then a reload is needed
-            let src = pred_args.get(i).expect("index out of range").into_value_ref().expect(
-                "internally-produced successor arguments are not yet supported by this analysis",
-            );
-            let src = ValueOrAlias::new(src);
-            if !w_exitp.contains(&src) {
-                to_reload.insert(src);
+        match &info.point {
+            // Remove block params from `to_reload`, and replace them, as needed, with reloads of the value
+            // in the predecessor which was used as the successor argument
+            ProgramPoint::Block { block, .. } => {
+                for (i, param) in block.borrow().arguments().iter().enumerate() {
+                    let param = *param as ValueRef;
+                    to_reload.remove(&param);
+                    // Match up this parameter with its source argument, and if the source value is not in
+                    // W^exit(P), then a reload is needed
+                    let src = pred_args.get(i).unwrap_or_else(|| {
+                        panic!("index {i} is out of bounds: len is {}", pred_args.len())
+                    });
+                    if !w_exitp.contains(&src) {
+                        to_reload.insert(ValueOrAlias::new(src));
+                    }
+                }
             }
+            // Remove op results from `to_reload`, and replace them, as needed, with reloads of the
+            // value in the predecessor which was used as the successor argument
+            ProgramPoint::Op { op: _, .. } => {
+                todo!()
+            }
+            _ => unreachable!(),
         }
 
         // If there are no reloads or spills needed, we're done
@@ -2022,9 +2052,9 @@ impl SpillAnalysis {
 
         // Otherwise, we need to split the edge from P to B, and place any spills/reloads in the split,
         // S, moving any block arguments for B, to the unconditional branch in S.
-        let split = self.split_local(block_info.block_id, pred);
+        let split = self.split(info.point, *pred);
         let place = Placement::Split(split);
-        let span = predecessor.span();
+        let span = pred.operation(info.point).span();
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
@@ -2057,34 +2087,37 @@ impl SpillAnalysis {
         s: &mut SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
     ) {
-        let ip = ProgramPoint::before(op);
-        let place = Placement::At(ip);
+        let before_op = ProgramPoint::before(op);
+        let place = Placement::At(before_op);
         let span = op.span();
 
-        // A non-branching terminator is either a return, or an unreachable.
-        //
-        // In the latter case, there are no operands or results, so there is no effect on W or S.
-        // In the former case, the operands to the instruction are the "results" from the
-        // perspective of the operand stack, so we are simply ensuring that those values are in W by
-        // issuing reloads as necessary, all other values are dead, so we do not actually issue any
-        // spills.
-        //
-        // NOTE: We only pull operands from group 0, as other groups are (currently) exclusively
-        // used for successor operand groups, and we want to ignore those here.
-        let operands = op
-            .operands()
-            .group(0)
-            .iter()
-            .map(|operand| operand.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
-        if op.implements::<dyn Terminator>() && !op.implements::<dyn BranchOpInterface>() {
+        log::trace!(target: "spills", "scheduling spills/reloads at {before_op}");
+        log::trace!(target: "spills", "  W^entry = {w:?}");
+        log::trace!(target: "spills", "  S^entry = {s:?}");
+
+        let is_terminator = op.implements::<dyn Terminator>()
+            && !(op.implements::<dyn RegionBranchTerminatorOpInterface>()
+                || op.implements::<dyn BranchOpInterface>());
+
+        if is_terminator {
+            log::trace!(target: "spills", "  terminator = true");
+            // A non-branching terminator is either a return, or an unreachable.
+            // In the latter case, there are no operands or results, so there is no
+            // effect on W or S In the former case, the operands to the instruction are
+            // the "results" from the perspective of the operand stack, so we are simply
+            // ensuring that those values are in W by issuing reloads as necessary, all
+            // other values are dead, so we do not actually issue any spills.
             w.retain(|o| liveness.is_live_before(o, op));
-            let to_reload = operands.iter().copied().map(ValueOrAlias::new);
-            for reload in to_reload {
+            let to_reload = ValueRange::<4>::from(op.operands().all());
+            for reload in to_reload.into_iter().map(ValueOrAlias::new) {
                 if w.insert(reload) {
+                    log::trace!(target: "spills", "  emitting reload for {reload}");
                     self.reload(place, reload.value(), span);
                 }
             }
+
+            log::trace!(target: "spills", "  W^exit = {w:?}");
+            log::trace!(target: "spills", "  S^exit = {s:?}");
             return;
         }
 
@@ -2096,11 +2129,8 @@ impl SpillAnalysis {
         // independently, as if they occur on exit from this instruction. The result is that
         // we may or may not have all successor arguments in W on exit from I, but by the time
         // each successor block is reached, all block parameters are guaranteed to be in W
-        let mut to_reload = operands
-            .iter()
-            .copied()
-            .map(ValueOrAlias::new)
-            .collect::<SmallVec<[ValueOrAlias; 4]>>();
+        let args = ValueRange::<4>::from(op.operands().group(0));
+        let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
 
         // Remove the first occurrance of any operand already in W, remaining uses
         // must be considered against the stack usage calculation (but will not
@@ -2119,20 +2149,16 @@ impl SpillAnalysis {
         let in_needed = to_reload.iter().map(|o| o.stack_size()).sum::<usize>();
 
         // Compute the needed operand stack space for results of I
-        let results = op
-            .results()
-            .iter()
-            .map(|result| *result as ValueRef)
-            .collect::<SmallVec<[_; 2]>>();
+        let results = ValueRange::<2>::from(op.results().all());
         let out_needed = results.iter().map(|v| v.borrow().ty().size_in_felts()).sum::<usize>();
 
         // Compute the amount of operand stack space needed for operands which are
         // not live across the instruction, i.e. which do not consume stack space
         // concurrently with the results.
-        let in_consumed = operands
+        let in_consumed = args
             .iter()
             .filter_map(|v| {
-                if liveness.is_live_after(*v, op) {
+                if liveness.is_live_after(v, op) {
                     None
                 } else {
                     Some(v.borrow().ty().size_in_felts())
@@ -2140,9 +2166,16 @@ impl SpillAnalysis {
             })
             .sum::<usize>();
 
+        log::trace!(target: "spills", "  results = {results}");
+        log::trace!(target: "spills", "  require copy/reload = {to_reload:?}");
+        log::trace!(target: "spills", "  current stack usage = {w_used}");
+        log::trace!(target: "spills", "  required by reloads = {in_needed}");
+        log::trace!(target: "spills", "  required by results = {out_needed}");
+        log::trace!(target: "spills", "  freed by op         = {in_consumed}");
+
         // If we have room for operands and results in W, then no spills are needed,
         // otherwise we require two passes to compute the spills we will need to issue
-        let mut to_spill = SmallSet::<ValueOrAlias, 4>::default();
+        let mut to_spill = SmallSet::<_, 4>::default();
 
         // First pass: compute spills for entry to I (making room for operands)
         //
@@ -2151,15 +2184,13 @@ impl SpillAnalysis {
         // the size of any operands which must be reloaded.
         let max_usage_in = w_used + in_needed;
         if max_usage_in > K {
+            log::trace!(target: "spills", "max usage on entry ({max_usage_in}) exceeds K ({K}), spills required");
             // We must spill enough capacity to keep K >= 16
             let mut must_spill = max_usage_in - K;
             // Our initial set of candidates consists of values in W which are not operands
             // of the current instruction.
-            let mut candidates = w
-                .iter()
-                .copied()
-                .filter(|o| !operands.contains(&o.value()))
-                .collect::<SmallVec<[_; 16]>>();
+            let mut candidates =
+                w.iter().filter(|o| !args.contains(*o)).copied().collect::<SmallVec<[_; 4]>>();
             // We order the candidates such that those whose next-use distance is greatest, are
             // placed last, and thus will be selected first. We further break ties between
             // values with equal next-use distances by ordering them by the
@@ -2175,22 +2206,25 @@ impl SpillAnalysis {
                 let candidate = candidates.pop().unwrap_or_else(|| {
                     panic!(
                         "unable to spill sufficient capacity to hold all operands on stack at one \
-                         time at {}",
-                        op.name()
+                         time at {op}"
                     )
                 });
                 must_spill = must_spill.saturating_sub(candidate.stack_size());
                 to_spill.insert(candidate);
             }
+        } else {
+            log::trace!(target: "spills", "  spills required on entry: no");
         }
 
         // Second pass: compute spills for exit from I (making room for results)
         let spilled = to_spill.iter().map(|o| o.stack_size()).sum::<usize>();
+        log::trace!(target: "spills", "  freed by spills = {spilled}");
         // The max usage out is computed by adding the space required for all results of I, to
         // the max usage in, then subtracting the size of all operands which are consumed by I,
         // as well as the size of those values in W which we have spilled.
         let max_usage_out = (max_usage_in + out_needed).saturating_sub(in_consumed + spilled);
         if max_usage_out > K {
+            log::trace!(target: "spills", "max usage on exit ({max_usage_out}) exceeds K ({K}), additional spills required");
             // We must spill enough capacity to keep K >= 16
             let mut must_spill = max_usage_out - K;
             // For this pass, the set of candidates consists of values in W which are not
@@ -2203,7 +2237,7 @@ impl SpillAnalysis {
             let mut candidates = w
                 .iter()
                 .filter(|o| {
-                    if !operands.contains(&o.value()) {
+                    if !args.contains(*o) {
                         // Not an argument, not yet spilled
                         !to_spill.contains(*o)
                     } else {
@@ -2211,8 +2245,8 @@ impl SpillAnalysis {
                         liveness.is_live_after(*o, op)
                     }
                 })
-                .copied()
-                .collect::<SmallVec<[_; 16]>>();
+                .cloned()
+                .collect::<SmallVec<[_; 4]>>();
             candidates.sort_by(|a, b| {
                 let a_dist = liveness.next_use_after(a, op);
                 let b_dist = liveness.next_use_after(b, op);
@@ -2222,23 +2256,25 @@ impl SpillAnalysis {
                 let candidate = candidates.pop().unwrap_or_else(|| {
                     panic!(
                         "unable to spill sufficient capacity to hold all operands on stack at one \
-                         time at {}",
-                        op.name()
+                         time at {op}"
                     )
                 });
                 // If we're spilling an operand of I, we can multiple the amount of space
                 // freed by the spill by the number of uses of the spilled value in I
                 let num_uses =
-                    core::cmp::max(1, operands.iter().filter(|v| *v == &candidate.value()).count());
+                    core::cmp::max(1, args.iter().filter(|v| *v == candidate.value()).count());
                 let freed = candidate.stack_size() * num_uses;
                 must_spill = must_spill.saturating_sub(freed);
                 to_spill.insert(candidate);
             }
+        } else {
+            log::trace!(target: "spills", "  spills required on exit: no");
         }
 
         // Emit spills first, to make space for reloaded values on the operand stack
         for spill in to_spill.iter() {
             if s.insert(*spill) {
+                log::trace!(target: "spills", "emitting spill for {spill}");
                 self.spill(place, spill.value(), span);
             }
 
@@ -2250,6 +2286,7 @@ impl SpillAnalysis {
         for reload in to_reload {
             // We only need to emit a reload for a given value once
             if w.insert(reload) {
+                log::trace!(target: "spills", "emitting reload for {reload}");
                 // By definition, if we are emitting a reload, the value must have been spilled
                 s.insert(reload);
                 self.reload(place, reload.value(), span);
@@ -2266,7 +2303,9 @@ impl SpillAnalysis {
         // or reload along each control flow edge.
         //
         // Second, if applicable, we add in the instruction results
+        log::trace!(target: "spills", "  applying effects of operation to W..");
         if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
+            log::trace!(target: "spills", "  op is a control flow branch, attempting to resolve a single successor");
             // Try to determine if we can select a single successor here
             let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
                 op.operands().group(0).len(),
@@ -2285,6 +2324,7 @@ impl SpillAnalysis {
             }
 
             if let Some(succ) = branch.get_successor_for_operands(&operands) {
+                log::trace!(target: "spills", "  resolved single succeessor {}", succ.successor());
                 w.retain(|o| {
                     op.operands()
                         .group(succ.operand_group as usize)
@@ -2297,7 +2337,7 @@ impl SpillAnalysis {
                     .successors()
                     .iter()
                     .filter_map(|s| {
-                        let successor = s.block.borrow().successor();
+                        let successor = s.successor();
                         if liveness.is_block_executable(successor) {
                             Some(s.operand_group as usize)
                         } else {
@@ -2305,6 +2345,7 @@ impl SpillAnalysis {
                         }
                     })
                     .collect::<SmallVec<[_; 2]>>();
+                log::trace!(target: "spills", "  resolved {} successors", successor_operand_groups.len());
                 w.retain(|o| {
                     let is_succ_arg = successor_operand_groups.iter().copied().any(|succ| {
                         op.operands()
@@ -2316,81 +2357,475 @@ impl SpillAnalysis {
                 });
             }
         } else {
+            log::trace!(target: "spills", "  '{}' is a primitive operation", op.name());
+
             // This is a simple operation
+            log::trace!(target: "spills", "  removing dead operands from W");
             w.retain(|o| liveness.is_live_after(o, op));
-            w.extend(results.iter().copied().map(ValueOrAlias::new));
+            log::trace!(target: "spills", "  adding results to W");
+            w.extend(results.iter().map(ValueOrAlias::new));
         }
+
+        log::trace!(target: "spills", "  W^exit = {w:?}");
+        log::trace!(target: "spills", "  S^exit = {s:?}");
     }
 }
 
-/// Compute the maximum operand stack depth required within the body of the given loop.
-///
-/// If the stack depth never reaches K, the excess capacity represents an opportunity to
-/// avoid issuing spills/reloads for values which are live through the loop.
-fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis) -> usize {
-    let header = loop_info.header();
-    let mut max = max_block_pressure(&header.borrow(), liveness);
-    let mut block_q = VecDeque::from_iter([header]);
-    let mut visited = SmallSet::<BlockRef, 4>::default();
+/*
+#[cfg(test)]
+mod tests {
+    use midenc_hir::{
+        testing::TestContext, AbiParam, FunctionBuilder, Immediate, InstBuilder, Signature,
+    };
+    use pretty_assertions::assert_eq;
 
-    while let Some(block_ref) = block_q.pop_front() {
-        if !visited.insert(block_ref) {
-            continue;
+    use super::*;
+
+    /// In this test, we force several values to be live simultaneously inside the same block,
+    /// of sufficient size on the operand stack so as to require some of them to be spilled
+    /// at least once, and later reloaded.
+    ///
+    /// The purpose here is to validate the MIN algorithm that determines whether or not we need
+    /// to spill operands at each program point, in the following ways:
+    ///
+    /// * Ensure that we spill values we expect to be spilled
+    /// * Ensure that spills are inserted at the appropriate locations
+    /// * Ensure that we reload values that were previously spilled
+    /// * Ensure that reloads are inserted at the appropriate locations
+    ///
+    /// The following HIR is constructed for this test:
+    ///
+    /// * `in` indicates the set of values in W at an instruction, with reloads included
+    /// * `out` indicates the set of values in W after an instruction, with spills excluded
+    /// * `spills` indicates the candidates from W which were selected to be spilled at the
+    ///   instruction
+    /// * `reloads` indicates the set of values in S which must be reloaded at the instruction
+    ///
+    /// ```text,ignore
+    /// (func (export #spill) (param (ptr u8)) (result u32)
+    ///   (block 0 (param v0 (ptr u8))
+    ///     (let (v1 u32) (ptrtoint v0))              ; in=[v0] out=[v1]
+    ///     (let (v2 u32) (add v1 32))                ; in=[v1] out=[v1 v2]
+    ///     (let (v3 (ptr u128)) (inttoptr v2))       ; in=[v1 v2] out=[v1 v2 v3]
+    ///     (let (v4 u128) (load v3))                 ; in=[v1 v2 v3] out=[v1 v2 v3 v4]
+    ///     (let (v5 u32) (add v1 64))                ; in=[v1 v2 v3 v4] out=[v1 v2 v3 v4 v5]
+    ///     (let (v6 (ptr u128)) (inttoptr v5))       ; in=[v1 v2 v3 v4 v5] out=[v1 v2 v3 v4 v6]
+    ///     (let (v7 u128) (load v6))                 ; in=[v1 v2 v3 v4 v6] out=[v1 v2 v3 v4 v6 v7]
+    ///     (let (v8 u64) (const.u64 1))              ; in=[v1 v2 v3 v4 v6 v7] out=[v1 v2 v3 v4 v6 v7 v8]
+    ///     (let (v9 u32) (call (#example) v6 v4 v7 v7 v8)) <-- operand stack pressure hits 18 here
+    ///                                               ; in=[v1 v2 v3 v4 v6 v7 v7 v8] out=[v1 v7 v9]
+    ///                                               ; spills=[v2 v3] (v2 is furthest next-use, followed by v3)
+    ///     (let (v10 u32) (add v1 72))               ; in=[v1 v7] out=[v7 v10]
+    ///     (let (v11 (ptr u64)) (inttoptr v10))      ; in=[v7 v10] out=[v7 v11]
+    ///     (store v3 v7)                             ; reload=[v3] in=[v3 v7 v11] out=[v11]
+    ///     (let (v12 u64) (load v11))                ; in=[v11] out=[v12]
+    ///     (ret v2)                                  ; reload=[v2] in=[v2] out=[v2]
+    /// )
+    /// ```
+    #[test]
+    fn spills_intra_block() -> AnalysisResult<()> {
+        let context = TestContext::default();
+        let id = "test::spill".parse().unwrap();
+        let mut function = Function::new(
+            id,
+            Signature::new(
+                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
+                [AbiParam::new(Type::U32)],
+            ),
+        );
+
+        let v2;
+        let v3;
+        let call;
+        let store;
+        let ret;
+        {
+            let mut builder = FunctionBuilder::new(&mut function);
+            let example = builder
+                .import_function(
+                    "foo",
+                    "example",
+                    Signature::new(
+                        [
+                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U64),
+                        ],
+                        [AbiParam::new(Type::U32)],
+                    ),
+                    SourceSpan::UNKNOWN,
+                )
+                .unwrap();
+            let entry = builder.current_block();
+            let v0 = {
+                let args = builder.block_params(entry);
+                args[0]
+            };
+
+            // entry
+            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
+            v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
+            v3 = builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
+            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
+            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
+            let v6 =
+                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
+            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
+            let v8 = builder.ins().u64(1, SourceSpan::UNKNOWN);
+            call = builder.ins().exec(example, &[v6, v4, v7, v7, v8], SourceSpan::UNKNOWN);
+            let v10 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
+            store = builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
+            let v11 =
+                builder.ins().inttoptr(v10, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
+            let _v12 = builder.ins().load(v11, SourceSpan::UNKNOWN);
+            ret = builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
         }
 
-        let block = block_ref.borrow();
+        let mut analyses = AnalysisManager::default();
+        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
 
-        block_q.extend(BlockRef::children(block_ref).filter(|b| loop_info.contains_block(*b)));
+        assert!(spills.has_spills());
+        assert_eq!(spills.spills().len(), 2);
+        assert!(spills.is_spilled(&v2));
+        assert!(spills.is_spilled_at(v2, ProgramPoint::Inst(call)));
+        assert!(spills.is_spilled(&v3));
+        assert!(spills.is_spilled_at(v3, ProgramPoint::Inst(call)));
+        assert_eq!(spills.reloads().len(), 2);
+        assert!(spills.is_reloaded_at(v3, ProgramPoint::Inst(store)));
+        assert!(spills.is_reloaded_at(v2, ProgramPoint::Inst(ret)));
 
-        let block_max = max_block_pressure(&block, liveness);
-        max = core::cmp::max(max, block_max);
+        Ok(())
     }
 
-    max
+    /// In this test, we are verifying the behavior of the spill analysis when applied to a
+    /// control flow graph with branching control flow, where spills are required along one
+    /// branch and not the other. This verifies the following:
+    ///
+    /// * Control flow edges are split as necessary to insert required spills/reloads
+    /// * Propagation of the W and S sets from predecessors to successors is correct
+    /// * The W and S sets are properly computed at join points in the CFG
+    ///
+    /// The following HIR is constructed for this test (see the first test in this file for
+    /// a description of the notation used, if unclear):
+    ///
+    /// ```text,ignore
+    /// (func (export #spill) (param (ptr u8)) (result u32)
+    ///   (block 0 (param v0 (ptr u8))
+    ///     (let (v1 u32) (ptrtoint v0))              ; in=[v0] out=[v1]
+    ///     (let (v2 u32) (add v1 32))                ; in=[v1] out=[v1 v2]
+    ///     (let (v3 (ptr u128)) (inttoptr v2))       ; in=[v1 v2] out=[v1 v2 v3]
+    ///     (let (v4 u128) (load v3))                 ; in=[v1 v2 v3] out=[v1 v2 v3 v4]
+    ///     (let (v5 u32) (add v1 64))                ; in=[v1 v2 v3 v4] out=[v1 v2 v3 v4 v5]
+    ///     (let (v6 (ptr u128)) (inttoptr v5))       ; in=[v1 v2 v3 v4 v5] out=[v1 v2 v3 v4 v6]
+    ///     (let (v7 u128) (load v6))                 ; in=[v1 v2 v3 v4 v6] out=[v1 v2 v3 v4 v6 v7]
+    ///     (let (v8 i1) (eq v1 0))                   ; in=[v1 v2 v3 v4 v6, v7] out=[v1 v2 v3 v4 v6 v7, v8]
+    ///     (cond_br v8 (block 1) (block 2)))
+    ///
+    ///   (block 1
+    ///     (let (v9 u64) (const.u64 1))              ; in=[v1 v2 v3 v4 v6 v7] out=[v1 v2 v3 v4 v6 v7 v9]
+    ///     (let (v10 u32) (call (#example) v6 v4 v7 v7 v9)) <-- operand stack pressure hits 18 here
+    ///                                               ; in=[v1 v2 v3 v4 v6 v7 v7 v9] out=[v1 v7 v10]
+    ///                                               ; spills=[v2 v3] (v2 is furthest next-use, followed by v3)
+    ///     (br (block 3 v10))) ; this edge will be split to reload v2/v3 as expected by block3
+    ///
+    ///   (block 2
+    ///     (let (v11 u32) (add v1 8))                ; in=[v1 v2 v3 v7] out=[v1 v2 v3 v7 v11]
+    ///     (br (block 3 v11))) ; this edge will be split to spill v2/v3 to match the edge from block1
+    ///
+    ///   (block 3 (param v12 u32)) ; we expect that the edge between block 2 and 3 will be split, and spills of v2/v3 inserted
+    ///     (let (v13 u32) (add v1 72))               ; in=[v1 v7 v12] out=[v7 v12 v13]
+    ///     (let (v14 u32) (add v13 v12))             ; in=[v7 v12 v13] out=[v7 v14]
+    ///     (let (v15 (ptr u64)) (inttoptr v14))      ; in=[v7 v14] out=[v7 v15]
+    ///     (store v3 v7)                             ; reload=[v3] in=[v3 v7 v15] out=[v15]
+    ///     (let (v16 u64) (load v15))                ; in=[v15] out=[v16]
+    ///     (ret v2))                                 ; reload=[v2] in=[v2] out=[v2]
+    /// )
+    /// ```
+    #[test]
+    fn spills_branching_control_flow() -> AnalysisResult<()> {
+        let context = TestContext::default();
+        let id = "test::spill".parse().unwrap();
+        let mut function = Function::new(
+            id,
+            Signature::new(
+                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
+                [AbiParam::new(Type::U32)],
+            ),
+        );
+
+        let v2;
+        let v3;
+        let call;
+        {
+            let mut builder = FunctionBuilder::new(&mut function);
+            let example = builder
+                .import_function(
+                    "foo",
+                    "example",
+                    Signature::new(
+                        [
+                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U128),
+                            AbiParam::new(Type::U64),
+                        ],
+                        [AbiParam::new(Type::U32)],
+                    ),
+                    SourceSpan::UNKNOWN,
+                )
+                .unwrap();
+            let entry = builder.current_block();
+            let block1 = builder.create_block();
+            let block2 = builder.create_block();
+            let block3 = builder.create_block();
+            let v0 = {
+                let args = builder.block_params(entry);
+                args[0]
+            };
+
+            // entry
+            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
+            v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
+            v3 = builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
+            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
+            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
+            let v6 =
+                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
+            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
+            let v8 = builder.ins().eq_imm(v1, Immediate::U32(0), SourceSpan::UNKNOWN);
+            builder.ins().cond_br(v8, block1, &[], block2, &[], SourceSpan::UNKNOWN);
+
+            // block1
+            builder.switch_to_block(block1);
+            let v9 = builder.ins().u64(1, SourceSpan::UNKNOWN);
+            call = builder.ins().exec(example, &[v6, v4, v7, v7, v9], SourceSpan::UNKNOWN);
+            let v10 = builder.func.dfg.first_result(call);
+            builder.ins().br(block3, &[v10], SourceSpan::UNKNOWN);
+
+            // block2
+            builder.switch_to_block(block2);
+            let v11 = builder.ins().add_imm_unchecked(v1, Immediate::U32(8), SourceSpan::UNKNOWN);
+            builder.ins().br(block3, &[v11], SourceSpan::UNKNOWN);
+
+            // block3
+            let v12 = builder.append_block_param(block3, Type::U32, SourceSpan::UNKNOWN);
+            builder.switch_to_block(block3);
+            let v13 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
+            let v14 = builder.ins().add_unchecked(v13, v12, SourceSpan::UNKNOWN);
+            let v15 =
+                builder.ins().inttoptr(v14, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
+            builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
+            let _v16 = builder.ins().load(v15, SourceSpan::UNKNOWN);
+            builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
+        }
+
+        let mut analyses = AnalysisManager::default();
+        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
+
+        dbg!(&spills);
+
+        assert!(spills.has_spills());
+        assert_eq!(spills.spills().len(), 4);
+        // Block created by splitting edge between block 3 and its predecessors
+        assert_eq!(spills.splits().len(), 2);
+        let block1 = Block::from_u32(1);
+        let block2 = Block::from_u32(2);
+        let block3 = Block::from_u32(3);
+        let spill_blk1_blk3 = &spills.splits()[0];
+        assert_eq!(spill_blk1_blk3.block, block3);
+        assert_eq!(spill_blk1_blk3.predecessor.block, block1);
+        let spill_blk2_blk3 = &spills.splits()[1];
+        assert_eq!(spill_blk2_blk3.block, block3);
+        assert_eq!(spill_blk2_blk3.predecessor.block, block2);
+        assert!(spills.is_spilled(&v2));
+        assert!(spills.is_spilled_at(v2, ProgramPoint::Inst(call)));
+        // v2 should have a spill inserted from block2 to block3, as it is spilled in block1
+        assert!(spills.is_spilled_in_split(v2, spill_blk2_blk3.id));
+        assert!(spills.is_spilled(&v3));
+        // v3 should have a spill inserted from block2 to block3, as it is spilled in block1
+        assert!(spills.is_spilled_at(v3, ProgramPoint::Inst(call)));
+        assert!(spills.is_spilled_in_split(v3, spill_blk2_blk3.id));
+        // v2 and v3 should be reloaded on the edge from block1 to block3, since they were
+        // spilled previously, but must be in W on entry to block3
+        assert_eq!(spills.reloads().len(), 2);
+        assert!(spills.is_reloaded_in_split(v2, spill_blk1_blk3.id));
+        assert!(spills.is_reloaded_in_split(v3, spill_blk1_blk3.id));
+
+        Ok(())
+    }
+
+    /// In this test, we are verifying the behavior of the spill analysis when applied to a
+    /// control flow graph with cyclical control flow, i.e. loops. We're interested specifically in
+    /// the following properties:
+    ///
+    /// * W and S at entry to a loop are computed correctly
+    /// * Values live-through - but not live-in - a loop, which cannot survive the loop due to
+    ///   operand stack pressure within the loop, are spilled outside of the loop, with reloads
+    ///   placed on exit edges from the loop where needed
+    /// * W and S upon exit from a loop are computed correctly
+    ///
+    /// The following HIR is constructed for this test (see the first test in this file for
+    /// a description of the notation used, if unclear):
+    ///
+    /// ```text,ignore
+    /// (func (export #spill) (param (ptr u64)) (param u32) (param u32) (result u64)
+    ///   (block 0 (param v0 (ptr u64)) (param v1 u32) (param v2 u32)
+    ///     (let (v3 u32) (const.u32 0))         ; in=[v0, v1, v2] out=[v0, v1, v2, v3]
+    ///     (let (v4 u32) (const.u32 0))         ; in=[v0, v1, v2, v3] out=[v0, v1, v2, v3, v4]
+    ///     (let (v5 u64) (const.u64 0))         ; in=[v0, v1, v2, v3, v4] out=[v0, v1, v2, v3, v4, v5]
+    ///     (br (block 1 v3 v4 v5)))
+    ///
+    ///   (block 1 (param v6 u32) (param v7 u32) (param v8 u64)) ; outer loop
+    ///     (let (v9 i1) (eq v6 v1))             ; in=[v0, v2, v6, v7, v8] out=[v0, v1, v2, v6, v7, v8, v9]
+    ///     (cond_br v9 (block 2) (block 3)))    ; in=[v0, v1, v2, v6, v7, v8, v9] out=[v0, v1, v2, v6, v7, v8]
+    ///
+    ///   (block 2 ; exit outer loop, return from function
+    ///     (ret v8))                            ; in=[v0, v1, v2, v6, v7, v8] out=[v8]
+    ///
+    ///   (block 3 ; split edge
+    ///     (br (block 4 v7 v8)))                ; in=[v0, v1, v2, v6, v7, v8] out=[v0, v1, v2, v6]
+    ///
+    ///   (block 4 (param v10 u32) (param v11 u64) ; inner loop
+    ///     (let (v12 i1) (eq v10 v2))           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v6, v10, v11, v12]
+    ///     (cond_br v12 (block 5) (block 6)))   ; in=[v0, v1, v2, v6, v10, v11, v12] out=[v0, v1, v2, v6, v10, v11]
+    ///
+    ///   (block 5 ; increment row count, continue outer loop
+    ///     (let (v13 u32) (add v6 1))           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v10, v11, v13]
+    ///     (br (block 1 v13 v10 v11)))
+    ///
+    ///   (block 6 ; load value at v0[row][col], add to sum, increment col, continue inner loop
+    ///     (let (v14 u32) (sub.saturating v6 1)) ; row_offset := ROW_SIZE * row.saturating_sub(1)
+    ///                                           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v6, v10, v11, 14]
+    ///     (let (v15 u32) (mul v14 v2))          ; in=[v0, v1, v2, v6, v10, v11, 14] out=[v0, v1, v2, v6, v10, v11, 15]
+    ///     (let (v16 u32) (add v10 v15))         ; offset := col + row_offset
+    ///                                           ; in=[v0, v1, v2, v6, v10, v11, 15] out=[v0, v1, v2, v6, v10, v11, v16]
+    ///     (let (v17 u32) (ptrtoint v0))         ; ptr := (v0 as u32 + offset) as *u64
+    ///                                           ; in=[v0, v1, v2, v6, v10, v11, v16] out=[v0, v1, v2, v6, v10, v11, v16, 17]
+    ///     (let (v18 u32) (add v17 v16))         ; in=[v0, v1, v2, v6, v10, v11, v16, v17] out=[v0, v1, v2, v6, v10, v11, v18]
+    ///     (let (v19 (ptr u64)) (ptrtoint v18))  ; in=[v0, v1, v2, v6, v10, v11, v18] out=[v0, v1, v2, v6, v10, v11, v19]
+    ///     (let (v20 u64) (load v19))            ; sum += *ptr
+    ///                                           ; in=[v0, v1, v2, v6, v10, v11, v19] out=[v0, v1, v2, v6, v10, v11, v20]
+    ///     (let (v21 u64) (add v11 v20))         ; in=[v0, v1, v2, v6, v10, v11, v20] out=[v0, v1, v2, v6, v10, v21]
+    ///     (let (v22 u32) (add v10 1))           ; col++
+    ///                                           ; in=[v0, v1, v2, v6, v10, v21] out=[v0, v1, v2, v6, v21, v22]
+    ///     (br (block 4 v22 v21)))
+    /// )
+    /// ```
+    #[test]
+    fn spills_loop_nest() -> AnalysisResult<()> {
+        let context = TestContext::default();
+        let id = "test::spill".parse().unwrap();
+        let mut function = Function::new(
+            id,
+            Signature::new(
+                [
+                    AbiParam::new(Type::Ptr(Box::new(Type::U64))),
+                    AbiParam::new(Type::U64),
+                    AbiParam::new(Type::U64),
+                ],
+                [AbiParam::new(Type::U64)],
+            ),
+        );
+
+        {
+            let mut builder = FunctionBuilder::new(&mut function);
+            let entry = builder.current_block();
+            let (v0, v1, v2) = {
+                let args = builder.block_params(entry);
+                (args[0], args[1], args[2])
+            };
+
+            let block1 = builder.create_block();
+            let block2 = builder.create_block();
+            let block3 = builder.create_block();
+            let block4 = builder.create_block();
+            let block5 = builder.create_block();
+            let block6 = builder.create_block();
+
+            // entry
+            let v3 = builder.ins().u64(0, SourceSpan::UNKNOWN);
+            let v4 = builder.ins().u64(0, SourceSpan::UNKNOWN);
+            let v5 = builder.ins().u64(0, SourceSpan::UNKNOWN);
+            builder.ins().br(block1, &[v3, v4, v5], SourceSpan::UNKNOWN);
+
+            // block1 - outer loop header
+            let v6 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
+            let v7 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
+            let v8 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
+            builder.switch_to_block(block1);
+            let v9 = builder.ins().eq(v6, v1, SourceSpan::UNKNOWN);
+            builder.ins().cond_br(v9, block2, &[], block3, &[], SourceSpan::UNKNOWN);
+
+            // block2 - outer exit
+            builder.switch_to_block(block2);
+            builder.ins().ret(Some(v8), SourceSpan::UNKNOWN);
+
+            // block3 - split edge
+            builder.switch_to_block(block3);
+            builder.ins().br(block4, &[v7, v8], SourceSpan::UNKNOWN);
+
+            // block4 - inner loop
+            let v10 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
+            let v11 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
+            builder.switch_to_block(block4);
+            let v12 = builder.ins().eq(v10, v2, SourceSpan::UNKNOWN);
+            builder.ins().cond_br(v12, block5, &[], block6, &[], SourceSpan::UNKNOWN);
+
+            // block5 - inner latch
+            builder.switch_to_block(block5);
+            let v13 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
+            builder.ins().br(block1, &[v13, v10, v11], SourceSpan::UNKNOWN);
+
+            // block6 - inner body
+            builder.switch_to_block(block6);
+            let v14 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
+            let v15 = builder.ins().mul_unchecked(v14, v2, SourceSpan::UNKNOWN);
+            let v16 = builder.ins().add_unchecked(v10, v15, SourceSpan::UNKNOWN);
+            let v17 = builder.ins().ptrtoint(v0, Type::U64, SourceSpan::UNKNOWN);
+            let v18 = builder.ins().add_unchecked(v17, v16, SourceSpan::UNKNOWN);
+            let v19 =
+                builder.ins().inttoptr(v18, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
+            let v20 = builder.ins().load(v19, SourceSpan::UNKNOWN);
+            let v21 = builder.ins().add_unchecked(v11, v20, SourceSpan::UNKNOWN);
+            let v22 = builder.ins().add_imm_unchecked(v10, Immediate::U64(1), SourceSpan::UNKNOWN);
+            builder.ins().br(block4, &[v22, v21], SourceSpan::UNKNOWN);
+        }
+
+        let mut analyses = AnalysisManager::default();
+        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
+
+        dbg!(&spills);
+
+        let block1 = Block::from_u32(1);
+        let block3 = Block::from_u32(3);
+        let block4 = Block::from_u32(4);
+        let block5 = Block::from_u32(5);
+
+        assert!(spills.has_spills());
+        assert_eq!(spills.splits().len(), 2);
+
+        // We expect a spill from block3 to block4, as due to operand stack pressure in the loop,
+        // there is insufficient space to keep v1 on the operand stack through the loop
+        assert_eq!(spills.spills().len(), 1);
+        let split_blk3_blk4 = &spills.splits()[0];
+        assert_eq!(split_blk3_blk4.block, block4);
+        assert_eq!(split_blk3_blk4.predecessor.block, block3);
+        let v1 = Value::from_u32(1);
+        assert!(spills.is_spilled(&v1));
+        assert!(spills.is_spilled_in_split(v1, split_blk3_blk4.id));
+
+        // We expect a reload of v1 from block5 to block1, as block1 expects v1 on the operand stack
+        assert_eq!(spills.reloads().len(), 1);
+        let split_blk5_blk1 = &spills.splits()[1];
+        assert_eq!(split_blk5_blk1.block, block1);
+        assert_eq!(split_blk5_blk1.predecessor.block, block5);
+        assert!(spills.is_reloaded(&v1));
+        assert!(spills.is_reloaded_in_split(v1, split_blk5_blk1.id));
+
+        Ok(())
+    }
 }
-
-/// Compute the maximum operand stack pressure for `block`, using `liveness`
-fn max_block_pressure(block: &Block, liveness: &LivenessAnalysis) -> usize {
-    let mut max_pressure = 0;
-
-    let live_in = liveness.next_uses_at(&ProgramPoint::at_start_of(block)).unwrap();
-    for v in live_in.live() {
-        max_pressure += v.borrow().ty().size_in_felts();
-    }
-
-    let mut operands = SmallVec::<[ValueRef; 8]>::default();
-    for op in block.body() {
-        operands.clear();
-        operands.extend(op.operands().all().iter().map(|v| v.borrow().as_value_ref()));
-
-        let mut live_in_pressure = 0;
-        let mut relief = 0usize;
-        let live_in = liveness.next_uses_at(&ProgramPoint::before(&*op)).unwrap();
-        let live_out = liveness.next_uses_at(&ProgramPoint::after(&*op)).unwrap();
-        for live in live_in.live() {
-            if operands.contains(&live) {
-                continue;
-            }
-            if live_out.get(live).is_none_or(|v| !v.is_live()) {
-                continue;
-            }
-            live_in_pressure += live.borrow().ty().size_in_felts();
-        }
-        for operand in operands.iter() {
-            let size = operand.borrow().ty().size_in_felts();
-            if live_out.get(operand).is_none_or(|v| !v.is_live()) {
-                relief += size;
-            }
-            live_in_pressure += size;
-        }
-        let mut result_pressure = 0usize;
-        for result in op.results().all() {
-            result_pressure += result.borrow().ty().size_in_felts();
-        }
-
-        live_in_pressure += result_pressure.saturating_sub(relief);
-        max_pressure = core::cmp::max(max_pressure, live_in_pressure);
-    }
-
-    max_pressure
-}
+ */

@@ -2,20 +2,20 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_885212eb58b38aa5817a1cd1ea309cf5ebf56542a26e25486674166aaa47f2cb {
         builtin.function public @entrypoint(v0: i64, v1: i64) -> i64 {
         ^block6(v0: i64, v1: i64):
-            v3 = hir.bxor v1, v0 : i64;
-            hir.ret v3;
+            v3 = arith.bxor v1, v0 : i64;
+            builtin.ret v3;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
 
         builtin.global_variable public @#gv1 : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
 
         builtin.global_variable public @#gv2 : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
     };
 };

@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(trait_upcasting)]
 #![feature(debug_closure_helpers)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]

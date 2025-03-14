@@ -164,9 +164,9 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     /// end up mutating the state with it. The default [DerefMut] implementation will always
     /// assume the underlying state was changed if invoked - this function lets you bypass that,
     /// but with the requirement that you signal changes manually.
-    pub fn change<F>(&mut self, mut callback: F) -> ChangeResult
+    pub fn change<F>(&mut self, callback: F) -> ChangeResult
     where
-        F: FnMut(&mut T) -> ChangeResult,
+        F: FnOnce(&mut T) -> ChangeResult,
     {
         log::trace!("starting analysis state change of type {}", core::any::type_name::<T>());
         let result = callback(unsafe { self.state.as_mut() });
@@ -304,6 +304,11 @@ impl<T: DenseLattice> DenseLattice for AnalysisStateGuardMut<'_, T> {
     #[inline]
     fn lattice(&self) -> &Self::Lattice {
         unsafe { self.state.as_ref() }.lattice()
+    }
+
+    #[inline]
+    fn lattice_mut(&mut self) -> &mut Self::Lattice {
+        unsafe { self.state.as_mut() }.lattice_mut()
     }
 
     fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {

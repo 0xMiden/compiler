@@ -312,17 +312,11 @@ impl BlockEmitter<'_> {
         &'long mut self,
         inst: &'long Operation,
     ) -> InstOpEmitter<'short> {
-        InstOpEmitter::new(
-            inst,
-            self.function.locals(),
-            self.invoked,
-            &mut self.target,
-            &mut self.stack,
-        )
+        InstOpEmitter::new(inst, self.invoked, &mut self.target, &mut self.stack)
     }
 
     #[inline(always)]
     pub fn emitter<'short, 'long: 'short>(&'long mut self) -> OpEmitter<'short> {
-        OpEmitter::new(self.function.locals(), self.invoked, &mut self.target, &mut self.stack)
+        OpEmitter::new(self.invoked, &mut self.target, &mut self.stack)
     }
 }

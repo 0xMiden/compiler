@@ -97,6 +97,7 @@ pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
     });
     context.register_dialect_hook::<cf::ControlFlowDialect, _>(|info, _context| {
         info.register_operation_trait::<cf::Select, dyn HirLowering>();
+        info.register_operation_trait::<cf::CondBr, dyn HirLowering>();
     });
     context.register_dialect_hook::<scf::ScfDialect, _>(|info, _context| {
         info.register_operation_trait::<scf::If, dyn HirLowering>();
@@ -121,7 +122,9 @@ pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
         //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
         info.register_operation_trait::<hir::Exec, dyn HirLowering>();
         info.register_operation_trait::<hir::Store, dyn HirLowering>();
+        info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();
         info.register_operation_trait::<hir::Load, dyn HirLowering>();
+        info.register_operation_trait::<hir::LoadLocal, dyn HirLowering>();
         info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
         info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
         info.register_operation_trait::<hir::MemSet, dyn HirLowering>();

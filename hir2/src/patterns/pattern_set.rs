@@ -40,6 +40,13 @@ impl RewritePatternSet {
     pub fn push(&mut self, pattern: impl RewritePattern + 'static) {
         self.patterns.push(Box::new(pattern));
     }
+
+    pub fn extend<P>(&mut self, patterns: P)
+    where
+        P: IntoIterator<Item = Box<dyn RewritePattern>>,
+    {
+        self.patterns.extend(patterns);
+    }
 }
 
 pub struct FrozenRewritePatternSet {

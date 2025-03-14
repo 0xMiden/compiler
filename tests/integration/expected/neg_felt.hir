@@ -2,12 +2,12 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @neg_felt {
         builtin.function public @entrypoint(v0: felt, v1: felt) -> felt {
         ^block4(v0: felt, v1: felt):
-            v3 = hir.sub v0, v1 : felt #[overflow = unchecked];
-            hir.ret v3;
+            v3 = arith.sub v0, v1 : felt #[overflow = unchecked];
+            builtin.ret v3;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
     };
 };

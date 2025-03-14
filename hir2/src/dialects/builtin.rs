@@ -38,6 +38,7 @@ impl DialectRegistration for BuiltinDialect {
         info.register_operation::<ops::GlobalVariable>();
         info.register_operation::<ops::GlobalSymbol>();
         info.register_operation::<ops::Segment>();
+        info.register_operation::<ops::UnrealizedConversionCast>();
         info.register_operation::<ops::Ret>();
         info.register_operation::<ops::RetImm>();
     }

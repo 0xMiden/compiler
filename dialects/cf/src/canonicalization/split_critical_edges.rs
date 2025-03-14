@@ -42,12 +42,24 @@ pub struct SplitCriticalEdges {
 }
 
 impl SplitCriticalEdges {
+    #[allow(unused)]
     pub fn new(context: Rc<Context>) -> Self {
         Self {
             info: PatternInfo::new(
                 context,
                 "split-critical-edges",
                 PatternKind::Trait(TypeId::of::<dyn BranchOpInterface>()),
+                PatternBenefit::MAX,
+            ),
+        }
+    }
+
+    pub fn for_op(context: Rc<Context>, op: OperationName) -> Self {
+        Self {
+            info: PatternInfo::new(
+                context,
+                "split-critical-edges",
+                PatternKind::Operation(op),
                 PatternBenefit::MAX,
             ),
         }
@@ -78,7 +90,7 @@ impl RewritePattern for SplitCriticalEdges {
         let mut critical_edges = SmallVec::<[_; 4]>::default();
         for succ in br_op.successors().all() {
             let successor = succ.successor();
-            if successor.borrow().get_unique_predecessor().is_none() {
+            if successor.borrow().get_single_predecessor().is_none() {
                 critical_edges.push((successor, succ.index()));
             }
         }
@@ -98,7 +110,7 @@ impl RewritePattern for SplitCriticalEdges {
                     .iter()
                     .map(|o| o.borrow().as_value_ref())
                     .collect::<SmallVec<[_; 4]>>();
-                succ_operands.forwarded_mut().take();
+                succ_operands.forwarded_mut().clear();
                 operands
             };
 

@@ -1,30 +1,72 @@
+use smallvec::SmallVec;
+
 use crate::{
+    define_attr_type,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
-    BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter, OpPrintingFlags,
-    Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol, SymbolName,
-    SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Visibility,
+    AttrPrinter, BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter,
+    OpPrintingFlags, Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol,
+    SymbolName, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
 
 pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LocalId(u16);
-impl LocalId {
-    fn new(id: usize) -> Self {
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct LocalVariable {
+    function: FunctionRef,
+    index: u16,
+}
+
+impl LocalVariable {
+    fn new(function: FunctionRef, id: usize) -> Self {
         assert!(
             id <= u16::MAX as usize,
             "system limit: unable to allocate more than u16::MAX locals per function"
         );
-        Self(id as u16)
+        Self {
+            function,
+            index: id as u16,
+        }
     }
 
     #[inline(always)]
     pub const fn as_usize(&self) -> usize {
-        self.0 as usize
+        self.index as usize
+    }
+
+    pub fn ty(&self) -> Type {
+        self.function.borrow().get_local(self).clone()
+    }
+
+    /// Compute the absolute offset from the start of the procedure locals for this local variable
+    pub fn absolute_offset(&self) -> usize {
+        let index = self.as_usize();
+        self.function.borrow().locals()[..index]
+            .iter()
+            .map(|ty| ty.size_in_felts())
+            .sum::<usize>()
+    }
+}
+
+impl core::fmt::Debug for LocalVariable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LocalVariable")
+            .field_with("function", |f| write!(f, "{}", self.function.borrow().name().as_str()))
+            .field("index", &self.index)
+            .finish()
+    }
+}
+
+define_attr_type!(LocalVariable);
+
+impl AttrPrinter for LocalVariable {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        text(format!("lv{}", self.as_usize()))
     }
 }
 
@@ -47,7 +89,7 @@ pub struct Function {
     body: RegionRef,
     /// The set of local variables allocated within this function
     #[default]
-    locals: Vec<Type>,
+    locals: SmallVec<[Type; 2]>,
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
@@ -103,14 +145,19 @@ impl Function {
     }
 
     #[inline]
-    pub fn get_local(&self, id: LocalId) -> &Type {
+    pub fn get_local(&self, id: &LocalVariable) -> &Type {
+        assert_eq!(
+            self.as_operation_ref(),
+            id.function.as_operation_ref(),
+            "attempted to use local variable reference from different function"
+        );
         &self.locals[id.as_usize()]
     }
 
-    pub fn alloc_local(&mut self, ty: Type) -> LocalId {
+    pub fn alloc_local(&mut self, ty: Type) -> LocalVariable {
         let id = self.locals.len();
         self.locals.push(ty);
-        LocalId::new(id)
+        LocalVariable::new(self.as_function_ref(), id)
     }
 
     #[inline(always)]

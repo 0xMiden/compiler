@@ -2,7 +2,7 @@ use crate::{
     derive::operation,
     dialects::builtin::BuiltinDialect,
     effects::{EffectIterator, EffectOpInterface, MemoryEffect, MemoryEffectOpInterface},
-    traits::{AnyInteger, AnyType, InferTypeOpInterface, UnaryOp},
+    traits::{AnyType, InferTypeOpInterface, UnaryOp},
     Context, Report, Spanned, Type, Value,
 };
 
@@ -17,7 +17,7 @@ pub struct UnrealizedConversionCast {
     #[attr(hidden)]
     ty: Type,
     #[result]
-    result: AnyInteger,
+    result: AnyType,
 }
 
 impl InferTypeOpInterface for UnrealizedConversionCast {

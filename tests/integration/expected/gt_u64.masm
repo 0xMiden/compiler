@@ -4,6 +4,10 @@ export.entrypoint
 
         movdn.3
         movdn.3
+        movdn.3
+        movdn.3
+        movdn.3
+        movdn.3
         exec.::std::math::u64::gt
 end
 

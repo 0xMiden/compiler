@@ -570,6 +570,7 @@ impl<'a> TransformationContext<'a> {
             // continuation.
             if branch_region.is_empty() {
                 continuation_edges.push(entry_edge);
+                log::trace!(target: "cfg-to-scf", " empty branch region for edge {} -> {}", entry_edge.from_block, entry_edge.get_successor());
                 no_successor_has_continuation_edge = false;
                 continue;
             }
@@ -1084,8 +1085,13 @@ impl<'a> TransformationContext<'a> {
         let mut previous_edge_to_continuation = None;
         let mut branch_region_parent = branch_region[0].parent().unwrap();
 
+        log::trace!(target: "cfg-to-scf", "creating single-exit branch region");
+        log::trace!(target: "cfg-to-scf", "  continuation = {continuation}");
         for mut block_ref in branch_region.iter().copied() {
+            log::trace!(target: "cfg-to-scf", "  processing region block: {block_ref}");
             for edge in SuccessorEdges::new(block_ref) {
+                log::trace!(target: "cfg-to-scf", "    processing edge: {} -> {}", edge.from_block, edge.get_successor());
+                log::trace!(target: "cfg-to-scf", "    single-exit block: {single_exit_block:?}");
                 if !BlockRef::ptr_eq(&edge.get_successor(), &continuation) {
                     continue;
                 }

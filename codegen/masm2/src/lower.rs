@@ -9,7 +9,7 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir2::{
     dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, OpExt, Operation, Region, Span,
-    SymbolTable, Value, ValueRef,
+    SymbolTable, Value, ValueRange, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::SmallVec;
@@ -19,7 +19,7 @@ use crate::{
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
-    masm,
+    masm, Constraint,
 };
 
 pub trait ToMasmComponent {
@@ -287,7 +287,8 @@ impl MasmFunctionBuilder {
             Visibility::Internal => masm::Visibility::Public,
             Visibility::Private => masm::Visibility::Private,
         };
-        let num_locals = u16::try_from(function.num_locals()).map_err(|_| {
+        let locals_required = function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
+        let num_locals = u16::try_from(locals_required).map_err(|_| {
             let context = function.as_operation().context();
             context
                 .diagnostics()
@@ -295,7 +296,8 @@ impl MasmFunctionBuilder {
                 .with_message("cannot emit masm for function")
                 .with_primary_label(
                     function.span(),
-                    "too many locals: no more than u16::MAX are supported",
+                    "local storage exceeds procedure limit: no more than u16::MAX elements are \
+                     supported",
                 )
                 .into_report()
         })?;
@@ -441,47 +443,52 @@ fn emit_if(
         (then_stack, then_block)
     };
 
-    let (else_stack, else_blk) = match else_dest {
+    let else_blk = match else_dest {
         None => {
             assert!(
                 op.results().is_empty(),
                 "an elided 'hir.if' else block requires the '{}' to have no results",
                 op.name()
             );
-            let else_block = masm::Block::new(span, Default::default());
-            let mut else_stack = emitter.stack.clone();
-            for (index, result) in op.results().all().into_iter().enumerate() {
-                else_stack.rename(index, *result as ValueRef);
-            }
 
-            (else_stack, else_block)
+            masm::Block::new(span, Default::default())
         }
         Some(dest) => {
             let dest = dest.borrow();
             let mut else_emitter = emitter.nest();
             else_emitter.emit_inline(&dest);
+
             // Rename the yielded values on the stack for us to check against
             let mut else_stack = else_emitter.stack.clone();
             for (index, result) in op.results().all().into_iter().enumerate() {
                 else_stack.rename(index, *result as ValueRef);
             }
 
-            let else_block = else_emitter.into_emitted_block(dest.span());
-            (else_stack, else_block)
-        }
-    };
+            // Schedule realignment of the stack if needed
+            if then_stack != else_stack {
+                schedule_stack_realignment(&then_stack, &else_stack, &mut else_emitter);
+            }
 
-    if then_stack != else_stack {
-        panic!(
-            "unexpected observable stack effect leaked from regions of {op}
+            if cfg!(debug_assertions) {
+                let mut else_stack = else_emitter.stack.clone();
+                for (index, result) in op.results().all().into_iter().enumerate() {
+                    else_stack.rename(index, *result as ValueRef);
+                }
+                if then_stack != else_stack {
+                    panic!(
+                        "unexpected observable stack effect leaked from regions of {op}
 
 stack on exit from 'then': {then_stack:#?}
 stack on exit from 'else': {else_stack:#?}
-        "
-        );
-    }
+",
+                    );
+                }
+            }
 
-    println!("stack on exit from {op}: {then_stack:#?}");
+            else_emitter.into_emitted_block(dest.span())
+        }
+    };
+
     emitter.stack = then_stack;
 
     emitter.emit_op(masm::Op::If {
@@ -491,6 +498,49 @@ stack on exit from 'else': {else_stack:#?}
     });
 
     Ok(())
+}
+
+fn schedule_stack_realignment(
+    lhs: &crate::OperandStack,
+    rhs: &crate::OperandStack,
+    emitter: &mut BlockEmitter<'_>,
+) {
+    use crate::opt::{OperandMovementConstraintSolver, SolverError};
+
+    if lhs.is_empty() && rhs.is_empty() {
+        return;
+    }
+
+    assert_eq!(lhs.len(), rhs.len());
+
+    log::trace!(target: "codegen", "stack realignment required, scheduling moves..");
+    log::trace!(target: "codegen", "  desired stack state:    {lhs:#?}");
+    log::trace!(target: "codegen", "  misaligned stack state: {rhs:#?}");
+
+    let mut constraints = SmallVec::<[Constraint; 8]>::with_capacity(lhs.len());
+    constraints.resize(lhs.len(), Constraint::Move);
+
+    let expected = lhs
+        .iter()
+        .rev()
+        .map(|o| o.as_value().expect("unexpected operand type"))
+        .collect::<SmallVec<[_; 8]>>();
+    match OperandMovementConstraintSolver::new(&expected, &constraints, rhs) {
+        Ok(solver) => {
+            solver
+                .solve_and_apply(&mut emitter.emitter(), Default::default())
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "failed to realign stack\nwith error: {err:?}\nconstraints: \
+                         {constraints:?}\nexpected: {lhs:#?}\nstack: {rhs:#?}",
+                    )
+                });
+        }
+        Err(SolverError::AlreadySolved) => (),
+        Err(err) => {
+            panic!("unexpected error constructing operand movement constraint solver: {err:?}")
+        }
+    }
 }
 
 impl HirLowering for scf::While {
@@ -587,18 +637,6 @@ impl HirLowering for scf::While {
                     body_emitter.stack.rename(index, arg as ValueRef);
                 }
 
-                // TODO: Until spills pass is reintroduced, we need to emit code at region terminators
-                // that ensures the stack content is uniform across all exits. Previously, the spills
-                // pass performed a type of register allocation and coalesced live register sets at
-                // basic block boundaries, so the stack was always ordered to keep those sets aligned.
-                // Currently, without that pass, anything that is not explicitly returned from a
-                // region can be in different orders when exiting from different regions of the same
-                // op.
-                //
-                // In order to determine the order, we must first emit all of the instructions of
-                // the block and update the stack for exit, and then we ask the operand stack solver
-                // to solve for the whole stack, so that it will emit the necessary instructions to
-                // fix up any parts of the stack that are out of place.
                 if before_stack != body_emitter.stack {
                     panic!(
                         "unexpected observable stack effect leaked from regions of {}
@@ -654,7 +692,6 @@ impl HirLowering for scf::IndexSwitch {
         // the selector against each non-default case to determine whether control should enter
         // that block. The final else contains the default case.
         log::trace!(target: "index_switch", "{}", self.as_operation());
-        let span = self.span();
         let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
         cases.sort();
 
@@ -721,16 +758,7 @@ impl HirLowering for scf::IndexSwitch {
 
         assert!(!cases.is_empty());
         if cases.len() == 1 {
-            // Emit `selector == case0`
-            emitter.emit_op(masm::Op::Inst(Span::new(
-                span,
-                masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(span, cases[0].into()))),
-            )));
-
-            // Emit as 'hir.if'
-            let then_body = self.get_case_region(0);
-            let else_body = self.default_region();
-            return emit_if(emitter, self.as_operation(), &then_body.borrow(), &else_body);
+            return emit_binary_search(self, emitter, &[], &cases, 0, 1);
         }
 
         /*
@@ -744,13 +772,14 @@ impl HirLowering for scf::IndexSwitch {
         //
         // Partition such that the condition for the `then` branch guarantees that no fallback
         // branch is needed, i.e. an even number of cases must be in the first partition
+        let num_cases = cases.len();
         let midpoint = cases[0].midpoint(cases[cases.len() - 1]);
         let partition_point = core::cmp::min(
             cases.len(),
             cases.partition_point(|item| *item < midpoint).next_multiple_of(2),
         );
         let (a, b) = cases.split_at(partition_point);
-        emit_binary_search(self, emitter, a, b, midpoint)
+        emit_binary_search(self, emitter, a, b, midpoint, num_cases)
     }
 }
 
@@ -760,16 +789,37 @@ fn emit_binary_search(
     a: &[u32],
     b: &[u32],
     midpoint: u32,
+    num_cases: usize,
 ) -> Result<(), Report> {
+    dbg!(a, b, midpoint, num_cases);
     let span = op.span();
+    let selector = op.selector().as_value_ref();
 
     match a {
         [] => {
             match b {
-                [] => {
-                    // There is only a single case to emit, so we can just emit an 'hir.if' with fallback
+                [then_case] => {
+                    // There is only a single case to emit, so we can emit an 'hir.if' with fallback
                     //
-                    // Emit `selector == b[0]`
+                    // Emit `selector == then_case`
+                    //
+                    // NOTE: We duplicate the selector if it is live in either the case region or
+                    // the fallback region
+                    let then_index = op.get_case_index_for_selector(*then_case).unwrap();
+                    let then_body = op.get_case_region(then_index);
+                    let else_body = op.default_region();
+                    let is_live_after = emitter
+                        .liveness
+                        .is_live_at_start(selector, then_body.borrow().entry_block_ref().unwrap())
+                        || emitter
+                            .liveness
+                            .is_live_at_start(selector, else_body.entry_block_ref().unwrap());
+                    if is_live_after {
+                        emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
+                    } else {
+                        // Consume the selector
+                        emitter.stack.drop();
+                    }
                     emitter.emit_op(masm::Op::Inst(Span::new(
                         span,
                         masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
@@ -779,29 +829,71 @@ fn emit_binary_search(
                     )));
 
                     // Emit as 'hir.if'
-                    let then_index = op.get_case_index_for_selector(b[0]).unwrap();
-                    let then_body = op.get_case_region(then_index);
-                    let else_body = op.default_region();
                     emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body)
                 }
-                [then_case, else_case] => {
-                    // We can emit 'b' as an 'hir.if' with no fallback
+                [_then_case, else_case] => {
+                    // This is similar to the case of a = [_, _], b is non-empty
                     //
-                    // Emit `selector == then_case`
+                    // We must emit an `hir.if` for then/else cases in the first branch, and place
+                    // the fallback in the second branch.
+                    //
+                    // Emit `selector <= else_case ? (selector == then_case : then_case ? else_case) ? fallback`
+                    emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
                     emitter.emit_op(masm::Op::Inst(Span::new(
                         span,
-                        masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
-                            span,
-                            (*then_case).into(),
-                        ))),
+                        masm::Instruction::PushU32(*else_case),
                     )));
+                    emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lte)));
 
-                    // Emit as 'hir.if'
-                    let then_index = op.get_case_index_for_selector(*then_case).unwrap();
-                    let then_body = op.get_case_region(then_index);
-                    let else_index = op.get_case_index_for_selector(*else_case).unwrap();
-                    let else_body = op.get_case_region(else_index);
-                    emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
+                    let (then_blk, then_stack) = {
+                        let mut then_emitter = emitter.nest();
+                        emit_binary_search(op, &mut then_emitter, b, &[], midpoint, usize::MAX)?;
+                        let then_stack = then_emitter.stack.clone();
+                        (then_emitter.into_emitted_block(span), then_stack)
+                    };
+
+                    let (else_blk, else_stack) = {
+                        let default_region = op.default_region();
+                        dbg!(&emitter.stack, op.selector().as_value_ref());
+                        let is_live_after = emitter
+                            .liveness
+                            .is_live_at_start(selector, default_region.entry_block_ref().unwrap());
+                        dbg!(is_live_after);
+                        let mut else_emitter = emitter.nest();
+                        if !is_live_after {
+                            // Consume the selector
+                            else_emitter.stack.drop();
+                        }
+                        dbg!(&else_emitter.stack);
+                        else_emitter.emit_inline(&default_region.entry());
+                        // Rename the yielded values on the stack for us to check against
+                        let mut else_stack = else_emitter.stack.clone();
+                        for (index, result) in op.results().all().into_iter().enumerate() {
+                            else_stack.rename(index, *result as ValueRef);
+                        }
+                        (else_emitter.into_emitted_block(span), else_stack)
+                    };
+
+                    if then_stack != else_stack {
+                        panic!(
+                            "unexpected observable stack effect leaked from regions of {}
+
+stack on exit from 'then': {then_stack:#?}
+stack on exit from 'else': {else_stack:#?}
+                        ",
+                            op.as_operation()
+                        );
+                    }
+
+                    emitter.stack = then_stack;
+
+                    emitter.emit_op(masm::Op::If {
+                        span,
+                        then_blk,
+                        else_blk,
+                    });
+
+                    Ok(())
                 }
                 _ => panic!(
                     "unexpected partitioning of switch cases: a = empty, b = {b:#?}, midpoint = \
@@ -809,10 +901,90 @@ fn emit_binary_search(
                 ),
             }
         }
-        [then_case, else_case] if b.is_empty() => {
-            // We can emit 'a' as an 'hir.if' with no fallback
+        [_then_case, else_case] if b.is_empty() && num_cases == 2 => {
+            // There were exactly two cases and we are handling them here, but we must also emit
+            // a fallback branch in the case where an out of range selector value is given
+            //
+            // We must emit an `hir.if` for then/else cases in the first branch, and place
+            // the fallback in the second branch.
+            //
+            // Emit `selector <= else_case ? (selector == then_case : then_case ? else_case) ? fallback`
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
+            emitter
+                .emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU32(*else_case))));
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lte)));
+
+            let (then_blk, then_stack) = {
+                let mut then_emitter = emitter.nest();
+                emit_binary_search(op, &mut then_emitter, a, &[], midpoint, usize::MAX)?;
+                let then_stack = then_emitter.stack.clone();
+                (then_emitter.into_emitted_block(span), then_stack)
+            };
+
+            let (else_blk, else_stack) = {
+                let default_region = op.default_region();
+                dbg!(&emitter.stack, op.selector().as_value_ref());
+                let is_live_after = emitter
+                    .liveness
+                    .is_live_at_start(selector, default_region.entry_block_ref().unwrap());
+                let mut else_emitter = emitter.nest();
+                dbg!(is_live_after);
+                if !is_live_after {
+                    // Consume the selector
+                    else_emitter.stack.drop();
+                }
+                dbg!(&else_emitter.stack);
+                else_emitter.emit_inline(&default_region.entry());
+                // Rename the yielded values on the stack for us to check against
+                let mut else_stack = else_emitter.stack.clone();
+                for (index, result) in op.results().all().into_iter().enumerate() {
+                    else_stack.rename(index, *result as ValueRef);
+                }
+                (else_emitter.into_emitted_block(span), else_stack)
+            };
+
+            if then_stack != else_stack {
+                panic!(
+                    "unexpected observable stack effect leaked from regions of {}
+
+            stack on exit from 'then': {then_stack:#?}
+            stack on exit from 'else': {else_stack:#?}
+                                    ",
+                    op.as_operation()
+                );
+            }
+
+            emitter.stack = then_stack;
+
+            emitter.emit_op(masm::Op::If {
+                span,
+                then_blk,
+                else_blk,
+            });
+
+            Ok(())
+        }
+        [then_case, else_case] if b.is_empty() && num_cases > 2 => {
+            // We can emit 'a' as an 'hir.if' with no fallback, as this is a subset of the total
+            // cases and we were given enough to populate a single `hir.if`.
             //
             // Emit `selector == then_case`
+            let then_index = op.get_case_index_for_selector(*then_case).unwrap();
+            let then_body = op.get_case_region(then_index);
+            let else_index = op.get_case_index_for_selector(*else_case).unwrap();
+            let else_body = op.get_case_region(else_index);
+            let is_live_after = emitter
+                .liveness
+                .is_live_at_start(selector, then_body.borrow().entry_block_ref().unwrap())
+                || emitter
+                    .liveness
+                    .is_live_at_start(selector, else_body.borrow().entry_block_ref().unwrap());
+            if is_live_after {
+                emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
+            } else {
+                // Consume the selector
+                emitter.stack.drop();
+            }
             emitter.emit_op(masm::Op::Inst(Span::new(
                 span,
                 masm::Instruction::EqImm(masm::ImmFelt::Value(Span::new(
@@ -822,10 +994,6 @@ fn emit_binary_search(
             )));
 
             // Emit as 'hir.if'
-            let then_index = op.get_case_index_for_selector(*then_case).unwrap();
-            let then_body = op.get_case_region(then_index);
-            let else_index = op.get_case_index_for_selector(*else_case).unwrap();
-            let else_body = op.get_case_region(else_index);
             emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
         }
         [_then_case, _else_case] => {
@@ -833,11 +1001,12 @@ fn emit_binary_search(
             // the then region, and then recurse with 'b' on the else region
             //
             // Emit `selector < partition_point`
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
             emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU32(midpoint))));
             emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lt)));
             let (then_blk, then_stack) = {
                 let mut then_emitter = emitter.nest();
-                emit_binary_search(op, &mut then_emitter, a, &[], midpoint)?;
+                emit_binary_search(op, &mut then_emitter, a, &[], midpoint, usize::MAX)?;
                 let then_stack = then_emitter.stack.clone();
                 (then_emitter.into_emitted_block(span), then_stack)
             };
@@ -849,7 +1018,7 @@ fn emit_binary_search(
                     b.partition_point(|item| *item < midpoint).next_multiple_of(2),
                 );
                 let (b_then, b_else) = b.split_at(partition_point);
-                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint)?;
+                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint, b.len())?;
                 let else_stack = else_emitter.stack.clone();
                 (else_emitter.into_emitted_block(span), else_stack)
             };
@@ -876,6 +1045,7 @@ stack on exit from 'else': {else_stack:#?}
             Ok(())
         }
         a => {
+            emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::Dup0)));
             emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU32(midpoint))));
             emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::U32Lt)));
             let (then_blk, then_stack) = {
@@ -886,7 +1056,7 @@ stack on exit from 'else': {else_stack:#?}
                     a.partition_point(|item| *item < midpoint).next_multiple_of(2),
                 );
                 let (a_then, a_else) = a.split_at(partition_point);
-                emit_binary_search(op, &mut then_emitter, a_then, a_else, midpoint)?;
+                emit_binary_search(op, &mut then_emitter, a_then, a_else, midpoint, a.len())?;
                 let then_stack = then_emitter.stack.clone();
                 (then_emitter.into_emitted_block(span), then_stack)
             };
@@ -898,7 +1068,7 @@ stack on exit from 'else': {else_stack:#?}
                     b.partition_point(|item| *item < midpoint).next_multiple_of(2),
                 );
                 let (b_then, b_else) = b.split_at(partition_point);
-                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint)?;
+                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint, b.len())?;
                 let else_stack = else_emitter.stack.clone();
                 (else_emitter.into_emitted_block(span), else_stack)
             };
@@ -931,6 +1101,7 @@ impl HirLowering for scf::Yield {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
+        log::trace!(target: "codegen", "yielding {:#?}", &_emitter.stack);
         Ok(())
     }
 }
@@ -1466,9 +1637,23 @@ impl HirLowering for hir::Load {
     }
 }
 
+impl HirLowering for hir::LoadLocal {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).load_local(self.local(), self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::StoreLocal {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.emitter().store_local(self.local(), self.span());
         Ok(())
     }
 }
@@ -1504,6 +1689,79 @@ impl HirLowering for hir::MemCpy {
 impl HirLowering for cf::Select {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).select(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for cf::CondBr {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let then_dest = self.then_dest().successor();
+        let else_dest = self.else_dest().successor();
+
+        // This lowering is only legal if it represents a choice between multiple exits
+        assert_eq!(
+            then_dest.borrow().num_successors(),
+            0,
+            "illegal cf.cond_br: only exit blocks are supported"
+        );
+        assert_eq!(
+            else_dest.borrow().num_successors(),
+            0,
+            "illegal cf.cond_br: only exit blocks are supported"
+        );
+
+        // Drop the condition if no longer live
+        if !emitter
+            .liveness
+            .is_live_after(self.condition().as_value_ref(), self.as_operation())
+        {
+            emitter.stack.drop();
+        }
+
+        let then_blk = {
+            let mut emitter = emitter.nest();
+            // Rename any uses of the block arguments of `then_dest` to the values given as
+            // successor operands.
+            let then_operand = self.then_dest();
+            let then_block = then_dest.borrow();
+            for (input, output) in ValueRange::<2>::from(then_operand.arguments)
+                .into_iter()
+                .zip(ValueRange::<2>::from(then_block.arguments()))
+            {
+                // If we can't find it, it was almost certainly a duplicate we renamed already
+                let Some(index) = emitter.stack.find(&input) else {
+                    continue;
+                };
+                emitter.stack.rename(index, output);
+            }
+            emitter.emit(&then_dest.borrow())
+        };
+        let else_blk = {
+            let mut emitter = emitter.nest();
+            // Rename any uses of the block arguments of `else_dest` to the values given as
+            // successor operands.
+            let else_operand = self.else_dest();
+            let else_block = else_dest.borrow();
+            for (input, output) in ValueRange::<2>::from(else_operand.arguments)
+                .into_iter()
+                .zip(ValueRange::<2>::from(else_block.arguments()))
+            {
+                // If we can't find it, it was almost certainly a duplicate we renamed already
+                let Some(index) = emitter.stack.find(&input) else {
+                    continue;
+                };
+                emitter.stack.rename(index, output);
+            }
+            emitter.emit(&else_dest.borrow())
+        };
+
+        let span = self.span();
+        emitter.emit_op(masm::Op::If {
+            span,
+            then_blk,
+            else_blk,
+        });
+
         Ok(())
     }
 }

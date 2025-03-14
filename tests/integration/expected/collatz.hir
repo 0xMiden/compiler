@@ -2,47 +2,54 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @collatz {
         builtin.function public @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
-            v2 = hir.constant 0 : i32;
-            v6 = hir.constant 1 : i32;
-            v13 = hir.constant 3 : i32;
-            v30 = hir.constant 0 : u32;
-            v35 = hir.constant 1 : u32;
-            v36 = hir.poison  : i32;
-            v62, v63, v64 = hir.while v0, v2 : i32, i32, i32 {
-            ^block17(v65: i32, v66: i32):
-                v7 = hir.neq v65, v6 : i1;
-                v8 = hir.zext v7 : u32;
+            v37 = ub.poison i32 : i32;
+            v2 = arith.constant 0 : i32;
+            v45, v46, v47 = scf.while v0, v2, v37 : i32, i32, i32 {
+            ^block6(v5: i32, v12: i32, v41: i32):
+                v67 = arith.constant 0 : i32;
+                v6 = arith.constant 1 : i32;
+                v7 = arith.neq v5, v6 : i1;
+                v8 = arith.zext v7 : u32;
                 v9 = hir.bitcast v8 : i32;
-                v11 = hir.neq v9, v2 : i1;
-                v61 = hir.select v11, v35, v30 : u32;
-                v58, v59 = hir.if v11 : i32, i32 {
+                v11 = arith.neq v9, v67 : i1;
+                v55, v56, v57, v58 = scf.if v11 : i32, i32, u32, u32 {
                 ^block8:
-                    v14 = hir.mul v65, v13 : i32 #[overflow = wrapping];
-                    v16 = hir.add v14, v6 : i32 #[overflow = wrapping];
-                    v18 = hir.bitcast v65 : u32;
-                    v19 = hir.bitcast v6 : u32;
-                    v20 = hir.shr v18, v19 : u32;
+                    v62 = arith.constant 1 : u32;
+                    v31 = arith.constant 0 : u32;
+                    v63 = arith.constant 1 : i32;
+                    v28 = arith.add v12, v63 : i32 #[overflow = wrapping];
+                    v36 = arith.constant 1 : u32;
+                    v18 = hir.bitcast v5 : u32;
+                    v20 = arith.shr v18, v36 : u32;
                     v21 = hir.bitcast v20 : i32;
-                    v23 = hir.band v65, v6 : i32;
-                    v25 = hir.neq v23, v2 : i1;
-                    v26 = hir.select v25, v16, v21 : i32;
-                    v28 = hir.add v66, v6 : i32 #[overflow = wrapping];
-                    hir.yield v26, v28;
+                    v64 = arith.constant 1 : i32;
+                    v13 = arith.constant 3 : i32;
+                    v14 = arith.mul v5, v13 : i32 #[overflow = wrapping];
+                    v16 = arith.add v14, v64 : i32 #[overflow = wrapping];
+                    v65 = arith.constant 0 : i32;
+                    v66 = arith.constant 1 : i32;
+                    v23 = arith.band v5, v66 : i32;
+                    v25 = arith.neq v23, v65 : i1;
+                    v26 = cf.select v25, v16, v21 : i32;
+                    scf.yield v26, v28, v31, v62;
                 } {
                 ^block16:
-                    hir.yield v36, v36;
+                    v59 = arith.constant 0 : u32;
+                    v60 = arith.constant 1 : u32;
+                    v61 = ub.poison i32 : i32;
+                    scf.yield v61, v61, v60, v59;
                 };
-                v53 = hir.trunc v61 : i1;
-                hir.condition v53, v58, v59, v66;
+                v54 = arith.trunc v58 : i1;
+                scf.condition v54, v55, v56, v12;
             } {
-            ^block18(v67: i32, v68: i32, v69: i32):
-                hir.yield v67, v68;
+            ^block15(v51: i32, v52: i32, v53: i32):
+                scf.yield v51, v52, v53;
             };
-            hir.ret v64;
+            builtin.ret v47;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
     };
 };

@@ -1,9 +1,11 @@
+mod frontier;
 mod info;
 pub mod nca;
 mod traits;
 mod tree;
 
 pub use self::{
+    frontier::DominanceFrontier,
     info::{DominanceInfo, PostDominanceInfo, RegionDominanceInfo},
     traits::{Dominates, PostDominates},
     tree::{

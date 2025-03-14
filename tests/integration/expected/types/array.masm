@@ -3,31 +3,21 @@
 export.sum_arr
 
         push.0
-        push.4
-        push.4294967295
         push.0
-        push.1
-        push.3735929054
-        dup.7
-        dup.6
+        dup.3
+        swap.1
         eq
-        dup.6
         neq
         if.true
 
-            dropw
-            drop
+            push.0
             movdn.2
             drop
             drop
         else
 
-            dup.5
-            movup.2
-            swap.8
-            movdn.2
+            push.0
             swap.1
-            swap.7
             push.1
             while.true
 
@@ -43,45 +33,39 @@ export.sum_arr
                 exec.::intrinsics::mem::load_sw
                 movup.2
                 u32wrapping_add
-                dup.5
-                swap.1
-                swap.2
+                push.4294967295
+                movup.3
                 swap.1
                 u32wrapping_add
-                dup.4
+                push.0
+                dup.1
                 swap.1
+                neq
+                push.3735929054
+                dup.1
+                swap.1
+                swap.2
                 swap.3
                 swap.1
-                u32wrapping_add
-                dup.0
-                dup.7
-                neq
-                dup.0
-                dup.9
-                swap.2
-                swap.5
-                swap.1
                 cdrop
-                dup.8
-                dup.3
-                dup.5
-                cdrop
+                push.3735929054
+                dup.2
                 dup.4
-                dup.10
-                swap.2
-                swap.4
                 swap.1
                 cdrop
-                dup.10
-                dup.6
-                swap.2
-                swap.6
+                push.3735929054
+                push.4
+                movup.6
+                swap.1
+                u32wrapping_add
+                dup.4
+                cdrop
+                push.0
+                push.1
+                movup.5
                 cdrop
                 push.1
                 u32and
-                movup.3
-                swap.4
-                movdn.3
                 if.true
 
                     movup.3
@@ -95,24 +79,17 @@ export.sum_arr
             drop
             drop
             drop
-            movdn.6
-            dropw
-            drop
-            drop
         end
 end
 
 
 export.__main
 
-        push.1048596
-        push.1048576
         push.5
-        dup.0
-        swap.1
-        swap.2
+        push.1048576
         exec.::root_ns:root@1.0.0::test_rust_d63291a98b435c53f58385d5782fb46f0b0b78bee8e860843e7223106d66f7d6::sum_arr
-        swap.2
+        push.5
+        push.1048596
         exec.::root_ns:root@1.0.0::test_rust_d63291a98b435c53f58385d5782fb46f0b0b78bee8e860843e7223106d66f7d6::sum_arr
         u32wrapping_add
 end

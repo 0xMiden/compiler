@@ -1,4 +1,9 @@
-use midenc_hir2::{derive::operation, effects::*, traits::*, *};
+use alloc::boxed::Box;
+
+use midenc_hir2::{
+    derive::operation, dialects::builtin::LocalVariable, effects::*, traits::*,
+    transforms::SpillLike, *,
+};
 use smallvec::smallvec;
 
 use crate::HirDialect;
@@ -24,7 +29,36 @@ impl EffectOpInterface<MemoryEffect> for Store {
     }
 }
 
-// TODO(pauls): StoreLocal
+/// Store `value` on in procedure local memory
+#[operation(
+    dialect = HirDialect,
+    implements(MemoryEffectOpInterface, SpillLike)
+)]
+pub struct StoreLocal {
+    #[attr]
+    local: LocalVariable,
+    #[operand]
+    value: AnyType,
+}
+
+impl EffectOpInterface<MemoryEffect> for StoreLocal {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
+            MemoryEffect::Write,
+            Box::new(*self.local()) as Box<dyn AttributeValue>
+        )])
+    }
+}
+
+impl SpillLike for StoreLocal {
+    fn spilled(&self) -> OpOperand {
+        self.value().as_operand_ref()
+    }
+
+    fn spilled_value(&self) -> ValueRef {
+        self.value().as_value_ref()
+    }
+}
 
 /// Load `result` from the heap at `addr`
 ///
@@ -84,4 +118,31 @@ impl InferTypeOpInterface for Load {
     }
 }
 
-// TODO(pauls): LoadLocal
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct LoadLocal {
+    #[attr]
+    local: LocalVariable,
+    #[result]
+    result: AnyType,
+}
+
+impl EffectOpInterface<MemoryEffect> for LoadLocal {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
+            MemoryEffect::Read,
+            Box::new(*self.local()) as Box<dyn AttributeValue>
+        )])
+    }
+}
+
+impl InferTypeOpInterface for LoadLocal {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.local().ty();
+        self.result_mut().set_type(ty);
+
+        Ok(())
+    }
+}

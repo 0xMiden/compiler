@@ -15,6 +15,7 @@ pub mod assertions;
 mod attributes;
 mod builders;
 mod ops;
+pub mod transforms;
 
 use alloc::boxed::Box;
 
@@ -116,10 +117,14 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::ConstantBytes>();
         info.register_operation::<ops::Exec>();
         info.register_operation::<ops::Store>();
+        info.register_operation::<ops::StoreLocal>();
         info.register_operation::<ops::Load>();
+        info.register_operation::<ops::LoadLocal>();
         info.register_operation::<ops::MemGrow>();
         info.register_operation::<ops::MemSize>();
         info.register_operation::<ops::MemSet>();
         info.register_operation::<ops::MemCpy>();
+        info.register_operation::<ops::Spill>();
+        info.register_operation::<ops::Reload>();
     }
 }

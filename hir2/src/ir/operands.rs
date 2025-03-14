@@ -123,7 +123,6 @@ impl crate::StorableEntity for OpOperandImpl {
 
     fn unlink(&mut self) {
         if !self.as_operand_ref().is_linked() {
-            assert!(self.value.is_none(), "expected unlinked operand to have no value set");
             return;
         }
         if let Some(mut value) = self.value.take() {

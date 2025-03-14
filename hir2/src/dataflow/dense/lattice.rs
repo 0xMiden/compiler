@@ -4,10 +4,11 @@ use crate::dataflow::{AnalysisState, ChangeResult};
 ///
 /// It is propagated through the IR by dense data-flow analysis.
 #[allow(unused_variables)]
-pub trait DenseLattice: AnalysisState {
+pub trait DenseLattice: AnalysisState + core::fmt::Debug {
     type Lattice;
 
     fn lattice(&self) -> &Self::Lattice;
+    fn lattice_mut(&mut self) -> &mut Self::Lattice;
 
     fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {
         ChangeResult::Unchanged

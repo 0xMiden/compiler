@@ -1,5 +1,5 @@
 use miden_core::{Felt, FieldElement};
-use midenc_hir2::{dialects::builtin::LocalId, SourceSpan, StructType, Type};
+use midenc_hir2::{dialects::builtin::LocalVariable, SourceSpan, StructType, Type};
 
 use super::{masm, OpEmitter};
 use crate::lower::NativePtr;
@@ -42,10 +42,9 @@ impl OpEmitter<'_> {
     ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
-    #[allow(unused)]
-    pub fn load_local(&mut self, local: LocalId, span: SourceSpan) {
-        let local_index = local.as_usize();
-        let ty = self.locals[local_index].clone();
+    pub fn load_local(&mut self, local: &LocalVariable, span: SourceSpan) {
+        let local_index = local.absolute_offset();
+        let ty = local.ty();
         self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
         self.push(Type::Ptr(Box::new(ty.clone())));
         self.load(ty, span)
@@ -919,12 +918,10 @@ impl OpEmitter<'_> {
     ///
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
-    #[allow(unused)]
-    pub fn store_local(&mut self, local: LocalId, span: SourceSpan) {
-        let local_index = local.as_usize();
-        let ty = self.locals[local_index].clone();
+    pub fn store_local(&mut self, local: &LocalVariable, span: SourceSpan) {
+        let local_index = local.absolute_offset();
         self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::Ptr(Box::new(ty)));
+        self.push(Type::Ptr(Box::new(local.ty())));
         self.store(span)
     }
 
@@ -998,7 +995,7 @@ impl OpEmitter<'_> {
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.locals, self.invoked, &mut body, self.stack);
+        let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
 
         // Loop body - compute address for next value to be written
         let value_size = value.ty().size_in_bytes();
@@ -1117,7 +1114,7 @@ impl OpEmitter<'_> {
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.locals, self.invoked, &mut body, self.stack);
+        let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
 
         // Loop body - compute address for next value to be written
         // Compute the source and destination addresses

@@ -408,6 +408,64 @@ impl Region {
 
         postorder
     }
+
+    /// Returns a vector of regions in the region graph rooted at `root`, following a post-order
+    /// traversal of the graph, i.e. successors appear before their predecessors.
+    ///
+    /// NOTE: Backedges encountered during the traversal are ignored.
+    pub fn postorder_region_graph_for(
+        root: &dyn RegionBranchOpInterface,
+    ) -> SmallVec<[RegionRef; 4]> {
+        struct RegionNode {
+            region: RegionRef,
+            children: SmallVec<[RegionRef; 2]>,
+        }
+        impl RegionNode {
+            pub fn new(region: RegionRef, branch: &dyn RegionBranchOpInterface) -> Self {
+                // Collect unvisited children
+                let children = branch
+                    .get_successor_regions(RegionBranchPoint::Child(region))
+                    .filter_map(|s| s.into_successor())
+                    .collect();
+                Self { region, children }
+            }
+        }
+
+        let mut postorder = SmallVec::<[RegionRef; 4]>::default();
+        let mut visited = SmallSet::<RegionRef, 4>::default();
+        let mut worklist = SmallVec::<[(RegionNode, usize); 4]>::default();
+
+        for succ in root.get_successor_regions(RegionBranchPoint::Parent) {
+            let Some(region) = succ.into_successor() else {
+                continue;
+            };
+
+            if visited.insert(region) {
+                worklist.push((RegionNode::new(region, root), 0));
+            }
+        }
+
+        while let Some((node, child_index)) = worklist.last_mut() {
+            // If we visited all of the children of this node, "recurse" back up the stack
+            if *child_index >= node.children.len() {
+                postorder.push(node.region);
+                worklist.pop();
+            } else {
+                // Otherwise, recursively visit the given child
+                let index = *child_index;
+                *child_index += 1;
+                let child = RegionNode::new(node.children[index], root);
+                if worklist.iter().any(|(node, _)| node.region == child.region) {
+                    // `child` forms a backedge to a node we're still visiting, so ignore it
+                    continue;
+                } else if visited.insert(child.region) {
+                    worklist.push((child, 0));
+                }
+            }
+        }
+
+        postorder
+    }
 }
 
 /// Mutation

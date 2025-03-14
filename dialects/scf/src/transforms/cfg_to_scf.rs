@@ -188,7 +188,10 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             let mut op = switch_op.borrow_mut();
             let operation = op.as_operation_ref();
 
-            // The order of the regions match the original 'hir.switch', hence the fallback region
+            // If any of the case targets are duplicated, we have to duplicate the regions or
+            // we will fail to properly lower the input
+
+            // The order of the regions match the original 'cf.switch', hence the fallback region
             // coming first.
             op.default_region_mut().take_body(regions[0]);
             for (index, source_region) in regions.iter().copied().skip(1).enumerate() {
@@ -239,7 +242,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
         let span = replaced_op.span();
 
-        // Results are derived from the forwarded values given to `hir.condition`
+        // Results are derived from the forwarded values given to `scf.condition`
         let result_types = loop_values_next_iter
             .iter()
             .map(|v| v.borrow().ty().clone())
@@ -427,17 +430,17 @@ mod tests {
         let expected_input = "\
 builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v2 = hir.constant 0 : u32;
-    v3 = hir.eq v0, v2 : i1;
-    hir.cond_br v3 ^block1, ^block2;
+    v2 = arith.constant 0 : u32;
+    v3 = arith.eq v0, v2 : i1;
+    cf.cond_br v3 ^block1, ^block2;
 ^block1:
-    v4 = hir.incr v0 : u32;
-    hir.br ^block3(v4);
+    v4 = arith.incr v0 : u32;
+    cf.br ^block3(v4);
 ^block2:
-    v5 = hir.mul v0, v0 : u32 #[overflow = checked];
-    hir.br ^block3(v5);
+    v5 = arith.mul v0, v0 : u32 #[overflow = checked];
+    cf.br ^block3(v5);
 ^block3(v1: u32):
-    hir.ret v1;
+    builtin.ret v1;
 };";
         let input = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_input, &input);
@@ -446,23 +449,23 @@ builtin.function public @test(v0: u32) -> u32 {
         pm.add_pass(Box::new(LiftControlFlowToSCF));
         pm.run(operation)?;
 
-        // Verify that the function body now consists of a single `hir.if` operation, followed by
-        // an `hir.return`.
+        // Verify that the function body now consists of a single `scf.if` operation, followed by
+        // an `builtin.return`.
         let expected_output = "\
 builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v2 = hir.constant 0 : u32;
-    v3 = hir.eq v0, v2 : i1;
-    v8 = hir.if v3 : u32 {
+    v2 = arith.constant 0 : u32;
+    v3 = arith.eq v0, v2 : i1;
+    v8 = scf.if v3 : u32 {
     ^block1:
-        v4 = hir.incr v0 : u32;
-        hir.yield v4;
+        v4 = arith.incr v0 : u32;
+        scf.yield v4;
     } {
     ^block2:
-        v5 = hir.mul v0, v0 : u32 #[overflow = checked];
-        hir.yield v5;
+        v5 = arith.mul v0, v0 : u32 #[overflow = checked];
+        scf.yield v5;
     };
-    hir.ret v8;
+    builtin.ret v8;
 };";
         let output = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_output, &output);
@@ -519,18 +522,18 @@ builtin.function public @test(v0: u32) -> u32 {
         let expected_input = "\
 builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v3 = hir.constant 0 : u32;
-    v4 = hir.constant 1 : u32;
-    hir.br ^block1(v0, v3);
+    v3 = arith.constant 0 : u32;
+    v4 = arith.constant 1 : u32;
+    cf.br ^block1(v0, v3);
 ^block1(v1: u32, v2: u32):
-    v5 = hir.eq v1, v3 : i1;
-    hir.cond_br v5 ^block2, ^block3;
+    v5 = arith.eq v1, v3 : i1;
+    cf.cond_br v5 ^block2, ^block3;
 ^block2:
-    hir.ret v2;
+    builtin.ret v2;
 ^block3:
-    v6 = hir.sub v1, v4 : u32 #[overflow = unchecked];
-    v7 = hir.incr v2 : u32;
-    hir.br ^block1(v6, v7);
+    v6 = arith.sub v1, v4 : u32 #[overflow = unchecked];
+    v7 = arith.incr v2 : u32;
+    cf.br ^block1(v6, v7);
 };";
         let input = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_input, &input);
@@ -539,35 +542,35 @@ builtin.function public @test(v0: u32) -> u32 {
         pm.add_pass(Box::new(LiftControlFlowToSCF));
         pm.run(operation)?;
 
-        // Verify that the function body now consists of a single `hir.if` operation, followed by
-        // an `hir.return`.
+        // Verify that the function body now consists of a single `scf.if` operation, followed by
+        // an `builtin.return`.
         let expected_output = "\
 builtin.function public @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v15 = hir.poison  : u32;
-    v14 = hir.constant 1 : u32;
-    v9 = hir.constant 0 : u32;
-    v3 = hir.constant 0 : u32;
-    v4 = hir.constant 1 : u32;
-    v23, v24, v25 = hir.while v0, v3, v15 : u32, u32, u32 {
+    v15 = ub.poison u32 : u32;
+    v14 = arith.constant 1 : u32;
+    v9 = arith.constant 0 : u32;
+    v3 = arith.constant 0 : u32;
+    v4 = arith.constant 1 : u32;
+    v23, v24, v25 = scf.while v0, v3, v15 : u32, u32, u32 {
     ^block1(v1: u32, v2: u32, v19: u32):
-        v5 = hir.eq v1, v3 : i1;
-        v33, v34, v35, v36 = hir.if v5 : u32, u32, u32, u32 {
+        v5 = arith.eq v1, v3 : i1;
+        v33, v34, v35, v36 = scf.if v5 : u32, u32, u32, u32 {
         ^block10:
-            hir.yield v15, v15, v14, v9;
+            scf.yield v15, v15, v14, v9;
         } {
         ^block3:
-            v6 = hir.sub v1, v4 : u32 #[overflow = unchecked];
-            v7 = hir.incr v2 : u32;
-            hir.yield v6, v7, v9, v14;
+            v6 = arith.sub v1, v4 : u32 #[overflow = unchecked];
+            v7 = arith.incr v2 : u32;
+            scf.yield v6, v7, v9, v14;
         };
-        v32 = hir.trunc v36 : i1;
-        hir.condition v32, v33, v34, v2;
+        v32 = arith.trunc v36 : i1;
+        scf.condition v32, v33, v34, v2;
     } {
     ^block9(v29: u32, v30: u32, v31: u32):
-        hir.yield v29, v30, v31;
+        scf.yield v29, v30, v31;
     };
-    hir.ret v25;
+    builtin.ret v25;
 };";
         let output = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_output, &output);
@@ -675,31 +678,31 @@ builtin.function public @test(v0: u32) -> u32 {
         let expected_input = "\
 builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
 ^block0(v0: (ptr u32), v1: u32, v2: u32):
-    v7 = hir.constant 0 : u32;
-    hir.br ^block1(v7, v7);
+    v7 = arith.constant 0 : u32;
+    cf.br ^block1(v7, v7);
 ^block1(v3: u32, v4: u32):
-    v8 = hir.lt v3, v1 : i1;
-    hir.cond_br v8 ^block4, ^block3(v4);
+    v8 = arith.lt v3, v1 : i1;
+    cf.cond_br v8 ^block4, ^block3(v4);
 ^block2(v5: u32, v6: u32):
-    v10 = hir.lt v5, v2 : i1;
-    hir.cond_br v10 ^block6, ^block5(v6);
+    v10 = arith.lt v5, v2 : i1;
+    cf.cond_br v10 ^block6, ^block5(v6);
 ^block3:
-    v9 = hir.mul v3, v2 : u32 #[overflow = unchecked];
-    hir.br ^block2(v7, v4);
+    v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
+    cf.br ^block2(v7, v4);
 ^block4:
-    hir.ret v4;
+    builtin.ret v4;
 ^block5:
-    v12 = hir.add v9, v5 : u32 #[overflow = unchecked];
-    v13 = hir.ptr_to_int v0 : u32;
-    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
-    v15 = hir.int_to_ptr v14 : (ptr u32);
-    v16 = hir.load v15 : u32;
-    v17 = hir.incr v5 : u32;
-    v18 = hir.add v6, v16 : u32 #[overflow = unchecked];
-    hir.br ^block2(v17, v18);
+    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+    v13 = builtin.unrealized_conversion_cast v0 : u32;
+    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
+    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+    v16 = builtin.unrealized_conversion_cast v15 : u32;
+    v17 = arith.incr v5 : u32;
+    v18 = arith.add v6, v16 : u32 #[overflow = unchecked];
+    cf.br ^block2(v17, v18);
 ^block6:
-    v11 = hir.incr v3 : u32;
-    hir.br ^block1(v11, v6);
+    v11 = arith.incr v3 : u32;
+    cf.br ^block1(v11, v6);
 };";
         let input = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_input, &input);
@@ -708,57 +711,57 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
         pm.add_pass(Box::new(LiftControlFlowToSCF));
         pm.run(operation)?;
 
-        // Verify that the function body now consists of a single `hir.if` operation, followed by
-        // an `hir.return`.
+        // Verify that the function body now consists of a single `scf.if` operation, followed by
+        // an `builtin.return`.
         let expected_output = "\
 builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
 ^block0(v0: (ptr u32), v1: u32, v2: u32):
-    v26 = hir.poison  : u32;
-    v25 = hir.constant 1 : u32;
-    v20 = hir.constant 0 : u32;
-    v7 = hir.constant 0 : u32;
-    v35, v36, v37 = hir.while v7, v7, v26 : u32, u32, u32 {
+    v26 = ub.poison u32 : u32;
+    v25 = arith.constant 1 : u32;
+    v20 = arith.constant 0 : u32;
+    v7 = arith.constant 0 : u32;
+    v35, v36, v37 = scf.while v7, v7, v26 : u32, u32, u32 {
     ^block1(v3: u32, v4: u32, v30: u32):
-        v8 = hir.lt v3, v1 : i1;
-        v66, v67, v68, v69, v70 = hir.if v8 : u32, u32, u32, u32, u32 {
+        v8 = arith.lt v3, v1 : i1;
+        v66, v67, v68, v69, v70 = scf.if v8 : u32, u32, u32, u32, u32 {
         ^block18:
-            hir.yield v26, v26, v25, v20, v4;
+            scf.yield v26, v26, v25, v20, v4;
         } {
         ^block3:
-            v9 = hir.mul v3, v2 : u32 #[overflow = unchecked];
-            v56, v57, v58 = hir.while v7, v4, v26 : u32, u32, u32 {
+            v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
+            v56, v57, v58 = scf.while v7, v4, v26 : u32, u32, u32 {
             ^block2(v5: u32, v6: u32, v52: u32):
-                v10 = hir.lt v5, v2 : i1;
-                v71, v72, v73, v74 = hir.if v10 : u32, u32, u32, u32 {
+                v10 = arith.lt v5, v2 : i1;
+                v71, v72, v73, v74 = scf.if v10 : u32, u32, u32, u32 {
                 ^block19:
-                    hir.yield v26, v26, v25, v20;
+                    scf.yield v26, v26, v25, v20;
                 } {
                 ^block5:
-                    v12 = hir.add v9, v5 : u32 #[overflow = unchecked];
-                    v13 = hir.ptr_to_int v0 : u32;
-                    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
-                    v15 = hir.int_to_ptr v14 : (ptr u32);
-                    v16 = hir.load v15 : u32;
-                    v17 = hir.incr v5 : u32;
-                    v18 = hir.add v6, v16 : u32 #[overflow = unchecked];
-                    hir.yield v17, v18, v20, v25;
+                    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+                    v13 = builtin.unrealized_conversion_cast v0 : u32;
+                    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
+                    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+                    v16 = builtin.unrealized_conversion_cast v15 : u32;
+                    v17 = arith.incr v5 : u32;
+                    v18 = arith.add v6, v16 : u32 #[overflow = unchecked];
+                    scf.yield v17, v18, v20, v25;
                 };
-                v65 = hir.trunc v74 : i1;
-                hir.condition v65, v71, v72, v6;
+                v65 = arith.trunc v74 : i1;
+                scf.condition v65, v71, v72, v6;
             } {
             ^block17(v62: u32, v63: u32, v64: u32):
-                hir.yield v62, v63, v64;
+                scf.yield v62, v63, v64;
             };
-            v11 = hir.incr v3 : u32;
-            hir.yield v11, v58, v20, v25, v26;
+            v11 = arith.incr v3 : u32;
+            scf.yield v11, v58, v20, v25, v26;
         };
-        v44 = hir.trunc v69 : i1;
-        hir.condition v44, v66, v67, v70;
+        v44 = arith.trunc v69 : i1;
+        scf.condition v44, v66, v67, v70;
     } {
     ^block12(v41: u32, v42: u32, v43: u32):
-        hir.yield v41, v42, v43;
+        scf.yield v41, v42, v43;
     };
-    hir.ret v37;
+    builtin.ret v37;
 };";
         let output = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_output, &output);
@@ -881,33 +884,33 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
         let expected_input = "\
 builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
 ^block0(v0: (ptr u32), v1: u32, v2: u32):
-    v7 = hir.constant 0 : u32;
-    hir.br ^block1(v7, v7);
+    v7 = arith.constant 0 : u32;
+    cf.br ^block1(v7, v7);
 ^block1(v3: u32, v4: u32):
-    v8 = hir.lt v3, v1 : i1;
-    hir.cond_br v8 ^block3(v4), ^block4;
+    v8 = arith.lt v3, v1 : i1;
+    cf.cond_br v8 ^block3(v4), ^block4;
 ^block2(v5: u32, v6: u32):
-    v10 = hir.lt v5, v2 : i1;
-    hir.cond_br v10 ^block5(v6), ^block6;
+    v10 = arith.lt v5, v2 : i1;
+    cf.cond_br v10 ^block5(v6), ^block6;
 ^block3:
-    v9 = hir.mul v3, v2 : u32 #[overflow = unchecked];
-    hir.br ^block2(v7, v4);
+    v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
+    cf.br ^block2(v7, v4);
 ^block4:
-    hir.ret v4;
+    builtin.ret v4;
 ^block5:
-    v12 = hir.add v9, v5 : u32 #[overflow = unchecked];
-    v13 = hir.ptr_to_int v0 : u32;
-    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
-    v15 = hir.int_to_ptr v14 : (ptr u32);
-    v16 = hir.load v15 : u32;
-    v17 = hir.incr v5 : u32;
-    v18, v19 = hir.add_overflowing v6, v16 : i1, u32;
-    hir.cond_br v18 ^block7, ^block2(v17, v19);
+    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+    v13 = builtin.unrealized_conversion_cast v0 : u32;
+    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
+    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+    v16 = builtin.unrealized_conversion_cast v15 : u32;
+    v17 = arith.incr v5 : u32;
+    v18, v19 = arith.add_overflowing v6, v16 : i1, u32;
+    cf.cond_br v18 ^block7, ^block2(v17, v19);
 ^block6:
-    v11 = hir.incr v3 : u32;
-    hir.br ^block1(v11, v6);
+    v11 = arith.incr v3 : u32;
+    cf.br ^block1(v11, v6);
 ^block7:
-    hir.ret_imm 4294967295;
+    builtin.ret_imm 4294967295;
 };";
         let input = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_input, &input);
@@ -917,76 +920,82 @@ builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
         pm.add_pass(midenc_hir2::transforms::Canonicalizer::create());
         pm.run(operation)?;
 
-        // Verify that the function body now consists of a single `hir.if` operation, followed by
-        // an `hir.return`.
+        // Verify that the function body now consists of a single `scf.if` operation, followed by
+        // an `builtin.return`.
         let expected_output = "\
 builtin.function public @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
 ^block0(v0: (ptr u32), v1: u32, v2: u32):
-    v21 = hir.constant 0 : u32;
-    v26 = hir.constant 1 : u32;
-    v28 = hir.constant 2 : u32;
-    v27 = hir.poison  : u32;
-    v157, v158, v159, v160 = hir.while v21, v21 : u32, u32, u32, u32 {
-    ^block27(v161: u32, v162: u32):
-        v8 = hir.lt v161, v1 : i1;
-        v120, v121, v122, v123, v124 = hir.if v8 : u32, u32, u32, u32, u32 {
+    v28 = arith.constant 2 : u32;
+    v27 = ub.poison u32 : u32;
+    v26 = arith.constant 1 : u32;
+    v21 = arith.constant 0 : u32;
+    v40, v41, v42, v43 = scf.while v21, v21, v27, v27 : u32, u32, u32, u32 {
+    ^block1(v3: u32, v4: u32, v32: u32, v35: u32):
+        v8 = arith.lt v3, v1 : i1;
+        v120, v121, v122, v123, v124 = scf.if v8 : u32, u32, u32, u32, u32 {
         ^block3:
-            v9 = hir.mul v161, v2 : u32 #[overflow = unchecked];
-            v199, v200, v201, v202, v203, v204, v205 = hir.while v21, v162 : u32, u32, u32, u32, \
-                               u32, u32, u32 {
-            ^block31(v206: u32, v207: u32):
-                v10 = hir.lt v206, v2 : i1;
-                v193, v194, v195, v196, v197, v198 = hir.if v10 : u32, u32, u32, u32, u32, u32 {
+            v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
+            v87, v88, v89, v90, v91, v92, v93, v94, v95 = scf.while v21, v4, v27, v27, v27, v27, \
+                               v27, v27, v27 : u32, u32, u32, u32, u32, u32, u32, u32, u32 {
+            ^block2(v5: u32, v6: u32, v65: u32, v67: u32, v69: u32, v71: u32, v73: u32, v75: u32, \
+                               v77: u32):
+                v10 = arith.lt v5, v2 : i1;
+                v139, v140, v141, v142, v143, v144, v145, v146, v147 = scf.if v10 : u32, u32, u32, \
+                               u32, u32, u32, u32, u32, u32 {
                 ^block5:
-                    v12 = hir.add v9, v206 : u32 #[overflow = unchecked];
-                    v13 = hir.ptr_to_int v0 : u32;
-                    v14 = hir.add v13, v12 : u32 #[overflow = unchecked];
-                    v15 = hir.int_to_ptr v14 : (ptr u32);
-                    v16 = hir.load v15 : u32;
-                    v17 = hir.incr v206 : u32;
-                    v18, v19 = hir.add_overflowing v207, v16 : i1, u32;
-                    v187 = hir.select v18, v27, v17 : u32;
-                    v188 = hir.select v18, v27, v19 : u32;
-                    v189 = hir.select v18, v26, v27 : u32;
-                    v190 = hir.select v18, v21, v27 : u32;
-                    v191 = hir.select v18, v26, v21 : u32;
-                    v192 = hir.select v18, v21, v26 : u32;
-                    hir.yield v187, v188, v189, v190, v191, v192;
+                    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+                    v13 = builtin.unrealized_conversion_cast v0 : u32;
+                    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
+                    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+                    v16 = builtin.unrealized_conversion_cast v15 : u32;
+                    v17 = arith.incr v5 : u32;
+                    v18, v19 = arith.add_overflowing v6, v16 : i1, u32;
+                    v148, v149, v150, v151, v152, v153, v154, v155, v156 = scf.if v18 : u32, u32, \
+                               u32, u32, u32, u32, u32, u32, u32 {
+                    ^block25:
+                        scf.yield v27, v27, v27, v27, v26, v21, v27, v26, v21;
+                    } {
+                    ^block26:
+                        scf.yield v17, v19, v27, v27, v27, v27, v27, v21, v26;
+                    };
+                    scf.yield v148, v149, v150, v151, v152, v153, v154, v155, v156;
                 } {
                 ^block24:
-                    hir.yield v27, v27, v27, v27, v28, v21;
+                    scf.yield v27, v27, v27, v27, v27, v27, v27, v28, v21;
                 };
-                v114 = hir.trunc v198 : i1;
-                hir.condition v114, v193, v194, v207, v27, v195, v196, v197;
+                v114 = arith.trunc v147 : i1;
+                scf.condition v114, v139, v140, v6, v141, v142, v143, v144, v145, v146;
             } {
-            ^block32(v208: u32, v209: u32, v210: u32, v211: u32, v212: u32, v213: u32, v214: u32):
-                hir.yield v208, v209;
+            ^block19(v105: u32, v106: u32, v107: u32, v108: u32, v109: u32, v110: u32, v111: u32, \
+                               v112: u32, v113: u32):
+                scf.yield v105, v106, v107, v108, v109, v110, v111, v112, v113;
             };
-            v125, v126, v127, v128, v129 = hir.index_switch v205 : u32, u32, u32, u32, u32 #[cases \
+            v125, v126, v127, v128, v129 = scf.index_switch v95 : u32, u32, u32, u32, u32 #[cases \
                                = [1]] {
-            ^block22:
-                hir.yield v202, v202, v203, v204, v202;
-            } {
             ^block6:
-                v11 = hir.incr v161 : u32;
-                hir.yield v11, v201, v21, v26, v27;
+                v11 = arith.incr v3 : u32;
+                scf.yield v11, v89, v21, v26, v27;
+            } {
+            ^block22:
+                scf.yield v90, v91, v92, v93, v94;
             };
-            hir.yield v125, v126, v127, v128, v129;
+            scf.yield v125, v126, v127, v128, v129;
         } {
         ^block21:
-            hir.yield v27, v27, v28, v21, v162;
+            scf.yield v27, v27, v28, v21, v4;
         };
-        v52 = hir.trunc v123 : i1;
-        hir.condition v52, v120, v121, v124, v122;
+        v52 = arith.trunc v123 : i1;
+        scf.condition v52, v120, v121, v124, v122;
     } {
-    ^block28(v163: u32, v164: u32, v165: u32, v166: u32):
-        hir.yield v163, v164;
+    ^block14(v48: u32, v49: u32, v50: u32, v51: u32):
+        scf.yield v48, v49, v50, v51;
     };
-    hir.switch v160 ^block7, ^block4;
+    v158 = arith.eq v43, v26 : i1;
+    cf.cond_br v158 ^block7, ^block4;
 ^block4:
-    hir.ret v159;
+    builtin.ret v42;
 ^block7:
-    hir.ret_imm 4294967295;
+    builtin.ret_imm 4294967295;
 };";
         let output = format!("{}", &operation.borrow());
         assert_str_eq!(&expected_output, &output);

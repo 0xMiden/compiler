@@ -177,8 +177,8 @@ where
 
     // If the containing block is not executable, bail out.
     let not_executable = op.parent().is_some_and(|block| {
-        let dependent = ProgramPoint::at_start_of(block);
-        !solver.require::<Executable, _>(point, dependent).is_live()
+        let block_start = ProgramPoint::at_start_of(block);
+        !solver.require::<Executable, _>(block_start, point).is_live()
     });
     if not_executable {
         return Ok(());
@@ -195,7 +195,7 @@ where
     }
 
     // Get the dense state before the execution of the op.
-    let before = solver.require(point, ProgramPoint::before(op));
+    let before = solver.require(ProgramPoint::before(op), point);
 
     // If this is a call operation, then join its lattices across known return sites.
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
@@ -219,28 +219,6 @@ where
         return;
     }
 
-    visit_block_header(analysis, block, solver);
-    if let Some(op) = block.front() {
-        visit_before_block_start(analysis, &op.borrow(), solver)
-    }
-}
-
-fn visit_before_block_start<A>(analysis: &A, op: &Operation, solver: &mut DataFlowSolver)
-where
-    A: DenseForwardDataFlowAnalysis,
-{
-    // Get the dense lattice to update.
-    let point = ProgramPoint::before(op);
-    let mut after = solver.get_or_create_mut(point);
-    // By default, treat this the same as the block header itself
-    analysis.set_to_entry_state(&mut after, solver);
-}
-
-fn visit_block_header<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
-where
-    A: DenseForwardDataFlowAnalysis,
-{
-    let point = ProgramPoint::at_start_of(block);
     // Get the dense lattice to update.
     let mut after = solver.get_or_create_mut(point);
 
@@ -254,8 +232,8 @@ where
             let callable_region = callable.get_callable_region();
             if callable_region.is_some_and(|r| r == region) {
                 let callsites = solver.require::<PredecessorState, _>(
-                    point,
                     ProgramPoint::after(callable.as_operation()),
+                    point,
                 );
                 // If not all callsites are known, conservatively mark all lattices as having
                 // reached their pessimistic fixpoints. Do the same if interprocedural analysis
@@ -266,7 +244,7 @@ where
 
                 for callsite in callsites.known_predecessors() {
                     // Get the dense lattice before the callsite.
-                    let before = solver.require(point, ProgramPoint::before(*callsite));
+                    let before = solver.require(ProgramPoint::before(*callsite), point);
                     let call = callsite.borrow();
                     let call = call.as_trait::<dyn CallOpInterface>().unwrap();
                     analysis.visit_call_control_flow_transfer(
@@ -301,8 +279,8 @@ where
 
         // Merge in the state from the predecessor's terminator.
         let before = solver.require::<<A as DenseForwardDataFlowAnalysis>::Lattice, _>(
-            point,
             ProgramPoint::after(pred.owner),
+            point,
         );
         analysis.visit_branch_control_flow_transfer(
             predecessor,
@@ -346,11 +324,8 @@ pub fn visit_call_operation<A>(
     // Otherwise, if not all return sites are known, then conservatively assume we
     // can't reason about the data-flow.
     let call_op = call.as_operation().as_operation_ref();
-    let pp = ProgramPoint::after(call_op);
-    let anchor = pp;
-    let predecessors = solver.require::<PredecessorState, _>(
-        anchor, pp, // solver.program_point_after(call) is there any diff?
-    );
+    let after_call = ProgramPoint::after(call_op);
+    let predecessors = solver.require::<PredecessorState, _>(after_call, after_call);
     if !predecessors.all_predecessors_known() {
         return analysis.set_to_entry_state(after, solver);
     }
@@ -371,7 +346,7 @@ pub fn visit_call_operation<A>(
         //   }
         let lattice_after_call = &mut *after;
         let lattice_at_callee_return =
-            solver.require(ProgramPoint::after(call_op), ProgramPoint::after(*predecessor));
+            solver.require(ProgramPoint::after(*predecessor), ProgramPoint::after(call_op));
         analysis.visit_call_control_flow_transfer(
             call,
             CallControlFlowAction::Exit,
@@ -395,18 +370,17 @@ pub fn visit_region_branch_operation<A>(
     A: DenseForwardDataFlowAnalysis,
 {
     // Get the terminator predecessors.
-    let anchor = point;
-    let predecessors = solver.require::<PredecessorState, _>(anchor, point);
+    let predecessors = solver.require::<PredecessorState, _>(point, point);
     assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
 
     let branch_op = branch.as_operation().as_operation_ref();
     for predecessor in predecessors.known_predecessors() {
         let before = if &branch_op == predecessor {
             // If the predecessor is the parent, get the state before the parent.
-            solver.require(point, ProgramPoint::before(*predecessor))
+            solver.require(ProgramPoint::before(*predecessor), point)
         } else {
             // Otherwise, get the state after the terminator.
-            solver.require(point, ProgramPoint::after(*predecessor))
+            solver.require(ProgramPoint::after(*predecessor), point)
         };
 
         // This function is called in two cases:

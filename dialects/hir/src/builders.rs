@@ -273,6 +273,15 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Loads a value of the type of the given local variable, on to the stack
+    ///
+    /// NOTE: This function will panic if `local` is not valid within the current function
+    fn load_local(&mut self, local: LocalVariable, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::LoadLocal, _>(span);
+        let op = op_builder(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /*
     /// Loads a value from the given temporary (local variable), of the type associated with that
     /// local.
@@ -298,6 +307,24 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Store>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Store, _>(span);
         op_builder(ptr, value)
+    }
+
+    /// Stores `value` to the given local variable.
+    ///
+    /// NOTE: This function will panic if the local variable and value types do not match
+    fn store_local(
+        &mut self,
+        local: LocalVariable,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::StoreLocal>, Report> {
+        assert_eq!(
+            value.borrow().ty(),
+            &local.ty(),
+            "cannot store a value of a different type in the given local variable"
+        );
+        let op_builder = self.builder_mut().create::<crate::ops::StoreLocal, _>(span);
+        op_builder(local, value)
     }
 
     /*

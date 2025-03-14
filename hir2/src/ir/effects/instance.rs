@@ -166,16 +166,29 @@ impl<T: Effect> fmt::Debug for EffectInstance<T> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum EffectValue {
+    Attribute(Box<dyn AttributeValue>),
     Symbol(SymbolRef),
     Operand(OpOperand),
     Result(OpResultRef),
     BlockArgument(BlockArgumentRef),
 }
+impl Clone for EffectValue {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Attribute(attr) => Self::Attribute(attr.clone_value()),
+            Self::Symbol(value) => Self::Symbol(*value),
+            Self::Operand(value) => Self::Operand(*value),
+            Self::Result(value) => Self::Result(*value),
+            Self::BlockArgument(value) => Self::BlockArgument(*value),
+        }
+    }
+}
 impl fmt::Debug for EffectValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Attribute(attr) => f.debug_tuple("Attribute").field(attr).finish(),
             Self::Symbol(symbol_use) => f
                 .debug_tuple("Symbol")
                 .field_with(|f| {
@@ -196,6 +209,12 @@ impl fmt::Debug for EffectValue {
                 f.debug_tuple("BlockArgument").field(&value).finish()
             }
         }
+    }
+}
+
+impl From<Box<dyn AttributeValue>> for EffectValue {
+    fn from(value: Box<dyn AttributeValue>) -> Self {
+        Self::Attribute(value)
     }
 }
 

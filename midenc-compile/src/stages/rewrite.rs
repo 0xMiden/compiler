@@ -1,9 +1,10 @@
 use alloc::boxed::Box;
 
+use midenc_dialect_hir::transforms::TransformSpills;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir2::{
     pass::{Nesting, PassManager},
-    transforms::Canonicalizer,
+    transforms::{Canonicalizer, ControlFlowSink, SinkOperandDefs},
     Op,
 };
 
@@ -63,6 +64,9 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(TransformSpills));
             }
             // Function passes for component-level functions
             {
@@ -70,7 +74,10 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
-                func_pm.add_pass(Canonicalizer::create());
+                func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(TransformSpills));
             }
         }
 

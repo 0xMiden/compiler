@@ -1341,6 +1341,7 @@ impl Operation {
 
     /// Returns `None` if this operation has invalid ordering
     #[inline]
+    #[allow(unused)]
     pub(crate) fn get_or_compute_order(&self) -> u32 {
         use core::sync::atomic::Ordering;
 

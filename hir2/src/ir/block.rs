@@ -1249,6 +1249,15 @@ impl BlockOperand {
             )
         })
     }
+
+    /// Set the successor block to `block`, removing the block operand from the use list of the
+    /// previous block, and adding it to the use list of `block`.
+    ///
+    /// NOTE: This requires a mutable borrow of `block` when mutating its use list.
+    pub fn set(&mut self, mut block: BlockRef) {
+        self.unlink();
+        block.borrow_mut().insert_use(self.as_block_operand_ref());
+    }
 }
 
 impl fmt::Debug for BlockOperand {

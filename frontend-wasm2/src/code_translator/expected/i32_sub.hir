@@ -1,9 +1,9 @@
 builtin.function public @test_wrapper() {
 ^block4:
-    v0 = hir.constant 3 : i32;
-    v1 = hir.constant 1 : i32;
-    v2 = hir.sub v0, v1 : i32 #[overflow = wrapping];
-    hir.br ^block5;
+    v0 = arith.constant 3 : i32;
+    v1 = arith.constant 1 : i32;
+    v2 = arith.sub v0, v1 : i32 #[overflow = wrapping];
+    cf.br ^block5;
 ^block5:
-    hir.ret ;
+    builtin.ret ;
 };

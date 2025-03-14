@@ -10,20 +10,12 @@ export.__main
 
         push.0
         push.4294967287
-        push.1048585
-        push.1
-        push.255
-        push.0
-        push.1
-        push.3735929054
-        dup.7
-        swap.1
-        swap.7
         push.1
         while.true
 
-            dup.0
-            dup.7
+            push.1048585
+            dup.1
+            swap.1
             u32wrapping_add
             dup.0
             u32mod.16
@@ -37,29 +29,31 @@ export.__main
             push.128
             u32and
             movup.2
-            u32wrapping_add
-            dup.5
-            swap.1
-            swap.2
             swap.1
             u32wrapping_add
-            dup.0
-            dup.9
+            push.1
+            movup.2
+            swap.1
+            u32wrapping_add
+            push.0
+            dup.1
+            swap.1
             neq
-            dup.0
-            dup.9
-            swap.2
-            swap.3
+            push.3735929054
+            dup.1
+            dup.4
             swap.1
             cdrop
-            dup.8
-            dup.3
-            dup.3
-            cdrop
-            dup.4
-            dup.6
+            push.3735929054
+            dup.2
+            swap.1
             swap.2
             swap.4
+            swap.1
+            cdrop
+            push.0
+            push.1
+            movup.3
             cdrop
             push.1
             u32and
@@ -75,17 +69,7 @@ export.__main
         end
         drop
         drop
-        movdn.2
-        drop
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
+        push.255
         u32and
 end
 

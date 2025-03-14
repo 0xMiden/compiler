@@ -1,7 +1,7 @@
 builtin.function public @test_wrapper() {
 ^block4:
     v0 = hir.mem_size  : u32;
-    hir.br ^block5;
+    cf.br ^block5;
 ^block5:
-    hir.ret ;
+    builtin.ret ;
 };

@@ -7,7 +7,7 @@ pub mod spills;
 pub use self::{
     constant_propagation::SparseConstantPropagation,
     dce::DeadCodeAnalysis,
-    liveness::LivenessAnalysis,
+    liveness::{LivenessAnalysis, LivenessAnalysisAdaptor},
     loops::{LoopAction, LoopState},
     spills::SpillAnalysis,
 };

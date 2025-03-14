@@ -1,10 +1,10 @@
 builtin.function public @test_wrapper() {
 ^block4:
-    v0 = hir.constant 1 : i32;
+    v0 = arith.constant 1 : i32;
     v1 = hir.bitcast v0 : u32;
-    v2 = hir.zext v1 : u64;
+    v2 = arith.zext v1 : u64;
     v3 = hir.bitcast v2 : i64;
-    hir.br ^block5;
+    cf.br ^block5;
 ^block5:
-    hir.ret ;
+    builtin.ret ;
 };

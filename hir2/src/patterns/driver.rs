@@ -684,7 +684,7 @@ impl GreedyPatternRewriteDriver {
     }
 
     /// Look over the operands of the provided op for any defining operations that should be re-
-    /// added to the worklist. This function sho9uld be called when an operation is modified or
+    /// added to the worklist. This function should be called when an operation is modified or
     /// removed, as it may trigger further simplifications.
     fn add_operands_to_worklist(&self, op: OperationRef) {
         let current_op = op.borrow();

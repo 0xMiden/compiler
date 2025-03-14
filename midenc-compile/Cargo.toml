@@ -26,6 +26,7 @@ miden-assembly.workspace = true
 miden-mast-package.workspace = true
 midenc-frontend-wasm2.workspace = true
 midenc-dialect-scf.workspace = true
+midenc-dialect-hir.workspace = true
 midenc-hir2.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true

@@ -125,6 +125,11 @@ impl<'a> SuccessorOperandRange<'a> {
             num_produced,
         }
     }
+
+    #[inline]
+    pub fn into_forwarded(self) -> OpOperandRange<'a> {
+        self.forwarded
+    }
 }
 impl SuccessorOperands for SuccessorOperandRange<'_> {
     #[inline]
@@ -451,6 +456,10 @@ impl<'a, T> KeyedSuccessorRangeMut<'a, T> {
             }
         })
     }
+
+    pub fn remove(&mut self, index: usize) {
+        self.range.erase(index);
+    }
 }
 
 pub struct KeyedSuccessorRangeIter<'a, 'b: 'a, T> {
@@ -492,6 +501,14 @@ impl<'a, T: KeyedSuccessor> SuccessorWithKey<'a, T> {
         self.info.block.borrow().successor()
     }
 
+    pub fn block_operand(&self) -> BlockOperandRef {
+        self.info.block
+    }
+
+    pub fn operand_group(&self) -> usize {
+        self.info.operand_group as usize
+    }
+
     #[inline(always)]
     pub fn arguments(&self) -> &OpOperandRange<'a> {
         &self.operands
@@ -512,6 +529,14 @@ impl<'a, T: KeyedSuccessor> SuccessorWithKeyMut<'a, T> {
 
     pub fn block(&self) -> BlockRef {
         self.info.block.borrow().successor()
+    }
+
+    pub fn block_operand(&self) -> BlockOperandRef {
+        self.info.block
+    }
+
+    pub fn operand_group(&self) -> usize {
+        self.info.operand_group as usize
     }
 
     #[inline(always)]

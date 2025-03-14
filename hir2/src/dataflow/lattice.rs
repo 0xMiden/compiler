@@ -31,7 +31,7 @@ use super::{
 /// or `meet` are well-defined), however the implementation of whichever method is _not_ well-
 /// defined must assert/panic, to ensure the value is not improperly used in an analysis that relies
 /// on the properties of a join (or meet) semi-lattice for correctness.
-pub trait LatticeLike: Default + Eq + fmt::Debug + 'static {
+pub trait LatticeLike: Default + Clone + Eq + fmt::Debug + 'static {
     /// Joins `self` with `other`, producing a new value that represents the least upper bound of
     /// the two values in the join semi-lattice of the type.
     ///
@@ -183,6 +183,11 @@ impl<T: LatticeLike> DenseLattice for Lattice<T> {
     #[inline]
     fn lattice(&self) -> &Self::Lattice {
         &self.value
+    }
+
+    #[inline]
+    fn lattice_mut(&mut self) -> &mut Self::Lattice {
+        &mut self.value
     }
 
     fn join(&mut self, rhs: &Self::Lattice) -> ChangeResult {

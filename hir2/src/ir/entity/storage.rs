@@ -193,6 +193,7 @@ impl<T: StorableEntity, const INLINE: usize> EntityStorage<T, INLINE> {
         }
     }
 }
+
 impl<T, const INLINE: usize> core::ops::Index<usize> for EntityStorage<T, INLINE> {
     type Output = T;
 
@@ -249,7 +250,7 @@ impl<'a, T> EntityRange<'a, T> {
 
     /// Get this range as a slice
     #[inline]
-    pub fn as_slice(&self) -> &[T] {
+    pub fn as_slice(&self) -> &'a [T] {
         if self.range.is_empty() {
             &[]
         } else {
@@ -513,7 +514,58 @@ impl<T: StorableEntity, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
         Some(removed)
     }
 }
+
 impl<T: StorableEntity + Copy, const INLINE: usize> EntityRangeMut<'_, T, INLINE> {
+    /// Remove all items in this range from storage, unlinking them in the process
+    pub fn clear(&mut self) {
+        if self.range.is_empty() {
+            return;
+        }
+
+        let total_len = self.items.len();
+        let len = self.range.len();
+        let end = self.range.end;
+        self.range.end = self.range.start;
+        self.groups[self.group].shrink(len);
+
+        for item in self.items[self.range.start..end].iter_mut() {
+            item.unlink();
+        }
+
+        let trailing_items = total_len - end;
+        if trailing_items > 0 {
+            self.items.copy_within(end.., self.range.start);
+            self.items.truncate(self.range.start + trailing_items);
+        } else {
+            self.items.truncate(self.range.start);
+        }
+
+        // Shift groups
+        let next_group = self.group + 1;
+        if next_group < self.groups.len() {
+            let shift = -(len as isize);
+            for group in self.groups[next_group..].iter_mut() {
+                group.shift_start(shift);
+            }
+        }
+
+        // Shift item indices
+        if trailing_items > 0 {
+            for (offset, item) in self.items[self.range.start..(self.range.start + trailing_items)]
+                .iter_mut()
+                .enumerate()
+            {
+                unsafe {
+                    item.set_index(self.range.start + offset);
+                }
+            }
+        }
+    }
+
+    /// Remove all items in this range from storage into an owned [SmallVec] for further processing.
+    ///
+    /// NOTE: This does not unlink the items removed from storage, the caller is expected to handle
+    /// this themselves.
     pub fn take(&mut self) -> SmallVec<[T; INLINE]> {
         let mut taken = SmallVec::<[T; INLINE]>::with_capacity(self.len());
         if self.range.is_empty() {
@@ -531,11 +583,6 @@ impl<T: StorableEntity + Copy, const INLINE: usize> EntityRangeMut<'_, T, INLINE
             self.items.truncate(self.range.start + trailing_items);
         } else {
             self.items.truncate(self.range.start);
-        }
-
-        // Unlink removed items
-        for item in taken.iter_mut() {
-            item.unlink();
         }
 
         // Shift groups

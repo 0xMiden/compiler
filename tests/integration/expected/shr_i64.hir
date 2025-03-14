@@ -3,20 +3,20 @@ builtin.component root_ns:root@1.0.0 {
         builtin.function public @entrypoint(v0: i64, v1: i64) -> i64 {
         ^block6(v0: i64, v1: i64):
             v3 = hir.cast v1 : u32;
-            v4 = hir.shr v0, v3 : i64;
-            hir.ret v4;
+            v4 = arith.shr v0, v3 : i64;
+            builtin.ret v4;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
 
         builtin.global_variable public @#gv1 : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
 
         builtin.global_variable public @#gv2 : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
     };
 };

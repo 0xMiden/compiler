@@ -7,13 +7,13 @@ mod sccp;
 mod sink;
 mod spill;
 
-pub use self::cfg_to_scf::{transform_cfg_to_scf, CFGToSCFInterface};
 //pub use self::cse::CommonSubexpressionElimination;
 //pub use self::dce::{DeadSymbolElmination, DeadValueElimination};
 //pub use self::inliner::Inliner;
 pub use self::{
     canonicalization::Canonicalizer,
+    cfg_to_scf::{transform_cfg_to_scf, CFGToSCFInterface},
     sccp::SparseConditionalConstantPropagation,
     sink::{ControlFlowSink, SinkOperandDefs},
-    spill::InsertSpills,
+    spill::{transform_spills, ReloadLike, SpillLike, TransformSpillsInterface},
 };

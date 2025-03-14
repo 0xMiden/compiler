@@ -61,8 +61,11 @@ pub struct CondBr {
 
 impl Canonicalizable for CondBr {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        let name = context
+            .get_or_register_dialect::<ControlFlowDialect>()
+            .expect_registered_name::<Self>();
         rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context.clone()));
-        rewrites.push(crate::canonicalization::SplitCriticalEdges::new(context));
+        rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context, name));
     }
 }
 
@@ -118,7 +121,12 @@ pub struct Switch {
 
 impl Canonicalizable for Switch {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
-        rewrites.push(crate::canonicalization::SplitCriticalEdges::new(context));
+        let name = context
+            .get_or_register_dialect::<ControlFlowDialect>()
+            .expect_registered_name::<Self>();
+        rewrites.push(crate::canonicalization::SimplifyCondBrLikeSwitch::new(context.clone()));
+        rewrites.push(crate::canonicalization::SimplifySwitchFallbackOverlap::new(context.clone()));
+        rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context.clone(), name));
     }
 }
 
