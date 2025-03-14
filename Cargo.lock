@@ -3201,6 +3201,7 @@ dependencies = [
 name = "miden"
 version = "0.0.8"
 dependencies = [
+ "miden-base",
  "miden-base-sys",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
@@ -3234,6 +3235,24 @@ dependencies = [
  "thiserror 2.0.11",
  "tracing",
  "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "miden-base"
+version = "0.0.7"
+dependencies = [
+ "miden-base-macros",
+ "miden-base-sys",
+ "miden-stdlib-sys",
+]
+
+[[package]]
+name = "miden-base-macros"
+version = "0.0.7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

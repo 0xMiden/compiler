@@ -2,7 +2,7 @@ use core::ops::{Index, IndexMut};
 
 use super::felt::Felt;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(C, align(32))]
 pub struct Word {
     pub inner: (Felt, Felt, Felt, Felt),

@@ -5,8 +5,11 @@ use miden:base/core-types@1.0.0;
 interface foo {
     use core-types.{felt, word};
 
-    test-storage-item: func(index: u8, value: word) -> felt;
-    test-storage-map-item: func(index: u8, key: word, value: word) -> felt;
+    test-storage-item-low: func(value: word) -> felt;
+    test-storage-map-item-low: func(key: word, value: word) -> felt;
+
+    test-storage-item-high: func(value: word) -> felt;
+    test-storage-map-item-high: func(key: word, value: word) -> felt;
 }
 
 world foo-world {

@@ -27,8 +27,8 @@ impl CoreAsset {
         CoreAsset { inner: word.into() }
     }
 
-    pub fn as_word(&self) -> Word {
-        self.inner
+    pub fn as_word(&self) -> &Word {
+        &self.inner
     }
 }
 
@@ -49,3 +49,6 @@ pub struct NoteId(pub(crate) Felt);
 pub struct NoteType {
     pub inner: Felt,
 }
+
+#[repr(transparent)]
+pub struct StorageCommitmentRoot(Word);

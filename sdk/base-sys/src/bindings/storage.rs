@@ -1,5 +1,7 @@
 use miden_stdlib_sys::{Felt, Word};
 
+use super::StorageCommitmentRoot;
+
 #[allow(improper_ctypes)]
 #[link(wasm_import_module = "miden:core-import/account@1.0.0")]
 extern "C" {
@@ -13,7 +15,7 @@ extern "C" {
         v1: Felt,
         v2: Felt,
         v3: Felt,
-        ptr: *mut (Word, Word),
+        ptr: *mut (StorageCommitmentRoot, Word),
     );
 
     #[link_name = "get-storage-map-item"]
@@ -37,7 +39,7 @@ extern "C" {
         v1: Felt,
         v2: Felt,
         v3: Felt,
-        ptr: *mut (Word, Word),
+        ptr: *mut (StorageCommitmentRoot, Word),
     );
 }
 
@@ -73,9 +75,9 @@ pub fn get_item(index: u8) -> Word {
 ///
 /// Panics if:
 /// - the index of the item is out of bounds.
-pub fn set_item(index: u8, value: Word) -> (Word, Word) {
+pub fn set_item(index: u8, value: Word) -> (StorageCommitmentRoot, Word) {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(Word, Word)>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
         extern_set_storage_item(
             index.into(),
             value[0],
@@ -101,7 +103,7 @@ pub fn set_item(index: u8, value: Word) -> (Word, Word) {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
-pub fn get_map_item(index: u8, key: Word) -> Word {
+pub fn get_map_item(index: u8, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_get_storage_map_item(
@@ -131,9 +133,9 @@ pub fn get_map_item(index: u8, key: Word) -> Word {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
-pub fn set_map_item(index: u8, key: Word, value: Word) -> (Word, Word) {
+pub fn set_map_item(index: u8, key: Word, value: Word) -> (StorageCommitmentRoot, Word) {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(Word, Word)>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
         extern_set_storage_map_item(
             index.into(),
             key[0],

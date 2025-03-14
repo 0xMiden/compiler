@@ -1,0 +1,23 @@
+[package]
+name = "miden-base-macros"
+description = "Provides proc macro support for Miden rollup SDK"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+
+[dependencies.syn]
+version = "2.0"
+features = ["full", "parsing", "derive", "extra-traits", "printing"]
