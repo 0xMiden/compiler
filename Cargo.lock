@@ -3418,6 +3418,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-hir-eval"
+version = "0.0.7"
+dependencies = [
+ "log",
+ "miden-thiserror",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-dialect-ub",
+ "midenc-hir2",
+ "midenc-session",
+]
+
+[[package]]
 name = "midenc-hir-macros"
 version = "0.0.7"
 dependencies = [

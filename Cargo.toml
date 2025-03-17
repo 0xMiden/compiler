@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "codegen/*",
     "dialects/*",
+    "eval",
     "frontend-wasm2",
     "hir2",
     "hir-macros",

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use super::{OpOperandStorage, StorableEntity, Usable};
+use super::{OpOperandStorage, StorableEntity, Usable, ValueRange};
 use crate::{AttributeValue, BlockOperandRef, BlockRef, OpOperandRange, OpOperandRangeMut};
 
 pub type OpSuccessorStorage = crate::EntityStorage<SuccessorInfo, 0>;
@@ -278,6 +278,11 @@ pub struct SuccessorInfo {
 impl SuccessorInfo {
     pub fn successor(&self) -> BlockRef {
         self.block.borrow().successor()
+    }
+
+    pub fn successor_operands(&self) -> ValueRange<'static, 4> {
+        let owner = self.block.borrow().owner;
+        ValueRange::from(owner.borrow().operands().group(self.operand_group as usize)).into_owned()
     }
 }
 

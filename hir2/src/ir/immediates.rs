@@ -23,6 +23,7 @@ pub enum Immediate {
     F64(f64),
     Felt(Felt),
 }
+
 impl Immediate {
     pub fn ty(&self) -> Type {
         match self {
@@ -122,6 +123,239 @@ impl Immediate {
             Self::U128(i) => Some(i != 0),
             Self::I128(i) => Some(i != 0),
             Self::F64(_) => None,
+        }
+    }
+
+    /// Attempts to convert this value to a u8 regardless of signedness
+    pub fn bitcast_u8(self) -> Option<u8> {
+        match self {
+            Self::I1(b) => Some(b as u8),
+            Self::U8(b) => Some(b),
+            Self::I8(b) => Some(b as u8),
+            Self::U16(b) => u8::try_from(b).ok(),
+            Self::I16(b) => i8::try_from(b).ok().map(|v| v as u8),
+            Self::U32(b) => u8::try_from(b).ok(),
+            Self::I32(b) => i8::try_from(b).ok().map(|v| v as u8),
+            Self::U64(b) => u8::try_from(b).ok(),
+            Self::I64(b) => i8::try_from(b).ok().map(|v| v as u8),
+            Self::Felt(i) => u8::try_from(i.as_int()).ok(),
+            Self::U128(b) if b <= (u8::MAX as u128) => Some(b as u8),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i8::MIN as i128) || b > (i8::MAX as i128) => None,
+            Self::I128(b) => Some(b as u8),
+            Self::F64(f) => FloatToInt::<u8>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a i8 regardless of signedness
+    pub fn bitcast_i8(self) -> Option<i8> {
+        match self {
+            Self::I1(b) => Some(b as i8),
+            Self::U8(b) => Some(b as i8),
+            Self::I8(b) => Some(b),
+            Self::U16(b) => i8::try_from(b as i16).ok(),
+            Self::I16(b) => i8::try_from(b).ok(),
+            Self::U32(b) => i8::try_from(b as i32).ok(),
+            Self::I32(b) => i8::try_from(b).ok(),
+            Self::U64(b) => i8::try_from(b as i64).ok(),
+            Self::I64(b) => i8::try_from(b).ok(),
+            Self::Felt(i) => i8::try_from(i.as_int() as i64).ok(),
+            Self::U128(b) if b <= (u8::MAX as u128) => Some(b as u8 as i8),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i8::MIN as i128) || b > (i8::MAX as i128) => None,
+            Self::I128(b) => Some(b as i8),
+            Self::F64(f) => FloatToInt::<i8>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a u16 regardless of signedness
+    pub fn bitcast_u16(self) -> Option<u16> {
+        match self {
+            Self::I1(b) => Some(b as u16),
+            Self::U8(b) => Some(b as u16),
+            Self::I8(b) => Some(b as u16),
+            Self::U16(b) => Some(b),
+            Self::I16(b) => Some(b as u16),
+            Self::U32(b) => u16::try_from(b).ok(),
+            Self::I32(b) => i16::try_from(b).ok().map(|v| v as u16),
+            Self::U64(b) => u16::try_from(b).ok(),
+            Self::I64(b) => i16::try_from(b).ok().map(|v| v as u16),
+            Self::Felt(i) => u16::try_from(i.as_int()).ok(),
+            Self::U128(b) if b <= (u16::MAX as u128) => Some(b as u16),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i16::MIN as i128) || b > (i16::MAX as i128) => None,
+            Self::I128(b) => Some(b as u16),
+            Self::F64(f) => FloatToInt::<u16>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a i16 regardless of signedness
+    pub fn bitcast_i16(self) -> Option<i16> {
+        match self {
+            Self::I1(b) => Some(b as i16),
+            Self::U8(b) => Some(b as i16),
+            Self::I8(b) => Some(b as i16),
+            Self::U16(b) => Some(b as i16),
+            Self::I16(b) => Some(b),
+            Self::U32(b) => u16::try_from(b).ok().map(|v| v as i16),
+            Self::I32(b) => i16::try_from(b).ok(),
+            Self::U64(b) => u16::try_from(b).ok().map(|v| v as i16),
+            Self::I64(b) => i16::try_from(b).ok(),
+            Self::Felt(i) => u16::try_from(i.as_int()).ok().map(|v| v as i16),
+            Self::U128(b) if b <= (u16::MAX as u128) => Some(b as i16),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i16::MIN as i128) || b > (i16::MAX as i128) => None,
+            Self::I128(b) => Some(b as i16),
+            Self::F64(f) => FloatToInt::<i16>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a u32 regardless of signedness
+    pub fn bitcast_u32(self) -> Option<u32> {
+        match self {
+            Self::I1(b) => Some(b as u32),
+            Self::U8(b) => Some(b as u32),
+            Self::I8(b) => Some(b as u32),
+            Self::U16(b) => Some(b as u32),
+            Self::I16(b) => Some(b as u32),
+            Self::U32(b) => Some(b),
+            Self::I32(b) => Some(b as u32),
+            Self::U64(b) => u32::try_from(b).ok(),
+            Self::I64(b) => i32::try_from(b).ok().map(|v| v as u32),
+            Self::Felt(i) => u32::try_from(i.as_int()).ok(),
+            Self::U128(b) if b <= (u32::MAX as u128) => Some(b as u32),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i32::MIN as i128) || b > (i32::MAX as i128) => None,
+            Self::I128(b) => Some(b as u32),
+            Self::F64(f) => FloatToInt::<u32>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a i32 regardless of signedness
+    pub fn bitcast_i32(self) -> Option<i32> {
+        match self {
+            Self::I1(b) => Some(b as i32),
+            Self::U8(b) => Some(b as i32),
+            Self::I8(b) => Some(b as i32),
+            Self::U16(b) => Some(b as i32),
+            Self::I16(b) => Some(b as i32),
+            Self::U32(b) => Some(b as i32),
+            Self::I32(b) => Some(b),
+            Self::U64(b) => u32::try_from(b).ok().map(|v| v as i32),
+            Self::I64(b) => i32::try_from(b).ok(),
+            Self::Felt(i) => u32::try_from(i.as_int()).ok().map(|v| v as i32),
+            Self::U128(b) if b <= (u32::MAX as u128) => Some(b as i32),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i32::MIN as i128) || b > (i32::MAX as i128) => None,
+            Self::I128(b) => Some(b as i32),
+            Self::F64(f) => FloatToInt::<i32>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a u64 regardless of signedness
+    pub fn bitcast_u64(self) -> Option<u64> {
+        match self {
+            Self::I1(b) => Some(b as u64),
+            Self::U8(b) => Some(b as u64),
+            Self::I8(b) => Some(b as u64),
+            Self::U16(b) => Some(b as u64),
+            Self::I16(b) => Some(b as u64),
+            Self::U32(b) => Some(b as u64),
+            Self::I32(b) => Some(b as u64),
+            Self::U64(b) => Some(b),
+            Self::I64(b) => Some(b as u64),
+            Self::Felt(i) => Some(i.as_int()),
+            Self::U128(b) if b <= (u64::MAX as u128) => Some(b as u64),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i64::MIN as i128) || b > (i64::MAX as i128) => None,
+            Self::I128(b) => Some(b as u64),
+            Self::F64(f) => FloatToInt::<u64>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a i64 regardless of signedness
+    pub fn bitcast_i64(self) -> Option<i64> {
+        match self {
+            Self::I1(b) => Some(b as i64),
+            Self::U8(b) => Some(b as i64),
+            Self::I8(b) => Some(b as i64),
+            Self::U16(b) => Some(b as i64),
+            Self::I16(b) => Some(b as i64),
+            Self::U32(b) => Some(b as i64),
+            Self::I32(b) => Some(b as i64),
+            Self::U64(b) => Some(b as i64),
+            Self::I64(b) => Some(b),
+            Self::Felt(i) => Some(i.as_int() as i64),
+            Self::U128(b) if b <= (u64::MAX as u128) => Some(b as i64),
+            Self::U128(_) => None,
+            Self::I128(b) if b < (i64::MIN as i128) || b > (i64::MAX as i128) => None,
+            Self::I128(b) => Some(b as i64),
+            Self::F64(f) => FloatToInt::<i64>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a u128 regardless of signedness
+    pub fn bitcast_u128(self) -> Option<u128> {
+        match self {
+            Self::I1(b) => Some(b as u128),
+            Self::U8(b) => Some(b as u128),
+            Self::I8(b) => Some(b as u128),
+            Self::U16(b) => Some(b as u128),
+            Self::I16(b) => Some(b as u128),
+            Self::U32(b) => Some(b as u128),
+            Self::I32(b) => Some(b as u128),
+            Self::U64(b) => Some(b as u128),
+            Self::I64(b) => Some(b as u128),
+            Self::Felt(i) => Some(i.as_int() as u128),
+            Self::U128(b) => Some(b),
+            Self::I128(b) => Some(b as u128),
+            Self::F64(f) => FloatToInt::<u128>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a i128 regardless of signedness
+    pub fn bitcast_i128(self) -> Option<i128> {
+        match self {
+            Self::I1(b) => Some(b as i128),
+            Self::U8(b) => Some(b as i128),
+            Self::I8(b) => Some(b as i128),
+            Self::U16(b) => Some(b as i128),
+            Self::I16(b) => Some(b as i128),
+            Self::U32(b) => Some(b as i128),
+            Self::I32(b) => Some(b as i128),
+            Self::U64(b) => Some(b as i128),
+            Self::I64(b) => Some(b as i128),
+            Self::Felt(i) => Some(i.as_int() as i128),
+            Self::U128(b) => Some(b as i128),
+            Self::I128(b) => Some(b),
+            Self::F64(f) => FloatToInt::<i128>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a felt regardless of signedness
+    pub fn bitcast_felt(self) -> Option<Felt> {
+        match self {
+            Self::Felt(value) => Some(value),
+            imm => imm.bitcast_u64().map(Felt::new),
+        }
+    }
+
+    /// Attempts to convert this value to a f64
+    pub fn bitcast_f64(self) -> Option<f64> {
+        match self {
+            Self::I1(b) => Some(f64::from(b as u32)),
+            Self::U8(b) => Some(f64::from(b as u32)),
+            Self::I8(b) => Some(f64::from(b as i32)),
+            Self::U16(b) => Some(f64::from(b as u32)),
+            Self::I16(b) => Some(f64::from(b as i32)),
+            Self::U32(b) => Some(f64::from(b)),
+            Self::I32(b) => Some(f64::from(b)),
+            Self::U64(b) => Some(b as f64),
+            Self::I64(b) => Some(b as f64),
+            Self::Felt(i) => Some(i.as_int() as f64),
+            Self::U128(b) => Some(b as f64),
+            Self::I128(b) => Some(b as f64),
+            Self::F64(f) => Some(f),
         }
     }
 

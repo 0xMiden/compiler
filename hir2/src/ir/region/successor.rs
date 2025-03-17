@@ -6,7 +6,7 @@ use crate::ValueRange;
 
 /// This struct represents the metadata about a [RegionBranchOpInterface] successor, without
 /// borrowing the op or the successor.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum RegionSuccessorInfo {
     /// We're entering the given region, and its successor operands are the block arguments of its
     /// entry block.

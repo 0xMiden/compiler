@@ -105,6 +105,13 @@ impl Operation {
         self.as_trait::<dyn Symbol>()
     }
 
+    /// Get this operation as a [SymbolRef], if this operation implements the trait.
+    #[inline]
+    pub fn as_symbol_ref(&self) -> Option<SymbolRef> {
+        self.as_trait::<dyn Symbol>()
+            .map(|symbol| unsafe { SymbolRef::from_raw(symbol) })
+    }
+
     /// Get this operation as a [SymbolTable], if this operation implements the trait.
     #[inline]
     pub fn as_symbol_table(&self) -> Option<&dyn SymbolTable> {
