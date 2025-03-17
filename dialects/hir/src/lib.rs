@@ -109,7 +109,6 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Assert>();
         info.register_operation::<ops::Assertz>();
         info.register_operation::<ops::AssertEq>();
-        info.register_operation::<ops::AssertEqImm>();
         info.register_operation::<ops::PtrToInt>();
         info.register_operation::<ops::IntToPtr>();
         info.register_operation::<ops::Cast>();

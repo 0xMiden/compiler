@@ -65,7 +65,6 @@ pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
         info.register_operation_trait::<arith::Bor, dyn HirLowering>();
         info.register_operation_trait::<arith::Bxor, dyn HirLowering>();
         info.register_operation_trait::<arith::Shl, dyn HirLowering>();
-        info.register_operation_trait::<arith::ShlImm, dyn HirLowering>();
         info.register_operation_trait::<arith::Shr, dyn HirLowering>();
         info.register_operation_trait::<arith::Ashr, dyn HirLowering>();
         info.register_operation_trait::<arith::Rotl, dyn HirLowering>();
@@ -114,7 +113,6 @@ pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
         info.register_operation_trait::<hir::Assert, dyn HirLowering>();
         info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
         info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
-        info.register_operation_trait::<hir::AssertEqImm, dyn HirLowering>();
         info.register_operation_trait::<hir::PtrToInt, dyn HirLowering>();
         info.register_operation_trait::<hir::IntToPtr, dyn HirLowering>();
         info.register_operation_trait::<hir::Cast, dyn HirLowering>();

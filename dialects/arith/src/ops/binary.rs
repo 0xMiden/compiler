@@ -461,32 +461,6 @@ pub struct Shl {
 infer_return_ty_for_binary_op!(Shl);
 has_no_effects!(Shl);
 
-/// Bitwise shift-left by immediate
-///
-/// Shifts larger than the bitwidth of the value will be wrapped to zero.
-#[operation(
-    dialect = ArithDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
-)]
-pub struct ShlImm {
-    #[operand]
-    lhs: AnyInteger,
-    #[attr]
-    shift: u32,
-    #[result]
-    result: AnyInteger,
-}
-
-has_no_effects!(ShlImm);
-
-impl InferTypeOpInterface for ShlImm {
-    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.lhs().ty().clone();
-        self.result_mut().set_type(ty);
-        Ok(())
-    }
-}
-
 /// Bitwise (logical) shift-right
 ///
 /// Shifts larger than the bitwidth of the value will effectively truncate the value to zero.

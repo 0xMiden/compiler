@@ -59,9 +59,10 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         lhs: ValueRef,
         rhs: Immediate,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEqImm>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::AssertEqImm, _>(span);
-        op_builder(lhs, rhs)
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        let rhs = self.builder_mut().imm(rhs, span);
+        self.assert_eq(lhs, rhs, span)
     }
 
     /// Grow the global heap by `num_pages` pages, in 64kb units.

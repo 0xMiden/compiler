@@ -1152,16 +1152,6 @@ impl HirLowering for hir::AssertEq {
     }
 }
 
-impl HirLowering for hir::AssertEqImm {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let rhs = *self.rhs();
-
-        emitter.emitter().assert_eq_imm(rhs, self.span());
-
-        Ok(())
-    }
-}
-
 impl HirLowering for ub::Unreachable {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // This instruction, if reached, must cause the VM to trap, so we emit an assertion that
@@ -1369,14 +1359,6 @@ impl HirLowering for arith::Bxor {
 impl HirLowering for arith::Shl {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).shl(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for arith::ShlImm {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let rhs = *self.shift();
-        emitter.inst_emitter(self.as_operation()).shl_imm(rhs, self.span());
         Ok(())
     }
 }

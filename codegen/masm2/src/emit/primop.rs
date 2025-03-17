@@ -138,6 +138,7 @@ impl OpEmitter<'_> {
     /// as the provided immediate.
     ///
     /// This operation consumes the input value.
+    #[allow(unused)]
     pub fn assert_eq_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();

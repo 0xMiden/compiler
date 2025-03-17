@@ -145,7 +145,6 @@ impl DialectRegistration for ArithDialect {
         info.register_operation::<ops::Bor>();
         info.register_operation::<ops::Bxor>();
         info.register_operation::<ops::Shl>();
-        info.register_operation::<ops::ShlImm>();
         info.register_operation::<ops::Shr>();
         info.register_operation::<ops::Ashr>();
         info.register_operation::<ops::Rotl>();

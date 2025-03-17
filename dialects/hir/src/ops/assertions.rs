@@ -83,33 +83,3 @@ impl EffectOpInterface<MemoryEffect> for AssertEq {
         EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
     }
 }
-
-#[operation(
-    dialect = HirDialect,
-    implements(OpPrinter, MemoryEffectOpInterface)
-)]
-pub struct AssertEqImm {
-    #[operand]
-    lhs: AnyInteger,
-    #[attr(hidden)]
-    rhs: Immediate,
-}
-
-impl EffectOpInterface<MemoryEffect> for AssertEqImm {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
-impl OpPrinter for AssertEqImm {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        display(self.op.name())
-            + const_text(" ")
-            + display(self.lhs().as_value_ref())
-            + const_text(", ")
-            + display(self.rhs())
-            + const_text(";")
-    }
-}
