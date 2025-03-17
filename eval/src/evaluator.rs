@@ -6,6 +6,7 @@ use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
 
 use midenc_hir2::{
     dialects::builtin::{ComponentId, LocalVariable},
+    formatter::DisplayValues,
     smallvec, CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint,
     RegionRef, Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange,
     ValueRef,
@@ -489,6 +490,8 @@ impl HirEvaluator {
         op: &Operation,
         region: RegionRef,
     ) -> Result<SmallVec<[Value; 1]>, Report> {
+        log::debug!(target: "eval", "evaluating {} of {}", RegionBranchPoint::Child(region), op);
+
         self.ip = Some(op.as_operation_ref());
 
         let mut next_region = Some(region);
@@ -820,6 +823,8 @@ impl HirEvaluator {
     /// want something to evaluate a single operation and handle its control flow effects at the
     /// same time.
     fn eval_op(&mut self, op: &Operation) -> Result<ControlFlowEffect, Report> {
+        use crate::value::MaterializedValue;
+
         self.ip = Some(op.as_operation_ref());
 
         // Ensure the op is evaluatable
@@ -830,6 +835,11 @@ impl HirEvaluator {
                 format!("'{}' does not implement Eval", op.name()),
             ));
         };
+
+        log::debug!(target: "eval", "evaluating '{} {}'", op.name(), DisplayValues::new(ValueRange::<2>::from(op.operands().all()).into_iter().map(|v| MaterializedValue {
+            id: v,
+            value: self.get_value(&v).unwrap(),
+        })));
 
         // Evaluate it
         let effect = evaluatable.eval(self)?;
@@ -846,6 +856,12 @@ impl HirEvaluator {
 
         // Obtain any results this operation produced
         let current_frame = self.current_frame();
+        log::debug!(target: "eval", "  => {}", DisplayValues::new(ValueRange::<2>::from(op.results().all()).into_iter().map(|v| {
+            MaterializedValue {
+                id: v,
+                value: self.get_value(&v).unwrap(),
+            }
+        })));
         for result in ValueRange::<2>::from(op.results().all()) {
             if current_frame.is_defined(&result) {
                 continue;

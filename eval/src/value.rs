@@ -1,4 +1,4 @@
-use midenc_hir2::{Immediate, SourceSpan, Type};
+use midenc_hir2::{Immediate, SourceSpan, Type, ValueRef};
 use midenc_session::diagnostics::{miette, Diagnostic};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -112,5 +112,16 @@ impl core::fmt::Display for Value {
 impl<T: Into<Immediate>> From<T> for Value {
     fn from(value: T) -> Self {
         Self::Immediate(value.into())
+    }
+}
+
+/// A utility type for displaying value assignments in debug tracing
+pub struct MaterializedValue {
+    pub id: ValueRef,
+    pub value: Value,
+}
+impl core::fmt::Display for MaterializedValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} = {}", &self.id, &self.value)
     }
 }

@@ -1,4 +1,5 @@
 use alloc::{
+    boxed::Box,
     format,
     string::{String, ToString},
 };
@@ -9,8 +10,9 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir2::{
-    dialects::builtin, Felt, Immediate, Op, OperationRef, Overflow, RegionBranchPoint, Report,
-    SourceSpan, Spanned, SuccessorInfo, Type, Value as _, ValueRange,
+    dialects::builtin, AttributeValue, Felt, Immediate, Op, OperationRef, Overflow,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned,
+    SuccessorInfo, Type, Value as _, ValueRange,
 };
 use midenc_session::diagnostics::Severity;
 
@@ -253,11 +255,31 @@ impl Eval for scf::IndexSwitch {
 }
 
 impl Eval for scf::Yield {
-    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let arguments = ValueRange::<4>::from(self.yielded()).into_owned();
 
+        // The following uses compiler infrastructure to determine where to yield to without
+        // hardcoding the list of known parent operations here and how to select the successor
+        // region, since that's already been done in the compiler. If this turns out to be a big
+        // perf bottleneck, we can implement something more efficient.
+        let this = self.as_operation().as_trait::<dyn RegionBranchTerminatorOpInterface>().unwrap();
+        let mut operands = SmallVec::<[_; 4]>::with_capacity(self.yielded().len());
+        for yielded in self.yielded().iter() {
+            match evaluator.get_value(&yielded.borrow().as_value_ref())? {
+                Value::Immediate(value) | Value::Poison { value, .. } => {
+                    operands.push(Some(Box::new(value) as Box<dyn AttributeValue>))
+                }
+            }
+        }
+
+        // Because all of the operands are known constants, this should always select a single
+        // successor region
+        let succs = this.get_successor_regions(&operands);
+        assert_eq!(succs.len(), 1);
+        let successor = succs[0].successor();
+
         Ok(ControlFlowEffect::Yield {
-            successor: RegionBranchPoint::Parent,
+            successor,
             arguments,
         })
     }
