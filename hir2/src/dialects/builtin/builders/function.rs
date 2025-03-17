@@ -52,6 +52,13 @@ impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
         block
     }
 
+    pub fn create_block_in_region(&mut self, region: RegionRef) -> BlockRef {
+        let ip = *self.builder.insertion_point();
+        let block = self.builder.create_block(region, None, &[]);
+        self.builder.restore_insertion_point(ip);
+        block
+    }
+
     pub fn detach_block(&mut self, mut block: BlockRef) {
         assert_ne!(
             block,
