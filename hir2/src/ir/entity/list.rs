@@ -1115,8 +1115,11 @@ impl<T> RawEntityRef<T, IntrusiveLink> {
         use intrusive_collections::linked_list::{LinkOps, LinkedListOps};
         unsafe {
             let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
-            let current = self.inner.byte_add(offset).cast();
-            LinkOps.prev(current).map(|link_ptr| {
+            let current = self.inner.byte_add(offset).cast::<IntrusiveLink>();
+            if !current.as_ref().is_linked() {
+                return None;
+            }
+            LinkOps.prev(current.cast()).map(|link_ptr| {
                 let offset = core::mem::offset_of!(IntrusiveLink, link);
                 let link_ptr = link_ptr.byte_sub(offset).cast::<IntrusiveLink>();
                 Self::from_link_ptr(link_ptr)
@@ -1132,8 +1135,11 @@ impl<T> RawEntityRef<T, IntrusiveLink> {
         use intrusive_collections::linked_list::{LinkOps, LinkedListOps};
         unsafe {
             let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
-            let current = self.inner.byte_add(offset).cast();
-            LinkOps.next(current).map(|link_ptr| {
+            let current = self.inner.byte_add(offset).cast::<IntrusiveLink>();
+            if !current.as_ref().is_linked() {
+                return None;
+            }
+            LinkOps.next(current.cast()).map(|link_ptr| {
                 let offset = core::mem::offset_of!(IntrusiveLink, link);
                 let link_ptr = link_ptr.byte_sub(offset).cast::<IntrusiveLink>();
                 Self::from_link_ptr(link_ptr)
