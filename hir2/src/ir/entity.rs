@@ -638,7 +638,7 @@ impl<T: ?Sized + EntityWithId, Metadata> Ord for RawEntityRef<T, Metadata> {
 }
 impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+        self.inner.as_ptr().addr().hash(state);
     }
 }
 impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
