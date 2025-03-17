@@ -5,7 +5,7 @@ use crate::{
     formatter::{Document, PrettyPrint},
     matchers::Matcher,
     traits::BranchOpInterface,
-    AttributeValue, CallableOpInterface, EntityWithId, SuccessorOperands, Value,
+    AttributeValue, EntityWithId, SuccessorOperands, Value,
 };
 
 pub struct OpPrintingFlags {
@@ -190,136 +190,92 @@ struct OperationPrinter<'a> {
 /// Special handling is provided for SingleRegionSingleBlock and CallableOpInterface ops:
 ///
 /// * SingleRegionSingleBlock ops with no operands will have the block header elided
-/// * CallableOpInterface ops with no operands will be printed differently, using their
-///   symbol and signature, as shown below:
-///
-/// <dialect>.<op> @<symbol>(<abi_params..>) -> <abi_results..> #<attr>.. {
-///     ...
-/// }
 impl PrettyPrint for OperationPrinter<'_> {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
 
-        let is_callable_op = self.op.implements::<dyn CallableOpInterface>();
-        let is_symbol = self.op.is_symbol();
-        let no_operands = self.op.operands().is_empty();
-
         let doc = render_operation_results(self.op) + display(self.op.name()) + const_text(" ");
-        let doc = if is_callable_op && is_symbol && no_operands {
-            let name = self.op.as_symbol().unwrap().name();
-            let callable = self.op.as_trait::<dyn CallableOpInterface>().unwrap();
-            let signature = callable.signature();
-            let mut doc = doc + display(signature.visibility) + text(format!(" @{}", name));
-            if let Some(body) = callable.get_callable_region() {
-                let body = body.borrow();
-                let entry = body.entry();
-                doc += entry.arguments().iter().enumerate().fold(
-                    const_text("("),
-                    |doc, (i, param)| {
-                        let param = param.borrow();
-                        let doc = if i > 0 { doc + const_text(", ") } else { doc };
-                        doc + display(param.id()) + const_text(": ") + display(param.ty())
-                    },
-                ) + const_text(")");
-                if !signature.results.is_empty() {
-                    doc += signature.results().iter().enumerate().fold(
-                        const_text(" -> "),
-                        |doc, (i, result)| {
-                            if i > 0 {
-                                doc + const_text(", ") + display(&result.ty)
-                            } else {
-                                doc + display(&result.ty)
-                            }
-                        },
-                    );
-                }
-            } else {
-                doc += signature.render()
-            }
-            doc
-        } else {
-            let doc = if let Some(value) = crate::matchers::constant().matches(self.op) {
-                doc + value.print(self.flags, self.context)
-            } else if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
-                // Print non-successor operands
-                let operands = branch.operands().group(0);
-                let doc = if !operands.is_empty() {
-                    operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
-                        let operand = operand.borrow();
-                        let value = operand.value();
-                        if i > 0 {
-                            doc + const_text(", ") + display(value.id())
-                        } else {
-                            doc + display(value.id())
-                        }
-                    }) + const_text(" ")
-                } else {
-                    doc
-                };
-                // Print successors
-                branch.successors().iter().enumerate().fold(doc, |doc, (succ_index, succ)| {
-                    let doc = if succ_index > 0 {
-                        doc + const_text(", ") + display(succ.block.borrow().successor())
+        let doc = if let Some(value) = crate::matchers::constant().matches(self.op) {
+            doc + value.print(self.flags, self.context)
+        } else if let Some(branch) = self.op.as_trait::<dyn BranchOpInterface>() {
+            // Print non-successor operands
+            let operands = branch.operands().group(0);
+            let doc = if !operands.is_empty() {
+                operands.iter().enumerate().fold(doc, |doc, (i, operand)| {
+                    let operand = operand.borrow();
+                    let value = operand.value();
+                    if i > 0 {
+                        doc + const_text(", ") + display(value.id())
                     } else {
-                        doc + display(succ.block.borrow().successor())
-                    };
-
-                    let operands = branch.get_successor_operands(succ_index);
-                    if !operands.is_empty() {
-                        let doc = doc + const_text("(");
-                        operands.forwarded().iter().enumerate().fold(doc, |doc, (i, operand)| {
-                            if !operand.is_linked() {
-                                if i > 0 {
-                                    doc + const_text(", ") + const_text("<unlinked>")
-                                } else {
-                                    doc + const_text("<unlinked>")
-                                }
-                            } else {
-                                let operand = operand.borrow();
-                                let value = operand.value();
-                                if i > 0 {
-                                    doc + const_text(", ") + display(value.id())
-                                } else {
-                                    doc + display(value.id())
-                                }
-                            }
-                        }) + const_text(")")
-                    } else {
-                        doc
+                        doc + display(value.id())
                     }
-                })
+                }) + const_text(" ")
             } else {
-                doc + render_operation_operands(self.op)
+                doc
             };
-
-            let doc = doc + render_operation_result_types(self.op);
-
-            let attrs = self.op.attrs.iter().fold(Document::Empty, |acc, attr| {
-                // Do not print intrinsic attributes unless explicitly configured
-                if !self.flags.print_intrinsic_attributes && attr.intrinsic {
-                    return acc;
-                }
-                let doc = if let Some(value) = attr.value() {
-                    const_text("#[")
-                        + display(attr.name)
-                        + const_text(" = ")
-                        + value.print(self.flags, self.context)
-                        + const_text("]")
+            // Print successors
+            branch.successors().iter().enumerate().fold(doc, |doc, (succ_index, succ)| {
+                let doc = if succ_index > 0 {
+                    doc + const_text(", ") + display(succ.block.borrow().successor())
                 } else {
-                    text(format!("#[{}]", &attr.name))
+                    doc + display(succ.block.borrow().successor())
                 };
-                if acc.is_empty() {
-                    doc
-                } else {
-                    acc + const_text(" ") + doc
-                }
-            });
 
-            if attrs.is_empty() {
+                let operands = branch.get_successor_operands(succ_index);
+                if !operands.is_empty() {
+                    let doc = doc + const_text("(");
+                    operands.forwarded().iter().enumerate().fold(doc, |doc, (i, operand)| {
+                        if !operand.is_linked() {
+                            if i > 0 {
+                                doc + const_text(", ") + const_text("<unlinked>")
+                            } else {
+                                doc + const_text("<unlinked>")
+                            }
+                        } else {
+                            let operand = operand.borrow();
+                            let value = operand.value();
+                            if i > 0 {
+                                doc + const_text(", ") + display(value.id())
+                            } else {
+                                doc + display(value.id())
+                            }
+                        }
+                    }) + const_text(")")
+                } else {
+                    doc
+                }
+            })
+        } else {
+            doc + render_operation_operands(self.op)
+        };
+
+        let doc = doc + render_operation_result_types(self.op);
+
+        let attrs = self.op.attrs.iter().fold(Document::Empty, |acc, attr| {
+            // Do not print intrinsic attributes unless explicitly configured
+            if !self.flags.print_intrinsic_attributes && attr.intrinsic {
+                return acc;
+            }
+            let doc = if let Some(value) = attr.value() {
+                const_text("#[")
+                    + display(attr.name)
+                    + const_text(" = ")
+                    + value.print(self.flags, self.context)
+                    + const_text("]")
+            } else {
+                text(format!("#[{}]", &attr.name))
+            };
+            if acc.is_empty() {
                 doc
             } else {
-                doc + const_text(" ") + attrs
+                acc + const_text(" ") + doc
             }
+        });
+
+        let doc = if attrs.is_empty() {
+            doc
+        } else {
+            doc + const_text(" ") + attrs
         };
 
         if self.op.has_regions() {

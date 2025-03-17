@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @lt_felt {
-        builtin.function public @entrypoint(v0: felt, v1: felt) -> i32 {
+        public builtin.function @entrypoint(v0: felt, v1: felt) -> i32 {
         ^block4(v0: felt, v1: felt):
             v5 = arith.constant 0 : i32;
             v3 = arith.lt v1, v0 : i1;

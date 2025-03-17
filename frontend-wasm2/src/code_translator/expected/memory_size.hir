@@ -1,4 +1,4 @@
-builtin.function public @test_wrapper() {
+public builtin.function @test_wrapper() {
 ^block4:
     v0 = hir.mem_size  : u32;
     cf.br ^block5;

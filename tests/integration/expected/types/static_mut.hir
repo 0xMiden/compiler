@@ -1,11 +1,11 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4 {
-        builtin.function public @global_var_update() {
+        public builtin.function @global_var_update() {
         ^block6:
             builtin.ret ;
         };
 
-        builtin.function public @__main() -> i32 {
+        public builtin.function @__main() -> i32 {
         ^block8:
             v44 = ub.poison i32 : i32;
             v17 = arith.constant 0 : i32;
@@ -30,7 +30,7 @@ builtin.component root_ns:root@1.0.0 {
                     v43 = arith.constant 1 : u32;
                     v38 = arith.constant 0 : u32;
                     scf.yield v32, v30, v38, v43;
-                } {
+                } else {
                 ^block20:
                     v66 = arith.constant 0 : u32;
                     v67 = arith.constant 1 : u32;
@@ -39,7 +39,7 @@ builtin.component root_ns:root@1.0.0 {
                 };
                 v61 = arith.trunc v65 : i1;
                 scf.condition v61, v62, v63, v30;
-            } {
+            } do {
             ^block19(v58: i32, v59: i32, v60: i32):
                 scf.yield v58, v59, v60;
             };

@@ -7,7 +7,8 @@ use crate::{
     traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
     AttrPrinter, BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter,
     OpPrintingFlags, Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol,
-    SymbolName, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Visibility,
+    SymbolName, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, ValueRef,
+    Visibility,
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
@@ -77,7 +78,8 @@ impl AttrPrinter for LocalVariable {
         UsableSymbol,
         Symbol,
         CallableOpInterface,
-        RegionKindInterface
+        RegionKindInterface,
+        OpPrinter
     )
 )]
 pub struct Function {
@@ -93,6 +95,92 @@ pub struct Function {
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
+}
+
+impl OpPrinter for Function {
+    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let signature = self.signature();
+        let prelude = display(signature.visibility)
+            + const_text(" ")
+            + display(self.as_operation().name())
+            + text(format!(" @{}", self.name().as_str()));
+        let arglist = if self.body().is_empty() {
+            // Declaration
+            signature.params().iter().enumerate().fold(const_text("("), |doc, (i, param)| {
+                let doc = if i > 0 { doc + const_text(", ") } else { doc };
+                let mut param_attrs = Document::Empty;
+                match param.purpose {
+                    crate::ArgumentPurpose::Default => (),
+                    crate::ArgumentPurpose::StructReturn => {
+                        param_attrs += const_text("sret ");
+                    }
+                }
+                match param.extension {
+                    crate::ArgumentExtension::None => (),
+                    crate::ArgumentExtension::Zext => {
+                        param_attrs += const_text("zext ");
+                    }
+                    crate::ArgumentExtension::Sext => {
+                        param_attrs += const_text("sext ");
+                    }
+                }
+                doc + display(&param.ty)
+            })
+        } else {
+            let body = self.body();
+            let entry = body.entry();
+            entry.arguments().iter().zip(signature.params().iter()).enumerate().fold(
+                const_text("("),
+                |doc, (i, (entry_arg, param))| {
+                    let doc = if i > 0 { doc + const_text(", ") } else { doc };
+                    let mut param_attrs = Document::Empty;
+                    match param.purpose {
+                        crate::ArgumentPurpose::Default => (),
+                        crate::ArgumentPurpose::StructReturn => {
+                            param_attrs += const_text("sret ");
+                        }
+                    }
+                    match param.extension {
+                        crate::ArgumentExtension::None => (),
+                        crate::ArgumentExtension::Zext => {
+                            param_attrs += const_text("zext ");
+                        }
+                        crate::ArgumentExtension::Sext => {
+                            param_attrs += const_text("sext ");
+                        }
+                    }
+                    doc + display(*entry_arg as ValueRef) + const_text(": ") + display(&param.ty)
+                },
+            ) + const_text(")")
+        };
+
+        let results =
+            signature
+                .results()
+                .iter()
+                .enumerate()
+                .fold(Document::Empty, |doc, (i, result)| {
+                    if i > 0 {
+                        doc + const_text(", ") + display(&result.ty)
+                    } else {
+                        doc + display(&result.ty)
+                    }
+                });
+        let results = if results.is_empty() {
+            results
+        } else {
+            const_text(" -> ") + results
+        };
+
+        let signature = prelude + arglist + results;
+        if self.body().is_empty() {
+            signature + const_text(";")
+        } else {
+            signature + const_text(" ") + self.body().print(flags) + const_text(";")
+        }
+    }
 }
 
 /// Builders

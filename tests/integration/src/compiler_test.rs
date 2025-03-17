@@ -898,6 +898,11 @@ impl CompilerTest {
         self.artifact_name.as_ref()
     }
 
+    /// Return the entrypoint for this test, if specified
+    pub fn entrypoint(&self) -> Option<FunctionIdent> {
+        self.entrypoint
+    }
+
     /// Compile the Rust project using cargo-miden
     pub fn rust_source_cargo_miden(
         cargo_project_folder: impl AsRef<Path>,
@@ -1188,6 +1193,7 @@ fn dummy_context(flags: &[&str]) -> Rc<Context> {
     let session = dummy_session(flags);
     let context = Rc::new(Context::new(session));
     midenc_codegen_masm2::register_dialect_hooks(&context);
+    midenc_hir_eval::register_dialect_hooks(&context);
     context
 }
 
@@ -1204,6 +1210,7 @@ where
     let session = default_session(inputs, argv);
     let context = Rc::new(Context::new(session));
     midenc_codegen_masm2::register_dialect_hooks(&context);
+    midenc_hir_eval::register_dialect_hooks(&context);
     context
 }
 

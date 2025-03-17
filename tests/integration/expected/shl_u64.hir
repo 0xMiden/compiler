@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_2a329af439c3fda4a420516309900eb5dee52a3d62676c5dfee856e4056b3fa5 {
-        builtin.function public @entrypoint(v0: i64, v1: i64) -> i64 {
+        public builtin.function @entrypoint(v0: i64, v1: i64) -> i64 {
         ^block6(v0: i64, v1: i64):
             v3 = hir.cast v1 : u32;
             v4 = arith.shl v0, v3 : i64;

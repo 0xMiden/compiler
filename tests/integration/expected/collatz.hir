@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @collatz {
-        builtin.function public @entrypoint(v0: i32) -> i32 {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
             v37 = ub.poison i32 : i32;
             v2 = arith.constant 0 : i32;
@@ -32,7 +32,7 @@ builtin.component root_ns:root@1.0.0 {
                     v25 = arith.neq v23, v65 : i1;
                     v26 = cf.select v25, v16, v21 : i32;
                     scf.yield v26, v28, v31, v62;
-                } {
+                } else {
                 ^block16:
                     v59 = arith.constant 0 : u32;
                     v60 = arith.constant 1 : u32;
@@ -41,7 +41,7 @@ builtin.component root_ns:root@1.0.0 {
                 };
                 v54 = arith.trunc v58 : i1;
                 scf.condition v54, v55, v56, v12;
-            } {
+            } do {
             ^block15(v51: i32, v52: i32, v53: i32):
                 scf.yield v51, v52, v53;
             };

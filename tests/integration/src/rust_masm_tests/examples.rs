@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
 use midenc_frontend_wasm2::WasmTranslationConfig;
-use midenc_hir2::Felt;
+use midenc_hir2::{Felt, Immediate, Op, SymbolTable};
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -139,11 +139,127 @@ fn is_prime() {
     test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
+    let hir = test.hir();
+
+    println!("{}", hir.borrow().as_operation());
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    TestRunner::new(Config::with_cases(4))
+    TestRunner::new(Config::with_cases(40))
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
+
+            // Test the IR
+            let mut evaluator =
+                midenc_hir_eval::HirEvaluator::new(hir.borrow().as_operation().context_rc());
+            let op = hir
+                .borrow()
+                .symbol_manager()
+                .lookup_symbol_ref(
+                    &midenc_hir2::SymbolPath::new([
+                        midenc_hir2::SymbolNameComponent::Component("is_prime".into()),
+                        midenc_hir2::SymbolNameComponent::Leaf("entrypoint".into()),
+                    ])
+                    .unwrap(),
+                )
+                .unwrap();
+            let result = evaluator
+                .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
+                .unwrap_or_else(|err| panic!("{err}"));
+            let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
+                //return Err(TestCaseError::fail(format!(
+                panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
+                //)));
+            };
+            prop_assert_eq!(rust_out, result == 1);
+
+            /*
+            let mut args = Vec::<Felt>::default();
+            PushToStack::try_push(&a, &mut args);
+
+            let exec = Executor::for_package(&package, args, &test.session)
+                .map_err(|err| TestCaseError::fail(err.to_string()))?;
+            let output: bool = exec.execute_into(&package.unwrap_program(), &test.session);
+            dbg!(output);
+            prop_assert_eq!(rust_out, output);
+             */
+            Ok(())
+        })
+        .unwrap_or_else(|err| {
+            panic!("{err}");
+        });
+}
+
+#[test]
+fn nested_loop_early_exit() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    fn expected(n: u32) -> bool {
+        let mut i = 2;
+        while i < n {
+            if n % i == 0 {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+
+    let mut test = CompilerTest::rust_fn_body(
+        "\
+(n: u32) -> bool {
+    let mut i = 2;
+    while i < n {
+        if n % i == 0 {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}",
+        [],
+    );
+    let artifact_name = test.artifact_name().to_string();
+    let entrypoint = test.entrypoint().unwrap();
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+    let hir = test.hir();
+
+    println!("{}", hir.borrow().as_operation());
+
+    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
+    TestRunner::new(Config::with_cases(40))
+        .run(&(1u32..30), move |a| {
+            let rust_out = expected(a);
+
+            // Test the IR
+            let mut evaluator =
+                midenc_hir_eval::HirEvaluator::new(hir.borrow().as_operation().context_rc());
+            let op = hir
+                .borrow()
+                .symbol_manager()
+                .lookup_symbol_ref(
+                    &midenc_hir2::SymbolPath::new([
+                        midenc_hir2::SymbolNameComponent::Component(entrypoint.module.name),
+                        midenc_hir2::SymbolNameComponent::Leaf(entrypoint.function.name),
+                    ])
+                    .unwrap(),
+                )
+                .unwrap();
+            let result = evaluator
+                .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
+                .unwrap_or_else(|err| panic!("{err}"));
+            let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
+                //return Err(TestCaseError::fail(format!(
+                panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
+                //)));
+            };
+            prop_assert_eq!(rust_out, result == 1);
+
             let mut args = Vec::<Felt>::default();
             PushToStack::try_push(&a, &mut args);
 

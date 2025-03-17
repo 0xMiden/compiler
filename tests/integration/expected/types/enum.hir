@@ -1,27 +1,30 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824 {
-        builtin.function public @match_enum(v0: i32, v1: i32, v2: i32) -> i32 {
+        public builtin.function @match_enum(v0: i32, v1: i32, v2: i32) -> i32 {
         ^block6(v0: i32, v1: i32, v2: i32):
             v4 = arith.constant 255 : i32;
             v5 = arith.band v2, v4 : i32;
             v6 = hir.cast v5 : u32;
-            v27 = scf.index_switch v6 : i32 #[cases = [1, 2]] {
-            ^block10:
-                v7 = arith.add v1, v0 : i32 #[overflow = wrapping];
-                scf.yield v7;
-            } {
+            v27 = scf.index_switch v6 : i32 
+            case 1 {
             ^block9:
                 v8 = arith.sub v0, v1 : i32 #[overflow = wrapping];
                 scf.yield v8;
-            } {
+            }
+            case 2 {
             ^block8:
                 v9 = arith.mul v1, v0 : i32 #[overflow = wrapping];
                 scf.yield v9;
+            }
+            default {
+            ^block10:
+                v7 = arith.add v1, v0 : i32 #[overflow = wrapping];
+                scf.yield v7;
             };
             builtin.ret v27;
         };
 
-        builtin.function public @__main() -> i32 {
+        public builtin.function @__main() -> i32 {
         ^block11:
             v13 = arith.constant 0 : i32;
             v12 = arith.constant 5 : i32;

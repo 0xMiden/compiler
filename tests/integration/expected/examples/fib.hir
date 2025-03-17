@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @fibonacci {
-        builtin.function public @entrypoint(v0: i32) -> i32 {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
             v22 = ub.poison i32 : i32;
             v2 = arith.constant 0 : i32;
@@ -17,7 +17,7 @@ builtin.component root_ns:root@1.0.0 {
                     v12 = arith.add v7, v11 : i32 #[overflow = wrapping];
                     v13 = arith.add v10, v6 : i32 #[overflow = wrapping];
                     scf.yield v13, v12, v6, v15, v21;
-                } {
+                } else {
                 ^block16:
                     v50 = arith.constant 0 : u32;
                     v51 = arith.constant 1 : u32;
@@ -26,7 +26,7 @@ builtin.component root_ns:root@1.0.0 {
                 };
                 v44 = arith.trunc v49 : i1;
                 scf.condition v44, v45, v46, v47, v10;
-            } {
+            } do {
             ^block15(v40: i32, v41: i32, v42: i32, v43: i32):
                 scf.yield v40, v41, v42, v43;
             };

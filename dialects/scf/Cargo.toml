@@ -29,3 +29,4 @@ smallvec.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.0"
+expect-test.workspace = true

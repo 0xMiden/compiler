@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @is_prime {
-        builtin.function public @entrypoint(v0: i32) -> i32 {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
             v2 = arith.constant 0 : i32;
             v96 = arith.constant 2 : u32;
@@ -15,7 +15,7 @@ builtin.component root_ns:root@1.0.0 {
                 v95 = ub.poison i32 : i32;
                 v306 = arith.constant 0 : i32;
                 scf.yield v306, v95, v89;
-            } {
+            } else {
             ^block7:
                 v305 = arith.constant 0 : i32;
                 v98 = arith.constant 4 : u32;
@@ -31,7 +31,7 @@ builtin.component root_ns:root@1.0.0 {
                     v304 = ub.poison i32 : i32;
                     v11 = arith.constant 1 : i32;
                     scf.yield v11, v304, v304, v107, v303;
-                } {
+                } else {
                 ^block10:
                     v300 = arith.constant 0 : i32;
                     v301 = arith.constant 0 : i32;
@@ -48,7 +48,7 @@ builtin.component root_ns:root@1.0.0 {
                         v298 = ub.poison i32 : i32;
                         v299 = arith.constant 0 : i32;
                         scf.yield v298, v299, v298, v297, v94;
-                    } {
+                    } else {
                     ^block11:
                         v295 = arith.constant 0 : i32;
                         v296 = arith.constant 0 : i32;
@@ -67,7 +67,7 @@ builtin.component root_ns:root@1.0.0 {
                             v293 = ub.poison i32 : i32;
                             v294 = arith.constant 0 : i32;
                             scf.yield v294, v293, v293, v292, v291;
-                        } {
+                        } else {
                         ^block12:
                             v289 = ub.poison u32 : u32;
                             v290 = ub.poison i32 : i32;
@@ -88,7 +88,7 @@ builtin.component root_ns:root@1.0.0 {
                                     v99 = arith.constant 5 : u32;
                                     v287 = ub.poison i32 : i32;
                                     scf.yield v287, v287, v99, v286, v48;
-                                } {
+                                } else {
                                 ^block15:
                                     v284 = arith.constant 0 : i32;
                                     v285 = arith.constant 0 : i32;
@@ -102,7 +102,7 @@ builtin.component root_ns:root@1.0.0 {
                                         v282 = arith.constant 4 : u32;
                                         v283 = ub.poison i32 : i32;
                                         scf.yield v283, v283, v282, v281, v48;
-                                    } {
+                                    } else {
                                     ^block16:
                                         v279 = arith.constant 0 : i32;
                                         v280 = arith.constant 0 : i32;
@@ -120,7 +120,7 @@ builtin.component root_ns:root@1.0.0 {
                                             v277 = arith.constant 0 : u32;
                                             v278 = arith.constant 3 : u32;
                                             scf.yield v276, v276, v278, v277, v276;
-                                        } {
+                                        } else {
                                         ^block17:
                                             v3 = arith.constant 2 : i32;
                                             v68 = arith.add v41, v3 : i32 #[overflow = wrapping];
@@ -136,7 +136,7 @@ builtin.component root_ns:root@1.0.0 {
                                                 v272 = arith.constant 0 : u32;
                                                 v273 = arith.constant 2 : u32;
                                                 scf.yield v271, v271, v273, v272, v271;
-                                            } {
+                                            } else {
                                             ^block18:
                                                 v270 = arith.constant 0 : i32;
                                                 v78 = hir.bitcast v68 : u32;
@@ -152,7 +152,7 @@ builtin.component root_ns:root@1.0.0 {
                                                     v12 = arith.constant 4 : i32;
                                                     v76 = arith.add v68, v12 : i32 #[overflow = wrapping];
                                                     scf.yield v76, v43, v269, v268, v267;
-                                                } {
+                                                } else {
                                                 ^block55:
                                                     v264 = ub.poison i32 : i32;
                                                     v265 = arith.constant 0 : u32;
@@ -169,49 +169,56 @@ builtin.component root_ns:root@1.0.0 {
                                 };
                                 v124 = arith.trunc v201 : i1;
                                 scf.condition v124, v198, v199, v202, v200;
-                            } {
+                            } do {
                             ^block34(v120: i32, v121: i32, v122: i32, v123: u32):
                                 scf.yield v120, v121, v122, v123;
                             };
-                            v182, v183, v184, v185, v186, v187 = scf.index_switch v115 : i32, i32, i32, u32, u32, u32 #[cases = [1, 2, 3, 4]] {
-                            ^block24:
-                                v261 = arith.constant 0 : u32;
-                                v262 = ub.poison u32 : u32;
-                                v263 = ub.poison i32 : i32;
-                                scf.yield v114, v263, v263, v262, v261, v261;
-                            } {
+                            v182, v183, v184, v185, v186, v187 = scf.index_switch v115 : i32, i32, i32, u32, u32, u32 
+                            case 1 {
                             ^block19:
                                 v258 = arith.constant 0 : u32;
                                 v259 = ub.poison u32 : u32;
                                 v260 = ub.poison i32 : i32;
                                 scf.yield v114, v260, v260, v259, v258, v258;
-                            } {
+                            }
+                            case 2 {
                             ^block21:
                                 v255 = arith.constant 1 : u32;
                                 v256 = ub.poison u32 : u32;
                                 v257 = ub.poison i32 : i32;
                                 scf.yield v257, v257, v257, v256, v256, v255;
-                            } {
+                            }
+                            case 3 {
                             ^block22:
                                 v252 = arith.constant 0 : u32;
                                 v253 = ub.poison u32 : u32;
                                 v254 = ub.poison i32 : i32;
                                 scf.yield v114, v254, v254, v253, v252, v252;
-                            } {
+                            }
+                            case 4 {
                             ^block23:
                                 v249 = arith.constant 1 : u32;
                                 v250 = ub.poison u32 : u32;
                                 v251 = ub.poison i32 : i32;
                                 scf.yield v251, v251, v251, v250, v250, v249;
+                            }
+                            default {
+                            ^block24:
+                                v261 = arith.constant 0 : u32;
+                                v262 = ub.poison u32 : u32;
+                                v263 = ub.poison i32 : i32;
+                                scf.yield v114, v263, v263, v262, v261, v261;
                             };
-                            v188, v189, v190, v191, v192 = scf.index_switch v187 : i32, i32, i32, u32, u32 #[cases = [0]] {
+                            v188, v189, v190, v191, v192 = scf.index_switch v187 : i32, i32, i32, u32, u32 
+                            case 0 {
+                            ^block46:
+                                scf.yield v182, v183, v184, v185, v186;
+                            }
+                            default {
                             ^block8:
                                 v247 = arith.constant 1 : u32;
                                 v248 = ub.poison i32 : i32;
                                 scf.yield v248, v248, v248, v247, v247;
-                            } {
-                            ^block46:
-                                scf.yield v182, v183, v184, v185, v186;
                             };
                             scf.yield v188, v189, v190, v191, v192;
                         };
@@ -219,30 +226,35 @@ builtin.component root_ns:root@1.0.0 {
                     };
                     scf.yield v161, v162, v163, v164, v165;
                 };
-                v153, v154, v155 = scf.index_switch v152 : i32, i32, u32 #[cases = [0]] {
-                ^block42:
-                    scf.yield v149, v150, v151;
-                } {
+                v153, v154, v155 = scf.index_switch v152 : i32, i32, u32 
+                case 0 {
                 ^block9:
                     v245 = arith.constant 2 : u32;
                     v246 = ub.poison i32 : i32;
                     scf.yield v246, v148, v245;
+                }
+                default {
+                ^block42:
+                    scf.yield v149, v150, v151;
                 };
                 scf.yield v153, v154, v155;
             };
-            v136, v137 = scf.index_switch v133 : i32, u32 #[cases = [0, 1]] {
-            ^block38:
-                v244 = arith.constant 0 : u32;
-                scf.yield v132, v244;
-            } {
+            v136, v137 = scf.index_switch v133 : i32, u32 
+            case 0 {
             ^block5:
                 v243 = arith.constant 0 : u32;
                 scf.yield v131, v243;
-            } {
+            }
+            case 1 {
             ^block39:
                 v241 = arith.constant 1 : u32;
                 v242 = ub.poison i32 : i32;
                 scf.yield v242, v241;
+            }
+            default {
+            ^block38:
+                v244 = arith.constant 0 : u32;
+                scf.yield v132, v244;
             };
             v240 = arith.constant 0 : u32;
             v239 = arith.eq v137, v240 : i1;

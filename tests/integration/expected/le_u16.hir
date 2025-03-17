@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_aaaa272f39ec3f234fd119869db2d6791ce4b1e8d3f284fe6c212db33f480554 {
-        builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
             v4 = hir.bitcast v1 : u32;
             v3 = hir.bitcast v0 : u32;

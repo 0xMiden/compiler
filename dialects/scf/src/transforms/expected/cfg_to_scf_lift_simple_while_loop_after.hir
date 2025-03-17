@@ -1,0 +1,27 @@
+public builtin.function @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v15 = ub.poison u32 : u32;
+    v14 = arith.constant 1 : u32;
+    v9 = arith.constant 0 : u32;
+    v3 = arith.constant 0 : u32;
+    v4 = arith.constant 1 : u32;
+    v23, v24, v25 = scf.while v0, v3, v15 : u32, u32, u32 {
+    ^block1(v1: u32, v2: u32, v19: u32):
+        v5 = arith.eq v1, v3 : i1;
+        v33, v34, v35, v36 = scf.if v5 : u32, u32, u32, u32 {
+        ^block10:
+            scf.yield v15, v15, v14, v9;
+        } else {
+        ^block3:
+            v6 = arith.sub v1, v4 : u32 #[overflow = unchecked];
+            v7 = arith.incr v2 : u32;
+            scf.yield v6, v7, v9, v14;
+        };
+        v32 = arith.trunc v36 : i1;
+        scf.condition v32, v33, v34, v2;
+    } do {
+    ^block9(v29: u32, v30: u32, v31: u32):
+        scf.yield v29, v30, v31;
+    };
+    builtin.ret v25;
+};

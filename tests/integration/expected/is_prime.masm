@@ -248,6 +248,7 @@ export.entrypoint
                         u32lt
                         if.true
 
+                            drop
                             eq.1
                             if.true
 
@@ -283,6 +284,7 @@ export.entrypoint
                             u32lte
                             if.true
 
+                                drop
                                 eq.3
                                 if.true
 
@@ -313,6 +315,7 @@ export.entrypoint
                                 end
                             else
 
+                                drop
                                 push.0
                                 push.3735929054
                                 push.3735929054
@@ -328,12 +331,13 @@ export.entrypoint
                         eq.0
                         if.true
 
-                            nop
+                            drop
                         else
 
                             push.1
-                            movdn.5
+                            movdn.6
                             dropw
+                            drop
                             drop
                             push.3735929054
                             dup.0
@@ -352,6 +356,7 @@ export.entrypoint
             eq.0
             if.true
 
+                drop
                 movdn.3
                 drop
                 drop
@@ -363,6 +368,7 @@ export.entrypoint
             else
 
                 drop
+                drop
             end
         end
         movup.2
@@ -371,6 +377,7 @@ export.entrypoint
         u32lte
         if.true
 
+            drop
             eq.0
             if.true
 
@@ -388,6 +395,7 @@ export.entrypoint
             end
         else
 
+            drop
             drop
             push.0
             swap.1

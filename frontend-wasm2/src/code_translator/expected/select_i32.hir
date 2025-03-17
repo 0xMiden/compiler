@@ -1,4 +1,4 @@
-builtin.function public @test_wrapper() {
+public builtin.function @test_wrapper() {
 ^block4:
     v0 = arith.constant 3 : i64;
     v1 = arith.constant 7 : i64;

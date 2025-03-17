@@ -108,7 +108,7 @@ impl BranchOpInterface for CondBr {
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface)
+    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Switch {
     #[operand]
@@ -117,6 +117,57 @@ pub struct Switch {
     fallback: Successor,
     #[successors(keyed)]
     cases: SwitchCase,
+}
+
+impl OpPrinter for Switch {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let header =
+            display(self.op.name()) + const_text(" ") + display(self.selector().as_value_ref());
+        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
+            let key = case.key().unwrap();
+            let dest = case.block();
+            let operands = case.arguments();
+            let args = if operands.is_empty() {
+                Document::Empty
+            } else {
+                operands.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
+                    if i > 0 {
+                        acc + const_text(", ") + display(o.borrow().as_value_ref())
+                    } else {
+                        acc + display(o.borrow().as_value_ref())
+                    }
+                }) + const_text(")")
+            };
+            acc + nl()
+                + const_text("case ")
+                + display(*key)
+                + const_text(" => ")
+                + display(dest)
+                + args
+        });
+        let fallback = self.fallback();
+        let fallback_dest = fallback.successor();
+        let fallback_args = if fallback.arguments.is_empty() {
+            Document::Empty
+        } else {
+            fallback.arguments.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
+                if i > 0 {
+                    acc + const_text(", ") + display(o.borrow().as_value_ref())
+                } else {
+                    acc + display(o.borrow().as_value_ref())
+                }
+            }) + const_text(")")
+        };
+        let fallback = nl() + const_text("default => ") + display(fallback_dest) + fallback_args;
+        header
+            + const_text("{")
+            + indent(4, cases + fallback)
+            + nl()
+            + const_text("}")
+            + const_text(";")
+    }
 }
 
 impl Canonicalizable for Switch {

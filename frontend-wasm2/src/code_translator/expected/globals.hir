@@ -1,4 +1,4 @@
-builtin.function public @test_wrapper() {
+public builtin.function @test_wrapper() {
 ^block4:
     v0 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/noname/MyGlobalVal];
     v1 = hir.bitcast v0 : (ptr i32);

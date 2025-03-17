@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_8adee8c8a1d96eeb275124845b60cbff14dd0510589dd0280f2e41e39371d112 {
-        builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
             v3 = arith.bxor v1, v0 : i32;
             builtin.ret v3;

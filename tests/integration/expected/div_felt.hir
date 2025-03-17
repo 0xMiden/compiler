@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @div_felt {
-        builtin.function public @entrypoint(v0: felt, v1: felt) -> felt {
+        public builtin.function @entrypoint(v0: felt, v1: felt) -> felt {
         ^block4(v0: felt, v1: felt):
             v3 = arith.div v0, v1 : felt;
             builtin.ret v3;

@@ -18,7 +18,7 @@ use crate::ScfDialect;
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface)
+    implements(RegionBranchOpInterface, OpPrinter)
 )]
 pub struct If {
     #[operand]
@@ -27,6 +27,31 @@ pub struct If {
     then_body: Region,
     #[region]
     else_body: Region,
+}
+
+impl OpPrinter for If {
+    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let result_types = print::render_operation_result_types(self.as_operation());
+        let result_types = if result_types.is_empty() {
+            result_types
+        } else {
+            result_types + const_text(" ")
+        };
+        let header = print::render_operation_results(self.as_operation())
+            + display(self.op.name())
+            + const_text(" ")
+            + display(self.condition().as_value_ref())
+            + result_types;
+        let body = if self.else_body().is_empty() {
+            self.then_body().print(flags) + const_text(";")
+        } else {
+            let then_body = self.then_body().print(flags);
+            then_body + const_text(" else ") + self.else_body().print(flags) + const_text(";")
+        };
+        header + body
+    }
 }
 
 impl If {
@@ -155,7 +180,7 @@ impl RegionBranchOpInterface for If {
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface, LoopLikeOpInterface)
+    implements(RegionBranchOpInterface, LoopLikeOpInterface, OpPrinter)
 )]
 pub struct While {
     #[operands]
@@ -164,6 +189,27 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
+}
+
+impl OpPrinter for While {
+    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let result_types = print::render_operation_result_types(self.as_operation());
+        let result_types = if result_types.is_empty() {
+            result_types
+        } else {
+            result_types + const_text(" ")
+        };
+        let results = print::render_operation_results(self.as_operation());
+        let operands = print::render_operation_operands(self.as_operation());
+        let header = results + display(self.op.name()) + const_text(" ") + operands + result_types;
+        let body = self.before().print(flags)
+            + const_text(" do ")
+            + self.after().print(flags)
+            + const_text(";");
+        header + body
+    }
 }
 
 impl While {
@@ -336,7 +382,7 @@ impl RegionBranchOpInterface for While {
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface)
+    implements(RegionBranchOpInterface, OpPrinter)
 )]
 pub struct IndexSwitch {
     #[operand]
@@ -345,6 +391,37 @@ pub struct IndexSwitch {
     cases: ArrayAttr<u32>,
     #[region]
     default_region: Region,
+}
+
+impl OpPrinter for IndexSwitch {
+    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let result_types = print::render_operation_result_types(self.as_operation());
+        let result_types = if result_types.is_empty() {
+            result_types
+        } else {
+            result_types + const_text(" ")
+        };
+        let results = print::render_operation_results(self.as_operation());
+        let header = results
+            + display(self.op.name())
+            + const_text(" ")
+            + display(self.selector().as_value_ref())
+            + result_types;
+        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
+            let index = self.get_case_index_for_selector(*case).unwrap();
+            let region = self.get_case_region(index);
+            acc + nl()
+                + const_text("case ")
+                + display(*case)
+                + const_text(" ")
+                + region.borrow().print(flags)
+        });
+        let fallback =
+            nl() + const_text("default ") + self.default_region().print(flags) + const_text(";");
+        header + cases + fallback
+    }
 }
 
 impl IndexSwitch {
