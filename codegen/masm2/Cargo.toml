@@ -36,5 +36,6 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+expect-test.workspace = true
 proptest.workspace = true
 env_logger.workspace = true

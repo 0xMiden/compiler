@@ -1,0 +1,27 @@
+
+    dup.0
+    dup.0
+    push.2
+    u32lte
+    if.true
+
+        eq.1
+        if.true
+
+            drop
+            drop
+            push.1
+        else
+
+            drop
+            drop
+            push.2
+        end
+    else
+
+        movup.2
+        mul
+        u32assert
+        swap.1
+        drop
+    end

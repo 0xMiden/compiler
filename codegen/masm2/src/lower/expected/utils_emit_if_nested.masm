@@ -1,0 +1,25 @@
+
+    dup.1
+    dup.1
+    eq
+    if.true
+
+        drop
+        drop
+        push.1
+    else
+
+        dup.1
+        dup.1
+        u32lt
+        if.true
+
+            drop
+            drop
+            push.2
+        else
+
+            mul
+            u32assert
+        end
+    end

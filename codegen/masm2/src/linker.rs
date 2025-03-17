@@ -12,6 +12,17 @@ pub struct LinkInfo {
 }
 
 impl LinkInfo {
+    #[cfg(test)]
+    pub fn new(id: builtin::ComponentId) -> Self {
+        Self {
+            component: id,
+            globals_layout: Default::default(),
+            segment_layout: Default::default(),
+            reserved_memory_pages: 0,
+            page_size: 2u32.pow(16),
+        }
+    }
+
     #[inline]
     pub fn component(&self) -> &builtin::ComponentId {
         &self.component

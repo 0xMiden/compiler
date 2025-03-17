@@ -35,7 +35,7 @@ impl<const N: usize> Default for ValueRange<'_, N> {
     }
 }
 
-impl<const N: usize> ValueRange<'_, N> {
+impl<'values, const N: usize> ValueRange<'values, N> {
     /// Returns true if this range is empty
     pub fn is_empty(&self) -> bool {
         match self {
@@ -57,6 +57,23 @@ impl<const N: usize> ValueRange<'_, N> {
             Self::BlockArguments(range) => range.len(),
             Self::Operands(range) => range.len(),
             Self::Results(range) => range.len(),
+        }
+    }
+
+    pub fn slice<'a, 'b: 'a + 'values, R>(&'b self, range: R) -> ValueRange<'a, N>
+    where
+        R: core::slice::SliceIndex<[ValueRef], Output = [ValueRef]>,
+        R: core::slice::SliceIndex<[BlockArgumentRef], Output = [BlockArgumentRef]>,
+        R: core::slice::SliceIndex<[OpOperand], Output = [OpOperand]>,
+        R: core::slice::SliceIndex<[OpResultRef], Output = [OpResultRef]>,
+    {
+        match self {
+            Self::Empty => ValueRange::Empty,
+            Self::Owned(values) => Self::Borrowed(&values[range]),
+            Self::Borrowed(values) => Self::Borrowed(&values[range]),
+            Self::BlockArguments(values) => Self::BlockArguments(&values[range]),
+            Self::Operands(values) => Self::Operands(&values[range]),
+            Self::Results(values) => Self::Results(&values[range]),
         }
     }
 

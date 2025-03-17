@@ -1,0 +1,23 @@
+public builtin.function @test(v0: u32, v1: u32) -> u32 {
+^block0(v0: u32, v1: u32):
+    v2 = arith.eq v0, v1 : i1;
+    v3 = scf.if v2 : u32 {
+    ^block1:
+        v4 = arith.constant 1 : u32;
+        scf.yield v4;
+    } else {
+    ^block2:
+        v5 = arith.lt v0, v1 : i1;
+        v6 = scf.if v5 : u32 {
+        ^block3:
+            v7 = arith.constant 2 : u32;
+            scf.yield v7;
+        } else {
+        ^block4:
+            v8 = arith.mul v0, v1 : u32 #[overflow = checked];
+            scf.yield v8;
+        };
+        scf.yield v6;
+    };
+    builtin.ret v3;
+};

@@ -1,10 +1,9 @@
 use alloc::collections::BTreeSet;
 
+use miden_assembly::diagnostics::WrapErr;
 use midenc_hir2::{
-    dataflow::analyses::LivenessAnalysis,
-    dialects::builtin,
-    traits::{BinaryOp, Commutative},
-    Block, Operation, ProgramPoint, ValueRef,
+    dataflow::analyses::LivenessAnalysis, dialects::builtin, Block, Operation, ProgramPoint,
+    ValueRange, ValueRef,
 };
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -44,10 +43,58 @@ impl BlockEmitter<'_> {
     }
 
     pub fn emit_inline(&mut self, block: &Block) {
+        // Drop any unused block arguments on block entry
+        let block_ref = block.as_block_ref();
+        let mut index = 0;
+        let unused_params = ValueRange::<2>::from(block.arguments());
+        for next_param in unused_params {
+            if self.liveness.is_live_at_start(next_param, block_ref) {
+                index += 1;
+                continue;
+            }
+
+            self.emitter().drop_operand_at_position(index, next_param.span());
+        }
+
+        // Drop any operands that may have been inherited from a predecessor where they are live,
+        // but they are dead on entry to this block. We do this now, rather than later, so that
+        // we keep the operand stack clean.
+        {
+            if let Some(next_op) = block.body().front().get() {
+                self.drop_unused_operands_at(&next_op, |value| {
+                    // If the given value is not live at this op, it should be dropped
+                    self.liveness.is_live_before(value, &next_op)
+                });
+            }
+        }
+
         // Continue normally, by emitting the contents of the block based on the given schedule
         for op in block.body() {
             self.emit_inst(&op);
-            // TODO?: Drop unused results of the instruction immediately
+
+            // Drop any dead instruction results immediately
+            if op.has_results() {
+                let span = op.span();
+                index = 0;
+                let results = ValueRange::<2>::from(op.results().all());
+                for next_result in results {
+                    if self.liveness.is_live_after(next_result, &op) {
+                        index += 1;
+                        continue;
+                    }
+
+                    self.emitter().drop_operand_at_position(index, span);
+                }
+            }
+
+            // Drop any operands on the stack that did not live across this operation
+            if let Some(next_op) = op.as_operation_ref().next() {
+                let next_op = next_op.borrow();
+                self.drop_unused_operands_at(&next_op, |value| {
+                    // If the given value is not live at this op, it should be dropped
+                    self.liveness.is_live_before(value, &next_op)
+                });
+            }
         }
     }
 
@@ -59,94 +106,36 @@ impl BlockEmitter<'_> {
     fn emit_inst(&mut self, op: &Operation) {
         use crate::HirLowering;
 
-        self.drop_unused_operands_at(op);
-
-        // Move instruction operands into place, minimizing unnecessary stack manipulation ops
-        //
-        // NOTE: This does not include block arguments for control flow instructions, those are
-        // handled separately within the specific handlers for those instructions
-        let mut args = op
-            .operands()
-            .iter()
-            .map(|operand| operand.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 2]>>();
-
-        let mut constraints = op
-            .operands()
-            .iter()
-            .enumerate()
-            .map(|(index, operand)| {
-                let value = operand.borrow().as_value_ref();
-                if self.liveness.is_live_after_entry(value, op) {
-                    Constraint::Copy
-                } else {
-                    // Check if this is the last use of `value` by this operation
-                    let operands = op.operands().all();
-                    let remaining = &operands.as_slice()[..index];
-                    if remaining.iter().any(|o| o.borrow().as_value_ref() == value) {
-                        Constraint::Copy
-                    } else {
-                        Constraint::Move
-                    }
-                }
-            })
-            .collect::<SmallVec<[_; 2]>>();
-
-        // All of Miden's binary ops expect the right-hand operand on top of the stack, this
-        // requires us to invert the expected order of operands from the standard ordering in the
-        // IR
-        //
-        // TODO(pauls): We should probably assign a dedicated trait for this type of argument
-        // ordering override, rather than assuming that all BinaryOp impls need it
-        if op.implements::<dyn BinaryOp>() {
-            args.swap(0, 1);
-            constraints.swap(0, 1);
-        }
-
-        // If we're emitting a commutative binary op, and the operands are on top of the operand
-        // stack, then we can skip any stack manipulation, so long as we can consume both of the
-        // operands, and they are of the same type. This is a narrow optimization, but a useful one.
-        let is_binary_commutative = args.len() == 2 && op.implements::<dyn Commutative>();
-        let preserve_stack = if is_binary_commutative {
-            let can_move = constraints.iter().all(|c| matches!(c, Constraint::Move));
-            let operands_in_place = self.stack[0].as_value().is_none_or(|v| args.contains(&v));
-            let operands_in_place =
-                operands_in_place && self.stack[1].as_value().is_none_or(|v| args.contains(&v));
-            can_move && operands_in_place
-        } else {
-            false
-        };
-
-        if !preserve_stack && !args.is_empty() {
-            log::trace!(target: "codegen", "scheduling operands for {op}");
-            for arg in args.iter() {
-                log::trace!(target: "codegen", "{arg} is live after: {}", self.liveness.is_live_after(*arg, op));
-            }
-            log::trace!(target: "codegen", "starting with stack: {:#?}", &self.stack);
-            self.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
-                panic!(
-                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
-                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                    op.name(),
-                    self.stack,
-                )
-            });
-            log::trace!(target: "codegen", "stack after scheduling: {:#?}", &self.stack);
-        }
+        // If any values on the operand stack are no longer live, drop them now to avoid wasting
+        // operand stack space on operands that will never be used.
+        //self.drop_unused_operands_at(op);
 
         let lowering = op.as_trait::<dyn HirLowering>().unwrap_or_else(|| {
             panic!("illegal operation: no lowering has been defined for '{}'", op.name())
         });
+
+        // Schedule operands for this instruction
+        lowering
+            .schedule_operands(self)
+            .wrap_err("failed during operand scheduling")
+            .unwrap_or_else(|err| panic!("{err}"));
+
+        // Emit the Miden Assembly for this instruction to the current block
         lowering
             .emit(self)
-            .expect("unexpected error occurred when lowering hir operation to masm");
+            .wrap_err("failed while emitting instruction lowering")
+            .unwrap_or_else(|err| panic!("{err}"));
     }
 
     /// Drop the operands on the stack which are no longer live upon entry into
     /// the current program point.
     ///
     /// This is intended to be called before scheduling `op`
-    pub fn drop_unused_operands_at(&mut self, op: &Operation) {
+    pub fn drop_unused_operands_at<F>(&mut self, op: &Operation, is_live: F)
+    where
+        F: Fn(ValueRef) -> bool,
+    {
+        log::trace!(target: "codegen", "dropping unused operands at: {op}");
         // We start by computing the set of unused operands on the stack at this point
         // in the program. We will use the resulting vectors to schedule instructions
         // that will move those operands to the top of the stack to be discarded
@@ -154,15 +143,14 @@ impl BlockEmitter<'_> {
         let mut constraints = SmallVec::<[Constraint; 4]>::default();
         for operand in self.stack.iter().rev() {
             let value = operand.as_value().expect("unexpected non-ssa value on stack");
-            // If the given value is not live at or through this op, it should be dropped
-            let is_live = self.liveness.is_live_before(value, op)
-                || self.liveness.is_live_after_entry(value, op);
-            if !is_live {
-                log::trace!("should drop {value} at {}", ProgramPoint::before(op));
+            if !is_live(value) {
+                log::trace!(target: "codegen", "should drop {value} at {}", ProgramPoint::before(op));
                 unused.push(value);
                 constraints.push(Constraint::Move);
             }
         }
+
+        log::trace!(target: "codegen", "found unused operands {unused:?} with constraints {constraints:?}");
 
         // Next, emit the optimal set of moves to get the unused operands to the top
         if !unused.is_empty() {
@@ -170,6 +158,7 @@ impl BlockEmitter<'_> {
             // of used operands, then we will schedule manually, since this
             // is a pathological use case for the operand scheduler.
             let num_used = self.stack.len() - unused.len();
+            log::trace!(target: "codegen", "there are {num_used} used operands out of {}", self.stack.len());
             if unused.len() > num_used {
                 // In this case, we emit code starting from the top
                 // of the stack, i.e. if we encounter an unused value
@@ -221,7 +210,7 @@ impl BlockEmitter<'_> {
                     // we've found so far, and then reset our cursor to the top
                     if unused_batch {
                         let mut emitter = self.emitter();
-                        emitter.dropn(batch_size, SourceSpan::default());
+                        emitter.dropn(batch_size, op.span());
                         batch_size = 0;
                         current_index = 0;
                         continue;
@@ -252,39 +241,54 @@ impl BlockEmitter<'_> {
                                 .count();
                             let mut emitter = self.emitter();
                             if unused_chunk_size > 1 {
-                                emitter.movdn(unused_chunk_size as u8, SourceSpan::default());
-                                emitter.dropn(unused_chunk_size, SourceSpan::default());
+                                emitter.movdn(unused_chunk_size as u8, op.span());
+                                emitter.dropn(unused_chunk_size, op.span());
                             } else {
-                                emitter.swap(1, SourceSpan::default());
-                                emitter.drop(SourceSpan::default());
+                                emitter.swap(1, op.span());
+                                emitter.drop(op.span());
                             }
                         }
                         // We've got multiple unused values together, so choose instead
                         // to move the unused value to the top and drop it
                         _ => {
                             let mut emitter = self.emitter();
-                            emitter.movup(current_index as u8, SourceSpan::default());
-                            emitter.drop(SourceSpan::default());
+                            emitter.movup(current_index as u8, op.span());
+                            emitter.drop(op.span());
                         }
                     }
                     batch_size = 0;
                     current_index = 0;
                 }
+
+                // We may have accumulated a batch comprising the rest of the stack, handle that
+                // here.
+                if unused_batch && batch_size > 0 {
+                    log::trace!(target: "codegen", "dropping {batch_size} operands from {:?}", &self.stack);
+                    // It should only be possible to hit this point if the entire stack is unused
+                    assert_eq!(batch_size, self.stack.len());
+                    match batch_size {
+                        1 => {
+                            self.emitter().drop(op.span());
+                        }
+                        _ => {
+                            self.emitter().dropn(batch_size, op.span());
+                        }
+                    }
+                }
             } else {
-                self.schedule_operands(&unused, &constraints, SourceSpan::default())
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "failed to schedule unused operands for {}: {err:?}",
-                            ProgramPoint::before(op)
-                        )
-                    });
+                self.schedule_operands(&unused, &constraints, op.span()).unwrap_or_else(|err| {
+                    panic!(
+                        "failed to schedule unused operands for {}: {err:?}",
+                        ProgramPoint::before(op)
+                    )
+                });
                 let mut emitter = self.emitter();
-                emitter.dropn(unused.len(), SourceSpan::default());
+                emitter.dropn(unused.len(), op.span());
             }
         }
     }
 
-    fn schedule_operands(
+    pub fn schedule_operands(
         &mut self,
         expected: &[ValueRef],
         constraints: &[Constraint],
@@ -300,6 +304,32 @@ impl BlockEmitter<'_> {
                 panic!("unexpected error constructing operand movement constraint solver: {err:?}")
             }
         }
+    }
+
+    /// Obtain the constraints that apply to this operation's operands, based on the provided
+    /// liveness analysis.
+    pub fn constraints_for(
+        &self,
+        op: &Operation,
+        operands: &ValueRange<'_, 4>,
+    ) -> SmallVec<[Constraint; 4]> {
+        operands
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                if self.liveness.is_live_after_entry(value, op) {
+                    Constraint::Copy
+                } else {
+                    // Check if this is the last use of `value` by this operation
+                    let remaining = operands.slice(..index);
+                    if remaining.contains(value) {
+                        Constraint::Copy
+                    } else {
+                        Constraint::Move
+                    }
+                }
+            })
+            .collect()
     }
 
     #[inline]

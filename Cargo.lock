@@ -3228,6 +3228,7 @@ name = "midenc-codegen-masm2"
 version = "0.0.7"
 dependencies = [
  "env_logger 0.11.5",
+ "expect-test",
  "inventory",
  "log",
  "miden-assembly",
@@ -3351,6 +3352,7 @@ name = "midenc-dialect-scf"
 version = "0.0.7"
 dependencies = [
  "bitvec",
+ "expect-test",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
