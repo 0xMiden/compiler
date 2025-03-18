@@ -387,7 +387,7 @@ impl HirLowering for scf::While {
             body_emitter.emit_inline(&before_block);
 
             // Remove the 'hir.condition' condition flag from the operand stack, but do not emit any
-            // instructions to do so, as this will be handled by the 'while.true' instruction
+            // instructions to do so, as this will be handled by the 'if.true' instruction
             body_emitter.stack.drop();
 
             // Take a snapshot of the stack at this point, as it represents the state of the stack
@@ -451,7 +451,7 @@ stack on exit from 'after': {:#?}
                 }
 
                 // Re-enter the "before" block to retry the condition
-                body_emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(1))));
+                body_emitter.emitter().push_immediate(true.into(), span);
 
                 body_emitter.into_emitted_block(span)
             };
@@ -460,7 +460,7 @@ stack on exit from 'after': {:#?}
                 let mut body_emitter = body_emitter.nest();
 
                 // Exit the loop
-                body_emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(0))));
+                body_emitter.emitter().push_immediate(false.into(), span);
 
                 body_emitter.into_emitted_block(span)
             };

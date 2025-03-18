@@ -1,21 +1,21 @@
 
     dup.0
     dup.0
-    push.2
+    push.1
     u32lte
     if.true
 
-        eq.1
+        eq.0
         if.true
 
             drop
             drop
-            push.1
+            push.0
         else
 
             drop
             drop
-            push.2
+            push.1
         end
     else
 

@@ -318,7 +318,7 @@ stack on exit from 'else': {else_stack:#?}
             // Emit as 'hir.if'
             emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
         }
-        [_then_case, _else_case] => {
+        [_then_case, else_case] => {
             // We need to emit an 'hir.if' to split the search at the midpoint, and emit 'a' in
             // the then region, and then recurse with 'b' on the else region
             //
@@ -326,7 +326,7 @@ stack on exit from 'else': {else_stack:#?}
             {
                 let mut emitter = emitter.emitter();
                 emitter.dup(0, span);
-                emitter.lt_imm(midpoint.into(), span);
+                emitter.lte_imm((*else_case).into(), span);
             }
 
             // Remove the selector used for this branch selection from the emitter's view of the
@@ -340,6 +340,7 @@ stack on exit from 'else': {else_stack:#?}
                 (then_emitter.into_emitted_block(span), then_stack)
             };
 
+            // If we have exactly
             let (else_blk, else_stack) = {
                 let mut else_emitter = emitter.nest();
                 let midpoint = b[0].midpoint(b[b.len() - 1]);
@@ -378,7 +379,7 @@ stack on exit from 'else': {else_stack:#?}
             {
                 let mut emitter = emitter.emitter();
                 emitter.dup(0, span);
-                emitter.lt_imm(midpoint.into(), span);
+                emitter.lte_imm(midpoint.into(), span);
             }
 
             // Remove the selector used for this branch selection from the emitter's view of the
@@ -493,7 +494,7 @@ mod tests {
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_hir2::{
         dataflow::analyses::LivenessAnalysis,
-        dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder},
+        dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
         formatter::PrettyPrint,
         pass::AnalysisManager,
         version::Version,
@@ -694,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_test() -> Result<(), Report> {
+    fn util_emit_binary_search_single_case_test() -> Result<(), Report> {
         let _ = env_logger::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
@@ -703,6 +704,132 @@ mod tests {
         let context = Rc::new(Context::default());
         crate::register_dialect_hooks(&context);
 
+        let (function, block) = generate_emit_binary_search_test(1, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_1_case.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_1_case.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_two_cases_test() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        crate::register_dialect_hooks(&context);
+
+        let (function, block) = generate_emit_binary_search_test(2, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_2_cases.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_2_cases.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_three_cases_test() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        crate::register_dialect_hooks(&context);
+
+        let (function, block) = generate_emit_binary_search_test(3, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_3_cases.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_3_cases.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_four_cases_test() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        crate::register_dialect_hooks(&context);
+
+        let (function, block) = generate_emit_binary_search_test(4, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_4_cases.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_4_cases.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_five_cases_test() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        crate::register_dialect_hooks(&context);
+
+        let (function, block) = generate_emit_binary_search_test(5, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_5_cases.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_5_cases.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_seven_cases_test() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        crate::register_dialect_hooks(&context);
+
+        let (function, block) = generate_emit_binary_search_test(7, context.clone())?;
+
+        // Verify emitted block contents
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file!["expected/utils_emit_binary_search_7_cases.hir"].assert_eq(&input);
+
+        let output = block.to_pretty_string();
+        expect_file!["expected/utils_emit_binary_search_7_cases.masm"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    fn generate_emit_binary_search_test(
+        num_cases: usize,
+        context: Rc<Context>,
+    ) -> Result<(FunctionRef, masm::Block), Report> {
         let mut builder = OpBuilder::new(context.clone());
 
         let mut function_ref = builder.create_function(
@@ -721,22 +848,18 @@ mod tests {
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
 
-            let switch = builder.index_switch(a, [1, 2], &[Type::U32], span)?;
-            let (case1_region, case2_region, fallback_region) = {
-                let switch = switch.borrow();
-                let fallback_region = switch.default_region().as_region_ref();
-                (switch.get_case_region(0), switch.get_case_region(1), fallback_region)
-            };
+            let cases = SmallVec::<[_; 4]>::from_iter(0u32..(num_cases as u32));
+            let switch = builder.index_switch(a, cases, &[Type::U32], span)?;
 
-            let case1_block = builder.create_block_in_region(case1_region);
-            builder.switch_to_block(case1_block);
-            let case1_result = builder.u32(1, span);
-            builder.r#yield([case1_result], span)?;
+            let fallback_region = switch.borrow().default_region().as_region_ref();
+            let case_regions = (0..num_cases).map(|index| switch.borrow().get_case_region(index));
 
-            let case2_block = builder.create_block_in_region(case2_region);
-            builder.switch_to_block(case2_block);
-            let case2_result = builder.u32(2, span);
-            builder.r#yield([case2_result], span)?;
+            for (case, case_region) in case_regions.enumerate() {
+                let case_block = builder.create_block_in_region(case_region);
+                builder.switch_to_block(case_block);
+                let case_result = builder.u32(case as u32, span);
+                builder.r#yield([case_result], span)?;
+            }
 
             let fallback_block = builder.create_block_in_region(fallback_region);
             builder.switch_to_block(fallback_block);
@@ -781,13 +904,6 @@ mod tests {
         let entry = function.entry_block();
         let body = emitter.emit(&entry.borrow());
 
-        // Verify emitted block contents
-        let input = format!("{}", function.as_operation());
-        expect_file!["expected/utils_emit_binary_search.hir"].assert_eq(&input);
-
-        let output = body.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search.masm"].assert_eq(&output);
-
-        Ok(())
+        Ok((function_ref, body))
     }
 }
