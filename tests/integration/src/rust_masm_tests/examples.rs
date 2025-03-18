@@ -102,7 +102,6 @@ fn collatz() {
 }
 
 #[test]
-#[ignore = "diagnosing poison issue"]
 fn is_prime() {
     let _ = env_logger::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
@@ -145,7 +144,7 @@ fn is_prime() {
     println!("{}", hir.borrow().as_operation());
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    TestRunner::new(Config::with_cases(40))
+    TestRunner::new(Config::with_cases(100))
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
 
@@ -171,18 +170,15 @@ fn is_prime() {
                 panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
                 //)));
             };
-            prop_assert_eq!(rust_out, result == 1);
-
-            /*
+            prop_assert_eq!(rust_out as i32, result);
             let mut args = Vec::<Felt>::default();
             PushToStack::try_push(&a, &mut args);
 
             let exec = Executor::for_package(&package, args, &test.session)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: bool = exec.execute_into(&package.unwrap_program(), &test.session);
+            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
             dbg!(output);
-            prop_assert_eq!(rust_out, output);
-             */
+            prop_assert_eq!(rust_out as u32, output);
             Ok(())
         })
         .unwrap_or_else(|err| {

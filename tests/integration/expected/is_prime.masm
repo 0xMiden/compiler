@@ -240,7 +240,7 @@ export.entrypoint
                         swap.1
                         dup.0
                         push.2
-                        u32lt
+                        u32lte
                         if.true
 
                             eq.1
