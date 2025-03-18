@@ -1,0 +1,51 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @is_prime_reduce {
+        public builtin.function @entrypoint(v110: i32) -> i32 {
+        ^block32(v110: i32):
+            v112 = arith.constant 0 : i32;
+            v113 = arith.constant 5 : i32;
+            cf.br ^block36(v113, v110);
+        ^block33(v111: i32):
+
+        ^block34:
+            ub.unreachable ;
+        ^block35(v137: i32):
+            builtin.ret v137;
+        ^block36(v114: i32, v115: i32):
+            v116 = hir.bitcast v114 : u32;
+            v117 = hir.bitcast v115 : u32;
+            v118 = arith.gt v116, v117 : i1;
+            v119 = arith.zext v118 : u32;
+            v120 = hir.bitcast v119 : i32;
+            v121 = arith.constant 0 : i32;
+            v122 = arith.neq v120, v121 : i1;
+            cf.cond_br v122 ^block35(v120), ^block38;
+        ^block37:
+            cf.br ^block35(v120);
+        ^block38:
+            v123 = arith.constant 0 : i32;
+            v124 = arith.eq v114, v123 : i1;
+            v125 = arith.zext v124 : u32;
+            v126 = hir.bitcast v125 : i32;
+            v127 = arith.constant 0 : i32;
+            v128 = arith.neq v126, v127 : i1;
+            cf.cond_br v128 ^block34, ^block39;
+        ^block39:
+            v129 = hir.bitcast v115 : u32;
+            v130 = hir.bitcast v114 : u32;
+            v131 = arith.mod v129, v130 : u32;
+            v132 = hir.bitcast v131 : i32;
+            v133 = arith.constant 6 : i32;
+            v134 = arith.add v114, v133 : i32 #[overflow = wrapping];
+            v135 = arith.constant 0 : i32;
+            v136 = arith.neq v132, v135 : i1;
+            cf.cond_br v136 ^block36(v134, v115), ^block40;
+        ^block40:
+            cf.br ^block37;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

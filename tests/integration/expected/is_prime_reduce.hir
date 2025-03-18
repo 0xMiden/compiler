@@ -1,0 +1,100 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @is_prime_reduce {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
+        ^block4(v0: i32):
+            v45 = ub.poison u32 : u32;
+            v35 = ub.poison i32 : i32;
+            v3 = arith.constant 5 : i32;
+            v50, v51, v52, v53 = scf.while v3, v0, v35, v45 : i32, i32, i32, u32 {
+            ^block8(v4: i32, v5: i32, v41: i32, v44: u32):
+                v7 = hir.bitcast v5 : u32;
+                v6 = hir.bitcast v4 : u32;
+                v8 = arith.gt v6, v7 : i1;
+                v9 = arith.zext v8 : u32;
+                v10 = hir.bitcast v9 : i32;
+                v2 = arith.constant 0 : i32;
+                v12 = arith.neq v10, v2 : i1;
+                v72, v73, v74, v75, v76 = scf.if v12 : i32, i32, u32, u32, i32 {
+                ^block23:
+                    v28 = arith.constant 0 : u32;
+                    v37 = arith.constant 3 : u32;
+                    v109 = ub.poison i32 : i32;
+                    scf.yield v109, v109, v37, v28, v10;
+                } else {
+                ^block10:
+                    v107 = arith.constant 0 : i32;
+                    v108 = arith.constant 0 : i32;
+                    v14 = arith.eq v4, v108 : i1;
+                    v15 = arith.zext v14 : u32;
+                    v16 = hir.bitcast v15 : i32;
+                    v18 = arith.neq v16, v107 : i1;
+                    v82, v83, v84, v85, v86 = scf.if v18 : i32, i32, u32, u32, i32 {
+                    ^block25:
+                        v105 = arith.constant 0 : u32;
+                        v36 = arith.constant 2 : u32;
+                        v106 = ub.poison i32 : i32;
+                        scf.yield v106, v106, v36, v105, v10;
+                    } else {
+                    ^block11:
+                        v104 = arith.constant 0 : i32;
+                        v20 = hir.bitcast v4 : u32;
+                        v19 = hir.bitcast v5 : u32;
+                        v21 = arith.mod v19, v20 : u32;
+                        v22 = hir.bitcast v21 : i32;
+                        v26 = arith.neq v22, v104 : i1;
+                        v87, v88, v89, v90, v91 = scf.if v26 : i32, i32, u32, u32, i32 {
+                        ^block13:
+                            v102 = ub.poison i32 : i32;
+                            v34 = arith.constant 1 : u32;
+                            v103 = arith.constant 0 : u32;
+                            v23 = arith.constant 6 : i32;
+                            v24 = arith.add v4, v23 : i32 #[overflow = wrapping];
+                            scf.yield v24, v5, v103, v34, v102;
+                        } else {
+                        ^block27:
+                            v99 = ub.poison i32 : i32;
+                            v100 = arith.constant 0 : u32;
+                            v101 = arith.constant 1 : u32;
+                            scf.yield v99, v99, v101, v100, v99;
+                        };
+                        scf.yield v87, v88, v89, v90, v91;
+                    };
+                    scf.yield v82, v83, v84, v85, v86;
+                };
+                v62 = arith.trunc v75 : i1;
+                scf.condition v62, v72, v73, v76, v74;
+            } do {
+            ^block21(v58: i32, v59: i32, v60: i32, v61: u32):
+                scf.yield v58, v59, v60, v61;
+            };
+            v65, v66 = scf.index_switch v53 : i32, u32 
+            case 1 {
+            ^block12:
+                v97 = arith.constant 0 : u32;
+                scf.yield v52, v97;
+            }
+            case 2 {
+            ^block6:
+                v95 = arith.constant 1 : u32;
+                v96 = ub.poison i32 : i32;
+                scf.yield v96, v95;
+            }
+            default {
+            ^block14:
+                v98 = arith.constant 0 : u32;
+                scf.yield v52, v98;
+            };
+            v94 = arith.constant 0 : u32;
+            v93 = arith.eq v66, v94 : i1;
+            cf.cond_br v93 ^block7(v65), ^block15;
+        ^block7(v27: i32):
+            builtin.ret v27;
+        ^block15:
+            ub.unreachable ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

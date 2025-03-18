@@ -97,6 +97,14 @@ pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<builtin:
     stages.run(inputs, context).map(|link_output| link_output.component)
 }
 
+/// Compile the input files to HIR without running any optimization passes
+pub fn compile_to_unoptimized_hir(context: Rc<Context>) -> CompilerResult<builtin::ComponentRef> {
+    let mut stages = ParseStage.collect(LinkStage);
+
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context).map(|link_output| link_output.component)
+}
+
 fn compile_inputs(
     inputs: Vec<midenc_session::InputFile>,
     context: Rc<Context>,

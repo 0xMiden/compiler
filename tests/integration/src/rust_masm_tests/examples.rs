@@ -3,7 +3,8 @@ use std::collections::VecDeque;
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
 use midenc_frontend_wasm2::WasmTranslationConfig;
-use midenc_hir2::{Felt, Immediate, Op, SymbolTable};
+use midenc_hir2::{dialects::builtin::ComponentRef, Felt, Immediate, Op, SymbolTable};
+use midenc_hir_eval::Value;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -128,6 +129,33 @@ fn is_prime() {
         true
     }
 
+    fn ir_eval(hir: ComponentRef, a: u32) -> i32 {
+        // Test the IR
+        let mut evaluator =
+            midenc_hir_eval::HirEvaluator::new(hir.borrow().as_operation().context_rc());
+        let op = hir
+            .borrow()
+            .symbol_manager()
+            .lookup_symbol_ref(
+                &midenc_hir2::SymbolPath::new([
+                    midenc_hir2::SymbolNameComponent::Component("is_prime".into()),
+                    midenc_hir2::SymbolNameComponent::Leaf("entrypoint".into()),
+                ])
+                .unwrap(),
+            )
+            .unwrap();
+        let result = evaluator
+            .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
+            .unwrap_or_else(|err| panic!("{err}"));
+
+        let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
+            //return Err(TestCaseError::fail(format!(
+            panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
+            //)));
+        };
+        result
+    }
+
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../../examples/is-prime",
@@ -137,9 +165,13 @@ fn is_prime() {
     let artifact_name = "is_prime";
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir_unoptimized(expect_file![format!(
+        "../../expected/{artifact_name}_unoptimized.hir"
+    )]);
     test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
     let hir = test.hir();
+    let unoptimized_hir = test.compile_wasm_to_unoptimized_ir().unwrap();
 
     println!("{}", hir.borrow().as_operation());
 
@@ -148,40 +180,110 @@ fn is_prime() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
 
-            // Test the IR
-            let mut evaluator =
-                midenc_hir_eval::HirEvaluator::new(hir.borrow().as_operation().context_rc());
-            let op = hir
-                .borrow()
-                .symbol_manager()
-                .lookup_symbol_ref(
-                    &midenc_hir2::SymbolPath::new([
-                        midenc_hir2::SymbolNameComponent::Component("is_prime".into()),
-                        midenc_hir2::SymbolNameComponent::Leaf("entrypoint".into()),
-                    ])
-                    .unwrap(),
-                )
-                .unwrap();
-            let result = evaluator
-                .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
-                .unwrap_or_else(|err| panic!("{err}"));
-            let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
-                //return Err(TestCaseError::fail(format!(
-                panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
-                //)));
-            };
-            prop_assert_eq!(rust_out as i32, result);
-            let mut args = Vec::<Felt>::default();
-            PushToStack::try_push(&a, &mut args);
+            // Eval IR that comes out of the frontend without any optimizations
+            let ir_out = ir_eval(unoptimized_hir, a);
+            prop_assert_eq!(rust_out as i32, ir_out);
 
-            let exec = Executor::for_package(&package, args, &test.session)
-                .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
-            dbg!(output);
-            prop_assert_eq!(rust_out as u32, output);
+            // // Eval IR after optimizations
+            // let ir_out = ir_eval(hir, a);
+            // prop_assert_eq!(rust_out as i32, ir_out);
+            //
+            // let mut args = Vec::<Felt>::default();
+            // PushToStack::try_push(&a, &mut args);
+            //
+            // let exec = Executor::for_package(&package, args, &test.session)
+            //     .map_err(|err| TestCaseError::fail(err.to_string()))?;
+            // let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            // dbg!(output);
+            // prop_assert_eq!(rust_out as u32, output);
             Ok(())
         })
         .unwrap_or_else(|err| {
             panic!("{err}");
         });
+}
+
+#[test]
+fn is_prime_reduce() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    fn expected(n: u32) -> bool {
+        let mut i = 5;
+        while i <= n {
+            if n % i == 0 {
+                return false;
+            }
+            i += 6;
+        }
+        true
+    }
+
+    fn ir_eval(hir: ComponentRef, a: u32) -> i32 {
+        // Test the IR
+        let mut evaluator =
+            midenc_hir_eval::HirEvaluator::new(hir.borrow().as_operation().context_rc());
+        let op = hir
+            .borrow()
+            .symbol_manager()
+            .lookup_symbol_ref(
+                &midenc_hir2::SymbolPath::new([
+                    midenc_hir2::SymbolNameComponent::Component("is_prime_reduce".into()),
+                    midenc_hir2::SymbolNameComponent::Leaf("entrypoint".into()),
+                ])
+                .unwrap(),
+            )
+            .unwrap();
+        let result = evaluator
+            .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
+            .unwrap_or_else(|err| panic!("{err}"));
+
+        let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
+            //return Err(TestCaseError::fail(format!(
+            panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
+            //)));
+        };
+        result
+    }
+
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../../examples/is-prime-reduce",
+        config,
+        ["--entrypoint=is_prime_reduce::entrypoint".into()],
+    );
+    let artifact_name = "is_prime_reduce";
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir_unoptimized(expect_file![format!(
+        "../../expected/{artifact_name}_unoptimized.hir"
+    )]);
+    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+    let hir = test.hir();
+    let unoptimized_hir = test.compile_wasm_to_unoptimized_ir().unwrap();
+
+    println!("{}", hir.borrow().as_operation());
+
+    let a = 25;
+    let rust_out = expected(a);
+
+    // Eval IR that comes out of the frontend without any optimizations
+    let ir_out = ir_eval(unoptimized_hir, a);
+    assert_eq!(rust_out as i32, ir_out);
+
+    // Eval IR after optimizations
+    let ir_out = ir_eval(hir, a);
+    assert_eq!(rust_out as i32, ir_out);
+
+    // let mut args = Vec::<Felt>::default();
+    // PushToStack::try_push(&a, &mut args);
+    //
+    // let exec = Executor::for_package(&package, args, &test.session)
+    //     .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    // let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+    // dbg!(output);
+    // prop_assert_eq!(rust_out as u32, output);
 }

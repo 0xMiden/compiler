@@ -16,7 +16,7 @@ use std::{
 use miden_assembly::LibraryPath;
 use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
 use midenc_hir2::{
-    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident,
+    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident, Op,
 };
 use midenc_session::{InputFile, InputType, Session};
 
@@ -1028,6 +1028,16 @@ impl CompilerTest {
         expected_hir_file.assert_eq(&ir);
     }
 
+    /// Compare the compiled(unoptimized) IR against the expected output
+    pub fn expect_ir_unoptimized(&mut self, expected_hir_file: expect_test::ExpectFile) {
+        let compiled = self
+            .compile_wasm_to_unoptimized_ir()
+            .expect("failed to translate wasm to hir component");
+
+        let ir = demangle(compiled.borrow().as_operation().to_string());
+        expected_hir_file.assert_eq(&ir);
+    }
+
     /// Compare the compiled MASM against the expected output
     pub fn expect_masm(&mut self, expected_masm_file: expect_test::ExpectFile) {
         let program = demangle(self.masm_src().as_str());
@@ -1080,6 +1090,14 @@ impl CompilerTest {
         use midenc_compile::compile_to_optimized_hir;
 
         compile_to_optimized_hir(self.context.clone()).map_err(format_report)
+    }
+
+    pub(crate) fn compile_wasm_to_unoptimized_ir(
+        &mut self,
+    ) -> Result<builtin::ComponentRef, String> {
+        use midenc_compile::compile_to_unoptimized_hir;
+
+        compile_to_unoptimized_hir(self.context.clone()).map_err(format_report)
     }
 
     pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {
