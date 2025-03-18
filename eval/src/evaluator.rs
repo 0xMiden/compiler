@@ -14,7 +14,7 @@ use midenc_hir2::{
 use midenc_session::diagnostics::{InFlightDiagnosticBuilder, Severity};
 
 use self::{context::ExecutionContext, frame::CallFrame};
-use crate::*;
+use crate::{value::MaterializedValue, *};
 
 pub struct HirEvaluator {
     /// The context in which all IR objects are allocated
@@ -678,6 +678,13 @@ impl HirEvaluator {
                                     )
                                     .into_report());
                             }
+                            log::debug!(target: "eval", "  <= {}",
+                                DisplayValues::new(parent_op.results().iter().zip(arguments.iter()).map(|(result, arg)| {
+                                MaterializedValue {
+                                    id: *result as ValueRef,
+                                    value: self.get_value(&arg).unwrap(),
+                                }
+                            })));
                             for (result, arg) in parent_op.results().iter().zip(arguments) {
                                 let expected = result.borrow();
                                 let expected_ty = expected.ty();
@@ -823,8 +830,6 @@ impl HirEvaluator {
     /// want something to evaluate a single operation and handle its control flow effects at the
     /// same time.
     fn eval_op(&mut self, op: &Operation) -> Result<ControlFlowEffect, Report> {
-        use crate::value::MaterializedValue;
-
         self.ip = Some(op.as_operation_ref());
 
         // Ensure the op is evaluatable
@@ -848,16 +853,17 @@ impl HirEvaluator {
         match effect {
             effect @ (ControlFlowEffect::Jump(_)
             | ControlFlowEffect::Trap { .. }
-            | ControlFlowEffect::Call { .. }) => return Ok(effect),
+            | ControlFlowEffect::Call { .. }
+            | ControlFlowEffect::Yield {
+                successor: RegionBranchPoint::Parent,
+                ..
+            }) => return Ok(effect),
             ControlFlowEffect::Yield {
                 successor,
                 ref arguments,
                 ..
             } => {
-                log::debug!(target: "eval", "  {} {}", match successor {
-                    RegionBranchPoint::Parent => "<=".to_string(),
-                    RegionBranchPoint::Child(_) => format!("=> {successor}"),
-                    },
+                log::debug!(target: "eval", "  => {successor} {}",
                     DisplayValues::new(arguments.iter().map(|v| {
                     MaterializedValue {
                         id: v,
@@ -868,7 +874,7 @@ impl HirEvaluator {
             }
             ControlFlowEffect::Return(returning) => {
                 match returning {
-                    Some(value) => log::debug!(target: "eval", "  => {value}"),
+                    Some(value) => log::debug!(target: "eval", "  <= {value}"),
                     None => log::debug!(target: "eval", "  <= ()"),
                 }
                 return Ok(effect);
