@@ -10,14 +10,17 @@ mod stages;
 
 use alloc::{rc::Rc, vec::Vec};
 
-use midenc_hir2::dialects::builtin;
 pub use midenc_hir2::Context;
+use midenc_hir2::Op;
 use midenc_session::{
     diagnostics::{miette, Diagnostic, IntoDiagnostic, Report, WrapErr},
     OutputMode,
 };
 
-pub use self::{compiler::Compiler, stages::CodegenOutput};
+pub use self::{
+    compiler::Compiler,
+    stages::{CodegenOutput, LinkOutput},
+};
 use self::{stage::Stage, stages::*};
 
 pub type CompilerResult<T> = Result<T, Report>;
@@ -90,11 +93,47 @@ where
     stages.run(inputs, context)
 }
 
-pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<builtin::ComponentRef> {
+/// Compile the current inputs without lowering to Miden Assembly.
+///
+/// Returns the translated pre-link outputs of the compiler's link stage.
+pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
     let mut stages = ParseStage.collect(LinkStage).next_optional(ApplyRewritesStage);
 
     let inputs = context.session().inputs.clone();
-    stages.run(inputs, context).map(|link_output| link_output.component)
+    stages.run(inputs, context)
+}
+
+/// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST.
+///
+/// Returns the compiled artifact, just like `compile_to_memory` would.
+pub fn compile_link_output_to_masm(link_output: LinkOutput) -> CompilerResult<Artifact> {
+    let mut stages = CodegenStage.next(AssembleStage);
+
+    let context = link_output.component.borrow().as_operation().context_rc();
+    stages.run(link_output, context)
+}
+
+/// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST, but with
+/// an provided callback that will be used as an extra compiler stage just prior to assembly.
+///
+/// Returns the compiled artifact, just like `compile_to_memory` would.
+pub fn compile_link_output_to_masm_with_pre_assembly_stage<F>(
+    link_output: LinkOutput,
+    pre_assembly_stage: &mut F,
+) -> CompilerResult<Artifact>
+where
+    F: FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>,
+{
+    let mut stages = CodegenStage
+        .next(
+            pre_assembly_stage
+                as &mut (dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>
+                          + '_),
+        )
+        .next(AssembleStage);
+
+    let context = link_output.component.borrow().as_operation().context_rc();
+    stages.run(link_output, context)
 }
 
 fn compile_inputs(

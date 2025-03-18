@@ -14,6 +14,7 @@ use std::{
 };
 
 use miden_assembly::LibraryPath;
+use midenc_compile::compile_link_output_to_masm_with_pre_assembly_stage;
 use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
 use midenc_hir2::{
     demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident,
@@ -643,6 +644,16 @@ impl CompilerTestBuilder {
         rust_source: &str,
         midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> Self {
+        let name = format!("test_rust_{}", hash_string(rust_source));
+        Self::rust_fn_body_with_artifact_name(name, rust_source, midenc_flags)
+    }
+
+    /// Set the Rust source code to compile and add a binary operation test
+    pub fn rust_fn_body_with_artifact_name(
+        name: impl Into<Cow<'static, str>>,
+        rust_source: &str,
+        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+    ) -> Self {
         let rust_source = format!(
             r#"
             #![no_std]
@@ -658,7 +669,7 @@ impl CompilerTestBuilder {
             "#,
             rust_source
         );
-        let name = format!("test_rust_{}", hash_string(&rust_source));
+        let name = name.into();
         let module_name = Ident::with_empty_span(Symbol::intern(&name));
         let mut builder = CompilerTestBuilder::new(RustcTest::new(name, rust_source));
         builder.with_midenc_flags(midenc_flags).with_entrypoint(FunctionIdent {
@@ -850,7 +861,7 @@ pub struct CompilerTest {
     /// The entrypoint function to use when building the IR
     entrypoint: Option<FunctionIdent>,
     /// The compiled IR
-    hir: Option<builtin::ComponentRef>,
+    hir: Option<midenc_compile::LinkOutput>,
     /// The MASM source code
     masm_src: Option<String>,
     /// The compiled IR MASM program
@@ -868,7 +879,9 @@ impl fmt::Debug for CompilerTest {
             .field("entrypoint", &self.entrypoint)
             .field_with("hir", |f| match self.hir.as_ref() {
                 None => f.debug_tuple("None").finish(),
-                Some(component) => f.debug_tuple("Some").field(&component.borrow().id()).finish(),
+                Some(link_output) => {
+                    f.debug_tuple("Some").field(&link_output.component.borrow().id()).finish()
+                }
             })
             .finish_non_exhaustive()
     }
@@ -954,6 +967,16 @@ impl CompilerTest {
         CompilerTestBuilder::rust_fn_body(source, midenc_flags).build()
     }
 
+    /// Set the Rust source code to compile and add a binary operation test
+    pub fn rust_fn_body_with_artifact_name(
+        name: impl Into<Cow<'static, str>>,
+        rust_source: &str,
+        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+    ) -> Self {
+        CompilerTestBuilder::rust_fn_body_with_artifact_name(name, rust_source, midenc_flags)
+            .build()
+    }
+
     /// Set the Rust source code to compile with `miden-stdlib-sys` (stdlib + intrinsics)
     pub fn rust_fn_body_with_stdlib_sys(
         name: impl Into<Cow<'static, str>>,
@@ -1009,15 +1032,22 @@ impl CompilerTest {
             .expect("Failed to translate Wasm binary to IR component")
     }
 
-    /// Get the compiled IR, compiling the Wasm if it has not been compiled yet
+    /// Get the translated IR component, translating the Wasm if it has not been done yet
     pub fn hir(&mut self) -> builtin::ComponentRef {
+        self.link_output().component
+    }
+
+    /// Get a reference to the full IR linker output, translating the Wasm if needed.
+    pub fn link_output(&mut self) -> &midenc_compile::LinkOutput {
+        use midenc_compile::compile_to_optimized_hir;
+
         if self.hir.is_none() {
-            self.hir = Some(
-                self.compile_wasm_to_optimized_ir()
-                    .expect("failed to translate wasm to hir component"),
-            );
+            let link_output = compile_to_optimized_hir(self.context.clone())
+                .map_err(format_report)
+                .expect("failed to translate wasm to hir component");
+            self.hir = Some(link_output);
         }
-        self.hir.unwrap()
+        self.hir.as_ref().unwrap()
     }
 
     /// Compare the compiled IR against the expected output
@@ -1076,14 +1106,12 @@ impl CompilerTest {
         }
     }
 
-    pub(crate) fn compile_wasm_to_optimized_ir(&mut self) -> Result<builtin::ComponentRef, String> {
-        use midenc_compile::compile_to_optimized_hir;
-
-        compile_to_optimized_hir(self.context.clone()).map_err(format_report)
-    }
-
+    /// Assemble the Wasm input to Miden Assembly
+    ///
+    /// If the Wasm has already been translated to the IR, it is just assembled, otherwise the
+    /// Wasm will be translated to the IR, caching the translation results, and then assembled.
     pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {
-        use midenc_compile::{compile_to_memory_with_pre_assembly_stage, CodegenOutput};
+        use midenc_compile::CodegenOutput;
         use midenc_hir2::Context;
 
         let mut src = None;
@@ -1095,10 +1123,12 @@ impl CompilerTest {
             }
             Ok(output)
         };
-        let package =
-            compile_to_memory_with_pre_assembly_stage(self.context.clone(), &mut stage as _)
-                .map_err(format_report)?
-                .unwrap_mast();
+
+        let link_output = self.link_output().clone();
+        let package = compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut stage)
+            .map_err(format_report)?
+            .unwrap_mast();
+
         assert!(src.is_some(), "failed to pretty print masm artifact");
         self.masm_src = src;
         self.ir_masm_program = masm_program.map(Ok);

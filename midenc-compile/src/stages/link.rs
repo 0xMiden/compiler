@@ -9,6 +9,7 @@ use midenc_session::{
 
 use super::*;
 
+#[derive(Clone)]
 pub struct LinkOutput {
     /// The IR world in which all components/modules are represented as declarations or definitions.
     pub world: builtin::WorldRef,
