@@ -836,7 +836,7 @@ impl HirEvaluator {
             ));
         };
 
-        log::debug!(target: "eval", "evaluating '{} {}'", op.name(), DisplayValues::new(ValueRange::<2>::from(op.operands().all()).into_iter().map(|v| MaterializedValue {
+        log::debug!(target: "eval", "evaluating: {} {}", op.name(), DisplayValues::new(ValueRange::<2>::from(op.operands().all()).into_iter().map(|v| MaterializedValue {
             id: v,
             value: self.get_value(&v).unwrap(),
         })));
@@ -848,15 +848,37 @@ impl HirEvaluator {
         match effect {
             effect @ (ControlFlowEffect::Jump(_)
             | ControlFlowEffect::Trap { .. }
-            | ControlFlowEffect::Yield { .. }
-            | ControlFlowEffect::Call { .. }
-            | ControlFlowEffect::Return(_)) => return Ok(effect),
+            | ControlFlowEffect::Call { .. }) => return Ok(effect),
+            ControlFlowEffect::Yield {
+                successor,
+                ref arguments,
+                ..
+            } => {
+                log::debug!(target: "eval", "  {} {}", match successor {
+                    RegionBranchPoint::Parent => "<=".to_string(),
+                    RegionBranchPoint::Child(_) => format!("=> {successor}"),
+                    },
+                    DisplayValues::new(arguments.iter().map(|v| {
+                    MaterializedValue {
+                        id: v,
+                        value: self.get_value(&v).unwrap(),
+                    }
+                })));
+                return Ok(effect);
+            }
+            ControlFlowEffect::Return(returning) => {
+                match returning {
+                    Some(value) => log::debug!(target: "eval", "  => {value}"),
+                    None => log::debug!(target: "eval", "  <= ()"),
+                }
+                return Ok(effect);
+            }
             ControlFlowEffect::None => (),
         }
 
         // Obtain any results this operation produced
         let current_frame = self.current_frame();
-        log::debug!(target: "eval", "  => {}", DisplayValues::new(ValueRange::<2>::from(op.results().all()).into_iter().map(|v| {
+        log::debug!(target: "eval", "  <= {}", DisplayValues::new(ValueRange::<2>::from(op.results().all()).into_iter().map(|v| {
             MaterializedValue {
                 id: v,
                 value: self.get_value(&v).unwrap(),
