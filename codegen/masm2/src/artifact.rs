@@ -6,7 +6,7 @@ use core::fmt;
 
 use miden_assembly::{ast::InvocationTarget, Library};
 use miden_core::{utils::DisplayHex, Program};
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::{MastArtifact, Package, ProcedureName};
 use miden_processor::Digest;
 use midenc_hir2::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
@@ -332,6 +332,15 @@ impl MasmComponent {
             }
             // Invoke the program entrypoint
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
+            // Truncate the stack to 16 elements on exit
+            let truncate_stack = InvocationTarget::AbsoluteProcedurePath {
+                name: ProcedureName::new("truncate_stack").unwrap(),
+                path: masm::LibraryPath::new_from_components(
+                    masm::LibraryNamespace::new("std").unwrap(),
+                    [masm::Ident::new("sys").unwrap()],
+                ),
+            };
+            block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
             block
         };
         let start = masm::Procedure::new(
