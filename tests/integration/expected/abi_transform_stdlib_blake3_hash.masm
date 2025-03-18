@@ -2,16 +2,22 @@
 
 export.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
 
-        dropw
-        dropw
-        dropw
+        drop
+        drop
+        drop
+        drop
+        drop
+        drop
+        drop
+        drop
+        drop
 end
 
 
 export.entrypoint
 
-        dropw
-        dropw
+        drop
+        drop
 end
 
 

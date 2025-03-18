@@ -10,9 +10,8 @@ export.entrypoint
         neq
         if.true
 
-            push.0
-            swap.1
             drop
+            push.0
             push.3735929054
             push.0
         else
@@ -25,9 +24,8 @@ export.entrypoint
             neq
             if.true
 
-                push.0
-                swap.1
                 drop
+                push.0
                 push.3735929054
                 push.3735929054
                 push.1
@@ -46,9 +44,8 @@ export.entrypoint
                 neq
                 if.true
 
-                    push.1
-                    swap.1
                     drop
+                    push.1
                     push.0
                     push.3735929054
                     push.0
@@ -67,9 +64,8 @@ export.entrypoint
                     neq
                     if.true
 
-                        push.0
-                        swap.1
                         drop
+                        push.0
                         push.3735929054
                         push.3735929054
                         push.0
@@ -229,11 +225,10 @@ export.entrypoint
                             movdn.3
                             if.true
 
-                                swap.3
                                 movup.2
                                 drop
+                                movup.2
                                 drop
-                                swap.1
                                 push.1
                             else
 
@@ -248,7 +243,6 @@ export.entrypoint
                         u32lt
                         if.true
 
-                            drop
                             eq.1
                             if.true
 
@@ -263,9 +257,8 @@ export.entrypoint
                                 swap.5
                             else
 
-                                push.1
-                                swap.1
                                 drop
+                                push.1
                                 push.3735929054
                                 push.3735929054
                                 dup.0
@@ -284,7 +277,6 @@ export.entrypoint
                             u32lte
                             if.true
 
-                                drop
                                 eq.3
                                 if.true
 
@@ -299,9 +291,8 @@ export.entrypoint
                                     swap.5
                                 else
 
-                                    push.1
-                                    swap.1
                                     drop
+                                    push.1
                                     push.3735929054
                                     push.3735929054
                                     dup.0
@@ -331,14 +322,12 @@ export.entrypoint
                         eq.0
                         if.true
 
-                            drop
+                            nop
                         else
 
-                            push.1
-                            movdn.6
                             dropw
                             drop
-                            drop
+                            push.1
                             push.3735929054
                             dup.0
                             dup.1
@@ -356,7 +345,6 @@ export.entrypoint
             eq.0
             if.true
 
-                drop
                 movdn.3
                 drop
                 drop
@@ -368,7 +356,6 @@ export.entrypoint
             else
 
                 drop
-                drop
             end
         end
         movup.2
@@ -377,7 +364,6 @@ export.entrypoint
         u32lte
         if.true
 
-            drop
             eq.0
             if.true
 
@@ -387,10 +373,9 @@ export.entrypoint
                 swap.1
             else
 
+                drop
+                drop
                 push.1
-                movdn.2
-                drop
-                drop
                 push.3735929054
             end
         else
@@ -409,6 +394,7 @@ export.entrypoint
             nop
         else
 
+            drop
             push.0
             assert
         end

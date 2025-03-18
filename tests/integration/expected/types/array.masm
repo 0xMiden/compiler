@@ -10,10 +10,9 @@ export.sum_arr
         neq
         if.true
 
+            drop
+            drop
             push.0
-            movdn.2
-            drop
-            drop
         else
 
             push.0

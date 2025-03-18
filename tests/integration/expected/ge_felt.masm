@@ -3,7 +3,8 @@
 export.entrypoint
 
         push.0
-        swap.2
+        swap.1
+        movup.2
         gte
         neq
 end

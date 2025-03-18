@@ -100,6 +100,7 @@ midenc-dialect-scf = { version = "0.0.7", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.0.7", path = "dialects/cf" }
 midenc-dialect-ub = { version = "0.0.7", path = "dialects/ub" }
 midenc-hir2 = { version = "0.0.7", path = "hir2" }
+midenc-hir-eval = { version = "0.0.7", path = "eval" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }
 midenc-hir-type = { version = "0.0.7", path = "hir-type" }

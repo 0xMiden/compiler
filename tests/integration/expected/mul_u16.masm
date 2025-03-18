@@ -3,7 +3,8 @@
 export.entrypoint
 
         push.65535
-        movdn.2
+        swap.1
+        movup.2
         exec.::intrinsics::i32::wrapping_mul
         u32and
 end

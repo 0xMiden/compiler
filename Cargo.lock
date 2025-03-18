@@ -3106,6 +3106,7 @@ dependencies = [
  "midenc-compile",
  "midenc-debug",
  "midenc-frontend-wasm2",
+ "midenc-hir-eval",
  "midenc-hir2",
  "midenc-session",
  "proptest",
