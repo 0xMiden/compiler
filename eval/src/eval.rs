@@ -9,7 +9,7 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin, AttributeValue, Felt, Immediate, Op, OperationRef, Overflow,
     RegionBranchPoint, RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned,
     SuccessorInfo, Type, Value as _, ValueRange,
@@ -18,14 +18,14 @@ use midenc_session::diagnostics::Severity;
 
 use crate::*;
 
-/// This trait is intended to be implemented by any [midenc_hir2::Op] that we wish to be able to
+/// This trait is intended to be implemented by any [midenc_hir::Op] that we wish to be able to
 /// evaluate via the [HirEvaluator].
 pub trait Eval {
     /// Evaluate this operation, using the provided evaluator for any side effects/results, etc.
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report>;
 }
 
-/// This trait is intended to be implemented by any [midenc_hir2::Op] that has associated one-time
+/// This trait is intended to be implemented by any [midenc_hir::Op] that has associated one-time
 /// initialization that it needs to perform prior to starting evaluation.
 ///
 /// Initialization is only performed when calling [HirEvaluator::eval] or one of its variants, on
@@ -1697,7 +1697,7 @@ macro_rules! unaryop {
 
 impl Eval for arith::Incr {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir2::FieldElement;
+        use midenc_hir::FieldElement;
 
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
@@ -1759,7 +1759,7 @@ impl Eval for arith::Neg {
 
 impl Eval for arith::Inv {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir2::FieldElement;
+        use midenc_hir::FieldElement;
 
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;

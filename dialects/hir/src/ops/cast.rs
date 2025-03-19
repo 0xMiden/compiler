@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_hir2::{
+use midenc_hir::{
     derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
 };
 

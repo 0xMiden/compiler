@@ -3,14 +3,14 @@ use alloc::rc::Rc;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{self as cf, ControlFlowOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin,
     dominance::DominanceInfo,
     pass::{Pass, PassExecutionState},
-    transforms::{self, CFGToSCFInterface},
     Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
     SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
 };
+use midenc_hir_transform::{self as transforms, CFGToSCFInterface};
 use midenc_session::diagnostics::Severity;
 
 use crate::*;
@@ -154,11 +154,11 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// `scf.index_switch` if it is a `cf.switch`. Otherwise, returns an error.
     fn create_structured_branch_region_op(
         &self,
-        builder: &mut midenc_hir2::OpBuilder,
-        control_flow_cond_op: midenc_hir2::OperationRef,
-        result_types: &[midenc_hir2::Type],
-        regions: &mut midenc_hir2::SmallVec<[midenc_hir2::RegionRef; 2]>,
-    ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
+        builder: &mut midenc_hir::OpBuilder,
+        control_flow_cond_op: midenc_hir::OperationRef,
+        result_types: &[midenc_hir::Type],
+        regions: &mut midenc_hir::SmallVec<[midenc_hir::RegionRef; 2]>,
+    ) -> Result<midenc_hir::OperationRef, midenc_hir::Report> {
         let cf_op = control_flow_cond_op.borrow();
         if let Some(cond_br) = cf_op.downcast_ref::<cf::CondBr>() {
             assert_eq!(regions.len(), 2);
@@ -217,12 +217,12 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// Creates an `scf.yield` op returning the given results.
     fn create_structured_branch_region_terminator_op(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        _branch_region_op: midenc_hir2::OperationRef,
-        _replaced_control_flow_op: Option<midenc_hir2::OperationRef>,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        _branch_region_op: midenc_hir::OperationRef,
+        _replaced_control_flow_op: Option<midenc_hir::OperationRef>,
         results: ValueRange<'_, 2>,
-    ) -> Result<(), midenc_hir2::Report> {
+    ) -> Result<(), midenc_hir::Report> {
         builder.r#yield(results, span)?;
 
         Ok(())
@@ -233,13 +233,13 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// nothing but forward the iteration variables.
     fn create_structured_do_while_loop_op(
         &self,
-        builder: &mut midenc_hir2::OpBuilder,
-        replaced_op: midenc_hir2::OperationRef,
+        builder: &mut midenc_hir::OpBuilder,
+        replaced_op: midenc_hir::OperationRef,
         loop_values_init: ValueRange<'_, 2>,
-        condition: midenc_hir2::ValueRef,
+        condition: midenc_hir::ValueRef,
         loop_values_next_iter: ValueRange<'_, 2>,
-        loop_body: midenc_hir2::RegionRef,
-    ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
+        loop_body: midenc_hir::RegionRef,
+    ) -> Result<midenc_hir::OperationRef, midenc_hir::Report> {
         let span = replaced_op.span();
 
         // Results are derived from the forwarded values given to `scf.condition`
@@ -278,23 +278,23 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// Creates an `arith.constant` with an i32 attribute of the given value.
     fn get_cfg_switch_value(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
         value: u32,
-    ) -> midenc_hir2::ValueRef {
+    ) -> midenc_hir::ValueRef {
         builder.u32(value, span)
     }
 
     /// Creates a `cf.switch` op with the given cases and flag.
     fn create_cfg_switch_op(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        flag: midenc_hir2::ValueRef,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        flag: midenc_hir::ValueRef,
         case_values: &[u32],
-        case_destinations: &[midenc_hir2::BlockRef],
+        case_destinations: &[midenc_hir::BlockRef],
         case_arguments: &[ValueRange<'_, 2>],
-        default_dest: midenc_hir2::BlockRef,
+        default_dest: midenc_hir::BlockRef,
         default_args: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         let cases = case_values
@@ -315,10 +315,10 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
 
     fn create_single_destination_branch(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        _dummy_flag: midenc_hir2::ValueRef,
-        destination: midenc_hir2::BlockRef,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        _dummy_flag: midenc_hir::ValueRef,
+        destination: midenc_hir::BlockRef,
         arguments: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         builder.br(destination, arguments, span)?;
@@ -327,12 +327,12 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
 
     fn create_conditional_branch(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        condition: midenc_hir2::ValueRef,
-        true_dest: midenc_hir2::BlockRef,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        condition: midenc_hir::ValueRef,
+        true_dest: midenc_hir::BlockRef,
         true_args: ValueRange<'_, 2>,
-        false_dest: midenc_hir2::BlockRef,
+        false_dest: midenc_hir::BlockRef,
         false_args: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         builder.cond_br(condition, true_dest, true_args, false_dest, false_args, span)?;
@@ -343,19 +343,19 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
     /// Creates a `ub.poison` op of the given type.
     fn get_undef_value(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        ty: midenc_hir2::Type,
-    ) -> midenc_hir2::ValueRef {
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        ty: midenc_hir::Type,
+    ) -> midenc_hir::ValueRef {
         builder.poison(ty, span)
     }
 
     fn create_unreachable_terminator(
         &self,
-        span: midenc_hir2::SourceSpan,
-        builder: &mut midenc_hir2::OpBuilder,
-        _region: midenc_hir2::RegionRef,
-    ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        _region: midenc_hir::RegionRef,
+    ) -> Result<midenc_hir::OperationRef, midenc_hir::Report> {
         log::trace!(target: "cfg-to-scf", "creating unreachable terminator at {}", builder.insertion_point());
         let op = builder.unreachable(span);
         Ok(op.as_operation_ref())
@@ -368,7 +368,7 @@ mod tests {
 
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
     use expect_test::expect_file;
-    use midenc_hir2::{
+    use midenc_hir::{
         dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, Report,
         Signature, SourceSpan, Type,
     };
@@ -713,7 +713,7 @@ mod tests {
         )?;
 
         builder.switch_to_block(has_overflowed);
-        builder.ret_imm(midenc_hir2::Immediate::U32(u32::MAX), span)?;
+        builder.ret_imm(midenc_hir::Immediate::U32(u32::MAX), span)?;
 
         let operation = func.as_operation_ref();
         drop(func);
@@ -725,7 +725,7 @@ mod tests {
 
         let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
         pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.add_pass(midenc_hir2::transforms::Canonicalizer::create());
+        pm.add_pass(transforms::Canonicalizer::create());
         pm.run(operation)?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by

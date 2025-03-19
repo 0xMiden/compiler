@@ -1,6 +1,8 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
-use midenc_hir2::{derive::operation, effects::*, matchers::Matcher, traits::*, *};
+use midenc_hir::{
+    derive::operation, effects::*, matchers::Matcher, patterns::RewritePatternSet, traits::*, *,
+};
 
 use crate::ControlFlowDialect;
 

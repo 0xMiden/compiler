@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
 use midenc_frontend_wasm2::WasmTranslationConfig;
-use midenc_hir2::{Felt, Immediate, Op, SymbolTable};
+use midenc_hir::{Felt, Immediate, Op, SymbolTable};
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -155,9 +155,9 @@ fn is_prime() {
                 .borrow()
                 .symbol_manager()
                 .lookup_symbol_ref(
-                    &midenc_hir2::SymbolPath::new([
-                        midenc_hir2::SymbolNameComponent::Component("is_prime".into()),
-                        midenc_hir2::SymbolNameComponent::Leaf("entrypoint".into()),
+                    &midenc_hir::SymbolPath::new([
+                        midenc_hir::SymbolNameComponent::Component("is_prime".into()),
+                        midenc_hir::SymbolNameComponent::Leaf("entrypoint".into()),
                     ])
                     .unwrap(),
                 )

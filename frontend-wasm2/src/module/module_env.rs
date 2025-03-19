@@ -1,7 +1,7 @@
 use std::{ops::Range, path::PathBuf, sync::Arc};
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
-use midenc_hir2::{interner::Symbol, Ident};
+use midenc_hir::{interner::Symbol, Ident};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     types::CoreTypeId, CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding,

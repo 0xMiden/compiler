@@ -1,0 +1,26 @@
+#![no_std]
+#![feature(new_range_api)]
+
+extern crate alloc;
+#[cfg(test)]
+extern crate std;
+
+mod canonicalization;
+mod cfg_to_scf;
+//mod cse;
+//mod dce;
+//mod inliner;
+mod sccp;
+mod sink;
+mod spill;
+
+//pub use self::cse::CommonSubexpressionElimination;
+//pub use self::dce::{DeadSymbolElmination, DeadValueElimination};
+//pub use self::inliner::Inliner;
+pub use self::{
+    canonicalization::Canonicalizer,
+    cfg_to_scf::{transform_cfg_to_scf, CFGToSCFInterface},
+    sccp::SparseConditionalConstantPropagation,
+    sink::{ControlFlowSink, SinkOperandDefs},
+    spill::{transform_spills, ReloadLike, SpillLike, TransformSpillsInterface},
+};

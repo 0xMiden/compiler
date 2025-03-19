@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function},
     BlockRef, Builder, Context, Op,
 };
@@ -70,7 +70,7 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
     ) -> WasmResult<()> {
-        let mut op_builder = midenc_hir2::OpBuilder::new(func.as_operation().context_rc())
+        let mut op_builder = midenc_hir::OpBuilder::new(func.as_operation().context_rc())
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
 

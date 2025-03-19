@@ -16,7 +16,7 @@ use alloc::boxed::Box;
 mod builders;
 mod ops;
 
-use midenc_hir2::{
+use midenc_hir::{
     AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
     OperationRef, SourceSpan, Type,
 };
@@ -49,7 +49,7 @@ impl Dialect for ArithDialect {
         span: SourceSpan,
     ) -> Option<OperationRef> {
         // Save the current insertion point
-        let mut builder = midenc_hir2::InsertionGuard::new(builder);
+        let mut builder = midenc_hir::InsertionGuard::new(builder);
 
         // Only integer constants are supported here
         if !ty.is_integer() {

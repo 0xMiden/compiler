@@ -1,4 +1,4 @@
-use midenc_hir2::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{derive::operation, effects::*, traits::*, *};
 
 use crate::ArithDialect;
 

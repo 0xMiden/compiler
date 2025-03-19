@@ -5,7 +5,7 @@ use log::Log;
 use midenc_compile as compile;
 #[cfg(feature = "debug")]
 use midenc_debug as debugger;
-use midenc_hir2::Context;
+use midenc_hir::Context;
 use midenc_session::{
     diagnostics::{Emitter, Report},
     InputFile,

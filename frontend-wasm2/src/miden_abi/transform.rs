@@ -1,6 +1,6 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::FunctionRef, Builder, FunctionIdent, Immediate, Type, ValueRef,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, SourceSpan};
@@ -146,8 +146,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     assert_eq!(ptr_arg_ty, Type::I32);
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
 
-    let result_ty =
-        midenc_hir2::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
+    let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
     for (idx, value) in results.iter().enumerate() {
         let value_ty = (*value).borrow().ty().clone().clone();
         let eff_ptr = if idx == 0 {

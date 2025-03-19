@@ -11,7 +11,7 @@ pub struct WasmTranslationConfig {
     pub override_name: Option<Cow<'static, str>>,
 
     /// The HIR world in which to translate any components/modules
-    pub world: Option<midenc_hir2::dialects::builtin::WorldRef>,
+    pub world: Option<midenc_hir::dialects::builtin::WorldRef>,
 
     /// Whether or not to generate native DWARF debug information.
     pub generate_native_debuginfo: bool,

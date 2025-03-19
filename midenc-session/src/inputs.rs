@@ -1,9 +1,9 @@
-use alloc::{borrow::Cow, format, string::String, vec, vec::Vec};
+#[cfg(feature = "std")]
+use alloc::format;
+use alloc::{borrow::Cow, string::String, vec, vec::Vec};
 use core::fmt;
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+
+use crate::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct FileName {
@@ -37,15 +37,13 @@ impl fmt::Display for FileName {
         write!(f, "{}", self.as_str())
     }
 }
-#[cfg(feature = "std")]
-impl AsRef<std::path::Path> for FileName {
-    fn as_ref(&self) -> &std::path::Path {
-        std::path::Path::new(self.name.as_ref())
+impl AsRef<Path> for FileName {
+    fn as_ref(&self) -> &Path {
+        self.name.as_ref().as_ref()
     }
 }
-#[cfg(feature = "std")]
-impl From<std::path::PathBuf> for FileName {
-    fn from(path: std::path::PathBuf) -> Self {
+impl From<PathBuf> for FileName {
+    fn from(path: PathBuf) -> Self {
         Self {
             name: path.to_string_lossy().into_owned().into(),
             is_path: true,
@@ -78,8 +76,7 @@ impl FileName {
         self.is_path
     }
 
-    #[cfg(feature = "std")]
-    pub fn as_path(&self) -> &std::path::Path {
+    pub fn as_path(&self) -> &Path {
         self.as_ref()
     }
 
@@ -87,30 +84,12 @@ impl FileName {
         self.name.as_ref()
     }
 
-    #[cfg(feature = "std")]
     pub fn file_name(&self) -> Option<&str> {
         self.as_path().file_name().and_then(|name| name.to_str())
     }
 
-    #[cfg(feature = "std")]
     pub fn file_stem(&self) -> Option<&str> {
         self.as_path().file_stem().and_then(|name| name.to_str())
-    }
-
-    #[cfg(not(feature = "std"))]
-    pub fn file_name(&self) -> Option<&str> {
-        match self.name.rsplit_once('/') {
-            Some((_, name)) => Some(name),
-            None => Some(self.name.as_ref()),
-        }
-    }
-
-    #[cfg(not(feature = "std"))]
-    pub fn file_stem(&self) -> Option<&str> {
-        self.file_name().map(|name| match name.rsplit_once('.') {
-            Some((stem, _extension)) => stem,
-            None => name,
-        })
     }
 }
 
@@ -119,11 +98,12 @@ impl FileName {
 pub enum InvalidInputError {
     /// Occurs if an unsupported file type is given as an input
     #[error("invalid input file '{}': unsupported file type", .0.display())]
-    UnsupportedFileType(std::path::PathBuf),
+    UnsupportedFileType(PathBuf),
     /// We attempted to detecth the file type from the raw bytes, but failed
     #[error("could not detect file type of input")]
     UnrecognizedFileType,
     /// Unable to read input file
+    #[cfg(feature = "std")]
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -174,6 +154,7 @@ impl InputFile {
     /// Get an [InputFile] representing the contents received from standard input.
     ///
     /// This function returns an error if the contents are not a valid supported file type.
+    #[cfg(feature = "std")]
     pub fn from_stdin(name: FileName) -> Result<Self, InvalidInputError> {
         use std::io::Read;
 
@@ -219,6 +200,8 @@ impl InputFile {
         }
     }
 }
+
+#[cfg(feature = "std")]
 impl clap::builder::ValueParserFactory for InputFile {
     type Parser = InputFileParser;
 
@@ -229,7 +212,10 @@ impl clap::builder::ValueParserFactory for InputFile {
 
 #[doc(hidden)]
 #[derive(Clone)]
+#[cfg(feature = "std")]
 pub struct InputFileParser;
+
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for InputFileParser {
     type Value = InputFile;
 
@@ -237,7 +223,7 @@ impl clap::builder::TypedValueParser for InputFileParser {
         &self,
         _cmd: &clap::Command,
         _arg: Option<&clap::Arg>,
-        value: &OsStr,
+        value: &std::ffi::OsStr,
     ) -> Result<Self::Value, clap::error::Error> {
         use clap::error::{Error, ErrorKind};
 

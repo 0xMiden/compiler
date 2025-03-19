@@ -1,6 +1,6 @@
 use alloc::{format, vec};
 
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{self, LocalVariable},
     formatter::DisplayHex,
     BlockRef, Context, EntityRef, Felt, FxHashMap, Immediate, Operation, OperationRef, Report,

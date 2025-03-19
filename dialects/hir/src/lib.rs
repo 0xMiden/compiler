@@ -20,7 +20,7 @@ pub mod transforms;
 use alloc::boxed::Box;
 
 use midenc_dialect_arith as arith;
-use midenc_hir2::{
+use midenc_hir::{
     AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
     OperationRef, SourceSpan, Type,
 };
@@ -53,7 +53,7 @@ impl Dialect for HirDialect {
         span: SourceSpan,
     ) -> Option<OperationRef> {
         // Save the current insertion point
-        let mut builder = midenc_hir2::InsertionGuard::new(builder);
+        let mut builder = midenc_hir::InsertionGuard::new(builder);
 
         // Check for `PointerAttr`
         if let Some(attr) = attr.downcast_ref::<PointerAttr>() {

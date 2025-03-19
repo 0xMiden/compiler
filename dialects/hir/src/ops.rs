@@ -1,16 +1,14 @@
 macro_rules! has_no_effects {
     ($Op:ty) => {
-        impl ::midenc_hir2::effects::EffectOpInterface<::midenc_hir2::effects::MemoryEffect>
-            for $Op
-        {
+        impl ::midenc_hir::effects::EffectOpInterface<::midenc_hir::effects::MemoryEffect> for $Op {
             fn has_no_effect(&self) -> bool {
                 true
             }
 
             fn effects(
                 &self,
-            ) -> ::midenc_hir2::effects::EffectIterator<::midenc_hir2::effects::MemoryEffect> {
-                ::midenc_hir2::effects::EffectIterator::from_smallvec(smallvec::smallvec![])
+            ) -> ::midenc_hir::effects::EffectIterator<::midenc_hir::effects::MemoryEffect> {
+                ::midenc_hir::effects::EffectIterator::from_smallvec(::midenc_hir::smallvec![])
             }
         }
     };

@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
 use indexmap::IndexMap;
-use midenc_hir2::{interner::Symbol, FxHashMap, Ident};
+use midenc_hir::{interner::Symbol, FxHashMap, Ident};
 use midenc_session::DiagnosticsHandler;
 
 use self::types::*;

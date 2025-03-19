@@ -1,4 +1,4 @@
-use midenc_hir2::{derive::operation, traits::*, *};
+use midenc_hir::{derive::operation, traits::*, *};
 
 use crate::HirDialect;
 

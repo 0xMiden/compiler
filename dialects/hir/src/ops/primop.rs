@@ -1,5 +1,4 @@
-use midenc_hir2::{derive::operation, effects::*, traits::*, *};
-use smallvec::smallvec;
+use midenc_hir::{derive::operation, effects::*, smallvec, traits::*, *};
 
 use crate::HirDialect;
 

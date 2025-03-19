@@ -3,7 +3,7 @@
 use alloc::collections::BTreeMap;
 
 use miden_assembly::Spanned;
-use midenc_hir2::{dialects::builtin::ComponentBuilder, Abi, CallConv, FunctionType};
+use midenc_hir::{dialects::builtin::ComponentBuilder, Abi, CallConv, FunctionType};
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
 use super::{

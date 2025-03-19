@@ -1,14 +1,14 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::{
+use midenc_hir::{
     adt::SmallDenseMap,
-    dataflow::analyses::SpillAnalysis,
     dialects::builtin::{Function, FunctionRef, LocalVariable},
     pass::{Pass, PassExecutionState},
-    transforms::{self, ReloadLike, SpillLike, TransformSpillsInterface},
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
     SourceSpan, Spanned, ValueRef,
 };
+use midenc_hir_analysis::analyses::SpillAnalysis;
+use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformSpillsInterface};
 
 pub struct TransformSpills;
 

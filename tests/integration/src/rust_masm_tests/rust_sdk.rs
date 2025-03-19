@@ -5,7 +5,7 @@ use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
 use miden_mast_package::Package;
 use midenc_debug::Executor;
 use midenc_frontend_wasm2::WasmTranslationConfig;
-use midenc_hir2::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
+use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
 
 use crate::{
     cargo_proj::project, compiler_test::sdk_crate_path, CompilerTest, CompilerTestBuilder,

@@ -1,7 +1,8 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::{
+use midenc_hir::{
     adt::{SmallDenseMap, SmallSet},
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
     *,
 };
 

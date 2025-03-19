@@ -244,7 +244,7 @@ impl PopFromStack for [Felt; 4] {
 
 impl<const N: usize> PopFromStack for [u8; N] {
     fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        use midenc_hir2::FieldElement;
+        use midenc_hir::FieldElement;
         let mut out = [0u8; N];
 
         let chunk_size = (out.len() / 4) + (out.len() % 4 > 0) as usize;

@@ -2,11 +2,12 @@ use alloc::boxed::Box;
 
 use midenc_dialect_hir::transforms::TransformSpills;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
-use midenc_hir2::{
+use midenc_hir::{
     pass::{Nesting, PassManager},
-    transforms::{Canonicalizer, ControlFlowSink, SinkOperandDefs},
+    patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
     Op,
 };
+use midenc_hir_transform::{Canonicalizer, ControlFlowSink, SinkOperandDefs};
 
 use super::*;
 
@@ -49,9 +50,8 @@ impl Stage for ApplyRewritesStage {
         // Construct a pass manager with the default pass pipeline
         let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
 
-        let mut rewrite_config = midenc_hir2::GreedyRewriteConfig::default();
-        rewrite_config
-            .with_region_simplification_level(midenc_hir2::RegionSimplificationLevel::Normal);
+        let mut rewrite_config = GreedyRewriteConfig::default();
+        rewrite_config.with_region_simplification_level(RegionSimplificationLevel::Normal);
 
         // Component passes
         {

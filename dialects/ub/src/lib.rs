@@ -17,7 +17,7 @@ mod attributes;
 mod builders;
 mod ops;
 
-use midenc_hir2::{
+use midenc_hir::{
     AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
     SourceSpan, Type,
 };

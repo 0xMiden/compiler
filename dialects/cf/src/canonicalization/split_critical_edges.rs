@@ -1,7 +1,11 @@
 use alloc::rc::Rc;
 use core::any::TypeId;
 
-use midenc_hir2::{traits::BranchOpInterface, *};
+use midenc_hir::{
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    traits::BranchOpInterface,
+    *,
+};
 
 use crate::*;
 

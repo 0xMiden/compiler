@@ -36,7 +36,7 @@ macro_rules! test_bin_op {
                         let b_felt: Felt = b.0;
                         let rs_out = a_felt $op b_felt;
                         dbg!(&rs_out);
-                        let mut args = Vec::<midenc_hir2::Felt>::default();
+                        let mut args = Vec::<midenc_hir::Felt>::default();
                         PushToStack::try_push(&b, &mut args);
                         PushToStack::try_push(&a, &mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)

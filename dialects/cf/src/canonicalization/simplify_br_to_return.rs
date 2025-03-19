@@ -1,7 +1,8 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{self, BuiltinOpBuilder},
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
     *,
 };
 

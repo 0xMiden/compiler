@@ -1,0 +1,42 @@
+[package]
+name = "midenc-codegen-masm"
+description = "Miden Assembly backend for the Miden compiler"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir/std", "midenc-dialect-hir/std"]
+
+[dependencies]
+inventory.workspace = true
+log.workspace = true
+miden-assembly.workspace = true
+miden-core.workspace = true
+miden-mast-package.workspace = true
+miden-processor.workspace = true
+miden-stdlib.workspace = true
+midenc-hir = { workspace = true, features = ["serde"] }
+midenc-hir-analysis.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-dialect-ub.workspace = true
+midenc-session.workspace = true
+petgraph.workspace = true
+serde.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+expect-test.workspace = true
+proptest.workspace = true
+env_logger.workspace = true

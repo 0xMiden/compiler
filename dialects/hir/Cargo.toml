@@ -13,20 +13,16 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["midenc-hir2/std"]
+std = ["midenc-hir/std"]
 
 [dependencies]
 log.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
-midenc-dialect-scf.workspace = true
-midenc-dialect-ub.workspace = true
-midenc-hir2.workspace = true
+midenc-hir.workspace = true
+midenc-hir-analysis.workspace = true
 midenc-hir-symbol.workspace = true
+midenc-hir-transform.workspace = true
 midenc-session.workspace = true
 paste.workspace = true
 bitvec.workspace = true
-smallvec.workspace = true
-
-[dev-dependencies]
-pretty_assertions = "1.0"

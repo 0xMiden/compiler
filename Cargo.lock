@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.89"
+version = "1.0.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
+checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "anymap2"
@@ -3102,12 +3102,12 @@ dependencies = [
  "miden-mast-package",
  "miden-processor",
  "miden-stdlib",
- "midenc-codegen-masm2",
+ "midenc-codegen-masm",
  "midenc-compile",
  "midenc-debug",
  "midenc-frontend-wasm2",
+ "midenc-hir",
  "midenc-hir-eval",
- "midenc-hir2",
  "midenc-session",
  "proptest",
  "sha2",
@@ -3225,7 +3225,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-codegen-masm2"
+name = "midenc-codegen-masm"
 version = "0.0.7"
 dependencies = [
  "env_logger 0.11.5",
@@ -3243,7 +3243,8 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
- "midenc-hir2",
+ "midenc-hir",
+ "midenc-hir-analysis",
  "midenc-session",
  "petgraph",
  "proptest",
@@ -3255,17 +3256,19 @@ dependencies = [
 name = "midenc-compile"
 version = "0.0.7"
 dependencies = [
+ "anyhow",
  "clap",
  "inventory",
  "log",
  "miden-assembly",
  "miden-mast-package",
  "miden-thiserror",
- "midenc-codegen-masm2",
+ "midenc-codegen-masm",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-frontend-wasm2",
- "midenc-hir2",
+ "midenc-hir",
+ "midenc-hir-transform",
  "midenc-session",
  "wat",
 ]
@@ -3285,9 +3288,9 @@ dependencies = [
  "miden-processor",
  "miden-stdlib",
  "miden-thiserror",
- "midenc-codegen-masm2",
+ "midenc-codegen-masm",
  "midenc-dialect-hir",
- "midenc-hir2",
+ "midenc-hir",
  "midenc-session",
  "proptest",
  "ratatui",
@@ -3306,11 +3309,10 @@ version = "0.0.7"
 dependencies = [
  "bitvec",
  "log",
+ "midenc-hir",
  "midenc-hir-symbol",
- "midenc-hir2",
  "midenc-session",
  "paste",
- "pretty_assertions",
  "smallvec",
 ]
 
@@ -3321,12 +3323,10 @@ dependencies = [
  "bitvec",
  "log",
  "midenc-dialect-arith",
- "midenc-dialect-ub",
+ "midenc-hir",
  "midenc-hir-symbol",
- "midenc-hir2",
  "midenc-session",
  "paste",
- "pretty_assertions",
  "smallvec",
 ]
 
@@ -3338,14 +3338,12 @@ dependencies = [
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
- "midenc-dialect-scf",
- "midenc-dialect-ub",
+ "midenc-hir",
+ "midenc-hir-analysis",
  "midenc-hir-symbol",
- "midenc-hir2",
+ "midenc-hir-transform",
  "midenc-session",
  "paste",
- "pretty_assertions",
- "smallvec",
 ]
 
 [[package]]
@@ -3358,12 +3356,11 @@ dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-ub",
+ "midenc-hir",
  "midenc-hir-symbol",
- "midenc-hir2",
+ "midenc-hir-transform",
  "midenc-session",
  "paste",
- "pretty_assertions",
- "smallvec",
 ]
 
 [[package]]
@@ -3372,11 +3369,9 @@ version = "0.0.7"
 dependencies = [
  "bitvec",
  "log",
+ "midenc-hir",
  "midenc-hir-symbol",
- "midenc-hir2",
  "midenc-session",
- "paste",
- "pretty_assertions",
  "smallvec",
 ]
 
@@ -3389,7 +3384,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-compile",
  "midenc-debug",
- "midenc-hir2",
+ "midenc-hir",
  "midenc-session",
 ]
 
@@ -3412,12 +3407,51 @@ dependencies = [
  "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-ub",
+ "midenc-hir",
  "midenc-hir-type",
- "midenc-hir2",
  "midenc-session",
  "smallvec",
  "wasmparser 0.214.0",
  "wat",
+]
+
+[[package]]
+name = "midenc-hir"
+version = "0.0.7"
+dependencies = [
+ "anyhow",
+ "bitflags 2.6.0",
+ "bitvec",
+ "blink-alloc",
+ "compact_str",
+ "env_logger 0.11.5",
+ "hashbrown 0.14.5",
+ "intrusive-collections",
+ "inventory",
+ "log",
+ "miden-core",
+ "miden-thiserror",
+ "midenc-hir-macros",
+ "midenc-hir-symbol",
+ "midenc-hir-type",
+ "midenc-session",
+ "pretty_assertions",
+ "rustc-demangle",
+ "rustc-hash",
+ "semver 1.0.23",
+ "serde",
+ "serde_repr",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-hir-analysis"
+version = "0.0.7"
+dependencies = [
+ "bitvec",
+ "blink-alloc",
+ "log",
+ "midenc-hir",
 ]
 
 [[package]]
@@ -3431,7 +3465,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
- "midenc-hir2",
+ "midenc-hir",
  "midenc-session",
 ]
 
@@ -3462,6 +3496,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-hir-transform"
+version = "0.0.7"
+dependencies = [
+ "log",
+ "midenc-hir",
+ "midenc-hir-analysis",
+ "midenc-session",
+]
+
+[[package]]
 name = "midenc-hir-type"
 version = "0.0.7"
 dependencies = [
@@ -3472,38 +3516,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-hir2"
-version = "0.0.7"
-dependencies = [
- "anyhow",
- "bitflags 2.6.0",
- "bitvec",
- "blink-alloc",
- "compact_str",
- "env_logger 0.11.5",
- "hashbrown 0.14.5",
- "intrusive-collections",
- "inventory",
- "log",
- "miden-core",
- "miden-thiserror",
- "midenc-hir-macros",
- "midenc-hir-symbol",
- "midenc-hir-type",
- "midenc-session",
- "pretty_assertions",
- "rustc-demangle",
- "rustc-hash",
- "semver 1.0.23",
- "serde",
- "serde_repr",
- "smallvec",
-]
-
-[[package]]
 name = "midenc-session"
 version = "0.0.7"
 dependencies = [
+ "anyhow",
  "clap",
  "inventory",
  "log",

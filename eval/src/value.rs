@@ -1,4 +1,4 @@
-use midenc_hir2::{Immediate, SourceSpan, Type, ValueRef};
+use midenc_hir::{Immediate, SourceSpan, Type, ValueRef};
 use midenc_session::diagnostics::{miette, Diagnostic};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]

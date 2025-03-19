@@ -2,14 +2,14 @@ use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
 use miden_assembly::{ast::Module, Library};
 use miden_mast_package::Package;
-use midenc_codegen_masm2::{
+use midenc_codegen_masm::{
     self as masm,
     intrinsics::{
         I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
     },
     MasmComponent, ToMasmComponent,
 };
-use midenc_hir2::{interner::Symbol, pass::AnalysisManager};
+use midenc_hir::{interner::Symbol, pass::AnalysisManager};
 use midenc_session::OutputType;
 
 use super::*;

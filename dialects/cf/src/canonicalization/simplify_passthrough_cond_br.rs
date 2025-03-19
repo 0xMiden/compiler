@@ -1,6 +1,9 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::*;
+use midenc_hir::{
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    *,
+};
 
 use super::simplify_passthrough_br::collapse_branch;
 use crate::*;

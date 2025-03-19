@@ -5,9 +5,11 @@ members = [
     "dialects/*",
     "eval",
     "frontend-wasm2",
-    "hir2",
+    "hir",
+    "hir-analysis",
     "hir-macros",
     "hir-symbol",
+    "hir-transform",
     "hir-type",
     "midenc",
     "midenc-compile",
@@ -42,14 +44,20 @@ edition = "2021"
 publish = false
 
 [workspace.dependencies]
-anyhow = "1.0"
+anyhow = { version = "1.0", default-features = false }
 bitflags = "2.4"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-clap = { version = "4.1", default-features = false, features = [
+blink-alloc = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "nightly",
+] }
+clap = { version = "4.5", default-features = false, features = [
     "derive",
     "std",
     "env",
     "help",
+    "suggestions",
+    "error-context",
 ] }
 cranelift-entity = "0.108"
 compact_str = { version = "0.8", default-features = false }
@@ -92,16 +100,18 @@ miden-stdlib = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/mi
     "with-debug-info",
 ] }
 miden-mast-package = { version = "0.12.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
-midenc-codegen-masm2 = { version = "0.0.7", path = "codegen/masm2" }
+midenc-codegen-masm = { version = "0.0.7", path = "codegen/masm" }
 midenc-dialect-arith = { version = "0.0.7", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }
 midenc-dialect-scf = { version = "0.0.7", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.0.7", path = "dialects/cf" }
 midenc-dialect-ub = { version = "0.0.7", path = "dialects/ub" }
-midenc-hir2 = { version = "0.0.7", path = "hir2" }
+midenc-hir = { version = "0.0.7", path = "hir" }
+midenc-hir-analysis = { version = "0.0.7", path = "hir-analysis" }
 midenc-hir-eval = { version = "0.0.7", path = "eval" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }
+midenc-hir-transform = { version = "0.0.7", path = "hir-transform" }
 midenc-hir-type = { version = "0.0.7", path = "hir-type" }
 midenc-frontend-wasm2 = { version = "0.0.7", path = "frontend-wasm2" }
 midenc-compile = { version = "0.0.7", path = "midenc-compile" }

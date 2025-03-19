@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use cranelift_entity::{entity_impl, EntityList, EntitySet, ListPool};
 use hashbrown::hash_map::{Entry, EntryRef};
-use midenc_hir2::{
+use midenc_hir::{
     traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, ValueRef,
 };
 use midenc_hir_type::Type;

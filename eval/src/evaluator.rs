@@ -4,7 +4,7 @@ mod memory;
 
 use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
 
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{ComponentId, LocalVariable},
     formatter::DisplayValues,
     smallvec, CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint,

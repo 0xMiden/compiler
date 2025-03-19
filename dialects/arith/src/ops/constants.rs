@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_hir2::{derive::operation, effects::MemoryEffectOpInterface, traits::*, *};
+use midenc_hir::{derive::operation, effects::MemoryEffectOpInterface, traits::*, *};
 
 use crate::*;
 

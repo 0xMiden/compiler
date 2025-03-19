@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder},
     AbiParam, CallConv, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, Symbol,
     SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
@@ -171,7 +171,7 @@ fn define_func_for_miden_abi_trans(
     let func = func.as_mut().downcast_mut::<Function>().unwrap();
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
-        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+        midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
     let mut func_builder = FunctionBuilderExt::new(func, &mut op_builder);
     let entry_block = func_builder.current_block();
     func_builder.seal_block(entry_block); // Declare all predecessors known.

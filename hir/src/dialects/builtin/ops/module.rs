@@ -1,0 +1,196 @@
+use crate::{
+    derive::operation,
+    dialects::builtin::BuiltinDialect,
+    traits::{
+        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
+        NoTerminator, SingleBlock, SingleRegion,
+    },
+    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
+};
+
+pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
+
+/// A [Module] is a namespaced container for [Function] definitions, and represents the most atomic
+/// translation unit that supports compilation to Miden Assembly.
+///
+/// [Module] cannot be nested, use [Component] for such use cases.
+///
+/// Modules can contain one of the following entities:
+///
+/// * [Segment], describing how a specific region of memory should be initialized (i.e. what content
+///   it should be assumed to contain on program start). Segment definitions must not conflict
+///   within a shared-everything boundary. For example, multiple segments within the same module,
+///   or segments defined in sibling modules of the same [Component].
+/// * [Function], either a declaration of an externally-defined function, or a definition.
+///   Declarations are required in order to reference functions which are not in the compilation
+///   graph, but are expected to be provided at runtime. The difference between the two depends on
+///   whether or not the [Function] operation has a region (no region == declaration).
+/// * [GlobalVariable], either a declaration of an externally-defined global, or a definition, same
+///   as [Function].
+///
+/// Multiple modules can be grouped together into a [Component]. Doing so allows interprocedural
+/// analysis to reason across call boundaries for functions defined in different modules, in
+/// particular, dead code analysis.
+///
+/// Modules may also have a specified [Visibility]:
+///
+/// * `Visibility::Public` indicates that all functions exported from the module with `Public`
+///   visibility form the public interface of the module, and thus are not permitted to be dead-
+///   code eliminated, or otherwise rewritten by optimizations in a way that changes the public
+///   interface.
+/// * `Visibility::Internal` indicates that all functions exported from the module with `Public`
+///   or `Internal` visibility are only visibile by modules in the current compilation graph, and
+///   are thus eligible for dead-code elimination or other invasive rewrites so long as all
+///   callsites are known statically. If the address of any of those functions is captured, they
+///   must not be modified.
+/// * `Visibility::Private` indicates that the module and its exports are only visible to other
+///   modules in the same [Component], and otherwise adheres to the same rules as `Internal`.
+#[operation(
+    dialect = BuiltinDialect,
+    traits(
+        SingleRegion,
+        SingleBlock,
+        NoRegionArguments,
+        NoTerminator,
+        HasOnlyGraphRegion,
+        GraphRegionNoTerminator,
+        IsolatedFromAbove,
+    ),
+    implements(RegionKindInterface, SymbolTable, Symbol, OpPrinter)
+)]
+pub struct Module {
+    #[attr]
+    name: Ident,
+    #[attr]
+    #[default]
+    visibility: Visibility,
+    #[region]
+    body: RegionRef,
+    #[default]
+    symbols: SymbolMap,
+    #[default]
+    uses: SymbolUseList,
+}
+
+impl Module {
+    #[inline(always)]
+    pub fn as_module_ref(&self) -> ModuleRef {
+        unsafe { ModuleRef::from_raw(self) }
+    }
+}
+
+impl OpPrinter for Module {
+    fn print(
+        &self,
+        flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let header = display(self.op.name())
+            + const_text(" ")
+            + display(self.visibility())
+            + const_text(" @")
+            + display(self.name().as_str());
+        let body = crate::print::render_regions(&self.op, flags);
+        header + body
+    }
+}
+
+impl midenc_session::Emit for Module {
+    fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
+        Some(self.name().as_symbol())
+    }
+
+    fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {
+        midenc_session::OutputType::Hir
+    }
+
+    fn write_to<W: midenc_session::Writer>(
+        &self,
+        mut writer: W,
+        _mode: midenc_session::OutputMode,
+        _session: &midenc_session::Session,
+    ) -> anyhow::Result<()> {
+        let flags = crate::OpPrintingFlags::default();
+        let document = <Module as OpPrinter>::print(self, &flags, self.op.context());
+        writer.write_fmt(format_args!("{}", document))
+    }
+}
+
+impl RegionKindInterface for Module {
+    #[inline(always)]
+    fn kind(&self) -> RegionKind {
+        RegionKind::Graph
+    }
+}
+
+impl Usable for Module {
+    type Use = crate::SymbolUse;
+
+    #[inline(always)]
+    fn uses(&self) -> &SymbolUseList {
+        &self.uses
+    }
+
+    #[inline(always)]
+    fn uses_mut(&mut self) -> &mut SymbolUseList {
+        &mut self.uses
+    }
+}
+
+impl Symbol for Module {
+    #[inline(always)]
+    fn as_symbol_operation(&self) -> &Operation {
+        &self.op
+    }
+
+    #[inline(always)]
+    fn as_symbol_operation_mut(&mut self) -> &mut Operation {
+        &mut self.op
+    }
+
+    fn name(&self) -> SymbolName {
+        Module::name(self).as_symbol()
+    }
+
+    fn set_name(&mut self, name: SymbolName) {
+        let id = self.name_mut();
+        id.name = name;
+    }
+
+    fn visibility(&self) -> Visibility {
+        *Module::visibility(self)
+    }
+
+    fn set_visibility(&mut self, visibility: Visibility) {
+        *self.visibility_mut() = visibility;
+    }
+}
+
+impl SymbolTable for Module {
+    #[inline(always)]
+    fn as_symbol_table_operation(&self) -> &Operation {
+        &self.op
+    }
+
+    #[inline(always)]
+    fn as_symbol_table_operation_mut(&mut self) -> &mut Operation {
+        &mut self.op
+    }
+
+    fn symbol_manager(&self) -> SymbolManager<'_> {
+        SymbolManager::new(&self.op, crate::Symbols::Borrowed(&self.symbols))
+    }
+
+    fn symbol_manager_mut(&mut self) -> SymbolManagerMut<'_> {
+        SymbolManagerMut::new(&mut self.op, crate::SymbolsMut::Borrowed(&mut self.symbols))
+    }
+
+    #[inline]
+    fn get(&self, name: SymbolName) -> Option<SymbolRef> {
+        self.symbols.get(name)
+    }
+}

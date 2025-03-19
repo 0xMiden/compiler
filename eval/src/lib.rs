@@ -18,13 +18,13 @@ pub use self::{
     value::Value,
 };
 
-pub fn register_dialect_hooks(context: &midenc_hir2::Context) {
+pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_arith as arith;
     use midenc_dialect_cf as cf;
     use midenc_dialect_hir as hir;
     use midenc_dialect_scf as scf;
     use midenc_dialect_ub as ub;
-    use midenc_hir2::dialects::builtin;
+    use midenc_hir::dialects::builtin;
 
     context.register_dialect_hook::<builtin::BuiltinDialect, _>(|info, _context| {
         info.register_operation_trait::<builtin::Ret, dyn Eval>();

@@ -6,7 +6,7 @@
 use std::{borrow::BorrowMut, rc::Rc};
 
 use cranelift_entity::PrimaryMap;
-use midenc_hir2::{
+use midenc_hir::{
     self as hir2,
     dialects::builtin::{self, Component, ComponentBuilder, ComponentRef},
     interner::Symbol,

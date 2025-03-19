@@ -1,10 +1,9 @@
 use alloc::boxed::Box;
 
-use midenc_hir2::{
-    derive::operation, dialects::builtin::LocalVariable, effects::*, traits::*,
-    transforms::SpillLike, *,
+use midenc_hir::{
+    derive::operation, dialects::builtin::LocalVariable, effects::*, smallvec, traits::*, *,
 };
-use smallvec::smallvec;
+use midenc_hir_transform::SpillLike;
 
 use crate::HirDialect;
 

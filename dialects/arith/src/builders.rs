@@ -1,4 +1,4 @@
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::FunctionBuilder, Builder, BuilderExt, Felt, OpBuilder, Overflow, Report,
     SourceSpan, ValueRef,
 };

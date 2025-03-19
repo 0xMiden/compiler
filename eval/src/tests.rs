@@ -4,7 +4,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
     AbiParam, Builder, Context, Ident, Op, OpBuilder, ProgramPoint, Report, Signature, SourceSpan,
     SymbolTable, Type, ValueRef,

@@ -2,7 +2,7 @@ use core::fmt::Write;
 use std::{any::Any, rc::Rc};
 
 use expect_test::expect_file;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{self, Module},
     Op, Operation, Walk, WalkResult,
 };
@@ -12,7 +12,7 @@ use crate::{translate, WasmTranslationConfig};
 /// Check IR generated for a Wasm op(s).
 /// Wrap Wasm ops in a function and check the IR generated for the entry block of that function.
 fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
-    let ctx = midenc_hir2::Context::default();
+    let ctx = midenc_hir::Context::default();
     let context = Rc::new(ctx);
 
     let wat = format!(

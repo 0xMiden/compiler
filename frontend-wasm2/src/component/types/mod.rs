@@ -10,7 +10,7 @@ use core::{hash::Hash, ops::Index};
 
 use anyhow::{bail, Result};
 use cranelift_entity::{EntityRef, PrimaryMap};
-use midenc_hir2::FxHashMap;
+use midenc_hir::FxHashMap;
 use wasmparser::{collections::IndexSet, names::KebabString, types};
 
 use self::resources::ResourcesBuilder;

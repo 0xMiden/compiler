@@ -12,3 +12,7 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
+blink-alloc.workspace = true
+bitvec.workspace = true
+log.workspace = true
+midenc-hir.workspace = true

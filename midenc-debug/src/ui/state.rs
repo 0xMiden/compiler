@@ -177,7 +177,7 @@ impl State {
     pub fn read_memory(&self, expr: &ReadMemoryExpr) -> Result<String, String> {
         use core::fmt::Write;
 
-        use midenc_hir2::Type;
+        use midenc_hir::Type;
 
         let cycle = miden_processor::RowIndex::from(self.executor.cycle);
         let context = self.executor.current_context;

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use midenc_hir2::{
+use midenc_hir::{
     formatter::{self, PrettyPrint},
     Abi, FunctionIdent, FunctionType,
 };

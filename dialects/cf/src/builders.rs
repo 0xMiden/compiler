@@ -1,4 +1,4 @@
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::FunctionBuilder, BlockRef, Builder, BuilderExt, OpBuilder, Report,
     SourceSpan, UnsafeIntrusiveEntityRef, ValueRef,
 };
@@ -46,7 +46,7 @@ pub trait ControlFlowOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Switch>, Report>
     where
         TCases: IntoIterator<Item = SwitchCase>,
-        TFallbackArgs: IntoIterator<Item = ::midenc_hir2::ValueRef>,
+        TFallbackArgs: IntoIterator<Item = ::midenc_hir::ValueRef>,
     {
         let op_builder = self
             .builder_mut()

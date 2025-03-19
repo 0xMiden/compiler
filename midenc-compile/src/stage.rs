@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
-use midenc_hir2::Context;
+use midenc_hir::Context;
 
 use crate::{CompilerResult, CompilerStopped};
 

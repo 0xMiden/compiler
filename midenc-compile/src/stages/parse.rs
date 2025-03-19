@@ -1,12 +1,16 @@
-use alloc::{format, rc::Rc, string::ToString, sync::Arc};
 #[cfg(feature = "std")]
-use std::path::Path;
+use alloc::string::ToString;
+use alloc::{format, rc::Rc, sync::Arc};
 
-use miden_assembly::utils::{Deserializable, ReadAdapter};
+use miden_assembly::utils::Deserializable;
+#[cfg(feature = "std")]
+use miden_assembly::utils::ReadAdapter;
 use midenc_session::{
     diagnostics::{IntoDiagnostic, WrapErr},
-    FileName, InputFile, InputType,
+    InputFile, InputType,
 };
+#[cfg(feature = "std")]
+use midenc_session::{FileName, Path};
 
 use super::*;
 
@@ -38,6 +42,9 @@ impl Stage for ParseStage {
 
         let file_type = input.file_type();
         let parsed = match input.file {
+            #[cfg(not(feature = "std"))]
+            InputType::Real(_path) => unimplemented!(),
+            #[cfg(feature = "std")]
             InputType::Real(path) => match file_type {
                 FileType::Hir => {
                     Err(Report::msg("invalid input: hir parsing is temporarily unsupported"))
@@ -116,6 +123,7 @@ impl Stage for ParseStage {
     }
 }
 impl ParseStage {
+    #[cfg(feature = "std")]
     fn parse_wasm_from_wat_file(&self, path: &Path) -> CompilerResult<ParseOutput> {
         let wasm = wat::parse_file(path).into_diagnostic().wrap_err("failed to parse wat")?;
         Ok(ParseOutput::Wasm(InputType::Stdin {
@@ -124,6 +132,7 @@ impl ParseStage {
         }))
     }
 
+    #[cfg(feature = "std")]
     fn parse_masm_from_file(
         &self,
         path: &Path,

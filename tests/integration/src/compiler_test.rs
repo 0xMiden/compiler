@@ -16,7 +16,7 @@ use std::{
 use miden_assembly::LibraryPath;
 use midenc_compile::compile_link_output_to_masm_with_pre_assembly_stage;
 use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
-use midenc_hir2::{
+use midenc_hir::{
     demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident,
 };
 use midenc_session::{InputFile, InputType, Session};
@@ -865,7 +865,7 @@ pub struct CompilerTest {
     /// The MASM source code
     masm_src: Option<String>,
     /// The compiled IR MASM program
-    ir_masm_program: Option<Result<Arc<midenc_codegen_masm2::MasmComponent>, String>>,
+    ir_masm_program: Option<Result<Arc<midenc_codegen_masm::MasmComponent>, String>>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
 }
@@ -1052,7 +1052,7 @@ impl CompilerTest {
 
     /// Compare the compiled IR against the expected output
     pub fn expect_ir(&mut self, expected_hir_file: expect_test::ExpectFile) {
-        use midenc_hir2::Op;
+        use midenc_hir::Op;
 
         let ir = demangle(self.hir().borrow().as_operation().to_string());
         expected_hir_file.assert_eq(&ir);
@@ -1066,7 +1066,7 @@ impl CompilerTest {
     }
 
     /// Get the compiled IR MASM program
-    pub fn ir_masm_program(&mut self) -> Arc<midenc_codegen_masm2::MasmComponent> {
+    pub fn ir_masm_program(&mut self) -> Arc<midenc_codegen_masm::MasmComponent> {
         if self.ir_masm_program.is_none() {
             self.compile_wasm_to_masm_program().unwrap();
         }
@@ -1112,7 +1112,7 @@ impl CompilerTest {
     /// Wasm will be translated to the IR, caching the translation results, and then assembled.
     pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {
         use midenc_compile::CodegenOutput;
-        use midenc_hir2::Context;
+        use midenc_hir::Context;
 
         let mut src = None;
         let mut masm_program = None;
@@ -1222,7 +1222,7 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
 fn dummy_context(flags: &[&str]) -> Rc<Context> {
     let session = dummy_session(flags);
     let context = Rc::new(Context::new(session));
-    midenc_codegen_masm2::register_dialect_hooks(&context);
+    midenc_codegen_masm::register_dialect_hooks(&context);
     midenc_hir_eval::register_dialect_hooks(&context);
     context
 }
@@ -1239,7 +1239,7 @@ where
 {
     let session = default_session(inputs, argv);
     let context = Rc::new(Context::new(session));
-    midenc_codegen_masm2::register_dialect_hooks(&context);
+    midenc_codegen_masm::register_dialect_hooks(&context);
     midenc_hir_eval::register_dialect_hooks(&context);
     context
 }

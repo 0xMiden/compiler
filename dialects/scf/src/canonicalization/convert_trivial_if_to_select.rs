@@ -1,7 +1,11 @@
 use alloc::rc::Rc;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_hir2::{adt::SmallDenseMap, *};
+use midenc_hir::{
+    adt::SmallDenseMap,
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    *,
+};
 
 use crate::*;
 

@@ -18,7 +18,7 @@ mod builders;
 mod canonicalization;
 mod ops;
 
-use midenc_hir2::{
+use midenc_hir::{
     AttributeValue, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
     Type,
 };

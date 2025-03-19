@@ -10,10 +10,10 @@ mod stages;
 
 use alloc::{rc::Rc, vec::Vec};
 
-pub use midenc_hir2::Context;
-use midenc_hir2::Op;
+pub use midenc_hir::Context;
+use midenc_hir::Op;
 use midenc_session::{
-    diagnostics::{miette, Diagnostic, IntoDiagnostic, Report, WrapErr},
+    diagnostics::{miette, Diagnostic, Report, WrapErr},
     OutputMode,
 };
 
@@ -33,11 +33,11 @@ pub struct CompilerStopped;
 
 /// Run the compiler using the provided [Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
-    use midenc_hir2::formatter::DisplayHex;
+    use midenc_hir::formatter::DisplayHex;
 
     log::info!("starting compilation session");
 
-    midenc_codegen_masm2::register_dialect_hooks(&context);
+    midenc_codegen_masm::register_dialect_hooks(&context);
 
     let session = context.session();
     match compile_inputs(session.inputs.clone(), context.clone())? {
@@ -49,11 +49,11 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
             );
             session
                 .emit(OutputMode::Text, package)
-                .into_diagnostic()
+                .map_err(Report::msg)
                 .wrap_err("failed to pretty print 'mast' artifact")?;
             session
                 .emit(OutputMode::Binary, package)
-                .into_diagnostic()
+                .map_err(Report::msg)
                 .wrap_err("failed to serialize 'mast' artifact")
         }
         Artifact::Lowered(_) => {

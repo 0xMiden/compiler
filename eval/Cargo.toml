@@ -15,7 +15,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["midenc-hir2/std"]
+std = ["midenc-hir/std"]
 
 [dependencies]
 log.workspace = true
@@ -24,6 +24,6 @@ midenc-dialect-cf.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-ub.workspace = true
-midenc-hir2.workspace = true
+midenc-hir.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true

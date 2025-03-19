@@ -36,7 +36,7 @@ macro_rules! test_bin_op {
                         dbg!(a, b);
                         let rs_out = a $op b;
                         dbg!(&rs_out);
-                        let mut args = Vec::<midenc_hir2::Felt>::default();
+                        let mut args = Vec::<midenc_hir::Felt>::default();
                         PushToStack::try_push(&b, &mut args);
                         PushToStack::try_push(&a, &mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
@@ -75,7 +75,7 @@ macro_rules! test_unary_op {
                     .run(&($range), move |a| {
                         let rs_out = $op a;
                         dbg!(&rs_out);
-                        let mut args = Vec::<midenc_hir2::Felt>::default();
+                        let mut args = Vec::<midenc_hir::Felt>::default();
                         a.try_push(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
@@ -114,7 +114,7 @@ macro_rules! test_func_two_arg {
                     .run(&(0..$a_ty::MAX/2, any::<$b_ty>()), move |(a, b)| {
                         let rust_out = $func(a, b);
                         dbg!(&rust_out);
-                        let mut args = Vec::<midenc_hir2::Felt>::default();
+                        let mut args = Vec::<midenc_hir::Felt>::default();
                         b.try_push(&mut args);
                         a.try_push(&mut args);
                         run_masm_vs_rust(rust_out, &package, &args, &test.session)

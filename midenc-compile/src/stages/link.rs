@@ -1,7 +1,8 @@
 use alloc::{borrow::ToOwned, collections::BTreeMap, sync::Arc, vec::Vec};
-use std::path::Path;
 
-use midenc_hir2::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
+use midenc_hir::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
+#[cfg(feature = "std")]
+use midenc_session::Path;
 use midenc_session::{
     diagnostics::{Severity, Spanned},
     InputType, ProjectType,
@@ -109,7 +110,10 @@ impl Stage for LinkStage {
         let component_wasm =
             component_wasm.ok_or_else(|| Report::msg("expected at least one wasm input"))?;
         let component = match component_wasm {
+            #[cfg(feature = "std")]
             InputType::Real(path) => parse_hir_from_wasm_file(&path, world, context.clone())?,
+            #[cfg(not(feature = "std"))]
+            InputType::Real(_path) => unimplemented!(),
             InputType::Stdin { name, input } => {
                 let config = wasm::WasmTranslationConfig {
                     source_name: name.file_stem().unwrap().to_owned().into(),
@@ -141,6 +145,7 @@ impl Stage for LinkStage {
     }
 }
 
+#[cfg(feature = "std")]
 fn parse_hir_from_wasm_file(
     path: &Path,
     world: builtin::WorldRef,

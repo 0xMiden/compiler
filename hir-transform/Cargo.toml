@@ -12,3 +12,7 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
+log.workspace = true
+midenc-hir.workspace = true
+midenc-hir-analysis.workspace = true
+midenc-session.workspace = true

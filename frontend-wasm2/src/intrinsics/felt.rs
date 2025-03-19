@@ -2,7 +2,7 @@ use std::vec;
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir2::{Builder, FunctionIdent, SourceSpan, Type, ValueRef};
+use midenc_hir::{Builder, FunctionIdent, SourceSpan, Type, ValueRef};
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 

@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, sync::Arc};
 
-use midenc_hir2::{
+use midenc_hir::{
     constants::{ConstantData, ConstantId},
     derive::operation,
     effects::MemoryEffectOpInterface,

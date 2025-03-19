@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_hir2::{formatter, AttributeValue, Immediate, Type};
+use midenc_hir::{formatter, AttributeValue, Immediate, Type};
 
 /// Represents a constant pointer value
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

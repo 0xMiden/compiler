@@ -1,4 +1,4 @@
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::*, AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, Report,
     Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
 };

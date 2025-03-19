@@ -18,7 +18,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::{assertions, HirOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, GlobalSymbolBuilder, GlobalVariable},
     traits::InferTypeOpInterface,
     BlockRef, Builder, CallableOpInterface, Felt, FieldElement, Immediate, Op, SymbolTable,

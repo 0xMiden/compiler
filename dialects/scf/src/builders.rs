@@ -1,4 +1,4 @@
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::FunctionBuilder, ArrayAttr, Builder, BuilderExt, OpBuilder, Region, Report,
     SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
 };

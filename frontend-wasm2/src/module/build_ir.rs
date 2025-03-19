@@ -1,7 +1,7 @@
 use core::mem;
 use std::rc::Rc;
 
-use midenc_hir2::{
+use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, Component, ComponentBuilder, Function, Module, ModuleBuilder,

@@ -1,11 +1,5 @@
-use midenc_hir2::{
-    derive::operation,
-    effects::*,
-    traits::*,
-    transforms::{ReloadLike, SpillLike},
-    *,
-};
-use smallvec::smallvec;
+use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir_transform::{ReloadLike, SpillLike};
 
 use crate::HirDialect;
 

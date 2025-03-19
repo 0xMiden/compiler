@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use midenc_hir2::{
+use midenc_hir::{
     dialects::builtin::{self, BuiltinDialect},
     Context,
 };
@@ -31,11 +31,11 @@ pub fn translate_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::ComponentRef> {
+) -> WasmResult<midenc_hir::dialects::builtin::ComponentRef> {
     let (mut component_types_builder, parsed_root_component) =
         parse(config, wasm, context.session())?;
     let dialect = context.get_or_register_dialect::<BuiltinDialect>();
-    dialect.expect_registered_name::<midenc_hir2::dialects::builtin::Component>();
+    dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
     // context.get_or_register_dialect::<HirDialect>();
     // Extract component name from exported component instance
     let id = {

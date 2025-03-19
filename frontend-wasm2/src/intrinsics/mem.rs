@@ -1,5 +1,5 @@
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir2::{
+use midenc_hir::{
     AbiParam, Builder, FunctionIdent, FunctionType, Signature, SourceSpan, Type, ValueRef,
 };
 

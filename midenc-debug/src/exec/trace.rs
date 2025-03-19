@@ -10,9 +10,9 @@ use miden_processor::{
     AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
     ProcessState, RowIndex, StackOutputs, TraceLenSummary, VmState, VmStateIterator,
 };
-use midenc_codegen_masm2::NativePtr;
-pub use midenc_codegen_masm2::TraceEvent;
-use midenc_hir2::Type;
+use midenc_codegen_masm::NativePtr;
+pub use midenc_codegen_masm::TraceEvent;
+use midenc_hir::Type;
 use midenc_session::Session;
 
 use super::Chiplets;

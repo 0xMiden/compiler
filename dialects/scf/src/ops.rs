@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, rc::Rc};
 
-use midenc_hir2::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{derive::operation, effects::*, patterns::RewritePatternSet, traits::*, *};
 
 use crate::ScfDialect;
 

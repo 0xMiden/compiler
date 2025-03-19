@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::{adt::SmallSet, *};
+use midenc_hir::{adt::SmallSet, *};
 
 use crate::{
     builders::{DefaultInstBuilder, InstBuilder},

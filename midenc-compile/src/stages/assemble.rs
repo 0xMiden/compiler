@@ -2,7 +2,7 @@ use alloc::{string::ToString, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{Dependency, MastArtifact, Package};
-use midenc_session::Session;
+use midenc_session::{diagnostics::IntoDiagnostic, Session};
 
 use super::*;
 
@@ -32,7 +32,7 @@ impl Stage for AssembleStage {
     type Output = Artifact;
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
-        use midenc_hir2::formatter::DisplayHex;
+        use midenc_hir::formatter::DisplayHex;
 
         let session = context.session();
         if session.should_assemble() {

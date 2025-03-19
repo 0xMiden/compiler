@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
 use midenc_frontend_wasm2::WasmTranslationConfig;
-use midenc_hir2::Felt;
+use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
 use crate::{

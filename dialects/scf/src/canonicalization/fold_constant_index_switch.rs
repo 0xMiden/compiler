@@ -1,6 +1,9 @@
 use alloc::rc::Rc;
 
-use midenc_hir2::*;
+use midenc_hir::{
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    *,
+};
 
 use crate::*;
 
@@ -29,7 +32,7 @@ impl FoldConstantIndexSwitch {
 
 impl FoldConstantIndexSwitch {
     fn match_constant_selector(&self, op: OperationRef) -> Option<u32> {
-        use midenc_hir2::matchers::{self, Matcher};
+        use midenc_hir::matchers::{self, Matcher};
 
         let op = op.borrow();
         if let Some(op) = op.downcast_ref::<IndexSwitch>() {
