@@ -768,7 +768,7 @@ impl Operation {
     }
 
     /// Replace the current operands of this operation with the ones provided in `operands`.
-    pub fn set_operands(&mut self, operands: impl Iterator<Item = ValueRef>) {
+    pub fn set_operands(&mut self, operands: impl IntoIterator<Item = ValueRef>) {
         self.operands.clear();
         let context = self.context_rc();
         let owner = self.as_operation_ref();

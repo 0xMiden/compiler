@@ -4,7 +4,11 @@ mod stack;
 
 use core::{any::Any, fmt};
 
-pub use self::{aliasing::ValueOrAlias, range::ValueRange, stack::StackOperand};
+pub use self::{
+    aliasing::ValueOrAlias,
+    range::{AsValueRange, ValueRange},
+    stack::StackOperand,
+};
 use super::*;
 use crate::{DynHash, DynPartialEq};
 

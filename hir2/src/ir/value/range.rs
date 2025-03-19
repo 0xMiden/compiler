@@ -145,6 +145,22 @@ impl<'values, const N: usize> ValueRange<'values, N> {
             }
         }
     }
+
+    /// Obtain a [alloc::vec::Vec] from this range.
+    pub fn to_vec(&self) -> alloc::vec::Vec<ValueRef> {
+        match self {
+            Self::Empty => Default::default(),
+            Self::Owned(values) => values.to_vec(),
+            Self::Borrowed(values) => values.to_vec(),
+            Self::BlockArguments(args) => args.iter().copied().map(|arg| arg as ValueRef).collect(),
+            Self::Operands(operands) => {
+                operands.iter().map(|operand| operand.borrow().as_value_ref()).collect()
+            }
+            Self::Results(results) => {
+                results.iter().copied().map(|result| result as ValueRef).collect()
+            }
+        }
+    }
 }
 
 impl<const N: usize> core::fmt::Debug for ValueRange<'_, N> {
@@ -287,6 +303,103 @@ impl<'a, const N: usize> From<&'a [OpResultRef]> for ValueRange<'a, N> {
 impl<'a, const N: usize> From<SuccessorOperandRange<'a>> for ValueRange<'a, N> {
     fn from(range: SuccessorOperandRange<'a>) -> Self {
         Self::from(range.into_forwarded())
+    }
+}
+
+pub trait AsValueRange {
+    fn as_value_range(&self) -> ValueRange<'_, 2>;
+}
+
+impl<T: AsValueRange> AsValueRange for Option<T> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        match self.as_ref() {
+            Some(values) => values.as_value_range(),
+            None => ValueRange::Empty,
+        }
+    }
+}
+
+impl AsValueRange for [ValueRef] {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Borrowed(self)
+    }
+}
+
+impl AsValueRange for [BlockArgumentRef] {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::BlockArguments(self)
+    }
+}
+
+impl AsValueRange for [OpOperand] {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Operands(self)
+    }
+}
+
+impl AsValueRange for [OpResultRef] {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Results(self)
+    }
+}
+
+impl AsValueRange for alloc::vec::Vec<ValueRef> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Borrowed(self.as_slice())
+    }
+}
+
+impl<const N: usize> AsValueRange for SmallVec<[ValueRef; N]> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Borrowed(self.as_slice())
+    }
+}
+
+impl AsValueRange for OpOperandStorage {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Operands(self.all().as_slice())
+    }
+}
+
+impl AsValueRange for OpResultStorage {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Results(self.all().as_slice())
+    }
+}
+
+impl AsValueRange for OpOperandRange<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Operands(self.as_slice())
+    }
+}
+
+impl AsValueRange for OpOperandRangeMut<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Operands(self.as_slice())
+    }
+}
+
+impl AsValueRange for OpResultRange<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Results(self.as_slice())
+    }
+}
+
+impl AsValueRange for OpResultRangeMut<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::Results(self.as_slice())
+    }
+}
+
+impl AsValueRange for BlockArgumentRange<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::BlockArguments(self.as_slice())
+    }
+}
+
+impl AsValueRange for BlockArgumentRangeMut<'_> {
+    fn as_value_range(&self) -> ValueRange<'_, 2> {
+        ValueRange::BlockArguments(self.as_slice())
     }
 }
 

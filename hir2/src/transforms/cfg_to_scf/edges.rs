@@ -1,7 +1,9 @@
 use smallvec::SmallVec;
 
 use super::*;
-use crate::{adt::SmallDenseMap, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef};
+use crate::{
+    adt::SmallDenseMap, AsValueRange, BlockRef, OpBuilder, Report, SourceSpan, Type, ValueRef,
+};
 
 /// Type representing an edge in the CFG.
 ///
@@ -37,6 +39,18 @@ impl Edge {
         let mut terminator = terminator.borrow_mut();
         let mut succ = terminator.successor_mut(self.successor_index);
         succ.set(block);
+    }
+}
+
+impl core::fmt::Display for Edge {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} -> {} (index {})",
+            self.get_predecessor(),
+            self.get_successor(),
+            self.successor_index
+        )
     }
 }
 
@@ -390,7 +404,9 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
                 succ.num_arguments()
             );
 
-            case_arguments.push(&multiplexer_block_args[offset..(offset + succ.num_arguments())]);
+            case_arguments.push(
+                multiplexer_block_args[offset..(offset + succ.num_arguments())].as_value_range(),
+            );
         }
 
         // If we don't have a discriminator due to only having one entry we have to create a dummy

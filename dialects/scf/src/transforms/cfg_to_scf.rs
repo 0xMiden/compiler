@@ -9,7 +9,7 @@ use midenc_hir2::{
     pass::{Pass, PassExecutionState},
     transforms::{self, CFGToSCFInterface},
     Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
-    SmallVec, Spanned, Type, ValueRef, WalkResult,
+    SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
 };
 use midenc_session::diagnostics::Severity;
 
@@ -221,9 +221,9 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         builder: &mut midenc_hir2::OpBuilder,
         _branch_region_op: midenc_hir2::OperationRef,
         _replaced_control_flow_op: Option<midenc_hir2::OperationRef>,
-        results: &[midenc_hir2::ValueRef],
+        results: ValueRange<'_, 2>,
     ) -> Result<(), midenc_hir2::Report> {
-        builder.r#yield(results.iter().copied(), span)?;
+        builder.r#yield(results, span)?;
 
         Ok(())
     }
@@ -235,9 +235,9 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         &self,
         builder: &mut midenc_hir2::OpBuilder,
         replaced_op: midenc_hir2::OperationRef,
-        loop_values_init: &[midenc_hir2::ValueRef],
+        loop_values_init: ValueRange<'_, 2>,
         condition: midenc_hir2::ValueRef,
-        loop_values_next_iter: &[midenc_hir2::ValueRef],
+        loop_values_next_iter: ValueRange<'_, 2>,
         loop_body: midenc_hir2::RegionRef,
     ) -> Result<midenc_hir2::OperationRef, midenc_hir2::Report> {
         let span = replaced_op.span();
@@ -247,8 +247,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             .iter()
             .map(|v| v.borrow().ty().clone())
             .collect::<SmallVec<[_; 2]>>();
-        let mut while_op =
-            builder.r#while(loop_values_init.iter().copied(), &result_types, span)?;
+        let mut while_op = builder.r#while(loop_values_init, &result_types, span)?;
         let mut op = while_op.borrow_mut();
         let operation = op.as_operation_ref();
 
@@ -259,7 +258,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         // `get_cfg_switch_value` returns a u32. We therefore need to truncate the condition to i1
         // first. It is guaranteed to be either 0 or 1 already.
         let cond = builder.trunc(condition, Type::I1, span)?;
-        builder.condition(cond, loop_values_next_iter.iter().copied(), span)?;
+        builder.condition(cond, loop_values_next_iter, span)?;
 
         let yielded = op
             .after()
@@ -294,14 +293,14 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         flag: midenc_hir2::ValueRef,
         case_values: &[u32],
         case_destinations: &[midenc_hir2::BlockRef],
-        case_arguments: &[&[midenc_hir2::ValueRef]],
+        case_arguments: &[ValueRange<'_, 2>],
         default_dest: midenc_hir2::BlockRef,
-        default_args: &[midenc_hir2::ValueRef],
+        default_args: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         let cases = case_values
             .iter()
             .copied()
-            .zip(case_destinations.iter().copied().zip(case_arguments.iter().copied()))
+            .zip(case_destinations.iter().copied().zip(case_arguments))
             .map(|(value, (successor, args))| cf::SwitchCase {
                 value,
                 successor,
@@ -309,7 +308,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             })
             .collect::<SmallVec<[_; 4]>>();
 
-        builder.switch(flag, cases, default_dest, default_args.iter().copied(), span)?;
+        builder.switch(flag, cases, default_dest, default_args, span)?;
 
         Ok(())
     }
@@ -320,9 +319,9 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         builder: &mut midenc_hir2::OpBuilder,
         _dummy_flag: midenc_hir2::ValueRef,
         destination: midenc_hir2::BlockRef,
-        arguments: &[midenc_hir2::ValueRef],
+        arguments: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
-        builder.br(destination, arguments.iter().copied(), span)?;
+        builder.br(destination, arguments, span)?;
         Ok(())
     }
 
@@ -332,18 +331,11 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         builder: &mut midenc_hir2::OpBuilder,
         condition: midenc_hir2::ValueRef,
         true_dest: midenc_hir2::BlockRef,
-        true_args: &[midenc_hir2::ValueRef],
+        true_args: ValueRange<'_, 2>,
         false_dest: midenc_hir2::BlockRef,
-        false_args: &[midenc_hir2::ValueRef],
+        false_args: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
-        builder.cond_br(
-            condition,
-            true_dest,
-            true_args.iter().copied(),
-            false_dest,
-            false_args.iter().copied(),
-            span,
-        )?;
+        builder.cond_br(condition, true_dest, true_args, false_dest, false_args, span)?;
 
         Ok(())
     }

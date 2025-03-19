@@ -10,8 +10,9 @@ use crate::{
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DominanceInfo, PreOrderDomTreeIter},
-    Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef, Region, RegionRef,
-    Report, SourceSpan, Spanned, Type, Usable, Value, ValueRef,
+    formatter::DisplayValues,
+    AsValueRange, Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef, Region,
+    RegionRef, Report, SourceSpan, Spanned, Type, Usable, Value, ValueRange, ValueRef,
 };
 
 /// This type represents the necessary context required for performing the control flow lifting
@@ -209,30 +210,28 @@ impl<'a> TransformationContext<'a> {
                 builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
                 let return_like_op = return_like_op_ref.borrow();
-                let operands = return_like_op.operands().all();
-                let operands = SmallVec::<[ValueRef; 2]>::from_iter(
-                    operands.iter().copied().map(|o| o.borrow().as_value_ref()),
-                );
+                let operands = return_like_op.operands().as_value_range().into_owned();
                 let span = return_like_op.span();
-                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {}", return_like_op.parent().unwrap());
+                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {} with operands {operands}", return_like_op.parent().unwrap());
+                let parent_region = return_like_op.parent_region().unwrap();
                 drop(return_like_op);
                 self.interface.create_single_destination_branch(
                     span,
                     &mut builder,
                     dummy_value,
                     exit_block,
-                    &operands,
+                    operands,
                 )?;
 
                 return_like_op_ref.borrow_mut().erase();
+
+                log::trace!(target: "cfg-to-scf", "return-like rewritten: {}", parent_region.borrow().print(&Default::default()));
             }
             Entry::Vacant(entry) => {
                 let mut return_like_op = return_like_op_ref.borrow_mut();
-                let operands = return_like_op.operands().all();
-                let args =
-                    SmallVec::<[Type; 2]>::from_iter(operands.iter().map(|o| o.borrow().ty()));
-                let operands = SmallVec::<[ValueRef; 2]>::from_iter(
-                    operands.iter().copied().map(|o| o.borrow().as_value_ref()),
+                let operands = return_like_op.operands().as_value_range();
+                let args = SmallVec::<[Type; 2]>::from_iter(
+                    operands.iter().map(|o| o.borrow().ty().clone()),
                 );
 
                 let mut builder = OpBuilder::new(self.context.clone());
@@ -240,7 +239,7 @@ impl<'a> TransformationContext<'a> {
                 log::trace!(target: "cfg-to-scf", "no equivalent return-like exit exists yet, created {exit_block} for this purpose");
                 entry.insert(exit_block);
 
-                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {}", return_like_op_ref.parent().unwrap());
+                log::trace!(target: "cfg-to-scf", "creating branch to return-like exit in {exit_block} from {} with operands {operands}", return_like_op_ref.parent().unwrap());
                 builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
                 let dummy_value = self.get_switch_value(0);
                 let span = return_like_op.span();
@@ -249,15 +248,15 @@ impl<'a> TransformationContext<'a> {
                     &mut builder,
                     dummy_value,
                     exit_block,
-                    &operands,
+                    operands,
                 )?;
 
                 log::trace!(target: "cfg-to-scf", "moving original return-like op to {exit_block}");
                 return_like_op.move_to(crate::ProgramPoint::at_end_of(exit_block));
                 let exit_block = exit_block.borrow();
-                return_like_op.set_operands(
-                    exit_block.arguments().iter().copied().map(|arg| arg as ValueRef),
-                );
+                let exit_args = exit_block.arguments().as_value_range();
+                log::trace!(target: "cfg-to-scf", "rewriting original return-like op operands to {exit_args}");
+                return_like_op.set_operands(exit_args);
             }
         }
 
@@ -367,16 +366,14 @@ impl<'a> TransformationContext<'a> {
 
             let loop_values_init = {
                 let new_loop_parent_block = new_loop_parent_block_ref.borrow();
-                SmallVec::<[ValueRef; 4]>::from_iter(
-                    new_loop_parent_block.arguments().iter().map(|arg| arg.borrow().as_value_ref()),
-                )
+                new_loop_parent_block.arguments().as_value_range().into_owned()
             };
             let structured_loop_op = self.interface.create_structured_do_while_loop_op(
                 &mut builder,
                 old_terminator,
-                &loop_values_init,
+                loop_values_init,
                 loop_properties.condition,
-                &iteration_values,
+                iteration_values,
                 loop_body_ref,
             )?;
 
@@ -645,7 +642,7 @@ impl<'a> TransformationContext<'a> {
 
         // Empty blocks with the values they return to the parent op.
         let mut created_empty_blocks =
-            SmallVec::<[(BlockRef, SmallVec<[ValueRef; 4]>); 2]>::default();
+            SmallVec::<[(BlockRef, ValueRange<'static, 2>); 2]>::default();
 
         // Create the branch regions.
         let mut conditional_regions = SmallVec::<[RegionRef; 2]>::default();
@@ -731,7 +728,7 @@ impl<'a> TransformationContext<'a> {
                 &mut builder,
                 structured_cond_op,
                 None,
-                &value_range,
+                value_range,
             )?;
         }
 
@@ -750,18 +747,14 @@ impl<'a> TransformationContext<'a> {
 
             let args = {
                 let pred = owner.borrow();
-                pred.successor(0)
-                    .arguments
-                    .iter()
-                    .map(|arg| arg.borrow().as_value_ref())
-                    .collect::<SmallVec<[ValueRef; 2]>>()
+                pred.successor(0).arguments.as_value_range().into_owned()
             };
             self.interface.create_structured_branch_region_terminator_op(
                 owner.span(),
                 &mut builder,
                 structured_cond_op,
                 Some(owner),
-                &args,
+                args,
             )?;
 
             owner.borrow_mut().erase();
@@ -814,7 +807,7 @@ impl<'a> TransformationContext<'a> {
         loop_header: BlockRef,
         exit_block: BlockRef,
         loop_blocks: &[BlockRef],
-    ) -> SmallVec<[ValueRef; 4]> {
+    ) -> ValueRange<'static, 2> {
         let latch = {
             let exit_block = exit_block.borrow();
             let latch = exit_block
@@ -846,9 +839,8 @@ impl<'a> TransformationContext<'a> {
         let mut loop_header_successor_operands = latch_term
             .successor(loop_header_index)
             .arguments
-            .iter()
-            .map(|arg| arg.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
+            .as_value_range()
+            .into_smallvec();
         drop(latch_term);
         drop(latch_block);
 
@@ -893,9 +885,14 @@ impl<'a> TransformationContext<'a> {
             let mut loop_block_dominates = |block: BlockRef, dominance_info: &DominanceInfo| {
                 use crate::adt::smallmap::Entry;
                 match dominance_cache.entry(block) {
-                    Entry::Occupied(entry) => *entry.get(),
+                    Entry::Occupied(entry) => {
+                        let dominates = *entry.get();
+                        log::trace!(target: "cfg-to-scf", "{loop_block_ref} dominates {block}: {dominates}");
+                        dominates
+                    }
                     Entry::Vacant(entry) => {
                         let dominates = dominance_info.dominates(loop_block_ref, &block);
+                        log::trace!(target: "cfg-to-scf", "{loop_block_ref} dominates {block}: {dominates}");
                         entry.insert(dominates);
                         dominates
                     }
@@ -903,20 +900,19 @@ impl<'a> TransformationContext<'a> {
             };
 
             let mut check_value = |ctx: &mut TransformationContext<'_>, value: ValueRef| {
+                log::trace!(target: "cfg-to-scf", "checking if value {value} escapes loop");
                 let mut block_argument = None;
                 let mut next_use = { value.borrow().uses().front().as_pointer() };
                 while let Some(mut user) = next_use.take() {
                     next_use = user.next();
+                    log::trace!(target: "cfg-to-scf", "  checking use of {value} by {}", user.borrow().owner());
 
                     // Go through all the parent blocks and find the one part of the region of the
                     // loop. If the block is part of the loop, then the value does not escape the
                     // loop through this use.
                     let mut curr_block = user.borrow().owner.parent();
                     while let Some(cb) = curr_block {
-                        if cb
-                            .parent()
-                            .is_none_or(|p| !RegionRef::ptr_eq(&loop_header.parent().unwrap(), &p))
-                        {
+                        if cb.parent().is_none_or(|r| loop_header.parent().unwrap() != r) {
                             curr_block = cb.grandparent().and_then(|op| op.parent());
                             continue;
                         }
@@ -926,8 +922,10 @@ impl<'a> TransformationContext<'a> {
 
                     let curr_block = curr_block.unwrap();
                     if loop_blocks.contains(&curr_block) {
+                        log::trace!(target: "cfg-to-scf", "  use is within loop");
                         continue;
                     }
+                    log::trace!(target: "cfg-to-scf", "  use in {curr_block} escapes loop {}", DisplayValues::new(loop_blocks.iter()));
 
                     // Block argument is only created the first time it is required.
                     if block_argument.is_none() {
@@ -940,7 +938,11 @@ impl<'a> TransformationContext<'a> {
                             value_ty.clone(),
                             span,
                         ));
-                        ctx.context.append_block_argument(loop_header, value_ty.clone(), span);
+                        log::trace!(target: "cfg-to-scf", "introducing block argument to prevent escape of {value}");
+                        log::trace!(target: "cfg-to-scf", "  created block argument {} in user's block", block_argument.unwrap());
+                        let _loop_header_arg =
+                            ctx.context.append_block_argument(loop_header, value_ty.clone(), span);
+                        log::trace!(target: "cfg-to-scf", "  created block argument {_loop_header_arg} in loop header");
 
                         // `value` might be defined in a block that does not dominate `latch` but
                         // previously dominated an exit block with a use. In this case, add a block
@@ -951,21 +953,19 @@ impl<'a> TransformationContext<'a> {
                         let mut argument = value;
                         if value_block != latch
                             && latch.borrow().predecessors().any(|pred| {
-                                !loop_block_dominates(
-                                    pred.owner.parent().unwrap(),
-                                    ctx.dominance_info,
-                                )
+                                !loop_block_dominates(pred.predecessor(), ctx.dominance_info)
                             })
                         {
+                            log::trace!(target: "cfg-to-scf", "  {argument} is defined in {value_block}, and at least one predecessor of the latch {latch} is not dominated by {loop_block_ref}");
                             argument =
                                 ctx.context.append_block_argument(latch, value_ty.clone(), span);
+                            log::trace!(target: "cfg-to-scf", "  creating block argument {argument} in latch");
                             for pred in latch.borrow().predecessors() {
                                 let mut succ_operand = value;
-                                if !loop_block_dominates(
-                                    pred.owner.parent().unwrap(),
-                                    ctx.dominance_info,
-                                ) {
+                                log::trace!(target: "cfg-to-scf", "  initializing predecessor operand for {argument} with {succ_operand}");
+                                if !loop_block_dominates(pred.predecessor(), ctx.dominance_info) {
                                     succ_operand = ctx.get_undef_value(&value_ty);
+                                    log::trace!(target: "cfg-to-scf", "  predecessor {} is not dominated by {loop_block_ref}, successor operand changed to {succ_operand}", pred.predecessor());
                                 }
 
                                 let succ_operand =
@@ -978,9 +978,11 @@ impl<'a> TransformationContext<'a> {
                             }
                         }
 
+                        log::trace!(target: "cfg-to-scf", "  appending {argument} to loop header successor operands");
                         loop_header_successor_operands.push(argument);
                         for edge in SuccessorEdges::new(latch) {
                             let mut pred = edge.from_block.borrow().terminator().unwrap();
+                            log::trace!(target: "cfg-to-scf", "  appending {argument} to successor operands of {edge}");
                             let operand = ctx.context.make_operand(argument, pred, 0);
                             let mut pred = pred.borrow_mut();
                             let mut succ = pred.successor_mut(edge.successor_index);
@@ -988,23 +990,22 @@ impl<'a> TransformationContext<'a> {
                         }
                     }
 
+                    log::trace!(target: "cfg-to-scf", "  setting use of {value} to {}", block_argument.unwrap());
                     user.borrow_mut().set(block_argument.unwrap());
                 }
             };
 
-            if BlockRef::ptr_eq(loop_block_ref, &latch) {
-                for arg in latch_block_arguments_prior.iter().map(|arg| arg.borrow().as_value_ref())
-                {
+            if *loop_block_ref == latch {
+                for arg in latch_block_arguments_prior.as_value_range() {
                     check_value(self, arg);
                 }
-            } else if BlockRef::ptr_eq(loop_block_ref, &loop_header) {
-                for arg in loop_header_arguments_prior.iter().map(|arg| arg.borrow().as_value_ref())
-                {
+            } else if *loop_block_ref == loop_header {
+                for arg in loop_header_arguments_prior.as_value_range() {
                     check_value(self, arg);
                 }
             } else {
                 let loop_block = loop_block_ref.borrow();
-                for arg in loop_block.arguments().iter().map(|arg| arg.borrow().as_value_ref()) {
+                for arg in loop_block.arguments().as_value_range() {
                     check_value(self, arg);
                 }
             }
@@ -1013,7 +1014,7 @@ impl<'a> TransformationContext<'a> {
             while let Some(op) = loop_block_cursor.take() {
                 loop_block_cursor = op.next();
                 let op = op.borrow();
-                for result in op.results().iter().map(|res| res.borrow().as_value_ref()) {
+                for result in op.results().as_value_range() {
                     check_value(self, result);
                 }
             }
@@ -1022,23 +1023,28 @@ impl<'a> TransformationContext<'a> {
         // New block arguments may have been added to the loop header. Adjust the entry edges to
         // pass undef values to these.
         let loop_header = loop_header.borrow();
+        log::trace!(target: "cfg-to-scf", "checking that all predecessors of {loop_header} pass {} successor operands", loop_header.num_arguments());
         for pred in loop_header.predecessors() {
             // Latch successor arguments have already been handled.
-            if BlockRef::ptr_eq(&pred.predecessor(), &latch) {
+            if pred.predecessor() == latch {
                 continue;
             }
 
             let mut op = pred.owner;
             let mut op = op.borrow_mut();
             let mut succ = op.successor_mut(pred.index as usize);
+            if cfg!(debug_assertions) && succ.arguments.len() != loop_header.num_arguments() {
+                log::trace!(target: "cfg-to-scf", "  {} has only {} successor operands", pred.predecessor(), succ.arguments.len());
+            }
             succ.arguments
                 .extend(loop_header.arguments().iter().skip(succ.arguments.len()).map(|arg| {
                     let val = self.get_undef_value(arg.borrow().ty());
+                    log::trace!(target: "cfg-to-scf", "  appending {val} to successor operands for missing parameter {arg}");
                     self.context.make_operand(val, pred.owner, 0)
                 }));
         }
 
-        loop_header_successor_operands
+        loop_header_successor_operands.into()
     }
 
     /// Creates a single entry block out of multiple entry edges using an edge multiplexer and returns
@@ -1078,7 +1084,7 @@ impl<'a> TransformationContext<'a> {
         &mut self,
         branch_region: &[BlockRef],
         continuation: BlockRef,
-        created_empty_blocks: &mut SmallVec<[(BlockRef, SmallVec<[ValueRef; 4]>); 2]>,
+        created_empty_blocks: &mut SmallVec<[(BlockRef, ValueRange<'static, 2>); 2]>,
         conditional_region: RegionRef,
     ) {
         let mut single_exit_block = None;
@@ -1194,21 +1200,16 @@ impl<'a> TransformationContext<'a> {
             let num_args = loop_header.borrow().num_arguments();
             let latch_args = {
                 let latch_block = latch_block.borrow();
-                latch_block
-                    .arguments()
-                    .iter()
-                    .take(num_args)
-                    .map(|arg| arg.borrow().as_value_ref())
-                    .collect::<SmallVec<[ValueRef; 4]>>()
+                ValueRange::from_iter(latch_block.arguments().iter().copied().take(num_args))
             };
             multiplexer.transform().interface_mut().create_conditional_branch(
                 span,
                 &mut builder,
                 should_repeat,
                 loop_header,
-                &latch_args,
+                latch_args,
                 exit_block,
-                &[],
+                ValueRange::Empty,
             )?;
         }
 

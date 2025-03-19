@@ -113,7 +113,7 @@ use self::transform::TransformationContext;
 use crate::{
     adt::SmallSet, dominance::DominanceInfo, traits::BranchOpInterface, BlockRef, Builder,
     OpBuilder, Operation, OperationRef, Region, RegionRef, Report, SourceSpan, Type, Value,
-    ValueRef, WalkResult,
+    ValueRange, ValueRef, WalkResult,
 };
 
 /// This trait is used to abstract over the dialect-specific aspects of the control flow lifting
@@ -152,7 +152,7 @@ pub trait CFGToSCFInterface {
         builder: &mut OpBuilder,
         branch_region_op: OperationRef,
         replaced_control_flow_op: Option<OperationRef>,
-        results: &[ValueRef],
+        results: ValueRange<'_, 2>,
     ) -> Result<(), Report>;
 
     /// Creates a structured control flow operation representing a do-while loop.
@@ -176,9 +176,9 @@ pub trait CFGToSCFInterface {
         &self,
         builder: &mut OpBuilder,
         replaced_op: OperationRef,
-        loop_values_init: &[ValueRef],
+        loop_values_init: ValueRange<'_, 2>,
         condition: ValueRef,
-        loop_values_next_iter: &[ValueRef],
+        loop_values_next_iter: ValueRange<'_, 2>,
         loop_body: RegionRef,
     ) -> Result<OperationRef, Report>;
 
@@ -211,9 +211,9 @@ pub trait CFGToSCFInterface {
         flag: ValueRef,
         case_values: &[u32],
         case_destinations: &[BlockRef],
-        case_arguments: &[&[ValueRef]],
+        case_arguments: &[ValueRange<'_, 2>],
         default_dest: BlockRef,
-        default_args: &[ValueRef],
+        default_args: ValueRange<'_, 2>,
     ) -> Result<(), Report>;
 
     /// Creates a constant operation returning an undefined instance of `type`.
@@ -248,7 +248,7 @@ pub trait CFGToSCFInterface {
         builder: &mut OpBuilder,
         dummy_flag: ValueRef,
         destination: BlockRef,
-        arguments: &[ValueRef],
+        arguments: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         self.create_cfg_switch_op(span, builder, dummy_flag, &[], &[], &[], destination, arguments)
     }
@@ -261,9 +261,9 @@ pub trait CFGToSCFInterface {
         builder: &mut OpBuilder,
         condition: ValueRef,
         true_dest: BlockRef,
-        true_args: &[ValueRef],
+        true_args: ValueRange<'_, 2>,
         false_dest: BlockRef,
-        false_args: &[ValueRef],
+        false_args: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         self.create_cfg_switch_op(
             span,
