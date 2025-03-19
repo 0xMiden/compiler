@@ -1,5 +1,5 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @test_rust_cc3b19fe60136e21eb08ffee1b6d6f2a6534ca0afa46f10f5296cdb8f0adfc30 {
+    builtin.module public @test_rust_e52816950d9b2deff10441c5aff28d88268e921c4c01a207c8743d871bd3a69f {
         public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
             v3 = arith.add v1, v0 : i32 #[overflow = wrapping];

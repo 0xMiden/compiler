@@ -1,5 +1,5 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @test_rust_c0f27bd914ea4f9a33c6502694b5eeace55ed7a40a907b0c5fd68e0aa656a56b {
+    builtin.module public @test_rust_1e76175a91b5fc3090baafa017f5a38c53c37f1e1a73be7ebaa886f57b9f86fb {
         public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
             v3 = arith.gte v0, v1 : i1;

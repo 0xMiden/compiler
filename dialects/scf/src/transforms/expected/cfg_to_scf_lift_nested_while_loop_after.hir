@@ -4,19 +4,19 @@ public builtin.function @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
     v25 = arith.constant 1 : u32;
     v20 = arith.constant 0 : u32;
     v7 = arith.constant 0 : u32;
-    v35, v36, v37 = scf.while v7, v7, v26 : u32, u32, u32 {
+    v34, v35, v36 = scf.while v7, v7, v26 : u32, u32, u32 {
     ^block1(v3: u32, v4: u32, v30: u32):
         v8 = arith.lt v3, v1 : i1;
-        v66, v67, v68, v69, v70 = scf.if v8 : u32, u32, u32, u32, u32 {
+        v65, v66, v67, v68 = scf.if v8 : u32, u32, u32, u32 {
         ^block18:
-            scf.yield v26, v26, v25, v20, v4;
+            scf.yield v26, v26, v25, v20;
         } else {
         ^block3:
             v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
-            v56, v57, v58 = scf.while v7, v4, v26 : u32, u32, u32 {
-            ^block2(v5: u32, v6: u32, v52: u32):
+            v55, v56, v57 = scf.while v7, v4, v26 : u32, u32, u32 {
+            ^block2(v5: u32, v6: u32, v51: u32):
                 v10 = arith.lt v5, v2 : i1;
-                v71, v72, v73, v74 = scf.if v10 : u32, u32, u32, u32 {
+                v69, v70, v71, v72 = scf.if v10 : u32, u32, u32, u32 {
                 ^block19:
                     scf.yield v26, v26, v25, v20;
                 } else {
@@ -30,20 +30,20 @@ public builtin.function @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
                     v18 = arith.add v6, v16 : u32 #[overflow = unchecked];
                     scf.yield v17, v18, v20, v25;
                 };
-                v65 = arith.trunc v74 : i1;
-                scf.condition v65, v71, v72, v6;
+                v64 = arith.trunc v72 : i1;
+                scf.condition v64, v69, v70, v6;
             } do {
-            ^block17(v62: u32, v63: u32, v64: u32):
-                scf.yield v62, v63, v64;
+            ^block17(v61: u32, v62: u32, v63: u32):
+                scf.yield v61, v62, v63;
             };
             v11 = arith.incr v3 : u32;
-            scf.yield v11, v58, v20, v25, v26;
+            scf.yield v11, v57, v20, v25;
         };
-        v44 = arith.trunc v69 : i1;
-        scf.condition v44, v66, v67, v70;
+        v43 = arith.trunc v68 : i1;
+        scf.condition v43, v65, v66, v4;
     } do {
-    ^block12(v41: u32, v42: u32, v43: u32):
-        scf.yield v41, v42, v43;
+    ^block12(v40: u32, v41: u32, v42: u32):
+        scf.yield v40, v41, v42;
     };
-    builtin.ret v37;
+    builtin.ret v36;
 };

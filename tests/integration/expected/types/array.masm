@@ -15,11 +15,15 @@ export.sum_arr
             push.0
         else
 
+            push.3735929054
             push.0
-            swap.1
+            movdn.2
+            movdn.3
             push.1
             while.true
 
+                movup.3
+                drop
                 dup.0
                 dup.0
                 u32mod.16
@@ -40,35 +44,39 @@ export.sum_arr
                 dup.1
                 swap.1
                 neq
-                push.3735929054
-                dup.1
-                swap.1
-                swap.2
-                swap.3
-                swap.1
-                cdrop
-                push.3735929054
-                dup.2
-                dup.4
-                swap.1
-                cdrop
-                push.3735929054
-                push.4
-                movup.6
-                swap.1
-                u32wrapping_add
-                dup.4
-                cdrop
-                push.0
-                push.1
-                movup.5
-                cdrop
+                if.true
+
+                    push.1
+                    push.0
+                    push.4
+                    movup.5
+                    swap.1
+                    u32wrapping_add
+                    dup.4
+                    movup.2
+                    swap.3
+                    swap.4
+                    movdn.2
+                    swap.1
+                else
+
+                    drop
+                    swap.1
+                    drop
+                    push.0
+                    push.1
+                    push.3735929054
+                    dup.0
+                    dup.1
+                    swap.2
+                end
+                movup.3
+                drop
+                movup.3
                 push.1
                 u32and
                 if.true
 
-                    movup.3
-                    drop
                     push.1
                 else
 

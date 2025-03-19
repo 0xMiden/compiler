@@ -8,11 +8,14 @@ end
 
 export.__main
 
+        push.3735929054
         push.0
         push.4294967287
         push.1
         while.true
 
+            movup.2
+            drop
             push.1048585
             dup.1
             swap.1
@@ -39,28 +42,30 @@ export.__main
             dup.1
             swap.1
             neq
-            push.3735929054
-            dup.1
-            dup.4
-            swap.1
-            cdrop
-            push.3735929054
-            dup.2
-            swap.1
-            swap.2
-            swap.4
-            swap.1
-            cdrop
-            push.0
-            push.1
-            movup.3
-            cdrop
+            if.true
+
+                push.1
+                push.0
+                dup.3
+                swap.1
+                swap.2
+                swap.3
+            else
+
+                drop
+                push.0
+                push.1
+                push.3735929054
+                dup.0
+                swap.1
+            end
+            movup.2
+            drop
+            movup.2
             push.1
             u32and
             if.true
 
-                movup.2
-                drop
                 push.1
             else
 

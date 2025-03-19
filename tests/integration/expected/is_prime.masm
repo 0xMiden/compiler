@@ -12,7 +12,6 @@ export.entrypoint
 
             drop
             push.0
-            push.3735929054
             push.0
         else
 
@@ -26,12 +25,7 @@ export.entrypoint
 
                 drop
                 push.0
-                push.3735929054
-                push.3735929054
                 push.1
-                dup.1
-                swap.2
-                swap.1
             else
 
                 push.0
@@ -45,12 +39,8 @@ export.entrypoint
                 if.true
 
                     drop
-                    push.1
                     push.0
-                    push.3735929054
                     push.0
-                    dup.1
-                    swap.2
                 else
 
                     push.0
@@ -66,18 +56,21 @@ export.entrypoint
 
                         drop
                         push.0
-                        push.3735929054
-                        push.3735929054
                         push.0
-                        dup.1
-                        swap.2
-                        swap.1
                     else
 
+                        push.3735929054
+                        push.3735929054
                         push.5
+                        movup.3
+                        swap.1
                         push.1
                         while.true
 
+                            movup.2
+                            drop
+                            movup.2
+                            drop
                             dup.1
                             dup.1
                             dup.2
@@ -106,11 +99,9 @@ export.entrypoint
                                 swap.1
                                 eq
                                 neq
-                                dup.0
                                 if.true
 
-                                    swap.3
-                                    movup.2
+                                    movdn.2
                                     drop
                                     drop
                                     push.0
@@ -122,8 +113,8 @@ export.entrypoint
 
                                     push.0
                                     push.0
-                                    dup.4
-                                    dup.6
+                                    dup.3
+                                    dup.5
                                     swap.1
                                     u32mod
                                     u32assert
@@ -131,8 +122,7 @@ export.entrypoint
                                     neq
                                     if.true
 
-                                        swap.3
-                                        movup.2
+                                        movdn.2
                                         drop
                                         drop
                                         push.0
@@ -143,7 +133,7 @@ export.entrypoint
                                     else
 
                                         push.2
-                                        movup.3
+                                        movup.2
                                         swap.1
                                         u32wrapping_add
                                         push.0
@@ -154,9 +144,8 @@ export.entrypoint
                                         neq
                                         if.true
 
-                                            movup.3
-                                            swap.1
                                             drop
+                                            swap.1
                                             drop
                                             push.0
                                             push.2
@@ -167,55 +156,35 @@ export.entrypoint
 
                                             push.0
                                             dup.1
-                                            dup.5
+                                            dup.4
                                             swap.1
                                             u32mod
                                             u32assert
                                             neq
-                                            push.0
-                                            push.1
-                                            dup.2
-                                            cdrop
-                                            push.1
-                                            push.0
-                                            dup.3
-                                            cdrop
-                                            push.3735929054
-                                            dup.3
-                                            swap.1
-                                            swap.2
-                                            swap.8
-                                            swap.1
-                                            cdrop
-                                            push.3735929054
-                                            push.4
-                                            movup.5
-                                            swap.1
-                                            u32wrapping_add
-                                            movup.4
-                                            cdrop
-                                            movup.2
-                                            swap.3
-                                            swap.5
-                                            movdn.2
-                                            movup.4
-                                            swap.5
-                                            movdn.4
+                                            if.true
+
+                                                push.1
+                                                push.0
+                                                push.4
+                                                movup.3
+                                                swap.1
+                                                u32wrapping_add
+                                                movup.4
+                                                swap.1
+                                            else
+
+                                                drop
+                                                swap.1
+                                                drop
+                                                push.0
+                                                push.1
+                                                push.3735929054
+                                                dup.0
+                                                swap.1
+                                            end
                                         end
-                                        movup.4
-                                        swap.5
-                                        movdn.4
                                     end
                                 end
-                                push.3735929054
-                                swap.1
-                                swap.5
-                                swap.1
-                                swap.2
-                                swap.6
-                                cdrop
-                                swap.4
-                                movup.3
                             end
                             movup.3
                             push.1
@@ -225,10 +194,6 @@ export.entrypoint
                             movdn.3
                             if.true
 
-                                movup.2
-                                drop
-                                movup.2
-                                drop
                                 push.1
                             else
 
@@ -247,28 +212,14 @@ export.entrypoint
                             if.true
 
                                 push.0
-                                push.3735929054
-                                push.3735929054
                                 dup.0
-                                dup.3
-                                swap.1
                                 swap.2
-                                swap.1
-                                swap.5
                             else
 
                                 drop
                                 push.1
                                 push.3735929054
                                 push.3735929054
-                                dup.0
-                                dup.1
-                                dup.3
-                                swap.1
-                                swap.2
-                                swap.1
-                                swap.4
-                                swap.3
                             end
                         else
 
@@ -281,109 +232,38 @@ export.entrypoint
                                 if.true
 
                                     push.0
-                                    push.3735929054
-                                    push.3735929054
                                     dup.0
-                                    dup.3
-                                    swap.1
                                     swap.2
-                                    swap.1
-                                    swap.5
                                 else
 
                                     drop
                                     push.1
                                     push.3735929054
                                     push.3735929054
-                                    dup.0
-                                    dup.1
-                                    dup.3
-                                    swap.1
-                                    swap.2
-                                    swap.1
-                                    swap.4
-                                    swap.3
                                 end
                             else
 
                                 drop
                                 push.0
-                                push.3735929054
-                                push.3735929054
                                 dup.0
-                                dup.3
-                                swap.1
                                 swap.2
-                                swap.1
-                                swap.5
                             end
                         end
-                        movup.5
+                        movup.2
                         eq.0
                         if.true
 
                             nop
                         else
 
-                            dropw
+                            drop
                             drop
                             push.1
                             push.3735929054
-                            dup.0
-                            dup.1
-                            dup.3
-                            swap.1
-                            swap.2
-                            swap.1
-                            swap.4
-                            swap.3
                         end
                     end
                 end
             end
-            movup.4
-            eq.0
-            if.true
-
-                movdn.3
-                drop
-                drop
-                drop
-                push.2
-                push.3735929054
-                movup.2
-                swap.1
-            else
-
-                drop
-            end
-        end
-        movup.2
-        dup.0
-        push.1
-        u32lte
-        if.true
-
-            eq.0
-            if.true
-
-                swap.1
-                drop
-                push.0
-                swap.1
-            else
-
-                drop
-                drop
-                push.1
-                push.3735929054
-            end
-        else
-
-            drop
-            drop
-            push.0
-            swap.1
         end
         push.0
         movup.2

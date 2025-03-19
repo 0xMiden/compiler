@@ -1,5 +1,5 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @test_rust_f251de15b0f1cb5576431f7d54bb74bf9a7d3ecd44df0dab5c9d48f9fbc8fc10 {
+    builtin.module public @test_rust_19d92981d2d7f148eaa97011bd0bd979fbc793cadadb334c67791824f38e7bf8 {
         public builtin.function @entrypoint(v0: i64, v1: i64) -> i64 {
         ^block6(v0: i64, v1: i64):
             v3 = arith.bor v1, v0 : i64;

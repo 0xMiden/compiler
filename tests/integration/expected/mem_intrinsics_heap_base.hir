@@ -31,23 +31,23 @@ builtin.component root_ns:root@1.0.0 {
             v58 = hir.bitcast v57 : i32;
             v60 = arith.neq v58, v51 : i1;
             v61 = cf.select v60, v48, v52 : i32;
-            v173 = arith.constant 0 : i32;
+            v177 = arith.constant 0 : i32;
             v64 = arith.constant 1 : i32;
             v62 = arith.popcnt v61 : u32;
             v63 = hir.bitcast v62 : i32;
             v65 = arith.neq v63, v64 : i1;
             v66 = arith.zext v65 : u32;
             v67 = hir.bitcast v66 : i32;
-            v69 = arith.neq v67, v173 : i1;
+            v69 = arith.neq v67, v177 : i1;
             v153, v154 = scf.if v69 : i32, u32 {
-            ^block29:
+            ^block28:
                 v145 = arith.constant 0 : u32;
                 v149 = ub.poison i32 : i32;
                 scf.yield v149, v145;
             } else {
             ^block14:
                 v71 = hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/core::ptr::alignment::Alignment::max(v48, v61) : i32
-                v172 = arith.constant 0 : i32;
+                v176 = arith.constant 0 : i32;
                 v74 = hir.bitcast v49 : u32;
                 v70 = arith.constant -2147483648 : i32;
                 v72 = arith.sub v70, v71 : i32 #[overflow = wrapping];
@@ -55,16 +55,16 @@ builtin.component root_ns:root@1.0.0 {
                 v75 = arith.lt v73, v74 : i1;
                 v76 = arith.zext v75 : u32;
                 v77 = hir.bitcast v76 : i32;
-                v79 = arith.neq v77, v172 : i1;
-                v155, v156 = scf.if v79 : i32, u32 {
-                ^block28:
-                    v170 = arith.constant 0 : u32;
-                    v171 = ub.poison i32 : i32;
-                    scf.yield v171, v170;
+                v79 = arith.neq v77, v176 : i1;
+                v157, v158 = scf.if v79 : i32, u32 {
+                ^block27:
+                    v174 = arith.constant 0 : u32;
+                    v175 = ub.poison i32 : i32;
+                    scf.yield v175, v174;
                 } else {
                 ^block15:
-                    v169 = arith.constant 0 : i32;
-                    v85 = arith.sub v169, v71 : i32 #[overflow = wrapping];
+                    v173 = arith.constant 0 : i32;
+                    v85 = arith.sub v173, v71 : i32 #[overflow = wrapping];
                     v82 = arith.constant -1 : i32;
                     v81 = arith.add v49, v71 : i32 #[overflow = wrapping];
                     v83 = arith.add v81, v82 : i32 #[overflow = wrapping];
@@ -72,48 +72,49 @@ builtin.component root_ns:root@1.0.0 {
                     v87 = hir.bitcast v47 : u32;
                     v90 = hir.int_to_ptr v87 : (ptr i32);
                     v91 = hir.load v90 : i32;
-                    v168 = arith.constant 0 : i32;
-                    v93 = arith.neq v91, v168 : i1;
-                    v157, v158, v159, v160 = scf.if v93 : i32, i32, i32, i32 {
-                    ^block27:
-                        v167 = arith.constant 0 : i32;
-                        scf.yield v47, v86, v71, v167;
+                    v172 = arith.constant 0 : i32;
+                    v93 = arith.neq v91, v172 : i1;
+                    v159, v160, v161, v162 = scf.if v93 : i32, i32, i32, i32 {
+                    ^block26:
+                        v171 = arith.constant 0 : i32;
+                        scf.yield v47, v86, v71, v171;
                     } else {
                     ^block17:
-                        v166 = arith.constant 0 : i32;
-                        scf.yield v47, v86, v71, v166;
+                        v170 = arith.constant 0 : i32;
+                        scf.yield v47, v86, v71, v170;
                     };
-                    v107 = hir.bitcast v157 : u32;
+                    v107 = hir.bitcast v159 : u32;
                     v110 = hir.int_to_ptr v107 : (ptr i32);
                     v111 = hir.load v110 : i32;
-                    v165 = arith.constant 0 : i32;
-                    v115 = hir.bitcast v158 : u32;
+                    v169 = arith.constant 0 : i32;
+                    v115 = hir.bitcast v160 : u32;
                     v105 = arith.constant 268435456 : i32;
                     v112 = arith.sub v105, v111 : i32 #[overflow = wrapping];
                     v114 = hir.bitcast v112 : u32;
                     v116 = arith.lt v114, v115 : i1;
                     v117 = arith.zext v116 : u32;
                     v118 = hir.bitcast v117 : i32;
-                    v120 = arith.neq v118, v165 : i1;
-                    v161 = scf.if v120 : i32 {
-                    ^block26:
-                        scf.yield v160;
+                    v120 = arith.neq v118, v169 : i1;
+                    v163, v164 = scf.if v120 : i32, u32 {
+                    ^block18:
+                        v150 = arith.constant 1 : u32;
+                        scf.yield v162, v150;
                     } else {
                     ^block19:
-                        v127 = arith.add v111, v159 : i32 #[overflow = wrapping];
-                        scf.yield v127;
+                        v168 = arith.constant 1 : u32;
+                        v127 = arith.add v111, v161 : i32 #[overflow = wrapping];
+                        scf.yield v127, v168;
                     };
-                    v150 = arith.constant 1 : u32;
-                    scf.yield v161, v150;
+                    scf.yield v163, v164;
                 };
-                scf.yield v155, v156;
+                scf.yield v157, v158;
             };
-            v164 = arith.constant 0 : u32;
-            v163 = arith.eq v154, v164 : i1;
-            cf.cond_br v163 ^block13, ^block31(v153);
+            v167 = arith.constant 0 : u32;
+            v166 = arith.eq v154, v167 : i1;
+            cf.cond_br v166 ^block13, ^block30(v153);
         ^block13:
             ub.unreachable ;
-        ^block31(v146: i32):
+        ^block30(v146: i32):
             builtin.ret v146;
         };
 
