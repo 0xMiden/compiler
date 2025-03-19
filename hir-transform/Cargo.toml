@@ -12,13 +12,3 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-inventory.workspace = true
-log.workspace = true
-midenc-hir.workspace = true
-midenc-hir-analysis.workspace = true
-midenc-session.workspace = true
-smallvec.workspace = true
-
-[dev-dependencies]
-pretty_assertions.workspace = true

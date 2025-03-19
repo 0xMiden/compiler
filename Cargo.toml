@@ -19,7 +19,6 @@ members = [
     "tests/integration",
 ]
 exclude = [
-    "codegen/masm",
     "sdk/.cargo",
     "tests/rust-apps/fib",
     "tests/rust-apps-wasm",
