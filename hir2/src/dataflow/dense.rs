@@ -137,7 +137,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
             "initializing analysis for {top}",
         );
 
-        forward::process_operation(&self.analysis, top, solver)?;
+        forward::process_operation(self, top, solver)?;
 
         // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
         // CFG top-down. Otherwise, fall back to a naive iteration over the contents of each region.
@@ -160,7 +160,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                 if region.has_one_block() {
                     let block = region.entry();
                     log::trace!(target: self.analysis.debug_name(), "initializing single-block region {region_index} from entry: {block}");
-                    forward::visit_block(&self.analysis, &block, solver);
+                    forward::visit_block(self, &block, solver);
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                     for op in block.body() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
@@ -204,7 +204,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                         }
 
                         let block = block.borrow();
-                        forward::visit_block(&self.analysis, &block, solver);
+                        forward::visit_block(self, &block, solver);
                         log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                         for op in block.body() {
                             let child_analysis_manager =
@@ -218,7 +218,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
             for (region_index, region) in top.regions().iter().enumerate() {
                 for block in region.body() {
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} of region {region_index}");
-                    forward::visit_block(&self.analysis, &block, solver);
+                    forward::visit_block(self, &block, solver);
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} in pre-order");
                     for op in block.body() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
@@ -241,10 +241,10 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
     fn visit(&self, point: &ProgramPoint, solver: &mut DataFlowSolver) -> Result<(), Report> {
         if point.is_at_block_start() {
             let block = point.block().expect("expected block");
-            forward::visit_block(&self.analysis, &block.borrow(), solver);
+            forward::visit_block(self, &block.borrow(), solver);
         } else {
             let op = point.operation().expect("expected operation");
-            forward::process_operation(&self.analysis, &op.borrow(), solver)?;
+            forward::process_operation(self, &op.borrow(), solver)?;
         }
 
         Ok(())
@@ -274,7 +274,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
             "initializing analysis for {top}",
         );
 
-        backward::process_operation(&self.analysis, top, solver)?;
+        backward::process_operation(self, top, solver)?;
 
         // If the op has SSACFG regions, use the dominator tree analysis, if available, to visit the
         // CFG in post-order. Otherwise, fall back to a naive iteration over the contents of each region.
@@ -297,7 +297,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                 if region.has_one_block() {
                     let block = region.entry();
                     log::trace!(target: self.analysis.debug_name(), "initializing single-block region {region_index} from entry: {block}");
-                    backward::visit_block(&self.analysis, &block, solver);
+                    backward::visit_block(self, &block, solver);
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                     for op in block.body().iter().rev() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
@@ -341,7 +341,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                         }
 
                         let block = block.borrow();
-                        backward::visit_block(&self.analysis, &block, solver);
+                        backward::visit_block(self, &block, solver);
                         log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                         for op in block.body().iter().rev() {
                             let child_analysis_manager =
@@ -355,7 +355,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
             for (region_index, region) in top.regions().iter().enumerate() {
                 for block in region.body().iter().rev() {
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} of region {region_index}");
-                    backward::visit_block(&self.analysis, &block, solver);
+                    backward::visit_block(self, &block, solver);
                     log::trace!(target: self.analysis.debug_name(), "initializing {block} in post-order");
                     for op in block.body().iter().rev() {
                         let child_analysis_manager = analysis_manager.nest(op.as_operation_ref());
@@ -377,12 +377,196 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
     fn visit(&self, point: &ProgramPoint, solver: &mut DataFlowSolver) -> Result<(), Report> {
         if point.is_at_block_end() {
             let block = point.block().expect("expected block");
-            backward::visit_block(&self.analysis, &block.borrow(), solver);
+            backward::visit_block(self, &block.borrow(), solver);
         } else {
             let op = point.next_operation().expect("expected operation");
-            backward::process_operation(&self.analysis, &op.borrow(), solver)?;
+            backward::process_operation(self, &op.borrow(), solver)?;
         }
 
         Ok(())
+    }
+}
+
+impl<A: DenseForwardDataFlowAnalysis> DenseForwardDataFlowAnalysis
+    for DenseDataFlowAnalysis<A, Forward>
+{
+    type Lattice = <A as DenseForwardDataFlowAnalysis>::Lattice;
+
+    fn debug_name(&self) -> &'static str {
+        <A as DenseForwardDataFlowAnalysis>::debug_name(&self.analysis)
+    }
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        before: &Self::Lattice,
+        after: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        <A as DenseForwardDataFlowAnalysis>::visit_operation(
+            &self.analysis,
+            op,
+            before,
+            after,
+            solver,
+        )
+    }
+
+    fn set_to_entry_state(
+        &self,
+        lattice: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseForwardDataFlowAnalysis>::set_to_entry_state(&self.analysis, lattice, solver);
+    }
+
+    fn visit_branch_control_flow_transfer(
+        &self,
+        from: BlockRef,
+        to: &crate::Block,
+        before: &Self::Lattice,
+        after: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseForwardDataFlowAnalysis>::visit_branch_control_flow_transfer(
+            &self.analysis,
+            from,
+            to,
+            before,
+            after,
+            solver,
+        );
+    }
+
+    fn visit_region_branch_control_flow_transfer(
+        &self,
+        branch: &dyn crate::RegionBranchOpInterface,
+        region_from: Option<crate::RegionRef>,
+        region_to: Option<crate::RegionRef>,
+        before: &Self::Lattice,
+        after: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseForwardDataFlowAnalysis>::visit_region_branch_control_flow_transfer(
+            &self.analysis,
+            branch,
+            region_from,
+            region_to,
+            before,
+            after,
+            solver,
+        );
+    }
+
+    fn visit_call_control_flow_transfer(
+        &self,
+        call: &dyn crate::CallOpInterface,
+        action: super::CallControlFlowAction,
+        before: &Self::Lattice,
+        after: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseForwardDataFlowAnalysis>::visit_call_control_flow_transfer(
+            &self.analysis,
+            call,
+            action,
+            before,
+            after,
+            solver,
+        );
+    }
+}
+
+impl<A: DenseBackwardDataFlowAnalysis> DenseBackwardDataFlowAnalysis
+    for DenseDataFlowAnalysis<A, Backward>
+{
+    type Lattice = <A as DenseBackwardDataFlowAnalysis>::Lattice;
+
+    fn debug_name(&self) -> &'static str {
+        <A as DenseBackwardDataFlowAnalysis>::debug_name(&self.analysis)
+    }
+
+    fn symbol_table(&self) -> Option<&dyn crate::SymbolTable> {
+        <A as DenseBackwardDataFlowAnalysis>::symbol_table(&self.analysis)
+    }
+
+    fn set_to_exit_state(
+        &self,
+        lattice: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseBackwardDataFlowAnalysis>::set_to_exit_state(&self.analysis, lattice, solver)
+    }
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        after: &Self::Lattice,
+        before: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        <A as DenseBackwardDataFlowAnalysis>::visit_operation(
+            &self.analysis,
+            op,
+            after,
+            before,
+            solver,
+        )
+    }
+
+    fn visit_branch_control_flow_transfer(
+        &self,
+        from: &crate::Block,
+        to: BlockRef,
+        after: &Self::Lattice,
+        before: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseBackwardDataFlowAnalysis>::visit_branch_control_flow_transfer(
+            &self.analysis,
+            from,
+            to,
+            after,
+            before,
+            solver,
+        )
+    }
+
+    fn visit_region_branch_control_flow_transfer(
+        &self,
+        branch: &dyn crate::RegionBranchOpInterface,
+        region_from: Option<crate::RegionRef>,
+        region_to: Option<crate::RegionRef>,
+        after: &Self::Lattice,
+        before: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseBackwardDataFlowAnalysis>::visit_region_branch_control_flow_transfer(
+            &self.analysis,
+            branch,
+            region_from,
+            region_to,
+            after,
+            before,
+            solver,
+        )
+    }
+
+    fn visit_call_control_flow_transfer(
+        &self,
+        call: &dyn crate::CallOpInterface,
+        action: super::CallControlFlowAction,
+        after: &Self::Lattice,
+        before: &mut super::AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as DenseBackwardDataFlowAnalysis>::visit_call_control_flow_transfer(
+            &self.analysis,
+            call,
+            action,
+            after,
+            before,
+            solver,
+        )
     }
 }

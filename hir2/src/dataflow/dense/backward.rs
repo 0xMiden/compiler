@@ -172,7 +172,7 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
 /// Dispatches to specialized methods for call or region control-flow operations. Otherwise, this
 /// function invokes the operation transfer function.
 pub fn process_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Backward>,
     op: &Operation,
     solver: &mut DataFlowSolver,
 ) -> Result<(), Report>
@@ -197,7 +197,23 @@ where
 
     // Get the dense state after execution of this op.
     log::trace!("getting 'after' analysis state for {}", ProgramPoint::after(op));
-    let after = solver.require(ProgramPoint::after(op), point);
+    // If this is the last operation in it's block, propagate the liveness of the block end to
+    // after this op
+    let after = if op.as_operation_ref().next().is_none() {
+        let after_block = solver.require::<<A as DenseBackwardDataFlowAnalysis>::Lattice, _>(
+            ProgramPoint::at_end_of(op.parent().unwrap()),
+            point,
+        );
+        let mut after = solver
+            .get_or_create_mut::<<A as DenseBackwardDataFlowAnalysis>::Lattice, _>(
+                ProgramPoint::after(op),
+            );
+        after.join(after_block.lattice());
+        AnalysisStateGuardMut::subscribe(&after, analysis);
+        AnalysisStateGuardMut::freeze(after)
+    } else {
+        solver.require(ProgramPoint::after(op), point)
+    };
 
     // Special cases where control flow may dictate data flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -226,8 +242,11 @@ where
 
 /// Visit a block. The state at the end of the block is propagated from control-flow successors of
 /// the block or callsites.
-pub fn visit_block<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
-where
+pub fn visit_block<A>(
+    analysis: &DenseDataFlowAnalysis<A, Backward>,
+    block: &Block,
+    solver: &mut DataFlowSolver,
+) where
     A: DenseBackwardDataFlowAnalysis,
 {
     log::trace!("processing block {}", block.id());
@@ -369,7 +388,7 @@ where
 ///   * If _not_ configured for inter-procedural analysis, then `visit_call_control_flow_transfer`
 ///     is invoked, so that the analysis implementation can decide how to proceed.
 pub fn visit_call_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Backward>,
     call: &dyn CallOpInterface,
     after: &<A as DenseBackwardDataFlowAnalysis>::Lattice,
     before: &mut AnalysisStateGuardMut<'_, <A as DenseBackwardDataFlowAnalysis>::Lattice>,
@@ -439,7 +458,7 @@ pub fn visit_call_operation<A>(
 /// Visit a program point within a region branch operation with successors (from which the state is
 /// propagated) in or after it.
 pub fn visit_region_branch_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Backward>,
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
     branch_point: RegionBranchPoint,

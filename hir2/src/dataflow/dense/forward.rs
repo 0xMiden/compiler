@@ -166,7 +166,7 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
 /// control-flow or the callgraph. Otherwise, this function invokes the
 /// operation transfer function.
 pub fn process_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Forward>,
     op: &Operation,
     solver: &mut DataFlowSolver,
 ) -> Result<(), Report>
@@ -209,8 +209,11 @@ where
 
 /// Visit a block. The state at the start of the block is propagated from
 /// control-flow predecessors or callsites.
-pub fn visit_block<A>(analysis: &A, block: &Block, solver: &mut DataFlowSolver)
-where
+pub fn visit_block<A>(
+    analysis: &DenseDataFlowAnalysis<A, Forward>,
+    block: &Block,
+    solver: &mut DataFlowSolver,
+) where
     A: DenseForwardDataFlowAnalysis,
 {
     // If the block is not executable, bail out.
@@ -295,7 +298,7 @@ where
 /// Visit an operation for which the data flow is described by the
 /// `CallOpInterface`.
 pub fn visit_call_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Forward>,
     call: &dyn CallOpInterface,
     before: &<A as DenseForwardDataFlowAnalysis>::Lattice,
     after: &mut AnalysisStateGuardMut<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
@@ -361,7 +364,7 @@ pub fn visit_call_operation<A>(
 /// in it. This can either be an entry block of one of the regions of the
 /// parent operation itself.
 pub fn visit_region_branch_operation<A>(
-    analysis: &A,
+    analysis: &DenseDataFlowAnalysis<A, Forward>,
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
     after: &mut AnalysisStateGuardMut<'_, <A as DenseForwardDataFlowAnalysis>::Lattice>,
