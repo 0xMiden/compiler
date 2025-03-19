@@ -19,7 +19,8 @@ impl Canonicalizable for Br {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
         rewrites
             .push(crate::canonicalization::SimplifyBrToBlockWithSinglePred::new(context.clone()));
-        rewrites.push(crate::canonicalization::SimplifyPassthroughBr::new(context));
+        rewrites.push(crate::canonicalization::SimplifyPassthroughBr::new(context.clone()));
+        rewrites.push(crate::canonicalization::SimplifyBrToReturn::new(context));
     }
 }
 
@@ -65,7 +66,8 @@ impl Canonicalizable for CondBr {
             .get_or_register_dialect::<ControlFlowDialect>()
             .expect_registered_name::<Self>();
         rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context.clone()));
-        rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context, name));
+        rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context.clone(), name));
+        rewrites.push(crate::canonicalization::RemoveUnusedSinglePredBlockArgs::new(context));
     }
 }
 
@@ -162,7 +164,7 @@ impl OpPrinter for Switch {
         };
         let fallback = nl() + const_text("default => ") + display(fallback_dest) + fallback_args;
         header
-            + const_text("{")
+            + const_text(" {")
             + indent(4, cases + fallback)
             + nl()
             + const_text("}")

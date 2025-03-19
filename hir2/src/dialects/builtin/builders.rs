@@ -63,14 +63,15 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn ret(
+    fn ret<I>(
         &mut self,
-        returning: Option<ValueRef>,
+        returning: I,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<Ret>, Report> {
-        let op_builder = self
-            .builder_mut()
-            .create::<Ret, (<Option<ValueRef> as IntoIterator>::IntoIter,)>(span);
+    ) -> Result<UnsafeIntrusiveEntityRef<Ret>, Report>
+    where
+        I: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<Ret, (I,)>(span);
         op_builder(returning)
     }
 
