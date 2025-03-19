@@ -280,6 +280,10 @@ impl SuccessorInfo {
         self.block.borrow().successor()
     }
 
+    pub fn successor_operand_group(&self) -> usize {
+        self.operand_group as usize
+    }
+
     pub fn successor_operands(&self) -> ValueRange<'static, 4> {
         let owner = self.block.borrow().owner;
         ValueRange::from(owner.borrow().operands().group(self.operand_group as usize)).into_owned()
@@ -348,6 +352,10 @@ pub struct OpSuccessorMut<'a> {
 }
 
 impl OpSuccessorMut<'_> {
+    pub fn successor(&self) -> BlockRef {
+        self.dest.borrow().successor()
+    }
+
     /// Rewrite the successor destination with `block`, updating the use list of each block.
     ///
     /// This is a no-op if the block has not changed.
