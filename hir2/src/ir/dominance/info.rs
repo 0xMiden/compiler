@@ -13,7 +13,7 @@ use crate::{
 ///
 /// Note that this type is aware of the different types of regions, and returns a region-kind
 /// specific notion of dominance. See [RegionKindInterface] for details.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct DominanceInfo {
     info: DominanceInfoBase<false>,
 }
@@ -226,6 +226,21 @@ pub struct RegionDominanceInfo<const IS_POST_DOM: bool> {
     has_ssa_dominance: bool,
 }
 
+impl<const IS_POST_DOM: bool> core::fmt::Debug for RegionDominanceInfo<IS_POST_DOM> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RegionDominanceInfo")
+            .field("has_ssa_dominance", &self.has_ssa_dominance)
+            .field_with("domtree", |f| {
+                if let Some(domtree) = self.domtree.as_ref() {
+                    core::fmt::Debug::fmt(domtree, f)
+                } else {
+                    f.write_str("None")
+                }
+            })
+            .finish()
+    }
+}
+
 impl<const IS_POST_DOM: bool> Clone for RegionDominanceInfo<IS_POST_DOM> {
     fn clone(&self) -> Self {
         let domtree = self.domtree.clone();
@@ -284,6 +299,18 @@ pub(crate) struct DominanceInfoBase<const IS_POST_DOM: bool> {
     /// This map does not contain dominator trees for empty or single block regions, however we
     /// still compute whether or not they have SSA dominance regardless.
     dominance_infos: RefCell<SmallDenseMap<RegionRef, RegionDominanceInfo<IS_POST_DOM>>>,
+}
+
+impl<const IS_POST_DOM: bool> core::fmt::Debug for DominanceInfoBase<IS_POST_DOM> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let infos = self.dominance_infos.borrow();
+
+        let mut builder = f.debug_map();
+        for (region, region_info) in infos.iter() {
+            builder.key_with(|f| write!(f, "{region}")).value(region_info);
+        }
+        builder.finish()
+    }
 }
 
 impl<const IS_POST_DOM: bool> Clone for DominanceInfoBase<IS_POST_DOM> {

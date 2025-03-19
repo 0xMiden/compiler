@@ -759,7 +759,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         self.node_info(self.num_to_node[1]).idom.set(attach_to.block());
         for n in self.num_to_node.iter().copied().skip(1) {
             let node = tree.get(n).unwrap();
-            let idom = tree.get(self.node_info(n).idom());
+            let idom = tree.get(self.node_info(n).idom()).unwrap();
             node.set_idom(idom);
         }
     }
@@ -1387,9 +1387,9 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
     ) {
         log::trace!("updating nearest common dominator = {ncd}");
 
-        for to_node in insertion_info.affected.iter() {
+        for to_node in insertion_info.affected.iter().cloned() {
             log::trace!("idom({to_node}) = {ncd}");
-            to_node.set_idom(Some(ncd.clone()));
+            to_node.set_idom(ncd.clone());
         }
 
         if IS_POST_DOM {

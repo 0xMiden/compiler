@@ -99,14 +99,49 @@ impl fmt::Debug for DomTreeNode {
                 None => f.write_str("None"),
                 Some(block_ref) => write!(f, "{}", block_ref.borrow().id()),
             })
-            .field("idom", unsafe { &*self.idom.as_ptr() })
+            .field("idom", &unsafe { &*self.idom.as_ptr() }.as_ref().map(|n| n.block))
             .field_with("children", |f| {
-                f.debug_list().entries(self.children.borrow().iter()).finish()
+                f.debug_list()
+                    .entries(self.children.borrow().iter().map(|child| child.block))
+                    .finish()
             })
             .field("level", &self.level.get())
             .field("num_in", &self.num_in.get())
             .field("num_out", &self.num_out.get())
             .finish()
+    }
+}
+
+impl<const IS_POST_DOM: bool> fmt::Debug for DomTreeBase<IS_POST_DOM> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut builder = f.debug_struct("DomTreeBase");
+        builder
+            .field("valid", &self.valid.get())
+            .field("slow_queries", &self.slow_queries.get())
+            .field_with("root", |f| match self.root.as_ref().and_then(|root| root.block) {
+                Some(root) => write!(f, "{root}"),
+                None => f.write_str("<virtual>"),
+            });
+        if IS_POST_DOM {
+            builder.field_with("roots", |f| {
+                let mut builder = f.debug_set();
+                for root in self.roots.iter() {
+                    builder.entry_with(|f| match root {
+                        Some(root) => write!(f, "{root}"),
+                        None => f.write_str("<virtual>"),
+                    });
+                }
+                builder.finish()
+            });
+        }
+
+        builder.field_with("nodes", |f| {
+            f.debug_set()
+                .entries(self.nodes.iter().filter_map(|node| node.as_ref().map(|(_, n)| n.clone())))
+                .finish()
+        });
+
+        builder.finish()
     }
 }
 
@@ -199,18 +234,23 @@ impl DomTreeNode {
     /// If `block` is `None`, this must be a node in a post-dominator tree, and the resulting node
     /// is a virtual node that post-dominates all nodes in the tree
     pub fn new(block: Option<BlockRef>, idom: Option<Rc<DomTreeNode>>) -> Self {
-        Self {
+        let this = Self {
             block,
-            idom: Cell::new(idom),
+            idom: Cell::new(None),
             children: Default::default(),
             level: Cell::new(0),
             num_in: Cell::new(None),
             num_out: Cell::new(None),
+        };
+        if let Some(idom) = idom {
+            this.with_idom(idom)
+        } else {
+            this
         }
     }
 
     /// Build this node with the specified immediate dominator.
-    pub fn with_idom(self, idom: Rc<DomTreeNode>) -> Self {
+    pub fn with_idom(self, idom: Rc<Self>) -> Self {
         self.level.set(idom.level.get() + 1);
         self.idom.set(Some(idom));
         self
@@ -220,12 +260,33 @@ impl DomTreeNode {
         self.block
     }
 
-    pub fn idom(&self) -> Option<Rc<DomTreeNode>> {
+    pub fn idom(&self) -> Option<Rc<Self>> {
         unsafe { &*self.idom.as_ptr() }.clone()
     }
 
-    pub(super) fn set_idom(&self, idom: Option<Rc<DomTreeNode>>) {
-        self.idom.set(idom);
+    pub(super) fn set_idom(self: Rc<Self>, new_idom: Rc<Self>) {
+        let idom = self.idom.take().expect("no immediate dominator?");
+        if idom == new_idom {
+            self.idom.set(Some(idom));
+            return;
+        }
+
+        {
+            let mut children = idom.children.borrow_mut();
+            let child_index = children
+                .iter()
+                .position(|n| Rc::ptr_eq(n, &self))
+                .expect("not in immediate dominator children!");
+            children.remove(child_index);
+        }
+
+        {
+            let mut children = new_idom.children.borrow_mut();
+            children.push(Rc::clone(&self));
+        }
+        self.idom.set(Some(new_idom));
+
+        self.update_level();
     }
 
     #[inline(always)]
@@ -251,12 +312,11 @@ impl DomTreeNode {
 
     /// Returns true if `self` is dominated by `other` in the tree.
     pub fn is_dominated_by(&self, other: &Self) -> bool {
-        assert!(
-            self.num_in.get().is_some() && other.num_in.get().is_some(),
-            "you forgot to call update_dfs_numbers"
-        );
-        self.num_in.get().is_some_and(|a| other.num_in.get().is_some_and(|b| a >= b))
-            && self.num_out.get().is_some_and(|a| other.num_in.get().is_some_and(|b| a <= b))
+        let num_in = self.num_in.get().expect("you forgot to call update_dfs_numbers").get();
+        let other_num_in = other.num_in.get().expect("you forgot to call update_dfs_numbers").get();
+        let num_out = self.num_out.get().unwrap().get();
+        let other_num_out = other.num_out.get().unwrap().get();
+        num_in >= other_num_in && num_out <= other_num_out
     }
 
     /// Recomputes this node's depth in the dominator tree
