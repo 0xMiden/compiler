@@ -1,4 +1,10 @@
+use account_component_metadata::AccountComponentMetadataBuilder;
+use miden_objects::utils::Serializable;
+use proc_macro2::Literal;
+
 extern crate proc_macro;
+
+mod account_component_metadata;
 
 /// Account component
 #[proc_macro_attribute]
@@ -15,6 +21,8 @@ pub fn component(
 
     // Create a vector to hold field initializations
     let mut field_inits = Vec::new();
+
+    let mut acc_builder = AccountComponentMetadataBuilder::new(struct_name.to_string());
 
     // Process each field in the struct to extract storage slot info
     if let syn::Fields::Named(ref mut named_fields) = input.fields {
@@ -72,11 +80,27 @@ pub fn component(
         };
     };
 
-    // Combine the original struct with the generated instance
+    let acc_component_metadata_bytes = acc_builder.build().to_bytes();
+    let link_section_bytes_len = acc_component_metadata_bytes.len();
+    let encoded_bytes_str = Literal::byte_string(&acc_component_metadata_bytes);
+
+    let acc_component_metadata_link_section = quote! {
+        #[cfg(target_arch = "wasm32")]
+        #[unsafe(
+            link_section = "miden_account_component_metadata"
+        )]
+        #[doc(hidden)]
+        #[allow(clippy::octal_escapes)]
+        pub static __MIDEN_ACCOUNT_COMPONENT_METADATA_BYTES: [u8; #link_section_bytes_len] = *#encoded_bytes_str;
+    };
+
+    // Combine the original struct with the generated instance and serialized account component metadata
     let output = quote! {
         #input
 
         #instance
+
+        #acc_component_metadata_link_section
     };
 
     proc_macro::TokenStream::from(output)
