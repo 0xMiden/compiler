@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[test]
-#[ignore = "until https://github.com/0xPolygonMiden/compiler/issues/428 is fixed"]
+#[ignore = "until https://github.com/0xPolygonMiden/compiler/issues/439 is fixed"]
 fn account() {
     let artifact_name = "miden_sdk_account_test";
     let mut test = CompilerTest::rust_source_cargo_lib(
