@@ -1,10 +1,10 @@
-builtin.function public @test_wrapper() {
+public builtin.function @test_wrapper() {
 ^block4:
-    v0 = hir.constant 2 : i64;
-    v1 = hir.constant 1 : i64;
-    v2 = hir.cast v1 : u32 #[ty = u32];
-    v3 = hir.shr v0, v2 : i64;
-    hir.br block5;
+    v0 = arith.constant 2 : i64;
+    v1 = arith.constant 1 : i64;
+    v2 = hir.cast v1 : u32;
+    v3 = arith.shr v0, v2 : i64;
+    cf.br ^block5;
 ^block5:
-    hir.ret ;
+    builtin.ret ;
 };

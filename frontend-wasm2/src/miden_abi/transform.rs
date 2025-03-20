@@ -1,6 +1,9 @@
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir::diagnostics::{DiagnosticsHandler, SourceSpan};
-use midenc_hir2::{dialects::builtin::FunctionRef, FunctionIdent, Immediate, Type, ValueRef};
+use midenc_dialect_arith::ArithOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir::{
+    dialects::builtin::FunctionRef, Builder, FunctionIdent, Immediate, Type, ValueRef,
+};
+use midenc_session::diagnostics::{DiagnosticsHandler, SourceSpan};
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;
@@ -63,11 +66,11 @@ fn get_transform_strategy(module_id: &str, function_id: &str) -> TransformStrate
 /// `import_func` - import function that we're transforming a call to (think of a MASM function)
 /// `args` - arguments to the generated synthetic function
 /// Returns results that will be returned from the synthetic function
-pub fn transform_miden_abi_call(
+pub fn transform_miden_abi_call<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     import_func_id: FunctionIdent,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     use TransformStrategy::*;
     match get_transform_strategy(import_func_id.module.as_str(), import_func_id.function.as_str()) {
@@ -79,15 +82,14 @@ pub fn transform_miden_abi_call(
 
 /// No transformation needed
 #[inline(always)]
-pub fn no_transform(
+pub fn no_transform<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
     let signature = import_func_ref.borrow().signature().clone();
     let exec = builder
-        .ins()
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in no_transform strategy");
 
@@ -99,15 +101,14 @@ pub fn no_transform(
 }
 
 /// The Miden ABI function returns a length and a pointer and we only want the length
-pub fn list_return(
+pub fn list_return<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
     let signature = import_func_ref.borrow().signature().clone();
     let exec = builder
-        .ins()
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in list_return strategy");
 
@@ -122,17 +123,16 @@ pub fn list_return(
 }
 
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
-pub fn return_via_pointer(
+pub fn return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
     let signature = import_func_ref.borrow().signature().clone();
     let exec = builder
-        .ins()
         .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
         .expect("failed to build an exec op in return_via_pointer strategy");
 
@@ -144,10 +144,9 @@ pub fn return_via_pointer(
     let ptr_arg = *args.last().expect("empty args");
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
     assert_eq!(ptr_arg_ty, Type::I32);
-    let ptr_u32 = builder.ins().bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
+    let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
 
-    let result_ty =
-        midenc_hir2::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
+    let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
     for (idx, value) in results.iter().enumerate() {
         let value_ty = (*value).borrow().ty().clone().clone();
         let eff_ptr = if idx == 0 {
@@ -155,14 +154,13 @@ pub fn return_via_pointer(
             ptr_u32
         } else {
             let imm = Immediate::U32(result_ty.get(idx).offset);
-            let imm_val = builder.ins().imm(imm, span);
-            builder.ins().add(ptr_u32, imm_val, span).expect("failed add")
+            let imm_val = builder.imm(imm, span);
+            builder.add(ptr_u32, imm_val, span).expect("failed add")
         };
         let addr = builder
-            .ins()
             .inttoptr(eff_ptr, Type::Ptr(value_ty.into()), span)
             .expect("failed inttoptr");
-        builder.ins().store(addr, *value, span).expect("failed store");
+        builder.store(addr, *value, span).expect("failed store");
     }
     Vec::new()
 }

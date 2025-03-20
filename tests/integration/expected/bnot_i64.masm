@@ -1,7 +1,10 @@
-# mod test_rust_318a80316e6bca93f0a48d41942655ffb321d8d6c62d387f9037272e5ec565e3
+# mod root_ns:root@1.0.0::test_rust_b907170bd28f219043267cdd24dc67337632f05fcaab8f9a4efb14def28e8e3e
 
 export.entrypoint
-    push.4294967295.4294967295 exec.::std::math::u64::xor
+
+        push.4294967295
+        push.4294967295
+        exec.::std::math::u64::xor
 end
 
 

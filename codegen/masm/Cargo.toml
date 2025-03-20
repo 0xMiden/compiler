@@ -13,32 +13,30 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["bitcode/std"]
+std = ["midenc-hir/std", "midenc-dialect-hir/std"]
 
 [dependencies]
-anyhow.workspace = true
-bitcode.workspace = true
-cranelift-entity.workspace = true
-intrusive-collections.workspace = true
 inventory.workspace = true
 log.workspace = true
-hashbrown.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
+miden-mast-package.workspace = true
 miden-processor.workspace = true
 miden-stdlib.workspace = true
 midenc-hir = { workspace = true, features = ["serde"] }
 midenc-hir-analysis.workspace = true
-midenc-hir-transform.workspace = true
-midenc-session = { workspace = true }
-miden-mast-package.workspace = true
-paste.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-dialect-ub.workspace = true
+midenc-session.workspace = true
 petgraph.workspace = true
 serde.workspace = true
-serde_bytes.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+expect-test.workspace = true
 proptest.workspace = true
 env_logger.workspace = true

@@ -130,4 +130,18 @@ impl ColorChoice {
             }
         }
     }
+
+    /// Returns true if this choice should forcefully use ANSI color codes.
+    ///
+    /// It's possible that ANSI is still the correct choice even if this
+    /// returns false.
+    #[cfg(not(feature = "std"))]
+    pub fn should_ansi(&self) -> bool {
+        match *self {
+            ColorChoice::Always => false,
+            ColorChoice::AlwaysAnsi => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => false,
+        }
+    }
 }

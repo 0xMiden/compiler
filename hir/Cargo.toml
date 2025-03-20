@@ -13,47 +13,33 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["rustc-demangle/std"]
-serde = [
-    "dep:serde",
-    "dep:serde_repr",
-    "dep:serde_bytes",
-    "midenc-hir-symbol/serde",
-]
-
-[build-dependencies]
-lalrpop = { version = "0.20", default-features = false }
+std = ["rustc-demangle/std", "compact_str/std", "semver/std"]
+serde = ["dep:serde", "dep:serde_repr", "midenc-hir-symbol/serde"]
+debug_refcell = []
 
 [dependencies]
 anyhow.workspace = true
-either.workspace = true
-cranelift-entity.workspace = true
+bitvec.workspace = true
+bitflags.workspace = true
+blink-alloc.workspace = true
+compact_str.workspace = true
+hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
-lalrpop-util = "0.20"
 log.workspace = true
-hashbrown.workspace = true
 miden-core.workspace = true
-miden-assembly.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-hir-type.workspace = true
 midenc-hir-macros.workspace = true
 midenc-session.workspace = true
-num-bigint = "0.4"
-num-traits = "0.2"
-petgraph.workspace = true
-paste.workspace = true
 rustc-hash.workspace = true
 rustc-demangle = "0.1.19"
 serde = { workspace = true, optional = true }
 serde_repr = { workspace = true, optional = true }
-serde_bytes = { workspace = true, optional = true }
+semver = { version = "1.0", default-features = false }
 smallvec.workspace = true
 thiserror.workspace = true
-typed-arena = "2.0"
-unicode-width = { version = "0.1", features = ["no_std"] }
-derive_more.workspace = true
-indexmap.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.0"
+env_logger.workspace = true

@@ -1,3 +1,3 @@
-mod cfg_to_scf;
+mod spill;
 
-pub use self::cfg_to_scf::LiftControlFlowToSCF;
+pub use self::spill::TransformSpills;

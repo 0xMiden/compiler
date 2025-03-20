@@ -5,9 +5,8 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir::{diagnostics::SourceSpan, Block, Inst};
-use midenc_hir2::{BlockRef, OperationRef, Signature, ValueRef};
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir::{BlockRef, Builder, OperationRef, Signature, SourceSpan, ValueRef};
 use midenc_hir_type::Type;
 
 use super::function_builder_ext::FunctionBuilderExt;
@@ -274,10 +273,10 @@ impl FuncTranslationState {
     }
 
     /// Pop one value and cast it to the specified type.
-    pub(crate) fn pop1_casted(
+    pub(crate) fn pop1_casted<B: ?Sized + Builder>(
         &mut self,
         ty: Type,
-        builder: &mut FunctionBuilderExt,
+        builder: &mut FunctionBuilderExt<'_, B>,
         span: SourceSpan,
     ) -> ValueRef {
         todo!()
@@ -290,16 +289,15 @@ impl FuncTranslationState {
     }
 
     /// Pop one value and bitcast it to the specified type.
-    pub(crate) fn pop1_bitcasted(
+    pub(crate) fn pop1_bitcasted<B: ?Sized + Builder>(
         &mut self,
         ty: Type,
-        builder: &mut FunctionBuilderExt,
+        builder: &mut FunctionBuilderExt<'_, B>,
         span: SourceSpan,
     ) -> ValueRef {
         let val = self.stack.pop().expect("attempted to pop a value from an empty stack");
         if val.borrow().ty() != &ty {
             builder
-                .ins()
                 .bitcast(val, ty.clone(), span)
                 .unwrap_or_else(|_| panic!("failed to bitcast {:?} to {:?}", val, ty))
         } else {
@@ -320,10 +318,10 @@ impl FuncTranslationState {
     }
 
     /// Pop two values. Cast them to the specified type. Return them in the order they were pushed.
-    pub(crate) fn pop2_casted(
+    pub(crate) fn pop2_casted<B: ?Sized + Builder>(
         &mut self,
         ty: Type,
-        builder: &mut FunctionBuilderExt,
+        builder: &mut FunctionBuilderExt<'_, B>,
         span: SourceSpan,
     ) -> (ValueRef, ValueRef) {
         todo!()
@@ -344,21 +342,21 @@ impl FuncTranslationState {
 
     /// Pop two values. Bitcast them to the specified type. Return them in the order they were
     /// pushed.
-    pub(crate) fn pop2_bitcasted(
+    pub(crate) fn pop2_bitcasted<B: ?Sized + Builder>(
         &mut self,
         ty: Type,
-        builder: &mut FunctionBuilderExt,
+        builder: &mut FunctionBuilderExt<'_, B>,
         span: SourceSpan,
     ) -> WasmResult<(ValueRef, ValueRef)> {
         let v2 = self.stack.pop().unwrap();
         let v1 = self.stack.pop().unwrap();
         let v1 = if v1.borrow().ty() != &ty {
-            builder.ins().bitcast(v1, ty.clone(), span)?
+            builder.bitcast(v1, ty.clone(), span)?
         } else {
             v1
         };
         let v2 = if v2.borrow().ty() != &ty {
-            builder.ins().bitcast(v2, ty, span)?
+            builder.bitcast(v2, ty, span)?
         } else {
             v2
         };

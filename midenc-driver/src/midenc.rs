@@ -5,6 +5,7 @@ use log::Log;
 use midenc_compile as compile;
 #[cfg(feature = "debug")]
 use midenc_debug as debugger;
+use midenc_hir::Context;
 use midenc_session::{
     diagnostics::{Emitter, Report},
     InputFile,
@@ -161,9 +162,11 @@ impl Midenc {
                 if options.working_dir.is_none() {
                     options.working_dir = Some(cwd);
                 }
-                let session =
-                    options.into_session(vec![input], emitter).with_extra_flags(matches.into());
-                compile::compile(Rc::new(session))
+                let session = Rc::new(
+                    options.into_session(vec![input], emitter).with_extra_flags(matches.into()),
+                );
+                let context = Rc::new(Context::new(session));
+                compile::compile(context)
             }
             #[cfg(feature = "debug")]
             Commands::Run {

@@ -1,4 +1,4 @@
-use std::fmt;
+use core::fmt;
 
 use midenc_hir::{formatter::PrettyPrint, FunctionIdent, Ident, Signature};
 

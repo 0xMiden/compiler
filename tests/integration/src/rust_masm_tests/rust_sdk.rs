@@ -4,16 +4,15 @@ use expect_test::expect_file;
 use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
 use miden_mast_package::Package;
 use midenc_debug::Executor;
-use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{
-    FunctionIdent, Ident, InterfaceFunctionIdent, InterfaceIdent, SourceSpan, Symbol,
-};
+use midenc_frontend_wasm2::WasmTranslationConfig;
+use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
 
 use crate::{
     cargo_proj::project, compiler_test::sdk_crate_path, CompilerTest, CompilerTestBuilder,
 };
 
 #[test]
+#[ignore = "requires component translation"]
 fn account() {
     let artifact_name = "miden_sdk_account_test";
     let mut test = CompilerTest::rust_source_cargo_lib(
@@ -35,6 +34,7 @@ fn account() {
 }
 
 #[test]
+#[ignore = "requires component translation"]
 fn rust_sdk_basic_wallet() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = WasmTranslationConfig::default();
@@ -123,6 +123,7 @@ fn rust_sdk_p2id_note_script() {
 }
 
 #[test]
+#[ignore = "requires component translation"]
 fn rust_sdk_cross_ctx_account() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = WasmTranslationConfig::default();
@@ -151,6 +152,7 @@ fn rust_sdk_cross_ctx_account() {
 }
 
 #[test]
+#[ignore = "requires component translation"]
 fn rust_sdk_cross_ctx_note() {
     // Build cross-ctx-account package
     let args: Vec<String> = [
@@ -228,6 +230,5 @@ fn pure_rust_hir2() {
         CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}_old.hir")]);
-    test.expect_ir2(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
 }

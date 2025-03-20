@@ -1,7 +1,4 @@
-use midenc_hir::{
-    diagnostics::{miette, Diagnostic, Report},
-    SymbolConflictError,
-};
+use midenc_session::diagnostics::{miette, Diagnostic, Report};
 use thiserror::Error;
 
 /// A WebAssembly translation error.
@@ -33,11 +30,6 @@ pub enum WasmError {
     #[error("Too many declared functions in the module")]
     #[diagnostic()]
     FuncNumLimitExceeded,
-
-    /// Duplicate symbol names were found in a module
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    SymbolConflictError(#[from] SymbolConflictError),
 
     #[error("import metadata is missing: {0}")]
     #[diagnostic()]
@@ -72,7 +64,7 @@ pub type WasmResult<T> = Result<T, Report>;
 macro_rules! unsupported_diag {
     ($diagnostics:expr, $($arg:tt)*) => {{
         return Err($diagnostics
-            .diagnostic(midenc_hir::diagnostics::Severity::Error)
+            .diagnostic(midenc_session::diagnostics::Severity::Error)
             .with_message(format!($($arg)*))
             .into_report());
     }}

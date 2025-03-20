@@ -1,71 +1,96 @@
-use std::{ffi::OsString, path::PathBuf, sync::Arc};
+#[cfg(feature = "std")]
+use alloc::{borrow::ToOwned, format, string::ToString, vec};
+use alloc::{string::String, sync::Arc, vec::Vec};
+#[cfg(feature = "std")]
+use std::ffi::OsString;
 
+#[cfg(feature = "std")]
 use clap::{builder::ArgPredicate, Parser};
 use midenc_session::{
     diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
-    OutputTypeSpec, OutputTypes, ProjectType, Session, TargetEnv, Verbosity, Warnings,
+    OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
+    Warnings,
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
-#[derive(Debug, Parser)]
-#[command(name = "midenc")]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(Parser))]
+#[cfg_attr(feature = "std", command(name = "midenc"))]
 pub struct Compiler {
     /// Write all intermediate compiler artifacts to `<dir>`
     ///
     /// Defaults to a directory named `target/midenc` in the current working directory
-    #[arg(
-        long,
-        value_name = "DIR",
-        env = "MIDENC_TARGET_DIR",
-        default_value = "target/midenc",
-        help_heading = "Output"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "DIR",
+            env = "MIDENC_TARGET_DIR",
+            default_value = "target/midenc",
+            help_heading = "Output"
+        )
     )]
     pub target_dir: PathBuf,
     /// The working directory for the compiler
     ///
     /// By default this will be the working directory the compiler is executed from
-    #[arg(long, value_name = "DIR", help_heading = "Output")]
+    #[cfg_attr(
+        feature = "std",
+        arg(long, value_name = "DIR", help_heading = "Output")
+    )]
     pub working_dir: Option<PathBuf>,
     /// The path to the root directory of the Miden toolchain libraries
     ///
     /// By default this is assumed to be ~/.miden/toolchains/<version>
-    #[arg(
-        long,
-        value_name = "DIR",
-        env = "MIDENC_SYSROOT",
-        help_heading = "Compiler"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "DIR",
+            env = "MIDENC_SYSROOT",
+            help_heading = "Compiler"
+        )
     )]
     pub sysroot: Option<PathBuf>,
     /// Write compiled output to compiler-chosen filename in `<dir>`
-    #[arg(
-        long,
-        short = 'O',
-        value_name = "DIR",
-        env = "MIDENC_OUT_DIR",
-        help_heading = "Output"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            short = 'O',
+            value_name = "DIR",
+            env = "MIDENC_OUT_DIR",
+            help_heading = "Output"
+        )
     )]
     pub output_dir: Option<PathBuf>,
     /// Write compiled output to `<filename>`
-    #[arg(long, short = 'o', value_name = "FILENAME", help_heading = "Output")]
+    #[cfg_attr(
+        feature = "std",
+        arg(long, short = 'o', value_name = "FILENAME", help_heading = "Output")
+    )]
     pub output_file: Option<PathBuf>,
     /// Write output to stdout
-    #[arg(long, conflicts_with("output_file"), help_heading = "Output")]
+    #[cfg_attr(
+        feature = "std",
+        arg(long, conflicts_with("output_file"), help_heading = "Output")
+    )]
     pub stdout: bool,
     /// Specify the name of the project being compiled
     ///
     /// The default is derived from the name of the first input file, or if reading from stdin,
     /// the base name of the working directory.
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         short = 'n',
         value_name = "NAME",
         default_value = None,
         help_heading = "Diagnostics"
-    )]
+    ))]
     pub name: Option<String>,
     /// Specify what type and level of informational output to emit
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long = "verbose",
         short = 'v',
         value_enum,
@@ -74,10 +99,10 @@ pub struct Compiler {
         default_missing_value = "debug",
         num_args(0..=1),
         help_heading = "Diagnostics"
-    )]
+    ))]
     pub verbosity: Verbosity,
     /// Specify how warnings should be treated by the compiler.
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         short = 'W',
         value_enum,
@@ -86,33 +111,33 @@ pub struct Compiler {
         default_missing_value = "all",
         num_args(0..=1),
         help_heading = "Diagnostics"
-    )]
+    ))]
     pub warn: Warnings,
     /// Whether, and how, to color terminal output
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         value_enum,
         default_value_t = ColorChoice::Auto,
         default_missing_value = "auto",
         num_args(0..=1),
         help_heading = "Diagnostics"
-    )]
+    ))]
     pub color: ColorChoice,
     /// The target environment to compile for
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         value_name = "TARGET",
         default_value_t = TargetEnv::Base,
         help_heading = "Compiler"
-    )]
+    ))]
     pub target: TargetEnv,
     /// Specify the function to call as the entrypoint for the program
-    #[arg(long, help_heading = "Compiler", hide(true))]
+    #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler", hide(true)))]
     pub entrypoint: Option<String>,
     /// Tells the compiler to produce an executable Miden program
     ///
     /// Implied by `--entrypoint`, defaults to true for non-rollup targets.
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long = "exe",
         default_value_t = true,
         default_value_ifs([
@@ -122,12 +147,12 @@ pub struct Compiler {
             ("entrypoint", ArgPredicate::IsPresent, Some("true")),
         ]),
         help_heading = "Linker"
-    )]
+    ))]
     pub is_program: bool,
     /// Tells the compiler to produce a Miden library
     ///
     /// Implied by `--target rollup`, defaults to false.
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long = "lib",
         conflicts_with("is_program"),
         conflicts_with("entrypoint"),
@@ -139,14 +164,17 @@ pub struct Compiler {
             ("target", "rollup".into(), Some("true")),
         ]),
         help_heading = "Linker"
-    )]
+    ))]
     pub is_library: bool,
     /// Specify one or more search paths for link libraries requested via `-l`
-    #[arg(
-        long = "search-path",
-        short = 'L',
-        value_name = "PATH",
-        help_heading = "Linker"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "search-path",
+            short = 'L',
+            value_name = "PATH",
+            help_heading = "Linker"
+        )
     )]
     pub search_path: Vec<PathBuf>,
     /// Link compiled projects to the specified library NAME.
@@ -159,7 +187,7 @@ pub struct Compiler {
     /// while the latter will be located in the search path based on its KIND.
     ///
     /// See below for valid KINDs:
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long = "link-library",
         short = 'l',
         value_name = "[KIND=]NAME",
@@ -170,7 +198,7 @@ pub struct Compiler {
         ]),
         next_line_help(true),
         help_heading = "Linker"
-    )]
+    ))]
     pub link_libraries: Vec<LinkLibrary>,
     /// Specify one or more output types for the compiler to emit
     ///
@@ -179,16 +207,19 @@ pub struct Compiler {
     /// multiple times.
     ///
     /// PATH must be a directory in which to place the outputs, or `-` for stdout.
-    #[arg(
-        long = "emit",
-        value_name = "SPEC",
-        value_delimiter = ',',
-        next_line_help(true),
-        help_heading = "Output"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "emit",
+            value_name = "SPEC",
+            value_delimiter = ',',
+            next_line_help(true),
+            help_heading = "Output"
+        )
     )]
     pub output_types: Vec<OutputTypeSpec>,
     /// Specify what level of debug information to emit in compilation artifacts
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         value_enum,
         value_name = "LEVEL",
@@ -197,11 +228,11 @@ pub struct Compiler {
         default_missing_value = "full",
         num_args(0..=1),
         help_heading = "Output"
-    )]
+    ))]
     pub debug: DebugInfo,
     /// Specify what type, and to what degree, of optimizations to apply to code during
     /// compilation.
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long = "optimize",
         value_enum,
         value_name = "LEVEL",
@@ -210,87 +241,108 @@ pub struct Compiler {
         default_missing_value = "balanced",
         num_args(0..=1),
         help_heading = "Output"
-    )]
+    ))]
     pub opt_level: OptLevel,
     /// Set a codegen option
     ///
     /// Use `-C help` to print available options
-    #[arg(
-        long,
-        short = 'C',
-        value_name = "OPT[=VALUE]",
-        help_heading = "Compiler"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            short = 'C',
+            value_name = "OPT[=VALUE]",
+            help_heading = "Compiler"
+        )
     )]
     pub codegen: Vec<String>,
     /// Set an unstable compiler option
     ///
     /// Use `-Z help` to print available options
-    #[arg(
-        long,
-        short = 'Z',
-        value_name = "OPT[=VALUE]",
-        help_heading = "Compiler"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            short = 'Z',
+            value_name = "OPT[=VALUE]",
+            help_heading = "Compiler"
+        )
     )]
     pub unstable: Vec<String>,
 }
 
-#[derive(Debug, Clone, Parser)]
-#[command(name = "-C")]
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "std", derive(Parser))]
+#[cfg_attr(feature = "std", command(name = "-C"))]
 pub struct CodegenOptions {
     /// Tell the compiler to exit after it has parsed the inputs
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         conflicts_with_all(["analyze_only", "link_only"]),
         default_value_t = false,
-    )]
+    ))]
     pub parse_only: bool,
     /// Tell the compiler to exit after it has performed semantic analysis on the inputs
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         conflicts_with_all(["parse_only", "link_only"]),
         default_value_t = false,
-    )]
+    ))]
     pub analyze_only: bool,
     /// Tell the compiler to exit after linking the inputs, without generating Miden Assembly
-    #[arg(
+    #[cfg_attr(feature = "std", arg(
         long,
         conflicts_with_all(["no_link"]),
         default_value_t = false,
-    )]
+    ))]
     pub link_only: bool,
     /// Tell the compiler to generate Miden Assembly from the inputs without linking them
-    #[arg(long, default_value_t = false)]
+    #[cfg_attr(feature = "std", arg(long, default_value_t = false))]
     pub no_link: bool,
 }
 
-#[derive(Debug, Clone, Parser)]
-#[command(name = "-Z")]
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "std", derive(Parser))]
+#[cfg_attr(feature = "std", command(name = "-Z"))]
 pub struct UnstableOptions {
     /// Print the CFG after each HIR pass is applied
-    #[arg(long, default_value_t = false, help_heading = "Passes")]
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Passes")
+    )]
     pub print_cfg_after_all: bool,
     /// Print the CFG after running a specific HIR pass
-    #[arg(
-        long,
-        value_name = "PASS",
-        value_delimiter = ',',
-        help_heading = "Passes"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "PASS",
+            value_delimiter = ',',
+            help_heading = "Passes"
+        )
     )]
     pub print_cfg_after_pass: Vec<String>,
     /// Print the IR after each pass is applied
-    #[arg(long, default_value_t = false, help_heading = "Passes")]
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Passes")
+    )]
     pub print_ir_after_all: bool,
     /// Print the IR after running a specific pass
-    #[arg(
-        long,
-        value_name = "PASS",
-        value_delimiter = ',',
-        help_heading = "Passes"
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "PASS",
+            value_delimiter = ',',
+            help_heading = "Passes"
+        )
     )]
     pub print_ir_after_pass: Vec<String>,
 }
 
 impl CodegenOptions {
+    #[cfg(feature = "std")]
     fn parse_argv(argv: Vec<String>) -> Self {
         let command = <CodegenOptions as clap::CommandFactory>::command()
             .no_binary_name(true)
@@ -324,9 +376,15 @@ NOTE: When specifying these options, strip the leading '--'",
             .map_err(format_error::<CodegenOptions>)
             .unwrap_or_else(|err| err.exit())
     }
+
+    #[cfg(not(feature = "std"))]
+    fn parse_argv(_argv: Vec<String>) -> Self {
+        Self::default()
+    }
 }
 
 impl UnstableOptions {
+    #[cfg(feature = "std")]
     fn parse_argv(argv: Vec<String>) -> Self {
         let command = <UnstableOptions as clap::CommandFactory>::command()
             .no_binary_name(true)
@@ -360,15 +418,21 @@ NOTE: When specifying these options, strip the leading '--'",
             .map_err(format_error::<UnstableOptions>)
             .unwrap_or_else(|err| err.exit())
     }
+
+    #[cfg(not(feature = "std"))]
+    fn parse_argv(_argv: Vec<String>) -> Self {
+        Self::default()
+    }
 }
 
 impl Compiler {
     /// Construct a [Compiler] programatically
+    #[cfg(feature = "std")]
     pub fn new_session<I, A, S>(inputs: I, emitter: Option<Arc<dyn Emitter>>, argv: A) -> Session
     where
         I: IntoIterator<Item = InputFile>,
         A: IntoIterator<Item = S>,
-        S: Into<OsString> + Clone,
+        S: Into<std::ffi::OsString> + Clone,
     {
         let argv = [OsString::from("midenc")]
             .into_iter()
@@ -392,9 +456,7 @@ impl Compiler {
         inputs: Vec<InputFile>,
         emitter: Option<Arc<dyn Emitter>>,
     ) -> Session {
-        let cwd = self
-            .working_dir
-            .unwrap_or_else(|| std::env::current_dir().expect("no working directory available"));
+        let cwd = self.working_dir.unwrap_or_else(current_dir);
 
         // Determine if a specific output file has been requested
         let output_file = match self.output_file {
@@ -448,9 +510,7 @@ impl Compiler {
         } else {
             options.current_dir.join(&self.target_dir)
         };
-        std::fs::create_dir_all(&target_dir).unwrap_or_else(|err| {
-            panic!("unable to create --target-dir '{}': {err}", target_dir.display())
-        });
+        create_target_dir(target_dir.as_path());
 
         let source_manager = Arc::new(DefaultSourceManager::default());
         Session::new(
@@ -465,7 +525,27 @@ impl Compiler {
     }
 }
 
+#[cfg(feature = "std")]
 fn format_error<I: clap::CommandFactory>(err: clap::Error) -> clap::Error {
     let mut cmd = I::command();
     err.format(&mut cmd)
 }
+
+#[cfg(feature = "std")]
+fn current_dir() -> PathBuf {
+    std::env::current_dir().expect("no working directory available")
+}
+
+#[cfg(not(feature = "std"))]
+fn current_dir() -> PathBuf {
+    <str as AsRef<Path>>::as_ref(".").to_path_buf()
+}
+
+#[cfg(feature = "std")]
+fn create_target_dir(path: &Path) {
+    std::fs::create_dir_all(path)
+        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
+}
+
+#[cfg(not(feature = "std"))]
+fn create_target_dir(_path: &Path) {}

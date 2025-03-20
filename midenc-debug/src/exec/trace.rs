@@ -11,7 +11,7 @@ use miden_processor::{
     ProcessState, RowIndex, StackOutputs, TraceLenSummary, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::NativePtr;
-pub use midenc_hir::TraceEvent;
+pub use midenc_codegen_masm::TraceEvent;
 use midenc_hir::Type;
 use midenc_session::Session;
 

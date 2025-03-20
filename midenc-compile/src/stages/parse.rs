@@ -1,177 +1,147 @@
-use std::path::Path;
+#[cfg(feature = "std")]
+use alloc::string::ToString;
+use alloc::{format, rc::Rc, sync::Arc};
 
+use miden_assembly::utils::Deserializable;
+#[cfg(feature = "std")]
+use miden_assembly::utils::ReadAdapter;
 use midenc_session::{
-    diagnostics::{IntoDiagnostic, Spanned, WrapErr},
-    InputFile,
+    diagnostics::{IntoDiagnostic, WrapErr},
+    InputFile, InputType,
 };
-use wasm::WasmTranslationConfig;
+#[cfg(feature = "std")]
+use midenc_session::{FileName, Path};
 
 use super::*;
 
-/// This represents the output of the parser, depending on the type
-/// of input that was parsed/loaded.
+/// This represents the output of the parser, depending on the type of input that was parsed/loaded.
 pub enum ParseOutput {
-    /// We parsed HIR into the AST from text
-    Ast(Box<ast::Module>),
-    /// We parsed HIR from a Wasm module or other binary format
-    Hir(Box<hir::Component>),
-    /// We parsed MASM from a Miden Assembly module or other binary format
-    Masm(Box<midenc_codegen_masm::Module>),
+    /// We found a WebAssembly binary representing a component or core module.
+    ///
+    /// This input type is processed in a later stage, here we are only interested in other input
+    /// types.
+    Wasm(InputType),
+    /// A single Miden Assembly module was given as an input
+    Module(Arc<miden_assembly::ast::Module>),
+    /// A MAST library was given as an input
+    Library(Arc<miden_assembly::Library>),
+    /// A Miden package was given as an input
+    Package(Arc<miden_mast_package::Package>),
 }
 
-/// This stage of compilation is where we parse input files into the
-/// earliest representation supported by the input file type. Later
-/// stages will handle lowering as needed.
+/// This stage of compilation is where we parse input files into the earliest representation
+/// supported by the input file type. Later stages will handle lowering as needed.
 pub struct ParseStage;
+
 impl Stage for ParseStage {
     type Input = InputFile;
     type Output = ParseOutput;
 
-    fn run(
-        &mut self,
-        input: Self::Input,
-        _analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output> {
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
         use midenc_session::{FileType, InputType};
-        // Track when compilation began
+
         let file_type = input.file_type();
-        match &input.file {
-            InputType::Real(ref path) => match file_type {
-                FileType::Hir => self.parse_ast_from_file(path.as_ref(), session),
-                FileType::Wasm => self.parse_hir_from_wasm_file(path.as_ref(), session),
-                FileType::Wat => self.parse_hir_from_wat_file(path.as_ref(), session),
-                FileType::Masm => self.parse_masm_from_file(path.as_ref(), session),
-                FileType::Mast => Err(Report::msg(
-                    "invalid input: mast libraries are not supported as inputs, did you mean to \
-                     use '-l'?",
-                )),
-                FileType::Masp => Err(Report::msg(
-                    "invalid input: mast packages are not supported as inputs, did you mean to \
-                     use '-l'?",
-                )),
+        let parsed = match input.file {
+            #[cfg(not(feature = "std"))]
+            InputType::Real(_path) => unimplemented!(),
+            #[cfg(feature = "std")]
+            InputType::Real(path) => match file_type {
+                FileType::Hir => {
+                    Err(Report::msg("invalid input: hir parsing is temporarily unsupported"))
+                }
+                FileType::Wasm => Ok(ParseOutput::Wasm(InputType::Real(path))),
+                FileType::Wat => self.parse_wasm_from_wat_file(path.as_ref()),
+                FileType::Masm => self.parse_masm_from_file(path.as_ref(), context.clone()),
+                FileType::Mast => miden_assembly::Library::deserialize_from_file(&path)
+                    .map(Arc::new)
+                    .map(ParseOutput::Library)
+                    .map_err(|err| {
+                        Report::msg(format!(
+                            "invalid input: could not deserialize mast library: {err}"
+                        ))
+                    }),
+                FileType::Masp => {
+                    let mut file = std::fs::File::open(&path).map_err(|err| {
+                        Report::msg(format!("cannot open {} for reading: {err}", path.display()))
+                    })?;
+                    let mut adapter = ReadAdapter::new(&mut file);
+                    miden_mast_package::Package::read_from(&mut adapter)
+                        .map(Arc::new)
+                        .map(ParseOutput::Package)
+                        .map_err(|err| {
+                            Report::msg(format!(
+                                "failed to load mast package from {}: {err}",
+                                path.display()
+                            ))
+                        })
+                }
             },
-            InputType::Stdin { name, ref input } => match file_type {
-                FileType::Hir => self.parse_ast_from_bytes(input, session),
-                FileType::Wasm => self.parse_hir_from_wasm_bytes(
-                    input,
-                    session,
-                    &WasmTranslationConfig {
-                        source_name: name.as_str().to_string().into(),
-                        ..Default::default()
-                    },
-                ),
-                FileType::Wat => self.parse_hir_from_wat_bytes(
-                    input,
-                    session,
-                    &WasmTranslationConfig {
-                        source_name: name.as_str().to_string().into(),
-                        ..Default::default()
-                    },
-                ),
-                FileType::Masm => self.parse_masm_from_bytes(name.as_str(), input, session),
-                FileType::Mast => Err(Report::msg(
-                    "invalid input: mast libraries are not supported as inputs, did you mean to \
-                     use '-l'?",
-                )),
-                FileType::Masp => Err(Report::msg(
-                    "invalid input: mast packages are not supported as inputs, did you mean to \
-                     use '-l'?",
-                )),
+            InputType::Stdin { name, input } => match file_type {
+                FileType::Hir => {
+                    Err(Report::msg("invalid input: hir parsing is temporarily unsupported"))
+                }
+                FileType::Wasm => Ok(ParseOutput::Wasm(InputType::Stdin { name, input })),
+                FileType::Wat => {
+                    let wasm = wat::parse_bytes(&input)
+                        .into_diagnostic()
+                        .wrap_err("failed to parse wat")?;
+                    Ok(ParseOutput::Wasm(InputType::Stdin {
+                        name,
+                        input: wasm.into_owned(),
+                    }))
+                }
+                FileType::Masm => {
+                    self.parse_masm_from_bytes(name.as_str(), &input, context.clone())
+                }
+                FileType::Mast => miden_assembly::Library::read_from_bytes(&input)
+                    .map(Arc::new)
+                    .map(ParseOutput::Library)
+                    .map_err(|err| {
+                        Report::msg(format!(
+                            "invalid input: could not deserialize mast library: {err}"
+                        ))
+                    }),
+                FileType::Masp => miden_mast_package::Package::read_from_bytes(&input)
+                    .map(Arc::new)
+                    .map(ParseOutput::Package)
+                    .map_err(|err| {
+                        Report::msg(format!(
+                            "invalid input: failed to load mast package from {name}: {err}"
+                        ))
+                    }),
             },
+        }?;
+
+        match parsed {
+            ParseOutput::Module(ref module) => {
+                context.session().emit(OutputMode::Text, module).into_diagnostic()?;
+            }
+            ParseOutput::Wasm(_) | ParseOutput::Library(_) | ParseOutput::Package(_) => (),
         }
+
+        Ok(parsed)
     }
 }
 impl ParseStage {
-    fn parse_ast_from_file(&self, path: &Path, session: &Session) -> CompilerResult<ParseOutput> {
-        use std::io::Read;
-
-        let mut file = std::fs::File::open(path).into_diagnostic()?;
-        let mut bytes = Vec::with_capacity(1024);
-        file.read_to_end(&mut bytes).into_diagnostic()?;
-        self.parse_ast_from_bytes(&bytes, session)
-    }
-
-    fn parse_ast_from_bytes(&self, bytes: &[u8], session: &Session) -> CompilerResult<ParseOutput> {
-        use midenc_hir::parser::Parser;
-
-        let source = core::str::from_utf8(bytes)
-            .into_diagnostic()
-            .wrap_err("input is not valid utf-8")?;
-        let parser = Parser::new(session);
-        parser.parse_str(source).map(Box::new).map(ParseOutput::Ast)
-    }
-
-    fn parse_hir_from_wasm_file(
-        &self,
-        path: &Path,
-        session: &Session,
-    ) -> CompilerResult<ParseOutput> {
-        use std::io::Read;
-
-        log::debug!("parsing hir from wasm at {}", path.display());
-        let mut file = std::fs::File::open(path)
-            .into_diagnostic()
-            .wrap_err("could not open input for reading")?;
-        let mut bytes = Vec::with_capacity(1024);
-        file.read_to_end(&mut bytes).into_diagnostic()?;
-        let file_name = path.file_stem().unwrap().to_str().unwrap().to_owned();
-        let config = wasm::WasmTranslationConfig {
-            source_name: file_name.into(),
-            ..Default::default()
-        };
-        self.parse_hir_from_wasm_bytes(&bytes, session, &config)
-    }
-
-    fn parse_hir_from_wasm_bytes(
-        &self,
-        bytes: &[u8],
-        session: &Session,
-        config: &WasmTranslationConfig,
-    ) -> CompilerResult<ParseOutput> {
-        let component = wasm::translate(bytes, config, session)?;
-        log::debug!(
-            "parsed hir component from wasm bytes with first module name: {}",
-            component.name()
-        );
-
-        Ok(ParseOutput::Hir(component.into()))
-    }
-
-    fn parse_hir_from_wat_file(
-        &self,
-        path: &Path,
-        session: &Session,
-    ) -> CompilerResult<ParseOutput> {
-        let file_name = path.file_stem().unwrap().to_str().unwrap().to_owned();
-        let config = WasmTranslationConfig {
-            source_name: file_name.into(),
-            ..Default::default()
-        };
+    #[cfg(feature = "std")]
+    fn parse_wasm_from_wat_file(&self, path: &Path) -> CompilerResult<ParseOutput> {
         let wasm = wat::parse_file(path).into_diagnostic().wrap_err("failed to parse wat")?;
-        let component = wasm::translate(&wasm, &config, session)?;
-
-        Ok(ParseOutput::Hir(component.into()))
+        Ok(ParseOutput::Wasm(InputType::Stdin {
+            name: FileName::from(path.to_path_buf()),
+            input: wasm,
+        }))
     }
 
-    fn parse_hir_from_wat_bytes(
+    #[cfg(feature = "std")]
+    fn parse_masm_from_file(
         &self,
-        bytes: &[u8],
-        session: &Session,
-        config: &WasmTranslationConfig,
+        path: &Path,
+        context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
-        let wasm = wat::parse_bytes(bytes).into_diagnostic().wrap_err("failed to parse wat")?;
-        let component = wasm::translate(&wasm, config, session)?;
-
-        Ok(ParseOutput::Hir(component.into()))
-    }
-
-    fn parse_masm_from_file(&self, path: &Path, session: &Session) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
             ast::{self, Ident, ModuleKind},
             LibraryNamespace, LibraryPath,
         };
-        use midenc_codegen_masm as masm;
 
         // Construct library path for MASM module
         let module_name = Ident::new(path.file_stem().unwrap().to_str().unwrap())
@@ -192,24 +162,21 @@ impl ParseStage {
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_file(name, path, &session.source_manager)?;
-        let span = ast.span();
+        let ast = parser.parse_file(name, path, &context.session().source_manager)?;
 
-        // Convert to MASM IR representation
-        Ok(ParseOutput::Masm(Box::new(masm::Module::from_ast(&ast, span))))
+        Ok(ParseOutput::Module(Arc::from(ast)))
     }
 
     fn parse_masm_from_bytes(
         &self,
         name: &str,
         bytes: &[u8],
-        session: &Session,
+        context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
             ast::{self, ModuleKind},
             LibraryPath,
         };
-        use midenc_codegen_masm as masm;
 
         let source = core::str::from_utf8(bytes)
             .into_diagnostic()
@@ -220,10 +187,8 @@ impl ParseStage {
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_str(name, source, &session.source_manager)?;
-        let span = ast.span();
+        let ast = parser.parse_str(name, source, &context.session().source_manager)?;
 
-        // Convert to MASM IR representation
-        Ok(ParseOutput::Masm(Box::new(masm::Module::from_ast(&ast, span))))
+        Ok(ParseOutput::Module(Arc::from(ast)))
     }
 }

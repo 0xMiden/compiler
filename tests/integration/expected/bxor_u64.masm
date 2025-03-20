@@ -1,7 +1,8 @@
-# mod test_rust_0ac0889968c0147e0b9ffdf298215e3c144b2f0574e12a5a7110797b6cd692a5
+# mod root_ns:root@1.0.0::test_rust_ab1d59bc3952451e2ac6a22333bf5458760622594546976d2d1488d607497ae7
 
 export.entrypoint
-    exec.::std::math::u64::xor
+
+        exec.::std::math::u64::xor
 end
 
 

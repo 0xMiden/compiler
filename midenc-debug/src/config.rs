@@ -160,7 +160,7 @@ fn deserialize_rodata_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error
 where
     D: serde::Deserializer<'de>,
 {
-    use midenc_hir::ConstantData;
+    use midenc_hir::constants::ConstantData;
 
     String::deserialize(deserializer).and_then(|hex| {
         ConstantData::from_str_be(hex.as_str())

@@ -1,14 +1,14 @@
-builtin.function public @test_wrapper() {
+public builtin.function @test_wrapper() {
 ^block4:
-    v0 = hir.constant 1024 : i32;
-    v1 = hir.constant 1 : i64;
-    v2 = hir.bitcast v0 : u32 #[ty = u32];
-    v3 = hir.constant 8 : u32;
-    v4 = hir.mod v2, v3 : u32;
+    v0 = arith.constant 1024 : i32;
+    v1 = arith.constant 1 : i64;
+    v2 = hir.bitcast v0 : u32;
+    v3 = arith.constant 8 : u32;
+    v4 = arith.mod v2, v3 : u32;
     hir.assertz v4 #[code = 250];
-    v5 = hir.int_to_ptr v2 : (ptr i64) #[ty = (ptr i64)];
+    v5 = hir.int_to_ptr v2 : (ptr i64);
     hir.store v5, v1;
-    hir.br block5;
+    cf.br ^block5;
 ^block5:
-    hir.ret ;
+    builtin.ret ;
 };

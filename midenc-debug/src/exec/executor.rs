@@ -320,7 +320,7 @@ fn render_execution_error(
     execution_state: &DebugExecutor,
     session: &Session,
 ) -> ! {
-    use midenc_hir::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
+    use midenc_session::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
 
     let stacktrace = execution_state.callstack.stacktrace(&execution_state.recent, session);
 
@@ -328,7 +328,7 @@ fn render_execution_error(
 
     if let Some(last_state) = execution_state.last.as_ref() {
         let stack = last_state.stack.iter().map(|elem| elem.as_int());
-        let stack = midenc_hir::DisplayValues::new(stack);
+        let stack = midenc_hir::formatter::DisplayValues::new(stack);
         let fmp = last_state.fmp.as_int();
         eprintln!(
             "\nLast Known State (at most recent instruction which succeeded):

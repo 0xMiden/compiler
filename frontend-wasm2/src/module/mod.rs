@@ -2,11 +2,9 @@
 
 use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 
+use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
 use indexmap::IndexMap;
-use midenc_hir::{
-    cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap},
-    FxHashMap, Ident, Symbol,
-};
+use midenc_hir::{interner::Symbol, FxHashMap, Ident};
 use midenc_session::DiagnosticsHandler;
 
 use self::types::*;
@@ -356,7 +354,7 @@ impl FunctionTypeInfo {
 /// Index into the funcref table
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct FuncRefIndex(u32);
-midenc_hir::cranelift_entity::entity_impl!(FuncRefIndex);
+cranelift_entity::entity_impl!(FuncRefIndex);
 
 #[derive(Debug, Default)]
 pub struct NameSection {

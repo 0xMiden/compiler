@@ -1,7 +1,12 @@
-# mod ge_felt
+# mod root_ns:root@1.0.0::ge_felt
 
 export.entrypoint
-    swap.1 gte push.0 neq
+
+        push.0
+        swap.1
+        movup.2
+        gte
+        neq
 end
 
 

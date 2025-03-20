@@ -15,9 +15,10 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["dep:termcolor", "dep:parking_lot", "dep:clap"]
+std = ["dep:termcolor", "dep:parking_lot", "dep:clap", "anyhow/std"]
 
 [dependencies]
+anyhow.workspace = true
 clap = { workspace = true, optional = true }
 inventory.workspace = true
 log.workspace = true

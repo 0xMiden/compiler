@@ -13,20 +13,23 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[features]
+default = ["std"]
+std = ["anyhow/std", "miden-assembly/std", "midenc-hir/std", "dep:clap"]
+
 [dependencies]
-clap.workspace = true
-either.workspace = true
+anyhow.workspace = true
+clap = { workspace = true, optional = true }
 log.workspace = true
-intrusive-collections.workspace = true
 inventory.workspace = true
 midenc-codegen-masm.workspace = true
-miden-assembly = { workspace = true, features = ["std"] }
+miden-assembly.workspace = true
 miden-mast-package.workspace = true
-midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm2.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
-midenc-hir-analysis.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true
 wat.workspace = true
-derive_more.workspace = true

@@ -1,35 +1,40 @@
-builtin.world  #[name = #world] {
-
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
-
-        builtin.module  #[name = #fibonacci] #[visibility = public] {
-
-            builtin.function public @entrypoint(v0: i32) -> i32 {
-            ^block4(v0: i32):
-                v2 = hir.constant 0 : i32;
-                v3 = hir.constant 0 : i32;
-                v4 = hir.constant 1 : i32;
-                hir.br block6(v4, v0, v3);
-            ^block5(v1: i32):
-
-            ^block6(v6: i32, v7: i32, v10: i32):
-                v8 = hir.constant 0 : i32;
-                v9 = hir.neq v7, v8 : i1;
-                hir.cond_br v9 block8, block9;
-            ^block7(v5: i32):
-
-            ^block8:
-                v11 = hir.constant -1 : i32;
-                v12 = hir.add v7, v11 : i32 #[overflow = wrapping];
-                v13 = hir.add v10, v6 : i32 #[overflow = wrapping];
-                hir.br block6(v13, v12, v6);
-            ^block9:
-                hir.ret v10;
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @fibonacci {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
+        ^block4(v0: i32):
+            v22 = ub.poison i32 : i32;
+            v2 = arith.constant 0 : i32;
+            v4 = arith.constant 1 : i32;
+            v32, v33, v34, v35 = scf.while v4, v0, v2, v22 : i32, i32, i32, i32 {
+            ^block6(v6: i32, v7: i32, v10: i32, v27: i32):
+                v53 = arith.constant 0 : i32;
+                v9 = arith.neq v7, v53 : i1;
+                v45, v46, v47, v48, v49 = scf.if v9 : i32, i32, i32, u32, u32 {
+                ^block8:
+                    v21 = arith.constant 1 : u32;
+                    v15 = arith.constant 0 : u32;
+                    v11 = arith.constant -1 : i32;
+                    v12 = arith.add v7, v11 : i32 #[overflow = wrapping];
+                    v13 = arith.add v10, v6 : i32 #[overflow = wrapping];
+                    scf.yield v13, v12, v6, v15, v21;
+                } else {
+                ^block16:
+                    v50 = arith.constant 0 : u32;
+                    v51 = arith.constant 1 : u32;
+                    v52 = ub.poison i32 : i32;
+                    scf.yield v52, v52, v52, v51, v50;
+                };
+                v44 = arith.trunc v49 : i1;
+                scf.condition v44, v45, v46, v47, v10;
+            } do {
+            ^block15(v40: i32, v41: i32, v42: i32, v43: i32):
+                scf.yield v40, v41, v42, v43;
             };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
+            builtin.ret v35;
+        };
 
-                hir.ret_imm  #[value = 1048576];
-            };
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
         };
     };
 };

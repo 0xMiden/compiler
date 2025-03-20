@@ -1,32 +1,25 @@
-builtin.world  #[name = #world] {
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_c3eed17236100365f8c1660de046d9d6663a7b82697275884d4fcb6fa25a7447 {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
+        ^block6(v0: i32, v1: i32):
+            v3 = arith.constant 15 : i32;
+            v4 = arith.band v1, v3 : i32;
+            v5 = hir.bitcast v4 : u32;
+            v6 = arith.shl v0, v5 : i32;
+            v7 = arith.sext v6 : i32;
+            builtin.ret v7;
+        };
 
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-        builtin.module  #[name = #test_rust_947b1fd0c78559d180609e8a959684c5090a8ac458193ed6a1103a863d3c8bd0] #[visibility = public] {
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-            builtin.function public @entrypoint(v0: i32, v1: i32) -> i32 {
-            ^block6(v0: i32, v1: i32):
-                v3 = hir.constant 15 : i32;
-                v4 = hir.band v1, v3 : i32;
-                v5 = hir.bitcast v4 : u32 #[ty = u32];
-                v6 = hir.shl v0, v5 : i32;
-                v7 = hir.sext v6 : i32 #[ty = i32];
-                hir.br block7(v7);
-            ^block7(v2: i32):
-                hir.ret v2;
-            };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
-            builtin.global_variable  #[name = #gv1] #[ty = i32] #[visibility = public] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
-            builtin.global_variable  #[name = #gv2] #[ty = i32] #[visibility = public] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
         };
     };
 };

@@ -8,8 +8,6 @@ use midenc_debug::{Executor, PopFromStack};
 use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
-use crate::execute_emulator;
-
 mod abi_transform;
 mod apps;
 mod examples;
@@ -30,6 +28,7 @@ where
     let exec = Executor::for_package(package, args.to_vec(), session)
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let output = exec.execute_into(&package.unwrap_program(), session);
+    std::dbg!(&output);
     prop_assert_eq!(rust_out.clone(), output, "VM output mismatch");
     // TODO: Uncomment after https://github.com/0xPolygonMiden/compiler/issues/228 is fixed
     // let emul_out: T = (*execute_emulator(ir_program.clone(), args).first().unwrap()).into();

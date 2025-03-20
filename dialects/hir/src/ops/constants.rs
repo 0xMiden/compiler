@@ -1,39 +1,42 @@
 use alloc::{boxed::Box, sync::Arc};
 
-use midenc_hir2::{
+use midenc_hir::{
     constants::{ConstantData, ConstantId},
     derive::operation,
+    effects::MemoryEffectOpInterface,
     traits::*,
     *,
 };
 
-use crate::HirDialect;
+use crate::{HirDialect, PointerAttr};
 
-/// An operation for expressing constant immediate values.
+/// An operation for expressing constant pointer values.
 ///
 /// This is used to materialize folded constants for the HIR dialect.
 #[operation(
     dialect = HirDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
 )]
-pub struct Constant {
-    #[attr]
-    value: Immediate,
+pub struct ConstantPointer {
+    #[attr(hidden)]
+    value: PointerAttr,
     #[result]
-    result: AnyInteger,
+    result: AnyPointer,
 }
 
-impl InferTypeOpInterface for Constant {
+has_no_effects!(ConstantPointer);
+
+impl InferTypeOpInterface for ConstantPointer {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.value().ty();
+        let ty = Type::Ptr(Box::new(self.value().pointee_type().clone()));
         self.result_mut().set_type(ty);
 
         Ok(())
     }
 }
 
-impl Foldable for Constant {
+impl Foldable for ConstantPointer {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         results.push(OpFoldResult::Attribute(self.get_attribute("value").unwrap().clone_value()));
@@ -60,14 +63,16 @@ impl Foldable for Constant {
     dialect = HirDialect,
     name = "bytes",
     traits(ConstantLike),
-    implements(InferTypeOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
 )]
 pub struct ConstantBytes {
-    #[attr]
+    #[attr(hidden)]
     id: ConstantId,
     #[result]
     result: AnyArrayOf<UInt8>,
 }
+
+has_no_effects!(ConstantBytes);
 
 impl InferTypeOpInterface for ConstantBytes {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {

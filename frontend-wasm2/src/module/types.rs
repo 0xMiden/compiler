@@ -3,12 +3,10 @@
 use core::fmt;
 use std::{collections::HashMap, ops::Index};
 
-use midenc_hir::{
-    cranelift_entity::PrimaryMap,
-    diagnostics::{DiagnosticsHandler, Severity},
-};
-use midenc_hir2::{AbiParam, CallConv, Immediate, Signature, Visibility};
+use cranelift_entity::PrimaryMap;
+use midenc_hir::{AbiParam, CallConv, Immediate, Signature, Visibility};
 use midenc_hir_type::{self as hir, Abi};
+use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 use wasmparser::types::CoreTypeId;
 
 use crate::{component::SignatureIndex, error::WasmResult, module::Module, unsupported_diag};
@@ -26,7 +24,7 @@ macro_rules! indices {
         )]
         #[repr(transparent)]
         pub struct $name(u32);
-        midenc_hir::cranelift_entity::entity_impl!($name);
+        ::cranelift_entity::entity_impl!($name);
     )*);
 }
 

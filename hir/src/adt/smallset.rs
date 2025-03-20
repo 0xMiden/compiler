@@ -177,6 +177,15 @@ where
         self.items
     }
 
+    /// Drain items from the set
+    #[inline]
+    pub fn drain(
+        &mut self,
+        range: impl core::ops::RangeBounds<usize>,
+    ) -> impl Iterator<Item = T> + '_ {
+        self.items.drain(range)
+    }
+
     #[inline]
     fn find<Q>(&self, item: &Q) -> Option<usize>
     where
@@ -192,7 +201,7 @@ where
     T: Clone + Eq,
 {
     /// Obtain a new [SmallSet] containing the unique elements of both `self` and `other`
-    pub fn union(&self, other: &Self) -> Self {
+    pub fn union<const M: usize>(&self, other: &SmallSet<T, M>) -> Self {
         let mut result = self.clone();
 
         for item in other.items.iter() {
@@ -206,7 +215,7 @@ where
     }
 
     /// Obtain a new [SmallSet] containing the unique elements of both `self` and `other`
-    pub fn into_union(mut self, other: &Self) -> Self {
+    pub fn into_union<const M: usize>(mut self, other: &SmallSet<T, M>) -> Self {
         for item in other.items.iter() {
             if self.contains(item) {
                 continue;
@@ -218,7 +227,7 @@ where
     }
 
     /// Obtain a new [SmallSet] containing the elements in common between `self` and `other`
-    pub fn intersection(&self, other: &Self) -> Self {
+    pub fn intersection<const M: usize>(&self, other: &SmallSet<T, M>) -> Self {
         let mut result = Self::default();
 
         for item in self.items.iter() {
@@ -231,7 +240,7 @@ where
     }
 
     /// Obtain a new [SmallSet] containing the elements in common between `self` and `other`
-    pub fn into_intersection(self, other: &Self) -> Self {
+    pub fn into_intersection<const M: usize>(self, other: &SmallSet<T, M>) -> Self {
         let mut result = Self::default();
 
         for item in self.items.into_iter() {
@@ -244,7 +253,7 @@ where
     }
 
     /// Obtain a new [SmallSet] containing the elements in `self` but not in `other`
-    pub fn difference(&self, other: &Self) -> Self {
+    pub fn difference<const M: usize>(&self, other: &SmallSet<T, M>) -> Self {
         let mut result = Self::default();
 
         for item in self.items.iter() {
@@ -258,14 +267,14 @@ where
     }
 
     /// Obtain a new [SmallSet] containing the elements in `self` but not in `other`
-    pub fn into_difference(mut self, other: &Self) -> Self {
+    pub fn into_difference<const M: usize>(mut self, other: &SmallSet<T, M>) -> Self {
         Self {
             items: self.items.drain_filter(|item| !other.contains(item)).collect(),
         }
     }
 
     /// Obtain a new [SmallSet] containing the elements in `self` or `other`, but not in both
-    pub fn symmetric_difference(&self, other: &Self) -> Self {
+    pub fn symmetric_difference<const M: usize>(&self, other: &SmallSet<T, M>) -> Self {
         let mut result = Self::default();
 
         for item in self.items.iter() {

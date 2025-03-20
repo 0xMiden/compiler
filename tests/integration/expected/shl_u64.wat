@@ -1,4 +1,4 @@
-(module $test_rust_2a329af439c3fda4a420516309900eb5dee52a3d62676c5dfee856e4056b3fa5.wasm
+(module $test_rust_ef9c837ab7c2bd11aacdf5ad41eb9264c0daecd169f2b4cfe73fd928059744bb.wasm
   (type (;0;) (func (param i64 i64) (result i64)))
   (func $entrypoint (;0;) (type 0) (param i64 i64) (result i64)
     local.get 0

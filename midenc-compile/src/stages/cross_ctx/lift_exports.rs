@@ -1,18 +1,14 @@
-//! lifting the exports for cross-context calls.
+//! Lifting the exports for cross-context calls.
 
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
 
 use miden_assembly::Spanned;
-use midenc_hir::{
-    diagnostics::Severity,
-    pass::AnalysisManager,
-    types::Abi::{self, Canonical},
-    CallConv, ComponentBuilder, ComponentExport, FunctionType, InstBuilder, InterfaceFunctionIdent,
-};
-use midenc_session::{DiagnosticsHandler, Session};
+use midenc_hir::{dialects::builtin::ComponentBuilder, Abi, CallConv, FunctionType};
+use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
-use super::flat::{
-    assert_core_wasm_signature_equivalence, flatten_function_type, needs_transformation,
+use super::{
+    super::*,
+    flat::{assert_core_wasm_signature_equivalence, flatten_function_type, needs_transformation},
 };
 use crate::{stage::Stage, CompilerResult, LinkerInput};
 
@@ -31,12 +27,7 @@ impl Stage for LiftExportsCrossCtxStage {
     type Input = LinkerInput;
     type Output = LinkerInput;
 
-    fn run(
-        &mut self,
-        input: Self::Input,
-        _analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output> {
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
         let component = if let LinkerInput::Hir(component) = input {
             component
         } else {

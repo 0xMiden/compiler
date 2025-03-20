@@ -79,7 +79,7 @@ impl Host for DebuggerHost {
             handler(clk, TraceEvent::AssertionFailed(core::num::NonZeroU32::new(err_code)));
         }
         let err_msg = match err_code {
-            midenc_hir::ASSERT_FAILED_ALIGNMENT => Some(
+            midenc_dialect_hir::assertions::ASSERT_FAILED_ALIGNMENT => Some(
                 "failed alignment: use of memory address violates minimum alignment requirements \
                  for that use"
                     .to_string(),

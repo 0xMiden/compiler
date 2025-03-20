@@ -1,7 +1,12 @@
-# mod gt_felt
+# mod root_ns:root@1.0.0::gt_felt
 
 export.entrypoint
-    swap.1 gt push.0 neq
+
+        push.0
+        swap.1
+        movup.2
+        gt
+        neq
 end
 
 

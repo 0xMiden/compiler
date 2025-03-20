@@ -1,7 +1,12 @@
-# mod lt_felt
+# mod root_ns:root@1.0.0::lt_felt
 
 export.entrypoint
-    lt push.0 neq
+
+        push.0
+        swap.1
+        movup.2
+        lt
+        neq
 end
 
 
