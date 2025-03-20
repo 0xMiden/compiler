@@ -76,6 +76,9 @@ pub struct ParsedModule<'data> {
     /// When we're parsing the code section this will be incremented so we know
     /// which function is currently being defined.
     code_index: u32,
+
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
+    pub account_component_metadata_bytes: Option<&'data [u8]>,
 }
 
 /// Contains function data: byte code and its offset in the module.
@@ -210,13 +213,24 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     log::warn!("failed to parse name section {:?}", e);
                 }
             }
-            Payload::CustomSection(s) => self.dwarf_section(&s),
+            Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
+            Payload::CustomSection(s) if s.name() == "miden_account_component_metadata" => {
+                self.result.account_component_metadata_bytes = Some(s.data());
+            }
+            Payload::CustomSection { .. } => {
+                // ignore any other custom sections
+            }
+
             // It's expected that validation will probably reject other
             // payloads such as `UnknownSection` or those related to the
             // component model.
             other => {
                 self.validator.payload(&other).into_diagnostic()?;
-                unsupported_diag!(diagnostics, "wasm error: unsupported section {:?}", other);
+                unsupported_diag!(
+                    diagnostics,
+                    "wasm error: unsupported module section {:?}",
+                    other
+                );
             }
         }
         Ok(())
@@ -718,9 +732,6 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
 
     fn dwarf_section(&mut self, section: &CustomSectionReader<'data>) {
         let name = section.name();
-        if !name.starts_with(".debug_") {
-            return;
-        }
         if !self.config.generate_native_debuginfo && !self.config.parse_wasm_debuginfo {
             self.result.has_unparsed_debuginfo = true;
             return;

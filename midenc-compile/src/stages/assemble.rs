@@ -86,6 +86,8 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         }
     }
 
+    todo!("store outputs.account_component_metadata to the Package");
+
     miden_mast_package::Package {
         name,
         mast,

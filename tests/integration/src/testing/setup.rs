@@ -99,6 +99,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> LinkOutput {
         masm: Default::default(),
         mast: Default::default(),
         packages: Default::default(),
+        account_component_metadata_bytes: None,
     };
     link_output
         .link_libraries_from(context.session())

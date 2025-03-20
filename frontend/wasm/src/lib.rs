@@ -31,17 +31,29 @@ use wasmparser::WasmFeatures;
 
 pub use self::{config::*, error::WasmError};
 
+/// The output of the frontend Wasm translation stage
+pub struct FrontendOutput {
+    /// The IR component translated from the Wasm
+    pub component: builtin::ComponentRef,
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
+    pub account_component_metadata_bytes: Option<Vec<u8>>,
+}
+
 /// Translate a valid Wasm core module or Wasm Component Model binary into Miden
 /// IR Component
 pub fn translate(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<builtin::ComponentRef> {
+) -> WasmResult<FrontendOutput> {
     if wasm[4..8] == [0x01, 0x00, 0x00, 0x00] {
         // Wasm core module
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
-        translate_module_as_component(wasm, config, context)
+        let component = translate_module_as_component(wasm, config, context)?;
+        Ok(FrontendOutput {
+            component,
+            account_component_metadata_bytes: None,
+        })
     } else {
         translate_component(wasm, config, context)
     }

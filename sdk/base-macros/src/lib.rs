@@ -22,7 +22,7 @@ pub fn component(
     // Create a vector to hold field initializations
     let mut field_inits = Vec::new();
 
-    let mut acc_builder = AccountComponentMetadataBuilder::new(struct_name.to_string());
+    let acc_builder = AccountComponentMetadataBuilder::new(struct_name.to_string());
 
     // Process each field in the struct to extract storage slot info
     if let syn::Fields::Named(ref mut named_fields) = input.fields {

@@ -35,10 +35,6 @@ impl AccountComponentMetadataBuilder {
         }
     }
 
-    pub fn name(&self) -> String {
-        self.name.clone()
-    }
-
     pub fn build(self) -> AccountComponentMetadata {
         AccountComponentMetadata::new(
             self.name,

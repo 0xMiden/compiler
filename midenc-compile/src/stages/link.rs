@@ -1,5 +1,6 @@
 use alloc::{borrow::ToOwned, collections::BTreeMap, sync::Arc, vec::Vec};
 
+use midenc_frontend_wasm::FrontendOutput;
 use midenc_hir::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
 #[cfg(feature = "std")]
 use midenc_session::Path;
@@ -16,6 +17,8 @@ pub struct LinkOutput {
     pub world: builtin::WorldRef,
     /// The IR component which is the primary input being compiled
     pub component: builtin::ComponentRef,
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
+    pub account_component_metadata_bytes: Option<Vec<u8>>,
     /// The set of Miden Assembly sources to be provided to the assembler to satisfy link-time
     /// dependencies
     pub masm: Vec<Arc<miden_assembly::ast::Module>>,
@@ -116,7 +119,10 @@ impl Stage for LinkStage {
         // Parse and translate the component WebAssembly using the constructed World
         let component_wasm =
             component_wasm.ok_or_else(|| Report::msg("expected at least one wasm input"))?;
-        let component = match component_wasm {
+        let FrontendOutput {
+            component,
+            account_component_metadata_bytes,
+        } = match component_wasm {
             #[cfg(feature = "std")]
             InputType::Real(path) => parse_hir_from_wasm_file(&path, world, context.clone())?,
             #[cfg(not(feature = "std"))]
@@ -134,6 +140,7 @@ impl Stage for LinkStage {
         let mut link_output = LinkOutput {
             world,
             component,
+            account_component_metadata_bytes,
             masm,
             mast: Vec::with_capacity(context.session().options.link_libraries.len()),
             packages,
@@ -161,7 +168,7 @@ fn parse_hir_from_wasm_file(
     path: &Path,
     world: builtin::WorldRef,
     context: Rc<Context>,
-) -> CompilerResult<builtin::ComponentRef> {
+) -> CompilerResult<FrontendOutput> {
     use std::io::Read;
 
     log::debug!("parsing hir from wasm at {}", path.display());
@@ -183,12 +190,12 @@ fn parse_hir_from_wasm_bytes(
     bytes: &[u8],
     context: Rc<Context>,
     config: &wasm::WasmTranslationConfig,
-) -> CompilerResult<builtin::ComponentRef> {
-    let component = wasm::translate(bytes, config, context.clone())?;
+) -> CompilerResult<FrontendOutput> {
+    let outpub = wasm::translate(bytes, config, context.clone())?;
     log::debug!(
         "parsed hir component from wasm bytes with first module name: {}",
-        component.borrow().id()
+        outpub.component.borrow().id()
     );
 
-    Ok(component)
+    Ok(outpub)
 }
