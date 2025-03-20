@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use expect_test::expect_file;
 use midenc_hir::{
-    dialects::builtin::{self, Module},
-    Op, Operation, Walk, WalkResult,
+    dialects::builtin::{self},
+    Op, Operation, WalkResult,
 };
 
 use crate::{translate, WasmTranslationConfig};

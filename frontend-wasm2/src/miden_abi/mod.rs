@@ -4,9 +4,9 @@ pub(crate) mod tx_kernel;
 
 use std::{cell::RefCell, rc::Rc};
 
-use midenc_dialect_hir::InstBuilder;
+use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{Function, ModuleBuilder, WorldBuilder},
+    dialects::builtin::{BuiltinOpBuilder, Function, ModuleBuilder, WorldBuilder},
     interner::Symbol,
     AbiParam, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, ValueRef,
 };
@@ -154,7 +154,7 @@ pub fn define_func_for_miden_abi_transformation(
     let func = func.as_mut().downcast_mut::<Function>().unwrap();
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
-        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+        midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
     let mut func_builder = FunctionBuilderExt::new(func, &mut op_builder);
     let entry_block = func_builder.current_block();
     func_builder.seal_block(entry_block); // Declare all predecessors known.
@@ -188,10 +188,10 @@ pub fn define_func_for_miden_abi_transformation(
 
     let exit_block = func_builder.create_block();
     func_builder.append_block_params_for_function_returns(exit_block);
-    func_builder.ins().br(exit_block, results, span).expect("failed br");
+    func_builder.br(exit_block, results, span).expect("failed br");
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
-    func_builder.ins().ret(None, span).expect("failed ret");
+    func_builder.ret(None, span).expect("failed ret");
 
     CallableFunction {
         wasm_id: synth_func_id,

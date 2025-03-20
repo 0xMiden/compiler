@@ -1,10 +1,6 @@
 use std::rc::Rc;
 
-use midenc_hir::{
-    dialects::builtin::{self, BuiltinDialect},
-    version::Version,
-    Context,
-};
+use midenc_hir::{dialects::builtin::BuiltinDialect, Context};
 use midenc_session::{diagnostics::Report, Session};
 
 use super::{translator::ComponentTranslator, ComponentTypesBuilder, ParsedRootComponent};

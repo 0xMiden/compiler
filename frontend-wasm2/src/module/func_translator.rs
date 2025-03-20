@@ -9,7 +9,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
-use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function},
     BlockRef, Builder, Context, Op,
@@ -258,7 +257,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     // If the exit block is unreachable, it may not have the correct arguments, so we would
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
-        builder.ret(state.stack.first().cloned(), end_span);
+        builder.ret(state.stack.first().cloned(), end_span)?;
     }
 
     // Discard any remaining values on the stack. Either we just returned them,

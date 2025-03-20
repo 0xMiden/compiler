@@ -58,15 +58,12 @@ impl WorldBuilder {
     }
 
     pub fn find_component(&self, id: &ComponentId) -> Option<ComponentRef> {
-        self.world
-            .borrow()
-            .get(SymbolName::intern(id.to_string()))
-            .and_then(|symbol_ref| {
-                let op = symbol_ref.borrow();
-                op.as_symbol_operation()
-                    .downcast_ref::<Component>()
-                    .map(|c| c.as_component_ref())
-            })
+        self.world.borrow().get(SymbolName::intern(id)).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation()
+                .downcast_ref::<Component>()
+                .map(|c| c.as_component_ref())
+        })
     }
 
     /// Declare a new world-level module `name`

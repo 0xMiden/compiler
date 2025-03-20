@@ -2,9 +2,12 @@
 
 use std::{cell::RefCell, rc::Rc, str::FromStr};
 
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir2::{
-    dialects::builtin::{ComponentBuilder, ComponentId, Function, ModuleBuilder, WorldBuilder},
+use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir::{
+    dialects::builtin::{
+        BuiltinOpBuilder, ComponentBuilder, ComponentId, Function, ModuleBuilder, WorldBuilder,
+    },
     CallConv, FunctionIdent, FunctionType, Op, Signature, ValueRef,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
@@ -58,7 +61,7 @@ pub fn generate_import_lowering_function(
     let context = core_func.as_operation().context_rc();
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
-        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+        midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
     let span = core_func.name().span;
     let mut fb = FunctionBuilderExt::new(
         core_func.as_mut().downcast_mut::<Function>().unwrap(),
@@ -94,7 +97,6 @@ pub fn generate_import_lowering_function(
     // see https://github.com/0xPolygonMiden/compiler/issues/369
 
     let call = fb
-        .ins()
         .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)
         .expect("failed to build an exec op");
 
@@ -105,11 +107,11 @@ pub fn generate_import_lowering_function(
     assert!(results.len() <= 1, "expected a single result or none");
 
     let exit_block = fb.create_block();
-    fb.ins().br(exit_block, vec![], span)?;
+    fb.br(exit_block, vec![], span)?;
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
     let returning = results.first().cloned();
-    fb.ins().ret(returning, span).expect("failed ret");
+    fb.ret(returning, span).expect("failed ret");
 
     Ok(CallableFunction {
         wasm_id: core_func_id,

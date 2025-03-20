@@ -4,8 +4,7 @@ use std::rc::Rc;
 use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
-        self, BuiltinOpBuilder, Component, ComponentBuilder, Function, Module, ModuleBuilder,
-        ModuleRef, World, WorldBuilder, WorldRef,
+        self, BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder, World, WorldBuilder,
     },
     interner::Symbol,
     version::Version,
@@ -198,7 +197,7 @@ fn build_globals(
         };
         let mut op_builder = OpBuilder::new(context);
         op_builder.create_block(init_region_ref, None, &[]);
-        op_builder.ret_imm(global_init.to_imm(wasm_module, diagnostics)?, span);
+        op_builder.ret_imm(global_init.to_imm(wasm_module, diagnostics)?, span)?;
     }
     Ok(())
 }

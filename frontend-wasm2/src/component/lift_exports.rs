@@ -1,8 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir2::{
-    dialects::builtin::{ComponentBuilder, Function, ModuleBuilder},
+use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir::{
+    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder},
     interner::Symbol,
     CallConv, FunctionIdent, FunctionType, Ident, Op, SourceSpan, ValueRef,
 };
@@ -63,7 +64,7 @@ pub fn generate_export_lifting_function(
     let context = export_func.as_operation().context_rc();
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
-        midenc_hir2::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
+        midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
     let span = export_func.name().span;
     let mut fb = FunctionBuilderExt::new(
         export_func.as_mut().downcast_mut::<Function>().unwrap(),
@@ -84,7 +85,6 @@ pub fn generate_export_lifting_function(
     // see https://github.com/0xPolygonMiden/compiler/issues/369
 
     let exec = fb
-        .ins()
         .exec(core_export_func_ref, core_export_func_sig, args.to_vec(), span)
         .expect("failed to build an exec op");
 
@@ -95,11 +95,11 @@ pub fn generate_export_lifting_function(
     assert!(results.len() <= 1, "expected a single result or none");
 
     let exit_block = fb.create_block();
-    fb.ins().br(exit_block, vec![], span).expect("failed br");
+    fb.br(exit_block, vec![], span).expect("failed br");
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
     let returning = results.first().cloned();
-    fb.ins().ret(returning, span).expect("failed ret");
+    fb.ret(returning, span).expect("failed ret");
 
     Ok(())
 }

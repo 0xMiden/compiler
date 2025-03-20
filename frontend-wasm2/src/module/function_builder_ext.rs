@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use cranelift_entity::{EntitySet, SecondaryMap};
+use cranelift_entity::SecondaryMap;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;

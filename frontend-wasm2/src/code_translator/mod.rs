@@ -13,17 +13,15 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use cranelift_entity::packed_option::ReservedValue;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::{assertions, HirOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, GlobalSymbolBuilder, GlobalVariable},
-    traits::InferTypeOpInterface,
-    BlockRef, Builder, CallableOpInterface, Felt, FieldElement, Immediate, Op, SymbolTable,
+    dialects::builtin::BuiltinOpBuilder,
+    BlockRef, Builder, Felt, FieldElement, Immediate,
     Type::{self, *},
-    UnsafeIntrusiveEntityRef, ValueRef,
+    ValueRef,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
@@ -209,7 +207,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 let count = builder.bitcast(count_i32, Type::U32, span)?;
                 let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
                 let src = prepare_addr(src_i32, &U8, None, builder, span)?;
-                builder.memcpy(src, dst, count, span);
+                builder.memcpy(src, dst, count, span)?;
             } else {
                 unsupported_diag!(diagnostics, "MemoryCopy: only single memory is supported");
             }
@@ -225,7 +223,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let value = builder.trunc(value, Type::U8, span)?;
             let num_bytes = builder.bitcast(num_bytes, Type::U32, span)?;
             let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
-            builder.memset(dst, num_bytes, value, span);
+            builder.memset(dst, num_bytes, value, span)?;
         }
         /******************************* Load instructions ***********************************/
         Operator::I32Load8U { memarg } => {
@@ -683,7 +681,7 @@ fn prepare_addr<B: ?Sized + Builder>(
             // Generate alignment assertion - aligned addresses should always produce 0 here
             let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
             let align_offset = builder.r#mod(full_addr_int, imm, span)?;
-            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span);
+            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
         }
     };
     builder.inttoptr(full_addr_int, Type::Ptr(ptr_ty.clone().into()), span)
@@ -739,7 +737,7 @@ fn translate_return<B: ?Sized + Builder>(
             }
         };
 
-        builder.ret(return_args, span);
+        builder.ret(return_args, span)?;
     }
     state.popn(return_count);
     state.reachable = false;
@@ -765,7 +763,7 @@ fn translate_br<B: ?Sized + Builder>(
         (return_count, frame.br_destination())
     };
     let destination_args = state.peekn_mut(return_count).to_vec();
-    builder.br(br_destination, destination_args, span);
+    builder.br(br_destination, destination_args, span)?;
     state.popn(return_count);
     state.reachable = false;
     Ok(())
@@ -787,7 +785,7 @@ fn translate_br_if<B: ?Sized + Builder>(
     // cond is expected to be a i32 value
     let imm = builder.imm(Immediate::I32(0), span);
     let cond_i1 = builder.neq(cond, imm, span)?;
-    builder.cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
+    builder.cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span)?;
     builder.seal_block(next_block); // The only predecessor is the current block.
     builder.switch_to_block(next_block);
     Ok(())
@@ -908,7 +906,7 @@ fn translate_end<B: ?Sized + Builder>(
     let return_count = frame.num_return_values();
     let return_args = state.peekn_mut(return_count);
 
-    builder.br(next_block, return_args.iter().cloned(), span);
+    builder.br(next_block, return_args.iter().cloned(), span)?;
 
     // You might expect that if we just finished an `if` block that
     // didn't have a corresponding `else` block, then we would clean
@@ -972,7 +970,7 @@ fn translate_else<B: ?Sized + Builder>(
                         let else_block =
                             builder.create_block_with_params(blocktype.params.clone(), span);
                         let params_len = blocktype.params.len();
-                        builder.br(destination, state.peekn(params_len).iter().copied(), span);
+                        builder.br(destination, state.peekn(params_len).iter().copied(), span)?;
                         state.popn(params_len);
 
                         builder.change_jump_destination(branch_inst, placeholder, else_block);
@@ -1084,7 +1082,7 @@ fn translate_loop<B: ?Sized + Builder>(
     let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
     let next = builder.create_block_with_params(blockty.results.clone(), span);
     let args = state.peekn(blockty.params.len()).to_vec();
-    builder.br(loop_body, args, span);
+    builder.br(loop_body, args, span)?;
     state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
     state.popn(blockty.params.len());
     let loop_body_args: Vec<ValueRef> = loop_body

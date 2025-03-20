@@ -4,7 +4,7 @@
 //! and https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
-use midenc_hir2::{
+use midenc_hir::{
     Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Signature,
     StructType, Type, Visibility,
 };

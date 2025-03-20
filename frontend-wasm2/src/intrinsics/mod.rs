@@ -6,7 +6,7 @@ use std::{collections::HashSet, sync::OnceLock};
 use midenc_hir::{
     dialects::builtin::{ModuleBuilder, WorldBuilder},
     interner::Symbol,
-    FunctionIdent, FunctionType, Signature, SourceSpan, ValueRef,
+    Builder, FunctionIdent, FunctionType, Signature, SourceSpan, ValueRef,
 };
 
 use crate::{

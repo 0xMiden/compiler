@@ -12,8 +12,8 @@
 use core::mem;
 use std::rc::Rc;
 
-use cranelift_entity::{entity_impl, EntityList, EntitySet, ListPool};
-use hashbrown::hash_map::{Entry, EntryRef};
+use cranelift_entity::{entity_impl, EntityList, ListPool};
+use hashbrown::hash_map::EntryRef;
 use midenc_hir::{
     traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, ValueRef,
 };

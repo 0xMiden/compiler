@@ -1,9 +1,4 @@
-use core::fmt;
-
-use midenc_hir::{
-    formatter::{self, PrettyPrint},
-    Abi, FunctionIdent, FunctionType, Signature,
-};
+use midenc_hir::{FunctionIdent, FunctionType};
 
 /// Represents module argument that is used to instantiate a module.
 #[derive(Debug, Clone)]

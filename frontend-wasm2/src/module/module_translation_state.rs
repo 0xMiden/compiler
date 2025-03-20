@@ -1,11 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
-
-use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder},
-    AbiParam, CallConv, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, Symbol,
-    SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, SymbolTable, UnsafeIntrusiveEntityRef,
-    ValueRef, Visibility,
+    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder},
+    CallConv, FunctionIdent, FxHashMap, Ident, Signature, Visibility,
 };
 use midenc_session::diagnostics::DiagnosticsHandler;
 
@@ -101,12 +96,12 @@ impl<'a> ModuleTranslationState<'a> {
 fn process_import(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
-    module_args: &hashbrown::HashMap<FunctionIdent, ModuleArgument, midenc_hir2::FxBuildHasher>,
+    module_args: &hashbrown::HashMap<FunctionIdent, ModuleArgument, midenc_hir::FxBuildHasher>,
     core_func_id: FunctionIdent,
     core_func_sig: Signature,
     import: &super::ModuleImport,
     diagnostics: &DiagnosticsHandler,
-) -> Result<CallableFunction, midenc_hir2::Report> {
+) -> Result<CallableFunction, midenc_hir::Report> {
     let wasm_import_func_id = FunctionIdent {
         module: Ident::from(import.module.as_str()),
         function: Ident::from(import.field.as_str()),
@@ -146,7 +141,7 @@ fn process_module_arg(
     sig: Signature,
     wasm_import_func_id: FunctionIdent,
     module_arg: &ModuleArgument,
-) -> Result<CallableFunction, midenc_hir2::Report> {
+) -> Result<CallableFunction, midenc_hir::Report> {
     Ok(match module_arg {
         ModuleArgument::Function(_function_ident) => {
             todo!("core Wasm function import is not implemented yet");
