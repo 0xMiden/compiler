@@ -1,10 +1,6 @@
-use miden_core::debuginfo::Spanned;
-
 use super::BuiltinOpBuilder;
 use crate::{
-    dialects::builtin::{
-        ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef, PrimFunctionBuilder,
-    },
+    dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
     Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolTable,
 };
 
@@ -63,8 +59,7 @@ impl ComponentBuilder {
         name: Ident,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let builder = PrimFunctionBuilder::new(&mut self.builder, name.span());
-        let function_ref = builder(name, signature)?;
+        let function_ref = self.builder.create_function(name, signature)?;
         let is_new = self
             .component
             .borrow_mut()
