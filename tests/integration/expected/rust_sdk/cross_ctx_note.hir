@@ -1,217 +1,253 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @cross_ctx_note {
-        builtin.function public @cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1(v0: felt) -> felt {
+        public builtin.function @cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1(v0: felt) -> felt {
         ^block3(v0: felt):
             v1 = hir.call v0 : felt #[callee = miden:cross-ctx-account/foo@1.0.0/process-felt] #[signature = (param felt) (result felt)];
-            hir.ret v1;
+            builtin.ret v1;
         };
 
-        builtin.function public @__wasm_call_ctors() {
+        public builtin.function @__wasm_call_ctors() {
         ^block8:
-            hir.ret ;
+            builtin.ret ;
         };
 
-        builtin.function public @cross_ctx_note::bindings::__link_custom_section_describing_imports() {
+        public builtin.function @cross_ctx_note::bindings::__link_custom_section_describing_imports() {
         ^block10:
-            hir.ret ;
+            builtin.ret ;
         };
 
-        builtin.function public @__rust_alloc(v2: i32, v3: i32) -> i32 {
+        public builtin.function @__rust_alloc(v2: i32, v3: i32) -> i32 {
         ^block12(v2: i32, v3: i32):
-            v5 = hir.constant 1048616 : i32;
+            v5 = arith.constant 1048616 : i32;
             v6 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v5, v3, v2) : i32
-            hir.ret v6;
+            builtin.ret v6;
         };
 
-        builtin.function public @__rust_realloc(v7: i32, v8: i32, v9: i32, v10: i32) -> i32 {
+        public builtin.function @__rust_realloc(v7: i32, v8: i32, v9: i32, v10: i32) -> i32 {
         ^block14(v7: i32, v8: i32, v9: i32, v10: i32):
-            v12 = hir.constant 1048616 : i32;
+            v12 = arith.constant 1048616 : i32;
             v13 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v12, v9, v10) : i32
-            hir.ret v13;
+            v192 = arith.constant 0 : i32;
+            v14 = arith.constant 0 : i32;
+            v15 = arith.eq v13, v14 : i1;
+            v16 = arith.zext v15 : u32;
+            v17 = hir.bitcast v16 : i32;
+            v19 = arith.neq v17, v192 : i1;
+            v191 = scf.if v19 : i32 {
+            ^block16:
+                scf.yield v13;
+            } else {
+            ^block17:
+                scf.yield v13;
+            };
+            builtin.ret v191;
         };
 
-        builtin.function public @miden:base/note-script@1.0.0#note-script() {
+        public builtin.function @miden:base/note-script@1.0.0#note-script() {
         ^block18:
-            hir.ret ;
+            builtin.ret ;
         };
 
-        builtin.function public @cabi_realloc_wit_bindgen_0_28_0(v39: i32, v40: i32, v41: i32, v42: i32) -> i32 {
+        public builtin.function @cabi_realloc_wit_bindgen_0_28_0(v39: i32, v40: i32, v41: i32, v42: i32) -> i32 {
         ^block20(v39: i32, v40: i32, v41: i32, v42: i32):
             v44 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/wit_bindgen_rt::cabi_realloc(v39, v40, v41, v42) : i32
-            hir.ret v44;
+            builtin.ret v44;
         };
 
-        builtin.function public @wit_bindgen_rt::cabi_realloc(v45: i32, v46: i32, v47: i32, v48: i32) -> i32 {
+        public builtin.function @wit_bindgen_rt::cabi_realloc(v45: i32, v46: i32, v47: i32, v48: i32) -> i32 {
         ^block22(v45: i32, v46: i32, v47: i32, v48: i32):
-            v50 = hir.constant 0 : i32;
-            v193 = hir.constant 0 : u32;
-            v198 = hir.constant 1 : u32;
-            v197 = hir.poison  : i32;
-            v51 = hir.neq v46, v50 : i1;
-            v202, v203, v204 = hir.if v51 : i32, i32, u32 {
+            v50 = arith.constant 0 : i32;
+            v51 = arith.neq v46, v50 : i1;
+            v203, v204, v205 = scf.if v51 : i32, i32, u32 {
             ^block26:
                 v66 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/__rust_realloc(v45, v46, v47, v48) : i32
-                hir.yield v66, v197, v193;
-            } {
+                v194 = arith.constant 0 : u32;
+                v198 = ub.poison i32 : i32;
+                scf.yield v66, v198, v194;
+            } else {
             ^block27:
-                v53 = hir.eq v48, v50 : i1;
-                v54 = hir.zext v53 : u32;
+                v228 = arith.constant 0 : i32;
+                v229 = arith.constant 0 : i32;
+                v53 = arith.eq v48, v229 : i1;
+                v54 = arith.zext v53 : u32;
                 v55 = hir.bitcast v54 : i32;
-                v57 = hir.neq v55, v50 : i1;
-                v219 = hir.select v57, v47, v197 : i32;
-                v220 = hir.select v57, v198, v193 : u32;
-                v218 = hir.if v57 : i32 {
+                v57 = arith.neq v55, v228 : i1;
+                v214, v215, v216 = scf.if v57 : i32, i32, u32 {
                 ^block50:
-                    hir.yield v197;
-                } {
+                    v199 = arith.constant 1 : u32;
+                    v227 = ub.poison i32 : i32;
+                    scf.yield v227, v47, v199;
+                } else {
                 ^block28:
                     v65 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/__rust_alloc(v48, v47) : i32
-                    hir.yield v65;
+                    v225 = arith.constant 0 : u32;
+                    v226 = ub.poison i32 : i32;
+                    scf.yield v65, v226, v225;
                 };
-                hir.yield v218, v219, v220;
+                scf.yield v214, v215, v216;
             };
-            v209, v210 = hir.index_switch v204 : i32, u32 #[cases = [0]] {
-            ^block56:
-                hir.yield v203, v193;
-            } {
+            v210, v211 = scf.index_switch v205 : i32, u32 
+            case 0 {
             ^block25:
-                v69 = hir.neq v202, v50 : i1;
-                v216 = hir.select v69, v202, v197 : i32;
-                v217 = hir.select v69, v193, v198 : u32;
-                hir.yield v216, v217;
+                v223 = arith.constant 0 : i32;
+                v69 = arith.neq v203, v223 : i1;
+                v212, v213 = scf.if v69 : i32, u32 {
+                ^block51:
+                    v222 = arith.constant 0 : u32;
+                    scf.yield v203, v222;
+                } else {
+                ^block29:
+                    v220 = arith.constant 1 : u32;
+                    v221 = ub.poison i32 : i32;
+                    scf.yield v221, v220;
+                };
+                scf.yield v212, v213;
+            }
+            default {
+            ^block57:
+                v224 = arith.constant 0 : u32;
+                scf.yield v204, v224;
             };
-            hir.switch v210 ^block52, ^block23(v209);
-        ^block23(v49: i32):
-            hir.ret v49;
+            v219 = arith.constant 0 : u32;
+            v218 = arith.eq v211, v219 : i1;
+            cf.cond_br v218 ^block52, ^block53;
         ^block52:
-            hir.unreachable ;
+            builtin.ret v210;
+        ^block53:
+            ub.unreachable ;
         };
 
-        builtin.function public @wit_bindgen_rt::run_ctors_once() {
+        public builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block30:
-            v73 = hir.constant 1048621 : u32;
-            v71 = hir.constant 0 : i32;
-            v72 = hir.bitcast v71 : u32;
-            v74 = hir.add v72, v73 : u32 #[overflow = checked];
-            v75 = hir.int_to_ptr v74 : (ptr u8);
-            v76 = hir.load v75 : u8;
-            v77 = hir.zext v76 : u32;
-            v78 = hir.bitcast v77 : i32;
-            v80 = hir.neq v78, v71 : i1;
-            hir.if v80 {
-            ^block32:
-                hir.yield ;
-            } {
-            ^block33:
-                hir.yield ;
-            };
-            hir.ret ;
+            builtin.ret ;
         };
 
-        builtin.function public @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v89: i32, v90: i32, v91: i32) -> i32 {
+        public builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v89: i32, v90: i32, v91: i32) -> i32 {
         ^block34(v89: i32, v90: i32, v91: i32):
-            v94 = hir.constant 32 : i32;
-            v93 = hir.constant 0 : i32;
-            v106 = hir.constant 1 : i32;
-            v112 = hir.constant -2147483648 : i32;
-            v124 = hir.constant -1 : i32;
-            v147 = hir.constant 268435456 : i32;
-            v222 = hir.constant 0 : u32;
-            v227 = hir.constant 1 : u32;
-            v226 = hir.poison  : i32;
+            v94 = arith.constant 32 : i32;
+            v93 = arith.constant 0 : i32;
+            v232 = arith.constant 32 : u32;
             v96 = hir.bitcast v90 : u32;
-            v97 = hir.bitcast v94 : u32;
-            v98 = hir.gt v96, v97 : i1;
-            v99 = hir.zext v98 : u32;
+            v98 = arith.gt v96, v232 : i1;
+            v99 = arith.zext v98 : u32;
             v100 = hir.bitcast v99 : i32;
-            v102 = hir.neq v100, v93 : i1;
-            v103 = hir.select v102, v90, v94 : i32;
-            v104 = hir.popcnt v103 : u32;
+            v102 = arith.neq v100, v93 : i1;
+            v103 = cf.select v102, v90, v94 : i32;
+            v265 = arith.constant 0 : i32;
+            v106 = arith.constant 1 : i32;
+            v104 = arith.popcnt v103 : u32;
             v105 = hir.bitcast v104 : i32;
-            v107 = hir.neq v105, v106 : i1;
-            v108 = hir.zext v107 : u32;
+            v107 = arith.neq v105, v106 : i1;
+            v108 = arith.zext v107 : u32;
             v109 = hir.bitcast v108 : i32;
-            v111 = hir.neq v109, v93 : i1;
-            v230, v231 = hir.if v111 : i32, u32 {
+            v111 = arith.neq v109, v265 : i1;
+            v241, v242 = scf.if v111 : i32, u32 {
             ^block62:
-                hir.yield v226, v222;
-            } {
+                v233 = arith.constant 0 : u32;
+                v237 = ub.poison i32 : i32;
+                scf.yield v237, v233;
+            } else {
             ^block37:
                 v113 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/core::ptr::alignment::Alignment::max(v90, v103) : i32
-                v114 = hir.sub v112, v113 : i32 #[overflow = wrapping];
-                v115 = hir.bitcast v114 : u32;
+                v264 = arith.constant 0 : i32;
                 v116 = hir.bitcast v91 : u32;
-                v117 = hir.lt v115, v116 : i1;
-                v118 = hir.zext v117 : u32;
+                v112 = arith.constant -2147483648 : i32;
+                v114 = arith.sub v112, v113 : i32 #[overflow = wrapping];
+                v115 = hir.bitcast v114 : u32;
+                v117 = arith.lt v115, v116 : i1;
+                v118 = arith.zext v117 : u32;
                 v119 = hir.bitcast v118 : i32;
-                v121 = hir.neq v119, v93 : i1;
-                v240 = hir.select v121, v222, v227 : u32;
-                v239 = hir.if v121 : i32 {
+                v121 = arith.neq v119, v264 : i1;
+                v245, v246 = scf.if v121 : i32, u32 {
                 ^block61:
-                    hir.yield v226;
-                } {
+                    v262 = arith.constant 0 : u32;
+                    v263 = ub.poison i32 : i32;
+                    scf.yield v263, v262;
+                } else {
                 ^block38:
-                    v123 = hir.add v91, v113 : i32 #[overflow = wrapping];
-                    v125 = hir.add v123, v124 : i32 #[overflow = wrapping];
-                    v127 = hir.sub v93, v113 : i32 #[overflow = wrapping];
-                    v128 = hir.band v125, v127 : i32;
-                    v149 = hir.bitcast v89 : u32;
+                    v261 = arith.constant 0 : i32;
+                    v127 = arith.sub v261, v113 : i32 #[overflow = wrapping];
+                    v124 = arith.constant -1 : i32;
+                    v123 = arith.add v91, v113 : i32 #[overflow = wrapping];
+                    v125 = arith.add v123, v124 : i32 #[overflow = wrapping];
+                    v128 = arith.band v125, v127 : i32;
+                    v129 = hir.bitcast v89 : u32;
+                    v132 = hir.int_to_ptr v129 : (ptr i32);
+                    v133 = hir.load v132 : i32;
+                    v260 = arith.constant 0 : i32;
+                    v135 = arith.neq v133, v260 : i1;
+                    v247, v248, v249, v250 = scf.if v135 : i32, i32, i32, i32 {
+                    ^block60:
+                        v259 = arith.constant 0 : i32;
+                        scf.yield v89, v128, v113, v259;
+                    } else {
+                    ^block40:
+                        v258 = arith.constant 0 : i32;
+                        scf.yield v89, v128, v113, v258;
+                    };
+                    v149 = hir.bitcast v247 : u32;
                     v152 = hir.int_to_ptr v149 : (ptr i32);
                     v153 = hir.load v152 : i32;
-                    v154 = hir.sub v147, v153 : i32 #[overflow = wrapping];
+                    v257 = arith.constant 0 : i32;
+                    v157 = hir.bitcast v248 : u32;
+                    v147 = arith.constant 268435456 : i32;
+                    v154 = arith.sub v147, v153 : i32 #[overflow = wrapping];
                     v156 = hir.bitcast v154 : u32;
-                    v157 = hir.bitcast v128 : u32;
-                    v158 = hir.lt v156, v157 : i1;
-                    v159 = hir.zext v158 : u32;
+                    v158 = arith.lt v156, v157 : i1;
+                    v159 = arith.zext v158 : u32;
                     v160 = hir.bitcast v159 : i32;
-                    v162 = hir.neq v160, v93 : i1;
-                    v238 = hir.if v162 : i32 {
-                    ^block59:
-                        hir.yield v93;
-                    } {
+                    v162 = arith.neq v160, v257 : i1;
+                    v251, v252 = scf.if v162 : i32, u32 {
+                    ^block41:
+                        v238 = arith.constant 1 : u32;
+                        scf.yield v250, v238;
+                    } else {
                     ^block42:
-                        v169 = hir.add v153, v113 : i32 #[overflow = wrapping];
-                        hir.yield v169;
+                        v256 = arith.constant 1 : u32;
+                        v169 = arith.add v153, v249 : i32 #[overflow = wrapping];
+                        scf.yield v169, v256;
                     };
-                    hir.yield v238;
+                    scf.yield v251, v252;
                 };
-                hir.yield v239, v240;
+                scf.yield v245, v246;
             };
-            hir.switch v231 ^block64(v230), ^block36;
+            v255 = arith.constant 0 : u32;
+            v254 = arith.eq v242, v255 : i1;
+            cf.cond_br v254 ^block36, ^block64(v241);
         ^block36:
-            hir.unreachable ;
-        ^block64(v223: i32):
-            hir.ret v223;
+            ub.unreachable ;
+        ^block64(v234: i32):
+            builtin.ret v234;
         };
 
-        builtin.function public @core::ptr::alignment::Alignment::max(v172: i32, v173: i32) -> i32 {
+        public builtin.function @core::ptr::alignment::Alignment::max(v172: i32, v173: i32) -> i32 {
         ^block43(v172: i32, v173: i32):
-            v180 = hir.constant 0 : i32;
-            v175 = hir.bitcast v172 : u32;
+            v180 = arith.constant 0 : i32;
             v176 = hir.bitcast v173 : u32;
-            v177 = hir.gt v175, v176 : i1;
-            v178 = hir.zext v177 : u32;
+            v175 = hir.bitcast v172 : u32;
+            v177 = arith.gt v175, v176 : i1;
+            v178 = arith.zext v177 : u32;
             v179 = hir.bitcast v178 : i32;
-            v181 = hir.neq v179, v180 : i1;
-            v182 = hir.select v181, v172, v173 : i32;
-            hir.ret v182;
+            v181 = arith.neq v179, v180 : i1;
+            v182 = cf.select v181, v172, v173 : i32;
+            builtin.ret v182;
         };
 
-        builtin.function public @cabi_realloc(v183: i32, v184: i32, v185: i32, v186: i32) -> i32 {
+        public builtin.function @cabi_realloc(v183: i32, v184: i32, v185: i32, v186: i32) -> i32 {
         ^block45(v183: i32, v184: i32, v185: i32, v186: i32):
             v188 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/cabi_realloc_wit_bindgen_0_28_0(v183, v184, v185, v186) : i32
-            hir.ret v188;
+            builtin.ret v188;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            hir.ret_imm 1048576;
+            builtin.ret_imm 1048576;
         };
 
         builtin.segment readonly @1048576 = 0x00000002000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
-    builtin.function public @note-script() {
+    public builtin.function @note-script() {
     ^block47:
-        hir.ret ;
+        builtin.ret ;
     };
 };
