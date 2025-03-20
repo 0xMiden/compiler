@@ -37,6 +37,11 @@ impl Pass for TransformSpills {
         // We need to drop our mutable reference while computing the analysis results
         let function = unsafe { FunctionRef::from_raw(&*op) };
         drop(op);
+        if function.borrow().body().is_empty() {
+            log::debug!(target: "insert-spills", "function has no body, no spills needed!");
+            state.preserved_analyses_mut().preserve_all();
+            return Ok(());
+        }
         let mut analysis =
             state.analysis_manager().get_analysis_for::<SpillAnalysis, Function>()?;
 
