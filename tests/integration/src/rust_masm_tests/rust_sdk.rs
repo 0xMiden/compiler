@@ -137,22 +137,20 @@ fn rust_sdk_cross_ctx_account() {
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
 
-    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/427 is fixed
-    //
-    // test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
-    // let package = test.compiled_package();
-    // let lib = package.unwrap_library();
-    // let expected_module = "#anon::miden:cross-ctx-account/foo@1.0.0";
-    // let expected_function = "process-felt";
-    // let exports = lib
-    //     .exports()
-    //     .filter(|e| !e.module.to_string().starts_with("intrinsics"))
-    //     .map(|e| format!("{}::{}", e.module, e.name.as_str()))
-    //     .collect::<Vec<_>>();
-    // dbg!(&exports);
-    // assert!(lib.exports().any(|export| {
-    //     export.module.to_string() == expected_module && export.name.as_str() == expected_function
-    // }));
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+    let lib = package.unwrap_library();
+    let expected_module = "miden:cross-ctx-account/foo@1.0.0";
+    let expected_function = "process-felt";
+    let exports = lib
+        .exports()
+        .filter(|e| !e.module.to_string().starts_with("intrinsics"))
+        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .collect::<Vec<_>>();
+    dbg!(&exports);
+    assert!(lib.exports().any(|export| {
+        export.module.to_string() == expected_module && export.name.as_str() == expected_function
+    }));
 }
 
 #[test]
