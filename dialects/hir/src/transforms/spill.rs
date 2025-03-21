@@ -5,7 +5,7 @@ use midenc_hir::{
     dialects::builtin::{Function, FunctionRef, LocalVariable},
     pass::{Pass, PassExecutionState},
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
-    SourceSpan, Spanned, ValueRef,
+    SourceSpan, Spanned, Symbol, ValueRef,
 };
 use midenc_hir_analysis::analyses::SpillAnalysis;
 use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformSpillsInterface};
@@ -37,7 +37,7 @@ impl Pass for TransformSpills {
         // We need to drop our mutable reference while computing the analysis results
         let function = unsafe { FunctionRef::from_raw(&*op) };
         drop(op);
-        if function.borrow().body().is_empty() {
+        if function.borrow().is_declaration() {
             log::debug!(target: "insert-spills", "function has no body, no spills needed!");
             state.preserved_analyses_mut().preserve_all();
             return Ok(());
