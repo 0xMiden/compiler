@@ -1,4 +1,4 @@
-(component
+(component $cross-ctx-account
   (type (;0;)
     (instance
       (type (;0;) (func (result s32)))
