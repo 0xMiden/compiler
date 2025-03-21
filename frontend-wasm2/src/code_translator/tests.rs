@@ -23,6 +23,7 @@ fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
             (func $test_wrapper
                 {wat_op}
             )
+            (export "test_wrapper" (func $test_wrapper))
         )"#,
     );
     let wasm = wat::parse_str(wat).unwrap();

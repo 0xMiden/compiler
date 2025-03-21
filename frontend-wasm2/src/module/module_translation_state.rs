@@ -35,6 +35,14 @@ pub struct ModuleTranslationState<'a> {
 }
 
 impl<'a> ModuleTranslationState<'a> {
+    /// Create a new `ModuleTranslationState` for the core Wasm module translation
+    ///
+    /// Parameters:
+    /// `module` - the core Wasm module
+    /// `module_builder` - the Miden IR Module builder
+    /// `world_builder` - the Miden IR World builder
+    /// `mod_types` - the Miden IR module types builder
+    /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
@@ -52,7 +60,12 @@ impl<'a> ModuleTranslationState<'a> {
                 module: Ident::from(module.name().as_str()),
                 function: Ident::from(func_name.as_str()),
             };
-            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, Visibility::Public);
+            let visibility = if module.is_exported(index.into()) {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            };
+            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, visibility);
             if module.is_imported_function(index) {
                 assert!((index.as_u32() as usize) < module.num_imported_funcs);
                 let import = &module.imports[index.as_u32() as usize];

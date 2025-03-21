@@ -8,19 +8,19 @@ end
 
 # mod miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
 
-export.__wasm_call_ctors
+proc.__wasm_call_ctors
 
         nop
 end
 
 
-export.cross_ctx_account::bindings::__link_custom_section_describing_imports
+proc.cross_ctx_account::bindings::__link_custom_section_describing_imports
 
         nop
 end
 
 
-export.__rust_alloc
+proc.__rust_alloc
 
         push.1048612
         movup.2
@@ -29,7 +29,7 @@ export.__rust_alloc
 end
 
 
-export.__rust_realloc
+proc.__rust_realloc
 
         drop
         drop
@@ -64,7 +64,7 @@ export.cabi_realloc_wit_bindgen_0_28_0
 end
 
 
-export.wit_bindgen_rt::cabi_realloc
+proc.wit_bindgen_rt::cabi_realloc
 
         push.0
         dup.2
@@ -145,13 +145,13 @@ export.wit_bindgen_rt::cabi_realloc
 end
 
 
-export.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen_rt::run_ctors_once
 
         nop
 end
 
 
-export.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
 
         push.32
         push.0
@@ -276,7 +276,7 @@ export.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
 end
 
 
-export.core::ptr::alignment::Alignment::max
+proc.core::ptr::alignment::Alignment::max
 
         push.0
         dup.2

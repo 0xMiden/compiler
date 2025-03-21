@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_tx_kernel_get_id {
-        public builtin.function @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
+        private builtin.function @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
         ^block3:
             builtin.ret ;
         };
@@ -11,7 +11,7 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v3;
         };
 
-        public builtin.function @miden_base_sys::bindings::account::get_id() -> felt {
+        private builtin.function @miden_base_sys::bindings::account::get_id() -> felt {
         ^block9:
             v5 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id() : felt
             builtin.ret v5;

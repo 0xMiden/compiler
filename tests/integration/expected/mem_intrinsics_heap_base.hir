@@ -13,14 +13,14 @@ builtin.component root_ns:root@1.0.0 {
             ub.unreachable ;
         };
 
-        public builtin.function @__rust_alloc(v42: i32, v43: i32) -> i32 {
+        private builtin.function @__rust_alloc(v42: i32, v43: i32) -> i32 {
         ^block9(v42: i32, v43: i32):
             v45 = arith.constant 1048576 : i32;
             v46 = hir.exec @root_ns:root@1.0.0/mem_intrinsics_heap_base/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v45, v43, v42) : i32
             builtin.ret v46;
         };
 
-        public builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v47: i32, v48: i32, v49: i32) -> i32 {
+        private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v47: i32, v48: i32, v49: i32) -> i32 {
         ^block11(v47: i32, v48: i32, v49: i32):
             v52 = arith.constant 32 : i32;
             v51 = arith.constant 0 : i32;
@@ -118,12 +118,12 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v146;
         };
 
-        public builtin.function @alloc::alloc::handle_alloc_error(v130: i32, v131: i32) {
+        private builtin.function @alloc::alloc::handle_alloc_error(v130: i32, v131: i32) {
         ^block20(v130: i32, v131: i32):
             ub.unreachable ;
         };
 
-        public builtin.function @core::ptr::alignment::Alignment::max(v132: i32, v133: i32) -> i32 {
+        private builtin.function @core::ptr::alignment::Alignment::max(v132: i32, v133: i32) -> i32 {
         ^block22(v132: i32, v133: i32):
             v140 = arith.constant 0 : i32;
             v136 = hir.bitcast v133 : u32;

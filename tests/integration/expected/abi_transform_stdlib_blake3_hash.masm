@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
 
-export.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
+proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
 
         drop
         drop

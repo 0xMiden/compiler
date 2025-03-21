@@ -1,23 +1,23 @@
 builtin.component miden:cross-ctx-account/foo@1.0.0 {
     builtin.module public @cross_ctx_account {
-        public builtin.function @__wasm_call_ctors() {
+        private builtin.function @__wasm_call_ctors() {
         ^block5:
             builtin.ret ;
         };
 
-        public builtin.function @cross_ctx_account::bindings::__link_custom_section_describing_imports() {
+        private builtin.function @cross_ctx_account::bindings::__link_custom_section_describing_imports() {
         ^block7:
             builtin.ret ;
         };
 
-        public builtin.function @__rust_alloc(v0: i32, v1: i32) -> i32 {
+        private builtin.function @__rust_alloc(v0: i32, v1: i32) -> i32 {
         ^block9(v0: i32, v1: i32):
             v3 = arith.constant 1048612 : i32;
             v4 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v3, v1, v0) : i32
             builtin.ret v4;
         };
 
-        public builtin.function @__rust_realloc(v5: i32, v6: i32, v7: i32, v8: i32) -> i32 {
+        private builtin.function @__rust_realloc(v5: i32, v6: i32, v7: i32, v8: i32) -> i32 {
         ^block11(v5: i32, v6: i32, v7: i32, v8: i32):
             v10 = arith.constant 1048612 : i32;
             v11 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v10, v7, v8) : i32
@@ -50,7 +50,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret v42;
         };
 
-        public builtin.function @wit_bindgen_rt::cabi_realloc(v43: i32, v44: i32, v45: i32, v46: i32) -> i32 {
+        private builtin.function @wit_bindgen_rt::cabi_realloc(v43: i32, v44: i32, v45: i32, v46: i32) -> i32 {
         ^block19(v43: i32, v44: i32, v45: i32, v46: i32):
             v48 = arith.constant 0 : i32;
             v49 = arith.neq v44, v48 : i1;
@@ -113,12 +113,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             ub.unreachable ;
         };
 
-        public builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block27:
             builtin.ret ;
         };
 
-        public builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v87: i32, v88: i32, v89: i32) -> i32 {
+        private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v87: i32, v88: i32, v89: i32) -> i32 {
         ^block31(v87: i32, v88: i32, v89: i32):
             v92 = arith.constant 32 : i32;
             v91 = arith.constant 0 : i32;
@@ -216,7 +216,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret v235;
         };
 
-        public builtin.function @core::ptr::alignment::Alignment::max(v170: i32, v171: i32) -> i32 {
+        private builtin.function @core::ptr::alignment::Alignment::max(v170: i32, v171: i32) -> i32 {
         ^block40(v170: i32, v171: i32):
             v178 = arith.constant 0 : i32;
             v174 = hir.bitcast v171 : u32;
