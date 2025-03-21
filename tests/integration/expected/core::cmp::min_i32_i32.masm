@@ -3,10 +3,12 @@
 export.entrypoint
 
         push.0
-        dup.1
-        dup.3
+        dup.2
+        dup.2
         exec.::intrinsics::i32::is_lt
         neq
+        movup.2
+        swap.1
         cdrop
 end
 

@@ -2,6 +2,11 @@
   (type (;0;) (func (param i32 i32 i32 i32 i32 i32 i32 i32 i32)))
   (type (;1;) (func (param i32 i32)))
   (import "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0" "hash-one-to-one" (func $miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1 (;0;) (type 0)))
+  (table (;0;) 1 1 funcref)
+  (memory (;0;) 16)
+  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+  (export "memory" (memory 0))
+  (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;1;) (type 1) (param i32 i32)
     (local i32 i32)
     global.get $__stack_pointer
@@ -55,9 +60,4 @@
     local.get 2
     global.set $__stack_pointer
   )
-  (table (;0;) 1 1 funcref)
-  (memory (;0;) 16)
-  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-  (export "memory" (memory 0))
-  (export "entrypoint" (func $entrypoint))
 )

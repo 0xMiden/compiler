@@ -2,35 +2,39 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @fibonacci {
         public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
-            v22 = ub.poison i32 : i32;
+            v25 = ub.poison i32 : i32;
             v2 = arith.constant 0 : i32;
             v4 = arith.constant 1 : i32;
-            v32, v33, v34, v35 = scf.while v4, v0, v2, v22 : i32, i32, i32, i32 {
-            ^block6(v6: i32, v7: i32, v10: i32, v27: i32):
-                v53 = arith.constant 0 : i32;
-                v9 = arith.neq v7, v53 : i1;
-                v45, v46, v47, v48, v49 = scf.if v9 : i32, i32, i32, u32, u32 {
-                ^block8:
-                    v21 = arith.constant 1 : u32;
-                    v15 = arith.constant 0 : u32;
-                    v11 = arith.constant -1 : i32;
-                    v12 = arith.add v7, v11 : i32 #[overflow = wrapping];
-                    v13 = arith.add v10, v6 : i32 #[overflow = wrapping];
-                    scf.yield v13, v12, v6, v15, v21;
+            v35, v36, v37, v38 = scf.while v4, v0, v2, v25 : i32, i32, i32, i32 {
+            ^block7(v5: i32, v6: i32, v15: i32, v30: i32):
+                v56 = arith.constant 0 : i32;
+                v57 = arith.constant 0 : i32;
+                v8 = arith.eq v6, v57 : i1;
+                v9 = arith.zext v8 : u32;
+                v10 = hir.bitcast v9 : i32;
+                v12 = arith.neq v10, v56 : i1;
+                v48, v49, v50, v51, v52 = scf.if v12 : i32, i32, i32, u32, u32 {
+                ^block17:
+                    v18 = arith.constant 0 : u32;
+                    v24 = arith.constant 1 : u32;
+                    v55 = ub.poison i32 : i32;
+                    scf.yield v55, v55, v55, v24, v18;
                 } else {
-                ^block16:
-                    v50 = arith.constant 0 : u32;
-                    v51 = arith.constant 1 : u32;
-                    v52 = ub.poison i32 : i32;
-                    scf.yield v52, v52, v52, v51, v50;
+                ^block9:
+                    v53 = arith.constant 1 : u32;
+                    v54 = arith.constant 0 : u32;
+                    v13 = arith.constant -1 : i32;
+                    v14 = arith.add v6, v13 : i32 #[overflow = wrapping];
+                    v16 = arith.add v15, v5 : i32 #[overflow = wrapping];
+                    scf.yield v16, v14, v5, v54, v53;
                 };
-                v44 = arith.trunc v49 : i1;
-                scf.condition v44, v45, v46, v47, v10;
+                v47 = arith.trunc v52 : i1;
+                scf.condition v47, v48, v49, v50, v15;
             } do {
-            ^block15(v40: i32, v41: i32, v42: i32, v43: i32):
-                scf.yield v40, v41, v42, v43;
+            ^block16(v43: i32, v44: i32, v45: i32, v46: i32):
+                scf.yield v43, v44, v45, v46;
             };
-            builtin.ret v35;
+            builtin.ret v38;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

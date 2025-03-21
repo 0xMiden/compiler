@@ -4,6 +4,11 @@
   (type (;2;) (func (param i32 i32) (result i32)))
   (type (;3;) (func (param i32 i32 i32) (result i32)))
   (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;0;) (type 0)))
+  (table (;0;) 1 1 funcref)
+  (memory (;0;) 17)
+  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+  (export "memory" (memory 0))
+  (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;1;) (type 1) (param i32 i32)
     (local i32)
     i32.const 0
@@ -12,7 +17,7 @@
     block ;; label = @1
       i32.const 4
       i32.const 4
-      call $__rust_alloc
+      call $__rustc::__rust_alloc
       local.tee 2
       br_if 0 (;@1;)
       i32.const 4
@@ -35,7 +40,7 @@
     i32.shl
     i32.store
   )
-  (func $__rust_alloc (;2;) (type 2) (param i32 i32) (result i32)
+  (func $__rustc::__rust_alloc (;2;) (type 2) (param i32 i32) (result i32)
     i32.const 1048576
     local.get 1
     local.get 0
@@ -51,18 +56,19 @@
       i32.gt_u
       select
       local.tee 3
-      i32.popcnt
-      i32.const 1
-      i32.ne
+      local.get 3
+      i32.const -1
+      i32.add
+      i32.and
       br_if 0 (;@1;)
+      local.get 2
       i32.const -2147483648
       local.get 1
       local.get 3
       call $core::ptr::alignment::Alignment::max
       local.tee 1
       i32.sub
-      local.get 2
-      i32.lt_u
+      i32.gt_u
       br_if 0 (;@1;)
       i32.const 0
       local.set 3
@@ -123,9 +129,4 @@
     i32.gt_u
     select
   )
-  (table (;0;) 1 1 funcref)
-  (memory (;0;) 17)
-  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-  (export "memory" (memory 0))
-  (export "entrypoint" (func $entrypoint))
 )
