@@ -1,17 +1,16 @@
 [book]
-authors = []
-language = "en"
+authors      = ["Miden contributors"]
+description  = "Manual for the Miden compiler"
+language     = "en"
 multilingual = false
-src = "src"
-title = "Miden Compiler Documentation"
+title        = "The Miden compiler"
 
 [output.html]
-git-repository-url = "https://github.com/0xPolygonMiden/compiler/"
-
-[preprocessor.alerts]
+git-repository-url = "https://github.com/0xPolygonMiden/compiler"
 
 [preprocessor.katex]
 after = ["links"]
 
+[preprocessor.alerts]
+
 [output.linkcheck]
-warning-policy = "ignore"
