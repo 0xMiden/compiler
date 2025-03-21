@@ -268,7 +268,7 @@ install_crate = { crate_name = "mdbook-alerts" }
 category = "Build"
 install_crate = { crate_name = "mdbook-katex" }
 
-[tasks.serve-docs]
+[tasks.book]
 category = "Build"
 description = "Opens the compiler documentation"
 install_crate = { crate_name = "mdbook", binary = "mdbook", test_arg = [
