@@ -1,93 +1,75 @@
-# Performs checks, builds and deploys the mdbook
+# Performs checks, builds and deploys the documentation mdbook.
+#
+# Flow is based on the official github and mdbook documentation:
+#
+#   https://github.com/actions/starter-workflows/blob/main/pages/mdbook.yml
+#   https://github.com/rust-lang/mdBook/wiki/Automated-Deployment%3A-GitHub-Actions
 
 name: book
 
+# Documentation should be built and tested on every pull-request, and additionally deployed on push onto next.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
   pull_request:
-    paths:
-      - 'docs/src/SUMMARY.md'
-      - 'docs/src/IMPORTED.md'
+    path: ['docs/**']
+  push:
+    branches: [next]
+    path: ['docs/**']
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  check-files:
-    name: check interdependent files
+  # Always build and test the mdbook documentation whenever the docs folder is changed.
+  #
+  # The documentation is uploaded as a github artifact IFF it is required for deployment i.e. on push into next.
+  build:
+    name: Build documentation
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@main
+
+      # Installation from source takes a fair while, so we install the binaries directly instead.
+      - name: Install mdbook and plugins
+        uses: taiki-e/install-action@v2
         with:
-          fetch-depth: 0
-
-      - name: Check if SUMMARY.md and IMPORTED.md are modified together
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            BASE_SHA=${{ github.event.pull_request.base.sha }}
-            HEAD_SHA=${{ github.event.pull_request.head.sha }}
-          else
-            # For push events, compare with the previous commit
-            BASE_SHA=${{ github.event.before }}
-            HEAD_SHA=${{ github.event.after }}
-          fi
-
-          # Check which files were modified
-          SUMMARY_CHANGED=$(git diff --name-only $BASE_SHA $HEAD_SHA | grep -q "src/docs/SUMMARY.md" && echo "true" || echo "false")
-          IMPORTED_CHANGED=$(git diff --name-only $BASE_SHA $HEAD_SHA | grep -q "src/docs/IMPORTED.md" && echo "true" || echo "false")
-
-          # If one file changed and the other didn't, fail the check
-          if [[ "$SUMMARY_CHANGED" == "true" && "$IMPORTED_CHANGED" == "false" ]]; then
-            echo "Error: src/docs/SUMMARY.md was modified but src/docs/IMPORTED.md was not. Please update both files together to make sure the local book and the Miden book are in sync."
-            exit 1
-          fi
-
-          if [[ "$SUMMARY_CHANGED" == "false" && "$IMPORTED_CHANGED" == "true" ]]; then
-            echo "Error: src/docs/IMPORTED.md was modified but src/docs/SUMMARY.md was not. Please update both files together to make sure the local book and the Miden book are in sync."
-            exit 1
-          fi
-
-          echo "Both files were either modified together or not modified at all. Check passes!"
-
-  deploy:
-    name: deploy mdbook
-    runs-on: ubuntu-latest
-    needs: check-files
-    if: github.event_name == 'push' || github.event_name == 'workflow_run'
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install latest mdBook
-        run: |
-          tag=$(curl 'https://api.github.com/repos/rust-lang/mdbook/releases/latest' | jq -r '.tag_name')
-          url="https://github.com/rust-lang/mdbook/releases/download/${tag}/mdbook-${tag}-x86_64-unknown-linux-gnu.tar.gz"
-          mkdir mdbook
-          curl -sSL $url | tar -xz --directory=./mdbook
-          echo `pwd`/mdbook >> $GITHUB_PATH
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install mdBook plugins
-        run: |
-          cargo install mdbook-katex mdbook-linkcheck mdbook-alerts
+          tool: mdbook, mdbook-linkcheck, mdbook-alerts, mdbook-katex
 
       - name: Build book
         run: mdbook build docs/
 
+      # Only Upload documentation if we want to deploy (i.e. push to next).
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+        id: pages
+        uses: actions/configure-pages@v5
 
-      - name: Upload artifact
+      - name: Upload book artifact
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "docs/book/html"
+          # We specify multiple [output] sections in our book.toml which causes mdbook to create separate folders for each. This moves the generated `html` into its own `html` subdirectory.
+          path: ./docs/book/html
 
+  # Deployment job only runs on push to next.
+  deploy:
+    name: Deploy documentation
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
