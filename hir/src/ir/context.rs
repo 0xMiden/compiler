@@ -276,35 +276,6 @@ impl Context {
         }
     }
 
-    /// Changes the destination of the `branch_inst` instruction to `new_dest` if the current
-    /// destination is `old_dest`.
-    ///
-    /// NOTE: Panics if `branch_inst` is not a branch instruction.
-    pub fn change_branch_destination(
-        &self,
-        mut branch_inst: OperationRef,
-        old_dest: BlockRef,
-        new_dest: BlockRef,
-    ) {
-        let mut borrow = branch_inst.borrow_mut();
-        let op = borrow.as_mut().as_operation_mut();
-        assert!(
-            op.as_trait::<dyn BranchOpInterface>().is_some(),
-            "expected branch instruction, got {branch_inst:?}"
-        );
-
-        let dest_operand_groups: Vec<usize> = op
-            .successors()
-            .iter()
-            .filter(|succ| succ.block.borrow().successor() == old_dest)
-            .map(|succ| succ.operand_group as usize)
-            .collect();
-        for dest_group in dest_operand_groups {
-            let mut succ = op.successor_mut(dest_group);
-            succ.set(new_dest);
-        }
-    }
-
     /// Allocate a new uninitialized entity of type `T`
     ///
     /// In general, you can probably prefer [Context::alloc] instead, but for use cases where you

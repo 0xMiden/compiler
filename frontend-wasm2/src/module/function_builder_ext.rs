@@ -403,18 +403,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     ///
     /// **Note:** You are responsible for maintaining the coherence with the arguments of
     /// other jump instructions.
+    ///
+    /// NOTE: Panics if `branch_inst` is not a branch instruction.
     pub fn change_jump_destination(
         &mut self,
-        inst: OperationRef,
+        mut branch_inst: OperationRef,
         old_block: BlockRef,
         new_block: BlockRef,
     ) {
-        self.func_ctx.borrow_mut().ssa.remove_block_predecessor(old_block, inst);
-        self.inner
-            .builder()
-            .context()
-            .change_branch_destination(inst, old_block, new_block);
-        self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, inst);
+        self.func_ctx.borrow_mut().ssa.remove_block_predecessor(old_block, branch_inst);
+        let mut borrow_mut = branch_inst.borrow_mut();
+        let Some(inst_branch) = borrow_mut.as_trait_mut::<dyn BranchOpInterface>() else {
+            panic!("expected branch instruction, got {branch_inst:?}");
+        };
+        inst_branch.change_branch_destination(old_block, new_block);
+        self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, branch_inst);
     }
 }
 

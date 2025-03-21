@@ -13,6 +13,7 @@ pub use self::{
     info::TraitInfo,
     types::*,
 };
+use super::BlockRef;
 use crate::{derive, AttributeValue, Context, Operation, Report, Spanned};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
@@ -144,6 +145,17 @@ pub trait BranchOpInterface: crate::Op {
     /// By default, types must be exactly equal to be compatible.
     fn are_types_compatible(&self, lhs: &crate::Type, rhs: &crate::Type) -> bool {
         lhs == rhs
+    }
+
+    /// Changes the destination to `new_dest` if the current destination is `old_dest`.
+    fn change_branch_destination(&mut self, old_dest: BlockRef, new_dest: BlockRef) {
+        let op = <Self as crate::Op>::as_operation_mut(self);
+        assert_eq!(old_dest.borrow().num_arguments(), new_dest.borrow().num_arguments());
+        for successor_info in op.successors_mut().iter_mut() {
+            if successor_info.successor() == old_dest {
+                successor_info.block.borrow_mut().set(new_dest);
+            }
+        }
     }
 }
 
