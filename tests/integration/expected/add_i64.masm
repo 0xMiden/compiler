@@ -1,7 +1,8 @@
-# mod test_rust_069cf45252371f826e737bc3d7f808e1df77c97acac642efbaf976f4ab507131
+# mod root_ns:root@1.0.0::test_rust_cc1ebe8ed410a033febcc7c6a7e1b2473b2337e0dff32b08d3c91be5bbc2cc0a
 
 export.entrypoint
-    exec.::std::math::u64::wrapping_add
+
+        exec.::std::math::u64::wrapping_add
 end
 
 

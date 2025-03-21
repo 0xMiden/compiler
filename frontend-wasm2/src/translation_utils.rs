@@ -1,9 +1,9 @@
 //! Helper functions and structures for the translation.
 
 use miden_core::{Felt, FieldElement};
-use midenc_dialect_hir::InstBuilder;
-use midenc_hir::SourceSpan;
-use midenc_hir2::{AbiParam, CallConv, Signature, ValueRef, Visibility};
+use midenc_dialect_arith::ArithOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_hir::{AbiParam, Builder, CallConv, Signature, SourceSpan, ValueRef, Visibility};
 use midenc_hir_type::{FunctionType, Type};
 use midenc_session::DiagnosticsHandler;
 
@@ -103,23 +103,23 @@ const fn ceiling_divide(n: usize, d: usize) -> usize {
 }
 
 /// Emit instructions to produce a zero value in the given type.
-pub fn emit_zero(
+pub fn emit_zero<B: ?Sized + Builder>(
     ty: &Type,
-    builder: &mut FunctionBuilderExt,
+    builder: &mut FunctionBuilderExt<'_, B>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<ValueRef> {
     Ok(match ty {
-        Type::I1 => builder.ins().i1(false, SourceSpan::default()),
-        Type::I8 => builder.ins().i8(0, SourceSpan::default()),
-        Type::I16 => builder.ins().i16(0, SourceSpan::default()),
-        Type::I32 => builder.ins().i32(0, SourceSpan::default()),
-        Type::I64 => builder.ins().i64(0, SourceSpan::default()),
-        Type::U8 => builder.ins().u8(0, SourceSpan::default()),
-        Type::U16 => builder.ins().u16(0, SourceSpan::default()),
-        Type::U32 => builder.ins().u32(0, SourceSpan::default()),
-        Type::U64 => builder.ins().u64(0, SourceSpan::default()),
-        Type::F64 => builder.ins().f64(0.0, SourceSpan::default()),
-        Type::Felt => builder.ins().felt(Felt::ZERO, SourceSpan::default()),
+        Type::I1 => builder.i1(false, SourceSpan::default()),
+        Type::I8 => builder.i8(0, SourceSpan::default()),
+        Type::I16 => builder.i16(0, SourceSpan::default()),
+        Type::I32 => builder.i32(0, SourceSpan::default()),
+        Type::I64 => builder.i64(0, SourceSpan::default()),
+        Type::U8 => builder.u8(0, SourceSpan::default()),
+        Type::U16 => builder.u16(0, SourceSpan::default()),
+        Type::U32 => builder.u32(0, SourceSpan::default()),
+        Type::U64 => builder.u64(0, SourceSpan::default()),
+        Type::F64 => builder.f64(0.0, SourceSpan::default()),
+        Type::Felt => builder.felt(Felt::ZERO, SourceSpan::default()),
         Type::I128
         | Type::U128
         | Type::U256

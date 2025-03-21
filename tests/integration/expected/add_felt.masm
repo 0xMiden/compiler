@@ -1,7 +1,8 @@
-# mod add_felt
+# mod root_ns:root@1.0.0::add_felt
 
 export.entrypoint
-    swap.1 add
+
+        add
 end
 
 

@@ -1,0 +1,15 @@
+public builtin.function @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v3 = arith.constant 0 : u32;
+    v4 = arith.constant 1 : u32;
+    cf.br ^block1(v0, v3);
+^block1(v1: u32, v2: u32):
+    v5 = arith.eq v1, v3 : i1;
+    cf.cond_br v5 ^block2, ^block3;
+^block2:
+    builtin.ret v2;
+^block3:
+    v6 = arith.sub v1, v4 : u32 #[overflow = unchecked];
+    v7 = arith.incr v2 : u32;
+    cf.br ^block1(v6, v7);
+};

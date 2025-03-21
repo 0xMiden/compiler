@@ -1,12 +1,26 @@
-pub(crate) mod adt;
-mod inline_blocks;
-mod spill;
-mod split_critical_edges;
-mod treeify;
+#![no_std]
+#![feature(new_range_api)]
 
+extern crate alloc;
+#[cfg(test)]
+extern crate std;
+
+mod canonicalization;
+mod cfg_to_scf;
+//mod cse;
+//mod dce;
+//mod inliner;
+mod sccp;
+mod sink;
+mod spill;
+
+//pub use self::cse::CommonSubexpressionElimination;
+//pub use self::dce::{DeadSymbolElmination, DeadValueElimination};
+//pub use self::inliner::Inliner;
 pub use self::{
-    inline_blocks::InlineBlocks,
-    spill::{ApplySpills, InsertSpills, RewriteSpills},
-    split_critical_edges::SplitCriticalEdges,
-    treeify::Treeify,
+    canonicalization::Canonicalizer,
+    cfg_to_scf::{transform_cfg_to_scf, CFGToSCFInterface},
+    sccp::SparseConditionalConstantPropagation,
+    sink::{ControlFlowSink, SinkOperandDefs},
+    spill::{transform_spills, ReloadLike, SpillLike, TransformSpillsInterface},
 };

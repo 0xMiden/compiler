@@ -1,24 +1,18 @@
-builtin.world  #[name = #world] {
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @eq_felt {
+        public builtin.function @entrypoint(v0: felt, v1: felt) -> i32 {
+        ^block4(v0: felt, v1: felt):
+            v5 = arith.constant 1 : i32;
+            v3 = arith.eq v0, v1 : i1;
+            v4 = hir.cast v3 : i32;
+            v6 = arith.eq v4, v5 : i1;
+            v7 = arith.zext v6 : u32;
+            v8 = hir.bitcast v7 : i32;
+            builtin.ret v8;
+        };
 
-    builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
-
-        builtin.module  #[name = #eq_felt] #[visibility = public] {
-
-            builtin.function public @entrypoint(v0: felt, v1: felt) -> i32 {
-            ^block4(v0: felt, v1: felt):
-                v3 = hir.eq v0, v1 : i1;
-                v4 = hir.cast v3 : i32 #[ty = i32];
-                v5 = hir.constant 1 : i32;
-                v6 = hir.eq v4, v5 : i1;
-                v7 = hir.zext v6 : u32 #[ty = u32];
-                hir.br block5(v7);
-            ^block5(v2: i32):
-                hir.ret v2;
-            };
-            builtin.global_variable  #[name = #__stack_pointer] #[ty = i32] #[visibility = private] {
-
-                hir.ret_imm  #[value = 1048576];
-            };
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
         };
     };
 };

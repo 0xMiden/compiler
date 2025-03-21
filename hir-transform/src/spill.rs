@@ -1,475 +1,589 @@
-#![allow(clippy::mutable_key_type)]
-use std::collections::{BTreeMap, VecDeque};
+use alloc::{collections::VecDeque, rc::Rc};
 
 use midenc_hir::{
-    self as hir,
-    adt::{SmallMap, SmallSet},
-    pass::{AnalysisManager, RewritePass, RewriteResult},
-    *,
+    adt::{SmallDenseMap, SmallSet},
+    cfg::Graph,
+    dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
+    pass::AnalysisManager,
+    traits::SingleRegion,
+    BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
+    ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
+    SmallVec, SourceSpan, Spanned, StorableEntity, Usable, ValueRange, ValueRef,
 };
-use midenc_hir_analysis::{
-    spill::Placement, ControlFlowGraph, DominanceFrontier, DominatorTree, SpillAnalysis, Use, User,
+use midenc_hir_analysis::analyses::{
+    spills::{Placement, Predecessor},
+    SpillAnalysis,
 };
-use midenc_session::{diagnostics::IntoDiagnostic, Emit, Session};
 
-/// This pass places spills of SSA values to temporaries to cap the depth of the operand stack.
-///
-/// Internally it handles orchestrating the [InsertSpills]  and [RewriteSpills] passes, and should
-/// be preferred over using those two passes directly. See their respective documentation to better
-/// understand what this pass does as a whole.
-///
-/// In addition to running the two passes, and maintaining the [AnalysisManager] state between them,
-/// this pass also handles applying an additional run of [crate::InlineBlocks] if spills were
-/// introduced, so as to ensure that the output of the spills transformation is cleaned up. As
-/// applying a pass conditionally like that is a bit tricky, we handle that here to ensure that is
-/// a detail downstream users do not have to deal with.
-#[derive(Default, PassInfo, ModuleRewritePassAdapter)]
-pub struct ApplySpills;
-impl RewritePass for ApplySpills {
-    type Entity = hir::Function;
+/// This interface is used in conjunction with [transform_spills] so that the transform can be used
+/// with any dialect, and more importantly, avoids forming a dependency on our own dialects for the
+/// subset of operations we need to emit/rewrite.
+pub trait TransformSpillsInterface {
+    /// Create an unconditional branch to `destination`
+    fn create_unconditional_branch(
+        &self,
+        builder: &mut OpBuilder,
+        destination: BlockRef,
+        arguments: &[ValueRef],
+        span: SourceSpan,
+    ) -> Result<(), Report>;
 
-    fn apply(
+    /// Create a spill for `value`, returning the spill instruction
+    fn create_spill(
+        &self,
+        builder: &mut OpBuilder,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<OperationRef, Report>;
+
+    /// Create a reload of `value`, returning the reload instruction
+    fn create_reload(
+        &self,
+        builder: &mut OpBuilder,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<OperationRef, Report>;
+
+    /// Convert `spill`, a [SpillLike] operation, into a primitive memory store of the spilled
+    /// value.
+    fn convert_spill_to_store(
         &mut self,
-        function: &mut Self::Entity,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> RewriteResult {
-        use midenc_hir::pass::{RewriteFn, RewriteSet};
+        rewriter: &mut dyn Rewriter,
+        spill: OperationRef,
+    ) -> Result<(), Report>;
 
-        let mut rewrites = RewriteSet::pair(InsertSpills, RewriteSpills);
+    /// Convert `reload`, a [ReloadLike] operation, into a primitive memory load of the spilled
+    /// value.
+    fn convert_reload_to_load(
+        &mut self,
+        rewriter: &mut dyn Rewriter,
+        reload: OperationRef,
+    ) -> Result<(), Report>;
+}
 
-        // If the spills transformation is run, we want to run the block inliner again to
-        // clean up the output, but _only_ if there were actually spills, otherwise running
-        // the inliner again will have no effect. To avoid that case, we wrap the second run
-        // in a closure which will only apply the pass if there were spills
-        let maybe_rerun_block_inliner: Box<RewriteFn<hir::Function>> = Box::new(
-            |function: &mut hir::Function,
-             analyses: &mut AnalysisManager,
-             session: &Session|
-             -> RewriteResult {
-                let has_spills = analyses
-                    .get::<SpillAnalysis>(&function.id)
-                    .map(|spills| spills.has_spills())
-                    .unwrap_or(false);
-                if has_spills {
-                    let mut inliner = crate::InlineBlocks;
-                    inliner.apply(function, analyses, session)
-                } else {
-                    Ok(())
-                }
-            },
-        );
-        rewrites.push(maybe_rerun_block_inliner);
-
-        // Apply the above collectively
-        rewrites.apply(function, analyses, session)?;
-
-        session.print(&*function, Self::FLAG).into_diagnostic()?;
-        if session.should_print_cfg(Self::FLAG) {
-            use std::io::Write;
-            let cfg = function.cfg_printer();
-            let mut stdout = std::io::stdout().lock();
-            write!(&mut stdout, "{cfg}").into_diagnostic()?;
-        }
-        Ok(())
+/// An operation trait for operations that implement spill-like behavior for purposes of the
+/// spills transformation/rewrite.
+///
+/// A spill-like operation is expected to take a single value, and store it somewhere in memory
+/// temporarily, such that the live range of the original value is terminated by the spill. Spilled
+/// values may then be reloaded, starting a new live range, using the corresponding [ReloadLike] op.
+pub trait SpillLike {
+    /// Returns the operand corresponding to the spilled value
+    fn spilled(&self) -> OpOperand;
+    /// Returns a reference to the spilled value
+    fn spilled_value(&self) -> ValueRef {
+        self.spilled().borrow().as_value_ref()
     }
 }
 
-/// This pass inserts spills and reloads as computed by running a [SpillAnalysis] on the given
-/// function, recording materialized splits, spills, and reloads in the analysis results.
+/// An operation trait for operations that implement reload-like behavior for purposes of the
+/// spills transformation/rewrite.
 ///
-/// **IMPORTANT:** This pass is intended to be combined with the [RewriteSpills] pass when used
-/// as part of a compilation pipeline - it performs the first phase of a two-phase transformation,
-/// and compilation _will_ fail if you forget to apply [RewriteSpills] after this pass when the
-/// [SpillAnalysis] directed spills to be injected.
-///
-/// ## Design
-///
-/// The full spills transformation is split into an analysis and two rewrite passes, corresponding
-/// to the three phases of the transformation:
-///
-/// 1. Analyze the function to determine if and when to spill values, which values to spill, and
-///    where to place reloads.
-/// 2. Insert the computed spills and reloads, temporarily breaking the SSA form of the program
-/// 3. Reconstruct SSA form, by rewriting uses of spilled values to use the nearest dominating
-///    definition, inserting block parameters as needed to ensure that all uses are strictly
-///    dominated by the corresponding definitions.
-///
-/// Additionally, splitting it up this way makes each phase independently testable and verifiable,
-/// essential due to the complexity of the overall transformation.
-///
-/// This pass corresponds to Phase 2 above, application of computed spills and reloads. It is very
-/// simple, and can be seen as essentially materializing the analysis results in the IR. In addition
-/// to setting the stage for Phase 3, this pass can also be used to validate that the scheduling of
-/// spills and reloads is correct, matching the order in which we expect those operations to occur.
-///
-/// ## Notes About The Validity of Emitted IR
-///
-/// It is implied in my earlier notice, but I want to make it explicit here - this pass may produce
-/// IR that is semantically invalid. Such IR is technically valid, and self-consistent, but cannot
-/// be compiled to Miden Assembly. First, the spill and reload pseudo-instructions are expected to
-/// only ever exist in the IR during application of the [InsertSpills] and  [RewriteSpills] passes;
-/// later passes do not know how to handle them, and may panic if encountered, particularly the code
-/// generation pass, which will raise an error on any unhandled instructions. Second, the semantics
-/// of spills and reloads dictates that when a spill occurs, the live range of the spilled value is
-/// terminated; and may only be resurrected by an explicit reload of that value. However, because
-/// the new definition produced by a reload instruction is not actually used in the IR until after
-/// the [RewriteSpills] pass is applied, the IR immediately after the [InsertSpills] pass is
-/// semantically invalid - values will be dropped from the operand stack by a spill, yet there will
-/// be code later in the same function which expects them to still be live (and thus on the operand
-/// stack), which will fail to compile.
-///
-/// **TL;DR:** Unless testing or debugging, always apply [InsertSpills] and [RewriteSpills]
-/// consecutively!
-#[derive(Default)]
-pub struct InsertSpills;
-impl RewritePass for InsertSpills {
-    type Entity = hir::Function;
+/// A reload-like operation is expected to take a single value, for which a dominating [SpillLike]
+/// op exists, and produce a new, unique SSA value corresponding to the reloaded spill value. The
+/// spills transformation will handle rewriting any uses of the [SpillLike] and [ReloadLike] ops
+/// such that they are not present after the transformation, in conjunction with an implementation
+/// of the [TransformSpillsInterface].
+pub trait ReloadLike {
+    /// Returns the operand corresponding to the spilled value
+    fn spilled(&self) -> OpOperand;
+    /// Returns a reference to the spilled value
+    fn spilled_value(&self) -> ValueRef {
+        self.spilled().borrow().as_value_ref()
+    }
+    /// Returns the value representing this unique reload of the spilled value
+    ///
+    /// Generally, this always corresponds to this op's result
+    fn reloaded(&self) -> ValueRef;
+}
 
-    fn apply(
-        &mut self,
-        function: &mut Self::Entity,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> RewriteResult {
-        let mut spills = {
-            // Compute the spills
-            let spills = analyses.get_or_compute::<SpillAnalysis>(function, session)?;
-            // If there are no spills to process, we're done
-            if !spills.has_spills() {
-                analyses.mark_all_preserved::<Function>(&function.id);
-                return Ok(());
-            }
-            // Drop the reference to the analysis so that we can take ownership of it
-            drop(spills);
-            analyses.take::<SpillAnalysis>(&function.id).unwrap()
-        };
+/// This transformation rewrites `op` by applying the results of the provided [SpillAnalysis],
+/// using the provided implementation of the [TransformSpillsInterface].
+///
+/// In effect, it performs the following steps:
+///
+/// * Splits all control flow edges that need to carry spills/reloads
+/// * Inserts all spills and reloads at their computed locations
+/// * Rewrites `op` such that all uses of a spilled value dominated by a reload, are rewritten to
+///   use that reload, or in the case of crossing a dominance frontier, a materialized block
+///   argument/phi representing the closest definition of that value from each predecessor.
+/// * Rewrites all spill and reload instructions to their primitive memory store/load ops
+pub fn transform_spills(
+    op: OperationRef,
+    analysis: &mut SpillAnalysis,
+    interface: &mut dyn TransformSpillsInterface,
+    analysis_manager: AnalysisManager,
+) -> Result<(), Report> {
+    assert!(
+        op.borrow().implements::<dyn SingleRegion>(),
+        "the spills transformation is not supported when the root op is multi-region"
+    );
 
-        // Apply all splits
-        for split_info in spills.splits_mut() {
-            let mut builder = FunctionBuilder::at(
-                function,
-                InsertionPoint::after(split_info.predecessor.block.into()),
-            );
+    let mut builder = OpBuilder::new(op.borrow().context_rc());
 
-            // Create the split
-            let split = builder.create_block();
-            builder.switch_to_block(split);
+    log::debug!(target: "insert-spills", "analysis determined that some spills were required");
+    log::debug!(target: "insert-spills", "    edges to split = {}", analysis.splits().len());
+    log::debug!(target: "insert-spills", "    values spilled = {}", analysis.spills().len());
+    log::debug!(target: "insert-spills", "    reloads issued = {}", analysis.reloads().len());
 
-            // Record the block we created for this split
-            split_info.split = Some(split);
+    // Split all edges along which spills/reloads are required
+    for split_info in analysis.splits_mut() {
+        log::trace!(target: "insert-spills", "splitting control flow edge {} -> {}", match split_info.predecessor {
+            Predecessor::Parent => ProgramPoint::before(split_info.predecessor.operation(split_info.point)),
+            Predecessor::Block { op, .. } | Predecessor::Region(op) => ProgramPoint::at_end_of(op.parent().unwrap()),
+        }, split_info.point);
 
-            // Rewrite the terminator in the predecessor so that it transfers control to the
-            // original successor via `split`, moving any block arguments into the
-            // unconditional branch that terminates `split`.
-            let span = builder.func.dfg.inst_span(split_info.predecessor.inst);
-            let ix = builder.func.dfg.inst_mut(split_info.predecessor.inst);
-            let args = match ix {
-                Instruction::Br(Br {
-                    ref mut successor, ..
-                }) => {
-                    assert_eq!(successor.destination, split_info.block);
-                    successor.destination = split;
-                    successor.args.take()
-                }
-                Instruction::CondBr(CondBr {
-                    ref mut then_dest,
-                    ref mut else_dest,
-                    ..
-                }) => {
-                    if then_dest.destination == split_info.block {
-                        then_dest.destination = split;
-                        then_dest.args.take()
-                    } else {
-                        assert_eq!(else_dest.destination, split_info.block);
-                        else_dest.destination = split;
-                        else_dest.args.take()
+        let predecessor_block = split_info
+            .predecessor
+            .block()
+            .unwrap_or_else(|| todo!("implement support for splits following a region branch op"));
+        let predecessor_region = predecessor_block.parent().unwrap();
+
+        // Create the split and switch the insertion point to the end of it
+        let split = builder.create_block(predecessor_region, Some(predecessor_block), &[]);
+        log::trace!(target: "insert-spills", "created {split} to hold contents of split edge");
+
+        // Record the block we created for this split
+        split_info.split = Some(split);
+
+        // Rewrite the terminator in the predecessor so that it transfers control to the
+        // original successor via `split`, moving any block arguments into the unconditional
+        // branch that terminates `split`.
+        match split_info.predecessor {
+            Predecessor::Block { mut op, index } => {
+                log::trace!(target: "insert-spills", "redirecting {predecessor_block} to {split}");
+                let mut op = op.borrow_mut();
+                let mut succ = op.successor_mut(index as usize);
+                let prev_dest = succ.dest.parent().unwrap();
+                succ.dest.borrow_mut().set(split);
+                log::trace!(target: "insert-spills", "creating edge from {split} to {prev_dest}");
+                let arguments = succ
+                    .arguments
+                    .take()
+                    .into_iter()
+                    .map(|mut operand| {
+                        let mut operand = operand.borrow_mut();
+                        let value = operand.as_value_ref();
+                        // It is our responsibility to unlink the operands we removed from `succ`
+                        operand.unlink();
+                        value
+                    })
+                    .collect::<SmallVec<[_; 4]>>();
+                match split_info.point {
+                    ProgramPoint::Block { block, .. } => {
+                        assert_eq!(
+                            prev_dest, block,
+                            "unexpected mismatch between predecessor target and successor block"
+                        );
+                        interface.create_unconditional_branch(
+                            &mut builder,
+                            block,
+                            &arguments,
+                            op.span(),
+                        )?;
                     }
+                    point => panic!(
+                        "unexpected program point for split: unstructured control flow requires a \
+                         block entry, got {point}"
+                    ),
                 }
-                Instruction::Switch(_) => {
-                    panic!("expected switch instructions to have been rewritten prior to this pass")
-                }
-                ix => unimplemented!("unhandled branch instruction: {}", ix.opcode()),
-            };
-            builder.ins().Br(Opcode::Br, Type::Unit, split_info.block, args, span);
+            }
+            Predecessor::Region(predecessor) => {
+                log::trace!(target: "insert-spills", "splitting region control flow edge to {} from {predecessor}", split_info.point);
+                todo!()
+            }
+            Predecessor::Parent => unimplemented!(
+                "support for splits on exit from region branch ops is not yet implemented"
+            ),
         }
-
-        // Insert all spills
-        for spill_info in spills.spills.iter_mut() {
-            let ip = match spill_info.place {
-                Placement::Split(split) => {
-                    let split_block = spills.splits[split.as_u32() as usize]
-                        .split
-                        .expect("expected split to have been materialized");
-                    let terminator = function.dfg.last_inst(split_block).unwrap();
-                    InsertionPoint::before(terminator.into())
-                }
-                Placement::At(ip) => ip,
-            };
-            let mut builder = FunctionBuilder::at(function, ip);
-            let mut args = ValueList::default();
-            args.push(spill_info.value, &mut builder.func.dfg.value_lists);
-            let inst = builder.ins().PrimOp(Opcode::Spill, Type::Unit, args, spill_info.span).0;
-            spill_info.inst = Some(inst);
-        }
-
-        // Insert all reloads
-        for reload in spills.reloads.iter_mut() {
-            let ip = match reload.place {
-                Placement::Split(split) => {
-                    let split_block = spills.splits[split.as_u32() as usize]
-                        .split
-                        .expect("expected split to have been materialized");
-                    let terminator = function.dfg.last_inst(split_block).unwrap();
-                    InsertionPoint::before(terminator.into())
-                }
-                Placement::At(ip) => ip,
-            };
-
-            let ty = function.dfg.value_type(reload.value).clone();
-            let mut builder = FunctionBuilder::at(function, ip);
-            let mut args = ValueList::default();
-            args.push(reload.value, &mut builder.func.dfg.value_lists);
-            let inst = builder.ins().PrimOp(Opcode::Reload, ty, args, reload.span).0;
-            reload.inst = Some(inst);
-        }
-
-        // Save the updated analysis results, and mark it preserved for later passes
-        analyses.insert(function.id, spills);
-        analyses.mark_preserved::<SpillAnalysis>(&function.id);
-
-        if session.options.print_ir_after_all {
-            function.write_to_stdout(session).into_diagnostic()?;
-        }
-
-        Ok(())
     }
+
+    // Insert all spills
+    for spill in analysis.spills.iter_mut() {
+        let ip = match spill.place {
+            Placement::Split(split) => {
+                let split_block = analysis.splits[split.as_usize()]
+                    .split
+                    .expect("expected split to have been materialized");
+                let terminator = split_block.borrow().terminator().unwrap();
+                ProgramPoint::before(terminator)
+            }
+            Placement::At(ip) => ip,
+        };
+        log::trace!(target: "insert-spills", "inserting spill of {} at {ip}", spill.value);
+        builder.set_insertion_point(ip);
+        let inst = interface.create_spill(&mut builder, spill.value, spill.span)?;
+        spill.inst = Some(inst);
+    }
+
+    // Insert all reloads
+    for reload in analysis.reloads.iter_mut() {
+        let ip = match reload.place {
+            Placement::Split(split) => {
+                let split_block = analysis.splits[split.as_usize()]
+                    .split
+                    .expect("expected split to have been materialized");
+                let terminator = split_block.borrow().terminator().unwrap();
+                ProgramPoint::before(terminator)
+            }
+            Placement::At(ip) => ip,
+        };
+        log::trace!(target: "insert-spills", "inserting reload of {} at {ip}", reload.value);
+        builder.set_insertion_point(ip);
+        let inst = interface.create_reload(&mut builder, reload.value, reload.span)?;
+        reload.inst = Some(inst);
+    }
+
+    log::trace!(target: "insert-spills", "all spills and reloads inserted successfully");
+
+    let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
+
+    let region = op.borrow().regions().front().as_pointer().unwrap();
+    if region.borrow().has_one_block() {
+        rewrite_single_block_spills(op, region, analysis, interface, analysis_manager)?;
+    } else {
+        rewrite_cfg_spills(
+            builder.context_rc(),
+            region,
+            analysis,
+            interface,
+            &dominfo,
+            analysis_manager,
+        )?;
+    }
+
+    Ok(())
 }
 
-/// This pass rewrites a function annotated by the [InsertSpills] pass, by means of the spill
-/// and reload pseudo-instructions, such that the resulting function is semantically equivalent
-/// to the original function, but with the additional property that the function will keep the
-/// operand stack depth <= 16 at all times.
-///
-/// This rewrite consists of the following main objectives:
-///
-/// * Match all uses of spilled values with the nearest dominating definition, modifying the IR as
-///   required to ensure that all uses are strictly dominated by their definitions.
-/// * Allocate sufficient procedure locals to store concurrently-active spills
-/// * Rewrite all `spill` instructions to primitive `local.store` instructions
-/// * Rewrite used `reload` instructions to primitive `local.load` instructions
-/// * Remove unused `reload` instructions as dead code
-///
-/// **NOTE:** This pass is intended to be combined with the [InsertSpills] pass. If run on its own,
-/// it is effectively a no-op, so it is safe to do, but nonsensical. In a normal compilation
-/// pipeline, this pass is run immediately after [InsertSpills]. It is _not_ safe to run other
-/// passes between [InsertSpills] and [RewriteSpills], unless that pass specifically is designed to
-/// preserve the results of the [SpillAnalysis] computed and used by [InsertSpills] to place spills
-/// and reloads. Conversely, you can't just run [InsertSpills] without this pass, or the resulting
-/// IR will fail to codegen.
-///
-/// ## Design
-///
-/// See [SpillAnalysis] and [InsertSpills] for more context and details.
-///
-/// The primary purpose of this pass is twofold: reconstruct SSA form after insertion of spills and
-/// reloads by [InsertSpills], and lowering of the spill and reload pseudo-instructions to primitive
-/// stores and loads from procedure-local variables. It is the final, and most important phase of
-/// the spills transformation.
-///
-/// Unlike [InsertSpills], which mainly just materializes the results of the [SpillAnalysis], this
-/// pass must do a tricky combo of dataflow analysis and rewrite in a single postorder traversal of
-/// the CFG (i.e. bottom-up):
-///
-/// * We need to find uses of spilled values as we encounter them, and keep track of them until
-///   we find an appropriate definition for each use.
-/// * We need to propagate uses up the dominance tree until all uses are matched with definitions
-/// * We need to rewrite uses when we find a definition
-/// * We need to identify whether a block we are about to leave (on our way up the CFG), is in
-///   the iterated dominance frontier for the set of spilled values we've found uses for. If it is,
-///   we must append a new block parameter, rewrite the terminator of any predecessor blocks, and
-///   rewrite all uses found so far by using the new block parameter as the dominating definition.
-///
-/// Technically, this pass could be generalized a step further, such that it fixes up invalid
-/// def-use relationships in general, rather than just the narrow case of spills/reloads - but it is
-/// more efficient to keep it specialized for now, we can always generalize later.
-///
-/// This pass guarantees that:
-///
-/// 1. No `spill` or `reload` instructions remain in the IR
-/// 2. The semantics of the original IR on which [InsertSpills] was run, will be preserved, if:
-///    * The original IR was valid
-///    * No modification to the IR was made between [InsertSpills] and [RewriteSpills]
-/// 3. The resulting function, once compiled to Miden Assembly, will keep the operand stack depth <=
-///    16 elements, so long as the schedule produced by the backend preserves the scheduling
-///    semantics. For example, spills/reloads are computed based on an implied scheduling of
-///    operations, given by following the control flow graph, and visiting instructions in a block
-///    top-down. If the backend reschedules operations for more optimal placement of operands on the
-///    operand stack, it is possible that this rescheduling could result in the operand stack depth
-///    exceeding 16 elements. However, at this point, it is not expected that this will be a
-///    practical issue, even if it does occur, since the introduction of spills and reloads, not
-///    only place greater constraints on backend scheduling, but also ensure that more live ranges
-///    are split, and thus operands will spend less time on the operand stack overall. Time will
-///    tell whether this holds true or not.
-#[derive(Default)]
-pub struct RewriteSpills;
-impl RewritePass for RewriteSpills {
-    type Entity = hir::Function;
+fn rewrite_single_block_spills(
+    op: OperationRef,
+    region: RegionRef,
+    analysis: &mut SpillAnalysis,
+    interface: &mut dyn TransformSpillsInterface,
+    _analysis_manager: AnalysisManager,
+) -> Result<(), Report> {
+    // In a flattened CFG with only structured control flow, no dominance tree is required.
+    //
+    // Instead, similar to a regular CFG, we walk the region graph in post-order, doing the
+    // following:
+    //
+    // 1. If we encounter a use of a spilled value, we add it to a use list
+    // 2. If we encounter a reloaded spill, we rewrite any uses found so far to use the reloaded
+    //    value
+    // 3. If we encounter a spill, then we clear the set of uses of that spill found so far and
+    //    continue
+    // 4. If we reach the top of a region's entry block, and the region has no predecessors other
+    //    than the containing operation, then we do nothing but continue the traversal.
+    // 5. If we reach the top of a region's entry block, and the region has multiple predecessors,
+    //    then for each spilled value for which we have found at least one use, we must insert a
+    //    new region argument representing the spilled value, and rewrite all uses to use that
+    //    argument instead. For any dominating predecessors, the original spilled value is passed
+    //    as the value of the new argument.
 
-    fn apply(
-        &mut self,
-        function: &mut Self::Entity,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> RewriteResult {
-        // At this point, we've potentially emitted spills/reloads, but these are not yet being
-        // used to split the live ranges of the SSA values to which they apply. Our job now, is
-        // to walk the CFG bottom-up, finding uses of values for which we have issued reloads,
-        // and then looking for the dominating definition (either original, or reload) that controls
-        // that use, rewriting the use with the SSA value corresponding to the reloaded value.
-        //
-        // This has the effect of "reconstructing" the SSA form - although in our case it is more
-        // precise to say that we are fixing up the original program to reflect the live-range
-        // splits that we have computed (and inserted pseudo-instructions for). In the original
-        // paper, they actually had multiple definitions of reloaded SSA values, which is why
-        // this phase is referred to as "reconstructing", as it is intended to recover the SSA
-        // property that was lost once multiple definitions are introduced.
-        //
-        //   * For each original definition of a spilled value `v`, get the new definitions of `v`
-        //     (reloads) and the uses of `v`.
-        //   * For each use of `v`, walk the dominance tree upwards until a definition of `v` is
-        //     found that is responsible for that use. If an iterated dominance frontier is passed,
-        //     a block argument is inserted such that appropriate definitions from each predecessor
-        //     are wired up to that block argument, which is then the definition of `v` responsible
-        //     for subsequent uses. The predecessor instructions which branch to it are new uses
-        //     which we visit in the same manner as described above. After visiting all uses, any
-        //     definitions (reloads) which are dead will have no uses of the reloaded value, and can
-        //     thus be eliminated.
-
-        // We consume the spill analysis in this pass, as it will no longer be valid after this
-        let spills = match analyses.get::<SpillAnalysis>(&function.id) {
-            Some(spills) if spills.has_spills() => spills,
-            _ => {
-                analyses.mark_all_preserved::<Function>(&function.id);
-                return Ok(());
+    struct Node {
+        block: BlockRef,
+        cursor: Option<OperationRef>,
+        is_first_visit: bool,
+    }
+    impl Node {
+        pub fn new(block: BlockRef) -> Self {
+            Self {
+                block,
+                cursor: block.borrow().body().back().as_pointer(),
+                is_first_visit: true,
             }
+        }
+
+        pub fn current(&self) -> Option<OperationRef> {
+            self.cursor
+        }
+
+        pub fn move_next(&mut self) -> Option<OperationRef> {
+            let next = self.cursor.take()?;
+            self.cursor = next.prev();
+            Some(next)
+        }
+    }
+
+    let mut block_states =
+        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 4>, 4>>::default();
+    let entry_block = region.borrow().entry_block_ref().unwrap();
+    let mut block_q = VecDeque::from([Node::new(entry_block)]);
+
+    while let Some(mut node) = block_q.pop_back() {
+        let Some(operation) = node.current() else {
+            // We've reached the top of the block, remove any uses of the block arguments, if they
+            // were spilled, as they represent the original definitions of those values.
+            let block = node.block.borrow();
+            let used = block_states.entry(node.block).or_default();
+            for arg in ValueRange::<2>::from(block.arguments()) {
+                if analysis.is_spilled(&arg) {
+                    used.remove(&arg);
+                }
+            }
+            continue;
         };
-        let cfg = analyses.get_or_compute::<ControlFlowGraph>(function, session).unwrap();
-        let domtree = analyses.get_or_compute::<DominatorTree>(function, session).unwrap();
-        let domf = DominanceFrontier::compute(&domtree, &cfg, function);
 
-        // Make sure that any block in the iterated dominance frontier of a spilled value, has
-        // a new phi (block argument) inserted, if one is not already present. These must be in
-        // the CFG before we search for dominating definitions.
-        let inserted_phis = insert_required_phis(&spills, function, &cfg, &domf);
+        let op = operation.borrow();
+        if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
+            // Before we process this op, we need to visit all if it's regions first, as rewriting
+            // those regions might introduce new region arguments that we must rewrite here. So,
+            // if this is our first visit to this op, we recursively visit its regions in postorder
+            // first, and then mark the op has visited. The next time we visit this op, we will
+            // skip this part, and proceed to handling uses/defs of spilled values at the op entry/
+            // exit.
+            if node.is_first_visit {
+                node.is_first_visit = false;
+                block_q.push_back(node);
+                for region in Region::postorder_region_graph_for(branch).into_iter().rev() {
+                    let region = region.borrow();
+                    assert!(
+                        region.has_one_block(),
+                        "multi-block regions are not currently supported"
+                    );
+                    let entry = region.entry();
+                    block_q.push_back(Node::new(entry.as_block_ref()));
+                }
+                continue;
+            } else {
+                // Process any uses in the entry regions of this op before proceeding
+                for region in branch.get_successor_regions(RegionBranchPoint::Parent) {
+                    let Some(region) = region.into_successor() else {
+                        continue;
+                    };
 
-        // Traverse the CFG bottom-up, doing the following along the way:
-        //
-        // 0. Merge the "used" sets of each successor of the current block (see remaining steps for
-        //    how the "used" set is computed for a block). NOTE: We elaborate in step 4 on how to
-        //    handle computing the "used" set for a successor, from the "used" set at the start of
-        //    the successor block.
-        // 1. If we encounter a use of a spilled value, record the location of that use in the set
-        // of uses we're seeking a dominating definition for, i.e. the "used" set
-        // 2. If we reach a definition for a value with uses in the "used" set:
-        //   * If the definition is the original definition of the value, no action is needed, so we
-        //     remove all uses of that value from the "used" set.
-        //   * If the definition is a reload, rewrite all of the uses in the "used" set to use the
-        //     reload instead, removing them from the "used" set. Mark the reload used.
-        // 3. When we reach the start of the block, the state of the "used" set is associated with
-        //    the current block. This will be used as the starting state of the "used" set in each
-        //    predecessor of the block
-        // 4. When computing the "used" set in the predecessor (i.e. step 0), we also check whether
-        //    a given successor is in the iterated dominance frontier for any values in the "used"
-        //    set of that successor. If so, we need to insert a block parameter for each such value,
-        //    rewrite all uses of that value to use the new block parameter, and add the "used"
-        //    value as an additional argument to that successor. The resulting "used" set will thus
-        //    retain a single entry for each of the values for which uses were rewritten
-        //    (corresponding to the block arguments for the successor), but all of the uses
-        //    dominated by the introduced block parameter are no longer in the set, as their
-        //    dominating definition has been found. Any values in the "used" set for which the
-        //    successor is not in the iterated dominance frontier for that value, are retained in
-        //    the "used" set without any changes.
-        let mut used_sets = BTreeMap::<Block, BTreeMap<Value, FxHashSet<User>>>::default();
-        let mut block_q = VecDeque::from_iter(domtree.cfg_postorder().iter().copied());
-        while let Some(block_id) = block_q.pop_front() {
-            // Compute the initial "used" set for this block
-            let mut used = BTreeMap::<Value, FxHashSet<User>>::default();
-            for succ in cfg.succ_iter(block_id) {
-                if let Some(succ_used) = used_sets.get_mut(&succ) {
-                    // Union the used set from this successor with the others
-                    for (value, users) in succ_used.iter() {
-                        used.entry(*value).or_default().extend(users.iter().cloned());
+                    let region_entry = region.borrow().entry_block_ref().unwrap();
+                    if let Some(uses) = block_states.remove(&region_entry) {
+                        let parent_uses = block_states.entry(node.block).or_default();
+                        for (spilled, users) in uses {
+                            // TODO(pauls): If `users` is non-empty, and `region` has multiple
+                            // predecessors, then we need to introduce a new region argument to
+                            // represent the definition of each spilled value from those
+                            // predecessors, and then rewrite the uses to use the new argument.
+                            let parent_users = parent_uses.entry(spilled).or_default();
+                            let merged = users.into_union(parent_users);
+                            *parent_users = merged;
+                        }
                     }
                 }
             }
-
-            // Traverse the block bottom-up, recording uses of spilled values while looking for
-            // definitions
-            let mut insts = function.dfg.block(block_id).insts().collect::<Vec<_>>();
-            while let Some(current_inst) = insts.pop() {
-                find_inst_uses(current_inst, &mut used, function, &spills);
-            }
-
-            // At the top of the block, if any of the block parameters are in the "used" set, remove
-            // those uses, as the block parameters are the original definitions for
-            // those values, and thus no rewrite is needed.
-            for arg in function.dfg.block_args(block_id) {
-                used.remove(arg);
-            }
-
-            rewrite_inserted_phi_uses(&inserted_phis, block_id, &mut used, function);
-
-            // What remains are the unsatisfied uses of spilled values for this block and its
-            // successors
-            used_sets.insert(block_id, used);
         }
 
-        rewrite_spill_pseudo_instructions(function, &domtree, &spills);
+        let used = block_states.entry(node.block).or_default();
 
-        Ok(())
+        let reload_like = op.as_trait::<dyn ReloadLike>();
+        let is_reload_like = reload_like.is_some();
+        if let Some(reload_like) = reload_like {
+            // We've found a reload of a spilled value, rewrite all uses of the spilled value
+            // found so far to use the reload instead.
+            let spilled = reload_like.spilled_value();
+            let reloaded = reload_like.reloaded();
+
+            if let Some(to_rewrite) = used.remove(&spilled) {
+                debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
+
+                for mut user in to_rewrite {
+                    user.borrow_mut().set(reloaded);
+                }
+            } else {
+                // This reload is unused, so remove it entirely, and move to the next op
+                node.move_next();
+                continue;
+            }
+        }
+
+        // Advance the cursor in this block
+        node.move_next();
+
+        // Remove any use tracking for spilled values defined by this op
+        for result in ValueRange::<2>::from(op.results().all()) {
+            if analysis.is_spilled(&result) {
+                used.remove(&result);
+                continue;
+            }
+        }
+
+        // Record any uses of spilled values by this op, so long as the op is not reload-like
+        if !is_reload_like {
+            for operand in op.operands().iter().copied() {
+                let value = operand.borrow().as_value_ref();
+                if analysis.is_spilled(&value) {
+                    used.entry(value).or_default().insert(operand);
+                }
+            }
+        }
     }
+
+    rewrite_spill_pseudo_instructions(op.borrow().context_rc(), analysis, interface, None)
 }
 
-// Insert additional phi nodes as follows:
-//
-// 1. For each spilled value V
-// 2. Obtain the set of blocks, R, containing a reload of V
-// 3. For each block B in the iterated dominance frontier of R, insert a phi in B for V
-// 4. For every predecessor of B, append a new block argument to B, passing V initially
-// 5. Traverse the CFG bottom-up, finding uses of V, until we reach an inserted phi, a reload, or
-//    the original definition. Rewrite all found uses of V up to that point, to use this definition.
+fn rewrite_cfg_spills(
+    context: Rc<Context>,
+    region: RegionRef,
+    analysis: &mut SpillAnalysis,
+    interface: &mut dyn TransformSpillsInterface,
+    dominfo: &DominanceInfo,
+    _analysis_manager: AnalysisManager,
+) -> Result<(), Report> {
+    // At this point, we've potentially emitted spills/reloads, but these are not yet being
+    // used to split the live ranges of the SSA values to which they apply. Our job now, is
+    // to walk the CFG bottom-up, finding uses of values for which we have issued reloads,
+    // and then looking for the dominating definition (either original, or reload) that controls
+    // that use, rewriting the use with the SSA value corresponding to the reloaded value.
+    //
+    // This has the effect of "reconstructing" the SSA form - although in our case it is more
+    // precise to say that we are fixing up the original program to reflect the live-range
+    // splits that we have computed (and inserted pseudo-instructions for). In the original
+    // paper, they actually had multiple definitions of reloaded SSA values, which is why
+    // this phase is referred to as "reconstructing", as it is intended to recover the SSA
+    // property that was lost once multiple definitions are introduced.
+    //
+    //   * For each original definition of a spilled value `v`, get the new definitions of `v`
+    //     (reloads) and the uses of `v`.
+    //   * For each use of `v`, walk the dominance tree upwards until a definition of `v` is
+    //     found that is responsible for that use. If an iterated dominance frontier is passed,
+    //     a block argument is inserted such that appropriate definitions from each predecessor
+    //     are wired up to that block argument, which is then the definition of `v` responsible
+    //     for subsequent uses. The predecessor instructions which branch to it are new uses
+    //     which we visit in the same manner as described above. After visiting all uses, any
+    //     definitions (reloads) which are dead will have no uses of the reloaded value, and can
+    //     thus be eliminated.
+
+    // We consume the spill analysis in this pass, as it will no longer be valid after this
+    let domtree = dominfo.dominance(region);
+    let domf = DominanceFrontier::new(&domtree);
+
+    // Make sure that any block in the iterated dominance frontier of a spilled value, has
+    // a new phi (block argument) inserted, if one is not already present. These must be in
+    // the CFG before we search for dominating definitions.
+    let inserted_phis = insert_required_phis(&context, analysis, &domf);
+
+    // Traverse the CFG bottom-up, doing the following along the way:
+    //
+    // 0. Merge the "used" sets of each successor of the current block (see remaining steps for
+    //    how the "used" set is computed for a block). NOTE: We elaborate in step 4 on how to
+    //    handle computing the "used" set for a successor, from the "used" set at the start of
+    //    the successor block.
+    // 1. If we encounter a use of a spilled value, record the location of that use in the set
+    // of uses we're seeking a dominating definition for, i.e. the "used" set
+    // 2. If we reach a definition for a value with uses in the "used" set:
+    //   * If the definition is the original definition of the value, no action is needed, so we
+    //     remove all uses of that value from the "used" set.
+    //   * If the definition is a reload, rewrite all of the uses in the "used" set to use the
+    //     reload instead, removing them from the "used" set. Mark the reload used.
+    // 3. When we reach the start of the block, the state of the "used" set is associated with
+    //    the current block. This will be used as the starting state of the "used" set in each
+    //    predecessor of the block
+    // 4. When computing the "used" set in the predecessor (i.e. step 0), we also check whether
+    //    a given successor is in the iterated dominance frontier for any values in the "used"
+    //    set of that successor. If so, we need to insert a block parameter for each such value,
+    //    rewrite all uses of that value to use the new block parameter, and add the "used"
+    //    value as an additional argument to that successor. The resulting "used" set will thus
+    //    retain a single entry for each of the values for which uses were rewritten
+    //    (corresponding to the block arguments for the successor), but all of the uses
+    //    dominated by the introduced block parameter are no longer in the set, as their
+    //    dominating definition has been found. Any values in the "used" set for which the
+    //    successor is not in the iterated dominance frontier for that value, are retained in
+    //    the "used" set without any changes.
+    let mut used_sets =
+        SmallDenseMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>, 8>::default();
+    let mut block_q = VecDeque::from(domtree.postorder());
+    while let Some(node) = block_q.pop_front() {
+        let Some(block_ref) = node.block() else {
+            continue;
+        };
+
+        // Compute the initial "used" set for this block
+        let mut used = SmallDenseMap::<ValueRef, SmallSet<OpOperand, 8>, 8>::default();
+        for succ in Rc::<DomTreeNode>::children(node) {
+            let Some(succ_block) = succ.block() else {
+                continue;
+            };
+
+            if let Some(usages) = used_sets.get_mut(&succ_block) {
+                // Union the used set from this successor with the others
+                for (value, users) in usages.iter() {
+                    used.entry(*value).or_default().extend(users.iter().copied());
+                }
+            }
+        }
+
+        // Traverse the block bottom-up, recording uses of spilled values while looking for
+        // definitions
+        let block = block_ref.borrow();
+        for op in block.body().iter().rev() {
+            find_inst_uses(&op, &mut used, analysis);
+        }
+
+        // At the top of the block, if any of the block parameters are in the "used" set, remove
+        // those uses, as the block parameters are the original definitions for those values, and
+        // thus no rewrite is needed.
+        for arg in ValueRange::<2>::from(block.arguments()) {
+            used.remove(&arg);
+        }
+
+        rewrite_inserted_phi_uses(&inserted_phis, block_ref, &mut used);
+
+        // What remains are the unsatisfied uses of spilled values for this block and its
+        // successors
+        used_sets.insert(block_ref, used);
+    }
+
+    rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo))
+}
+
+/// Insert additional phi nodes as follows:
+///
+/// 1. For each spilled value V
+/// 2. Obtain the set of blocks, R, containing a reload of V
+/// 3. For each block B in the iterated dominance frontier of R, insert a phi in B for V
+/// 4. For every predecessor of B, append a new block argument to B, passing V initially
+/// 5. Traverse the CFG bottom-up, finding uses of V, until we reach an inserted phi, a reload, or
+///    the original definition. Rewrite all found uses of V up to that point, to use this
+///    definition.
 fn insert_required_phis(
-    spills: &SpillAnalysis,
-    function: &mut hir::Function,
-    cfg: &ControlFlowGraph,
+    context: &Context,
+    analysis: &SpillAnalysis,
     domf: &DominanceFrontier,
-) -> BTreeMap<Block, SmallMap<Value, Value, 2>> {
-    let mut required_phis = BTreeMap::<Value, SmallSet<Block, 2>>::default();
-    for info in spills.reloads() {
-        let r_block = function.dfg.inst_block(info.inst.unwrap()).unwrap();
-        let r = required_phis.entry(info.value).or_default();
-        r.insert(r_block);
+) -> SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8> {
+    use midenc_hir::adt::smallmap::Entry;
+
+    let mut required_phis = SmallDenseMap::<ValueRef, SmallSet<BlockRef, 2>, 4>::default();
+    for reload in analysis.reloads() {
+        let block = reload.inst.unwrap().parent().unwrap();
+        let r = required_phis.entry(reload.value).or_default();
+        r.insert(block);
     }
 
-    let mut inserted_phis = BTreeMap::<Block, SmallMap<Value, Value, 2>>::default();
+    let mut inserted_phis =
+        SmallDenseMap::<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>::default();
     for (value, domf_r) in required_phis {
         // Compute the iterated dominance frontier, DF+(R)
         let idf_r = domf.iterate_all(domf_r);
         // Add phi to each B in DF+(R)
-        let data = function.dfg.value_data(value);
-        let ty = data.ty().clone();
-        let span = data.span();
-        for b in idf_r {
+        let (ty, span) = {
+            let value = value.borrow();
+            (value.ty().clone(), value.span())
+        };
+        for mut b in idf_r {
             // Allocate new block parameter/phi, if one is not already present
             let phis = inserted_phis.entry(b).or_default();
-            if let adt::smallmap::Entry::Vacant(entry) = phis.entry(value) {
-                let phi = function.dfg.append_block_param(b, ty.clone(), span);
+            if let Entry::Vacant(entry) = phis.entry(value) {
+                let phi = context.append_block_argument(b, ty.clone(), span);
                 entry.insert(phi);
 
                 // Append `value` as new argument to every predecessor to satisfy new parameter
-                for pred in cfg.pred_iter(b) {
-                    function.dfg.append_branch_destination_argument(pred.inst, b, value);
+                let block = b.borrow_mut();
+                let mut next_use = block.uses().front().as_pointer();
+                while let Some(pred) = next_use.take() {
+                    next_use = pred.next();
+
+                    let (mut predecessor, successor_index) = {
+                        let pred = pred.borrow();
+                        (pred.owner, pred.index as usize)
+                    };
+                    let operand = context.make_operand(value, predecessor, 0);
+                    predecessor.borrow_mut().successor_mut(successor_index).arguments.push(operand);
                 }
             }
         }
@@ -479,149 +593,67 @@ fn insert_required_phis(
 }
 
 fn find_inst_uses(
-    current_inst: Inst,
-    used: &mut BTreeMap<Value, FxHashSet<User>>,
-    function: &mut hir::Function,
-    spills: &SpillAnalysis,
+    op: &Operation,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
 ) {
-    // If `current_inst` is a branch or terminator, it cannot define a value, so
-    // we simply record any uses, and move on.
-    match function.dfg.analyze_branch(current_inst) {
-        BranchInfo::SingleDest(SuccessorInfo { args, .. }) => {
-            for (index, arg) in args.iter().enumerate() {
-                if spills.is_spilled(arg) {
-                    used.entry(*arg).or_default().insert(User::new(
-                        current_inst,
-                        *arg,
-                        Use::BlockArgument {
-                            succ: 0,
-                            index: index as u16,
-                        },
-                    ));
-                }
-            }
-        }
-        BranchInfo::MultiDest(infos) => {
-            for (succ_index, info) in infos.into_iter().enumerate() {
-                for (index, arg) in info.args.iter().enumerate() {
-                    if spills.is_spilled(arg) {
-                        used.entry(*arg).or_default().insert(User::new(
-                            current_inst,
-                            *arg,
-                            Use::BlockArgument {
-                                succ: succ_index as u16,
-                                index: index as u16,
-                            },
-                        ));
-                    }
-                }
-            }
-        }
-        BranchInfo::NotABranch => {
-            // Does this instruction provide a definition for any spilled values?
-            let ix = function.dfg.inst(current_inst);
+    let reload_like = op.as_trait::<dyn ReloadLike>();
+    let is_reload = reload_like.is_some();
+    if let Some(reload_like) = reload_like {
+        // We have found a new definition for a spilled value, we must rewrite all uses of the
+        // spilled value found so far, with the reloaded value.
+        let spilled = reload_like.spilled_value();
+        let reloaded = reload_like.reloaded();
 
-            let is_reload = matches!(ix.opcode(), Opcode::Reload);
-            if is_reload {
-                // We have found a new definition for a spilled value, we must rewrite
-                // all uses of the spilled value found so
-                // far, with the reloaded value
-                let spilled = ix.arguments(&function.dfg.value_lists)[0];
-                let reloaded = function.dfg.first_result(current_inst);
+        if let Some(to_rewrite) = used.remove(&spilled) {
+            debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
 
-                if let Some(to_rewrite) = used.remove(&spilled) {
-                    debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
-
-                    for user in to_rewrite.iter() {
-                        match user.ty {
-                            Use::BlockArgument {
-                                succ: succ_succ,
-                                index,
-                            } => {
-                                function.dfg.replace_successor_argument(
-                                    user.inst,
-                                    succ_succ as usize,
-                                    index as usize,
-                                    reloaded,
-                                );
-                            }
-                            Use::Operand { index } => {
-                                function.dfg.replace_argument(user.inst, index as usize, reloaded);
-                            }
-                        }
-                    }
-                } else {
-                    // This reload is unused, so remove it entirely, and move to the
-                    // next instruction
-                    return;
-                }
+            for mut user in to_rewrite {
+                user.borrow_mut().set(reloaded);
             }
-
-            for spilled in function
-                .dfg
-                .inst_results(current_inst)
-                .iter()
-                .filter(|result| spills.is_spilled(result))
-            {
-                // This op is the original definition for `spilled`, so remove any uses
-                // of it we've accumulated so far, as they
-                // do not need to be rewritten
-                used.remove(spilled);
-            }
+        } else {
+            // This reload is unused, so remove it entirely, and move to the next op
+            return;
         }
     }
 
-    // Record any uses of spilled values in the argument list for `current_inst` (except
-    // reloads)
-    let ignored = matches!(function.dfg.inst(current_inst).opcode(), Opcode::Reload);
-    if !ignored {
-        for (index, arg) in function.dfg.inst_args(current_inst).iter().enumerate() {
-            if spills.is_spilled(arg) {
-                used.entry(*arg).or_default().insert(User::new(
-                    current_inst,
-                    *arg,
-                    Use::Operand {
-                        index: index as u16,
-                    },
-                ));
+    for result in ValueRange::<2>::from(op.results().all()) {
+        if analysis.is_spilled(&result) {
+            // This op is the original definition for a spilled value, so remove any
+            // uses of it we've accumulated so far, as they do not need to be rewritten
+            used.remove(&result);
+        }
+    }
+
+    // Record any uses of spilled values in the argument list for `op`, but ignore reload-likes
+    if !is_reload {
+        for operand in op.operands().iter().copied() {
+            let value = operand.borrow().as_value_ref();
+            if analysis.is_spilled(&value) {
+                used.entry(value).or_default().insert(operand);
             }
         }
     }
 }
 
 fn rewrite_inserted_phi_uses(
-    inserted_phis: &BTreeMap<Block, SmallMap<Value, Value, 2>>,
-    block_id: Block,
-    used: &mut BTreeMap<Value, FxHashSet<User>>,
-    function: &mut hir::Function,
+    inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
+    block_ref: BlockRef,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
 ) {
     // If we have inserted any phis in this block, rewrite uses of the spilled values they
     // represent.
-    if let Some(phis) = inserted_phis.get(&block_id) {
+    if let Some(phis) = inserted_phis.get(&block_ref) {
         for (spilled, phi) in phis.iter() {
             if let Some(to_rewrite) = used.remove(spilled) {
                 debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
 
-                for user in to_rewrite.iter() {
-                    match user.ty {
-                        Use::BlockArgument {
-                            succ: succ_succ,
-                            index,
-                        } => {
-                            function.dfg.replace_successor_argument(
-                                user.inst,
-                                succ_succ as usize,
-                                index as usize,
-                                *phi,
-                            );
-                        }
-                        Use::Operand { index } => {
-                            function.dfg.replace_argument(user.inst, index as usize, *phi);
-                        }
-                    }
+                for mut user in to_rewrite {
+                    user.borrow_mut().set(*phi);
                 }
             } else {
                 // TODO(pauls): This phi is unused, we should be able to remove it
+                log::warn!(target: "insert-spills", "unused phi {phi} encountered during rewrite phase");
                 continue;
             }
         }
@@ -641,432 +673,69 @@ fn rewrite_inserted_phi_uses(
 /// those spills which do not dominate any reloads - if a store to a spill slot can never
 /// be read, then the store can be elided.
 fn rewrite_spill_pseudo_instructions(
-    function: &mut hir::Function,
-    domtree: &DominatorTree,
-    spills: &SpillAnalysis,
-) {
-    let mut locals = BTreeMap::<Value, LocalId>::default();
-    for spill_info in spills.spills() {
-        let spill = spill_info.inst.expect("expected spill to have been materialized");
-        let spilled = spill_info.value;
-        let stored = function.dfg.inst_args(spill)[0];
-        let is_used = spills.reloads().iter().any(|info| {
-            if info.value == spilled {
-                let reload = info.inst.unwrap();
-                domtree.dominates(spill, reload, &function.dfg)
-            } else {
-                false
-            }
+    context: Rc<Context>,
+    analysis: &mut SpillAnalysis,
+    interface: &mut dyn TransformSpillsInterface,
+    dominfo: Option<&DominanceInfo>,
+) -> Result<(), Report> {
+    use midenc_hir::{
+        dominance::Dominates,
+        patterns::{NoopRewriterListener, RewriterImpl},
+    };
+
+    let mut builder = RewriterImpl::<NoopRewriterListener>::new(context);
+    for spill in analysis.spills() {
+        let operation = spill.inst.expect("expected spill to have been materialized");
+        let op = operation.borrow();
+        let spill_like = op
+            .as_trait::<dyn SpillLike>()
+            .expect("expected materialized spill operation to implement SpillLike");
+        // The current SSA value representing the original spilled value at this point in the
+        // program
+        let stored = spill_like.spilled_value();
+        // This spill is used if it properly dominates any reload of `stored` (and all uses should
+        // be reloads)
+        //
+        // If we have no dominance info, the spill is presumed used
+        let is_used = dominfo.is_none_or(|dominfo| {
+            stored.borrow().uses().iter().any(|user| {
+                let used_by = user.owner.borrow();
+                debug_assert!(
+                    user.owner == operation || used_by.implements::<dyn ReloadLike>(),
+                    "unexpected non-reload use of spilled value"
+                );
+                op.dominates(&used_by, dominfo)
+            })
         });
+        drop(op);
+
         if is_used {
-            let local = *locals
-                .entry(spilled)
-                .or_insert_with(|| function.dfg.alloc_local(spill_info.ty.clone()));
-            let builder = ReplaceBuilder::new(&mut function.dfg, spill);
-            builder.store_local(local, stored, spill_info.span);
+            builder.set_insertion_point_after(operation);
+            interface.convert_spill_to_store(&mut builder, operation)?;
         } else {
-            let spill_block = function.dfg.inst_block(spill).unwrap();
-            let block = function.dfg.block_mut(spill_block);
-            block.cursor_mut_at_inst(spill).remove();
+            builder.erase_op(operation);
         }
     }
 
     // Rewrite all used reload instructions as `local.load` instructions from the corresponding
     // procedure local
-    for reload_info in spills.reloads() {
-        let inst = reload_info.inst.expect("expected reload to have been materialized");
-        let spilled = function.dfg.inst_args(inst)[0];
-        let builder = ReplaceBuilder::new(&mut function.dfg, inst);
-        builder.load_local(locals[&spilled], reload_info.span);
-    }
-}
+    for reload in analysis.reloads() {
+        let operation = reload.inst.expect("expected reload to have been materialized");
+        let op = operation.borrow();
+        let reload_like = op
+            .as_trait::<dyn ReloadLike>()
+            .expect("expected materialized reload op to implement ReloadLike");
+        let is_used = reload_like.reloaded().borrow().is_used();
+        drop(op);
 
-#[cfg(test)]
-mod tests {
-    use midenc_hir::testing::TestContext;
-    use pretty_assertions::{assert_ne, assert_str_eq};
-
-    use super::*;
-
-    #[test]
-    fn spills_intra_block() {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
-                [AbiParam::new(Type::U32)],
-            ),
-        );
-
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let example = builder
-                .import_function(
-                    "foo",
-                    "example",
-                    Signature::new(
-                        [
-                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U64),
-                        ],
-                        [AbiParam::new(Type::U32)],
-                    ),
-                    SourceSpan::UNKNOWN,
-                )
-                .unwrap();
-            let entry = builder.current_block();
-            let v0 = {
-                let args = builder.block_params(entry);
-                args[0]
-            };
-
-            // entry
-            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
-            let v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
-            let v3 =
-                builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
-            let v6 =
-                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
-            let v8 = builder.ins().u64(1, SourceSpan::UNKNOWN);
-            builder.ins().exec(example, &[v6, v4, v7, v7, v8], SourceSpan::UNKNOWN);
-            let v10 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
-            builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
-            let v11 =
-                builder.ins().inttoptr(v10, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            let _v12 = builder.ins().load(v11, SourceSpan::UNKNOWN);
-            builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
+        // Avoid emitting loads for unused reloads
+        if is_used {
+            builder.set_insertion_point_after(operation);
+            interface.convert_reload_to_load(&mut builder, operation)?;
+        } else {
+            builder.erase_op(operation);
         }
-
-        let original = function.to_string();
-        let mut analyses = AnalysisManager::default();
-        let mut rewrite = InsertSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill insertion failed");
-
-        analyses.invalidate::<Function>(&function.id);
-
-        let mut rewrite = RewriteSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill cleanup failed");
-
-        let expected = "\
-(func (export #spill) (param (ptr u8)) (result u32)
-    (block 0 (param v0 (ptr u8))
-        (let (v1 u32) (ptrtoint v0))
-        (let (v2 u32) (add.unchecked v1 32))
-        (let (v3 (ptr u128)) (inttoptr v2))
-        (let (v4 u128) (load v3))
-        (let (v5 u32) (add.unchecked v1 64))
-        (let (v6 (ptr u128)) (inttoptr v5))
-        (let (v7 u128) (load v6))
-        (let (v8 u64) (const.u64 1))
-        (store.local local0 v2)
-        (store.local local1 v3)
-        (let (v9 u32) (exec (#foo #example) v6 v4 v7 v7 v8))
-        (let (v10 u32) (add.unchecked v1 72))
-        (let (v13 (ptr u128)) (load.local local1))
-        (store v13 v7)
-        (let (v11 (ptr u64)) (inttoptr v10))
-        (let (v12 u64) (load v11))
-        (let (v14 u32) (load.local local0))
-        (ret v14))
-)";
-
-        let transformed = function.to_string();
-        assert_ne!(transformed, original);
-        assert_str_eq!(transformed.as_str(), expected);
     }
 
-    #[test]
-    fn spills_branching_control_flow() {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
-                [AbiParam::new(Type::U32)],
-            ),
-        );
-
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let example = builder
-                .import_function(
-                    "foo",
-                    "example",
-                    Signature::new(
-                        [
-                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U64),
-                        ],
-                        [AbiParam::new(Type::U32)],
-                    ),
-                    SourceSpan::UNKNOWN,
-                )
-                .unwrap();
-            let entry = builder.current_block();
-            let block1 = builder.create_block();
-            let block2 = builder.create_block();
-            let block3 = builder.create_block();
-            let v0 = {
-                let args = builder.block_params(entry);
-                args[0]
-            };
-
-            // entry
-            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
-            let v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
-            let v3 =
-                builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
-            let v6 =
-                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
-            let v8 = builder.ins().eq_imm(v1, Immediate::U32(0), SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v8, block1, &[], block2, &[], SourceSpan::UNKNOWN);
-
-            // block1
-            builder.switch_to_block(block1);
-            let v9 = builder.ins().u64(1, SourceSpan::UNKNOWN);
-            let call = builder.ins().exec(example, &[v6, v4, v7, v7, v9], SourceSpan::UNKNOWN);
-            let v10 = builder.func.dfg.first_result(call);
-            builder.ins().br(block3, &[v10], SourceSpan::UNKNOWN);
-
-            // block2
-            builder.switch_to_block(block2);
-            let v11 = builder.ins().add_imm_unchecked(v1, Immediate::U32(8), SourceSpan::UNKNOWN);
-            builder.ins().br(block3, &[v11], SourceSpan::UNKNOWN);
-
-            // block3
-            let v12 = builder.append_block_param(block3, Type::U32, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block3);
-            let v13 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
-            let v14 = builder.ins().add_unchecked(v13, v12, SourceSpan::UNKNOWN);
-            let v15 =
-                builder.ins().inttoptr(v14, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
-            let _v16 = builder.ins().load(v15, SourceSpan::UNKNOWN);
-            builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
-        }
-
-        let original = function.to_string();
-        let mut analyses = AnalysisManager::default();
-        let mut rewrite = InsertSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill insertion failed");
-
-        analyses.invalidate::<Function>(&function.id);
-
-        let mut rewrite = RewriteSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill cleanup failed");
-
-        let expected = "\
-(func (export #spill) (param (ptr u8)) (result u32)
-    (block 0 (param v0 (ptr u8))
-        (let (v1 u32) (ptrtoint v0))
-        (let (v2 u32) (add.unchecked v1 32))
-        (let (v3 (ptr u128)) (inttoptr v2))
-        (let (v4 u128) (load v3))
-        (let (v5 u32) (add.unchecked v1 64))
-        (let (v6 (ptr u128)) (inttoptr v5))
-        (let (v7 u128) (load v6))
-        (let (v8 i1) (eq v1 0))
-        (condbr v8 (block 1) (block 2)))
-
-    (block 1
-        (let (v9 u64) (const.u64 1))
-        (store.local local0 v2)
-        (store.local local1 v3)
-        (let (v10 u32) (exec (#foo #example) v6 v4 v7 v7 v9))
-        (br (block 4)))
-
-    (block 2
-        (let (v11 u32) (add.unchecked v1 8))
-        (br (block 5)))
-
-    (block 3 (param v12 u32) (param v19 u32) (param v20 (ptr u128))
-        (let (v13 u32) (add.unchecked v1 72))
-        (let (v14 u32) (add.unchecked v13 v12))
-        (let (v15 (ptr u64)) (inttoptr v14))
-        (store v20 v7)
-        (let (v16 u64) (load v15))
-        (ret v19))
-
-    (block 4
-        (let (v17 (ptr u128)) (load.local local1))
-        (let (v18 u32) (load.local local0))
-        (br (block 3 v10 v18 v17)))
-
-    (block 5
-        (br (block 3 v11 v2 v3)))
-)";
-
-        let transformed = function.to_string();
-        assert_ne!(transformed, original);
-        assert_str_eq!(transformed.as_str(), expected);
-    }
-
-    #[test]
-    fn spills_loop_nest() {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [
-                    AbiParam::new(Type::Ptr(Box::new(Type::U64))),
-                    AbiParam::new(Type::U64),
-                    AbiParam::new(Type::U64),
-                ],
-                [AbiParam::new(Type::U64)],
-            ),
-        );
-
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let entry = builder.current_block();
-            let (v0, v1, v2) = {
-                let args = builder.block_params(entry);
-                (args[0], args[1], args[2])
-            };
-
-            let block1 = builder.create_block();
-            let block2 = builder.create_block();
-            let block3 = builder.create_block();
-            let block4 = builder.create_block();
-            let block5 = builder.create_block();
-            let block6 = builder.create_block();
-
-            // entry
-            let v3 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            let v4 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            builder.ins().br(block1, &[v3, v4, v5], SourceSpan::UNKNOWN);
-
-            // block1 - outer loop header
-            let v6 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            let v7 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            let v8 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block1);
-            let v9 = builder.ins().eq(v6, v1, SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v9, block2, &[], block3, &[], SourceSpan::UNKNOWN);
-
-            // block2 - outer exit
-            builder.switch_to_block(block2);
-            builder.ins().ret(Some(v8), SourceSpan::UNKNOWN);
-
-            // block3 - split edge
-            builder.switch_to_block(block3);
-            builder.ins().br(block4, &[v7, v8], SourceSpan::UNKNOWN);
-
-            // block4 - inner loop
-            let v10 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
-            let v11 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block4);
-            let v12 = builder.ins().eq(v10, v2, SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v12, block5, &[], block6, &[], SourceSpan::UNKNOWN);
-
-            // block5 - inner latch
-            builder.switch_to_block(block5);
-            let v13 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
-            builder.ins().br(block1, &[v13, v10, v11], SourceSpan::UNKNOWN);
-
-            // block6 - inner body
-            builder.switch_to_block(block6);
-            let v14 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
-            let v15 = builder.ins().mul_unchecked(v14, v2, SourceSpan::UNKNOWN);
-            let v16 = builder.ins().add_unchecked(v10, v15, SourceSpan::UNKNOWN);
-            let v17 = builder.ins().ptrtoint(v0, Type::U64, SourceSpan::UNKNOWN);
-            let v18 = builder.ins().add_unchecked(v17, v16, SourceSpan::UNKNOWN);
-            let v19 =
-                builder.ins().inttoptr(v18, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            let v20 = builder.ins().load(v19, SourceSpan::UNKNOWN);
-            let v21 = builder.ins().add_unchecked(v11, v20, SourceSpan::UNKNOWN);
-            let v22 = builder.ins().add_imm_unchecked(v10, Immediate::U64(1), SourceSpan::UNKNOWN);
-            builder.ins().br(block4, &[v22, v21], SourceSpan::UNKNOWN);
-        }
-
-        let original = function.to_string();
-        let mut analyses = AnalysisManager::default();
-        let mut rewrite = InsertSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill insertion failed");
-
-        analyses.invalidate::<Function>(&function.id);
-
-        let mut rewrite = RewriteSpills;
-        rewrite
-            .apply(&mut function, &mut analyses, &context.session)
-            .expect("spill cleanup failed");
-
-        let expected = "\
-(func (export #spill) (param (ptr u64)) (param u64) (param u64) (result u64)
-    (block 0 (param v0 (ptr u64)) (param v1 u64) (param v2 u64)
-        (let (v3 u64) (const.u64 0))
-        (let (v4 u64) (const.u64 0))
-        (let (v5 u64) (const.u64 0))
-        (br (block 1 v3 v4 v5 v1)))
-
-    (block 1 (param v6 u64) (param v7 u64) (param v8 u64) (param v24 u64)
-        (let (v9 i1) (eq v6 v24))
-        (condbr v9 (block 2) (block 3)))
-
-    (block 2
-        (ret v8))
-
-    (block 3
-        (br (block 7)))
-
-    (block 4 (param v10 u64) (param v11 u64)
-        (let (v12 i1) (eq v10 v2))
-        (condbr v12 (block 5) (block 6)))
-
-    (block 5
-        (let (v13 u64) (add.unchecked v6 1))
-        (br (block 8)))
-
-    (block 6
-        (let (v14 u64) (add.unchecked v6 1))
-        (let (v15 u64) (mul.unchecked v14 v2))
-        (let (v16 u64) (add.unchecked v10 v15))
-        (let (v17 u64) (ptrtoint v0))
-        (let (v18 u64) (add.unchecked v17 v16))
-        (let (v19 (ptr u64)) (inttoptr v18))
-        (let (v20 u64) (load v19))
-        (let (v21 u64) (add.unchecked v11 v20))
-        (let (v22 u64) (add.unchecked v10 1))
-        (br (block 4 v22 v21)))
-
-    (block 7
-        (store.local local0 v24)
-        (br (block 4 v7 v8)))
-
-    (block 8
-        (let (v23 u64) (load.local local0))
-        (br (block 1 v13 v10 v11 v23)))
-)";
-
-        let transformed = function.to_string();
-        assert_ne!(transformed, original);
-        assert_str_eq!(transformed.as_str(), expected);
-    }
+    Ok(())
 }

@@ -10,7 +10,7 @@ use std::{
 
 use miden_core::{debuginfo::Location, AssemblyOp};
 use miden_processor::{Operation, RowIndex, VmState};
-use midenc_hir::demangle;
+use midenc_hir::demangle::demangle;
 use midenc_session::{
     diagnostics::{SourceFile, SourceSpan},
     Session,

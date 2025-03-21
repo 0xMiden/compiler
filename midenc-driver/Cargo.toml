@@ -17,7 +17,7 @@ edition.workspace = true
 default = ["all"]
 all = ["std", "debug"]
 debug = ["dep:midenc-debug"]
-std = ["alloc", "log/std", "clap/std", "clap/color", "clap/env"]
+std = ["alloc", "log/std", "clap/color"]
 alloc = ["clap/help", "clap/usage", "clap/error-context", "clap/suggestions"]
 
 [dependencies]

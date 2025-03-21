@@ -1,0 +1,45 @@
+public builtin.function @test(v0: u32, v1: u32) -> u32 {
+^block0(v0: u32, v1: u32):
+    v2 = scf.index_switch v0 : u32 
+    case 0 {
+    ^block1:
+        v3 = arith.constant 0 : u32;
+        scf.yield v3;
+    }
+    case 1 {
+    ^block2:
+        v4 = arith.constant 1 : u32;
+        scf.yield v4;
+    }
+    case 2 {
+    ^block3:
+        v5 = arith.constant 2 : u32;
+        scf.yield v5;
+    }
+    case 3 {
+    ^block4:
+        v6 = arith.constant 3 : u32;
+        scf.yield v6;
+    }
+    case 4 {
+    ^block5:
+        v7 = arith.constant 4 : u32;
+        scf.yield v7;
+    }
+    case 5 {
+    ^block6:
+        v8 = arith.constant 5 : u32;
+        scf.yield v8;
+    }
+    case 6 {
+    ^block7:
+        v9 = arith.constant 6 : u32;
+        scf.yield v9;
+    }
+    default {
+    ^block8:
+        v10 = arith.mul v0, v1 : u32 #[overflow = checked];
+        scf.yield v10;
+    };
+    builtin.ret v2;
+};

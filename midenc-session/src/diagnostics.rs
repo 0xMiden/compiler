@@ -14,8 +14,7 @@ pub use miden_assembly::diagnostics::{
     miette::MietteDiagnostic as AdHocDiagnostic,
     reporting,
     reporting::{PrintDiagnostic, ReportHandlerOpts},
-    Diagnostic, IntoDiagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity,
-    WrapErr,
+    Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr,
 };
 pub use miden_core::debuginfo::*;
 pub use midenc_hir_macros::Spanned;
@@ -177,8 +176,12 @@ impl DiagnosticsHandler {
 
     #[cfg(not(feature = "std"))]
     fn write_report(&self, diagnostic: Report) {
-        let out = PrintDiagnostic::new(diagnostic).to_string();
-        self.emitter.print(out).unwrap();
+        use core::fmt::Write;
+
+        let mut buffer = self.emitter.buffer();
+        let printer = PrintDiagnostic::new(diagnostic);
+        write!(&mut buffer, "{printer}").expect("failed to write diagnostic to buffer");
+        self.emitter.print(buffer).unwrap();
     }
 }
 
@@ -393,5 +396,71 @@ impl Diagnostic for InFlightDiagnostic {
 
     fn diagnostic_source(&self) -> Option<&(dyn Diagnostic + '_)> {
         None
+    }
+}
+
+pub use self::into_diagnostic::{DiagnosticError, IntoDiagnostic};
+
+mod into_diagnostic {
+    use alloc::boxed::Box;
+
+    /// Convenience [`Diagnostic`] that can be used as an "anonymous" wrapper for
+    /// Errors. This is intended to be paired with [`IntoDiagnostic`].
+    #[derive(Debug)]
+    pub struct DiagnosticError<E>(Box<E>);
+    impl<E> DiagnosticError<E> {
+        pub fn new(error: E) -> Self {
+            Self(Box::new(error))
+        }
+    }
+    impl<E: core::fmt::Debug + core::fmt::Display + 'static> miden_assembly::diagnostics::Diagnostic
+        for DiagnosticError<E>
+    {
+    }
+    impl<E: core::fmt::Display> core::fmt::Display for DiagnosticError<E> {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            core::fmt::Display::fmt(self.0.as_ref(), f)
+        }
+    }
+    impl<E: core::fmt::Debug + core::fmt::Display + 'static> core::error::Error for DiagnosticError<E> {
+        default fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+            None
+        }
+
+        default fn cause(&self) -> Option<&dyn core::error::Error> {
+            self.source()
+        }
+    }
+    impl<E: core::error::Error + 'static> core::error::Error for DiagnosticError<E> {
+        fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+            self.0.source()
+        }
+    }
+    unsafe impl<E: Send> Send for DiagnosticError<E> {}
+    unsafe impl<E: Sync> Sync for DiagnosticError<E> {}
+
+    /**
+    Convenience trait that adds a [`.into_diagnostic()`](IntoDiagnostic::into_diagnostic) method that converts a type implementing
+    [`std::error::Error`] to a [`Result<T, Report>`].
+
+    ## Warning
+
+    Calling this on a type implementing [`Diagnostic`] will reduce it to the common denominator of
+    [`std::error::Error`]. Meaning all extra information provided by [`Diagnostic`] will be
+    inaccessible. If you have a type implementing [`Diagnostic`] consider simply returning it or using
+    [`Into`] or the [`Try`](std::ops::Try) operator (`?`).
+    */
+    pub trait IntoDiagnostic<T, E> {
+        /// Converts [`Result`] types that return regular [`std::error::Error`]s
+        /// into a [`Result`] that returns a [`Diagnostic`].
+        fn into_diagnostic(self) -> Result<T, super::Report>;
+    }
+
+    impl<T, E: core::fmt::Debug + core::fmt::Display + Sync + Send + 'static> IntoDiagnostic<T, E>
+        for Result<T, E>
+    {
+        fn into_diagnostic(self) -> Result<T, super::Report> {
+            self.map_err(|e| DiagnosticError::new(e).into())
+        }
     }
 }

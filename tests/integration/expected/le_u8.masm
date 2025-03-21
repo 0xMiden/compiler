@@ -1,14 +1,11 @@
-# mod test_rust_aace3f1ae4da30ba44b3c078c978343b282544139b496703f5f6a78953f42b7e
+# mod root_ns:root@1.0.0::test_rust_6b31118a71e100e1653e01e16012428a3ef4b388ea4b8aa8f00a0e4ff40c4ad9
 
 export.entrypoint
-    swap.1
-    u32lte
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
+
+        swap.1
+        swap.1
+        swap.1
+        u32lte
 end
 
 

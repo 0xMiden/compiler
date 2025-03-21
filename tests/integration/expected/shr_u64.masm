@@ -1,19 +1,22 @@
-# mod test_rust_06af793a34a89f72818a0d65a5b5ac2526e0731e32c76ae951f9d05d12b6d4e4
+# mod root_ns:root@1.0.0::test_rust_9efc7a825f7a743a5fc284e5d1f0d3fc1bb239f780841274be29a84565e75592
 
 export.entrypoint
-    movdn.3
-    movdn.3
-    dup.0
-    push.2147483648
-    u32and
-    eq.2147483648
-    assertz
-    assertz
-    dup.0
-    push.4294967295
-    u32lte
-    assert
-    exec.::std::math::u64::shr
+
+        movdn.3
+        movdn.3
+        dup.0
+        push.2147483648
+        u32and
+        eq.2147483648
+        assertz
+        assertz
+        dup.0
+        push.4294967295
+        u32lte
+        assert
+        movdn.2
+        movup.2
+        exec.::std::math::u64::shr
 end
 
 

@@ -1,0 +1,15 @@
+
+    push.0
+    dup.1
+    movup.3
+    eq
+    if.true
+
+        drop
+        drop
+        push.1
+    else
+
+        mul
+        u32assert
+    end

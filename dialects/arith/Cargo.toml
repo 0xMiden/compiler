@@ -1,0 +1,25 @@
+[package]
+name = "midenc-dialect-arith"
+description = "Miden IR Arithmetic Dialect"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir/std"]
+
+[dependencies]
+log.workspace = true
+midenc-hir.workspace = true
+midenc-hir-symbol.workspace = true
+midenc-session.workspace = true
+paste.workspace = true
+bitvec.workspace = true
+smallvec.workspace = true

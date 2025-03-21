@@ -1,15 +1,15 @@
-use midenc_hir2::{derive::operation, traits::*, *};
+use midenc_hir::{derive::operation, traits::*, *};
 
 use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
 )]
 pub struct Exec {
     #[symbol(callable)]
     callee: SymbolPath,
-    #[attr]
+    #[attr(hidden)]
     signature: Signature,
     #[operands]
     arguments: AnyType,
@@ -25,6 +25,25 @@ impl InferTypeOpInterface for Exec {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OpPrinter for Exec {
+    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+        use formatter::*;
+
+        let op = self.as_operation();
+        let prelude = print::render_operation_results(op) + display(op.name()) + const_text(" ");
+        let callee = const_text("@") + display(self.callee());
+        let args = op.operands().iter().enumerate().fold(const_text("("), |acc, (i, arg)| {
+            if i > 0 {
+                acc + const_text(", ") + display(arg.borrow().as_value_ref())
+            } else {
+                acc + display(arg.borrow().as_value_ref())
+            }
+        }) + const_text(")");
+        let results = print::render_operation_result_types(op);
+        prelude + callee + args + results
     }
 }
 

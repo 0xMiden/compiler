@@ -5,11 +5,10 @@
 
 use std::mem;
 
+use cranelift_entity::PrimaryMap;
 use indexmap::IndexMap;
-use midenc_hir::{
-    cranelift_entity::PrimaryMap, diagnostics::IntoDiagnostic, FxBuildHasher, FxHashMap,
-};
-use midenc_session::Session;
+use midenc_hir::{FxBuildHasher, FxHashMap};
+use midenc_session::{diagnostics::IntoDiagnostic, Session};
 use wasmparser::{
     types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,

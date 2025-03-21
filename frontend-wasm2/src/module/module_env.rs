@@ -1,10 +1,8 @@
 use std::{ops::Range, path::PathBuf, sync::Arc};
 
-use midenc_hir::{
-    cranelift_entity::{packed_option::ReservedValue, PrimaryMap},
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity},
-    Ident, Symbol,
-};
+use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
+use midenc_hir::{interner::Symbol, Ident};
+use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     types::CoreTypeId, CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding,
     ExternalKind, FuncToValidate, FunctionBody, NameSectionReader, Naming, Operator, Parser,

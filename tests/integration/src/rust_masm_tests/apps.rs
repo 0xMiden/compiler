@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
-use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_frontend_wasm2::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
@@ -91,7 +91,7 @@ fn function_call_hir2() {
 
     let artifact_name = name;
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn mem_intrinsics_heap_base() {
 
     let artifact_name = name;
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
 }
 
 #[test]
@@ -174,5 +174,5 @@ fn felt_intrinsics() {
 
     let artifact_name = name;
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir2(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
 }

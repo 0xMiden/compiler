@@ -1,7 +1,9 @@
-# mod div_felt
+# mod root_ns:root@1.0.0::div_felt
 
 export.entrypoint
-    swap.1 div
+
+        swap.1
+        div
 end
 
 

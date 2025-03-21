@@ -1,0 +1,28 @@
+public builtin.function @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
+^block0(v0: (ptr u32), v1: u32, v2: u32):
+    v7 = arith.constant 0 : u32;
+    cf.br ^block1(v7, v7);
+^block1(v3: u32, v4: u32):
+    v8 = arith.lt v3, v1 : i1;
+    cf.cond_br v8 ^block4, ^block3(v4);
+^block2(v5: u32, v6: u32):
+    v10 = arith.lt v5, v2 : i1;
+    cf.cond_br v10 ^block6, ^block5(v6);
+^block3:
+    v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
+    cf.br ^block2(v7, v4);
+^block4:
+    builtin.ret v4;
+^block5:
+    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+    v13 = builtin.unrealized_conversion_cast v0 : u32;
+    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
+    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+    v16 = builtin.unrealized_conversion_cast v15 : u32;
+    v17 = arith.incr v5 : u32;
+    v18 = arith.add v6, v16 : u32 #[overflow = unchecked];
+    cf.br ^block2(v17, v18);
+^block6:
+    v11 = arith.incr v3 : u32;
+    cf.br ^block1(v11, v6);
+};

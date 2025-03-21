@@ -1,10 +1,16 @@
-use alloc::{string::String, vec::Vec};
+#[cfg(feature = "std")]
+use alloc::string::String;
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+use alloc::vec::Vec;
 use core::ops::Deref;
 
-use crate::{
-    diagnostics::{IntoDiagnostic, Report},
-    ColorChoice,
-};
+#[cfg(not(feature = "std"))]
+use midenc_hir_symbol::sync::RwLock;
+
+#[cfg(feature = "std")]
+use crate::diagnostics::IntoDiagnostic;
+use crate::{diagnostics::Report, ColorChoice};
 
 /// The [Emitter] trait is used for controlling how diagnostics are displayed.
 ///
@@ -59,7 +65,7 @@ pub struct DefaultEmitterImpl {
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 pub struct DefaultEmitterImpl {
-    writer: Vec<u8>,
+    writer: RwLock<Vec<u8>>,
     ansi: bool,
 }
 
@@ -90,7 +96,7 @@ impl DefaultEmitterImpl {
     fn new(color: ColorChoice) -> Self {
         Self {
             ansi: color.should_ansi(),
-            writer: vec![],
+            writer: Default::default(),
         }
     }
 }
@@ -108,8 +114,9 @@ impl Emitter for DefaultEmitterImpl {
 
     #[inline(always)]
     fn print(&self, buffer: Buffer) -> Result<(), Report> {
-        self.0.push(b'\n');
-        self.0.extend(buffer.into_inner());
+        let mut writer = self.writer.write();
+        writer.push(b'\n');
+        writer.extend(buffer.into_inner());
         Ok(())
     }
 }
@@ -302,9 +309,10 @@ impl Buffer {
 
 #[cfg(not(feature = "std"))]
 impl core::fmt::Write for Buffer {
-    fn write_str(&mut self, s: &str) -> Result<(), core::fmt::Result> {
-        use core::fmt::Write;
-        self.0.write_str(s);
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        use miden_assembly::utils::ByteWriter;
+        self.0.write_bytes(s.as_bytes());
+        Ok(())
     }
 }
 

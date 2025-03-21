@@ -1,9 +1,14 @@
-#![feature(debug_closure_helpers)]
 #![no_std]
+#![feature(debug_closure_helpers)]
+#![feature(specialization)]
+#![feature(slice_split_once)]
+// Specialization
+#![allow(incomplete_features)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
 use alloc::{
     borrow::ToOwned,
     string::{String, ToString},
@@ -21,11 +26,11 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
+mod path;
 #[cfg(feature = "std")]
 mod statistics;
 
 use alloc::{fmt, sync::Arc};
-use std::path::{Path, PathBuf};
 
 /// The version associated with the current compiler toolchain
 pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
@@ -33,6 +38,7 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
+#[cfg(feature = "std")]
 use clap::ValueEnum;
 pub use miden_assembly;
 use midenc_hir_symbol::Symbol;
@@ -40,17 +46,18 @@ use midenc_hir_symbol::Symbol;
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, SourceManager},
-    duration::HumanDuration,
-    emit::Emit,
-    flags::{CompileFlag, CompileFlags, FlagAction},
-    inputs::{FileType, InputFile, InputType, InvalidInputError},
+    emit::{Emit, Writer},
+    flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
+    inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
         LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
-    statistics::Statistics,
+    path::{Path, PathBuf},
 };
+#[cfg(feature = "std")]
+pub use self::{duration::HumanDuration, emit::EmitExt, statistics::Statistics};
 
 /// The type of project being compiled
 #[derive(Debug, Copy, Clone, Default)]
@@ -167,9 +174,7 @@ impl Session {
             .name
             .clone()
             .or_else(|| {
-                output_file
-                    .as_ref()
-                    .and_then(|of| of.filestem().map(|stem| stem.to_string_lossy().into_owned()))
+                output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
             })
             .unwrap_or_else(|| match inputs.first() {
                 Some(InputFile {
@@ -223,6 +228,7 @@ impl Session {
             diagnostics,
             inputs,
             output_files,
+            #[cfg(feature = "std")]
             statistics: Default::default(),
         }
     }
@@ -257,29 +263,9 @@ impl Session {
         self.options.flags.get_flag_count(name)
     }
 
-    /// Get the value of a specific custom flag
+    /// Get the remaining [ArgMatches] left after parsing the base session configuration
     #[inline]
-    pub fn get_flag_value<T>(&self, name: &str) -> Option<&T>
-    where
-        T: core::any::Any + Clone + Send + Sync + 'static,
-    {
-        self.options.flags.get_flag_value(name)
-    }
-
-    /// Iterate over values of a specific custom flag
-    #[inline]
-    #[cfg(feature = "std")]
-    pub fn get_flag_values<T>(&self, name: &str) -> Option<clap::parser::ValuesRef<'_, T>>
-    where
-        T: core::any::Any + Clone + Send + Sync + 'static,
-    {
-        self.options.flags.get_flag_values(name)
-    }
-
-    /// Get the remaining [clap::ArgMatches] left after parsing the base session configuration
-    #[inline]
-    #[cfg(feature = "std")]
-    pub fn matches(&self) -> &clap::ArgMatches {
+    pub fn matches(&self) -> &ArgMatches {
         self.options.flags.matches()
     }
 
@@ -299,6 +285,16 @@ impl Session {
         out_file
     }
 
+    #[cfg(not(feature = "std"))]
+    fn check_file_is_writeable(&self, file: &Path) {
+        panic!(
+            "Compiler exited with a fatal error: cannot write '{}' - compiler was built without \
+             standard library",
+            file.display()
+        );
+    }
+
+    #[cfg(feature = "std")]
     fn check_file_is_writeable(&self, file: &Path) {
         if let Ok(m) = file.metadata() {
             if m.permissions().readonly() {
@@ -359,7 +355,8 @@ impl Session {
     }
 
     /// Print the given emittable IR to stdout, as produced by a pass with name `pass`
-    pub fn print(&self, ir: impl Emit, pass: &str) -> std::io::Result<()> {
+    #[cfg(feature = "std")]
+    pub fn print(&self, ir: impl Emit, pass: &str) -> anyhow::Result<()> {
         if self.should_print_ir(pass) {
             ir.write_to_stdout(self)?;
         }
@@ -379,7 +376,8 @@ impl Session {
     }
 
     /// Emit an item to stdout/file system depending on the current configuration
-    pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> std::io::Result<()> {
+    #[cfg(feature = "std")]
+    pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> anyhow::Result<()> {
         let output_type = item.output_type(mode);
         if self.should_emit(output_type) {
             let name = item.name().map(|n| n.as_str());
@@ -394,6 +392,11 @@ impl Session {
             }
         }
 
+        Ok(())
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub fn emit<E: Emit>(&self, _mode: OutputMode, _item: &E) -> anyhow::Result<()> {
         Ok(())
     }
 }

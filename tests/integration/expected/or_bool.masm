@@ -1,7 +1,8 @@
-# mod test_rust_fcd39ca2fcbe5490a38db6dfe57f9ead120d9b7ced8d4170a040c64bd03b0413
+# mod root_ns:root@1.0.0::test_rust_f1d36010a1862f085dfb5f246228723fc87e291a764ca76107b03554afd7db26
 
 export.entrypoint
-    swap.1 u32or
+
+        u32or
 end
 
 

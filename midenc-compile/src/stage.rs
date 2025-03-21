@@ -1,5 +1,6 @@
-use midenc_hir::pass::AnalysisManager;
-use midenc_session::Session;
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
+
+use midenc_hir::Context;
 
 use crate::{CompilerResult, CompilerStopped};
 
@@ -9,17 +10,12 @@ pub trait Stage {
     type Output;
 
     /// Return true if this stage is disabled
-    fn enabled(&self, _session: &Session) -> bool {
+    fn enabled(&self, _context: &Context) -> bool {
         true
     }
 
     /// Run this stage
-    fn run(
-        &mut self,
-        input: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output>;
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output>;
 
     fn next<S>(self, stage: S) -> Chain<Self, S>
     where
@@ -47,33 +43,23 @@ pub trait Stage {
     }
 }
 
-impl<I, O> Stage for &mut dyn FnMut(I, &mut AnalysisManager, &Session) -> CompilerResult<O> {
+impl<I, O> Stage for &mut dyn FnMut(I, Rc<Context>) -> CompilerResult<O> {
     type Input = I;
     type Output = O;
 
     #[inline]
-    fn run(
-        &mut self,
-        input: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output> {
-        (*self)(input, analyses, session)
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        (*self)(input, context)
     }
 }
 
-impl<I, O> Stage for Box<dyn FnMut(I, &mut AnalysisManager, &Session) -> CompilerResult<O>> {
+impl<I, O> Stage for Box<dyn FnMut(I, Rc<Context>) -> CompilerResult<O>> {
     type Input = I;
     type Output = O;
 
     #[inline]
-    fn run(
-        &mut self,
-        input: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output> {
-        self(input, analyses, session)
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        self(input, context)
     }
 }
 
@@ -98,17 +84,16 @@ where
     fn run<'a>(
         &mut self,
         input: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
+        context: Rc<Context>,
     ) -> CompilerResult<Self::Output> {
-        if !self.a.enabled(session) {
+        if !self.a.enabled(&context) {
             return Err(CompilerStopped.into());
         }
-        let output = self.a.run(input, analyses, session)?;
-        if !self.b.enabled(session) {
+        let output = self.a.run(input, context.clone())?;
+        if !self.b.enabled(&context) {
             return Err(CompilerStopped.into());
         }
-        self.b.run(output, analyses, session)
+        self.b.run(output, context)
     }
 }
 
@@ -133,17 +118,16 @@ where
     fn run<'a>(
         &mut self,
         input: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
+        context: Rc<Context>,
     ) -> CompilerResult<Self::Output> {
-        if !self.a.enabled(session) {
+        if !self.a.enabled(&context) {
             return Err(CompilerStopped.into());
         }
-        let output = self.a.run(input, analyses, session)?;
-        if !self.b.enabled(session) {
+        let output = self.a.run(input, context.clone())?;
+        if !self.b.enabled(&context) {
             Ok(output)
         } else {
-            self.b.run(output, analyses, session)
+            self.b.run(output, context)
         }
     }
 }
@@ -177,16 +161,11 @@ where
     type Input = I;
     type Output = <B as Stage>::Output;
 
-    fn run(
-        &mut self,
-        inputs: Self::Input,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> CompilerResult<Self::Output> {
-        let mut outputs = vec![];
+    fn run(&mut self, inputs: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        let mut outputs = Vec::default();
         for input in inputs.into_iter() {
-            outputs.push(self.spread.run(input, analyses, session)?);
+            outputs.push(self.spread.run(input, context.clone())?);
         }
-        self.join.run(outputs, analyses, session)
+        self.join.run(outputs, context)
     }
 }

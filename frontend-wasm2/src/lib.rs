@@ -26,7 +26,7 @@ use std::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;
-use midenc_hir2::Context;
+use midenc_hir::{dialects::builtin, Context};
 use module::build_ir::translate_module_as_component;
 use wasmparser::WasmFeatures;
 
@@ -38,7 +38,7 @@ pub fn translate(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir2::dialects::builtin::WorldRef> {
+) -> WasmResult<builtin::ComponentRef> {
     if wasm[4..8] == [0x01, 0x00, 0x00, 0x00] {
         // Wasm core module
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions

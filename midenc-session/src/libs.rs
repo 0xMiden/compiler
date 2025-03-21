@@ -1,21 +1,22 @@
-use alloc::{borrow::Cow, boxed::Box, format, str::FromStr, string::ToString, sync::Arc};
+use alloc::{borrow::Cow, format, str::FromStr, sync::Arc};
+#[cfg(feature = "std")]
+use alloc::{boxed::Box, string::ToString};
 use core::fmt;
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-    sync::LazyLock,
-};
 
 pub use miden_assembly::{
     Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
 };
 use miden_base_sys::masl::tx::MidenTxKernelLibrary;
+#[cfg(feature = "std")]
 use miden_core::utils::Deserializable;
 use miden_stdlib::StdLibrary;
+use midenc_hir_symbol::sync::LazyLock;
 
+use crate::{diagnostics::Report, PathBuf, Session};
+#[cfg(feature = "std")]
 use crate::{
-    diagnostics::{IntoDiagnostic, Report, WrapErr},
-    Session,
+    diagnostics::{IntoDiagnostic, WrapErr},
+    Path,
 };
 
 pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
@@ -75,6 +76,20 @@ pub struct LinkLibrary {
     pub kind: LibraryKind,
 }
 impl LinkLibrary {
+    #[cfg(not(feature = "std"))]
+    pub fn load(&self, _session: &Session) -> Result<CompiledLibrary, Report> {
+        // Handle libraries shipped with the compiler, or via Miden crates
+        match self.name.as_ref() {
+            "std" => Ok((*STDLIB).as_ref().clone()),
+            "base" => Ok((*BASE).as_ref().clone()),
+            name => Err(Report::msg(format!(
+                "link library '{name}' cannot be loaded: compiler was built without standard \
+                 library"
+            ))),
+        }
+    }
+
+    #[cfg(feature = "std")]
     pub fn load(&self, session: &Session) -> Result<CompiledLibrary, Report> {
         if let Some(path) = self.path.as_deref() {
             return self.load_from_path(path, session);
@@ -93,6 +108,7 @@ impl LinkLibrary {
         self.load_from_path(&path, session)
     }
 
+    #[cfg(feature = "std")]
     fn load_from_path(&self, path: &Path, session: &Session) -> Result<CompiledLibrary, Report> {
         match self.kind {
             LibraryKind::Masm => {
@@ -127,6 +143,7 @@ impl LinkLibrary {
         }
     }
 
+    #[cfg(feature = "std")]
     fn find(&self, session: &Session) -> Result<PathBuf, Report> {
         use std::fs;
 
@@ -186,6 +203,7 @@ impl LinkLibrary {
     }
 }
 
+#[cfg(feature = "std")]
 impl clap::builder::ValueParserFactory for LinkLibrary {
     type Parser = LinkLibraryParser;
 
@@ -194,9 +212,12 @@ impl clap::builder::ValueParserFactory for LinkLibrary {
     }
 }
 
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct LinkLibraryParser;
+
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for LinkLibraryParser {
     type Value = LinkLibrary;
 
@@ -224,7 +245,7 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
         &self,
         _cmd: &clap::Command,
         _arg: Option<&clap::Arg>,
-        value: &OsStr,
+        value: &std::ffi::OsStr,
     ) -> Result<Self::Value, clap::error::Error> {
         use clap::error::{Error, ErrorKind};
 

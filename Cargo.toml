@@ -3,10 +3,9 @@ resolver = "2"
 members = [
     "codegen/*",
     "dialects/*",
-    "frontend-wasm",
+    "eval",
     "frontend-wasm2",
     "hir",
-    "hir2",
     "hir-analysis",
     "hir-macros",
     "hir-symbol",
@@ -31,7 +30,7 @@ exclude = [
 
 [workspace.package]
 version = "0.0.7"
-rust-version = "1.84"
+rust-version = "1.86"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
 repository = "https://github.com/0xPolygonMiden/compiler"
@@ -45,21 +44,24 @@ edition = "2021"
 publish = false
 
 [workspace.dependencies]
-anyhow = "1.0"
+anyhow = { version = "1.0", default-features = false }
 bitflags = "2.4"
-bitcode = { version = "0.6.3", default-features = false, features = ["serde"] }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-clap = { version = "4.1", default-features = false, features = [
+blink-alloc = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "nightly",
+] }
+clap = { version = "4.5", default-features = false, features = [
     "derive",
     "std",
     "env",
     "help",
+    "suggestions",
+    "error-context",
 ] }
 cranelift-entity = "0.108"
-cranelift-bforest = "0.108"
 compact_str = { version = "0.8", default-features = false }
 env_logger = "0.11"
-either = { version = "1.10", default-features = false }
 expect-test = "1.5"
 hashbrown = { version = "0.14", features = ["nightly"] }
 Inflector = "0.11"
@@ -67,7 +69,6 @@ intrusive-collections = "0.9"
 inventory = "0.3"
 log = "0.4"
 miette = { package = "miden-miette", version = "7.1.1" }
-#miette = { version = "7.1", git = "https://github.com/bitwalker/miette", branch = "no-std" }
 paste = "1.0"
 parking_lot = "0.12"
 parking_lot_core = "0.9"
@@ -77,28 +78,21 @@ proptest = "1.4"
 rustc-hash = { version = "2.0", default-features = false }
 serde = { version = "1.0.208", features = ["serde_derive", "alloc", "rc"] }
 serde_repr = "0.1.19"
-serde_bytes = "0.11.15"
 smallvec = { version = "1.13", features = [
     "union",
     "const_generics",
     "const_new",
     "drain_filter",
 ] }
-smallstr = { version = "0.3", features = ["union"] }
 thiserror = { package = "miden-thiserror", version = "1.0" }
-#thiserror = { version = "1.0", git = "https://github.com/bitwalker/thiserror", branch = "no-std" }
 toml = { version = "0.8", features = ["preserve_order"] }
 derive_more = "0.99"
-indexmap = "2.7"
 miden-formatting = { version = "0.1", default-features = false }
-miden-parsing = "0.1"
-
 # miden-assembly = { version = "0.11.0", path = "../vm-aux/assembly" }
 # miden-core = { version = "0.11.0", path = "../vm-aux/core" }
 # miden-processor = { version = "0.11.0", path = "../vm-aux/processor" }
 # miden-stdlib = { version = "0.11.0", path = "../vm-aux/stdlib" }
 # miden-package = { version = "0.11.0", path = "../vm-aux/package" }
-
 miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 miden-core = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 miden-processor = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
@@ -106,17 +100,19 @@ miden-stdlib = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/mi
     "with-debug-info",
 ] }
 miden-mast-package = { version = "0.12.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
-
 midenc-codegen-masm = { version = "0.0.7", path = "codegen/masm" }
+midenc-dialect-arith = { version = "0.0.7", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }
+midenc-dialect-scf = { version = "0.0.7", path = "dialects/scf" }
+midenc-dialect-cf = { version = "0.0.7", path = "dialects/cf" }
+midenc-dialect-ub = { version = "0.0.7", path = "dialects/ub" }
 midenc-hir = { version = "0.0.7", path = "hir" }
-midenc-hir2 = { version = "0.0.7", path = "hir2" }
 midenc-hir-analysis = { version = "0.0.7", path = "hir-analysis" }
+midenc-hir-eval = { version = "0.0.7", path = "eval" }
 midenc-hir-macros = { version = "0.0.7", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.0.7", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.0.7", path = "hir-transform" }
 midenc-hir-type = { version = "0.0.7", path = "hir-type" }
-midenc-frontend-wasm = { version = "0.0.7", path = "frontend-wasm" }
 midenc-frontend-wasm2 = { version = "0.0.7", path = "frontend-wasm2" }
 midenc-compile = { version = "0.0.7", path = "midenc-compile" }
 midenc-driver = { version = "0.0.7", path = "midenc-driver" }
@@ -125,9 +121,7 @@ midenc-session = { version = "0.0.7", path = "midenc-session" }
 cargo-miden = { version = "0.0.7", path = "tools/cargo-miden" }
 miden-integration-tests = { version = "0.0.0", path = "tests/integration" }
 wat = "1.0.69"
-blake3 = "1.5"
 tokio = { version = "1.39.2", features = ["rt", "time", "macros"] }
-tokio-util = "0.7.11"
 
 [profile.dev]
 lto = false
