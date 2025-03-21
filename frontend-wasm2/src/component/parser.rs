@@ -10,10 +10,10 @@ use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
 use midenc_session::{diagnostics::IntoDiagnostic, Session};
 use wasmparser::{
-    types::{
+    component_types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,
-        Types,
     },
+    types::Types,
     Chunk, ComponentImportName, Encoding, Parser, Payload, Validator,
 };
 
@@ -222,6 +222,7 @@ pub enum LocalInitializer<'data> {
     ResourceNew(AliasableResourceId, SignatureIndex),
     ResourceRep(AliasableResourceId, SignatureIndex),
     ResourceDrop(AliasableResourceId, SignatureIndex),
+    ResourceDropAsync(AliasableResourceId, SignatureIndex),
 
     // core wasm modules
     ModuleStatic(StaticModuleIndex),
@@ -288,6 +289,8 @@ pub struct LocalCanonicalOptions {
     pub memory: Option<MemoryIndex>,
     pub realloc: Option<FuncIndex>,
     pub post_return: Option<FuncIndex>,
+    pub is_async: bool,
+    pub async_callback: Option<FuncIndex>,
 }
 
 /// Action to take after parsing a payload.
@@ -541,12 +544,46 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     core_func_index += 1;
                     LocalInitializer::ResourceDrop(resource, ty)
                 }
+                wasmparser::CanonicalFunction::ResourceDropAsync { resource } => {
+                    let resource = types.component_any_type_at(resource).unwrap_resource();
+                    let ty = self.core_func_signature(core_func_index);
+                    core_func_index += 1;
+                    LocalInitializer::ResourceDropAsync(resource, ty)
+                }
                 wasmparser::CanonicalFunction::ResourceRep { resource } => {
                     let resource = types.component_any_type_at(resource).unwrap_resource();
                     let ty = self.core_func_signature(core_func_index);
                     core_func_index += 1;
                     LocalInitializer::ResourceRep(resource, ty)
                 }
+                wasmparser::CanonicalFunction::ErrorContextNew { .. }
+                | wasmparser::CanonicalFunction::ErrorContextDrop
+                | wasmparser::CanonicalFunction::ErrorContextDebugMessage { .. }
+                | wasmparser::CanonicalFunction::ThreadSpawn { .. }
+                | wasmparser::CanonicalFunction::ThreadAvailableParallelism
+                | wasmparser::CanonicalFunction::Yield { .. }
+                | wasmparser::CanonicalFunction::BackpressureSet
+                | wasmparser::CanonicalFunction::WaitableJoin
+                | wasmparser::CanonicalFunction::WaitableSetNew
+                | wasmparser::CanonicalFunction::WaitableSetDrop
+                | wasmparser::CanonicalFunction::WaitableSetPoll { .. }
+                | wasmparser::CanonicalFunction::WaitableSetWait { .. }
+                | wasmparser::CanonicalFunction::FutureNew { .. }
+                | wasmparser::CanonicalFunction::FutureRead { .. }
+                | wasmparser::CanonicalFunction::FutureWrite { .. }
+                | wasmparser::CanonicalFunction::FutureCancelRead { .. }
+                | wasmparser::CanonicalFunction::FutureCancelWrite { .. }
+                | wasmparser::CanonicalFunction::FutureCloseWritable { .. }
+                | wasmparser::CanonicalFunction::FutureCloseReadable { .. }
+                | wasmparser::CanonicalFunction::SubtaskDrop
+                | wasmparser::CanonicalFunction::TaskReturn { .. }
+                | wasmparser::CanonicalFunction::StreamNew { .. }
+                | wasmparser::CanonicalFunction::StreamRead { .. }
+                | wasmparser::CanonicalFunction::StreamWrite { .. }
+                | wasmparser::CanonicalFunction::StreamCancelRead { .. }
+                | wasmparser::CanonicalFunction::StreamCancelWrite { .. }
+                | wasmparser::CanonicalFunction::StreamCloseWritable { .. }
+                | wasmparser::CanonicalFunction::StreamCloseReadable { .. } => unimplemented!(),
             };
             // dbg!(&init);
             self.result.initializers.push(init);
@@ -902,6 +939,8 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
         memory: None,
         realloc: None,
         post_return: None,
+        is_async: false,
+        async_callback: None,
     };
     for opt in opts {
         match opt {
@@ -925,6 +964,12 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
             wasmparser::CanonicalOption::PostReturn(idx) => {
                 let idx = FuncIndex::from_u32(*idx);
                 ret.post_return = Some(idx);
+            }
+            wasmparser::CanonicalOption::Async => {
+                ret.is_async = true;
+            }
+            wasmparser::CanonicalOption::Callback(idx) => {
+                ret.async_callback = Some(FuncIndex::from_u32(*idx));
             }
         }
     }

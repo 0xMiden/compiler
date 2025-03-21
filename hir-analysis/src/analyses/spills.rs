@@ -95,16 +95,16 @@ use crate::{
 ///    of I that are not in W (because they were spilled), and we may need to spill values from W to
 ///    ensure that the stack depth <= K. The specific effects for I are computed as follows:
 ///    a. All operands of I not in W, must be reloaded in front of I, thus adding them to W.
-///       This is also one means by which values are added to S, as by definition a reload
-///       implies that the value must have been spilled, or it would still be in W. Thus, when
-///       we emit reloads, we also ensure that the reloaded value is added to S.
+///    This is also one means by which values are added to S, as by definition a reload implies that
+///    the value must have been spilled, or it would still be in W. Thus, when we emit reloads, we
+///    also ensure that the reloaded value is added to S.
 ///    b. If a reload would cause |W| to exceed K, we must select values in W to spill. Candidates
-///       are selected from the set of values in W which are not operands of I, prioritized first
-///       by greatest next-use distance, then by stack consumption, as determined by the
-///       representation of the value type on the operand stack.
-///    c. By definition, none of I's results can be in W directly in front of I, so we must
-///       always ensure that W has sufficient capacity to hold all of I's results. The analysis
-///       of sufficient capacity is somewhat subtle:
+///    are selected from the set of values in W which are not operands of I, prioritized first by
+///    greatest next-use distance, then by stack consumption, as determined by the representation of
+///    the value type on the operand stack.
+///    c. By definition, none of I's results can be in W directly in front of I, so we must always
+///    ensure that W has sufficient capacity to hold all of I's results. The analysis of sufficient
+///    capacity is somewhat subtle:
 ///       - Any of I's operands that are live-at I, but _not_ live-after I, do _not_ count towards
 ///         the operand stack usage when calculating available capacity for the results. This is
 ///         because those operands will be consumed, and their space can be re-used for results.
@@ -114,11 +114,11 @@ use crate::{
 ///         or are operands of I which are live-after I. Selection criteria is the same as before.
 ///
 ///    d. Operands of I which are _not_ live-after I, are removed from W on exit from I, thus W
-///       reflects only those values which are live at the current program point.
+///    reflects only those values which are live at the current program point.
 ///    e. Lastly, when we select a value to be spilled, we only emit spill instructions for those
-///       values which are not yet in S, i.e. they have not yet been spilled; and which have a
-///       finite next-use distance, i.e. the value is still live. If a value to be spilled _is_
-///       in S and/or is unused after that point in the program, we can elide the spill entirely.
+///    values which are not yet in S, i.e. they have not yet been spilled; and which have a finite
+///    next-use distance, i.e. the value is still live. If a value to be spilled _is_ in S and/or is
+///    unused after that point in the program, we can elide the spill entirely.
 ///
 /// What we've described above represents both the analysis itself, as well as the effects of
 /// applying that analysis to the actual control flow graph of the function. However, doing so
@@ -188,22 +188,22 @@ use crate::{
 /// 2. In each block, working towards the start of the block from the end, visit each instruction
 ///    until one of the following occurs:
 ///    a. We find a use of a value in S. We append the use to the list of other uses of that value
-///       which are awaiting a rewrite while we search for the nearest dominating definition.
+///    which are awaiting a rewrite while we search for the nearest dominating definition.
 ///    b. We find a reload of a value in S. This reload is, by construction, the nearest dominating
-///       definition for all uses of the reloaded value that we have found so far. We rewrite all of
-///       those uses to reference the reloaded value, and remove them from the list.
+///    definition for all uses of the reloaded value that we have found so far. We rewrite all of
+///    those uses to reference the reloaded value, and remove them from the list.
 ///    c. We find the original definition of a value in S. This is similar to what happens when we
-///       find a reload, except no rewrite is needed, so we simply remove all pending uses of that
-///       value from the list.
+///    find a reload, except no rewrite is needed, so we simply remove all pending uses of that
+///    value from the list.
 ///    d. We reach the top of the block. Note that block parameters are treated as definitions, so
-///       those are handled first as described in the previous point. However, an additional step
-///       is required here: If the current block is in the iterated dominance frontier for S, i.e.
-///       for any value in S, the current block is in the dominance frontier of the original
-///       definition of that value - then for each such value for which we have found at least one
-///       use, we must add a new block parameter representing that value; rewrite all uses we have
-///       found so far to use the block parameter instead; remove those uses from the list; and
-///       lastly, rewrite the branch instruction in each predecessor to pass the value as a new block
-///       argument when branching to the current block.
+///    those are handled first as described in the previous point. However, an additional step is
+///    required here: If the current block is in the iterated dominance frontier for S, i.e. for any
+///    value in S, the current block is in the dominance frontier of the original definition of that
+///    value - then for each such value for which we have found at least one use, we must add a new
+///    block parameter representing that value; rewrite all uses we have found so far to use the
+///    block parameter instead; remove those uses from the list; and lastly, rewrite the branch
+///    instruction in each predecessor to pass the value as a new block argument when branching to
+///    the current block.
 /// 3. When we start processing a block, the union of the set of unresolved uses found in each
 ///    successor, forms the initial state of that set for the current block. If a block has no
 ///    successors, then the set is initially empty. This is how we propagate uses up the dominance

@@ -8,7 +8,7 @@ macro_rules! has_no_effects {
             fn effects(
                 &self,
             ) -> ::midenc_hir::effects::EffectIterator<::midenc_hir::effects::MemoryEffect> {
-                ::midenc_hir::effects::EffectIterator::from_smallvec(smallvec::smallvec![])
+                ::midenc_hir::effects::EffectIterator::from_smallvec(::midenc_hir::smallvec![])
             }
         }
     };

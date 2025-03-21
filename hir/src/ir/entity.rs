@@ -2,8 +2,8 @@ mod group;
 mod list;
 mod storage;
 
-use alloc::alloc::{AllocError, Layout};
 use core::{
+    alloc::{AllocError, Layout},
     any::Any,
     cell::{Cell, UnsafeCell},
     fmt,
@@ -330,7 +330,7 @@ impl<T: 'static, Metadata: 'static> RawEntityRef<T, Metadata> {
             RawEntityRef::from_ptr(RawEntityRef::allocate_for_layout(
                 metadata,
                 Layout::new::<T>(),
-                |layout| arena.allocator().allocate(layout),
+                |layout| arena.allocator().allocate(layout).map_err(|_| AllocError),
                 <*mut u8>::cast,
             ))
         }

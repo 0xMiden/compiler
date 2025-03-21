@@ -20,7 +20,7 @@ use crate::*;
 /// 2. Either:
 ///    a. Has a single predecessor
 ///    b. The `builtin.return` returns no value, or returns a value whose definition is either a
-///       block argument of the successor, or dominates the predecessor `cf.br`
+///    block argument of the successor, or dominates the predecessor `cf.br`
 pub struct SimplifyBrToReturn {
     info: PatternInfo,
 }

@@ -191,6 +191,51 @@ description = "Clean build artifacts"
 command = "cargo"
 args = ["clean", "${@}"]
 
+[tasks.update]
+category = "Dependencies"
+description = "Update dependencies to latest semver-compatible version"
+command = "cargo"
+args = ["update"]
+
+[tasks.outdated]
+category = "Dependencies"
+description = "Look for dependencies with newer, possibly-incompatible versions"
+command = "cargo"
+args = ["outdated", "--workspace", "--root-deps-only"]
+
+[tasks.check-deps]
+category = "Dependencies"
+description = "Check dependencies for lack of use, duplicates, vulnerabilities, etc."
+run_task = [
+    { name = [
+        "unused",
+    ] },
+    { name = [
+        "duplicates",
+    ] },
+    { name = [
+        "audit",
+    ] },
+]
+
+[tasks.unused]
+category = "Dependencies"
+description = "Check for unused dependencies"
+command = "cargo"
+args = ["machete", "--with-metadata"]
+
+[tasks.duplicates]
+category = "Dependencies"
+description = "Check dependencies for multiple versions of the same crate"
+command = "cargo"
+args = ["tree", "--duplicate"]
+
+[tasks.audit]
+category = "Dependencies"
+description = "Check dependencies for known vulnerabilities, deprecations"
+command = "cargo"
+args = ["audit"]
+
 [tasks.test]
 category = "Test"
 description = "Runs all tests"

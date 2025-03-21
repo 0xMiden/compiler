@@ -16,9 +16,4 @@ default = ["std"]
 std = ["midenc-hir/std"]
 
 [dependencies]
-log.workspace = true
 midenc-hir.workspace = true
-midenc-hir-symbol.workspace = true
-midenc-session.workspace = true
-bitvec.workspace = true
-smallvec.workspace = true

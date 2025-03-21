@@ -67,7 +67,7 @@
 // Based on wasmtime v16.0 Wasm component translation
 
 use midenc_hir::FxHashMap;
-use wasmparser::types;
+use wasmparser::{component_types, types};
 
 use crate::component::{
     ComponentTypes, ResourceIndex, RuntimeComponentInstanceIndex, TypeResourceTable,
@@ -110,7 +110,7 @@ pub struct ResourcesBuilder {
     /// A cache of previously visited `ResourceId` items and which table they
     /// correspond to. This is lazily populated as resources are visited and is
     /// exclusively used by the `convert` function below.
-    resource_id_to_table_index: FxHashMap<types::ResourceId, TypeResourceTableIndex>,
+    resource_id_to_table_index: FxHashMap<component_types::ResourceId, TypeResourceTableIndex>,
 
     /// A cache of the origin resource type behind a `ResourceId`.
     ///
@@ -120,7 +120,7 @@ pub struct ResourcesBuilder {
     /// phase. This is used to record the actual underlying type of a resource
     /// and where it originally comes from. When a resource is later referred to
     /// then a table is injected to be referred to.
-    resource_id_to_resource_index: FxHashMap<types::ResourceId, ResourceIndex>,
+    resource_id_to_resource_index: FxHashMap<component_types::ResourceId, ResourceIndex>,
 
     /// The current instance index that's being visited. This is updated as
     /// inliner frames are processed and components are instantiated.
@@ -143,7 +143,7 @@ impl ResourcesBuilder {
     /// any component it's assigned a new table, which is exactly what we want.
     pub fn convert(
         &mut self,
-        id: types::ResourceId,
+        id: component_types::ResourceId,
         types: &mut ComponentTypes,
     ) -> TypeResourceTableIndex {
         *self.resource_id_to_table_index.entry(id).or_insert_with(|| {
@@ -171,7 +171,7 @@ impl ResourcesBuilder {
     pub fn register_component_entity_type<'a>(
         &mut self,
         types: &'a types::TypesRef<'_>,
-        ty: types::ComponentEntityType,
+        ty: component_types::ComponentEntityType,
         path: &mut Vec<&'a str>,
         register: &mut dyn FnMut(&[&'a str]) -> ResourceIndex,
     ) {
@@ -181,8 +181,8 @@ impl ResourcesBuilder {
             // with the current path and that's inserted in to
             // `resource_id_to_resource_index` if the resource hasn't been seen
             // yet.
-            types::ComponentEntityType::Type {
-                created: types::ComponentAnyTypeId::Resource(id),
+            component_types::ComponentEntityType::Type {
+                created: component_types::ComponentAnyTypeId::Resource(id),
                 ..
             } => {
                 self.resource_id_to_resource_index
@@ -193,7 +193,7 @@ impl ResourcesBuilder {
             // Resources can be imported/defined through exports of instances so
             // all instance exports are walked here. Note the management of
             // `path` which is used for the recursive invocation of this method.
-            types::ComponentEntityType::Instance(id) => {
+            component_types::ComponentEntityType::Instance(id) => {
                 let ty = &types[id];
                 for (name, ty) in ty.exports.iter() {
                     path.push(name);
@@ -204,11 +204,11 @@ impl ResourcesBuilder {
 
             // None of these items can introduce a new component type, so
             // there's no need to recurse over these.
-            types::ComponentEntityType::Func(_)
-            | types::ComponentEntityType::Type { .. }
-            | types::ComponentEntityType::Module(_)
-            | types::ComponentEntityType::Component(_)
-            | types::ComponentEntityType::Value(_) => {}
+            component_types::ComponentEntityType::Func(_)
+            | component_types::ComponentEntityType::Type { .. }
+            | component_types::ComponentEntityType::Module(_)
+            | component_types::ComponentEntityType::Component(_)
+            | component_types::ComponentEntityType::Value(_) => {}
         }
     }
 
@@ -216,7 +216,7 @@ impl ResourcesBuilder {
     /// defined by the `ty` provided.
     ///
     /// This is used when a local resource is defined within a component for example.
-    pub fn register_resource(&mut self, id: types::ResourceId, ty: ResourceIndex) {
+    pub fn register_resource(&mut self, id: component_types::ResourceId, ty: ResourceIndex) {
         let prev = self.resource_id_to_resource_index.insert(id, ty);
         assert!(prev.is_none());
     }

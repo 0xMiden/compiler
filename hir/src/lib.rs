@@ -11,7 +11,6 @@
 #![feature(rustc_attrs)]
 #![feature(debug_closure_helpers)]
 #![feature(trait_alias)]
-#![feature(trait_upcasting)]
 #![feature(try_trait_v2)]
 #![feature(try_trait_v2_residual)]
 #![feature(tuple_trait)]
@@ -34,7 +33,6 @@
 #![feature(never_type)]
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_array_assume_init)]
-#![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(array_into_iter_constructors)]
 #![feature(slice_range)]
@@ -80,6 +78,8 @@ pub mod pass;
 pub mod patterns;
 mod program_point;
 pub mod version;
+
+pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{

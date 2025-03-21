@@ -16,10 +16,6 @@ use core::fmt;
 /// convention used at a given call site, matches the convention of the callee, i.e. it must
 /// be the case that caller and callee agree on the convention used for that call.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
-)]
 #[repr(u8)]
 pub enum CallConv {
     /// This convention passes all arguments and results by value, and thus requires that the types

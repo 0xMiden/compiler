@@ -47,3 +47,6 @@ package = "miden:cross-ctx-note"
 "miden:base" = { path = "../wit-sdk/miden.wit" }
 "miden:core-import" = { path = "../wit-sdk/miden-core-import.wit" }
 "miden:cross-ctx-account" = { path = "../cross-ctx-account/wit/cross-ctx-account.wit" }
+
+[package.metadata.cargo-machete]
+ignored = ["wit-bindgen-rt"]
