@@ -3,7 +3,11 @@ pub mod mem;
 
 use std::{collections::HashSet, sync::OnceLock};
 
-use midenc_hir::{interner::Symbol, Builder, FunctionIdent, FunctionType, SourceSpan, ValueRef};
+use midenc_hir::{
+    dialects::builtin::{ModuleBuilder, WorldBuilder},
+    interner::Symbol,
+    Builder, FunctionIdent, FunctionType, Signature, SourceSpan, ValueRef,
+};
 
 use crate::{
     error::WasmResult,
@@ -70,5 +74,42 @@ pub fn intrinsics_conversion_result(func_id: &FunctionIdent) -> IntrinsicsConver
         }
         felt::MODULE_ID => IntrinsicsConversionResult::MidenVmOp,
         _ => panic!("No intrinsics conversion result found for {}", func_id),
+    }
+}
+
+/// Returns [`CallableFunction`] for a given intrinsics in core Wasm module imports
+pub fn process_intrinsics_import(
+    world_builder: &mut WorldBuilder,
+    import_func_id: FunctionIdent,
+    sig: Signature,
+) -> CallableFunction {
+    if intrinsics_conversion_result(&import_func_id).is_operation() {
+        CallableFunction {
+            wasm_id: import_func_id,
+            // Call to this intrinsic functon will be translated as an IR op
+            function_ref: None,
+            signature: sig.clone(),
+        }
+    } else {
+        // This intrinsic function will be defined further down the pipeline.
+        // We are declaring it, creating the module if needed.
+        let import_module_ref = if let Some(found_module_ref) =
+            world_builder.find_module(import_func_id.module.as_symbol())
+        {
+            found_module_ref
+        } else {
+            world_builder
+                .declare_module(import_func_id.module)
+                .expect("failed to create a module for imports")
+        };
+        let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+        let import_func_ref = import_module_builder
+            .define_function(import_func_id.function, sig.clone())
+            .expect("failed to create an import function");
+        CallableFunction {
+            wasm_id: import_func_id,
+            function_ref: Some(import_func_ref),
+            signature: sig,
+        }
     }
 }

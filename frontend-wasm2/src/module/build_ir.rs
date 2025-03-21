@@ -4,27 +4,24 @@ use std::rc::Rc;
 use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
-        self, BuiltinOpBuilder, Component, ComponentBuilder, Function, Module, ModuleBuilder,
-        ModuleRef, World, WorldBuilder, WorldRef,
+        self, BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder, World, WorldBuilder,
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, CallConv, Context, Ident, Immediate, Op, OpBuilder, Visibility,
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
 };
-use midenc_session::{
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan},
-    Session,
-};
+use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
 
-use super::{module_translation_state::ModuleTranslationState, MemoryIndex};
+use super::{
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
+};
 use crate::{
     error::WasmResult,
-    miden_abi::miden_abi_function_type,
     module::{
         func_translator::FuncTranslator,
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
-        types::{ir_func_sig, ir_func_type, ir_type, ModuleTypes},
+        types::ir_type,
     },
     WasmTranslationConfig,
 };
@@ -53,7 +50,7 @@ pub fn translate_module_as_component(
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
-    let module_types = module_types_builder.finish();
+    let module_types = module_types_builder;
 
     // If a world wasn't provided to us, create one
     let world_ref = match config.world {
@@ -68,7 +65,7 @@ pub fn translate_module_as_component(
     let component_ref = world_builder.define_component(ns, name, ver)?;
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();
-    let mut module_ref = cb.define_module(Ident::from(module_name)).unwrap();
+    let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
 
     let mut module_builder = ModuleBuilder::new(module_ref);
     let mut module_state = ModuleTranslationState::new(
@@ -76,9 +73,9 @@ pub fn translate_module_as_component(
         &mut module_builder,
         &mut world_builder,
         &module_types,
-        vec![],
+        FxHashMap::default(),
         context.diagnostics(),
-    );
+    )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
 
     Ok(component_ref)
@@ -86,12 +83,12 @@ pub fn translate_module_as_component(
 
 pub fn build_ir_module(
     parsed_module: &mut ParsedModule,
-    module_types: &ModuleTypes,
+    module_types: &ModuleTypesBuilder,
     module_state: &mut ModuleTranslationState,
     _config: &WasmTranslationConfig,
     context: Rc<Context>,
 ) -> WasmResult<()> {
-    let memory_size = parsed_module
+    let _memory_size = parsed_module
         .module
         .memories
         .get(MemoryIndex::from_u32(0))
@@ -126,16 +123,8 @@ pub fn build_ir_module(
     let func_body_inputs = mem::take(&mut parsed_module.function_body_inputs);
     for (defined_func_idx, body_data) in func_body_inputs {
         let func_index = parsed_module.module.func_index(defined_func_idx);
-        let func_type = &parsed_module.module.functions[func_index];
         let func_name = parsed_module.module.func_name(func_index).as_str();
-        let wasm_func_type = module_types[func_type.signature].clone();
-        let ir_func_type = ir_func_type(&wasm_func_type, context.diagnostics())?;
-        let visibility = if parsed_module.module.is_exported(func_index.into()) {
-            Visibility::Public
-        } else {
-            Visibility::Internal
-        };
-        let sig = ir_func_sig(&ir_func_type, CallConv::SystemV, visibility);
+
         let mut function_ref = module_state
             .module_builder
             .get_function(func_name)
@@ -201,14 +190,14 @@ fn build_globals(
                     .into_report()
             })?;
         let context = global_var_ref.borrow().as_operation().context_rc().clone();
-        let mut init_region_ref = {
+        let init_region_ref = {
             let mut global_var = global_var_ref.borrow_mut();
             let region_ref = global_var.initializer_mut().as_region_ref();
             region_ref
         };
         let mut op_builder = OpBuilder::new(context);
         op_builder.create_block(init_region_ref, None, &[]);
-        op_builder.ret_imm(global_init.to_imm(wasm_module, diagnostics)?, span);
+        op_builder.ret_imm(global_init.to_imm(wasm_module, diagnostics)?, span)?;
     }
     Ok(())
 }

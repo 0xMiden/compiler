@@ -10,6 +10,7 @@ use core::{hash::Hash, ops::Index};
 
 use anyhow::{bail, Result};
 use cranelift_entity::{EntityRef, PrimaryMap};
+use indexmap::IndexMap;
 use midenc_hir::FxHashMap;
 use wasmparser::{collections::IndexSet, names::KebabString, types};
 
@@ -979,7 +980,7 @@ pub struct TypeComponent {
 #[derive(Default)]
 pub struct TypeComponentInstance {
     /// The list of exports that this component has along with their types.
-    pub exports: FxHashMap<String, TypeDef>,
+    pub exports: IndexMap<String, TypeDef>,
 }
 
 /// A component function type in the component model.

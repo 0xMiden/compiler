@@ -270,12 +270,17 @@ fn load_package(session: &Session) -> Result<Arc<miden_mast_package::Package>, R
             let bytes = std::fs::read(path).into_diagnostic()?;
             miden_mast_package::Package::read_from_bytes(&bytes)
                 .map(Arc::new)
-                .into_diagnostic()?
+                .map_err(|e| {
+                    Report::msg(format!(
+                        "failed to load Miden package from {}: {e}",
+                        path.display()
+                    ))
+                })?
         }
         InputType::Stdin { input, .. } => {
             miden_mast_package::Package::read_from_bytes(input.as_slice())
                 .map(Arc::new)
-                .into_diagnostic()?
+                .map_err(|e| Report::msg(format!("failed to load Miden package from stdin: {e}")))?
         }
     };
 

@@ -1,7 +1,7 @@
 use crate::{
     dialects::builtin::{
-        ComponentId, ComponentRef, Module, ModuleRef, PrimComponentBuilder, PrimModuleBuilder,
-        WorldRef,
+        Component, ComponentId, ComponentRef, Module, ModuleRef, PrimComponentBuilder,
+        PrimModuleBuilder, WorldRef,
     },
     version::Version,
     Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolTable,
@@ -55,6 +55,15 @@ impl WorldBuilder {
             }
         );
         Ok(component_ref)
+    }
+
+    pub fn find_component(&self, id: &ComponentId) -> Option<ComponentRef> {
+        self.world.borrow().get(SymbolName::intern(id)).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation()
+                .downcast_ref::<Component>()
+                .map(|c| c.as_component_ref())
+        })
     }
 
     /// Declare a new world-level module `name`

@@ -5,8 +5,8 @@
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
 use midenc_hir::{
-    types::Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Linkage,
-    Signature, StructType, Type,
+    Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Signature,
+    StructType, Type, Visibility,
 };
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
@@ -62,7 +62,7 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, String> {
         Type::Array(elem_ty, len) => vec![AbiParam::new(*elem_ty.clone()); *len],
         Type::List(elem_ty) => vec![
             // pointer to the list element type
-            AbiParam::sret(*elem_ty.clone()),
+            AbiParam::sret(Type::Ptr(elem_ty.clone())),
             // length of the list
             AbiParam::new(Type::I32),
         ],
@@ -130,7 +130,7 @@ pub fn flatten_function_type(func_ty: &FunctionType, cc: CallConv) -> Result<Sig
         params: flat_params,
         results: flat_results,
         cc,
-        linkage: Linkage::External,
+        visibility: Visibility::Public,
     })
 }
 

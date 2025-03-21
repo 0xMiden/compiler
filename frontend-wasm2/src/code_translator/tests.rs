@@ -1,11 +1,8 @@
 use core::fmt::Write;
-use std::{any::Any, rc::Rc};
+use std::rc::Rc;
 
 use expect_test::expect_file;
-use midenc_hir::{
-    dialects::builtin::{self, Module},
-    Op, Operation, Walk, WalkResult,
-};
+use midenc_hir::{dialects::builtin, Op, Operation, WalkResult};
 
 use crate::{translate, WasmTranslationConfig};
 
@@ -23,6 +20,7 @@ fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
             (func $test_wrapper
                 {wat_op}
             )
+            (export "test_wrapper" (func $test_wrapper))
         )"#,
     );
     let wasm = wat::parse_str(wat).unwrap();

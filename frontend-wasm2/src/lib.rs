@@ -4,8 +4,8 @@
 #![deny(warnings)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// TODO: remove when completed
-#![allow(unused)]
+// Allow unused code that we're going to need for implementing the missing Wasm features (call_direct, tables, etc.)
+#![allow(dead_code)]
 
 extern crate alloc;
 
@@ -18,9 +18,6 @@ mod miden_abi;
 mod module;
 mod ssa;
 mod translation_utils;
-
-#[cfg(test)]
-mod test_utils;
 
 use std::rc::Rc;
 
@@ -44,8 +41,7 @@ pub fn translate(
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
         translate_module_as_component(wasm, config, context)
     } else {
-        todo!()
-        // translate_component(wasm, config, context)
+        translate_component(wasm, config, context)
     }
 }
 

@@ -115,6 +115,7 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Bitcast>();
         info.register_operation::<ops::ConstantBytes>();
         info.register_operation::<ops::Exec>();
+        info.register_operation::<ops::Call>();
         info.register_operation::<ops::Store>();
         info.register_operation::<ops::StoreLocal>();
         info.register_operation::<ops::Load>();

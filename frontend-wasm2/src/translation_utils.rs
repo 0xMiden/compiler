@@ -2,7 +2,6 @@
 
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_arith::ArithOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{AbiParam, Builder, CallConv, Signature, SourceSpan, ValueRef, Visibility};
 use midenc_hir_type::{FunctionType, Type};
 use midenc_session::DiagnosticsHandler;

@@ -13,17 +13,15 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use cranelift_entity::packed_option::ReservedValue;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::{assertions, HirOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, GlobalSymbolBuilder, GlobalVariable},
-    traits::InferTypeOpInterface,
-    BlockRef, Builder, CallableOpInterface, Felt, FieldElement, Immediate, Op, SymbolTable,
+    dialects::builtin::BuiltinOpBuilder,
+    BlockRef, Builder, Felt, FieldElement, Immediate,
     Type::{self, *},
-    UnsafeIntrusiveEntityRef, ValueRef,
+    ValueRef,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
@@ -31,12 +29,11 @@ use wasmparser::{MemArg, Operator};
 use crate::{
     error::WasmResult,
     intrinsics::{convert_intrinsics_call, is_miden_intrinsics_module},
-    miden_abi::{is_miden_abi_module, transform::transform_miden_abi_call},
     module::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
         module_translation_state::ModuleTranslationState,
-        types::{ir_type, BlockType, FuncIndex, GlobalIndex, ModuleTypes},
+        types::{BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
         Module,
     },
     ssa::Variable,
@@ -54,7 +51,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &Module,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -142,9 +139,9 @@ pub fn translate_operator<B: ?Sized + Builder>(
                     state.push1(builder.select(cond, arg1, arg2, span)?);
                 }
                 wasmparser::ValType::I64 => {
-                    todo!()
-                    // let cond = builder.neq_imm(cond, Immediate::I64(0), span);
-                    // state.push1(builder.select(cond, arg1, arg2, span)?);
+                    let imm = builder.imm(Immediate::I64(0), span);
+                    let cond = builder.neq(cond, imm, span)?;
+                    state.push1(builder.select(cond, arg1, arg2, span)?);
                 }
                 ty => panic!("unsupported value type for 'select': {ty}"),
             };
@@ -165,10 +162,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_if(blockty, state, builder, mod_types, diagnostics, span)?;
         }
         Operator::Else => translate_else(state, builder, span)?,
-        Operator::End => translate_end(state, builder, span),
+        Operator::End => translate_end(state, builder, span)?,
 
         /**************************** Branch instructions *********************************/
-        Operator::Br { relative_depth } => translate_br(state, relative_depth, builder, span),
+        Operator::Br { relative_depth } => translate_br(state, relative_depth, builder, span)?,
         Operator::BrIf { relative_depth } => {
             translate_br_if(*relative_depth, builder, state, span)?
         }
@@ -210,7 +207,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 let count = builder.bitcast(count_i32, Type::U32, span)?;
                 let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
                 let src = prepare_addr(src_i32, &U8, None, builder, span)?;
-                builder.memcpy(src, dst, count, span);
+                builder.memcpy(src, dst, count, span)?;
             } else {
                 unsupported_diag!(diagnostics, "MemoryCopy: only single memory is supported");
             }
@@ -226,7 +223,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let value = builder.trunc(value, Type::U8, span)?;
             let num_bytes = builder.bitcast(num_bytes, Type::U32, span)?;
             let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
-            builder.memset(dst, num_bytes, value, span);
+            builder.memset(dst, num_bytes, value, span)?;
         }
         /******************************* Load instructions ***********************************/
         Operator::I32Load8U { memarg } => {
@@ -267,7 +264,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::I64Store { memarg } => translate_store(I64, memarg, state, builder, span)?,
         Operator::F32Store { memarg } => translate_store(Felt, memarg, state, builder, span)?,
         Operator::I32Store8 { memarg } | Operator::I64Store8 { memarg } => {
-            translate_store(U8, memarg, state, builder, span);
+            translate_store(U8, memarg, state, builder, span)?;
         }
         Operator::I32Store16 { memarg } | Operator::I64Store16 { memarg } => {
             translate_store(U16, memarg, state, builder, span)?;
@@ -684,7 +681,7 @@ fn prepare_addr<B: ?Sized + Builder>(
             // Generate alignment assertion - aligned addresses should always produce 0 here
             let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
             let align_offset = builder.r#mod(full_addr_int, imm, span)?;
-            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span);
+            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
         }
     };
     builder.inttoptr(full_addr_int, Type::Ptr(ptr_ty.clone().into()), span)
@@ -696,9 +693,9 @@ fn translate_call<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
     function_index: FuncIndex,
     span: SourceSpan,
-    diagnostics: &DiagnosticsHandler,
+    _diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let defined_func = module_state.get_direct_func(function_index, diagnostics)?;
+    let defined_func = module_state.get_direct_func(function_index)?;
     let wasm_sig = defined_func.signature.clone();
     let num_wasm_args = wasm_sig.params().len();
     let args = func_state.peekn(num_wasm_args);
@@ -706,27 +703,7 @@ fn translate_call<B: ?Sized + Builder>(
         let results = convert_intrinsics_call(&defined_func, args, builder, span)?;
         func_state.popn(num_wasm_args);
         func_state.pushn(&results);
-    }
-    // else if is_miden_abi_module(func_id.module.as_symbol()) {
-    //     // Miden SDK function call, transform the call to the Miden ABI if needed
-    //     let results = transform_miden_abi_call(func_id, args, builder, span, diagnostics);
-    //     assert_eq!(
-    //         wasm_sig.results().len(),
-    //         results.len(),
-    //         "Adapted function call results quantity are not the same as the original Wasm \
-    //          function results quantity for function {}",
-    //         func_id
-    //     );
-    //     assert_eq!(
-    //         wasm_sig.results().iter().map(|p| p.ty).collect::<Vec<Type>>(),
-    //         results.iter().map(|r| (*r).borrow().ty().clone()).collect::<Vec<Type>>(),
-    //         "Adapted function call result types are not the same as the original Wasm function \
-    //          result types for function {}",
-    //         func_id
-    //     );
-    //     func_state.popn(num_wasm_args);
-    //     func_state.pushn(&results);
-    else {
+    } else {
         let func_ref = defined_func
             .function_ref
             .expect("expected DefinedFunction::function_ref to be set");
@@ -760,7 +737,7 @@ fn translate_return<B: ?Sized + Builder>(
             }
         };
 
-        builder.ret(return_args, span);
+        builder.ret(return_args, span)?;
     }
     state.popn(return_count);
     state.reachable = false;
@@ -772,7 +749,7 @@ fn translate_br<B: ?Sized + Builder>(
     relative_depth: &u32,
     builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
-) {
+) -> WasmResult<()> {
     let i = state.control_stack.len() - 1 - (*relative_depth as usize);
     let (return_count, br_destination) = {
         let frame = &mut state.control_stack[i];
@@ -786,9 +763,10 @@ fn translate_br<B: ?Sized + Builder>(
         (return_count, frame.br_destination())
     };
     let destination_args = state.peekn_mut(return_count).to_vec();
-    builder.br(br_destination, destination_args, span);
+    builder.br(br_destination, destination_args, span)?;
     state.popn(return_count);
     state.reachable = false;
+    Ok(())
 }
 
 fn translate_br_if<B: ?Sized + Builder>(
@@ -807,7 +785,7 @@ fn translate_br_if<B: ?Sized + Builder>(
     // cond is expected to be a i32 value
     let imm = builder.imm(Immediate::I32(0), span);
     let cond_i1 = builder.neq(cond, imm, span)?;
-    builder.cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span);
+    builder.cond_br(cond_i1, then_dest, then_args, else_dest, else_args, span)?;
     builder.seal_block(next_block); // The only predecessor is the current block.
     builder.switch_to_block(next_block);
     Ok(())
@@ -904,7 +882,7 @@ fn translate_block<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -918,7 +896,7 @@ fn translate_end<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
-) {
+) -> WasmResult<()> {
     // The `End` instruction pops the last control frame from the control stack, seals
     // the destination block (since `br` instructions targeting it only appear inside the
     // block and have already been translated) and modify the value stack to use the
@@ -928,7 +906,7 @@ fn translate_end<B: ?Sized + Builder>(
     let return_count = frame.num_return_values();
     let return_args = state.peekn_mut(return_count);
 
-    builder.br(next_block, return_args.iter().cloned(), span);
+    builder.br(next_block, return_args.iter().cloned(), span)?;
 
     // You might expect that if we just finished an `if` block that
     // didn't have a corresponding `else` block, then we would clean
@@ -953,6 +931,7 @@ fn translate_end<B: ?Sized + Builder>(
         .map(|ba| ba.borrow().as_value_ref())
         .collect();
     state.stack.extend_from_slice(&next_block_args);
+    Ok(())
 }
 
 fn translate_else<B: ?Sized + Builder>(
@@ -991,7 +970,7 @@ fn translate_else<B: ?Sized + Builder>(
                         let else_block =
                             builder.create_block_with_params(blocktype.params.clone(), span);
                         let params_len = blocktype.params.len();
-                        builder.br(destination, state.peekn(params_len).iter().copied(), span);
+                        builder.br(destination, state.peekn(params_len).iter().copied(), span)?;
                         state.popn(params_len);
 
                         builder.change_jump_destination(branch_inst, placeholder, else_block);
@@ -1003,7 +982,7 @@ fn translate_else<B: ?Sized + Builder>(
                             destination,
                             state.peekn(num_return_values).iter().copied(),
                             span,
-                        );
+                        )?;
                         state.popn(num_return_values);
                         else_block
                     }
@@ -1034,7 +1013,7 @@ fn translate_if<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -1095,7 +1074,7 @@ fn translate_loop<B: ?Sized + Builder>(
     blockty: &wasmparser::BlockType,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
@@ -1103,7 +1082,7 @@ fn translate_loop<B: ?Sized + Builder>(
     let loop_body = builder.create_block_with_params(blockty.params.clone(), span);
     let next = builder.create_block_with_params(blockty.results.clone(), span);
     let args = state.peekn(blockty.params.len()).to_vec();
-    builder.br(loop_body, args, span);
+    builder.br(loop_body, args, span)?;
     state.push_loop(loop_body, next, blockty.params.len(), blockty.results.len());
     state.popn(blockty.params.len());
     let loop_body_args: Vec<ValueRef> = loop_body
@@ -1124,7 +1103,7 @@ fn translate_unreachable_operator<B: ?Sized + Builder>(
     op: &Operator,
     builder: &mut FunctionBuilderExt<'_, B>,
     state: &mut FuncTranslationState,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {

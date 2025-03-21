@@ -3,7 +3,6 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::FunctionRef, Builder, FunctionIdent, Immediate, Type, ValueRef,
 };
-use midenc_session::diagnostics::{DiagnosticsHandler, SourceSpan};
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;

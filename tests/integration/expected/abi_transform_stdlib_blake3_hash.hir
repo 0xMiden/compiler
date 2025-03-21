@@ -1,6 +1,6 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_stdlib_blake3_hash {
-        public builtin.function @miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32) {
+        private builtin.function @miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32) {
         ^block3(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32):
             builtin.ret ;
         };

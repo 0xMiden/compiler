@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use cranelift_entity::{EntitySet, SecondaryMap};
+use cranelift_entity::SecondaryMap;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
@@ -8,9 +8,8 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     traits::{BranchOpInterface, Terminator},
-    Block, BlockArgumentRef, BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener,
-    ListenerType, Op, OpBuilder, OperationRef, ProgramPoint, Region, RegionRef, Signature, Usable,
-    ValueRef,
+    BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, ListenerType, OpBuilder,
+    OperationRef, ProgramPoint, RegionRef, Signature, ValueRef,
 };
 use midenc_hir_type::Type;
 use midenc_session::diagnostics::SourceSpan;
@@ -93,7 +92,7 @@ impl Listener for SSABuilderListener {
             debug_assert!(!is_filled, "you cannot add an instruction to a block already filled");
         }
 
-        if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
+        if op.implements::<dyn BranchOpInterface>() {
             let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
             for succ in op.successors().iter() {
                 let successor = succ.block.borrow().successor();
@@ -111,9 +110,9 @@ impl Listener for SSABuilderListener {
 
     fn notify_block_inserted(
         &self,
-        block: BlockRef,
-        prev: Option<RegionRef>,
-        ip: Option<BlockRef>,
+        _block: BlockRef,
+        _prev: Option<RegionRef>,
+        _ip: Option<BlockRef>,
     ) {
     }
 }
@@ -230,14 +229,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     pub fn seal_block(&mut self, block: BlockRef) {
         let side_effects = self.func_ctx.borrow_mut().ssa.seal_block(block);
         self.handle_ssa_side_effects(side_effects);
-    }
-
-    /// A Block is 'filled' when a terminator instruction is present.
-    fn fill_current_block(&mut self) {
-        self.func_ctx
-            .borrow_mut()
-            .status
-            .insert(self.inner.current_block(), BlockStatus::Filled);
     }
 
     fn handle_ssa_side_effects(&mut self, side_effects: SideEffects) {
@@ -412,49 +403,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     ///
     /// **Note:** You are responsible for maintaining the coherence with the arguments of
     /// other jump instructions.
+    ///
+    /// NOTE: Panics if `branch_inst` is not a branch instruction.
     pub fn change_jump_destination(
         &mut self,
-        inst: OperationRef,
+        mut branch_inst: OperationRef,
         old_block: BlockRef,
         new_block: BlockRef,
     ) {
-        todo!()
-        // self.func_ctx.ssa.remove_block_predecessor(old_block, inst);
-        // match &mut *self.data_flow_graph_mut().insts[inst].data {
-        //     Instruction::Br(Br {
-        //         ref mut successor, ..
-        //     }) if successor.destination == old_block => {
-        //         successor.destination = new_block;
-        //     }
-        //     Instruction::CondBr(CondBr {
-        //         ref mut then_dest,
-        //         ref mut else_dest,
-        //         ..
-        //     }) => {
-        //         if then_dest.destination == old_block {
-        //             then_dest.destination = new_block;
-        //         } else if else_dest.destination == old_block {
-        //             else_dest.destination = new_block;
-        //         }
-        //     }
-        //     Instruction::Switch(Switch {
-        //         op: _,
-        //         arg: _,
-        //         ref mut arms,
-        //         ref mut default,
-        //     }) => {
-        //         for arm in arms.iter_mut() {
-        //             if arm.successor.destination == old_block {
-        //                 arm.successor.destination = new_block;
-        //             }
-        //         }
-        //         if default.destination == old_block {
-        //             default.destination = new_block;
-        //         }
-        //     }
-        //     _ => panic!("{} must be a branch instruction", inst),
-        // }
-        // self.func_ctx.ssa.declare_block_predecessor(new_block, inst);
+        self.func_ctx.borrow_mut().ssa.remove_block_predecessor(old_block, branch_inst);
+        let mut borrow_mut = branch_inst.borrow_mut();
+        let Some(inst_branch) = borrow_mut.as_trait_mut::<dyn BranchOpInterface>() else {
+            panic!("expected branch instruction, got {branch_inst:?}");
+        };
+        inst_branch.change_branch_destination(old_block, new_block);
+        self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, branch_inst);
     }
 }
 

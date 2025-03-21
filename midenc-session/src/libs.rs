@@ -128,7 +128,12 @@ impl LinkLibrary {
             LibraryKind::Masp => {
                 let bytes = std::fs::read(path).into_diagnostic()?;
                 let package =
-                    miden_mast_package::Package::read_from_bytes(&bytes).into_diagnostic()?;
+                    miden_mast_package::Package::read_from_bytes(&bytes).map_err(|e| {
+                        Report::msg(format!(
+                            "failed to load Miden package from {}: {e}",
+                            path.display()
+                        ))
+                    })?;
                 let lib = match package.mast {
                     miden_mast_package::MastArtifact::Executable(_) => {
                         return Err(Report::msg(format!(

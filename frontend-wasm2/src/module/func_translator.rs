@@ -9,7 +9,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
-use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function},
     BlockRef, Builder, Context, Op,
@@ -22,7 +21,7 @@ use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
     function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState,
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -31,7 +30,7 @@ use crate::{
         func_translation_state::FuncTranslationState,
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt},
         module_env::DwarfReader,
-        types::{convert_valtype, ir_type, ModuleTypes},
+        types::{convert_valtype, ir_type},
     },
     ssa::Variable,
     translation_utils::emit_zero,
@@ -65,7 +64,7 @@ impl FuncTranslator {
         func: &mut Function,
         module_state: &mut ModuleTranslationState,
         module: &ParsedModule<'_>,
-        mod_types: &ModuleTypes,
+        mod_types: &ModuleTypesBuilder,
         addr2line: &addr2line::Context<DwarfReader<'_>>,
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
@@ -190,7 +189,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     module: &ParsedModule<'_>,
-    mod_types: &ModuleTypes,
+    mod_types: &ModuleTypesBuilder,
     addr2line: &addr2line::Context<DwarfReader<'_>>,
     session: &Session,
     func_validator: &mut FuncValidator<impl WasmModuleResources>,
@@ -258,7 +257,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     // If the exit block is unreachable, it may not have the correct arguments, so we would
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
-        builder.ret(state.stack.first().cloned(), end_span);
+        builder.ret(state.stack.first().cloned(), end_span)?;
     }
 
     // Discard any remaining values on the stack. Either we just returned them,

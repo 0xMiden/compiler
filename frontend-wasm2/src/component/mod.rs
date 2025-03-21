@@ -3,7 +3,10 @@
 //! This module contains all of the internal type definitions to parse and
 //! translate the component model.
 
-pub mod build_ir;
+pub(crate) mod build_ir;
+mod flat;
+mod lift_exports;
+pub(crate) mod lower_imports;
 mod parser;
 mod translator;
 mod types;
