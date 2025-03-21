@@ -475,7 +475,7 @@ impl SSABuilder {
             let pred = preds.get_mut(idx).unwrap();
             let branch = *pred;
             assert!(
-                branch.borrow().as_trait::<dyn BranchOpInterface>().is_some(),
+                branch.borrow().implements::<dyn BranchOpInterface>(),
                 "you have declared a non-branch instruction as a predecessor to a block!"
             );
 

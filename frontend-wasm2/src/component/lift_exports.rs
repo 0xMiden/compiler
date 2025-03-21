@@ -1,11 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
+use alloc::rc::Rc;
+use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder},
     interner::Symbol,
-    CallConv, FunctionIdent, FunctionType, Ident, Op, SourceSpan, ValueRef,
+    CallConv, FunctionIdent, FunctionType, Ident, Op, SourceSpan, ValueRange, ValueRef,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
@@ -85,21 +86,19 @@ pub fn generate_export_lifting_function(
     // see https://github.com/0xPolygonMiden/compiler/issues/369
 
     let exec = fb
-        .exec(core_export_func_ref, core_export_func_sig, args.to_vec(), span)
+        .exec(core_export_func_ref, core_export_func_sig, args, span)
         .expect("failed to build an exec op");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
-    let results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    let results = ValueRange::<2>::from(borrow.results().all());
     assert!(results.len() <= 1, "expected a single result or none");
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span).expect("failed br");
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
-    let returning = results.first().cloned();
-    fb.ret(returning, span).expect("failed ret");
+    let returning_onty_first = results.iter().take(1);
+    fb.ret(returning_onty_first, span).expect("failed ret");
 
     Ok(())
 }

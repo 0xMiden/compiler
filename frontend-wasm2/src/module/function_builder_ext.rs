@@ -92,7 +92,7 @@ impl Listener for SSABuilderListener {
             debug_assert!(!is_filled, "you cannot add an instruction to a block already filled");
         }
 
-        if op.as_trait::<dyn BranchOpInterface>().is_some() {
+        if op.implements::<dyn BranchOpInterface>() {
             let mut unique: FxHashSet<BlockRef> = FxHashSet::default();
             for succ in op.successors().iter() {
                 let successor = succ.block.borrow().successor();

@@ -6,7 +6,7 @@ use midenc_session::{diagnostics::Report, Session};
 use super::{translator::ComponentTranslator, ComponentTypesBuilder, ParsedRootComponent};
 use crate::{
     component::ComponentParser, error::WasmResult, supported_component_model_features,
-    translation_utils::parse_component_id, WasmTranslationConfig,
+    WasmTranslationConfig,
 };
 
 fn parse<'data>(
@@ -35,7 +35,7 @@ pub fn translate_component(
     dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
     // Extract component name from exported component instance
     let id = {
-        let instance: String = parsed_root_component
+        let instance = parsed_root_component
             .root_component
             .exports
             .iter()
@@ -44,7 +44,10 @@ pub fn translate_component(
                 _ => None,
             })
             .expect("expected at least one component instance to be exported");
-        parse_component_id(instance)
+
+        instance
+            .parse()
+            .expect("failed to parse ComponentId from Wasm component instance name")
     };
     let translator = ComponentTranslator::new(
         id,

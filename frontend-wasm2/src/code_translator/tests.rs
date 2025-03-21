@@ -2,10 +2,7 @@ use core::fmt::Write;
 use std::rc::Rc;
 
 use expect_test::expect_file;
-use midenc_hir::{
-    dialects::builtin::{self},
-    Op, Operation, WalkResult,
-};
+use midenc_hir::{dialects::builtin, Op, Operation, WalkResult};
 
 use crate::{translate, WasmTranslationConfig};
 

@@ -2,10 +2,7 @@
 
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_arith::ArithOpBuilder;
-use midenc_hir::{
-    dialects::builtin, version::Version, AbiParam, Builder, CallConv, Signature, SourceSpan,
-    ValueRef, Visibility,
-};
+use midenc_hir::{AbiParam, Builder, CallConv, Signature, SourceSpan, ValueRef, Visibility};
 use midenc_hir_type::{FunctionType, Type};
 use midenc_session::DiagnosticsHandler;
 
@@ -148,23 +145,5 @@ pub fn sig_from_func_type(
         results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         cc: call_conv,
         visibility,
-    }
-}
-
-/// Parse `builtin::ComponentId` from the Wasm CM component name in the
-/// `namespace:package/interface@version` format
-pub fn parse_component_id(wasm_component_name: String) -> builtin::ComponentId {
-    match wasm_component_name.split_once(":") {
-        Some((ns, name_version)) => match name_version.split_once("@") {
-            Some((name, version)) => builtin::ComponentId {
-                namespace: ns.to_string().into(),
-                name: name.to_string().into(),
-                version: Version::parse(version).unwrap_or_else(|_| {
-                    panic!("failed to parse version from {wasm_component_name}")
-                }),
-            },
-            None => panic!("failed to parse name and version from {wasm_component_name}"),
-        },
-        None => panic!("failed to parse namespace from {wasm_component_name}"),
     }
 }
