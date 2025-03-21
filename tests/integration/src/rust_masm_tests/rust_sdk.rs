@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use expect_test::expect_file;
-use miden_core::{crypto::hash::RpoDigest, utils::Deserializable};
+use miden_core::{
+    crypto::hash::RpoDigest,
+    utils::{Deserializable, Serializable},
+};
 use miden_mast_package::Package;
 use midenc_debug::Executor;
 use midenc_frontend_wasm2::WasmTranslationConfig;
@@ -46,8 +49,6 @@ fn rust_sdk_basic_wallet() {
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
-    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/429"]
-    //
     // assert!(
     //     test.compile_wasm_to_masm_program().is_err(),
     //     "expected to fail until the lifting/lowering of the heap-allocated data is supported"
@@ -136,7 +137,6 @@ fn rust_sdk_cross_ctx_account() {
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
-
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     let package = test.compiled_package();
     let lib = package.unwrap_library();
@@ -151,9 +151,15 @@ fn rust_sdk_cross_ctx_account() {
     assert!(lib.exports().any(|export| {
         export.module.to_string() == expected_module && export.name.as_str() == expected_function
     }));
+    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/441 is resolved
+    //
+    // Test that the package loads
+    // let bytes = package.to_bytes();
+    // let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
 }
 
 #[test]
+#[ignore = "until https://github.com/0xPolygonMiden/compiler/issues/441 is resolved"]
 fn rust_sdk_cross_ctx_note() {
     // Build cross-ctx-account package
     let args: Vec<String> = [
@@ -172,15 +178,13 @@ fn rust_sdk_cross_ctx_note() {
     .iter()
     .map(|s| s.to_string())
     .collect();
-    // dbg!(env::current_dir().unwrap().display());
+    dbg!(env::current_dir().unwrap().display());
 
-    // TODO: uncomment after ctx_account compiles
+    let outputs = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
+        .expect("Failed to compile the cross-ctx-account package for cross-ctx-note");
+    let masp_path: PathBuf = outputs.first().unwrap().clone();
 
-    // let outputs = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
-    //     .expect("Failed to compile the cross-ctx-account package for cross-ctx-note");
-    // let masp_path: PathBuf = outputs.first().unwrap().clone();
-
-    // dbg!(&masp_path);
+    dbg!(&masp_path);
 
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -194,10 +198,8 @@ fn rust_sdk_cross_ctx_note() {
             "std".into(),
             "-l".into(),
             "base".into(),
-            // TODO: uncomment after ctx_account compiles
-            //
-            // "--link-library".into(),
-            // masp_path.clone().into_os_string().into_string().unwrap().into(),
+            "--link-library".into(),
+            masp_path.clone().into_os_string().into_string().unwrap().into(),
         ],
     );
     builder.with_entrypoint(FunctionIdent {
@@ -213,20 +215,15 @@ fn rust_sdk_cross_ctx_note() {
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
-    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/427 is fixed
-    //
-    // test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
-    // Run it in the VM (output is checked via assert_eq in the note code)
-    // let package = test.compiled_package();
-
-    // let mut exec = Executor::new(vec![]);
-    // let account_package =
-    // Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
-    // exec.dependency_resolver_mut()
-    //     .add(account_package.digest(), account_package.into());
-    // exec.with_dependencies(&package.manifest.dependencies).unwrap();
-
-    // let trace = exec.execute(&package.unwrap_program(), &test.session);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+    let mut exec = Executor::new(vec![]);
+    let account_package =
+        Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
+    exec.dependency_resolver_mut()
+        .add(account_package.digest(), account_package.into());
+    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
 
 #[test]
