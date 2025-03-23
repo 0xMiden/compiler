@@ -14,15 +14,33 @@ This document describes the concepts, usage, and overall structure of the interm
   * [Attributes](#attributes)
   * [Traits](#traits)
   * [Interfaces](#interfaces)
+    * [BranchOpInterface]
+    * [RegionBranchOpInterface]
+    * [RegionBranchTerminatorOpInterface]
   * [Symbols](#symbols)
   * [Symbol Tables](#symbol-tables)
   * [Successors and Predecessors](#successors-and-predecessors)
-  * [Dominance](#dominance)
 * [High-Level Structure](#high-level-structure)
 * [Pass Infrastructure](#pass-infrastructure)
-* [Analysis](#analysis)
-* [Pattern Rewrites](#pattern-rewrites)
-* [Canonicalization](#canonicalization)
+  * [Analysis](#analysis)
+  * [Pattern Rewrites](#pattern-rewrites)
+  * [Canonicalization](#canonicalization)
+    * [Folding](#folding)
+* [Implementation Details](#implementation-details)
+  * [Entity References](#entity-references)
+    * [Entity Storage](#entity-storage)
+      * [StoreableEntity](#storeableentity)
+      * [ValueRange](#valuerange)
+    * [Entity Lists](#entity-storage)
+  * [Traversal](#traversal)
+  * [Program Points](#program-points)
+  * [Defining Dialects](#defining-dialects)
+    * [Dialect Registration]
+    * [Dialect Hooks]
+    * [Defining Operations]
+  * [Builders](#builders)
+    * [Validation](#validation)
+  * [Effects](#effects)
 
 ## Core Concepts
 
@@ -43,13 +61,17 @@ Operations are organized into [dialects](#dialects). A dialect can be used to re
 
 See the following sections for more information on the concepts introduced above:
 
+* [Dialects](#dialects)
 * [Operations](#operations)
 * [Regions](#regions)
 * [Blocks](#blocks)
 * [Values](#values)
-* [Dialects](#dialects)
 * [Traits](#traits)
 * [Interfaces](#interfaces)
+
+### Dialects
+
+TODO
 
 ### Operations
 
@@ -65,7 +87,7 @@ Operations may also have associated [_attributes_](#attributes). Attributes repr
 
 ### Regions
 
-A _region_ encapsulates a control-flow graph (CFG) of one or more [_basic blocks_](#blocks). In HIR, the contents of a region are almost always in _single-static assignment_ (SSA) form, meaning that values may only be defined once, definitions must [_dominate_](#dominance-relation) uses, and operations in the CFG described by the region are executed one-by-one, from the entry block of the region, until control exits the region (e.g. via `builtin.ret` or some other terminator instruction).
+A _region_ encapsulates a control-flow graph (CFG) of one or more [_basic blocks_](#blocks). In HIR, the contents of a region are almost always in _single-static assignment_ (SSA) form, meaning that values may only be defined once, definitions must  _dominate_ uses, and operations in the CFG described by the region are executed one-by-one, from the entry block of the region, until control exits the region (e.g. via `builtin.ret` or some other terminator instruction).
 
 The order of operations in the region closely corresponds to their scheduling order, though the code generator may reschedule operations when it is safe - and more efficient - to do so.
 
@@ -103,9 +125,9 @@ Value _definitions_ (aka "defs") can be introduced in two ways:
 
 Values have _uses_ corresponding to operands or successor arguments (special operands which are used to satisfy successor block parameters). As a result, values also have _users_, corresponding to the specific operation and operand forming a _use.
 
-All _uses_ of a value must be [_dominated_](#dominance-relation) by its _definition_. The IR is invalid if this rule is ever violated.
+All _uses_ of a value must be _dominated_ by its _definition_. The IR is invalid if this rule is ever violated.
 
-### Operands
+#### Operands
 
 An _operand_ is a [_value_](#values) used as an argument to an operation.
 
@@ -114,7 +136,11 @@ closer to the top of the operand stack it will appear.
 
 Similarly, the ordering of operand results also correlates to the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
 
-### Immediates
+#### Results
+
+TODO
+
+#### Immediates
 
 An _immediate_ is a literal value, typically of integral type, used as an operand. Not all operations support immediates, but those that do, will typically use them to attempt to perform optimizations only possible when there is static information available about the operands. For example, multiplying any number by 2, will always produce an even number, so a sequence such as
 `mul.2 is_odd` can be folded to `false` at compile-time, allowing further optimizations to occur.
@@ -150,6 +176,38 @@ There are others as well, responsible for aiding in type checking, decorating op
 
 TODO
 
+#### BranchOpInterface
+
+TODO
+
+#### RegionBranchOpInterface
+
+TODO
+
+#### RegionBranchTerminatorOpInterface
+
+TODO
+
+### Symbol Tables
+
+A _symbol table_ represents a namespace in which [_symbols_](#symbols) may be defined and resolved.
+
+Operations that represent a symbol table, must implement the `SymbolTable` trait.
+
+Symbol tables may be nested, so long as child symbol table operations are also valid symbols, so that the hierarchy of namespaces can be encoded as a _symbol path_ (see [Symbols](#symbols)).
+
+### Symbols
+
+A _symbol_ is a named operation, e.g. the function `foo` names that function so that it can be referenced and called from other operations.
+
+Symbols are only meaningful in the context of a _symbol table_, i.e. the namespace in which a symbol is registered. Symbols within a symbol table must be unique.
+
+A symbol is reified as a _symbol path_, i.e. `foo/bar` represents a symbol path consisting of two path components, `foo` and `bar`. Resolving that symbol path requires first resolving `foo` in the current symbol table, to an operation that is itself a symbol table, and then resolving `bar` there.
+
+Symbol paths can come in two forms: relative and absolute. Relative paths are resolved as described above, while absolute paths are resolved from the root symbol table, which is either the containing [_world_](#worlds), or the nearest symbol table which has no parent.
+
+Symbols, like the various forms of [_values_](#values), track their uses and definitions, i.e. when you reference a symbol from another operation, that reference is recorded in the use list of the referenced symbol. This allows us to trivially determine if a symbol is used, and visit all of those uses.
+
 ### Successors and Predecessors
 
 The concept of _predecessor_ and _successor_ corresponds to a parent/child relationship in a control-flow graph (CFG), where edges in the graph are directed, and describe the order in which control flows through the program. If a node $A$ transfers control to a node $B$ after it is finished executing, then $A$ is a _predecessor_ of $B$, and $B$ is a _successor_ of $A$.
@@ -160,37 +218,6 @@ Successors and predecessors can be looked at from two similar, but slightly diff
 2. In terms of blocks. The successor(s) of a basic block, are the set of blocks to which control may be transferred when exiting the block. Likewise, the precessor(s) of a block, are the set of blocks which can transfer control to it. We are most frequently dealing with the concept of successors and predecessors in terms of blocks, as it allows us to focus on the interesting parts of the CFG. For example, the dominator tree and loop analyses, are constructed in terms of a block-oriented CFG, since we can trivially derive dominance and loop information for individual ops from their containing blocks.
 
 Typically, you will see successors as a pair of `(block_id, &[value_id])`, i.e. the block to which control is transferred, and the set of values being passed as block arguments. On the other hand, predecessors are most often a pair of `(block_id, terminator_op_id)`, i.e. the block from which control originates, and the specific operation responsible.
-
-### Dominance Relation
-
-In an SSA IR, the concept of _dominance_ is of critical importance. Dominance is a property of the relationship between two or more entities and their respective program points. For example, between the use of a value as an operand for an operation, and the definition of that value; or between a basic block and its successors. The dominance property is anti-symmetric, i.e. if $A$ dominates $B$, then $B$ cannot dominate $A$, unless $A = B$. Put simply:
-
-> Given a control-flow graph $G$, and a node $A \in G$, then $\forall B \in G$, $A dom B$ if all paths to $B$ from the root of $G$, pass through $A$.
->
-> Furthermore, $A$ _strictly_ dominates $B$, if $A \neq B$.
-
-An example of why dominance is an important property of a program, can be seen when considering the meaning of a program like so (written in pseudocode):
-
-```
-if (...) {
-  var a = 1;
-}
-
-foo(a)
-```
-
-Here, the definition of `a` does not dominate its usage in the call to `foo`. If the conditional branch is ever false, `a` is never defined, nor initialized - so what should happen when we reach the call to `foo`?
-
-In practice, of course, such a program is rarely possible to expresss in a high-level language, however in a low-level CFG, it is possible to reference values which are defined somewhere in the graph, but in such a way that is not _legal_ according to the "definitions must dominate uses" rule of SSA CFGs. The dominance property is what we use to validate the correctness of the IR, as well as evaluate the range of valid transformations that can be applied to the IR. For example, we might determine that it is valid to move an expression into a specific `if/then` branch, because it is only used in that branch - the dominance property is how we determine that there are paths through the program in which the result of the expression is unused, as well as what program points
-represent the nearest point to one of its uses that still dominates _all_ of the uses.
-
-There is another useful notion of dominance, called _post-dominance_, which can be described much like the regular notion of dominance, except in terms of paths to the exit of the CFG, rather than paths from the entry:
-
-> Given a control-flow graph $G$, and a node $A \in $G$, then $\forall B \in G$, $A pdom B$ if all paths through $B$ that exit the CFG, must flow through $A$ first.
->
-> Furthermore, $A$ _strictly_ post-dominates $B$ if $A \neq B$.
-
-The notion of post-dominance is important in determining the applicability of certain transformations, in particular with loops.
 
 ## High-Level Structure
 
@@ -309,26 +336,6 @@ A global variable represents a named, typed region of memory, with a fixed addre
 
 Global variables may specify an optional _initializer_, which is a region consisting of operations that will be executed in order to initialize the state of the global variable prior to program start. Typically, the initializer should only consist of operations that can be executed at compile-time, not runtime, but because of how Miden memory is initialized, we can actually relax this rule.
 
-### Symbol Tables
-
-A _symbol table_ represents a namespace in which [_symbols_](#symbols) may be defined and resolved.
-
-Operations that represent a symbol table, must implement the `SymbolTable` trait.
-
-Symbol tables may be nested, so long as child symbol table operations are also valid symbols, so that the hierarchy of namespaces can be encoded as a _symbol path_ (see [Symbols](#symbols)).
-
-### Symbols
-
-A _symbol_ is a named operation, e.g. the function `foo` names that function so that it can be referenced and called from other operations.
-
-Symbols are only meaningful in the context of a _symbol table_, i.e. the namespace in which a symbol is registered. Symbols within a symbol table must be unique.
-
-A symbol is reified as a _symbol path_, i.e. `foo/bar` represents a symbol path consisting of two path components, `foo` and `bar`. Resolving that symbol path requires first resolving `foo` in the current symbol table, to an operation that is itself a symbol table, and then resolving `bar` there.
-
-Symbol paths can come in two forms: relative and absolute. Relative paths are resolved as described above, while absolute paths are resolved from the root symbol table, which is either the containing [_world_](#worlds), or the nearest symbol table which has no parent.
-
-Symbols, like the various forms of [_values_](#values), track their uses and definitions, i.e. when you reference a symbol from another operation, that reference is recorded in the use list of the referenced symbol. This allows us to trivially determine if a symbol is used, and visit all of those uses.
-
 ## Pass Infrastructure
 
 Compiler passes encode transformations of the IR from frontend to backend. In HIR, you define a pass over a concrete operation type, or over all operations and then filter on some criteria.
@@ -369,5 +376,45 @@ Analyses can be implemented for a specific concrete operation, or any operation.
 TODO
 
 ### Canonicalization
+
+TODO
+
+#### Folding
+
+TODO
+
+## Implementation Details
+
+TODO
+
+### Entity References
+
+TODO
+
+#### Entity Storage
+
+TODO
+
+#### Entity Lists
+
+TODO
+
+### Traversal
+
+TODO
+
+### Program Points
+
+TODO
+
+### Defining Dialects
+
+TODO
+
+### Builders
+
+TODO
+
+### Effects
 
 TODO

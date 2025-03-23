@@ -1,9 +1,9 @@
 [book]
-authors      = ["Miden contributors"]
-description  = "Manual for the Miden compiler"
-language     = "en"
+authors = ["Miden contributors"]
+description = "Manual for the Miden compiler"
+language = "en"
 multilingual = false
-title        = "The Miden compiler"
+title = "The Miden compiler"
 
 [output.html]
 git-repository-url = "https://github.com/0xPolygonMiden/compiler"
@@ -14,3 +14,4 @@ after = ["links"]
 [preprocessor.alerts]
 
 [output.linkcheck]
+exclude = ['[!][A-Z]*']
