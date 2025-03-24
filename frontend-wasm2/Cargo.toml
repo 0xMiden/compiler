@@ -35,6 +35,7 @@ wasmparser = { version = "0.227", default-features = false, features = [
     "features",
     "component-model",
     "validate",
+    "simd",
 ] }
 
 [dev-dependencies]

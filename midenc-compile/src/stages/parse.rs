@@ -50,6 +50,9 @@ impl Stage for ParseStage {
                     Err(Report::msg("invalid input: hir parsing is temporarily unsupported"))
                 }
                 FileType::Wasm => Ok(ParseOutput::Wasm(InputType::Real(path))),
+                #[cfg(not(feature = "std"))]
+                FileType::Wat => unimplemented!(),
+                #[cfg(feature = "std")]
                 FileType::Wat => self.parse_wasm_from_wat_file(path.as_ref()),
                 FileType::Masm => self.parse_masm_from_file(path.as_ref(), context.clone()),
                 FileType::Mast => miden_assembly::Library::deserialize_from_file(&path)
@@ -81,6 +84,9 @@ impl Stage for ParseStage {
                     Err(Report::msg("invalid input: hir parsing is temporarily unsupported"))
                 }
                 FileType::Wasm => Ok(ParseOutput::Wasm(InputType::Stdin { name, input })),
+                #[cfg(not(feature = "std"))]
+                FileType::Wat => unimplemented!(),
+                #[cfg(feature = "std")]
                 FileType::Wat => {
                     let wasm = wat::parse_bytes(&input)
                         .into_diagnostic()

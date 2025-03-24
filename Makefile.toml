@@ -165,7 +165,7 @@ args = [
     "build",
     "-p",
     "midenc",
-    "--out-dir",
+    "--artifact-dir",
     "${MIDENC_BIN_DIR}",
 ]
 
