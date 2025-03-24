@@ -312,6 +312,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = state.pop1();
             state.push1(builder.trunc(val, I32, span)?);
         }
+        Operator::F32ReinterpretI32 => {
+            let val = state.pop1_bitcasted(Felt, builder, span);
+            state.push1(val);
+        }
         /****************************** Binary Operators ************************************/
         Operator::I32Add | Operator::I64Add => {
             let (arg1, arg2) = state.pop2();

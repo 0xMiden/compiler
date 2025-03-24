@@ -103,6 +103,16 @@ pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutp
     stages.run(inputs, context)
 }
 
+/// Compile the current inputs without lowering to Miden Assembly and without any IR transformations.
+///
+/// Returns the translated pre-link outputs of the compiler's link stage.
+pub fn compile_to_unoptimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
+    let mut stages = ParseStage.collect(LinkStage);
+
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context)
+}
+
 /// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST.
 ///
 /// Returns the compiled artifact, just like `compile_to_memory` would.

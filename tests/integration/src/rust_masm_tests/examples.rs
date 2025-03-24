@@ -10,6 +10,21 @@ use proptest::prelude::*;
 use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
 
 #[test]
+fn storage_example() {
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_source_cargo_miden("../../examples/storage-example", config, []);
+
+    test.expect_wasm(expect_file!["../../expected/examples/storage_example.wat"]);
+    test.expect_ir_unoptimized(expect_file![
+        "../../expected/examples/storage_example_unoptimized.hir"
+    ]);
+    test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
+    // test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
+    // let _package = test.compiled_package();
+}
+
+#[test]
 fn fibonacci() {
     fn expected_fib(n: u32) -> u32 {
         let mut a = 0;
