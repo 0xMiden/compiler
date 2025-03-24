@@ -469,15 +469,44 @@ Every operation has access to the context which created it, making it easy to al
 
 ### Entity References
 
-TODO
+All IR entities, e.g. values, operations, blocks, regions - are allocated via an arena allocator provided by the [`Context`](#context), along with any custom metadata relevant for the specific entity type. A custom smart pointer type, called `RawEntityRef`, is then used to reference those entities, while simultaneously providing access to the metadata, and enforcing Rust's aliasing rules via dynamic borrow checking.
+
+This approach is used due to the graph-like structure of the IR itself - the ergonomics we can provide this way far outweigh the cost of dynamic borrow checking. However, it does place the burden on the programmer to carefully manage the lifetime of borrowed entities, so as to avoid aliasing conflicts. To make such issues easy to troubleshoot and fix, the `RawEntityRef` type will track both the source location of a borrow, and the location where a conflicting borrow occurs, and print this information as part of the runtime error that occurs (when compiled with the `debug_refcell` feature enabled).
+
+There are two main "types" of `RawEntityRef` metadata:
+
+* `()`, aliased as `UnsafeEntityRef`
+* `IntrusiveLink`, aliased as `UnsafeIntrusiveEntityRef`.
+
+In both cases, the type is aliased to reflect the underlying entity type being referenced, e.g. `BlockRef` is an `UnsafeIntrusiveEntityRef<Block>`, and `ValueRef` is an `UnsafeEntityRef<dyn Value>`.
+
+The latter of the two is the most important, as it is used for all entity types which have a parent entity in which they are tracked by means of an intrusive doubly-linked list (called an [_entity list_](#entity-lists)), e.g. operations, blocks, regions, operands, etc. The key thing that the `UnsafeIntrusiveEntityRef` type provides, is access to the parent entity, if linked to one, and access to the previous and next sibling of the containing entity list, if present - without needing to borrow the underlying entity. This is critical for traversing the IR without needing to borrow each entity being traversed, unless one wants to explicitly visit it. Entities allocated into an `UnsafeIntrusiveEntityRef` must also implement the `EntityListItem` trait, which provides various callbacks that are invoked when inserting/removing/transferring them between the entity list of the parent entity type.
+
+The `UnsafeEntityRef` type, in contrast, is used for entities that are not tracked in an entity list, but in [_entity storage_](#entity-storage), i.e. a small, resizeable vector of references which are stored as part in the parent entity. Examples include block arguments, operation results, and operation successors. Entities allocated into an `UnsafeEntityRef` and stored in `EntityStorage`, must also implement the `StoreableEntity` trait, which provides a similar set of callbacks to `EntityListItem` for managing the lifecycle of an entity as it is inserted, removed, etc.
 
 #### Entity Storage
 
-TODO
+This refers to the `EntityStorage<T>` type, which abstracts over the storage of IR entities in a small, resizeable vector attached to a parent entity.
+
+The `EntityStorage` type provides the following:
+
+* Lifecycle management of stored entities, via the `StoreableEntity` trait
+* Grouping of entities within storage, with relative indexing, support for insertion, removal, iteration, etc. This is used, for example, to use a single `EntityStorage` for all operands of an operation, while grouping operands semantically (e.g. group 0 are operands of the op itself, group 1 through N are operand groups for each successor of the operation).
+* Conveniences for indexing, slicing, iterating, etc.
 
 ##### StoreableEntity
 
+The `StoreableEntity` trait is used to ensure that, as entities are inserted/removed/transferred between instances of `EntityStorage`, that metadata about the relationship between the stored entity, and the parent, is updated accordingly.
+
+For example, this is used to ensure that when an `OpOperand` is inserted into the operand storage of an operation, that it is added to the use list of the referenced `Value`. Conversely, when that same operand is removed from the operand storage, the use of the referenced `Value` is removed.
+
 ##### ValueRange
+
+The `ValueRange` type is intended to provide a uniform, efficient API over slices/ranges of value-like types, in the form of `ValueRef`. It can be directly constructed from any `EntityRange` or `EntityStorage` reference of `BlockArgumentRef`, `OpOperandRef`, or `OpResultRef` type; as well as raw slices of any of those types in addition to `ValueRef`.
+
+It supports borrowed and owned variants, iteration, indexing, and conversions.
+
+In general, you should prefer to use `ValueRange` when working with collections of value-like types, unless you have a specific reason otherwise.
 
 #### Entity Lists
 
