@@ -36,9 +36,9 @@ impl fmt::Display for PatternKind {
 pub struct PatternBenefit(Option<core::num::NonZeroU16>);
 impl PatternBenefit {
     /// Represents a pattern which is the most beneficial
-    pub const MAX: Self = Self(Some(unsafe { core::num::NonZeroU16::new_unchecked(u16::MAX) }));
+    pub const MAX: Self = Self(core::num::NonZeroU16::new(u16::MAX));
     /// Represents a pattern which is the least beneficial
-    pub const MIN: Self = Self(Some(unsafe { core::num::NonZeroU16::new_unchecked(1) }));
+    pub const MIN: Self = Self(core::num::NonZeroU16::new(1));
     /// Represents a pattern which can never match, and thus should be discarded
     pub const NONE: Self = Self(None);
 
@@ -50,7 +50,7 @@ impl PatternBenefit {
         if benefit == u16::MAX {
             Self(None)
         } else {
-            Self(Some(unsafe { core::num::NonZeroU16::new_unchecked(benefit + 1) }))
+            Self(core::num::NonZeroU16::new(benefit + 1))
         }
     }
 

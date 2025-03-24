@@ -4,6 +4,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{self as cf, ControlFlowOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
+    diagnostics::Severity,
     dialects::builtin,
     dominance::DominanceInfo,
     pass::{Pass, PassExecutionState},
@@ -11,7 +12,6 @@ use midenc_hir::{
     SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
 };
 use midenc_hir_transform::{self as transforms, CFGToSCFInterface};
-use midenc_session::diagnostics::Severity;
 
 use crate::*;
 

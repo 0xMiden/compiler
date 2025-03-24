@@ -198,7 +198,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 // the passive count, do not reserve anything here.
             }
             Payload::CustomSection(s) if s.name() == "name" => {
-                let reader = wasmparser::BinaryReader::new(
+                let reader = wasmparser::BinaryReader::new_features(
                     s.data(),
                     s.data_offset(),
                     *self.validator.features(),
@@ -247,8 +247,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         self.types.reserve_wasm_signatures(num);
         for i in 0..types.count() {
             let types = self.validator.types(0).unwrap();
-            let ty = types.core_type_at(i);
-            self.declare_type(ty.unwrap_sub())?;
+            let ty = types.core_type_at_in_module(i);
+            self.declare_type(ty)?;
         }
         Ok(())
     }
@@ -810,7 +810,9 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 let sig_index = self.types.wasm_func_type(id, wasm);
                 self.result.module.types.push(ModuleType::Function(sig_index));
             }
-            CompositeInnerType::Array(_) | CompositeInnerType::Struct(_) => unimplemented!(),
+            CompositeInnerType::Array(_)
+            | CompositeInnerType::Struct(_)
+            | CompositeInnerType::Cont(_) => unimplemented!(),
         }
         Ok(())
     }

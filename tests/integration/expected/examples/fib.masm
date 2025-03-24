@@ -13,10 +13,22 @@ export.entrypoint
             movup.3
             drop
             push.0
-            dup.2
+            push.0
+            dup.3
             swap.1
+            eq
             neq
             if.true
+
+                drop
+                drop
+                push.0
+                push.1
+                push.3735929054
+                dup.0
+                dup.1
+                swap.2
+            else
 
                 push.1
                 push.0
@@ -31,16 +43,6 @@ export.entrypoint
                 swap.3
                 swap.4
                 movdn.2
-            else
-
-                drop
-                drop
-                push.0
-                push.1
-                push.3735929054
-                dup.0
-                dup.1
-                swap.2
             end
             movup.3
             drop

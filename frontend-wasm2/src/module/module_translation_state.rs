@@ -109,7 +109,7 @@ impl<'a> ModuleTranslationState<'a> {
 fn process_import(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
-    module_args: &hashbrown::HashMap<FunctionIdent, ModuleArgument, midenc_hir::FxBuildHasher>,
+    module_args: &FxHashMap<FunctionIdent, ModuleArgument>,
     core_func_id: FunctionIdent,
     core_func_sig: Signature,
     import: &super::ModuleImport,

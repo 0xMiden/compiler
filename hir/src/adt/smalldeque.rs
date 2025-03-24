@@ -1814,7 +1814,7 @@ impl<T, const N: usize> From<SmallDeque<T, N>> for SmallVec<[T; N]> {
                     // Construct an uninitialized array on the stack of the same size as the target
                     // SmallVec's inline size, "move" `len` items into it, and the construct the
                     // SmallVec from the raw buffer and len
-                    let mut buf = core::mem::MaybeUninit::<T>::uninit_array::<N>();
+                    let mut buf = [const { core::mem::MaybeUninit::<T>::uninit() }; N];
                     let buf_ptr = core::mem::MaybeUninit::slice_as_mut_ptr(&mut buf);
                     ptr::copy(ptr.add(other.head), buf_ptr, len);
                     // While we are technically potentially letting a subset of elements in the
@@ -2260,7 +2260,7 @@ impl<T, const M: usize> Iterator for IntoIter<T, M> {
     fn next_chunk<const N: usize>(
         &mut self,
     ) -> Result<[Self::Item; N], core::array::IntoIter<Self::Item, N>> {
-        let mut raw_arr = core::mem::MaybeUninit::uninit_array();
+        let mut raw_arr = [const { core::mem::MaybeUninit::uninit() }; N];
         let raw_arr_ptr = raw_arr.as_mut_ptr().cast();
         let (head, tail) = self.inner.as_slices();
 
@@ -3610,7 +3610,7 @@ mod tests {
             let cap = (2i32.pow(cap_pwr) - 1) as usize;
 
             // In these cases there is enough free space to solve it with copies
-            for len in 0..((cap + 1) / 2) {
+            for len in 0..cap.div_ceil(2) {
                 // Test contiguous cases
                 for offset in 0..(cap - len) {
                     create_vec_and_test_convert(cap, offset, len)
@@ -3631,7 +3631,7 @@ mod tests {
             // the ring will use swapping when:
             // (cap + 1 - offset) > (cap + 1 - len) && (len - (cap + 1 - offset)) > (cap + 1 - len))
             //  right block size  >   free space    &&      left block size       >    free space
-            for len in ((cap + 1) / 2)..cap {
+            for len in cap.div_ceil(2)..cap {
                 // Test contiguous cases
                 for offset in 0..(cap - len) {
                     create_vec_and_test_convert(cap, offset, len)

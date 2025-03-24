@@ -11,8 +11,13 @@ use core::{hash::Hash, ops::Index};
 use anyhow::{bail, Result};
 use cranelift_entity::{EntityRef, PrimaryMap};
 use indexmap::IndexMap;
-use midenc_hir::FxHashMap;
-use wasmparser::{collections::IndexSet, names::KebabString, types};
+use midenc_hir::{FxHashMap, SmallVec};
+use wasmparser::{
+    collections::IndexSet,
+    component_types,
+    names::KebabString,
+    types::{self, TypesRef},
+};
 
 use self::resources::ResourcesBuilder;
 use crate::{
@@ -245,7 +250,7 @@ pub enum ComponentItem {
     Module(ModuleIndex),
     Component(ComponentIndex),
     ComponentInstance(ComponentInstanceIndex),
-    Type(types::ComponentAnyTypeId),
+    Type(component_types::ComponentAnyTypeId),
 }
 impl ComponentItem {
     pub(crate) fn unwrap_instance(&self) -> ComponentInstanceIndex {
@@ -306,7 +311,9 @@ impl ComponentTypes {
                 &CanonicalAbiInfo::SCALAR8
             }
 
-            InterfaceType::String | InterfaceType::List(_) => &CanonicalAbiInfo::POINTER_PAIR,
+            InterfaceType::String | InterfaceType::List(_) | InterfaceType::ErrorContext => {
+                &CanonicalAbiInfo::POINTER_PAIR
+            }
 
             InterfaceType::Record(i) => &self[*i].abi,
             InterfaceType::Variant(i) => &self[*i].abi,
@@ -461,8 +468,8 @@ impl ComponentTypesBuilder {
     /// Converts a wasmparser `ComponentFuncType`
     pub fn convert_component_func_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentFuncTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentFuncTypeId,
     ) -> Result<TypeFuncIndex> {
         let ty = &types[id];
         let params = ty
@@ -470,11 +477,10 @@ impl ComponentTypesBuilder {
             .iter()
             .map(|(_name, ty)| self.valtype(types, ty))
             .collect::<Result<_>>()?;
-        let results = ty
-            .results
-            .iter()
-            .map(|(_name, ty)| self.valtype(types, ty))
-            .collect::<Result<_>>()?;
+        let results = match ty.result.as_ref() {
+            Some(ty) => SmallVec::from_buf([self.valtype(types, ty)?]).into_boxed_slice(),
+            None => Box::<[_]>::default(),
+        };
         let ty = TypeFunc {
             params: self.new_tuple_type(params),
             results: self.new_tuple_type(results),
@@ -485,55 +491,55 @@ impl ComponentTypesBuilder {
     /// Converts a wasmparser `ComponentEntityType`
     pub fn convert_component_entity_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: types::ComponentEntityType,
+        types: TypesRef<'_>,
+        ty: component_types::ComponentEntityType,
     ) -> Result<TypeDef> {
         Ok(match ty {
-            types::ComponentEntityType::Module(id) => {
+            component_types::ComponentEntityType::Module(id) => {
                 TypeDef::Module(self.convert_module(types, id)?)
             }
-            types::ComponentEntityType::Component(id) => {
+            component_types::ComponentEntityType::Component(id) => {
                 TypeDef::Component(self.convert_component(types, id)?)
             }
-            types::ComponentEntityType::Instance(id) => {
+            component_types::ComponentEntityType::Instance(id) => {
                 TypeDef::ComponentInstance(self.convert_instance(types, id)?)
             }
-            types::ComponentEntityType::Func(id) => {
+            component_types::ComponentEntityType::Func(id) => {
                 TypeDef::ComponentFunc(self.convert_component_func_type(types, id)?)
             }
-            types::ComponentEntityType::Type { created, .. } => match created {
-                types::ComponentAnyTypeId::Defined(id) => {
+            component_types::ComponentEntityType::Type { created, .. } => match created {
+                component_types::ComponentAnyTypeId::Defined(id) => {
                     TypeDef::Interface(self.defined_type(types, id)?)
                 }
-                types::ComponentAnyTypeId::Resource(id) => {
+                component_types::ComponentAnyTypeId::Resource(id) => {
                     TypeDef::Resource(self.resource_id(id.resource()))
                 }
                 _ => bail!("unsupported type export"),
             },
-            types::ComponentEntityType::Value(_) => bail!("values not supported"),
+            component_types::ComponentEntityType::Value(_) => bail!("values not supported"),
         })
     }
 
     /// Converts a wasmparser `Type`
     pub fn convert_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentAnyTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentAnyTypeId,
     ) -> Result<TypeDef> {
         Ok(match id {
-            types::ComponentAnyTypeId::Defined(id) => {
+            component_types::ComponentAnyTypeId::Defined(id) => {
                 TypeDef::Interface(self.defined_type(types, id)?)
             }
-            types::ComponentAnyTypeId::Component(id) => {
+            component_types::ComponentAnyTypeId::Component(id) => {
                 TypeDef::Component(self.convert_component(types, id)?)
             }
-            types::ComponentAnyTypeId::Instance(id) => {
+            component_types::ComponentAnyTypeId::Instance(id) => {
                 TypeDef::ComponentInstance(self.convert_instance(types, id)?)
             }
-            types::ComponentAnyTypeId::Func(id) => {
+            component_types::ComponentAnyTypeId::Func(id) => {
                 TypeDef::ComponentFunc(self.convert_component_func_type(types, id)?)
             }
-            types::ComponentAnyTypeId::Resource(id) => {
+            component_types::ComponentAnyTypeId::Resource(id) => {
                 TypeDef::Resource(self.resource_id(id.resource()))
             }
         })
@@ -541,8 +547,8 @@ impl ComponentTypesBuilder {
 
     fn convert_component(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentTypeId,
     ) -> Result<TypeComponentIndex> {
         let ty = &types[id];
         let mut result = TypeComponent::default();
@@ -561,8 +567,8 @@ impl ComponentTypesBuilder {
 
     fn convert_instance(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentInstanceTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentInstanceTypeId,
     ) -> Result<TypeComponentInstanceIndex> {
         let ty = &types[id];
         let mut result = TypeComponentInstance::default();
@@ -576,8 +582,8 @@ impl ComponentTypesBuilder {
 
     fn convert_module(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentCoreModuleTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentCoreModuleTypeId,
     ) -> Result<TypeModuleIndex> {
         let ty = &types[id];
         let mut result = TypeModule::default();
@@ -592,11 +598,7 @@ impl ComponentTypesBuilder {
         Ok(self.component_types.modules.push(result))
     }
 
-    fn entity_type(
-        &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::EntityType,
-    ) -> Result<EntityType> {
+    fn entity_type(&mut self, types: TypesRef<'_>, ty: &types::EntityType) -> Result<EntityType> {
         Ok(match ty {
             types::EntityType::Func(idx) => {
                 let ty = types[*idx].unwrap_func();
@@ -612,34 +614,44 @@ impl ComponentTypesBuilder {
 
     fn defined_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        id: types::ComponentDefinedTypeId,
+        types: TypesRef<'_>,
+        id: component_types::ComponentDefinedTypeId,
     ) -> Result<InterfaceType> {
         let ret = match &types[id] {
-            types::ComponentDefinedType::Primitive(ty) => ty.into(),
-            types::ComponentDefinedType::Record(e) => {
+            component_types::ComponentDefinedType::Primitive(ty) => ty.into(),
+            component_types::ComponentDefinedType::Record(e) => {
                 InterfaceType::Record(self.record_type(types, e)?)
             }
-            types::ComponentDefinedType::Variant(e) => {
+            component_types::ComponentDefinedType::Variant(e) => {
                 InterfaceType::Variant(self.variant_type(types, e)?)
             }
-            types::ComponentDefinedType::List(e) => InterfaceType::List(self.list_type(types, e)?),
-            types::ComponentDefinedType::Tuple(e) => {
+            component_types::ComponentDefinedType::List(e) => {
+                InterfaceType::List(self.list_type(types, e)?)
+            }
+            component_types::ComponentDefinedType::Tuple(e) => {
                 InterfaceType::Tuple(self.tuple_type(types, e)?)
             }
-            types::ComponentDefinedType::Flags(e) => InterfaceType::Flags(self.flags_type(e)),
-            types::ComponentDefinedType::Enum(e) => InterfaceType::Enum(self.enum_type(e)),
-            types::ComponentDefinedType::Option(e) => {
+            component_types::ComponentDefinedType::Flags(e) => {
+                InterfaceType::Flags(self.flags_type(e))
+            }
+            component_types::ComponentDefinedType::Enum(e) => {
+                InterfaceType::Enum(self.enum_type(e))
+            }
+            component_types::ComponentDefinedType::Option(e) => {
                 InterfaceType::Option(self.option_type(types, e)?)
             }
-            types::ComponentDefinedType::Result { ok, err } => {
+            component_types::ComponentDefinedType::Result { ok, err } => {
                 InterfaceType::Result(self.result_type(types, ok, err)?)
             }
-            types::ComponentDefinedType::Own(r) => {
+            component_types::ComponentDefinedType::Own(r) => {
                 InterfaceType::Own(self.resource_id(r.resource()))
             }
-            types::ComponentDefinedType::Borrow(r) => {
+            component_types::ComponentDefinedType::Borrow(r) => {
                 InterfaceType::Borrow(self.resource_id(r.resource()))
+            }
+            component_types::ComponentDefinedType::Stream(_)
+            | component_types::ComponentDefinedType::Future(_) => {
+                unimplemented!("support for the async proposal is not implemented")
             }
         };
         let info = self.type_information(&ret);
@@ -651,19 +663,19 @@ impl ComponentTypesBuilder {
 
     fn valtype(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::ComponentValType,
+        types: TypesRef<'_>,
+        ty: &component_types::ComponentValType,
     ) -> Result<InterfaceType> {
         match ty {
-            types::ComponentValType::Primitive(p) => Ok(p.into()),
-            types::ComponentValType::Type(id) => self.defined_type(types, *id),
+            component_types::ComponentValType::Primitive(p) => Ok(p.into()),
+            component_types::ComponentValType::Type(id) => self.defined_type(types, *id),
         }
     }
 
     fn record_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::RecordType,
+        types: TypesRef<'_>,
+        ty: &component_types::RecordType,
     ) -> Result<TypeRecordIndex> {
         let fields = ty
             .fields
@@ -683,8 +695,8 @@ impl ComponentTypesBuilder {
 
     fn variant_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::VariantType,
+        types: TypesRef<'_>,
+        ty: &component_types::VariantType,
     ) -> Result<TypeVariantIndex> {
         let cases = ty
             .cases
@@ -712,8 +724,8 @@ impl ComponentTypesBuilder {
 
     fn tuple_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::TupleType,
+        types: TypesRef<'_>,
+        ty: &component_types::TupleType,
     ) -> Result<TypeTupleIndex> {
         let types = ty
             .types
@@ -745,8 +757,8 @@ impl ComponentTypesBuilder {
 
     fn option_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::ComponentValType,
+        types: TypesRef<'_>,
+        ty: &component_types::ComponentValType,
     ) -> Result<TypeOptionIndex> {
         let ty = self.valtype(types, ty)?;
         let (info, abi) = VariantInfo::new([None, Some(self.component_types.canonical_abi(&ty))]);
@@ -755,9 +767,9 @@ impl ComponentTypesBuilder {
 
     fn result_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ok: &Option<types::ComponentValType>,
-        err: &Option<types::ComponentValType>,
+        types: TypesRef<'_>,
+        ok: &Option<component_types::ComponentValType>,
+        err: &Option<component_types::ComponentValType>,
     ) -> Result<TypeResultIndex> {
         let ok = match ok {
             Some(ty) => Some(self.valtype(types, ty)?),
@@ -776,8 +788,8 @@ impl ComponentTypesBuilder {
 
     fn list_type(
         &mut self,
-        types: types::TypesRef<'_>,
-        ty: &types::ComponentValType,
+        types: TypesRef<'_>,
+        ty: &component_types::ComponentValType,
     ) -> Result<TypeListIndex> {
         let element = self.valtype(types, ty)?;
         Ok(self.add_list_type(TypeList { element }))
@@ -785,7 +797,7 @@ impl ComponentTypesBuilder {
 
     /// Converts a wasmparser `id`, which must point to a resource, to its
     /// corresponding `TypeResourceTableIndex`.
-    pub fn resource_id(&mut self, id: types::ResourceId) -> TypeResourceTableIndex {
+    pub fn resource_id(&mut self, id: component_types::ResourceId) -> TypeResourceTableIndex {
         self.resources.convert(id, &mut self.component_types)
     }
 
@@ -864,6 +876,7 @@ impl ComponentTypesBuilder {
             | InterfaceType::U32
             | InterfaceType::S32
             | InterfaceType::Char
+            | InterfaceType::ErrorContext
             | InterfaceType::Own(_) => {
                 static INFO: TypeInformation = TypeInformation::primitive(FlatType::I32);
                 &INFO
@@ -1014,6 +1027,7 @@ pub enum InterfaceType {
     Float64,
     Char,
     String,
+    ErrorContext,
     Record(TypeRecordIndex),
     Variant(TypeVariantIndex),
     List(TypeListIndex),
@@ -1042,6 +1056,7 @@ impl From<&wasmparser::PrimitiveValType> for InterfaceType {
             wasmparser::PrimitiveValType::F64 => InterfaceType::Float64,
             wasmparser::PrimitiveValType::Char => InterfaceType::Char,
             wasmparser::PrimitiveValType::String => InterfaceType::String,
+            wasmparser::PrimitiveValType::ErrorContext => InterfaceType::ErrorContext,
         }
     }
 }
@@ -1749,6 +1764,7 @@ pub fn interface_type_to_ir(
         InterfaceType::Float64 => todo!(),
         InterfaceType::Char => todo!(),
         InterfaceType::String => todo!(),
+        InterfaceType::ErrorContext => todo!("the async proposal is not currently supported"),
         InterfaceType::Record(idx) => {
             let tys = component_types.records[*idx]
                 .fields

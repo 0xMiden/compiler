@@ -1,7 +1,8 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    derive::operation, effects::*, matchers::Matcher, patterns::RewritePatternSet, traits::*, *,
+    derive::operation, effects::*, matchers::Matcher, patterns::RewritePatternSet, smallvec,
+    traits::*, *,
 };
 
 use crate::ControlFlowDialect;
@@ -309,7 +310,7 @@ impl EffectOpInterface<MemoryEffect> for Select {
     }
 
     fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec::smallvec![])
+        EffectIterator::from_smallvec(smallvec![])
     }
 }
 

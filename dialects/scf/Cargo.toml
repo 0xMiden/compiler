@@ -22,9 +22,6 @@ midenc-dialect-cf.workspace = true
 midenc-dialect-ub.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
-midenc-hir-symbol.workspace = true
-midenc-session.workspace = true
-paste.workspace = true
 bitvec.workspace = true
 
 [dev-dependencies]

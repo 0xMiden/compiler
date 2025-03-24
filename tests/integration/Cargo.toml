@@ -13,9 +13,8 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-cargo_metadata = "0.18"
+cargo_metadata = "0.19"
 cargo-util = "0.2"
-derive_more.workspace = true
 env_logger.workspace = true
 expect-test.workspace = true
 filetime = "0.2.23"
@@ -25,7 +24,6 @@ miden-assembly.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
-miden-stdlib.workspace = true
 midenc-frontend-wasm2.workspace = true
 midenc-hir.workspace = true
 midenc-hir-eval.workspace = true
@@ -34,7 +32,7 @@ midenc-session.workspace = true
 midenc-compile.workspace = true
 midenc-debug.workspace = true
 cargo-miden.workspace = true
-wasmprinter = "0.2.80"
+wasmprinter = "0.227"
 proptest.workspace = true
 sha2 = "0.10"
 walkdir = "2.5.0"
@@ -43,3 +41,6 @@ walkdir = "2.5.0"
 blake3 = "1.5"
 concat-idents = "1.1"
 miden-core.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["blake3"]

@@ -4,7 +4,6 @@
 #![feature(debug_closure_helpers)]
 #![feature(ptr_metadata)]
 #![feature(specialization)]
-#![feature(trait_upcasting)]
 #![feature(unsize)]
 // Specialization
 #![allow(incomplete_features)]

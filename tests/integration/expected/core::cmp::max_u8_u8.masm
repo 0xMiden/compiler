@@ -3,11 +3,13 @@
 export.entrypoint
 
         push.0
-        dup.2
-        dup.2
+        dup.1
+        dup.3
         swap.1
         u32gt
         neq
+        movup.2
+        swap.1
         cdrop
 end
 

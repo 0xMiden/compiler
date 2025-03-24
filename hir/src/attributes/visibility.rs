@@ -4,7 +4,6 @@ use crate::define_attr_type;
 
 /// The types of visibility that a [Symbol] may have
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum Visibility {
     /// The symbol is public and may be referenced anywhere internal or external to the visible

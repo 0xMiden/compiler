@@ -14,7 +14,6 @@ edition.workspace = true
 [features]
 default = ["std"]
 std = ["rustc-demangle/std", "compact_str/std", "semver/std"]
-serde = ["dep:serde", "dep:serde_repr", "midenc-hir-symbol/serde"]
 debug_refcell = []
 
 [dependencies]
@@ -34,8 +33,6 @@ midenc-hir-macros.workspace = true
 midenc-session.workspace = true
 rustc-hash.workspace = true
 rustc-demangle = "0.1.19"
-serde = { workspace = true, optional = true }
-serde_repr = { workspace = true, optional = true }
 semver = { version = "1.0", default-features = false }
 smallvec.workspace = true
 thiserror.workspace = true

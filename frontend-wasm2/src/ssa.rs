@@ -13,7 +13,6 @@ use core::mem;
 use std::rc::Rc;
 
 use cranelift_entity::{entity_impl, EntityList, ListPool};
-use hashbrown::hash_map::EntryRef;
 use midenc_hir::{
     traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, ValueRef,
 };
@@ -371,6 +370,8 @@ impl SSABuilder {
 
     /// Helper function for `seal_block`
     fn seal_one_block(&mut self, block: BlockRef) {
+        use midenc_hir::hashbrown::hash_map::EntryRef;
+
         // For each undef var we look up values in the predecessors and create a block parameter
         // only if necessary.
         let mut undef_variables = match self.ssa_blocks.entry_ref(&block) {

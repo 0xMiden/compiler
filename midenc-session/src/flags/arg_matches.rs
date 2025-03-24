@@ -18,7 +18,7 @@ mod fallback {
 
     use crate::{diagnostics::Report, CompileFlag, FlagAction};
 
-    /// Violation of [`ArgMatches`][crate::ArgMatches] assumptions
+    /// Violation of [`ArgMatches`] assumptions
     #[derive(Clone, Debug, thiserror::Error)]
     #[non_exhaustive]
     pub enum MatchesError {
@@ -337,7 +337,7 @@ mod fallback {
         fn verify_arg(&self, _arg: &str) -> Result<(), MatchesError> {
             #[cfg(debug_assertions)]
             {
-                if _arg.is_empty() || self.valid_args.iter().any(|s| *s == _arg) {
+                if _arg.is_empty() || self.valid_args.contains(&_arg) {
                 } else {
                     log::debug!(
                         target: "driver",

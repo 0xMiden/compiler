@@ -31,9 +31,7 @@ anyhow.workspace = true
 cargo-component = { version = "0.21" }
 cargo-component-core = { version = "0.21" }
 cargo_metadata = "0.19"
-cargo-generate = "0.22"
-semver = "1.0.20"
-parse_arg = "0.1.4"
+cargo-generate = "0.23"
 path-absolutize = "3.1.1"
 tokio.workspace = true
 cargo-config2 = "0.1.24"

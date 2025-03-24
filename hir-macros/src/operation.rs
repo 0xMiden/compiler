@@ -451,7 +451,7 @@ impl quote::ToTokens for WithOperands<'_> {
                                     return Err(builder.context()
                                         .session()
                                         .diagnostics
-                                        .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                        .diagnostic(::midenc_hir::diagnostics::Severity::Error)
                                         .with_message("invalid operand")
                                         .with_primary_label(span, #constraint_violation)
                                         .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
@@ -481,7 +481,7 @@ impl quote::ToTokens for WithOperands<'_> {
                                 return Err(builder.context()
                                     .session()
                                     .diagnostics
-                                    .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                    .diagnostic(::midenc_hir::diagnostics::Severity::Error)
                                     .with_message("invalid operand")
                                     .with_primary_label(span, #constraint_violation)
                                     .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
@@ -588,7 +588,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                         return Err(builder.context()
                                             .session()
                                             .diagnostics
-                                            .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                            .diagnostic(::midenc_hir::diagnostics::Severity::Error)
                                             .with_message(::alloc::format!("invalid operation {}", op.name()))
                                             .with_primary_label(span, #constraint_violation)
                                             .with_secondary_label(op_result.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
@@ -619,7 +619,7 @@ impl quote::ToTokens for BuildOp<'_> {
                                         return Err(builder.context()
                                             .session()
                                             .diagnostics
-                                            .diagnostic(::midenc_session::diagnostics::Severity::Error)
+                                            .diagnostic(::midenc_hir::diagnostics::Severity::Error)
                                             .with_message("invalid operation")
                                             .with_primary_label(span, #constraint_violation)
                                             .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
@@ -678,11 +678,11 @@ impl quote::ToTokens for OpCreateFn<'_> {
             #[allow(clippy::too_many_arguments)]
             pub fn create #impl_generics(
                 builder: &mut B,
-                span: ::midenc_session::diagnostics::SourceSpan,
+                span: ::midenc_hir::diagnostics::SourceSpan,
                 #(
                     #param_names: #param_types,
                 )*
-            ) -> Result<::midenc_hir::UnsafeIntrusiveEntityRef<Self>, ::midenc_session::diagnostics::Report>
+            ) -> Result<::midenc_hir::UnsafeIntrusiveEntityRef<Self>, ::midenc_hir::diagnostics::Report>
             #where_clause
             {
                 use ::midenc_hir::{Builder, Op};
@@ -736,9 +736,9 @@ impl quote::ToTokens for OpDefinition {
 
         // impl Spanned
         tokens.extend(quote! {
-            impl #impl_generics ::midenc_session::diagnostics::Spanned for #op_ident #ty_generics #where_clause {
-                fn span(&self) -> ::midenc_session::diagnostics::SourceSpan {
-                    ::midenc_session::diagnostics::Spanned::span(&self.op)
+            impl #impl_generics ::midenc_hir::diagnostics::Spanned for #op_ident #ty_generics #where_clause {
+                fn span(&self) -> ::midenc_hir::diagnostics::SourceSpan {
+                    ::midenc_hir::diagnostics::Spanned::span(&self.op)
                 }
             }
         });
@@ -786,13 +786,13 @@ impl quote::ToTokens for OpDefinition {
             }
 
             impl #impl_generics ::midenc_hir::OpRegistration for #op_ident #ty_generics #where_clause {
-                fn dialect_name() -> ::midenc_hir_symbol::Symbol {
+                fn dialect_name() -> ::midenc_hir::interner::Symbol {
                     let namespace = <#dialect as ::midenc_hir::DialectRegistration>::NAMESPACE;
-                    ::midenc_hir_symbol::Symbol::intern(namespace)
+                    ::midenc_hir::interner::Symbol::intern(namespace)
                 }
 
-                fn name() -> ::midenc_hir_symbol::Symbol {
-                    ::midenc_hir_symbol::Symbol::intern(#opcode_str)
+                fn name() -> ::midenc_hir::interner::Symbol {
+                    ::midenc_hir::interner::Symbol::intern(#opcode_str)
                 }
 
                 fn traits() -> ::alloc::boxed::Box<[::midenc_hir::traits::TraitInfo]> {
@@ -991,8 +991,8 @@ impl quote::ToTokens for OpSymbolFns<'_> {
             tokens.extend(quote! {
                 #[doc = #symbol_symbol_doc]
                 #[inline(always)]
-                pub fn #symbol_symbol() -> ::midenc_hir_symbol::Symbol {
-                    ::midenc_hir_symbol::Symbol::intern(#symbol_str)
+                pub fn #symbol_symbol() -> ::midenc_hir::interner::Symbol {
+                    ::midenc_hir::interner::Symbol::intern(#symbol_str)
                 }
 
                 #[doc = #symbol_doc]
@@ -1121,8 +1121,8 @@ impl quote::ToTokens for OpAttrFns<'_> {
             tokens.extend(quote! {
                 #[doc = #attr_symbol_doc]
                 #[inline(always)]
-                pub fn #attr_symbol() -> ::midenc_hir_symbol::Symbol {
-                    ::midenc_hir_symbol::Symbol::intern(#attr_str)
+                pub fn #attr_symbol() -> ::midenc_hir::interner::Symbol {
+                    ::midenc_hir::interner::Symbol::intern(#attr_str)
                 }
 
                 #[doc = #attr_doc]
@@ -1443,6 +1443,7 @@ pub enum AttrKind {
 }
 
 /// An abstraction over named vs unnamed groups of some IR entity
+#[allow(clippy::large_enum_variant)]
 pub enum EntityGroup<T> {
     /// An unnamed group consisting of individual named items
     Unnamed(Vec<T>),
@@ -1470,6 +1471,7 @@ pub struct OpResult {
 pub type OpResultGroup = EntityGroup<OpResult>;
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SuccessorGroup {
     /// An unnamed group consisting of individual named successors
     Unnamed(Vec<Ident>),
@@ -1637,7 +1639,7 @@ impl quote::ToTokens for OpBuilderImpl {
                 #op_builder_doc
                 pub struct #op_builder <'a, B: ?Sized> {
                     builder: &'a mut B,
-                    span: ::midenc_session::diagnostics::SourceSpan,
+                    span: ::midenc_hir::diagnostics::SourceSpan,
                 }
 
                 impl<'a, B> #op_builder <'a, B>
@@ -1646,7 +1648,7 @@ impl quote::ToTokens for OpBuilderImpl {
                 {
                     #op_builder_new_doc
                     #[inline(always)]
-                    pub fn new(builder: &'a mut B, span: ::midenc_session::diagnostics::SourceSpan) -> Self {
+                    pub fn new(builder: &'a mut B, span: ::midenc_hir::diagnostics::SourceSpan) -> Self {
                         Self {
                             builder,
                             span,
@@ -1695,7 +1697,7 @@ impl quote::ToTokens for BuildableOpImpl {
                     type Builder<'a, T: ?Sized + ::midenc_hir::Builder + 'a> = #op_builder <'a, T>;
 
                     #[inline(always)]
-                    fn builder<'b, B>(builder: &'b mut B, span: ::midenc_session::diagnostics::SourceSpan) -> Self::Builder<'b, B>
+                    fn builder<'b, B>(builder: &'b mut B, span: ::midenc_hir::diagnostics::SourceSpan) -> Self::Builder<'b, B>
                     where
                         B: ?Sized + ::midenc_hir::Builder + 'b,
                     {
@@ -1722,7 +1724,7 @@ impl quote::ToTokens for BuildableOpImpl {
                 type Builder<'a, T: ?Sized + ::midenc_hir::Builder + 'a> = #op_builder <'a, T>;
 
                 #[inline(always)]
-                fn builder<'b, B>(builder: &'b mut B, span: ::midenc_session::diagnostics::SourceSpan) -> Self::Builder<'b, B>
+                fn builder<'b, B>(builder: &'b mut B, span: ::midenc_hir::diagnostics::SourceSpan) -> Self::Builder<'b, B>
                 where
                     B: ?Sized + ::midenc_hir::Builder + 'b,
                 {
@@ -1790,7 +1792,7 @@ impl quote::ToTokens for OpBuilderFnOnceImpl {
             };
             tokens.extend(quote! {
                 impl #required_impl_generics ::core::ops::FnOnce<#required_params_ty> for #op_builder<'a, B> #required_where_clause {
-                    type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_session::diagnostics::Report>;
+                    type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_hir::diagnostics::Report>;
 
                     #[inline]
                     extern "rust-call" fn call_once(self, args: #required_params_ty) -> Self::Output {
@@ -1826,7 +1828,7 @@ impl quote::ToTokens for OpBuilderFnOnceImpl {
         };
         tokens.extend(quote! {
             impl #impl_generics ::core::ops::FnOnce<#params_ty> for #op_builder<'a, B> #where_clause {
-                type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_session::diagnostics::Report>;
+                type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_hir::diagnostics::Report>;
 
                 #[inline]
                 extern "rust-call" fn call_once(self, args: #params_ty) -> Self::Output {
@@ -1867,7 +1869,7 @@ impl quote::ToTokens for OpVerifierImpl {
                 /// manually implemented by this type.
                 impl ::midenc_hir::OpVerifier for #op {
                     #[inline(always)]
-                    fn verify(&self, _context: &::midenc_hir::Context) -> Result<(), ::midenc_session::diagnostics::Report> {
+                    fn verify(&self, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
                         Ok(())
                     }
                 }
@@ -1914,7 +1916,7 @@ impl quote::ToTokens for OpVerifierImpl {
                 #[doc = #op_verifier_doc_lines]
             )*
             impl ::midenc_hir::OpVerifier for #op {
-                fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_session::diagnostics::Report> {
+                fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
                     /// This type represents the concrete set of derived traits for some op `T`, paired with a
                     /// type-erased [::midenc_hir::Operation] reference for an instance of that op.
                     ///
@@ -1957,7 +1959,7 @@ impl quote::ToTokens for OpVerifierImpl {
                         )*
                     {
                         #[inline]
-                        fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_session::diagnostics::Report> {
+                        fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
                             let op = self.downcast_ref::<#op>().unwrap();
                             #(
                                 if const { !<#op as ::midenc_hir::verifier::Verifier<dyn #derived_traits>>::VACUOUS } {
@@ -2283,6 +2285,7 @@ impl OperationFieldAttrs {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum OperationFieldType {
     /// An operation attribute
     Attr(AttrKind),

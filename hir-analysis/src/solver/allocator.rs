@@ -1,8 +1,8 @@
-use alloc::{
-    alloc::{Allocator, Layout},
-    rc::Rc,
+use alloc::rc::Rc;
+use core::{
+    alloc::{AllocError, Allocator, Layout},
+    ptr::NonNull,
 };
-use core::ptr::NonNull;
 
 /// This is a simple wrapper around [blink_alloc::Blink] that allows it to be used as an allocator
 /// with standard library collections such as [alloc::collections::VecDeque], without binding the
@@ -21,18 +21,18 @@ impl core::ops::Deref for DataFlowSolverAlloc {
 
 unsafe impl Allocator for DataFlowSolverAlloc {
     #[inline]
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().allocate(layout)
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        self.0.allocator().allocate(layout).map_err(|_| AllocError)
     }
 
     #[inline]
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        <blink_alloc::BlinkAlloc as Allocator>::deallocate(self.0.allocator(), ptr, layout)
+        self.0.allocator().deallocate(ptr, layout.size());
     }
 
     #[inline]
-    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().allocate_zeroed(layout)
+    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        self.0.allocator().allocate_zeroed(layout).map_err(|_| AllocError)
     }
 
     #[inline]
@@ -42,7 +42,7 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().grow(ptr, old_layout, new_layout)
+        self.0.allocator().grow(ptr, old_layout, new_layout).map_err(|_| AllocError)
     }
 
     #[inline]
@@ -52,7 +52,7 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().shrink(ptr, old_layout, new_layout)
+        self.0.allocator().shrink(ptr, old_layout, new_layout).map_err(|_| AllocError)
     }
 
     #[inline]
@@ -62,6 +62,9 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().grow_zeroed(ptr, old_layout, new_layout)
+        self.0
+            .allocator()
+            .grow_zeroed(ptr, old_layout, new_layout)
+            .map_err(|_| AllocError)
     }
 }

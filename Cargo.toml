@@ -22,7 +22,6 @@ members = [
 ]
 exclude = [
     "sdk/.cargo",
-    "tests/rust-apps/fib",
     "tests/rust-apps-wasm",
     "cargo-ext/tests/data",
     "examples",
@@ -63,7 +62,7 @@ cranelift-entity = "0.108"
 compact_str = { version = "0.8", default-features = false }
 env_logger = "0.11"
 expect-test = "1.5"
-hashbrown = { version = "0.14", features = ["nightly"] }
+hashbrown = { version = "0.14.5", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
@@ -76,9 +75,12 @@ petgraph = "0.6"
 pretty_assertions = "1.0"
 proptest = "1.4"
 rustc-hash = { version = "2.0", default-features = false }
-serde = { version = "1.0.208", features = ["serde_derive", "alloc", "rc"] }
-serde_repr = "0.1.19"
-smallvec = { version = "1.13", features = [
+serde = { version = "1.0", default-features = false, features = [
+    "serde_derive",
+    "alloc",
+    "rc",
+] }
+smallvec = { version = "1.14", default-features = false, features = [
     "union",
     "const_generics",
     "const_new",
@@ -86,7 +88,6 @@ smallvec = { version = "1.13", features = [
 ] }
 thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "0.8", features = ["preserve_order"] }
-derive_more = "0.99"
 miden-formatting = { version = "0.1", default-features = false }
 # miden-assembly = { version = "0.11.0", path = "../vm-aux/assembly" }
 # miden-core = { version = "0.11.0", path = "../vm-aux/core" }

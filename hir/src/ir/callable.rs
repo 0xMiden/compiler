@@ -154,10 +154,6 @@ impl Callable {
 /// Represents whether an argument or return value has a special purpose in
 /// the calling convention of a function.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
-)]
 #[repr(u8)]
 pub enum ArgumentPurpose {
     /// No special purpose, the argument is passed/returned by value
@@ -184,10 +180,6 @@ impl fmt::Display for ArgumentPurpose {
 ///
 /// It is for the latter scenario that argument extension is really relevant.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
-)]
 #[repr(u8)]
 pub enum ArgumentExtension {
     /// Do not perform any extension, high bits have undefined contents
@@ -210,7 +202,6 @@ impl fmt::Display for ArgumentExtension {
 
 /// Describes a function parameter or result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AbiParam {
     /// The type associated with this value
     pub ty: Type,
@@ -273,7 +264,6 @@ impl fmt::Display for AbiParam {
 /// validate and emit code for a function, whether from the perspective of a caller,
 /// or the callee.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Signature {
     /// The arguments expected by this function
     pub params: Vec<AbiParam>,

@@ -5,34 +5,3 @@ version = 4
 [[package]]
 name = "collatz"
 version = "0.1.0"
-dependencies = [
- "miden",
-]
-
-[[package]]
-name = "miden"
-version = "0.0.7"
-source = "git+https://github.com/0xPolygonMiden/compiler#8aa89ff73021253520694904304f99f1f53d4b9a"
-dependencies = [
- "miden-base-sys",
- "miden-sdk-alloc",
- "miden-stdlib-sys",
-]
-
-[[package]]
-name = "miden-base-sys"
-version = "0.0.7"
-source = "git+https://github.com/0xPolygonMiden/compiler#8aa89ff73021253520694904304f99f1f53d4b9a"
-dependencies = [
- "miden-stdlib-sys",
-]
-
-[[package]]
-name = "miden-sdk-alloc"
-version = "0.0.7"
-source = "git+https://github.com/0xPolygonMiden/compiler#8aa89ff73021253520694904304f99f1f53d4b9a"
-
-[[package]]
-name = "miden-stdlib-sys"
-version = "0.0.7"
-source = "git+https://github.com/0xPolygonMiden/compiler#8aa89ff73021253520694904304f99f1f53d4b9a"

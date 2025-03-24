@@ -3,12 +3,12 @@ use std::rc::Rc;
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
     self as hir2,
+    diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
     interner::Symbol,
     Abi, BuilderExt, Context, FunctionIdent, FunctionType, FxHashMap, Ident, SourceSpan,
 };
-use midenc_session::diagnostics::Report;
-use wasmparser::types::{ComponentEntityType, TypesRef};
+use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
 use super::{
     interface_type_to_ir, CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule,
@@ -163,7 +163,7 @@ impl<'a> ComponentTranslator<'a> {
                     "Resource representation is not supported"
                 )
             }
-            LocalInitializer::ResourceDrop(..) => {
+            LocalInitializer::ResourceDrop(..) | LocalInitializer::ResourceDropAsync(..) => {
                 unsupported_diag!(self.context.diagnostics(), "Resource dropping is not supported")
             }
             LocalInitializer::ModuleStatic(static_module_idx) => {

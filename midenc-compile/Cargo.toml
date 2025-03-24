@@ -15,10 +15,9 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["anyhow/std", "miden-assembly/std", "midenc-hir/std", "dep:clap"]
+std = ["miden-assembly/std", "midenc-hir/std", "dep:clap"]
 
 [dependencies]
-anyhow.workspace = true
 clap = { workspace = true, optional = true }
 log.workspace = true
 inventory.workspace = true

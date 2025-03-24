@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{derive::operation, effects::*, smallvec, traits::*, *};
 
 use crate::*;
 
@@ -26,7 +26,7 @@ impl EffectOpInterface<MemoryEffect> for Poison {
     }
 
     fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec::smallvec![])
+        EffectIterator::from_smallvec(smallvec![])
     }
 }
 

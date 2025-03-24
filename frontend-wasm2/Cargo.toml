@@ -11,18 +11,17 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[features]
+default = ["std"]
+std = ["wasmparser/std", "gimli/std"]
+
 [dependencies]
 anyhow.workspace = true
 addr2line = "0.24"
 cranelift-entity.workspace = true
-derive_more.workspace = true
-gimli = { version = "0.31", default-features = false, features = [
-    'read',
-    'std',
-] }
+gimli = { version = "0.31", default-features = false, features = ['read'] }
 indexmap = "2.7"
 log.workspace = true
-hashbrown.workspace = true
 miden-core.workspace = true
 midenc-hir.workspace = true
 midenc-dialect-hir.workspace = true
@@ -31,9 +30,12 @@ midenc-dialect-ub.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-hir-type.workspace = true
 midenc-session.workspace = true
-smallvec.workspace = true
 thiserror.workspace = true
-wasmparser = "0.214"
+wasmparser = { version = "0.227", default-features = false, features = [
+    "features",
+    "component-model",
+    "validate",
+] }
 
 [dev-dependencies]
 wat.workspace = true

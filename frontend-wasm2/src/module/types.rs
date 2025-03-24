@@ -216,7 +216,7 @@ impl WasmFuncType {
 }
 
 /// An index of an entity.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, derive_more::From)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum EntityIndex {
     /// Function index.
     Function(FuncIndex),
@@ -234,6 +234,30 @@ impl EntityIndex {
             EntityIndex::Function(f) => *f,
             eidx => panic!("not a func, but {eidx:?}"),
         }
+    }
+}
+
+impl From<FuncIndex> for EntityIndex {
+    fn from(value: FuncIndex) -> Self {
+        Self::Function(value)
+    }
+}
+
+impl From<TableIndex> for EntityIndex {
+    fn from(value: TableIndex) -> Self {
+        Self::Table(value)
+    }
+}
+
+impl From<MemoryIndex> for EntityIndex {
+    fn from(value: MemoryIndex) -> Self {
+        Self::Memory(value)
+    }
+}
+
+impl From<GlobalIndex> for EntityIndex {
+    fn from(value: GlobalIndex) -> Self {
+        Self::Global(value)
     }
 }
 

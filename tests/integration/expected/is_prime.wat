@@ -1,5 +1,9 @@
 (module $is_prime.wasm
   (type (;0;) (func (param i32) (result i32)))
+  (memory (;0;) 16)
+  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+  (export "memory" (memory 0))
+  (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;0;) (type 0) (param i32) (result i32)
     (local i32 i32 i32)
     block ;; label = @1
@@ -70,8 +74,4 @@
     end
     i32.const 0
   )
-  (memory (;0;) 16)
-  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-  (export "memory" (memory 0))
-  (export "entrypoint" (func $entrypoint))
 )
