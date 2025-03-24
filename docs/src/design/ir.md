@@ -9,14 +9,10 @@ This document describes the concepts, usage, and overall structure of the interm
   * [Blocks](#blocks)
   * [Values](#values)
     * [Operands](#operands)
-    * [Results](#results)
     * [Immediates](#immediates)
   * [Attributes](#attributes)
   * [Traits](#traits)
   * [Interfaces](#interfaces)
-    * [BranchOpInterface]
-    * [RegionBranchOpInterface]
-    * [RegionBranchTerminatorOpInterface]
   * [Symbols](#symbols)
   * [Symbol Tables](#symbol-tables)
   * [Successors and Predecessors](#successors-and-predecessors)
@@ -27,6 +23,8 @@ This document describes the concepts, usage, and overall structure of the interm
   * [Canonicalization](#canonicalization)
     * [Folding](#folding)
 * [Implementation Details](#implementation-details)
+  * [Session](#session)
+  * [Context](#context)
   * [Entity References](#entity-references)
     * [Entity Storage](#entity-storage)
       * [StoreableEntity](#storeableentity)
@@ -104,10 +102,11 @@ flow, as the only way to transfer control between blocks is by using unstructure
 
 A _block_, or _basic block_, is a set of one or more [_operations_](#operations) in which there is no control flow, except via the block _terminator_, i.e. the last operation in the block, which is responsible for transferring control to another block, exiting the current region (e.g. returning from a function body), or terminating program execution in some way (e.g. `ub.unreachable`).
 
-A block may declare _block parameters_, the only other way to introduce [_values_](#values) into the IR, aside from operation results. Predecessors of a block must ensure that they provide arguments for all block parameters when transfering control to the block.
+Blocks belong to [_regions_](#regions), and if a block has no parent region, it is considered _orphaned_.
 
-Blocks always belong to a [_region_](#regions). The first block in a region is called the _entry block_, and is special in that its block parameters (if any) correspond to whatever arguments the region accepts. For example, the body of a function is a region, and the entry block in that region must have a parameter list that exactly matches the arity and type of the parameters declared in the function signature. In this way, the function parameters are materialized as
-SSA values in the IR.
+A block may declare _block arguments_, the only other way to introduce [_values_](#values) into the IR, aside from operation results. Predecessors of a block must ensure that they provide inputs for all block arguments when transfering control to the block.
+
+Blocks which are reachable as successors of some control flow operation, are said to be _used_ by that operation. These uses are represented in the form of the `BlockOperand` type, which specifies what block is used, what operation is the user, and the index of the successor in the operation's [_successor storage_](#entity-storage). The `BlockOperand` is linked into the [_use-list_](#entity-lists) of the referenced `Block`, and a `BlockOperandRef` is stored as part of the successor information in the using operation's successor storage. This is the means by which the control flow graph is traversed - you can navigate to predecessors of a block by visiting all of its "users", and you navigate to successors of a block by visiting all successors of the block terminator operation.
 
 ### Values
 
@@ -120,12 +119,14 @@ A _value_ represents terms in a program, temporaries created to store data as it
 
 Value _definitions_ (aka "defs") can be introduced in two ways:
 
-1. Block parameters. Most notably, the entry block for function bodies materializes the function parameters as values via block parameters. Block parameters are also used at places in the CFG where two definitions for a single value are joined together. For example, if the value assigned to a variable in the source language is assigned conditionally, then in the IR, there will be a block with a parameter corresponding to the value of that variable after it is assigned. All uses after that point, would refer to that block parameter, rather than the value from a specific branch. Similarly, loop-carried variables, such as an iteration count, are typically manifested as block parameters of the block corresponding to the loop header.
-2. Operation results. The most common way in which values are introduced.
+1. Block argument lists, i.e. the `BlockArgument` value kind. In general, block arguments are used as a more intuitive and ergonomic representation of SSA _phi nodes_, joining multiple definitions of a single value together at control flow join points. Block arguments are also used to represent _region arguments_, which correspond to the set of values that will be forward to that region by the parent operation (or from a sibling region). These arguments are defined as block arguments of the region's entry block. A prime example of this, is the `Function` op. The parameters expressed by the function signature are reflected in the entry block argument list of the function body region.
+2. Operation results, i.e. the `OpResult` value kind. This is the primary way in which values are introduced.
 
-Values have _uses_ corresponding to operands or successor arguments (special operands which are used to satisfy successor block parameters). As a result, values also have _users_, corresponding to the specific operation and operand forming a _use.
+Both value kinds above implement the `Value` trait, which provides the set of metadata and behaviors that are common across all value kinds. In general, you will almost always be working with values in terms of this trait, rather than the concrete type.
 
-All _uses_ of a value must be _dominated_ by its _definition_. The IR is invalid if this rule is ever violated.
+Values have _uses_ corresponding to usage as an operand of some operation. This is represented via the `OpOperand` type, which encodes the use of a specific value (i.e. its _user_, or owning operation; what value is used; its index in operand storage). The `OpOperand` is linked into the [_use list_](#entity-lists) of the value, and the `OpOperandRef` is stored in the [_entity storage_](#entity-storage) of the using operation. This allows navigating from an operation to all of the values it uses, as well from a value to all of its users. This makes replacing all uses of a value extremely efficient.
+
+As always, all _uses_ of a value must be dominated by its definition. The IR is invalid if this rule is ever violated.
 
 #### Operands
 
@@ -136,31 +137,36 @@ closer to the top of the operand stack it will appear.
 
 Similarly, the ordering of operand results also correlates to the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
 
-#### Results
-
-TODO
-
 #### Immediates
 
-An _immediate_ is a literal value, typically of integral type, used as an operand. Not all operations support immediates, but those that do, will typically use them to attempt to perform optimizations only possible when there is static information available about the operands. For example, multiplying any number by 2, will always produce an even number, so a sequence such as
-`mul.2 is_odd` can be folded to `false` at compile-time, allowing further optimizations to occur.
+Immediates are a built-in [_attribute_](#attributes) type, which we use to represent constants that are able to be used as "immediate" operands of machine instructions (e.g. a literal memory address, or integer value).
 
-Immediates are separate from _constants_, in that immediates _are_ constants, but specifically constants which are valid operand values.
+The `Immediate` type  provides a number of useful APIs for interacting with an immediate value, such as bitcasts, conversions, and common queries, e.g. "is this a signed integer".
+
+It should be noted, that this type is a convenience, it is entirely possible to represent the same information using other types, e.g. `u32` rather than `Immediate::U32`, and the IR makes no assumptions about what type is used for constants in general. We do, however, assume this type is used for constants in specific dialects of the IR, e.g. `hir`.
 
 ### Attributes
 
-An _attribute_ is (typically optional) metadata attached to an IR entity. In HIR, attributes can be attached to functions, global variables, and operations.
+Attributes represent named metadata attached to an _operation_.
 
-Attributes are stored as a set of arbitrary key-value data, where values are optional. An attribute with no value acts like a "marker", i.e. it is meaningful just be being present (e.g. `#[inline]` in Rust).
+Attributes can be used in two primary ways:
 
-Attribute values must implement the `AttributeValue` trait.
+* A name without a value, i.e. a "marker" attribute. In this case, the presence of the attribute is significant, e.g. `#[inline]`.
+* A name with a value, i.e. a "key-value" attribute. This is the more common usage, e.g. `#[overflow = wrapping]`.
+
+Any type that implements the `AttributeValue` trait can be used as the value of a key/value-style attribute. This trait is implemented by default for all integral types, as well as a handful of IR types which have been used as attributes. There are also a few generic built-in attribute types that you may be interested in:
+
+* `ArrayAttr`, which can represent an array/vector-like collection of attribute values, e.g. `#[indices = [1, 2, 3]]`.
+* `SetAttr`, which represents a set-like collection of attribute values. The primary difference between this and `ArrayAttr` is that the values are guaranteed to be unique.
+* `DictAttr`, which represents a map-like collection of attribute values.
+
+It should be noted that there is no guarantee that attributes are preserved by transformations, i.e. if an operation is erased/replaced, attributes _may_ be lost in the process. As such, you must not assume that they will be preserved, unless made an intrinsic part of the operation definition.
 
 ### Traits
 
-A _trait_ defines some property of an operation. This allows operations
-to operated over generically based on those properties, in an analysis or rewrite, without having to handle the specific operation type explicitly.
+A _trait_ defines some property of an operation. This allows operations to be operated over generically based on those properties, e.g. in an analysis or rewrite, without having to handle the concrete operation type explicitly.
 
-Operations can always be cast to their implementing traits, as well as queried for if they implement a given trait.
+Operations can always be cast to their implementing traits, as well as queried for if they implement a given trait. The set of traits attached to an operation can either be declared as part of the operation itself, or be attached to the operation at [dialect registration](#dialect-registration) time via [dialect hooks](#dialect-hooks).
 
 There are a number of predefined traits, found in `midenc_hir::traits`, e.g.:
 
@@ -170,23 +176,19 @@ There are a number of predefined traits, found in `midenc_hir::traits`, e.g.:
 * `ConstantLike`, a marker trait for operations that produce a constant value
 * `Commutative`, a marker trait for binary operations that exhibit commutativity, i.e. the order of the operands can be swapped without changing semantics.
 
-There are others as well, responsible for aiding in type checking, decorating operations with the types of side effects they do (or do not) exhibit, and more.
-
 ### Interfaces
 
-TODO
+An _interface_, in contrast to a [_trait_](#traits), represents not only that an operation exhibits some property, but also provides a set of specialized APIs for working with them.
 
-#### BranchOpInterface
+Some key examples:
 
-TODO
-
-#### RegionBranchOpInterface
-
-TODO
-
-#### RegionBranchTerminatorOpInterface
-
-TODO
+* `EffectOpInterface`, operations whose side effects, or lack thereof, are well-specified. `MemoryEffectOpInterface` is a specialization of this interface specifically for operations with memory effects (e.g. read/write, alloc/free). This interface allows querying what effects an operation has, what resource the effect applies to (if known), or whether an operation affects a specific resource, and by what effect(s).
+* `CallableOpInterface`, operations which are "callable", i.e. can be targets of a call-like operation. This allows querying information about the callable, such as its signature, whether it is a declaration or definition, etc.
+* `CallOpInterface`, operations which can call a callable operation. This interface provides information about the call, and its callee.
+* `SelectOpInterface`, operations which represent a selection between two values based on a boolean condition. This interface allows operating on all select-like operations without knowing what dialect they are from.
+* `BranchOpInterface`, operations which implement an unstructured control flow branch from one block to one or more other blocks. This interface provides a generic means of accessing successors, successor operands, etc.
+* `RegionBranchOpInterface`, operations which implement structured control flow from themselves (the parent), to one of their regions (the children). Much like `BranchOpInterface`, this interface provides a generic means of querying which regions are successors on entry, which regions are successors of their siblings, whether a region is "repetitive", i.e. loops, and more.
+* `RegionBranchTerminatorOpInterface`, operations which represent control flow from some region of a `RegionBranchOpInterface` op, either to the parent op (e.g. returning/yielding), or to another region of that op (e.g. branching/yielding). Such operations are always children of a `RegionBranchOpInterface`, and conversely, the regions of a `RegionBranchOpInterface` must always terminate with an op that implements this interface.
 
 ### Symbol Tables
 
@@ -210,14 +212,47 @@ Symbols, like the various forms of [_values_](#values), track their uses and def
 
 ### Successors and Predecessors
 
-The concept of _predecessor_ and _successor_ corresponds to a parent/child relationship in a control-flow graph (CFG), where edges in the graph are directed, and describe the order in which control flows through the program. If a node $A$ transfers control to a node $B$ after it is finished executing, then $A$ is a _predecessor_ of $B$, and $B$ is a _successor_ of $A$.
+The concept of _predecessor_ and _successor_ corresponds to a parent/child relationship between nodes in a control-flow graph (CFG), where edges in the graph are directed, and describe the order in which control flows through the program. If a node $A$ transfers control to a node $B$ after it is finished executing, then $A$ is a _predecessor_ of $B$, and $B$ is a _successor_ of $A$.
 
-Successors and predecessors can be looked at from two similar, but slightly different, perspectives:
+Successors and predecessors can be looked at from a few similar, but unique, perspectives:
 
-1. In terms of operations. In an SSA CFG, operations in a basic block are executed in order, and thus the successor of an operation in the block, is the next operation to be executed in that block, with the predecessor being the inverse of that relationship. At basic block boundaries, the successor(s) of the _terminator_ operation, are the set of operations to which control can be transferred. Likewise, the predecessor(s) of the first operation in a block, are the set of terminators which can transfer control to the containing block. This is the most precise, but is not quite as intuitive as the alternative.
-2. In terms of blocks. The successor(s) of a basic block, are the set of blocks to which control may be transferred when exiting the block. Likewise, the precessor(s) of a block, are the set of blocks which can transfer control to it. We are most frequently dealing with the concept of successors and predecessors in terms of blocks, as it allows us to focus on the interesting parts of the CFG. For example, the dominator tree and loop analyses, are constructed in terms of a block-oriented CFG, since we can trivially derive dominance and loop information for individual ops from their containing blocks.
+#### Relating blocks
 
-Typically, you will see successors as a pair of `(block_id, &[value_id])`, i.e. the block to which control is transferred, and the set of values being passed as block arguments. On the other hand, predecessors are most often a pair of `(block_id, terminator_op_id)`, i.e. the block from which control originates, and the specific operation responsible.
+We're generally interested in successors/predecessors as they relate to blocks in the CFG. This is of primary interest in dominance and loop analyses, as the operations belonging to a block inherit the interesting properties of those analyses from their parent block.
+
+In abstract, the predecessor of a block is the operation which transfers control to that block. When considering what blocks are predecessors of the current block, we're deriving that by mapping each predecessor operation to its parent block.
+
+We are often interested in specific edges of the CFG, and because it is possible for a predecessor operation to have multiple edges to the same successor block, it is insufficient to refer to these edges by predecessor op and target block alone, instead we also need to know the successor index in the predecessor op.
+
+Unique edges in the CFG are represented in the form of the `BlockOperand` type, which provides not only references to the predecessor operation and the successor block, but also the index of the successor in the predecessor's successor storage.
+
+#### Relating operations
+
+This perspective is less common, but useful to be aware of.
+
+Operations in a basic block are, generally, assumed to execute in order, top to bottom. Thus, the predecessor/successor terminology can also refer to the relationship between two consecutive operations in a basic block, i.e. if $A$ immediately precedes $B$ in a block, then $A$ is the predecessor of $B$, and $B$ is the successor of $A$.
+
+We do not generally refer to this relationship in the compiler, except in perhaps one or two places, so as to avoid confusion due to the overloaded terminology.
+
+#### Relating regions
+
+Another important place in which the predecessor/successor terminology applies, is in the relationship between a parent operation and its regions, specifically when the parent implements `RegionBranchOpInterface`.
+
+In this dynamic, the relationship exists between two points, which we represent via the `RegionBranchPoint` type, where the two points can be either the parent op itself, or any of its child regions. In practice, this produces three types of edges:
+
+1. From the parent op itself, to any of its child regions, i.e. "entering" the op and that specific region). In this case, the predecessor is the parent operation, and the successor is the child region (or more precisely, the entry block of that region).
+2. From one of the child regions to one of its siblings, i.e. "yielding" to the sibling region. In this case, the predecessor is the terminator operation of the origin region, and the successor is the entry block of the sibling tregion.
+3. From a child regions to the parent operation, i.e. "returning" from the op. In this case, the predecessor is the terminator operation of the child region, and the successor is the operation immediately succeeding the parent operation (not the parent operation itself).
+
+This relationship is important to understand when working with `RegionBranchOpInterface` and `RegionBranchTerminatorOpInterface` operations.
+
+#### Relating call and callable
+
+The last place where the predecessor/successor terminology is used, is in regards to inter-procedural analysis of call operations and their callees.
+
+In this situation, predecessors of a callable are the set of call sites which refer to it; while successors of a callable are the operations immediately succeeding the call site where control will resume when returning from the callable region.
+
+We care about this when performing inter-procedural analyses, as it dictates how the data flow analysis state is propagated from caller to callee, and back to the caller again.
 
 ## High-Level Structure
 
@@ -373,19 +408,64 @@ Analyses can be implemented for a specific concrete operation, or any operation.
 
 ### Pattern Rewrites
 
-TODO
+See the [Rewrites](rewrites.md) document for more information on rewrite passes in general, including the current set of transformation passes that build on the pattern rewrite infrastructure.
+
+Pattern rewrites are essentially transformation passes which are scheduled on a specific operation type, or any operation that implements some trait or interface; recognizes some pattern about the operation which we desire to rewrite/transform in some way, and then attempts to perform that rewrite.
+
+Pattern rewrites are applied using the `GreedyPatternRewriteDriver`, which coordinates the application of rewrites, reschedules operations affected by a rewrite to determine if the newly rewritten IR is now amenable to further rewrites, and attempts to fold operations and materialize constants, and if so configured, apply region simplification.
+
+These are the core means by which transformation of the IR is performed.
 
 ### Canonicalization
 
-TODO
+Canonicalization is a form of [_pattern rewrite_](#pattern-rewrites) that applies to a specific operation type that has a _canonical_ form, recognizes whether the operation is in that form, and if not, transforms it so that it is.
+
+What constitutes the _canonical form_ of an operation, depends on the operation itself:
+
+* In some cases, this might be ensuring that if an operation has a constant operand, that it is always in the same position - thus making pattern recognition at higher levels easier, as they only need to attempt to match a single pattern.
+* In the case of control flow, the canonical form is often the simplest possible form that preserves the semantics.
+* Some operations can be simplified based on known constant operands, or reduced to a constant themselves. This process is called [_constant folding_](#folding), and is an implicit canonicalization of all operations which support folding, via the `Foldable` trait.
 
 #### Folding
 
-TODO
+Constant-folding is the process by which an operation is simplified, replaced with a simpler/less-expensive operation, or reduced to a constant value - when some or all of its operands are known constant values.
+
+The obvious example of this, is something like `v3 = arith.add v1, v2`, where both `v1` and `v2` are known to be constant values. This addition can be performed at compile-time, and the entire `arith.add` replaced with `arith.constant`, potentially enabling further folds of any operation using `v3`.
+
+What about when only some of the operands are constant? That depends on the operation in question. For example, something like `v4 = cf.select v1, v2, v3`, where `v1` is known to be the constant value `true`, would allow the entire `cf.select` to be erased, and all uses of `v4` replaced with `v2`. However, if only `v2` was constant, the attempt to fold the `cf.select` would fail, as no change can be made.
+
+A fold has three outcomes:
+
+* Success, i.e. the operation was able to be folded away; it can be erased and all uses of its results replaced with the fold outputs
+* In-place, the operation was able to be simplified, but not folded away/replaced. In this case, there are no fold outputs, the original operation is simply updated.
+* Failure, i.e. the operation could not be folded or simplified in any way
+
+Operation folding can be done manually, but is largely handled via the [_canonicalization_](#canonicalization) pass, which combines folding with other pattern rewrites, as well as region simplification.
 
 ## Implementation Details
 
-TODO
+The following sections get into certain low-level implementation details of the IR, which are important to be aware of when working with it. They are not ordered in any particular way, but are here for future reference.
+
+You should always refer to the documentation associated with the types mentioned here when working with them; however, this section is intended to provide an intro to the concepts and design decisions involved, so that you have the necessary context to understand how these things fit together and are used.
+
+### Session
+
+The `Session` type, provided by the `midenc-session` crate, represents all of the configuration for the current compilation _session_, i.e. invocation.
+
+A session begins by providing the compiler driver with some inputs, user-configurable flags/options, and intrumentation handler. A session ends when those inputs have been compiled to some output, and the driver exits.
+
+### Context
+
+The `Context` type, provided by the `midenc-hir` crate, encapsulates the current [_session_](#session), and provides all of the IR-specific storage and state required during compilation.
+
+In particular, a `Context` maintains the set of registered dialects, their hooks, the allocator for all IR entities produced with that context, and the uniquer for allocated value and block identifiers. All IR entities which are allocated using the `Context`, are referenced using [_entity references_](#entity-references).
+
+The `Context` itself is not commonly used directly, except in rare cases - primarily only when extending the context with dialect hooks, and when allocating values, operands, and blocks by hand.
+
+Every operation has access to the context which created it, making it easy to always access the context when needed.
+
+> [!WARNING]
+> You _must_ ensure that the `Context` outlives any reference to an IR entity which is allocated with it. For this reason, we typically instantiate the `Context` at the same time as the `Session`, near the driver entrypoint, and either pass it by reference, or clone a reference-counted pointer to it; only dropping the original as the compiler is exiting.
 
 ### Entity References
 
@@ -394,6 +474,10 @@ TODO
 #### Entity Storage
 
 TODO
+
+##### StoreableEntity
+
+##### ValueRange
 
 #### Entity Lists
 
@@ -411,7 +495,23 @@ TODO
 
 TODO
 
+#### Dialect Registration
+
+TODO
+
+#### Dialect Hooks
+
+TODO
+
+#### Defining Operations
+
+TODO
+
 ### Builders
+
+TODO
+
+#### Validation
 
 TODO
 
