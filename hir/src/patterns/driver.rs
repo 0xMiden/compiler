@@ -59,9 +59,9 @@ pub fn apply_patterns_and_fold_region_greedily(
     let converged = driver.simplify();
     if converged.is_err() {
         if let Some(max_iterations) = driver.driver.config.max_iterations {
-            log::trace!("pattern rewrite did not converge after scanning {max_iterations} times");
+            log::trace!(target: "pattern-rewrite-driver", "pattern rewrite did not converge after scanning {max_iterations} times");
         } else {
-            log::trace!("pattern rewrite did not converge");
+            log::trace!(target: "pattern-rewrite-driver", "pattern rewrite did not converge");
         }
     }
     converged
@@ -196,7 +196,7 @@ pub fn apply_patterns_and_fold(
     if converged.is_ok() {
         Ok(effect)
     } else {
-        log::trace!("pattern rewrite did not converge after {max_rewrites} rewrites");
+        log::trace!(target: "pattern-rewrite-driver", "pattern rewrite did not converge after {max_rewrites} rewrites");
         Err(effect)
     }
 }
@@ -402,11 +402,11 @@ impl GreedyPatternRewriteDriver {
         if matches!(self.config.restrict, GreedyRewriteStrictness::Any)
             || self.filtered_ops.borrow().contains(&op)
         {
-            log::trace!("adding single op '{}' to worklist", op.name());
+            log::trace!(target: "pattern-rewrite-driver", "adding single op '{}' to worklist", op.name());
             self.worklist.borrow_mut().push(op);
         } else {
             log::trace!(
-                "skipped adding single op '{}' to worklist due to strictness level",
+                target: "pattern-rewrite-driver", "skipped adding single op '{}' to worklist due to strictness level",
                 op.name()
             );
         }
@@ -426,13 +426,13 @@ impl GreedyPatternRewriteDriver {
                 }
                 return;
             } else {
-                log::trace!("gathering ancestors of '{}' for worklist", ancestor_op.name());
+                log::trace!(target: "pattern-rewrite-driver", "gathering ancestors of '{}' for worklist", ancestor_op.name());
                 ancestors.push(ancestor_op);
             }
             if let Some(region) = region {
                 op = region.parent();
             } else {
-                log::trace!("reached top level op while searching for ancestors");
+                log::trace!(target: "pattern-rewrite-driver", "reached top level op while searching for ancestors");
             }
         }
     }
@@ -441,7 +441,7 @@ impl GreedyPatternRewriteDriver {
     ///
     /// Returns true if the IR was changed.
     pub fn process_worklist(self: Rc<Self>) -> bool {
-        log::debug!("starting processing of greedy pattern rewrite driver worklist");
+        log::debug!(target: "pattern-rewrite-driver", "starting processing of greedy pattern rewrite driver worklist");
         let mut rewriter =
             PatternRewriter::new_with_listener(self.context.clone(), Rc::clone(&self));
 
@@ -450,7 +450,7 @@ impl GreedyPatternRewriteDriver {
         while self.config.max_rewrites.is_none_or(|max| num_rewrites < max.get()) {
             let Some(op) = self.worklist.borrow_mut().pop() else {
                 // Worklist is empty, we've converged
-                log::debug!("processing worklist complete, rewrites have converged");
+                log::debug!(target: "pattern-rewrite-driver", "processing worklist complete, rewrites have converged");
                 return changed;
             };
 
@@ -461,7 +461,7 @@ impl GreedyPatternRewriteDriver {
         }
 
         log::debug!(
-            "processing worklist was canceled after {} rewrites without converging (reached max \
+            target: "pattern-rewrite-driver", "processing worklist was canceled after {} rewrites without converging (reached max \
              rewrite limit)",
             self.config.max_rewrites.map(|max| max.get()).unwrap_or(u32::MAX)
         );
@@ -477,14 +477,15 @@ impl GreedyPatternRewriteDriver {
         rewriter: &mut PatternRewriter<Rc<Self>>,
         mut op_ref: OperationRef,
     ) -> bool {
-        let op = op_ref.borrow_mut();
-        log::trace!("processing operation '{}'", op.name());
+        let op = op_ref.borrow();
+
+        log::trace!(target: "pattern-rewrite-driver", "processing operation '{op}'");
 
         // If the operation is trivially dead - remove it.
         if op.is_trivially_dead() {
             drop(op);
             rewriter.erase_op(op_ref);
-            log::trace!("processing complete: operation is trivially dead");
+            log::trace!(target: "pattern-rewrite-driver", "processing complete: operation is trivially dead");
             return true;
         }
 
@@ -492,16 +493,24 @@ impl GreedyPatternRewriteDriver {
         // folding loop, since the folded result would be immediately materialized as a constant
         // op, and then revisited.
         if !op.implements::<dyn ConstantLike>() {
+            // Re-borrow mutably since we're going to try and rewrite `op` now
+            drop(op);
+            let op = op_ref.borrow_mut();
+
             let mut results = SmallVec::<[OpFoldResult; 1]>::default();
-            log::trace!("attempting to fold operation..");
+            log::trace!(target: "pattern-rewrite-driver", "attempting to fold operation..");
             if op.fold(&mut results).is_ok() {
                 if results.is_empty() {
                     // Op was modified in-place
                     self.notify_operation_modified(op_ref);
-                    log::trace!("operation was succesfully folded/modified in-place");
+                    log::trace!(
+                        target: "pattern-rewrite-driver",
+                        "operation was succesfully folded/modified in-place"
+                    );
                     return true;
                 } else {
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "operation was succesfully folded away, to be replaced with: {}",
                         results.as_slice().print(&crate::OpPrintingFlags::default(), op.context())
                     );
@@ -516,7 +525,7 @@ impl GreedyPatternRewriteDriver {
                 let mut rewriter = InsertionGuard::new(&mut **rewriter);
                 rewriter.set_insertion_point(ProgramPoint::before(op_ref));
 
-                log::trace!("replacing op with fold results..");
+                log::trace!(target: "pattern-rewrite-driver", "replacing op with fold results..");
                 let mut replacements = SmallVec::<[Option<ValueRef>; 2]>::default();
                 let mut materialization_succeeded = true;
                 for (fold_result, result_ty) in results
@@ -536,6 +545,7 @@ impl GreedyPatternRewriteDriver {
                             // Materialize attributes as SSA values using a constant op
                             let span = op.span();
                             log::trace!(
+                                target: "pattern-rewrite-driver",
                                 "materializing constant for value '{}' and type '{result_ty}'",
                                 attr.print(&crate::OpPrintingFlags::default(), op.context())
                             );
@@ -548,6 +558,7 @@ impl GreedyPatternRewriteDriver {
                             match constant_op {
                                 None => {
                                     log::trace!(
+                                        target: "pattern-rewrite-driver",
                                         "materialization failed: cleaning up any materialized ops \
                                          for {} previous results",
                                         replacements.len()
@@ -589,6 +600,7 @@ impl GreedyPatternRewriteDriver {
                                         "materialize_constant produced incorrect result type"
                                     );
                                     log::trace!(
+                                        target: "pattern-rewrite-driver",
                                         "successfully materialized constant as {}",
                                         result.borrow().id()
                                     );
@@ -601,22 +613,25 @@ impl GreedyPatternRewriteDriver {
 
                 if materialization_succeeded {
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "materialization of fold results was successful, performing replacement.."
                     );
                     drop(op);
                     rewriter.replace_op_with_values(op_ref, &replacements);
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "fold succeeded: operation was replaced with materialized constants"
                     );
                     return true;
                 } else {
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "materialization of fold results failed, proceeding without folding"
                     );
                 }
             }
         } else {
-            log::trace!("operation could not be folded");
+            log::trace!(target: "pattern-rewrite-driver", "operation could not be folded");
         }
 
         // Try to match one of the patterns.
@@ -630,24 +645,23 @@ impl GreedyPatternRewriteDriver {
         // the listener captured by these closures.
         //
         // This is another aspect of the listener infra that needs to be handled
-        log::trace!("attempting to match and rewrite one of the input patterns..");
+        log::trace!(target: "pattern-rewrite-driver", "attempting to match and rewrite one of the input patterns..");
         let result = if let Some(listener) = self.config.listener.as_deref() {
-            let op_name = op.name();
+            let op_name = op_ref.borrow().name();
             let can_apply = |pattern: &dyn RewritePattern| {
-                log::trace!("applying pattern {} to op {}", pattern.name(), &op_name);
+                log::trace!(target: "pattern-rewrite-driver", "applying pattern {} to op {}", pattern.name(), &op_name);
                 listener.notify_pattern_begin(pattern, op_ref);
                 true
             };
             let on_failure = |pattern: &dyn RewritePattern| {
-                log::trace!("pattern failed to match");
+                log::trace!(target: "pattern-rewrite-driver", "pattern failed to match");
                 listener.notify_pattern_end(pattern, false);
             };
             let on_success = |pattern: &dyn RewritePattern| {
-                log::trace!("pattern applied successfully");
+                log::trace!(target: "pattern-rewrite-driver", "pattern applied successfully");
                 listener.notify_pattern_end(pattern, true);
                 Ok(())
             };
-            drop(op);
             self.matcher.borrow_mut().match_and_rewrite(
                 op_ref,
                 &mut **rewriter,
@@ -656,7 +670,6 @@ impl GreedyPatternRewriteDriver {
                 on_success,
             )
         } else {
-            drop(op);
             self.matcher.borrow_mut().match_and_rewrite(
                 op_ref,
                 &mut **rewriter,
@@ -668,16 +681,16 @@ impl GreedyPatternRewriteDriver {
 
         match result {
             Ok(_) => {
-                log::trace!("processing complete: pattern matched and operation was rewritten");
+                log::trace!(target: "pattern-rewrite-driver", "processing complete: pattern matched and operation was rewritten");
                 true
             }
             Err(PatternApplicationError::NoMatchesFound) => {
-                log::debug!("processing complete: exhausted all patterns without finding a match");
+                log::debug!(target: "pattern-rewrite-driver", "processing complete: exhausted all patterns without finding a match");
                 false
             }
             Err(PatternApplicationError::Report(report)) => {
                 log::debug!(
-                    "processing complete: error occurred during match and rewrite: {report}"
+                    target: "pattern-rewrite-driver", "processing complete: error occurred during match and rewrite: {report}"
                 );
                 false
             }
@@ -851,7 +864,7 @@ impl RegionPatternRewriteDriver {
         let mut iteration = 0;
 
         while self.driver.config.max_iterations.is_none_or(|max| iteration < max.get()) {
-            log::trace!("starting iteration {iteration} of region pattern rewrite driver");
+            log::trace!(target: "pattern-rewrite-driver", "starting iteration {iteration} of region pattern rewrite driver");
             iteration += 1;
 
             // New iteration: start with an empty worklist
@@ -876,7 +889,7 @@ impl RegionPatternRewriteDriver {
 
             if !self.driver.config.use_top_down_traversal {
                 // Add operations to the worklist in postorder.
-                log::trace!("adding operations in postorder");
+                log::trace!(target: "pattern-rewrite-driver", "adding operations in postorder");
                 self.region.raw_postwalk_all::<Forward, _>(|op| {
                     if !insert_known_constant(op) {
                         self.driver.add_to_worklist(op);
@@ -884,7 +897,7 @@ impl RegionPatternRewriteDriver {
                 });
             } else {
                 // Add all nested operations to the worklist in preorder.
-                log::trace!("adding operations in preorder");
+                log::trace!(target: "pattern-rewrite-driver", "adding operations in preorder");
                 self.region
                     .raw_prewalk::<Forward, _, _>(|op| {
                         if !insert_known_constant(op) {
@@ -903,7 +916,7 @@ impl RegionPatternRewriteDriver {
 
             continue_rewrites = self.driver.clone().process_worklist();
             log::trace!(
-                "processing of worklist for this iteration has completed, \
+                target: "pattern-rewrite-driver", "processing of worklist for this iteration has completed, \
                  changed={continue_rewrites}"
             );
 
@@ -921,11 +934,11 @@ impl RegionPatternRewriteDriver {
                 )
                 .is_ok();
             } else {
-                log::debug!("region simplification was disabled, skipping simplification rewrites");
+                log::debug!(target: "pattern-rewrite-driver", "region simplification was disabled, skipping simplification rewrites");
             }
 
             if !continue_rewrites {
-                log::trace!("region pattern rewrites have converged");
+                log::trace!(target: "pattern-rewrite-driver", "region pattern rewrites have converged");
                 break;
             }
         }
