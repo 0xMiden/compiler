@@ -920,7 +920,7 @@ impl Operation {
     /// dead without always being conservative about terminators.
     pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
         // The set of operations to consider when checking for side effects
-        let mut effecting_ops = SmallVec::<[OperationRef; 4]>::default();
+        let mut effecting_ops = SmallVec::<[OperationRef; 4]>::from_iter([self.as_operation_ref()]);
         while let Some(op) = effecting_ops.pop() {
             let op = op.borrow();
 
