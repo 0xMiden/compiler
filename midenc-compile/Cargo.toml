@@ -18,7 +18,7 @@ default = ["std"]
 std = [
     "miden-assembly/std",
     "midenc-codegen-masm/std",
-    "midenc-frontend-wasm2/std",
+    "midenc-frontend-wasm/std",
     "midenc-hir/std",
     "midenc-session/std",
     "dep:clap",
@@ -32,7 +32,7 @@ inventory.workspace = true
 midenc-codegen-masm.workspace = true
 miden-assembly.workspace = true
 miden-mast-package.workspace = true
-midenc-frontend-wasm2.workspace = true
+midenc-frontend-wasm.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true

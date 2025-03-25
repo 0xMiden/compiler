@@ -7,7 +7,7 @@ use miden_core::{
 };
 use miden_mast_package::Package;
 use midenc_debug::Executor;
-use midenc_frontend_wasm2::WasmTranslationConfig;
+use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
 
 use crate::{
