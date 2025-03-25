@@ -3312,7 +3312,7 @@ dependencies = [
  "midenc-codegen-masm",
  "midenc-compile",
  "midenc-debug",
- "midenc-frontend-wasm2",
+ "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
  "midenc-session",
@@ -3471,7 +3471,7 @@ dependencies = [
  "midenc-codegen-masm",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
- "midenc-frontend-wasm2",
+ "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
@@ -3571,7 +3571,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-frontend-wasm2"
+name = "midenc-frontend-wasm"
 version = "0.0.7"
 dependencies = [
  "addr2line",

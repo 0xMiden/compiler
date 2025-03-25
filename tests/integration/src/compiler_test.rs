@@ -17,7 +17,7 @@ use miden_assembly::LibraryPath;
 use midenc_compile::{
     compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
 };
-use midenc_frontend_wasm2::{translate, WasmTranslationConfig};
+use midenc_frontend_wasm::{translate, WasmTranslationConfig};
 use midenc_hir::{
     demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident, Op,
 };

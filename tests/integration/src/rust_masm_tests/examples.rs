@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use expect_test::expect_file;
 use midenc_debug::{Executor, PopFromStack, PushToStack};
-use midenc_frontend_wasm2::WasmTranslationConfig;
+use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{Felt, Immediate, Op, SymbolTable};
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
