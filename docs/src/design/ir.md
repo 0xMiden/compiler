@@ -29,13 +29,13 @@ This document describes the concepts, usage, and overall structure of the interm
     * [Entity Storage](#entity-storage)
       * [StoreableEntity](#storeableentity)
       * [ValueRange](#valuerange)
-    * [Entity Lists](#entity-storage)
+    * [Entity Lists](#entity-lists)
   * [Traversal](#traversal)
   * [Program Points](#program-points)
   * [Defining Dialects](#defining-dialects)
-    * [Dialect Registration]
-    * [Dialect Hooks]
-    * [Defining Operations]
+    * [Dialect Registration](#dialect-registration)
+    * [Dialect Hooks](#dialect-hooks)
+    * [Defining Operations](#defining-operations)
   * [Builders](#builders)
     * [Validation](#validation)
   * [Effects](#effects)
@@ -69,7 +69,19 @@ See the following sections for more information on the concepts introduced above
 
 ### Dialects
 
-TODO
+A _dialect_ is a logical grouping of operations, attributes, and associated analyses and transformations. It forms the basis on which the IR is modularized and extended.
+
+There are currently a limited set of dialects, comprising the set of operations we currently have defined lowerings for, or can be converted to another dialect that does:
+
+* `builtin`, which provides the `World`, `Component`, `Module`, `Function`, `GlobalVariable`, `Segment`, and `Ret` operations.
+* `test`, used for testing within the compiler without external dependencies.
+* `ub`, i.e. _undefined behavior_, which provides the `Poison` (and associated attribute type), and `Unreachable` operations.
+* `arith`, i.e. _arithmetic_, which provides all of the mathematical operations we currently support lowerings for. This dialect also provides the `Constant` operation for all supported numeric types.
+* `cf`, i.e. _control flow_, which provides all of the unstructured control flow or control flow-adjacent operations, i.e. `Br`, `CondBr`, `Switch`, and `Select`. The latter is not strictly speaking a control flow operation, but is semantically similar. This dialect is largely converted to the `scf` dialect before lowering, with the exception of `Select`, and limited support for `CondBr` (to handle a specific edge case of the control flow lifting transformation).
+* `scf`, i.e. _structured control flow_, which provides structured equivalents of all the control flow we support, i.e. `If`, `While` (for both while/do and do/while loops), and `IndexSwitch` (essentially equivalent to `cf.switch`, but in structured form). The `Yield` and `Condition` operations are defined in this dialect to represent control flow within (or out of) a child region of one of the previous three ops.
+* `hir` (likely to be renamed to `masm` or `vm` in the near future), which is currently used to represent the set of operations unique to the Miden VM, or correspond to compiler intrinsics implemented in Miden Assembly.
+
+See [_defining dialects_](#defining-dialects) for more information on what dialects are responsible for in HIR.
 
 ### Operations
 
@@ -510,40 +522,288 @@ In general, you should prefer to use `ValueRange` when working with collections 
 
 #### Entity Lists
 
-TODO
+An entity list is simply a doubly-linked, intrusive list, owned by some entity, in which references to some specific child entity type are stored.
+
+Examples include:
+
+* The list of regions belonging to an operation
+* The list of blocks belonging to a region
+* The list of operations belonging to a block
+* The list of operands using a block argument/op result
+* The list of symbol users referencing a symbol
+
+In conjunction with the list itself, there are a set of traits which facilitate automatically maintaining the relationship between parent and child entity as items are inserted, removed, or transferred between parent lists:
+
+* `EntityParent<Child>`, implemented by any entity type which has some child entity of type `Child`. This provides us with the ability to map a parent/child relationship to the offset of the intrusive linked list in the parent entity, so that we can construct a reference to it. Entities can be the parent of multiple other entity types.
+* `EntityWithParent<Parent = T>`, implemented by the child entity which has some parent type `T`, this provides the inverse of `EntityParent`, i.e. the ability for the entity list infrastructure to resolve the parent type of a child entity it stores, and given a reference to the parent entity, get the relevant intrusive list for that child. Entities with a parent may only have a single parent entity type at this time.
+* `EntityListItem`, implemented by any entity type which can be stored in an entity list. This trait provides the set of callbacks that are invoked by the entity list infrastructure when modifying the list (inserting, removing, and transferring items). This trait is public, but the entity list infra actually uses a different trait, called `EntityListTraits`, which is specialized based on whether the list items implement just `EntityListItem`, or both `EntityListItem` and `EntityWithParent`. The specialization for the latter ensures that the parent/child relationship is updated appropriately by the entity list itself, rather than requiring `EntityListItem` implementations to do so.
+
+We use intrusive linked lists for storing sets of entities that may be arbitrarily large, and where the O(1) insertion, removal, splicing and splitting makes up for the less cache-friendly iteration performance. Given a reference to an entity, we can always construct a cursor to that element of the list, and traverse the list from there, or modify the list there - this is a much more frequent operation than iterating these lists.
 
 ### Traversal
 
-TODO
+Before we can discuss the various ways of traversing the IR, we need to clarify what aspect of the IR we're interested in traversing:
+
+* The data flow graph, i.e. nodes are operations, edges are formed by operands referencing values.
+* The control flow graph, i.e. nodes are either operations, blocks, or regions; and edges are formed by operations which transfer control (to the next op, to a specific set of successor blocks or regions).
+* The call graph, i.e. nodes are symbols which implement `CallableOpInterface`, and edges are formed by operations which implement `CallOpInterface`.
+
+There are also a few traversal primitives which are commonly used:
+
+* Any `UnsafeIntrusiveEntityRef` for a type which implements `EntityListItem`, provides `next` and `prev` methods which allow navigating to the next/previous sibling item in the list, without borrowing the entity itself. In some cases, being siblings in an entity list does not mean that the items are near each other, e.g. the only thing shared in common between uses of a `Symbol`, is the symbol they refer to, but their order in the symbol use-list has no semantic meaning. In others, being siblings mean that the items are actually located next to each other in that order, e.g. operations in a block.
+* Similarly, any `UnsafeIntrusiveEntityRef` for a type which implements `EntityWithParent`, provides a `parent` method which allow navigating to the parent entity from the child, without borrowing either of them.
+* All child entities "owned" by a parent entity, are stored in either a [_entity list_](#entity-lists) or [_entity storage_](#entity-storage) attached to that entity.
+
+These three primitives provide the core means by which one can navigate the relevant graph in any direction.
+
+Another thing to be aware of, is that relationships between entities where there may be multiple edges between the same two entities, are typically represented using a special node type. For example:
+
+* `OpOperand` represents a use of a `Value` by an operation. In order to maintain the use-def graph of values, each value type, e.g. `BlockArgument`, has its own entity list for `OpOperand`s. What is stored in the relevant entity storage of the operation then, are `OpOperandRef`s. So while operands are intuitively something we think of as an intrinsic part of an operation, they are actually their own IR entity, which is then stored by reference both in the operation, and in the use-list of the value they reference.
+* `BlockOperand` represents a "use" of a `Block` by an operation as a successor. This type is responsible for forming the edges of the CFG, and so much like `OpOperand`, the `Block` type has an entity list for `BlockOperand`s, effectively the set of that block's predecessors; while the operation has entity storage for `BlockOperandRefs` (or more precisely, `SuccessorInfo`, of which `BlockOperandRef` is one part).
+* `SymbolUse` represents a use of a `Symbol` by an operation. This underpins the maintenance of the call graph. Unlike operands, symbol usage is not tracked as a fundamental part of every operation, i.e. there is no dedicated `symbols` field of the `Operation` type which provides the entity storage for `SymbolUseRef`s, nor is there a field which defines the entity list. Instead, the symbol use list of an op that implements `Symbol`, must be defined as part of the concrete operation type. Similarly, any concrete operation type that can use/reference a `Symbol` op, must determine for itself how it will store that use. For this reason, symbol maintenance is a bit less ergonomic than other entity types.
+
+We now can explore the different means by which the IR can be traversed:
+
+1. Using the raw traversal primitives described above.
+2. The `Graph` trait
+3. The `Walk` and `RawWalk` traits
+4. `CallOpInterface` and `CallableOpInterface` (specifically for traversing the call graph)
+
+#### The `Graph` trait
+
+The `Graph` trait is an abstraction for directed graphs, and is intended for use when writing generic graph algorithms which can be reused across multiple graph types. For example, the implementation of pre-order and post-order visitors is implemented over any `Graph`.
+
+This trait is currently implemented for `Region`, `Block`/`BlockRef`, and `DomTreeNode`, as so far they are the only types we've needed to visit using this abstraction, primarily when performing pre-order/post-order visits of the CFG and/or dominance tree.
+
+#### The `Walk` and `RawWalk` traits
+
+The `Walk` trait defines how to walk all children of a given type, which are contained within the type for which `Walk` is being implemented. For example:
+
+* `Walk<Operation> for Region` defines how to traverse a region to visit all of the operations it contains, recursively.
+* `Walk<Region> for Operation` defines how to traverse an operation to visit all of the regions it contains, recursively.
+
+The difference between `Walk` and `RawWalk`, is that `Walk` requires borrowed references to the types it is implemented for, while `RawWalk` relies on the traversal primitives we introduced at the start of this section, to avoid borrowing any of the entities being traversed, with the sole exception being to access child entity lists long enough to get a reference to the head of the list. If we are ever mutating the IR as we visit it, then we use `RawWalk`, otherwise `Walk` tends to be more ergonomic.
+
+The `Walk` and `RawWalk` traits provide both pre- and post-order traversals, which dictates in what order the visit callback is invoked. You can further dictate the direction in which the children are visited, e.g. are operations of a block visited forward (top-down), or backward (bottom-up)? Lastly, if you wish to be able to break out of a traversal early, the traits provide variants of all functions which allow the visit callback to return a `WalkResult` that dictates whether to continue the traversal, skip the children of the current node, or abort the traversal with an error.
+
+#### `CallOpInterface` and `CallableOpInterface`
+
+These two interfaces provide the means for navigating the call graph, which is not explicitly maintained as its own data structure, but is rather implied by the connections between symbols and symbol uses which implement these interfaces, in a program.
+
+One is generally interested in the call graph for one of a couple reasons:
+
+1. Determine if a function/callable is used
+2. Visit all callers of a function/callable
+3. Visit the call graph reachable from a given call site as part of an analysis
+4. Identify cycles in the call graph
+
+For 1 and 2, one can simply use the `Symbol` use-list: an empty use-list means the symbol is unused. For non-empty use-lists, one can visit every use, determine if that use is by a `CallOpInterface`, and take some action based on that.
+
+For 2 and 3, the mechanism is essentially identical:
+
+1. Assume that you are starting from a call site, i.e. an operation that implements `CallOpInterface`. Your first step is generally going to be to determine if the callable is a `SymbolPath`, or a `ValueRef` (i.e. an indirect call), using the `get_callable_for_callee` interface method.
+2. If the callable is a `ValueRef`, you can try to trace that value back to an operation that materialized it from a `Symbol` (if that was the case), so as to make your analysis more precise; but in general there can be situations in which it is not possible to do so. What this means for your analysis depends on what that analysis is.
+3. If the callable is a `SymbolPath`, then we need to try and resolve it. This can be done using the `resolve` or `resolve_in_symbol_table` interface methods. If successful, you will get a `SymbolRef` which represents the callable `Symbol`. If the symbol could not be resolved, `None` is returned, and you can traverse that edge of the call graph no further.
+4. Once you've obtained the `SymbolRef` of the callable, you can borrow it, and then cast the `&dyn Symbol` reference to a `&dyn CallableOpInterface` reference using `symbol.as_symbol_operation().as_trait::<dyn CallableOpInterface>()`.
+5. With that reference, you call the `get_callable_region` interface method. If it returns `None`, then the callable represents a declaration, and so it is not possible to traverse the call graph further. If it returns a `RegionRef`, then you proceed by traversing all of the operations in that region, looking for more call sites to visit.
 
 ### Program Points
 
-TODO
+A _program point_ essentially represents a cursor in the CFG of a program. Specifically, program points are defined as a position before, or after, a block or operation. The type that represents this in the IR is `ProgramPoint`, which can be constructed from just about any type of block or operation reference.
+
+Program points are used in a few ways:
+
+* To specify where a block or operation should be inserted
+* To specify at what point a block should be split into two
+* To specify at what point a block should be merged into another
+* To anchor data flow analysis state, e.g. the state before and after an operation, or the state on entry and exit from a block.
+
+Currently, we distinguish the points representing "before" a block (i.e. at the start of the block), and "after" a block (i.e. at the end of the block), from the first and last operations in the block, respectively. Thus, even though a point referring to the start of the block, and a point referring to "before" the first operation in that block, effectively refer to the same place, we currently treat them as distinct locations. This may change in the future, but for now, it is something to be aware of.
+
+The `ProgramPoint` type can be reified as a literal cursor into the operation list of a block, and then used to perform some action relative to that cursor.
+
+The key thing to understand about program points has to do with the relationship between before/after (or start/end) and what location that actually refers to. The gist, is that a program point, when materialized as a cursor into an operation list, will always have the cursor positioned such that if you inserted a new operation at that point, it would be placed where you expect it to be - i.e. if "before" an operation, the insertion will place the new item immediately preceding the operation referenced by the program point. This is of particular importance if inserting multiple operations using the same point, as the order in which operations will be inserted depends on whether the position is before or after the point. For example, inserting multiple items "before" an operation, will have them appear in that same order in the containing block. However, inserting multiple items "after" an operation, will have them appear in reverse order they were inserted (i.e. the last to be inserted will appear first in the block relative to the others).
+
 
 ### Defining Dialects
 
-TODO
+Defining a new dialect is as simple as defining a struct type which implements the `Dialect` trait. For example:
+
+```rust
+use midenc_hir::{Dialect, DialectInfo};
+
+#[derive(Debug)]
+pub struct MyDialect {
+    info: DialectInfo,
+}
+
+impl Dialect for MyDialect {
+    fn info(&self) -> &DialectInfo {
+        &self.info
+    }
+}
+```
+
+One last thing remains before the dialect is ready to be used, and that is [_dialect registration_](#dialect-registration).
+
 
 #### Dialect Registration
 
-TODO
+Dialect registration is the means by which a dialect and its operations are registered with the [`Context`](#context), such that operations of that dialect can be built.
+
+First, you must define the `DialectRegistration` implementation. To extend our example from above:
+
+```rust
+impl DialectRegistration for MyDialect {
+    const NAMESPACE: &'static str = "my";
+
+    #[inline]
+    fn init(info: DialectInfo) -> Self {
+        Self { info }
+    }
+
+    fn register_operations(info: &mut DialectInfo) {
+        info.register_operation::<FooOp>();
+    }
+}
+```
+
+This provides all of the information needed by the `Context` to register our dialect, i.e. what namespace the dialect uses, and what operations are registered with the dialect.
+
+The next step is to actually register the dialect with a specific `Context`. In general, this is automatically handled for you, i.e. whenever an operation of your dialect is being built, a call to `context.get_or_register_dialect::<MyDialect>()` is made, so as to get a reference to the dialect. If the dialect has not yet been registered, a fresh instance will be constructed, all registered [_dialect hooks_](#dialect-hooks) will be invoked, and the initialized dialect registered with the context, before returning a reference to the registered instance.
 
 #### Dialect Hooks
 
-TODO
+In some cases, it is necessary/desirable to extend a dialect with types/behaviors that we do not want (or cannot make) dependencies of the dialect itself. For example, extending the set of traits/interfaces implemented by operations of some dialect.
+
+The mechanism by which this is done, is in the form of _dialect hooks_, functions which are invoked when a dialect is being registered, before the main dialect registration callbacks (e.g. `register_operations`) are invoked. Hooks are provided a reference to the raw `DialectInfo`, which can be modified as if the hook is part of the `DialectRegistration` itself.
+
+Of particular use, is the `DialectInfo::register_operation_trait` method, which can be used to register a trait (or interface) to an operation before it is registered by the dialect. These "late-bound" traits are then added to the set of traits/interfaces defined as part of the operation itself, when the operation is registered with `DialectInfo::register_operation`.
+
+We currently use dialect hooks for:
+
+* Attaching the `midenc_codegen_masm::Lowering` trait to all operations for which we have defined its lowering to Miden Assembly.
+* Attaching the `midenc_hir_eval::Eval` trait to all operations for which we have defined evaluation semantics, for use with the HIR evaluator.
 
 #### Defining Operations
 
-TODO
+Defining operations involves a non-trivial amount of boilerplate if done by hand, so we have defined the `#[operation]` proc-macro attribute which takes care of all the boilerplate associated with defining a new operation.
+
+As a result, defining an operation looks like this (using an example from `midenc_dialect_arith`):
+
+```rust
+use midenc_hir::{derive::operation, effects::*, traits::*, *};
+
+use crate::ArithDialect;
+
+/// Two's complement sum
+#[operation(
+    dialect = ArithDialect,
+    traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct Add {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyInteger,
+    #[attr]
+    overflow: Overflow,
+}
+
+impl InferTypeOpInterface for Add {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let lhs = self.lhs().ty().clone();
+        self.result_mut().set_type(lhs);
+        Ok(())
+    }
+}
+
+// MemoryEffectOpInterface is an alias for EffectOpInterface<MemoryEffect>
+impl EffectOpInterface<MemoryEffect> for Add {
+    fn has_no_effect(&self) -> bool {
+        true
+    }
+
+    fn effects(
+        &self,
+    ) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![])
+    }
+}
+```
+
+To summarize:
+
+* `dialect` specifies the dialect to which the operation will be registered
+* `traits` specifies the set of derivable traits for this operation.
+* `implements` specifies the set of traits/interfaces which will be manually implemented for this operation. If any of the listed traits/interfaces are _not_ implemented, a compiler error will be emitted.
+* The fields of the `Add` struct represent various properties of the operation. Their meaning depends on what (if any) attributes they are decorated with:
+  * The `#[operand]` attribute represents an expected operand of this operation, and the field type represents the type constraint to apply to it.
+  * The `#[result]` attribute represents a result produced by this operation, and the field type represents the type constraint to apply to it.
+  * The `#[attr]` attribute represents a required attribute of this operation. If the `#[default]` attribute is present, it is treated as an optional attribute.
+  * If a field has no attributes, or only `#[default]`, it is defined as part of the concrete operation struct, and is considered an internal detail of the op.
+  * All other fields are not actually stored as part of the concrete operation type, but as part of the underlying `Operation` struct, and methods will be generated in an `impl Add` block that provide access to those fields in all the ways you'd expect.
+  * The `#[operand]`, `#[attr]`, and undecorated fields are all expected, in that order, as arguments to the op builder when constructing an instance of this op.
+
+There are a variety of field attributes and options for them that are not shown here. For now, the best reference for these is looking at the set of current dialects for an operation that is similar to what you want to define. You can also look at the implementation of the `#[operation]` proc-macro in `midenc_hir_macros` as the authoritative source on what is supported and how it affects the output. In the future we will provide more comprehensive documentation for it.
+
 
 ### Builders
 
-TODO
+Constructing the IR is generally done via implementations of the `Builder` trait, which includes implementations of the `Rewriter` trait, as the former is a super-trait of the latter. Typically, this means the `OpBuilder` type.
+
+Aside from a variety of useful APIs e.g. creating blocks, setting the insertion point of the builder, etc., most commonly you will be constructing specific operations, which is done in one of two ways:
+
+* The lowest level primitive, actually provided by the `BuilderExt` trait due to the need to keep `Builder` object-safe, is its `create<T, Args>` method. This method produces an implementation of `BuildableOp` for the specified operation type (i.e. the `T` type parameter), and signature (i.e. the `Args` type parameter, which must be a tuple type). The desired operation is then constructed by applying the necessary arguments to the `BuildableOp` as a function (because `BuildableOp` is an implementation of the `FnOnce` closure type).
+* Much more commonly however, this boilerplate will be abstracted away for you by dialect-specific extensions of the `Builder` trait, e.g. the `BuiltinOpBuilder` trait extends all `Builder` implementations with methods for constructing any of the `builtin` dialect operations, such as the `ret` method, which constructs the `builtin.return` operation. All of the dialects used by the compiler define such a trait, all that is required is to bring it into scope in order to construct the specific operations you want.
+
+> [!NOTE]
+> All of the boilerplate for constructing an operation from a `Builder` is generated for you when defining an operation type with the `#[operation]` proc-macro attribute. A key piece of this underlying infrastructure, is the `OperationBuilder` type, which is used to construct the `Operation` that underlies any concrete `Op` implementation. The `OperationBuilder` is also where new operations are verified and inserted into the underlying `Builder` during construction.
+
+If the builder has a valid insertion point set, then either of the above methods will also insert the constructed operation at that point.
+
+The primary difference between `Rewriter` and `Builder`, is that the `Rewriter` API surface is comprised primarily of methods that modify the IR in some way, e.g. moving things around, splitting and merging blocks, erasing operations, replacing ops with values, values with values, etc. Because `Builder` is a super-trait, it can be used both to construct new IR, and to rewrite existing IR.
 
 #### Validation
 
-TODO
+A key aspect of the IR design, is to enable as much boilerplate as possible to be generated from the description of an operation, especially when it comes to verifying the validity of an operation using the type constraints of it's operands and results, and the traits/interfaces it implements.
+
+Operations are currently validated when constructed by the `OperationBuilder` that underpins the `BuildableOp` implementation generated by the `#[operation]` proc-macro attribute. There are some known issues with doing it here, so we are likely to revisit this at some point, but for now this is the first place where verification occurs. It may also be triggered manually at any point by calling the `Operation::verify` method.
+
+There are two traits which underpin the verification infrastructure:
+
+* `Verify<Trait>` which represents the verification of `Trait` against `Self`, which is an operation type. Typically, all traits with associated verification rules, implement this trait for all `T: Op + Trait`.
+* `Verifier<Trait>` which is a trait used to facilitate the generation of verification boilerplate specialized against a specific concrete operation type, without having to be aware of what operation traits/interfaces have associated `Verify` implementations. Instead, no-op verifiers are elided by the Rust compiler using `const { }` blocks. The method by which this is done is highly reliant on Rust's specialization infrastructure and type-level trickery.
+
+In the future, we will likely move verification out of the `OperationBuilder`, into a dedicated pass that is run as part of a pass pipeline, and invoked on each operation via `Operation::verify`. This will enable more robust verification than is currently possible (as operations are not yet inserted in the IR at the point verification is applied currently).
 
 ### Effects
 
-TODO
+Side effects are an important consideration during analysis and transformation of operations in the IR, particularly when evaluating whether operations can be reordered, re-materialized, spilled and reloaded, etc.
+
+The infrastructure underpinning the management and querying of effects is built on the following pieces:
+
+* The `Effect` trait, which is a marker trait for types which represent an effect, e.g. `MemoryEffect` which represents effects on memory, such as reading and writing, allocation and freeing.
+* The `EffectOpInterface<T: Effect>` interface, which is implemented for any operation for which the effect `T` is specified, and provides a number of useful methods for querying effects of a specific operation instance.
+* The `Resource` trait, which represents a type of resource to which an effect can apply. In many cases, one will use `DefaultResource`, which is a catch-all resource that implies a global effect. However, it is also possible to scope effects to a specific resource, such as a specific address range in memory. This could permit operations with disjoint effects to be reordered relative to one another, when that would otherwise not be allowed if the effects were global.
+* The `EffectInstance` type, which provides metadata about a specific effect, any attributes that apply to it, the resource affected, etc.
+
+It should be noted that the choice to implement `EffectOpInterface` for an operation is _not_ based on whether the operation _has_ the effect; but rather, it is based on whether the behavior of the operation with respect to that effect is _specified_ or not.
+
+For example, most operations will have a known effect (or lack thereof) on memory, e.g. `arith.add` will never have a memory effect, while `hir.load` by definition will read from memory. In some cases, whether an operation will have such an effect is not a property of the operation itself, but rather operations that may be nested in one of its child regions, e.g. `scf.if` has no memory effects in and of itself, but one of its regions might contain an operation which does, such as an `hir.store` in the "then" region. In this case, it does not make sense for `scf.if` to implement `EffectOpInterface<MemoryEffect>`, because memory effects are not specified for `scf.if`, but are instead derived from its regions.
+
+When `EffectOpInterface` is not implemented for some operation, then one must treat the operation as conservatively as possible in regards to the specific effect. For example, `scf.call` does not implement this interface for `MemoryEffect`, because whether the call has any memory effects depends on the function being called. As a result, one must assume that the `scf.call` could have any possible memory effect, unless you are able to prove otherwise using inter-procedural analysis.
+
+#### Memory Effects
+
+The infrastructure described above can be used to represent any manner of side effect. However, the compiler is currently only largely concerned with effects on memory. For this, there are a few more specific pieces:
+
+* The `MemoryEffectOpInterface` trait alias, which is just an alias for `EffectOpInterface<MemoryEffect>`.
+* The `MemoryEffect` type, which represents the set of memory effects we care about.
+* The `HasRecursiveMemoryEffects` trait, which should be implemented on any operation whose regions may contain operations that have memory effects.
+* The `Operation::is_memory_effect_free` method, which returns a boolean indicating whether the operation is known not to have any memory effects.
+
+In most places, we're largely concerned with whether an operation is known to be memory effect free, thus allowing us to move that operation around freely. We have not started doing more sophisticated effect analysis and optimizations based on such analysis.
