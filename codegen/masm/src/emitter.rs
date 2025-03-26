@@ -81,6 +81,8 @@ impl BlockEmitter<'_> {
                         continue;
                     }
 
+                    log::trace!(target: "codegen", "dropping dead instruction result {next_result} at index {index}");
+
                     self.emitter().drop_operand_at_position(index, span);
                 }
             }

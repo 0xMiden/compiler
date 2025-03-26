@@ -160,10 +160,17 @@ pub trait HirLowering: Op {
                             .expect("invalid constraints: a duplicate value cannot be moved twice")
                             as u8
                     } else {
-                        dupe_index.or_else(|| emitter.stack.find(&lhs)).unwrap() as u8
+                        dupe_index
+                            .or_else(|| emitter.stack.find(&lhs))
+                            .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
+                            as u8
                     }
                 } else {
-                    emitter.stack.find(&lhs).unwrap() as u8
+                    emitter
+                        .stack
+                        .find(&lhs)
+                        .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
+                        as u8
                 };
                 let duplicate_index = rhs_index == lhs_index;
 
