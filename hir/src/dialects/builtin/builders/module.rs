@@ -2,10 +2,11 @@ use super::BuiltinOpBuilder;
 use crate::{
     constants::ConstantData,
     dialects::builtin::{
-        Function, FunctionRef, GlobalVariable, GlobalVariableRef, ModuleRef, Segment,
+        Function, FunctionRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef,
+        PrimModuleBuilder, Segment,
     },
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, SymbolName, SymbolTable, Type,
-    UnsafeIntrusiveEntityRef, Visibility,
+    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
+    Type, UnsafeIntrusiveEntityRef, Visibility,
 };
 
 /// A specialized builder for constructing/modifying [crate::dialects::hir::Module]
@@ -111,6 +112,27 @@ impl ModuleBuilder {
                 .borrow()
                 .downcast_ref::<GlobalVariable>()
                 .map(|gv| gv.as_global_var_ref())
+        })
+    }
+
+    /// Declare a new nested module `name`
+    pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
+        let module_ref = builder(name)?;
+        let is_new = self
+            .module
+            .borrow_mut()
+            .symbol_manager_mut()
+            .insert_new(module_ref, crate::ProgramPoint::Invalid);
+        assert!(is_new, "module with the name {name} already exists in world",);
+        Ok(module_ref)
+    }
+
+    /// Resolve a nested module with `name`, if declared/defined
+    pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
+        self.module.borrow().get(name).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
         })
     }
 }

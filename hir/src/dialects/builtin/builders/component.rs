@@ -1,7 +1,7 @@
 use super::BuiltinOpBuilder;
 use crate::{
     dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
-    Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolTable,
+    Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolPath, SymbolTable,
 };
 
 pub struct ComponentBuilder {
@@ -47,6 +47,13 @@ impl ComponentBuilder {
 
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
         self.component.borrow().get(name).and_then(|symbol_ref| {
+            let op = symbol_ref.borrow();
+            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+        })
+    }
+
+    pub fn resolve_module(&self, path: &SymbolPath) -> Option<ModuleRef> {
+        self.component.borrow().resolve(path).and_then(|symbol_ref| {
             let op = symbol_ref.borrow();
             op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
         })

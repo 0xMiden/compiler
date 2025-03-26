@@ -1,7 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::FunctionRef, Builder, FunctionIdent, Immediate, Type, ValueRef,
+    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, SymbolNameComponent,
+    SymbolPath, Type, ValueRef,
 };
 
 use super::{stdlib, tx_kernel};
@@ -18,50 +19,73 @@ enum TransformStrategy {
 }
 
 /// Get the transformation strategy for a function name
-fn get_transform_strategy(module_id: &str, function_id: &str) -> TransformStrategy {
-    #[allow(clippy::single_match)]
-    match module_id {
-        stdlib::mem::MODULE_ID => match function_id {
-            stdlib::mem::PIPE_WORDS_TO_MEMORY => return TransformStrategy::ReturnViaPointer,
-            stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => return TransformStrategy::ReturnViaPointer,
-            _ => (),
+fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
+    let mut components = path.components().peekable();
+    components.next_if_eq(&SymbolNameComponent::Root);
+
+    match components.next()?.as_symbol_name() {
+        symbols::Std => match components.next()?.as_symbol_name() {
+            symbols::Mem => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                stdlib::mem::PIPE_WORDS_TO_MEMORY | stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => {
+                    Some(TransformStrategy::ReturnViaPointer)
+                }
+                _ => None,
+            },
+            symbols::Crypto => match components.next()?.as_symbol_name() {
+                symbols::Hashes => match components.next()?.as_symbol_name() {
+                    symbols::Blake3 => {
+                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                            stdlib::crypto::hashes::blake3::HASH_1TO1
+                            | stdlib::crypto::hashes::blake3::HASH_2TO1 => {
+                                Some(TransformStrategy::ReturnViaPointer)
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                },
+                symbols::Dsa => match components.next()?.as_symbol_name() {
+                    symbols::RpoFalcon => {
+                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                            stdlib::crypto::dsa::rpo_falcon::RPO_FALCON512_VERIFY => {
+                                Some(TransformStrategy::NoTransform)
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
         },
-        stdlib::crypto::hashes::blake3::MODULE_ID => match function_id {
-            stdlib::crypto::hashes::blake3::HASH_1TO1 => {
-                return TransformStrategy::ReturnViaPointer
+        symbols::Miden => match components.next()?.as_symbol_name() {
+            symbols::Account => {
+                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                    tx_kernel::account::GET_ID => Some(TransformStrategy::NoTransform),
+                    tx_kernel::account::ADD_ASSET
+                    | tx_kernel::account::REMOVE_ASSET
+                    | tx_kernel::account::GET_STORAGE_ITEM
+                    | tx_kernel::account::SET_STORAGE_ITEM
+                    | tx_kernel::account::GET_STORAGE_MAP_ITEM
+                    | tx_kernel::account::SET_STORAGE_MAP_ITEM => {
+                        Some(TransformStrategy::ReturnViaPointer)
+                    }
+                    _ => None,
+                }
             }
-            stdlib::crypto::hashes::blake3::HASH_2TO1 => {
-                return TransformStrategy::ReturnViaPointer
-            }
-            _ => (),
+            symbols::Note => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                tx_kernel::note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                _ => None,
+            },
+            symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                tx_kernel::tx::CREATE_NOTE => Some(TransformStrategy::NoTransform),
+                _ => None,
+            },
+            _ => None,
         },
-        stdlib::crypto::dsa::rpo_falcon::MODULE_ID => match function_id {
-            stdlib::crypto::dsa::rpo_falcon::RPO_FALCON512_VERIFY => {
-                return TransformStrategy::NoTransform
-            }
-            _ => (),
-        },
-        tx_kernel::note::MODULE_ID => match function_id {
-            tx_kernel::note::GET_INPUTS => return TransformStrategy::ListReturn,
-            _ => (),
-        },
-        tx_kernel::account::MODULE_ID => match function_id {
-            tx_kernel::account::ADD_ASSET => return TransformStrategy::ReturnViaPointer,
-            tx_kernel::account::REMOVE_ASSET => return TransformStrategy::ReturnViaPointer,
-            tx_kernel::account::GET_ID => return TransformStrategy::NoTransform,
-            tx_kernel::account::GET_STORAGE_ITEM => return TransformStrategy::ReturnViaPointer,
-            tx_kernel::account::SET_STORAGE_ITEM => return TransformStrategy::ReturnViaPointer,
-            tx_kernel::account::GET_STORAGE_MAP_ITEM => return TransformStrategy::ReturnViaPointer,
-            tx_kernel::account::SET_STORAGE_MAP_ITEM => return TransformStrategy::ReturnViaPointer,
-            _ => (),
-        },
-        tx_kernel::tx::MODULE_ID => match function_id {
-            tx_kernel::tx::CREATE_NOTE => return TransformStrategy::NoTransform,
-            _ => (),
-        },
-        _ => (),
+        _ => None,
     }
-    panic!("No transform strategy found for function '{function_id}' in module '{module_id}'");
 }
 
 /// Transform a Miden ABI function call based on the transformation strategy
@@ -71,15 +95,16 @@ fn get_transform_strategy(module_id: &str, function_id: &str) -> TransformStrate
 /// Returns results that will be returned from the synthetic function
 pub fn transform_miden_abi_call<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
-    import_func_id: FunctionIdent,
+    import_path: &SymbolPath,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     use TransformStrategy::*;
-    match get_transform_strategy(import_func_id.module.as_str(), import_func_id.function.as_str()) {
-        ListReturn => list_return(import_func_ref, args, builder),
-        ReturnViaPointer => return_via_pointer(import_func_ref, args, builder),
-        NoTransform => no_transform(import_func_ref, args, builder),
+    match get_transform_strategy(import_path) {
+        Some(ListReturn) => list_return(import_func_ref, args, builder),
+        Some(ReturnViaPointer) => return_via_pointer(import_func_ref, args, builder),
+        Some(NoTransform) => no_transform(import_func_ref, args, builder),
+        None => panic!("no transform strategy implemented for '{import_path}'"),
     }
 }
 

@@ -1,4 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
+use alloc::rc::Rc;
+use core::cell::RefCell;
 
 use cranelift_entity::SecondaryMap;
 use midenc_dialect_arith::ArithOpBuilder;
@@ -9,10 +10,8 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     traits::{BranchOpInterface, Terminator},
     BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, ListenerType, OpBuilder,
-    OperationRef, ProgramPoint, RegionRef, Signature, ValueRef,
+    OperationRef, ProgramPoint, RegionRef, Signature, SourceSpan, Type, ValueRef,
 };
-use midenc_hir_type::Type;
-use midenc_session::diagnostics::SourceSpan;
 
 use crate::ssa::{SSABuilder, SideEffects, Variable};
 

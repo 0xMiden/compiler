@@ -5,12 +5,23 @@
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
 use midenc_hir::{
+    diagnostics::{miette, Diagnostic},
     Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Signature,
     StructType, Type, Visibility,
 };
 
+#[derive(Debug, thiserror::Error, Diagnostic)]
+pub enum CanonicalTypeError {
+    #[error("unexpected use of reserved canonical abi type: {0}")]
+    #[diagnostic()]
+    Reserved(Type),
+    #[error("type '{0}' is not supported by the canonical abi")]
+    #[diagnostic()]
+    Unsupported(Type),
+}
+
 /// Flattens the given CanonABI type into a list of ABI parameters.
-pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, String> {
+pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
         Type::Unit => vec![],
@@ -44,18 +55,15 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, String> {
         Type::I64 => vec![AbiParam::new(Type::I64)],
         Type::U64 => vec![AbiParam::new(Type::I64)],
         Type::I128 | Type::U128 | Type::U256 => {
-            panic!("CanonABI type flattening: not yet implemented {}", ty)
+            unimplemented!("flattening of {ty} in canonical abi")
         }
-        Type::F64 => {
-            let message = "CanonABI type flattening: unexpected f64 type".to_string();
-            return Err(message);
-        }
+        Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
         Type::Felt => vec![AbiParam::new(Type::Felt)],
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
             .map(|field| flatten_type(&field.ty))
-            .collect::<Result<Vec<Vec<AbiParam>>, String>>()?
+            .try_collect::<Vec<Vec<AbiParam>>>()?
             .into_iter()
             .flatten()
             .collect(),
@@ -67,24 +75,27 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, String> {
             AbiParam::new(Type::I32),
         ],
         Type::Unknown | Type::Never | Type::Ptr(_) | Type::NativePtr(..) => {
-            panic!("CanonABI type flattening: unexpected {} type", ty)
+            return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
     })
 }
 
 /// Flattens the given list of CanonABI types into a list of ABI parameters.
-pub fn flatten_types(tys: &[Type]) -> Result<Vec<AbiParam>, String> {
+pub fn flatten_types(tys: &[Type]) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     Ok(tys
         .iter()
         .map(flatten_type)
-        .collect::<Result<Vec<Vec<AbiParam>>, String>>()?
+        .try_collect::<Vec<Vec<AbiParam>>>()?
         .into_iter()
         .flatten()
         .collect())
 }
 
 /// Flattens the given CanonABI function type
-pub fn flatten_function_type(func_ty: &FunctionType, cc: CallConv) -> Result<Signature, String> {
+pub fn flatten_function_type(
+    func_ty: &FunctionType,
+    cc: CallConv,
+) -> Result<Signature, CanonicalTypeError> {
     // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     //
     // For a variety of practical reasons, we need to limit the total number of flattened

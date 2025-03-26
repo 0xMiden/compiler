@@ -27,8 +27,9 @@ use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, So
 use wasmparser::{MemArg, Operator};
 
 use crate::{
+    callable::CallableFunction,
     error::WasmResult,
-    intrinsics::{convert_intrinsics_call, is_miden_intrinsics_module},
+    intrinsics::convert_intrinsics_call,
     module::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
@@ -699,25 +700,44 @@ fn translate_call<B: ?Sized + Builder>(
     span: SourceSpan,
     _diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let defined_func = module_state.get_direct_func(function_index)?;
-    let wasm_sig = defined_func.signature.clone();
-    let num_wasm_args = wasm_sig.params().len();
-    let args = func_state.peekn(num_wasm_args);
-    if is_miden_intrinsics_module(defined_func.wasm_id.module.as_symbol()) {
-        let results = convert_intrinsics_call(&defined_func, args, builder, span)?;
-        func_state.popn(num_wasm_args);
-        func_state.pushn(&results);
-    } else {
-        let func_ref = defined_func
-            .function_ref
-            .expect("expected DefinedFunction::function_ref to be set");
-        let exec = builder.exec(func_ref, wasm_sig, args.to_vec(), span)?;
-        let borrow = exec.borrow();
-        let results = borrow.as_ref().results();
-        func_state.popn(num_wasm_args);
-        let result_vals: Vec<ValueRef> =
-            results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-        func_state.pushn(&result_vals);
+    match module_state.get_direct_func(function_index)? {
+        CallableFunction::Instruction {
+            intrinsic,
+            signature,
+        } => {
+            let arity = signature.arity();
+            let args = func_state.peekn(arity);
+            let results = convert_intrinsics_call(intrinsic, None, args, builder, span)?;
+            func_state.popn(arity);
+            func_state.pushn(&results);
+        }
+        CallableFunction::Intrinsic {
+            intrinsic,
+            function_ref,
+            signature,
+        } => {
+            let arity = signature.arity();
+            let args = func_state.peekn(arity);
+            let results =
+                convert_intrinsics_call(intrinsic, Some(function_ref), args, builder, span)?;
+            func_state.popn(arity);
+            func_state.pushn(&results);
+        }
+        CallableFunction::Function {
+            function_ref,
+            signature,
+            ..
+        } => {
+            let arity = signature.arity();
+            let args = func_state.peekn(arity);
+            let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
+            let borrow = exec.borrow();
+            let results = borrow.as_ref().results();
+            func_state.popn(arity);
+            let result_vals: Vec<ValueRef> =
+                results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+            func_state.pushn(&result_vals);
+        }
     }
     Ok(())
 }

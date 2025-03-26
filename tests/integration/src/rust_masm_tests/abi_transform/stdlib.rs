@@ -17,7 +17,6 @@ use proptest::{
 use crate::CompilerTest;
 
 #[test]
-#[ignore = "until builtin.global_symbol is implemented"]
 fn test_blake3_hash() {
     let main_fn =
         "(a: [u8; 32]) -> [u8; 32] {  miden_stdlib_sys::blake3_hash_1to1(a) }".to_string();

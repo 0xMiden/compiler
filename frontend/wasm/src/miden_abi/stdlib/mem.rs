@@ -1,8 +1,17 @@
-use midenc_hir_type::{FunctionType, Type::*};
+use midenc_hir::{
+    interner::{symbols, Symbol},
+    FunctionType, SymbolNameComponent, SymbolPath,
+    Type::*,
+};
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
 pub(crate) const MODULE_ID: &str = "std::mem";
+pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
+    SymbolNameComponent::Root,
+    SymbolNameComponent::Component(symbols::Std),
+    SymbolNameComponent::Component(symbols::Mem),
+];
 
 pub(crate) const PIPE_WORDS_TO_MEMORY: &str = "pipe_words_to_memory";
 pub(crate) const PIPE_DOUBLE_WORDS_TO_MEMORY: &str = "pipe_double_words_to_memory";
@@ -11,7 +20,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut funcs: FunctionTypeMap = Default::default();
     funcs.insert(
-        PIPE_WORDS_TO_MEMORY,
+        Symbol::from(PIPE_WORDS_TO_MEMORY),
         FunctionType::new(
             [
                 Felt, // num_words
@@ -24,7 +33,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         ),
     );
     funcs.insert(
-        PIPE_DOUBLE_WORDS_TO_MEMORY,
+        Symbol::from(PIPE_DOUBLE_WORDS_TO_MEMORY),
         FunctionType::new(
             [
                 Felt, Felt, Felt, Felt, // C
@@ -41,6 +50,6 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             ],
         ),
     );
-    m.insert(MODULE_ID, funcs);
+    m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), funcs);
     m
 }

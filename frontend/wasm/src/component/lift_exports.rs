@@ -6,7 +6,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder},
     interner::Symbol,
-    CallConv, FunctionIdent, FunctionType, Ident, Op, SourceSpan, ValueRange, ValueRef,
+    CallConv, FunctionType, Ident, Op, SourceSpan, SymbolPath, ValueRange, ValueRef,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
@@ -24,7 +24,7 @@ pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
     export_func_ty: FunctionType,
-    core_export_func_id: FunctionIdent,
+    core_export_func_path: SymbolPath,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let cross_ctx_export_sig = flatten_function_type(&export_func_ty, CallConv::CanonLift)
@@ -32,7 +32,7 @@ pub fn generate_export_lifting_function(
             let message = format!(
                 "Component export lifting generation. Signature for exported function {} requires \
                  flattening. Error: {}",
-                core_export_func_id, e
+                core_export_func_path, e
             );
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
@@ -40,7 +40,7 @@ pub fn generate_export_lifting_function(
         let message = format!(
             "Component export lifting generation. Signature for exported function {} requires \
              lifting. This is not yet supported",
-            core_export_func_id
+            core_export_func_path
         );
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
@@ -50,13 +50,14 @@ pub fn generate_export_lifting_function(
     let mut export_func_ref =
         component_builder.define_function(export_func_ident, cross_ctx_export_sig.clone())?;
 
+    let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
-        .find_module(core_export_func_id.module.as_symbol())
+        .resolve_module(&core_export_module_path)
         .expect("failed to find the core module");
 
     let core_module_builder = ModuleBuilder::new(core_module_ref);
     let core_export_func_ref = core_module_builder
-        .get_function(core_export_func_id.function.as_str())
+        .get_function(core_export_func_path.name().as_str())
         .expect("failed to find the core module function");
     let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
     assert_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig);
