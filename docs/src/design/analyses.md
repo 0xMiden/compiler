@@ -88,7 +88,7 @@ We do not yet perform _dead-code elimination_ based on this analysis, but likely
 
 ## Sparse Constant Propagation
 
-This analysis propagates takes all constant values in a program, and uses that information to attempt determining whether or not uses of those constants that produce new values, may themselves be reduced to constants.
+This analysis takes all constant values in a program, and uses that information to attempt determining whether or not uses of those constants that produce new values, may themselves be reduced to constants.
 
 This analysis does not transform the IR, that is done by the _sparse conditional constant propagation_ (SCCP) transform. Instead, it attaches data flow facts to each value derived from an operation that uses a value for which we know a constant value.
 
