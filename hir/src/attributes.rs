@@ -13,10 +13,8 @@ pub mod markers {
 
     use super::*;
 
-    /// This attribute indicates that the decorated function is the entrypoint
-    /// for its containing program, regardless of what module it is defined in.
-    pub const ENTRYPOINT: Attribute = Attribute {
-        name: symbols::Entrypoint,
+    pub const INLINE: Attribute = Attribute {
+        name: symbols::Inline,
         value: None,
         intrinsic: false,
     };
