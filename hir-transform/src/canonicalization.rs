@@ -99,10 +99,10 @@ impl Pass for Canonicalizer {
             return Ok(());
         };
         let op = {
-            log::debug!("applying canonicalization to {}", &*op);
-            log::debug!("  require_convergence = {}", self.require_convergence);
             let ptr = op.as_operation_ref();
             drop(op);
+            log::debug!("applying canonicalization to {}", ptr.borrow());
+            log::debug!("  require_convergence = {}", self.require_convergence);
             ptr
         };
         let converged =
