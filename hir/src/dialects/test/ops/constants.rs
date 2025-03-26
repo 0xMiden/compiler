@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use crate::{derive::operation, dialects::test::TestDialect, traits::*, *};
+use crate::{derive::operation, dialects::test::TestDialect, effects::*, traits::*, *};
 
 /// An operation for expressing constant immediate values.
 ///
@@ -8,7 +8,7 @@ use crate::{derive::operation, dialects::test::TestDialect, traits::*, *};
 #[operation(
     dialect = TestDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface, Foldable)
+    implements(InferTypeOpInterface, Foldable, MemoryEffectOpInterface)
 )]
 pub struct Constant {
     #[attr(hidden)]
@@ -40,5 +40,11 @@ impl Foldable for Constant {
         results: &mut smallvec::SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         self.fold(results)
+    }
+}
+
+impl EffectOpInterface<MemoryEffect> for Constant {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![])
     }
 }
