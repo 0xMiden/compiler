@@ -1448,7 +1448,7 @@ impl HirLowering for builtin::GlobalSymbol {
         })?;
 
         // 2. Push computed address on the stack as the result
-        emitter.emitter().push_u32(addr, self.span());
+        emitter.inst_emitter(self.as_operation()).literal(addr, self.span());
 
         Ok(())
     }
