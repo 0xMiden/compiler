@@ -12,5 +12,3 @@
         + [Developing Miden Programs In Rust](./guides/develop_miden_in_rust.md)
         + [Developing Miden Rollup Accounts And Note Scripts In Rust](./guides/develop_miden_rollup_accounts_and_note_scripts_in_rust.md)
         + [Debugging programs](./usage/debugger.md)
-    * [Appendices](./appendix/index.md)
-        + [Known limitations](./appendix/known-limitations.md)
