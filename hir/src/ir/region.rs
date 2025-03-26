@@ -668,9 +668,9 @@ impl Region {
     ) -> Result<(), RegionTransformFailed> {
         let merge_blocks = matches!(simplification_level, RegionSimplificationLevel::Aggressive);
 
-        log::debug!("running region simplification on {} regions", regions.len());
-        log::debug!("  simplification level = {simplification_level:?}");
-        log::debug!("  merge_blocks         = {merge_blocks}");
+        log::debug!(target: "region-simplify", "running region simplification on {} regions", regions.len());
+        log::debug!(target: "region-simplify", "  simplification level = {simplification_level:?}");
+        log::debug!(target: "region-simplify", "  merge_blocks         = {merge_blocks}");
 
         let eliminated_blocks = Self::erase_unreachable_blocks(regions, rewriter).is_ok();
         let eliminated_ops_or_args = Self::dead_code_elimination(regions, rewriter).is_ok();

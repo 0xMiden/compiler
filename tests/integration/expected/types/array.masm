@@ -25,6 +25,12 @@ export.sum_arr
                 movup.3
                 drop
                 dup.0
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz.err=250
                 dup.0
                 u32mod.16
                 dup.0

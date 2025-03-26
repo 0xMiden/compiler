@@ -61,7 +61,7 @@ impl PatternApplicator {
     /// Apply the default cost model that solely uses the pattern's static benefit
     #[inline]
     pub fn apply_default_cost_model(&mut self) {
-        log::debug!("applying default cost model");
+        log::debug!(target: "pattern-rewrite-driver", "applying default cost model");
         self.apply_cost_model(|pattern| *pattern.benefit());
     }
 
@@ -102,15 +102,16 @@ impl PatternApplicator {
         let op_specific_patterns = self.patterns.get(&op_name).map(|p| p.as_slice()).unwrap_or(&[]);
 
         if op_specific_patterns.is_empty() {
-            log::trace!("no op-specific patterns found for '{op_name}'");
+            log::trace!(target: "pattern-rewrite-driver", "no op-specific patterns found for '{op_name}'");
         } else {
             log::trace!(
+                target: "pattern-rewrite-driver",
                 "found {} op-specific patterns for '{op_name}'",
                 op_specific_patterns.len()
             );
         }
 
-        log::trace!("{} op-agnostic patterns available", self.match_any_patterns.len());
+        log::trace!(target: "pattern-rewrite-driver", "{} op-agnostic patterns available", self.match_any_patterns.len());
 
         // Process the op-specific patterns and op-agnostic patterns in an interleaved fashion
         let mut op_patterns = op_specific_patterns.iter().peekable();
@@ -129,6 +130,7 @@ impl PatternApplicator {
             {
                 if let Some(best_pattern) = best_pattern {
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "selected op-agnostic pattern '{}' because its benefit is higher than the \
                          next best op-specific pattern '{}'",
                         next_any_pattern.name(),
@@ -136,6 +138,7 @@ impl PatternApplicator {
                     );
                 } else {
                     log::trace!(
+                        target: "pattern-rewrite-driver",
                         "selected op-agnostic pattern '{}' because no op-specific pattern is \
                          available",
                         next_any_pattern.name()
@@ -145,21 +148,21 @@ impl PatternApplicator {
             } else {
                 // The op-specific pattern is best, if available, so actually consume it from the iterator
                 if let Some(best_pattern) = best_pattern {
-                    log::trace!("selected op-specific pattern '{}'", best_pattern.name());
+                    log::trace!(target: "pattern-rewrite-driver", "selected op-specific pattern '{}'", best_pattern.name());
                 }
                 best_pattern = op_patterns.next();
             }
 
             // Break if we have exhausted all patterns
             let Some(best_pattern) = best_pattern else {
-                log::trace!("all patterns have been exhausted");
+                log::trace!(target: "pattern-rewrite-driver", "all patterns have been exhausted");
                 break;
             };
 
             // Can we apply this pattern?
             let applicable = can_apply(&**best_pattern);
             if !applicable {
-                log::trace!("skipping pattern: can_apply returned false");
+                log::trace!(target: "pattern-rewrite-driver", "skipping pattern: can_apply returned false");
                 continue;
             }
 
@@ -170,22 +173,22 @@ impl PatternApplicator {
 
             // TODO: Save the nearest parent IsolatedFromAbove op of this op for use in debug
             // messages/rendering, as the rewrite may invalidate `op`
-            log::debug!("trying to match '{}'", best_pattern.name());
+            log::debug!(target: "pattern-rewrite-driver", "trying to match '{}'", best_pattern.name());
 
             match best_pattern.match_and_rewrite(op, rewriter) {
                 Ok(matched) => {
                     if matched {
-                        log::trace!("pattern matched successfully");
+                        log::trace!(target: "pattern-rewrite-driver", "pattern matched successfully");
                         result =
                             on_success(&**best_pattern).map_err(PatternApplicationError::Report);
                         break;
                     } else {
-                        log::trace!("failed to match pattern");
+                        log::trace!(target: "pattern-rewrite-driver", "failed to match pattern");
                         on_failure(&**best_pattern);
                     }
                 }
                 Err(err) => {
-                    log::error!("error occurred during match_and_rewrite: {err}");
+                    log::error!(target: "pattern-rewrite-driver", "error occurred during match_and_rewrite: {err}");
                     result = Err(PatternApplicationError::Report(err));
                     on_failure(&**best_pattern);
                 }
@@ -210,6 +213,7 @@ where
     };
     if benefit.is_impossible_to_match() {
         log::debug!(
+            target: "pattern-rewrite-driver",
             "ignoring pattern '{}' ({}) because it is impossible to match or cannot lead to legal \
              IR (by cost model)",
             pattern.name(),
