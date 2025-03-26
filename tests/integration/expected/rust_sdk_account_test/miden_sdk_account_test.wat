@@ -59,6 +59,21 @@
   (import "miden:core-import/tx@1.0.0" "create-note" (func $miden_base_sys::bindings::tx::extern_tx_create_note (;28;) (type 16)))
   (import "miden:core-import/stdlib-mem@1.0.0" "pipe-words-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_words_to_memory (;29;) (type 17)))
   (import "miden:core-import/stdlib-mem@1.0.0" "pipe-double-words-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_double_words_to_memory (;30;) (type 18)))
+  (table (;0;) 1 1 funcref)
+  (memory (;0;) 17)
+  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+  (export "memory" (memory 0))
+  (export "get_wallet_magic_number" (func $get_wallet_magic_number.command_export))
+  (export "test_add_asset" (func $test_add_asset.command_export))
+  (export "test_felt_ops_smoke" (func $test_felt_ops_smoke.command_export))
+  (export "note_script" (func $note_script.command_export))
+  (export "test_blake3_hash_1to1" (func $test_blake3_hash_1to1.command_export))
+  (export "test_blake3_hash_2to1" (func $test_blake3_hash_2to1.command_export))
+  (export "test_rpo_falcon512_verify" (func $test_rpo_falcon512_verify.command_export))
+  (export "test_pipe_words_to_memory" (func $test_pipe_words_to_memory.command_export))
+  (export "test_pipe_double_words_to_memory" (func $test_pipe_double_words_to_memory.command_export))
+  (export "test_remove_asset" (func $test_remove_asset.command_export))
+  (export "test_create_note" (func $test_create_note.command_export))
   (func $<<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop::Drop>::drop (;31;) (type 19) (param i32)
     (local i32)
     global.get $__stack_pointer
@@ -98,6 +113,9 @@
       local.get 2
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
       local.tee 1
+      i32.eqz
+      br_if 0 (;@1;)
+      local.get 2
       i32.eqz
       br_if 0 (;@1;)
       local.get 1
@@ -301,37 +319,37 @@
     local.get 0
     local.get 3
     i32.store
-    loop (result f32) ;; label = @1
-      block ;; label = @2
+    block ;; label = @1
+      loop ;; label = @2
         local.get 4
-        br_if 0 (;@2;)
-        local.get 0
-        local.get 5
-        i32.store offset=4
-        local.get 0
-        call $<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop
-        local.get 0
-        i32.const 16
+        i32.eqz
+        br_if 1 (;@1;)
+        local.get 4
+        i32.const -4
         i32.add
-        global.set $__stack_pointer
+        local.set 4
         local.get 1
-        return
+        local.get 3
+        f32.load
+        call $miden_stdlib_sys::intrinsics::felt::extern_add
+        local.set 1
+        local.get 3
+        i32.const 4
+        i32.add
+        local.set 3
+        br 0 (;@2;)
       end
-      local.get 4
-      i32.const -4
-      i32.add
-      local.set 4
-      local.get 1
-      local.get 3
-      f32.load
-      call $miden_stdlib_sys::intrinsics::felt::extern_add
-      local.set 1
-      local.get 3
-      i32.const 4
-      i32.add
-      local.set 3
-      br 0 (;@1;)
     end
+    local.get 0
+    local.get 5
+    i32.store offset=4
+    local.get 0
+    call $<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop
+    local.get 0
+    i32.const 16
+    i32.add
+    global.set $__stack_pointer
+    local.get 1
   )
   (func $test_blake3_hash_1to1 (;39;) (type 21) (param i32 i32)
     (local i32 i32)
@@ -478,14 +496,14 @@
     local.get 3
     call $miden_base_sys::bindings::tx::create_note
   )
-  (func $__rust_alloc (;46;) (type 24) (param i32 i32) (result i32)
+  (func $__rustc::__rust_alloc (;46;) (type 24) (param i32 i32) (result i32)
     i32.const 1048704
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
-  (func $__rust_dealloc (;47;) (type 25) (param i32 i32 i32))
-  (func $__rust_alloc_zeroed (;48;) (type 24) (param i32 i32) (result i32)
+  (func $__rustc::__rust_dealloc (;47;) (type 25) (param i32 i32 i32))
+  (func $__rustc::__rust_alloc_zeroed (;48;) (type 24) (param i32 i32) (result i32)
     i32.const 1048704
     local.get 1
     local.get 0
@@ -501,18 +519,19 @@
       i32.gt_u
       select
       local.tee 3
-      i32.popcnt
-      i32.const 1
-      i32.ne
+      local.get 3
+      i32.const -1
+      i32.add
+      i32.and
       br_if 0 (;@1;)
+      local.get 2
       i32.const -2147483648
       local.get 1
       local.get 3
       call $core::ptr::alignment::Alignment::max
       local.tee 1
       i32.sub
-      local.get 2
-      i32.lt_u
+      i32.gt_u
       br_if 0 (;@1;)
       i32.const 0
       local.set 3
@@ -934,68 +953,70 @@
           i64.shr_u
           i32.wrap_i64
           br_if 0 (;@3;)
-          i32.const -2147483648
-          local.get 3
-          i32.sub
           local.get 6
           i32.wrap_i64
           local.tee 4
-          i32.lt_u
-          br_if 0 (;@3;)
-          block ;; label = @4
-            local.get 4
-            br_if 0 (;@4;)
-            local.get 0
-            local.get 3
-            i32.store offset=8
-            i32.const 0
-            local.set 3
-            local.get 0
-            i32.const 0
-            i32.store offset=4
-            br 3 (;@1;)
-          end
-          block ;; label = @4
-            block ;; label = @5
-              local.get 2
-              br_if 0 (;@5;)
-              local.get 5
-              i32.const 8
-              i32.add
-              local.get 3
-              local.get 4
-              call $<alloc::alloc::Global as core::alloc::Allocator>::allocate
-              local.get 5
-              i32.load offset=8
-              local.set 2
-              br 1 (;@4;)
-            end
-            local.get 5
-            local.get 3
-            local.get 4
-            i32.const 1
-            call $alloc::alloc::Global::alloc_impl
-            local.get 5
-            i32.load
-            local.set 2
-          end
-          local.get 2
-          i32.eqz
+          i32.const -2147483648
+          local.get 3
+          i32.sub
+          i32.le_u
           br_if 1 (;@2;)
-          local.get 0
-          local.get 2
-          i32.store offset=8
-          local.get 0
-          local.get 1
-          i32.store offset=4
-          i32.const 0
-          local.set 3
-          br 2 (;@1;)
         end
         local.get 0
         i32.const 0
         i32.store offset=4
         i32.const 1
+        local.set 3
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 4
+        br_if 0 (;@2;)
+        local.get 0
+        local.get 3
+        i32.store offset=8
+        i32.const 0
+        local.set 3
+        local.get 0
+        i32.const 0
+        i32.store offset=4
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        block ;; label = @3
+          local.get 2
+          br_if 0 (;@3;)
+          local.get 5
+          i32.const 8
+          i32.add
+          local.get 3
+          local.get 4
+          call $<alloc::alloc::Global as core::alloc::Allocator>::allocate
+          local.get 5
+          i32.load offset=8
+          local.set 2
+          br 1 (;@2;)
+        end
+        local.get 5
+        local.get 3
+        local.get 4
+        i32.const 1
+        call $alloc::alloc::Global::alloc_impl
+        local.get 5
+        i32.load
+        local.set 2
+      end
+      block ;; label = @2
+        local.get 2
+        i32.eqz
+        br_if 0 (;@2;)
+        local.get 0
+        local.get 2
+        i32.store offset=8
+        local.get 0
+        local.get 1
+        i32.store offset=4
+        i32.const 0
         local.set 3
         br 1 (;@1;)
       end
@@ -1058,13 +1079,13 @@
         br_if 0 (;@2;)
         local.get 2
         local.get 1
-        call $__rust_alloc
+        call $__rustc::__rust_alloc
         local.set 1
         br 1 (;@1;)
       end
       local.get 2
       local.get 1
-      call $__rust_alloc_zeroed
+      call $__rustc::__rust_alloc_zeroed
       local.set 1
     end
     local.get 0
@@ -1117,7 +1138,7 @@
       local.get 0
       local.get 2
       local.get 1
-      call $__rust_dealloc
+      call $__rustc::__rust_dealloc
     end
   )
   (func $alloc::raw_vec::handle_error (;66;) (type 25) (param i32 i32 i32)
@@ -1192,20 +1213,5 @@
     call $test_create_note
     call $__wasm_call_dtors
   )
-  (table (;0;) 1 1 funcref)
-  (memory (;0;) 17)
-  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-  (export "memory" (memory 0))
-  (export "get_wallet_magic_number" (func $get_wallet_magic_number.command_export))
-  (export "test_add_asset" (func $test_add_asset.command_export))
-  (export "test_felt_ops_smoke" (func $test_felt_ops_smoke.command_export))
-  (export "note_script" (func $note_script.command_export))
-  (export "test_blake3_hash_1to1" (func $test_blake3_hash_1to1.command_export))
-  (export "test_blake3_hash_2to1" (func $test_blake3_hash_2to1.command_export))
-  (export "test_rpo_falcon512_verify" (func $test_rpo_falcon512_verify.command_export))
-  (export "test_pipe_words_to_memory" (func $test_pipe_words_to_memory.command_export))
-  (export "test_pipe_double_words_to_memory" (func $test_pipe_double_words_to_memory.command_export))
-  (export "test_remove_asset" (func $test_remove_asset.command_export))
-  (export "test_create_note" (func $test_create_note.command_export))
   (data $.rodata (;0;) (i32.const 1048576) "../../sdk/base-sys/src/bindings/note.rs\00\00\00\10\00'\00\00\00\11\00\00\00!\00\00\00../../sdk/stdlib-sys/src/stdlib/mem.rs\00\008\00\10\00&\00\00\00J\00\00\00\22\00\00\008\00\10\00&\00\00\00a\00\00\00\1e\00\00\00")
 )

@@ -1,24 +1,24 @@
 builtin.component miden:cross-ctx-account/foo@1.0.0 {
     builtin.module public @cross_ctx_account {
         private builtin.function @__wasm_call_ctors() {
-        ^block5:
+        ^block6:
             builtin.ret ;
         };
 
         private builtin.function @cross_ctx_account::bindings::__link_custom_section_describing_imports() {
-        ^block7:
+        ^block8:
             builtin.ret ;
         };
 
         private builtin.function @__rustc::__rust_alloc(v0: i32, v1: i32) -> i32 {
-        ^block9(v0: i32, v1: i32):
+        ^block10(v0: i32, v1: i32):
             v3 = arith.constant 1048612 : i32;
             v4 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v3, v1, v0) : i32
             builtin.ret v4;
         };
 
         private builtin.function @__rustc::__rust_realloc(v5: i32, v6: i32, v7: i32, v8: i32) -> i32 {
-        ^block11(v5: i32, v6: i32, v7: i32, v8: i32):
+        ^block12(v5: i32, v6: i32, v7: i32, v8: i32):
             v10 = arith.constant 1048612 : i32;
             v11 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v10, v7, v8) : i32
             v200 = arith.constant 0 : i32;
@@ -28,10 +28,10 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v15 = hir.bitcast v14 : i32;
             v17 = arith.neq v15, v200 : i1;
             v195 = scf.if v17 : i32 {
-            ^block13:
+            ^block14:
                 scf.yield v11;
             } else {
-            ^block14:
+            ^block15:
                 v199 = arith.constant 0 : i32;
                 v19 = hir.bitcast v6 : u32;
                 v18 = hir.bitcast v8 : u32;
@@ -47,10 +47,10 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v29 = hir.bitcast v28 : i32;
                 v31 = arith.neq v29, v197 : i1;
                 v196 = scf.if v31 : i32 {
-                ^block47:
+                ^block48:
                     scf.yield v11;
                 } else {
-                ^block15:
+                ^block16:
                     v32 = hir.bitcast v25 : u32;
                     v33 = hir.bitcast v11 : u32;
                     v34 = hir.int_to_ptr v33 : (ptr u8);
@@ -65,7 +65,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
         };
 
         public builtin.function @miden:cross-ctx-account/foo@1.0.0#process-felt(v38: felt) -> felt {
-        ^block16(v38: felt):
+        ^block17(v38: felt):
             hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/wit_bindgen_rt::run_ctors_once()
             v201 = arith.constant 3 : felt;
             v42 = arith.add v38, v201 : felt #[overflow = unchecked];
@@ -73,23 +73,23 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
         };
 
         public builtin.function @cabi_realloc_wit_bindgen_0_28_0(v43: i32, v44: i32, v45: i32, v46: i32) -> i32 {
-        ^block18(v43: i32, v44: i32, v45: i32, v46: i32):
+        ^block19(v43: i32, v44: i32, v45: i32, v46: i32):
             v48 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/wit_bindgen_rt::cabi_realloc(v43, v44, v45, v46) : i32
             builtin.ret v48;
         };
 
         private builtin.function @wit_bindgen_rt::cabi_realloc(v49: i32, v50: i32, v51: i32, v52: i32) -> i32 {
-        ^block20(v49: i32, v50: i32, v51: i32, v52: i32):
+        ^block21(v49: i32, v50: i32, v51: i32, v52: i32):
             v54 = arith.constant 0 : i32;
             v55 = arith.neq v50, v54 : i1;
             v212, v213, v214 = scf.if v55 : i32, i32, u32 {
-            ^block24:
+            ^block25:
                 v70 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__rustc::__rust_realloc(v49, v50, v51, v52) : i32
                 v203 = arith.constant 0 : u32;
                 v207 = ub.poison i32 : i32;
                 scf.yield v70, v207, v203;
             } else {
-            ^block25:
+            ^block26:
                 v237 = arith.constant 0 : i32;
                 v238 = arith.constant 0 : i32;
                 v57 = arith.eq v52, v238 : i1;
@@ -97,12 +97,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v59 = hir.bitcast v58 : i32;
                 v61 = arith.neq v59, v237 : i1;
                 v223, v224, v225 = scf.if v61 : i32, i32, u32 {
-                ^block50:
+                ^block51:
                     v208 = arith.constant 1 : u32;
                     v236 = ub.poison i32 : i32;
                     scf.yield v236, v51, v208;
                 } else {
-                ^block26:
+                ^block27:
                     v69 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__rustc::__rust_alloc(v52, v51) : i32
                     v234 = arith.constant 0 : u32;
                     v235 = ub.poison i32 : i32;
@@ -112,15 +112,15 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             };
             v219, v220 = scf.index_switch v214 : i32, u32 
             case 0 {
-            ^block23:
+            ^block24:
                 v232 = arith.constant 0 : i32;
                 v73 = arith.neq v212, v232 : i1;
                 v221, v222 = scf.if v73 : i32, u32 {
-                ^block51:
+                ^block52:
                     v231 = arith.constant 0 : u32;
                     scf.yield v212, v231;
                 } else {
-                ^block27:
+                ^block28:
                     v229 = arith.constant 1 : u32;
                     v230 = ub.poison i32 : i32;
                     scf.yield v230, v229;
@@ -128,21 +128,21 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 scf.yield v221, v222;
             }
             default {
-            ^block57:
+            ^block58:
                 v233 = arith.constant 0 : u32;
                 scf.yield v213, v233;
             };
             v228 = arith.constant 0 : u32;
             v227 = arith.eq v220, v228 : i1;
-            cf.cond_br v227 ^block52, ^block53;
-        ^block52:
-            builtin.ret v219;
+            cf.cond_br v227 ^block53, ^block54;
         ^block53:
+            builtin.ret v219;
+        ^block54:
             ub.unreachable ;
         };
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {
-        ^block28:
+        ^block29:
             v77 = arith.constant 1048617 : u32;
             v242 = arith.constant 0 : u32;
             v78 = arith.add v242, v77 : u32 #[overflow = checked];
@@ -153,10 +153,10 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v82 = hir.bitcast v81 : i32;
             v84 = arith.neq v82, v75 : i1;
             scf.if v84{
-            ^block30:
+            ^block31:
                 scf.yield ;
             } else {
-            ^block31:
+            ^block32:
                 hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__wasm_call_ctors()
                 v240 = arith.constant 1 : u8;
                 v244 = arith.constant 1048617 : u32;
@@ -170,7 +170,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
         };
 
         private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v93: i32, v94: i32, v95: i32) -> i32 {
-        ^block32(v93: i32, v94: i32, v95: i32):
+        ^block33(v93: i32, v94: i32, v95: i32):
             v98 = arith.constant 32 : i32;
             v97 = arith.constant 0 : i32;
             v247 = arith.constant 32 : u32;
@@ -186,12 +186,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v110 = arith.band v107, v109 : i32;
             v112 = arith.neq v110, v284 : i1;
             v256, v257 = scf.if v112 : i32, u32 {
-            ^block62:
+            ^block63:
                 v248 = arith.constant 0 : u32;
                 v252 = ub.poison i32 : i32;
                 scf.yield v252, v248;
             } else {
-            ^block35:
+            ^block36:
                 v114 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/core::ptr::alignment::Alignment::max(v94, v107) : i32
                 v283 = arith.constant 0 : i32;
                 v113 = arith.constant -2147483648 : i32;
@@ -203,12 +203,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v120 = hir.bitcast v119 : i32;
                 v122 = arith.neq v120, v283 : i1;
                 v260, v261 = scf.if v122 : i32, u32 {
-                ^block61:
+                ^block62:
                     v281 = arith.constant 0 : u32;
                     v282 = ub.poison i32 : i32;
                     scf.yield v282, v281;
                 } else {
-                ^block36:
+                ^block37:
                     v279 = arith.constant 0 : i32;
                     v128 = arith.sub v279, v114 : i32 #[overflow = wrapping];
                     v280 = arith.constant -1 : i32;
@@ -224,12 +224,12 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                     v278 = arith.constant 0 : i32;
                     v136 = arith.neq v134, v278 : i1;
                     v262, v263, v264, v265 = scf.if v136 : i32, i32, i32, i32 {
-                    ^block60:
+                    ^block61:
                         v277 = arith.constant 0 : i32;
                         scf.yield v93, v129, v114, v277;
                     } else {
-                    ^block38:
-                        v137 = hir.exec @intrinsics::mem/heap_base() : i32
+                    ^block39:
+                        v137 = hir.exec @intrinsics/mem/heap_base() : i32
                         v138 = hir.mem_size  : u32;
                         v144 = hir.bitcast v93 : u32;
                         v276 = arith.constant 4 : u32;
@@ -260,11 +260,11 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                     v161 = hir.bitcast v160 : i32;
                     v163 = arith.neq v161, v273 : i1;
                     v266, v267 = scf.if v163 : i32, u32 {
-                    ^block39:
+                    ^block40:
                         v253 = arith.constant 1 : u32;
                         scf.yield v265, v253;
                     } else {
-                    ^block40:
+                    ^block41:
                         v165 = hir.bitcast v262 : u32;
                         v272 = arith.constant 4 : u32;
                         v167 = arith.mod v165, v272 : u32;
@@ -282,15 +282,15 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             };
             v270 = arith.constant 0 : u32;
             v269 = arith.eq v257, v270 : i1;
-            cf.cond_br v269 ^block34, ^block64(v256);
-        ^block34:
+            cf.cond_br v269 ^block35, ^block65(v256);
+        ^block35:
             ub.unreachable ;
-        ^block64(v249: i32):
+        ^block65(v249: i32):
             builtin.ret v249;
         };
 
         private builtin.function @core::ptr::alignment::Alignment::max(v173: i32, v174: i32) -> i32 {
-        ^block41(v173: i32, v174: i32):
+        ^block42(v173: i32, v174: i32):
             v181 = arith.constant 0 : i32;
             v177 = hir.bitcast v174 : u32;
             v176 = hir.bitcast v173 : u32;
@@ -303,7 +303,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
         };
 
         public builtin.function @cabi_realloc(v184: i32, v185: i32, v186: i32, v187: i32) -> i32 {
-        ^block43(v184: i32, v185: i32, v186: i32, v187: i32):
+        ^block44(v184: i32, v185: i32, v186: i32, v187: i32):
             v189 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/cabi_realloc_wit_bindgen_0_28_0(v184, v185, v186, v187) : i32
             builtin.ret v189;
         };
@@ -316,7 +316,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
     };
 
     public builtin.function @process-felt(v190: felt) -> felt {
-    ^block45(v190: felt):
+    ^block46(v190: felt):
         v191 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/miden:cross-ctx-account/foo@1.0.0#process-felt(v190) : felt
         builtin.ret v191;
     };

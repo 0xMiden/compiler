@@ -2,18 +2,18 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_tx_kernel_get_id {
         private builtin.function @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
         ^block3:
-            v0 = hir.exec @miden::account/get_id() : felt
+            v0 = hir.exec @miden/account/get_id() : felt
             builtin.ret ;
         };
 
         public builtin.function @entrypoint() -> felt {
-        ^block7:
+        ^block8:
             v3 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id() : felt
             builtin.ret v3;
         };
 
         private builtin.function @miden_base_sys::bindings::account::get_id() -> felt {
-        ^block9:
+        ^block10:
             v5 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id() : felt
             builtin.ret v5;
         };

@@ -2,7 +2,7 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_stdlib_blake3_hash {
         private builtin.function @miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32) {
         ^block3(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32):
-            v9, v10, v11, v12, v13, v14, v15, v16 = hir.exec @std::crypto::hashes::blake3/hash_1to1(v0, v1, v2, v3, v4, v5, v6, v7) : i32, i32, i32, i32, i32, i32, i32, i32
+            v9, v10, v11, v12, v13, v14, v15, v16 = hir.exec @std/crypto/hashes/blake3/hash_1to1(v0, v1, v2, v3, v4, v5, v6, v7) : i32, i32, i32, i32, i32, i32, i32, i32
             v17 = hir.bitcast v8 : u32;
             v18 = hir.int_to_ptr v17 : (ptr i32);
             hir.store v18, v9;
@@ -38,15 +38,15 @@ builtin.component root_ns:root@1.0.0 {
         };
 
         public builtin.function @entrypoint(v40: i32, v41: i32) {
-        ^block7(v40: i32, v41: i32):
-            v43 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer];
+        ^block10(v40: i32, v41: i32):
+            builtin.global_symbol @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer : (ptr u8)
             v44 = hir.bitcast v43 : (ptr i32);
             v45 = hir.load v44 : i32;
             v48 = arith.constant -32 : i32;
             v46 = arith.constant 32 : i32;
             v47 = arith.sub v45, v46 : i32 #[overflow = wrapping];
             v49 = arith.band v47, v48 : i32;
-            v50 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer];
+            builtin.global_symbol @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer : (ptr u8)
             v51 = hir.bitcast v50 : (ptr i32);
             hir.store v51, v49;
             v52 = hir.bitcast v41 : u32;
@@ -136,7 +136,7 @@ builtin.component root_ns:root@1.0.0 {
             v128 = hir.bitcast v40 : u32;
             v129 = hir.int_to_ptr v128 : (ptr i64);
             hir.store v129, v127;
-            v130 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer];
+            builtin.global_symbol @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/__stack_pointer : (ptr u8)
             v131 = hir.bitcast v130 : (ptr i32);
             hir.store v131, v45;
             builtin.ret ;
