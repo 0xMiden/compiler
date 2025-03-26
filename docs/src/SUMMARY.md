@@ -21,8 +21,15 @@
 
 # Compiler architecture
 
-- [Overview](./design/overview.md)
+- [Overview](./design/index.md)
 - [Frontends](./design/frontends.md)
+- [Intermediate Representation (HIR)](./design/ir.md)
+- [Packaging](./design/packaging.md)
+- [Data Layout](./design/data_layout.md)
+- [Analyses](./design/analyses.md)
+- [Rewrites](./design/rewrites.md)
+- [Code Generation](./design/codegen.md)
+- [Packaging](./design/packaging.md)
 
 ---
 
