@@ -187,8 +187,9 @@ impl OpEmitter<'_> {
         let arg = self.stack.pop().expect("operand stack is empty");
         let src = arg.ty();
         assert!(
-            src.is_integer() && dst.is_integer(),
-            "invalid cast of {src} to {dst}: only integer-to-integer bitcasts are supported"
+            (src.is_integer() && dst.is_integer()) || (src.is_pointer() && dst.is_pointer()),
+            "invalid cast of {src} to {dst}: only integer-to-integer or pointer-to-pointer \
+             bitcasts are supported"
         );
         self.push(dst.clone());
     }
