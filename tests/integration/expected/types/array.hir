@@ -19,6 +19,9 @@ builtin.component root_ns:root@1.0.0 {
                 v53, v54, v55, v56 = scf.while v0, v76, v1, v43 : i32, i32, i32, i32 {
                 ^block10(v11: i32, v17: i32, v21: i32, v48: i32):
                     v12 = hir.bitcast v11 : u32;
+                    v13 = arith.constant 4 : u32;
+                    v14 = arith.mod v12, v13 : u32;
+                    hir.assertz v14 #[code = 250];
                     v15 = hir.int_to_ptr v12 : (ptr i32);
                     v16 = hir.load v15 : i32;
                     v18 = arith.add v16, v17 : i32 #[overflow = wrapping];

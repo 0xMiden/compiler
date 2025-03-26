@@ -2,12 +2,54 @@
 
 export.global_var_update
 
-        nop
+        push.1048577
+        push.0
+        add
+        u32assert
+        dup.0
+        u32mod.16
+        dup.0
+        u32mod.4
+        swap.1
+        u32div.4
+        movup.2
+        u32div.16
+        exec.::intrinsics::mem::load_sw
+        push.128
+        u32and
+        push.1
+        swap.1
+        u32wrapping_add
+        push.128
+        u32and
+        push.1048576
+        push.0
+        add
+        u32assert
+        dup.0
+        u32mod.16
+        dup.0
+        u32mod.4
+        swap.1
+        u32div.4
+        movup.2
+        u32div.16
+        dup.2
+        dup.2
+        dup.2
+        exec.::intrinsics::mem::load_sw
+        push.4294967040
+        u32and
+        movup.5
+        u32or
+        movdn.4
+        exec.::intrinsics::mem::store_sw
 end
 
 
 export.__main
 
+        exec.::root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4::global_var_update
         push.3735929054
         push.0
         push.4294967287
