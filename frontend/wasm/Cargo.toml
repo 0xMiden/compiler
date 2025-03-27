@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["wasmparser/std", "gimli/std"]
+std = ["wasmparser/std", "gimli/std", "midenc-hir-symbol/std"]
 
 [dependencies]
 anyhow.workspace = true
@@ -28,7 +28,7 @@ midenc-dialect-hir.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-ub.workspace = true
 midenc-dialect-arith.workspace = true
-midenc-hir-type.workspace = true
+midenc-hir-symbol.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true
 wasmparser = { version = "0.227", default-features = false, features = [

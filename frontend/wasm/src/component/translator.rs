@@ -6,7 +6,8 @@ use midenc_hir::{
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
     interner::Symbol,
-    Abi, BuilderExt, Context, FunctionIdent, FunctionType, FxHashMap, Ident, SourceSpan,
+    smallvec, Abi, BuilderExt, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
+    SymbolPath,
 };
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
@@ -23,8 +24,7 @@ use crate::{
         StaticComponentIndex,
     },
     error::WasmResult,
-    intrinsics::is_miden_intrinsics_module,
-    miden_abi::{is_miden_abi_module, recover_imported_masm_module},
+    miden_abi::recover_imported_masm_module,
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
@@ -321,23 +321,23 @@ impl<'a> ComponentTranslator<'a> {
 
         let component_types = types.resources_mut_and_types().1;
         let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
-        let core_export_func_id = self.core_module_export_func_id(frame, canon_lift);
+        let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         generate_export_lifting_function(
             &mut self.result,
             name,
             func_ty,
-            core_export_func_id,
+            core_export_func_path,
             self.context.diagnostics(),
         )?;
         Ok(())
     }
 
-    fn core_module_export_func_id(
+    fn core_module_export_func_path(
         &self,
         frame: &ComponentFrame<'a>,
         canon_lift: &CanonLift,
-    ) -> FunctionIdent {
-        let core_func_id: FunctionIdent = match &frame.funcs[canon_lift.func] {
+    ) -> SymbolPath {
+        match &frame.funcs[canon_lift.func] {
             CoreDef::Export(module_instance_idx, name) => {
                 match &frame.module_instances[*module_instance_idx] {
                     ModuleInstanceDef::Instantiated {
@@ -349,9 +349,11 @@ impl<'a> ComponentTranslator<'a> {
                             let func_idx = parsed_module.module.exports[*name].unwrap_func();
                             let func_name = parsed_module.module.func_name(func_idx);
                             let module_ident = parsed_module.module.name();
-                            FunctionIdent {
-                                module: module_ident,
-                                function: Ident::new(func_name, SourceSpan::default()),
+                            SymbolPath {
+                                path: smallvec![
+                                    SymbolNameComponent::Component(module_ident.as_symbol()),
+                                    SymbolNameComponent::Leaf(func_name)
+                                ],
                             }
                         }
                         ModuleDef::Import(_) => {
@@ -366,8 +368,7 @@ impl<'a> ComponentTranslator<'a> {
             CoreDef::Lower(canon_lower) => {
                 panic!("expected export, got {:?}", canon_lower)
             }
-        };
-        core_func_id
+        }
     }
 
     fn module_instantiation(
@@ -382,24 +383,24 @@ impl<'a> ComponentTranslator<'a> {
             args: args.clone(),
         });
 
-        let mut import_canon_lower_args: FxHashMap<FunctionIdent, ModuleArgument> =
+        let mut import_canon_lower_args: FxHashMap<SymbolPath, ModuleArgument> =
             FxHashMap::default();
         match &frame.modules[*module_idx] {
             ModuleDef::Static(static_module_idx) => {
                 let parsed_module = self.nested_modules.get_mut(*static_module_idx).unwrap();
                 for module_arg in args {
                     let arg_module_name = module_arg.0;
-                    let recovered_module_name =
-                        recover_imported_masm_module(arg_module_name.to_string());
-                    if is_miden_intrinsics_module(recovered_module_name)
-                        || is_miden_abi_module(recovered_module_name)
-                    {
+                    if recover_imported_masm_module(arg_module_name).is_ok() {
                         // Skip processing module import if its an intrinsics, stdlib, tx-kernel, etc.
                         // They are processed in the core Wasm module translation
                         continue;
                     }
-                    let module_ident =
-                        Ident::new(Symbol::intern(*arg_module_name), SourceSpan::default());
+
+                    let module_path = SymbolPath {
+                        path: smallvec![SymbolNameComponent::Component(Symbol::intern(
+                            *arg_module_name
+                        ))],
+                    };
                     let arg_module = &frame.module_instances[*module_arg.1];
                     match arg_module {
                         ModuleInstanceDef::Instantiated {
@@ -415,15 +416,15 @@ impl<'a> ComponentTranslator<'a> {
                         ModuleInstanceDef::Synthetic(entities) => {
                             // module with CanonLower synthetic functions
                             for (func_name, entity) in entities.iter() {
-                                let (signature, func_id) = canon_lower_func(
+                                let (signature, path) = canon_lower_func(
                                     frame,
                                     types,
-                                    module_ident,
+                                    &module_path,
                                     func_name,
                                     entity,
                                 )?;
                                 import_canon_lower_args
-                                    .insert(func_id, ModuleArgument::ComponentImport(signature));
+                                    .insert(path, ModuleArgument::ComponentImport(signature));
                             }
                         }
                     }
@@ -510,13 +511,12 @@ fn convert_lifted_func_ty(
 fn canon_lower_func(
     frame: &mut ComponentFrame,
     types: &mut ComponentTypesBuilder,
-    module_ident: Ident,
+    module_path: &SymbolPath,
     func_name: &str,
     entity: &EntityIndex,
-) -> WasmResult<(FunctionType, FunctionIdent)> {
+) -> WasmResult<(FunctionType, SymbolPath)> {
     let func_id = entity.unwrap_func();
     let canon_lower = frame.funcs[func_id].unwrap_canon_lower();
-    let func_name_ident = Ident::new(Symbol::intern(func_name), SourceSpan::default());
     let type_func_idx = types
         .convert_component_func_type(frame.types, canon_lower.lower_ty)
         .map_err(Report::msg)?;
@@ -524,11 +524,10 @@ fn canon_lower_func(
     let component_types = types.resources_mut_and_types().1;
     let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
 
-    let func_id = FunctionIdent {
-        module: module_ident,
-        function: func_name_ident,
-    };
-    Ok((func_ty, func_id))
+    let mut path = module_path.clone();
+    path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
+
+    Ok((func_ty, path))
 }
 
 #[derive(Clone, Debug)]

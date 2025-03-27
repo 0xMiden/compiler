@@ -32,12 +32,10 @@ impl Pass for TransformSpills {
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
-        log::debug!(target: "insert-spills", "computing and inserting spills for {}", op.as_operation());
+        let function = op.into_entity_ref();
+        log::debug!(target: "insert-spills", "computing and inserting spills for {}", function.as_operation());
 
-        // We need to drop our mutable reference while computing the analysis results
-        let function = unsafe { FunctionRef::from_raw(&*op) };
-        drop(op);
-        if function.borrow().is_declaration() {
+        if function.is_declaration() {
             log::debug!(target: "insert-spills", "function has no body, no spills needed!");
             state.preserved_analyses_mut().preserve_all();
             return Ok(());
@@ -58,16 +56,13 @@ impl Pass for TransformSpills {
         // Place spills and reloads, rewrite IR to ensure live ranges we aimed to split are actually
         // split.
         let mut interface = TransformSpillsImpl {
-            function,
+            function: function.as_function_ref(),
             locals: Default::default(),
         };
 
-        transforms::transform_spills(
-            function.as_operation_ref(),
-            analysis,
-            &mut interface,
-            state.analysis_manager().clone(),
-        )
+        let op = function.as_operation_ref();
+        drop(function);
+        transforms::transform_spills(op, analysis, &mut interface, state.analysis_manager().clone())
     }
 }
 

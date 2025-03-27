@@ -9,15 +9,14 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
+use alloc::rc::Rc;
 use core::mem;
-use std::rc::Rc;
 
 use cranelift_entity::{entity_impl, EntityList, ListPool};
 use midenc_hir::{
-    traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, ValueRef,
+    traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, SourceSpan,
+    Type, ValueRef,
 };
-use midenc_hir_type::Type;
-use midenc_session::diagnostics::SourceSpan;
 
 /// Structure containing the data relevant the construction of SSA for a given function.
 ///

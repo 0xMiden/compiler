@@ -2,73 +2,76 @@ pub(crate) mod stdlib;
 pub(crate) mod transform;
 pub(crate) mod tx_kernel;
 
-use std::{cell::RefCell, rc::Rc};
+use alloc::rc::Rc;
+use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
+    diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, Function, ModuleBuilder, WorldBuilder},
     interner::Symbol,
-    AbiParam, FunctionIdent, FunctionType, FxHashMap, Ident, Op, Signature, ValueRef,
+    AbiParam, FunctionType, FxHashMap, Op, Signature, SymbolNameComponent, SymbolPath, ValueRef,
 };
+use midenc_hir_symbol::symbols;
 use transform::transform_miden_abi_call;
-use tx_kernel::note;
 
 use crate::{
+    callable::CallableFunction,
     intrinsics,
-    module::{
-        function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
-        module_translation_state::CallableFunction,
+    module::function_builder_ext::{
+        FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     },
 };
 
-pub(crate) type FunctionTypeMap = FxHashMap<&'static str, FunctionType>;
-pub(crate) type ModuleFunctionTypeMap = FxHashMap<&'static str, FunctionTypeMap>;
+pub(crate) type FunctionTypeMap = FxHashMap<Symbol, FunctionType>;
+pub(crate) type ModuleFunctionTypeMap = FxHashMap<SymbolPath, FunctionTypeMap>;
 
-pub fn is_miden_abi_module(module_id: Symbol) -> bool {
-    is_miden_stdlib_module(module_id) || is_miden_sdk_module(module_id)
+pub fn is_miden_abi_module(path: &SymbolPath) -> bool {
+    let module_path = path.without_leaf();
+    is_miden_stdlib_module(&module_path) || is_miden_sdk_module(&module_path)
 }
 
-pub fn miden_abi_function_type(module_id: Symbol, function_id: Symbol) -> FunctionType {
-    if is_miden_stdlib_module(module_id) {
-        miden_stdlib_function_type(module_id, function_id)
+fn is_miden_sdk_module(module_path: &SymbolPath) -> bool {
+    tx_kernel::signatures().contains_key(module_path)
+}
+
+fn is_miden_stdlib_module(module_path: &SymbolPath) -> bool {
+    stdlib::signatures().contains_key(module_path)
+}
+
+pub fn miden_abi_function_type(path: &SymbolPath) -> FunctionType {
+    const STD: &[SymbolNameComponent] =
+        &[SymbolNameComponent::Root, SymbolNameComponent::Component(symbols::Std)];
+
+    if path.is_prefixed_by(STD) {
+        miden_stdlib_function_type(path)
     } else {
-        miden_sdk_function_type(module_id, function_id)
+        miden_sdk_function_type(path)
     }
 }
 
-fn is_miden_sdk_module(module_id: Symbol) -> bool {
-    tx_kernel::signatures().contains_key(module_id.as_str())
-}
-
 /// Get the target Miden ABI tx kernel function type for the given module and function id
-pub fn miden_sdk_function_type(module_id: Symbol, function_id: Symbol) -> FunctionType {
+pub fn miden_sdk_function_type(path: &SymbolPath) -> FunctionType {
+    let module_path = path.without_leaf();
     let funcs = tx_kernel::signatures()
-        .get(module_id.as_str())
-        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {}", module_id));
-    funcs.get(function_id.as_str()).cloned().unwrap_or_else(|| {
-        panic!(
-            "No Miden ABI function type found for function {} in module {}",
-            function_id, module_id
-        )
-    })
-}
-
-fn is_miden_stdlib_module(module_id: Symbol) -> bool {
-    stdlib::signatures().contains_key(module_id.as_str())
+        .get(module_path.as_ref())
+        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {module_path}"));
+    funcs
+        .get(&path.name())
+        .cloned()
+        .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
 }
 
 /// Get the target Miden ABI stdlib function type for the given module and function id
-#[inline(always)]
-fn miden_stdlib_function_type(module_id: Symbol, function_id: Symbol) -> FunctionType {
+fn miden_stdlib_function_type(path: &SymbolPath) -> FunctionType {
+    let module_path = path.without_leaf();
     let funcs = stdlib::signatures()
-        .get(module_id.as_str())
-        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {}", module_id));
-    funcs.get(function_id.as_str()).cloned().unwrap_or_else(|| {
-        panic!(
-            "No Miden ABI function type found for function {} in module {}",
-            function_id, module_id
-        )
-    })
+        .get(module_path.as_ref())
+        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {module_path}"));
+    funcs
+        .get(&path.name())
+        .cloned()
+        .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
 }
 
 /// Restore module and function names of the intrinsics and Miden SDK functions
@@ -80,20 +83,24 @@ fn miden_stdlib_function_type(module_id: Symbol, function_id: Symbol) -> Functio
 pub fn recover_imported_masm_function_id(
     wasm_module_id: &str,
     wasm_function_id: &str,
-) -> FunctionIdent {
-    let module_id = recover_imported_masm_module(wasm_module_id.to_string());
-    // Since `hash-1to1` is an invalid name in Wasm CM (dashed part cannot start with a digit),
-    // we need to translate the CM name to the one that is expected at the linking stage
-    let function_id = if wasm_function_id == "hash-one-to-one" {
-        "hash_1to1".to_string()
-    } else if wasm_function_id == "hash-two-to-one" {
-        "hash_2to1".to_string()
-    } else {
-        wasm_function_id.replace("-", "_")
-    };
-    FunctionIdent {
-        module: Ident::from(module_id),
-        function: Ident::from(function_id.as_str()),
+) -> Option<SymbolPath> {
+    match recover_imported_masm_module(wasm_module_id) {
+        Ok(mut path) => {
+            // Since `hash-1to1` is an invalid name in Wasm CM (dashed part cannot start with a digit),
+            // we need to translate the CM name to the one that is expected at the linking stage
+            let function_id = if wasm_function_id == "hash-one-to-one" {
+                Symbol::from("hash_1to1")
+            } else if wasm_function_id == "hash-two-to-one" {
+                Symbol::from("hash_2to1")
+            } else {
+                Symbol::intern(wasm_function_id.replace("-", "_"))
+            };
+
+            path.set_name(function_id);
+
+            Some(path)
+        }
+        Err(_unknown_module_id) => None,
     }
 }
 
@@ -102,30 +109,29 @@ pub fn recover_imported_masm_function_id(
 ///
 /// Returns the pre-renamed (expected at the linking stage) module name
 /// or given `wasm_module_id` if the module is not an intrinsic or Miden SDK module
-pub fn recover_imported_masm_module(wasm_module_id: String) -> Symbol {
-    let module_id = if wasm_module_id.starts_with("miden:core-import/intrinsics-mem") {
-        intrinsics::mem::MODULE_ID
+pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, Symbol> {
+    if wasm_module_id.starts_with("miden:core-import/intrinsics-mem") {
+        Ok(SymbolPath::from_masm_module_id(intrinsics::mem::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/intrinsics-felt") {
-        intrinsics::felt::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(intrinsics::felt::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/account") {
-        tx_kernel::account::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(tx_kernel::account::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/note") {
-        note::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(tx_kernel::note::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/tx") {
-        tx_kernel::tx::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(tx_kernel::tx::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-mem") {
-        stdlib::mem::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(stdlib::mem::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-dsa-rpo-falcon") {
-        stdlib::crypto::dsa::rpo_falcon::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(stdlib::crypto::dsa::rpo_falcon::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-blake3") {
-        stdlib::crypto::hashes::blake3::MODULE_ID
+        Ok(SymbolPath::from_masm_module_id(stdlib::crypto::hashes::blake3::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import") {
         panic!("unrecovered intrinsics or Miden SDK import module ID: {wasm_module_id}")
     } else {
-        // Unrecognized module ID, return as is
-        return wasm_module_id.into();
-    };
-    module_id.into()
+        // Unrecognized module ID, return as a `Symbol`
+        Err(Symbol::intern(wasm_module_id))
+    }
 }
 
 /// Define a synthetic wrapper functon transforming parameters, calling the Miden ABI function
@@ -133,22 +139,19 @@ pub fn recover_imported_masm_module(wasm_module_id: String) -> Symbol {
 pub fn define_func_for_miden_abi_transformation(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
-    synth_func_id: FunctionIdent,
+    synth_func_id: SymbolPath,
     synth_func_sig: Signature,
-    import_func_id: FunctionIdent,
+    import_path: SymbolPath,
 ) -> CallableFunction {
-    let import_ft = miden_abi_function_type(
-        import_func_id.module.as_symbol(),
-        import_func_id.function.as_symbol(),
-    );
+    let import_ft = miden_abi_function_type(&import_path);
     let import_sig = Signature::new(
         import_ft.params.into_iter().map(AbiParam::new),
         import_ft.results.into_iter().map(AbiParam::new),
     );
-    let mut func_ref = module_builder
-        .define_function(synth_func_id.function, synth_func_sig.clone())
+    let mut function_ref = module_builder
+        .define_function(synth_func_id.name().into(), synth_func_sig.clone())
         .expect("failed to create an import function");
-    let mut func = func_ref.borrow_mut();
+    let mut func = function_ref.borrow_mut();
     let span = func.name().span;
     let context = func.as_operation().context_rc();
     let func = func.as_mut().downcast_mut::<Function>().unwrap();
@@ -166,25 +169,16 @@ pub fn define_func_for_miden_abi_transformation(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    let import_module_ref = if let Some(found_module_ref) =
-        world_builder.find_module(import_func_id.module.as_symbol())
-    {
-        found_module_ref
-    } else {
-        world_builder
-            .declare_module(import_func_id.module)
-            .expect("failed to create a module for imports")
-    };
+    let import_module_ref = world_builder
+        .declare_module_tree(&import_path)
+        .wrap_err("failed to create module for imports")
+        .unwrap_or_else(|err| panic!("{err}"));
     let mut import_module_builder = ModuleBuilder::new(import_module_ref);
     let import_func_ref = import_module_builder
-        .define_function(import_func_id.function, import_sig.clone())
+        .define_function(import_path.name().into(), import_sig.clone())
         .expect("failed to create an import function");
-    let results = transform_miden_abi_call(
-        import_func_ref,
-        import_func_id,
-        args.as_slice(),
-        &mut func_builder,
-    );
+    let results =
+        transform_miden_abi_call(import_func_ref, &import_path, args.as_slice(), &mut func_builder);
 
     let exit_block = func_builder.create_block();
     func_builder.append_block_params_for_function_returns(exit_block);
@@ -193,9 +187,9 @@ pub fn define_func_for_miden_abi_transformation(
     func_builder.switch_to_block(exit_block);
     func_builder.ret(None, span).expect("failed ret");
 
-    CallableFunction {
+    CallableFunction::Function {
         wasm_id: synth_func_id,
-        function_ref: Some(func_ref),
+        function_ref,
         signature: synth_func_sig,
     }
 }

@@ -97,6 +97,7 @@ impl Pass for ControlFlowSink {
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
+        let op = op.into_entity_ref();
         log::debug!(target: "control-flow-sink", "sinking operations in {op}");
 
         let operation = op.as_operation_ref();

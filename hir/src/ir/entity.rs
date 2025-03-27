@@ -747,6 +747,19 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         }
     }
 
+    /// Try to convert this immutable borrow into a mutable borrow, if it is the only immutable borrow
+    pub fn into_entity_mut(self) -> Result<EntityMut<'b, T>, Self> {
+        let value = self.value;
+        match self.borrow.try_into_mut() {
+            Ok(borrow) => Ok(EntityMut {
+                value,
+                borrow,
+                _marker: core::marker::PhantomData,
+            }),
+            Err(borrow) => Err(Self { value, borrow }),
+        }
+    }
+
     pub fn into_borrow_ref(self) -> BorrowRef<'b> {
         self.borrow
     }
@@ -1453,6 +1466,24 @@ impl<'b> BorrowRef<'b> {
             //    enough to represent having one more read borrow
             borrow.set(b);
             Some(Self { borrow })
+        }
+    }
+
+    /// Convert this immutable borrow into a mutable one, if it is the sole immutable borrow.
+    pub fn try_into_mut(self) -> Result<BorrowRefMut<'b>, Self> {
+        use core::mem::ManuallyDrop;
+
+        // Ensure we don't try to modify the borrow flag when this BorrowRef goes out of scope
+        let this = ManuallyDrop::new(self);
+        let b = this.borrow.get();
+        debug_assert!(b.is_reading());
+        if (b - 1).is_unused() {
+            this.borrow.set(BorrowFlag::UNUSED - 1);
+            Ok(BorrowRefMut {
+                borrow: this.borrow,
+            })
+        } else {
+            Err(ManuallyDrop::into_inner(this))
         }
     }
 }

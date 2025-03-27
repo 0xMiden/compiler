@@ -42,6 +42,7 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     context.register_dialect_hook::<builtin::BuiltinDialect, _>(|info, _context| {
         info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
         info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
+        info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
     });
     context.register_dialect_hook::<arith::ArithDialect, _>(|info, _context| {
         info.register_operation_trait::<arith::Constant, dyn HirLowering>();

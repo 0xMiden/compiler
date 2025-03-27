@@ -1,11 +1,11 @@
 //! Types for parsed core WebAssembly modules.
 
-use core::fmt;
-use std::{collections::HashMap, ops::Index};
+use core::{fmt, ops::Index};
 
 use cranelift_entity::PrimaryMap;
-use midenc_hir::{AbiParam, CallConv, Immediate, Signature, Visibility};
-use midenc_hir_type::{self as hir, Abi};
+use midenc_hir::{
+    self as hir, Abi, AbiParam, CallConv, FxHashMap, Immediate, Signature, Visibility,
+};
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 use wasmparser::types::CoreTypeId;
 
@@ -525,8 +525,8 @@ impl Index<SignatureIndex> for ModuleTypes {
 #[derive(Default)]
 pub struct ModuleTypesBuilder {
     types: ModuleTypes,
-    interned_func_types: HashMap<WasmFuncType, SignatureIndex>,
-    wasmparser_to_our: HashMap<CoreTypeId, SignatureIndex>,
+    interned_func_types: FxHashMap<WasmFuncType, SignatureIndex>,
+    wasmparser_to_our: FxHashMap<CoreTypeId, SignatureIndex>,
 }
 
 impl ModuleTypesBuilder {

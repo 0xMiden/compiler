@@ -1,6 +1,7 @@
 //! Data structures for representing parsed Wasm modules.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::Range};
+use alloc::{borrow::Cow, collections::BTreeMap};
+use core::ops::Range;
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
 use indexmap::IndexMap;

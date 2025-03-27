@@ -127,7 +127,6 @@ fn rust_sdk_p2id_note_script() {
 }
 
 #[test]
-#[ignore = "until undefined module 'intrinsics::mem' issue is fixed"]
 fn rust_sdk_cross_ctx_account() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(

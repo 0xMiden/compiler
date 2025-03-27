@@ -7,7 +7,7 @@ use crate::{
     dialects::builtin::BuiltinDialect,
     effects::{
         AlwaysSpeculatable, ConditionallySpeculatable, EffectIterator, EffectOpInterface,
-        MemoryEffect, Pure,
+        MemoryEffect, MemoryEffectOpInterface, Pure,
     },
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
@@ -143,7 +143,8 @@ impl OpPrinter for GlobalVariable {
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
 #[operation(
     dialect = BuiltinDialect,
-    implements(InferTypeOpInterface, Pure)
+    traits(Pure, AlwaysSpeculatable),
+    implements(InferTypeOpInterface, OpPrinter, ConditionallySpeculatable, MemoryEffectOpInterface)
 )]
 pub struct GlobalSymbol {
     /// The name of the global variable that is referenced
@@ -157,13 +158,35 @@ pub struct GlobalSymbol {
     addr: PointerOf<UInt8>,
 }
 
-impl Pure for GlobalSymbol {}
+impl OpPrinter for GlobalSymbol {
+    fn print(
+        &self,
+        _flags: &crate::OpPrintingFlags,
+        _context: &crate::Context,
+    ) -> crate::formatter::Document {
+        use crate::formatter::*;
+
+        let prefix = display(self.op.name())
+            + const_text(" ")
+            + const_text("@")
+            + display(&self.symbol().path);
+
+        let offset = *self.offset();
+        let doc = match *self.offset() {
+            0 => prefix,
+            n if n > 0 => prefix + const_text("+") + display(offset),
+            _ => prefix + const_text("-") + display(offset),
+        };
+
+        doc + const_text(" : ") + display(self.addr().ty())
+    }
+}
+
 impl ConditionallySpeculatable for GlobalSymbol {
     fn speculatability(&self) -> crate::effects::Speculatability {
         crate::effects::Speculatability::Speculatable
     }
 }
-impl AlwaysSpeculatable for GlobalSymbol {}
 impl EffectOpInterface<MemoryEffect> for GlobalSymbol {
     fn effects(&self) -> crate::effects::EffectIterator<MemoryEffect> {
         EffectIterator::from_smallvec(smallvec![])

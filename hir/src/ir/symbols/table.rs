@@ -241,15 +241,16 @@ impl SymbolMap {
                     let op = op_ref.borrow();
                     let symbol_table = op.as_trait::<dyn SymbolTable>()?;
                     let manager = symbol_table.symbol_manager();
-                    match components.next()? {
-                        super::SymbolNameComponent::Component(name) => {
+                    match components.next() {
+                        None => return Some(op_ref),
+                        Some(super::SymbolNameComponent::Component(name)) => {
                             found = manager.lookup_op(name);
                         }
-                        super::SymbolNameComponent::Leaf(name) => {
+                        Some(super::SymbolNameComponent::Leaf(name)) => {
                             assert_eq!(components.next(), None);
                             break manager.lookup_op(name);
                         }
-                        super::SymbolNameComponent::Root => unreachable!(),
+                        Some(super::SymbolNameComponent::Root) => unreachable!(),
                     }
                 }
             }

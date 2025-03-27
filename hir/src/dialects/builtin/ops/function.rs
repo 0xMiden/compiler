@@ -129,7 +129,7 @@ impl OpPrinter for Function {
                     }
                 }
                 doc + display(&param.ty)
-            })
+            }) + const_text(")")
         } else {
             let body = self.body();
             let entry = body.entry();

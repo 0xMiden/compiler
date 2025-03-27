@@ -3588,7 +3588,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-ub",
  "midenc-hir",
- "midenc-hir-type",
+ "midenc-hir-symbol",
  "midenc-session",
  "wasmparser 0.227.1",
  "wat",

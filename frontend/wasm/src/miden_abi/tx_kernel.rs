@@ -4,17 +4,17 @@ pub(crate) mod account;
 pub(crate) mod note;
 pub(crate) mod tx;
 
-use std::sync::OnceLock;
+use midenc_hir_symbol::sync::LazyLock;
 
 use super::ModuleFunctionTypeMap;
 
 pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
-    static TYPES: OnceLock<ModuleFunctionTypeMap> = OnceLock::new();
-    TYPES.get_or_init(|| {
+    static TYPES: LazyLock<ModuleFunctionTypeMap> = LazyLock::new(|| {
         let mut m: ModuleFunctionTypeMap = Default::default();
         m.extend(account::signatures());
         m.extend(note::signatures());
         m.extend(tx::signatures());
         m
-    })
+    });
+    &TYPES
 }

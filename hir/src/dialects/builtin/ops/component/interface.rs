@@ -3,9 +3,11 @@ use core::fmt;
 
 use super::Component;
 use crate::{
+    diagnostics::{miette, Diagnostic},
     dialects::builtin::{Function, Module},
     version::Version,
-    FxHashMap, Signature, Symbol, SymbolName, SymbolTable, Type, Visibility,
+    FxHashMap, Signature, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type,
+    Visibility,
 };
 
 /// The fully-qualfied identifier of a component
@@ -47,14 +49,40 @@ impl ComponentId {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Diagnostic)]
 pub enum InvalidComponentIdError {
     #[error("invalid component id: missing namespace identifier")]
+    #[diagnostic()]
     MissingNamespace,
     #[error("invalid component id: missing component name")]
+    #[diagnostic()]
     MissingName,
     #[error("invalid component version: {0}")]
+    #[diagnostic()]
     InvalidVersion(#[from] crate::version::semver::Error),
+}
+
+impl TryFrom<&SymbolPath> for ComponentId {
+    type Error = InvalidComponentIdError;
+
+    fn try_from(path: &SymbolPath) -> Result<Self, Self::Error> {
+        let mut components = path.components().peekable();
+        components.next_if_eq(&SymbolNameComponent::Root);
+
+        let (ns, name) = match components.next().map(|c| c.as_symbol_name()) {
+            None => return Err(InvalidComponentIdError::MissingNamespace),
+            Some(name) => match name.as_str().split_once(':') {
+                Some((ns, name)) => (SymbolName::intern(ns), SymbolName::intern(name)),
+                None => return Err(InvalidComponentIdError::MissingNamespace),
+            },
+        };
+
+        Ok(Self {
+            namespace: ns,
+            name,
+            version: Version::new(1, 0, 0),
+        })
+    }
 }
 
 impl core::str::FromStr for ComponentId {

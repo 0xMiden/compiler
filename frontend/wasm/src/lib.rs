@@ -6,9 +6,11 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 // Allow unused code that we're going to need for implementing the missing Wasm features (call_direct, tables, etc.)
 #![allow(dead_code)]
+#![feature(iterator_try_collect)]
 
 extern crate alloc;
 
+mod callable;
 mod code_translator;
 mod component;
 mod config;
@@ -19,7 +21,7 @@ mod module;
 mod ssa;
 mod translation_utils;
 
-use std::rc::Rc;
+use alloc::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;

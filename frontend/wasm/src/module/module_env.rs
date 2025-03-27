@@ -1,4 +1,6 @@
-use std::{ops::Range, path::PathBuf, sync::Arc};
+use alloc::sync::Arc;
+use core::ops::Range;
+use std::path::PathBuf;
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
 use midenc_hir::{interner::Symbol, Ident};

@@ -1,11 +1,11 @@
-use alloc::{collections::VecDeque, format};
+use alloc::{borrow::Cow, collections::VecDeque, format};
 use core::fmt;
 
 use midenc_session::diagnostics::{miette, Diagnostic};
 use smallvec::{smallvec, SmallVec};
 
 use super::SymbolUseRef;
-use crate::{define_attr_type, interner, SymbolName};
+use crate::{define_attr_type, interner, FunctionIdent, SymbolName};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidSymbolPathError {
@@ -120,7 +120,7 @@ define_attr_type!(SymbolPathAttr);
 #[derive(Clone)]
 pub struct SymbolPath {
     /// The underlying components of the symbol name (alternatively called the symbol path).
-    pub path: SmallVec<[SymbolNameComponent; 1]>,
+    pub path: SmallVec<[SymbolNameComponent; 3]>,
 }
 
 impl FromIterator<SymbolNameComponent> for SymbolPath {
@@ -175,6 +175,59 @@ impl SymbolPath {
         }
 
         Ok(Self { path })
+    }
+
+    /// Converts a [FunctionIdent] representing a fully-qualified Miden Assembly procedure path,
+    /// to it's equivalent [SymbolPath] representation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use midenc_hir::{SymbolPath, SymbolNameComponent, FunctionIdent};
+    ///
+    /// let id = FunctionIdent {
+    ///     module: "intrinsics::mem".into(),
+    ///     function: "load_felt_unchecked".into(),
+    /// };
+    /// assert_eq!(
+    ///     SymbolPath::from_masm_function_id(id),
+    ///     SymbolPath::from_iter([
+    ///         SymbolNameComponent::Root,
+    ///         SymbolNameComponent::Component("intrinsics".into()),
+    ///         SymbolNameComponent::Component("mem".into()),
+    ///         SymbolNameComponent::Leaf("load_felt_unchecked".into()),
+    ///     ])
+    /// );
+    /// ```
+    pub fn from_masm_function_id(id: FunctionIdent) -> Self {
+        let mut path = Self::from_masm_module_id(id.module.as_str());
+        path.path.push(SymbolNameComponent::Leaf(id.function.as_symbol()));
+        path
+    }
+
+    /// Converts a [str] representing a fully-qualified Miden Assembly module path, to it's
+    /// equivalent [SymbolPath] representation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use midenc_hir::{SymbolPath, SymbolNameComponent};
+    ///
+    /// assert_eq!(
+    ///     SymbolPath::from_masm_module_id("intrinsics::mem"),
+    ///     SymbolPath::from_iter([
+    ///         SymbolNameComponent::Root,
+    ///         SymbolNameComponent::Component("intrinsics".into()),
+    ///         SymbolNameComponent::Component("mem".into()),
+    ///     ])
+    /// );
+    /// ```
+    pub fn from_masm_module_id(id: &str) -> Self {
+        let parts = id.split("::");
+        Self::from_iter(
+            core::iter::once(SymbolNameComponent::Root)
+                .chain(parts.map(SymbolName::intern).map(SymbolNameComponent::Component)),
+        )
     }
 
     /// Returns the leaf component of the symbol path
@@ -258,14 +311,23 @@ impl SymbolPath {
         }
     }
 
-    /// Returns true if `self` is a prefix of `other`, i.e. `self` is a further qualified symbol
+    /// Returns true if `self` is a prefix of `other`, i.e. `other` is a further qualified symbol
     /// reference.
     ///
     /// NOTE: If `self` and `other` are equal, `self` is considered a prefix. The caller should
     /// check if the two references are identical if they wish to distinguish the two cases.
     pub fn is_prefix_of(&self, other: &Self) -> bool {
-        let mut a = self.path.iter();
-        let mut b = other.path.iter();
+        other.is_prefixed_by(&self.path)
+    }
+
+    /// Returns true if `prefix` is a prefix of `self`, i.e. `self` is a further qualified symbol
+    /// reference.
+    ///
+    /// NOTE: If `self` and `prefix` are equal, `prefix` is considered a valid prefix. The caller
+    /// should check if the two references are identical if they wish to distinguish the two cases.
+    pub fn is_prefixed_by(&self, prefix: &[SymbolNameComponent]) -> bool {
+        let mut a = prefix.iter();
+        let mut b = self.path.iter();
 
         let mut index = 0;
         loop {
@@ -282,6 +344,26 @@ impl SymbolPath {
     /// Returns an iterator over the path components of this symbol name
     pub fn components(&self) -> impl ExactSizeIterator<Item = SymbolNameComponent> + '_ {
         self.path.iter().copied()
+    }
+
+    /// Get the parent of this path, i.e. all but the last component
+    pub fn parent(&self) -> Option<SymbolPath> {
+        match self.path.split_last()? {
+            (SymbolNameComponent::Root, []) => None,
+            (_, rest) => Some(SymbolPath {
+                path: SmallVec::from_slice(rest),
+            }),
+        }
+    }
+
+    /// Get the portion of this path without the `Leaf` component, if present.
+    pub fn without_leaf(&self) -> Cow<'_, SymbolPath> {
+        match self.path.split_last() {
+            Some((SymbolNameComponent::Leaf(_), rest)) => Cow::Owned(SymbolPath {
+                path: SmallVec::from_slice(rest),
+            }),
+            _ => Cow::Borrowed(self),
+        }
     }
 }
 
@@ -375,6 +457,7 @@ pub enum SymbolNameComponent {
     /// The name of the symbol in its local symbol table
     Leaf(SymbolName),
 }
+
 impl SymbolNameComponent {
     pub fn as_symbol_name(&self) -> SymbolName {
         match self {
@@ -382,7 +465,18 @@ impl SymbolNameComponent {
             Self::Component(name) | Self::Leaf(name) => *name,
         }
     }
+
+    #[inline]
+    pub fn is_root(&self) -> bool {
+        matches!(self, Self::Root)
+    }
+
+    #[inline]
+    pub fn is_leaf(&self) -> bool {
+        matches!(self, Self::Leaf(_))
+    }
 }
+
 impl fmt::Debug for SymbolNameComponent {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -396,6 +490,7 @@ impl fmt::Debug for SymbolNameComponent {
         }
     }
 }
+
 impl Ord for SymbolNameComponent {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         use core::cmp::Ordering;
@@ -414,6 +509,7 @@ impl Ord for SymbolNameComponent {
         }
     }
 }
+
 impl PartialOrd for SymbolNameComponent {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
@@ -638,7 +734,7 @@ impl SymbolNameComponents {
         }
 
         // Pre-allocate the storage for the internal SymbolPath path
-        let mut path = SmallVec::<[_; 1]>::with_capacity(self.parts.len() + 1);
+        let mut path = SmallVec::<[_; 3]>::with_capacity(self.parts.len() + 1);
 
         // Handle the first path component which tells us whether or not the path is rooted
         let mut parts = self.parts.into_iter();

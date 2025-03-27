@@ -2,8 +2,9 @@
 
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_arith::ArithOpBuilder;
-use midenc_hir::{AbiParam, Builder, CallConv, Signature, SourceSpan, ValueRef, Visibility};
-use midenc_hir_type::{FunctionType, Type};
+use midenc_hir::{
+    AbiParam, Builder, CallConv, FunctionType, Signature, SourceSpan, Type, ValueRef, Visibility,
+};
 use midenc_session::DiagnosticsHandler;
 
 use crate::{

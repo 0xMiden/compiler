@@ -160,10 +160,17 @@ pub trait HirLowering: Op {
                             .expect("invalid constraints: a duplicate value cannot be moved twice")
                             as u8
                     } else {
-                        dupe_index.or_else(|| emitter.stack.find(&lhs)).unwrap() as u8
+                        dupe_index
+                            .or_else(|| emitter.stack.find(&lhs))
+                            .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
+                            as u8
                     }
                 } else {
-                    emitter.stack.find(&lhs).unwrap() as u8
+                    emitter
+                        .stack
+                        .find(&lhs)
+                        .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
+                        as u8
                 };
                 let duplicate_index = rhs_index == lhs_index;
 
@@ -1448,7 +1455,7 @@ impl HirLowering for builtin::GlobalSymbol {
         })?;
 
         // 2. Push computed address on the stack as the result
-        emitter.emitter().push_u32(addr, self.span());
+        emitter.inst_emitter(self.as_operation()).literal(addr, self.span());
 
         Ok(())
     }
