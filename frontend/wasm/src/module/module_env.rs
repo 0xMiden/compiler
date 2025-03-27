@@ -214,7 +214,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 }
             }
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
-            Payload::CustomSection(s) if s.name() == "miden_account_component_metadata" => {
+            Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
             Payload::CustomSection { .. } => {

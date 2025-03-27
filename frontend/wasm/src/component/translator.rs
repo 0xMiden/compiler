@@ -112,9 +112,8 @@ impl<'a> ComponentTranslator<'a> {
             .into_iter()
             .flat_map(|t| t.1.account_component_metadata_bytes.map(|slice| slice.to_vec()))
             .collect();
-        assert_eq!(
-            account_component_metadata_bytes_vec.len(),
-            1,
+        assert!(
+            account_component_metadata_bytes_vec.len() <= 1,
             "expected only one core Wasm module to have account component metadata section",
         );
         let account_component_metadata_bytes = account_component_metadata_bytes_vec.remove(0);

@@ -181,7 +181,7 @@
       local.get 4
       i32.const 32
       i32.add
-      i32.const 1
+      i32.const 0
       local.get 4
       i32.const 96
       i32.add
@@ -189,7 +189,7 @@
       local.get 4
       i32.const 32
       i32.add
-      i32.const 1
+      i32.const 0
       call $miden_base_sys::bindings::storage::get_item
       block ;; label = @1
         local.get 4
@@ -233,13 +233,13 @@
       local.get 5
       i32.const 32
       i32.add
-      i32.const 1
+      i32.const 0
       local.get 5
       call $miden_base_sys::bindings::storage::set_item
       local.get 5
       i32.const 32
       i32.add
-      i32.const 1
+      i32.const 0
       call $miden_base_sys::bindings::storage::get_item
       local.get 5
       f32.load offset=32
@@ -312,7 +312,7 @@
       local.get 8
       i32.const 64
       i32.add
-      i32.const 2
+      i32.const 1
       local.get 8
       i32.const 128
       i32.add
@@ -323,7 +323,7 @@
       local.get 8
       i32.const 64
       i32.add
-      i32.const 2
+      i32.const 1
       local.get 8
       call $miden_base_sys::bindings::storage::get_map_item
       block ;; label = @1
@@ -545,7 +545,7 @@
       call $cabi_realloc_wit_bindgen_0_28_0
     )
     (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
-    (@custom "miden_account_component_metadata" (after data) "\13MyAccount\01\0b0.0.1\01\01")
+    (@custom "rodata ,miden_account" (after data) "\13MyAccount\01\0b0.0.1\01\05\00!owner_public_key\01\15test value\00\02\0fmap_key\01\0ffoo_map\01\11test map\01\01\07key")
   )
   (alias export 1 "eq" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
