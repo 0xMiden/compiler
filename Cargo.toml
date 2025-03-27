@@ -89,18 +89,17 @@ smallvec = { version = "1.14", default-features = false, features = [
 thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "0.8", features = ["preserve_order"] }
 miden-formatting = { version = "0.1", default-features = false }
-# miden-assembly = { version = "0.11.0", path = "../vm-aux/assembly" }
-# miden-core = { version = "0.11.0", path = "../vm-aux/core" }
-# miden-processor = { version = "0.11.0", path = "../vm-aux/processor" }
-# miden-stdlib = { version = "0.11.0", path = "../vm-aux/stdlib" }
-# miden-package = { version = "0.11.0", path = "../vm-aux/package" }
-miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
-miden-core = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
-miden-processor = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
-miden-stdlib = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb", features = [
+miden-assembly = { version = "0.13.0", default-features = false }
+miden-core = { version = "0.13.0", default-features = false, features = [
+    "diagnostics",
+] }
+miden-processor = { version = "0.13.0", default-features = false }
+miden-stdlib = { version = "0.13.0", default-features = false, features = [
     "with-debug-info",
 ] }
-miden-mast-package = { version = "0.12.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
+miden-mast-package = { version = "0.13.0", default-features = false }
+# This is here for convenience if we need to quickly use a git ref of the VM crates
+#miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 midenc-codegen-masm = { version = "0.0.7", path = "codegen/masm" }
 midenc-dialect-arith = { version = "0.0.7", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.0.7", path = "dialects/hir" }

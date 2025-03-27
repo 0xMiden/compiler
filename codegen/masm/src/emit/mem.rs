@@ -60,7 +60,7 @@ impl OpEmitter<'_> {
         match ptr.ty() {
             Type::Ptr(_) => {
                 // Convert the pointer to a native pointer representation
-                self.emit_native_ptr(span);
+                self.convert_to_native_ptr(span);
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word(None, span),
@@ -101,43 +101,29 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
-    /// Emit a sequence of instructions to translate a raw pointer value to
-    /// a native pointer value, as a triple of `(waddr, index, offset)`, in
-    /// that order on the stack.
+    /// Emit a sequence of instructions to translate a raw pointer value to a native pointer value,
+    /// as a tuple of `(element_addr, byte_offset)`, in that order on the stack.
     ///
-    /// Instructions which must act on a pointer will expect the stack to have
-    /// these values in that order so that they can perform any necessary
-    /// re-alignment.
-    fn emit_native_ptr(&mut self, span: SourceSpan) {
+    /// Instructions which must act on a pointer will expect the stack to have these values in that
+    /// order so that they can perform any necessary re-alignment.
+    fn convert_to_native_ptr(&mut self, span: SourceSpan) {
         self.emit_all(
             [
-                // Copy the address
+                // Obtain the byte offset and element address
                 //
-                // [addr, addr]
-                masm::Instruction::Dup0,
-                // Obtain the absolute offset
-                //
-                // [abs_offset, addr]
-                masm::Instruction::U32ModImm(16.into()),
-                // Obtain the byte offset
-                //
-                // [abs_offset, abs_offset, addr]
-                masm::Instruction::Dup0,
-                // [offset, abs_offset, addr]
-                masm::Instruction::U32ModImm(4.into()),
-                // Obtain the element index
-                //
-                // [abs_offset, offset, addr]
+                // [offset, addr]
+                masm::Instruction::U32DivModImm(4.into()),
+                // Swap fields into expected order
                 masm::Instruction::Swap1,
-                // [index, byte_offset, addr]
-                masm::Instruction::U32DivImm(4.into()),
-                // Translate the address to Miden's address space
-                //
-                // [addr, index, offset]
-                masm::Instruction::MovUp2,
-                // [waddr, index, offset]
-                masm::Instruction::U32DivImm(16.into()),
             ],
+            span,
+        );
+    }
+
+    /// Push a [NativePtr] value to the operand stack in the expected stack representation.
+    fn push_native_ptr(&mut self, ptr: NativePtr, span: SourceSpan) {
+        self.emit_all(
+            [masm::Instruction::PushU8(ptr.offset), masm::Instruction::PushU32(ptr.addr)],
             span,
         );
     }
@@ -155,49 +141,7 @@ impl OpEmitter<'_> {
 
     fn load_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         assert!(ptr.is_element_aligned(), "felt values must be naturally aligned");
-        match ptr.index {
-            0 => self.emit(masm::Instruction::MemLoadImm(ptr.waddr.into()), span),
-            1 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            2 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::Drop,
-                        masm::Instruction::MovDn2,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            3 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::MovDn3,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            _ => unreachable!(),
-        }
+        self.emit(masm::Instruction::MemLoadImm(ptr.addr.into()), span);
     }
 
     /// Loads a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
@@ -214,138 +158,15 @@ impl OpEmitter<'_> {
 
     /// Loads a single 32-bit machine word from the given immediate address.
     fn load_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        let is_aligned = ptr.is_element_aligned();
-        let rshift = 32 - ptr.offset;
-        match ptr.index {
-            0 if is_aligned => self.emit(masm::Instruction::MemLoadImm(ptr.waddr.into()), span),
-            0 => {
-                self.emit_all(
-                    [
-                        // Load a quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // shift low bits
-                        masm::Instruction::U32ShrImm(rshift.into()),
-                        // shift high bits left by the offset
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32ShlImm(ptr.offset.into()),
-                        // OR the high and low bits together
-                        masm::Instruction::U32Or,
-                    ],
-                    span,
-                );
-            }
-            1 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // Drop w3, w2
-                    masm::Instruction::Drop,
-                    masm::Instruction::Drop,
-                    // Drop w1
-                    masm::Instruction::Swap1,
-                    masm::Instruction::Drop,
-                ],
+        if ptr.is_element_aligned() {
+            self.emit_all(
+                [masm::Instruction::MemLoadImm(ptr.addr.into()), masm::Instruction::U32Assert],
                 span,
-            ),
-            1 => {
-                self.emit_all(
-                    [
-                        // Load a quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop unused elements
-                        masm::Instruction::Drop,
-                        masm::Instruction::MovUp2,
-                        masm::Instruction::Drop,
-                        // Shift the low bits
-                        masm::Instruction::U32ShrImm(rshift.into()),
-                        // Shift the high bits
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32ShlImm(ptr.offset.into()),
-                        // OR the high and low bits together
-                        masm::Instruction::U32Or,
-                    ],
-                    span,
-                );
-            }
-            2 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // Drop w3
-                    masm::Instruction::Drop,
-                    // Move w2 to bottom
-                    masm::Instruction::MovDn2,
-                    // Drop w1, w0
-                    masm::Instruction::Drop,
-                    masm::Instruction::Drop,
-                ],
-                span,
-            ),
-            2 => {
-                self.emit_all(
-                    [
-                        // Load a quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop unused elements
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // Shift low bits
-                        masm::Instruction::U32ShrImm(rshift.into()),
-                        // Shift high bits
-                        masm::Instruction::U32ShlImm(ptr.offset.into()),
-                        // OR the high and low bits together
-                        masm::Instruction::U32Or,
-                    ],
-                    span,
-                );
-            }
-            3 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // Move w3 to bottom
-                    masm::Instruction::MovDn3,
-                    // Drop the three unused elements
-                    masm::Instruction::Drop,
-                    masm::Instruction::Drop,
-                    masm::Instruction::Drop,
-                ],
-                span,
-            ),
-            3 => {
-                self.emit_all(
-                    [
-                        // Load the quad-word containing the low bits
-                        masm::Instruction::MemLoadImm((ptr.waddr + 1).into()),
-                        // Shift the low bits
-                        masm::Instruction::U32ShrImm(rshift.into()),
-                        // Load the quad-word containing the high bits
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop unused elements
-                        masm::Instruction::MovDn3,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // Shift the high bits
-                        masm::Instruction::U32ShlImm(ptr.offset.into()),
-                        // OR the high and low bits together
-                        masm::Instruction::U32Or,
-                    ],
-                    span,
-                );
-            }
-            _ => unreachable!(),
+            );
+        } else {
+            // Delegate to load_sw intrinsic to handle the details of unaligned loads
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::load_sw", span);
         }
     }
 
@@ -359,155 +180,19 @@ impl OpEmitter<'_> {
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        let aligned = ptr.is_element_aligned();
-        match ptr.index {
-            0 if aligned => {
-                self.emit_all(
-                    [
-                        // Load quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Move the two elements we need to the bottom temporarily
-                        masm::Instruction::MovDn4,
-                        masm::Instruction::MovDn4,
-                        // Drop the unused elements
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            0 => {
-                // An unaligned double-word load spans three elements
-                self.emit_all(
-                    [
-                        // Load quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Move the unused element to the top and drop it
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::Drop,
-                        // Move into stack order for realign_dw
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
-                self.realign_double_word(ptr, span);
-            }
-            1 if aligned => {
-                self.emit_all(
-                    [
-                        // Load quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop the first word, its unused
-                        masm::Instruction::Drop,
-                        // Move the last word up and drop it, also unused
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            1 => {
-                // An unaligned double-word load spans three elements
-                self.emit_all(
-                    [
-                        // Load a quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop the unused element
-                        masm::Instruction::Drop,
-                        // Move into stack order for realign_dw
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
-                self.realign_double_word(ptr, span);
-            }
-            2 if aligned => {
-                self.emit_all(
-                    [
-                        // Load quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop unused words
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            2 => {
-                // An unaligned double-word load spans three elements,
-                // and in this case, two quad-words, because the last
-                // element is across a quad-word boundary
-                self.emit_all(
-                    [
-                        // Load the second quad-word first
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        // Move the element we need to the bottom temporarily
-                        masm::Instruction::MovDn4,
-                        // Drop the three unused elements of this word
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // Load the first quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop the two unused elements
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // Move into stack order for realign_dw
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
-                self.realign_double_word(ptr, span);
-            }
-            3 if aligned => {
-                self.emit_all(
-                    [
-                        // Load second word, drop unused elements
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::Drop,
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::Drop,
-                        // Load first word, drop unused elements
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            3 => {
-                self.emit_all(
-                    [
-                        // Load second word, drop unused element
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::Drop,
-                        // Load first word, drop unused elements
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // Move into stack order for realign_dw
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
-                self.realign_double_word(ptr, span);
-            }
-            _ => unimplemented!("unaligned loads are not yet implemented: {ptr:#?}"),
+        if ptr.is_element_aligned() {
+            self.emit_all(
+                [
+                    masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
+                    masm::Instruction::MemLoadImm(ptr.addr.into()),
+                    masm::Instruction::U32Assert2,
+                ],
+                span,
+            )
+        } else {
+            // Delegate to load_dw to handle the details of unaligned loads
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::load_dw", span);
         }
     }
 
@@ -521,207 +206,38 @@ impl OpEmitter<'_> {
 
     fn load_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         // For all other cases, more complicated loads are required
-        let aligned = ptr.is_element_aligned();
-        match ptr.index {
-            // Naturally-aligned
-            0 if aligned => self.emit_all(
+        if ptr.is_word_aligned() {
+            self.emit_all(
                 [
-                    // Load the word
-                    masm::Instruction::PadW,
                     // [w3, w2, w1, w0]
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
+                    masm::Instruction::PadW,
+                    masm::Instruction::MemLoadWImm(ptr.addr.into()),
                     // Swap the element order to lowest-address-first
-                    // [w2, w3, w1, w0]
-                    masm::Instruction::Swap1,
-                    // [w1, w3, w2, w0]
-                    masm::Instruction::Swap2,
-                    // [w3, w1, w2, w0]
-                    masm::Instruction::Swap1,
+                    // [w2, w1, w0, w3]
+                    masm::Instruction::MovDn3,
+                    // [w1, w0, w2, w3]
+                    masm::Instruction::MovDn2,
                     // [w0, w1, w2, w3]
-                    masm::Instruction::Swap3,
+                    masm::Instruction::Swap1,
+                    masm::Instruction::U32AssertW,
                 ],
                 span,
-            ),
-            0 => {
-                // An unaligned quad-word load spans five elements
-                self.emit_all(
-                    [
-                        // Load first element of second quad-word
-                        // [e]
-                        masm::Instruction::MemLoadImm((ptr.waddr + 1).into()),
-                        // Load first quad-word
-                        masm::Instruction::PadW,
-                        // [d, c, b, a, e]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [a, c, b, d, e]
-                        masm::Instruction::Swap3,
-                        // [c, a, b, d, e]
-                        masm::Instruction::Swap1,
-                        // [a, b, c, d, e]
-                        masm::Instruction::MovDn2,
-                    ],
-                    span,
-                );
-                self.realign_quad_word(ptr, span);
-            }
-            1 if aligned => {
-                self.emit_all(
-                    [
-                        // Load first element of second quad-word
-                        // [d]
-                        masm::Instruction::MemLoadImm((ptr.waddr + 1).into()),
-                        // Load first quad-word
-                        masm::Instruction::PadW,
-                        // [c, b, a, _, d]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [_, b, a, c, d]
-                        masm::Instruction::Swap3,
-                        masm::Instruction::Drop,
-                        // [a, b, c, d]
-                        masm::Instruction::Swap1,
-                    ],
-                    span,
-                );
-            }
-            1 => {
-                // An unaligned double-word load spans five elements
-                self.emit_all(
-                    [
-                        // Load first two elements of second quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        masm::Instruction::Drop,
-                        // [e, d]
-                        masm::Instruction::Drop,
-                        // Load last three elements of first quad-word
-                        masm::Instruction::PadW,
-                        // [c, b, a, _, e, d]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [_, b, a, c, e, d]
-                        masm::Instruction::Swap3,
-                        // [b, a, c, e, d]
-                        masm::Instruction::Drop,
-                        // [e, a, c, b, d]
-                        masm::Instruction::Swap3,
-                        // [d, a, c, b, e]
-                        masm::Instruction::Swap4,
-                        // [b, a, c, d, e]
-                        masm::Instruction::Swap3,
-                        // [a, b, c, d, e]
-                        masm::Instruction::Swap1,
-                    ],
-                    span,
-                );
-                self.realign_quad_word(ptr, span);
-            }
-            2 if aligned => {
-                self.emit_all(
-                    [
-                        // Load first two elements of second quad-word
-                        masm::Instruction::PadW,
-                        // [_, _, d, c]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // Drop last two elements
-                        masm::Instruction::Drop,
-                        // [d, c]
-                        masm::Instruction::Drop,
-                        // Load last two elements of first quad-word
-                        masm::Instruction::PadW,
-                        // [b, a, _, _, d, c]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [d, a, _, _, b, c]
-                        masm::Instruction::Swap4,
-                        // [a, _, _, b, c, d]
-                        masm::Instruction::MovDn5,
-                        // [_, _, a, b, c, d]
-                        masm::Instruction::Swap2,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            2 => {
-                // An unaligned double-word load spans five elements
-                self.emit_all(
-                    [
-                        // Load the first three elements of the second quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        // [e, d, c]
-                        masm::Instruction::Drop,
-                        // Load the last two elements of the first quad-word
-                        masm::Instruction::PadW,
-                        // [b, a, _, _, e, d, c]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [a, _, _, b, e, d, c]
-                        masm::Instruction::MovDn3,
-                        // [_, _, a, b, e, d, c]
-                        masm::Instruction::MovDn2,
-                        // [c, _, a, b, e, d, _]
-                        masm::Instruction::Swap6,
-                        // [e, _, a, b, c, d, _]
-                        masm::Instruction::Swap4,
-                        // [_, _, a, b, c, d, e]
-                        masm::Instruction::Swap6,
-                        masm::Instruction::Drop,
-                        // [a, b, c, d, e]
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-                self.realign_quad_word(ptr, span);
-            }
-            3 if aligned => {
-                self.emit_all(
-                    [
-                        // Load first three elements of second quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        masm::Instruction::Drop,
-                        // Load last element of first quad-word
-                        masm::Instruction::PadW,
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::MovDn3,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                    ],
-                    span,
-                );
-            }
-            3 => {
-                // An unaligned quad-word load spans five elements,
-                self.emit_all(
-                    [
-                        // Load second quad-word
-                        masm::Instruction::PadW,
-                        // [e, d, c, b]
-                        masm::Instruction::MemLoadWImm((ptr.waddr + 1).into()),
-                        // Load last element of first quad-word
-                        masm::Instruction::PadW,
-                        // [a, _, _, _, e, d, c, b]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [_, _, _, a, e, d, c, b]
-                        masm::Instruction::MovDn3,
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        // [a, e, d, c, b]
-                        masm::Instruction::Drop,
-                        // [e, a, d, c, b]
-                        masm::Instruction::Swap1,
-                        // [b, a, d, c, e]
-                        masm::Instruction::Swap4,
-                        // [d, a, b, c, e]
-                        masm::Instruction::Swap2,
-                        // [a, b, c, d, e]
-                        masm::Instruction::MovDn3,
-                    ],
-                    span,
-                );
-                self.realign_quad_word(ptr, span);
-            }
-            _ => unimplemented!("unaligned loads are not yet implemented: {ptr:#?}"),
+            );
+        } else if ptr.is_element_aligned() {
+            self.emit_all(
+                [
+                    masm::Instruction::MemLoadImm((ptr.addr + 3).into()),
+                    masm::Instruction::MemLoadImm((ptr.addr + 2).into()),
+                    masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
+                    masm::Instruction::MemLoadImm(ptr.addr.into()),
+                    masm::Instruction::U32AssertW,
+                ],
+                span,
+            );
+        } else {
+            // Delegate to load_qw to handle the details of unaligned loads
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::load_qw", span);
         }
     }
 
@@ -763,6 +279,7 @@ impl OpEmitter<'_> {
     /// have to perform a sequence of shifts and masks to get the bits where they belong. This
     /// function performs those steps, with the assumption that the caller has three values on
     /// the operand stack representing any unaligned double-word value
+    #[allow(unused)]
     fn realign_double_word(&mut self, _ptr: NativePtr, span: SourceSpan) {
         self.raw_exec("intrinsics::mem::realign_dw", span);
     }
@@ -780,6 +297,7 @@ impl OpEmitter<'_> {
     ///
     /// See the example in [OpEmitter::realign_quad_word] for more details on how bits are
     /// laid out in each word, and what is required to realign unaligned words.
+    #[allow(unused)]
     fn realign_quad_word(&mut self, ptr: NativePtr, span: SourceSpan) {
         // The stack starts as: [chunk_hi, chunk_mid_hi, chunk_mid_mid, chunk_mid_lo, chunk_lo]
         //
@@ -940,7 +458,7 @@ impl OpEmitter<'_> {
         match ptr_ty {
             Type::Ptr(_) => {
                 // Convert the pointer to a native pointer representation
-                self.emit_native_ptr(span);
+                self.convert_to_native_ptr(span);
                 match value_ty {
                     Type::I128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word(None, span),
@@ -984,6 +502,7 @@ impl OpEmitter<'_> {
         }
     }
 
+    /// Write `count` copies of `value` to `dst`
     pub fn memset(&mut self, span: SourceSpan) {
         let dst = self.stack.pop().expect("operand stack is empty");
         let count = self.stack.pop().expect("operand stack is empty");
@@ -992,13 +511,13 @@ impl OpEmitter<'_> {
         let ty = value.ty();
         assert!(dst.ty().is_pointer());
         assert_eq!(&ty, dst.ty().pointee().unwrap(), "expected value and pointee type to match");
+        let value_size = u32::try_from(ty.size_in_bytes()).expect("invalid value size");
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
         let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
 
         // Loop body - compute address for next value to be written
-        let value_size = value.ty().size_in_bytes();
         body_emitter.emit_all(
             [
                 // [i, dst, count, value..]
@@ -1006,8 +525,8 @@ impl OpEmitter<'_> {
                 // trap if it overflows
                 masm::Instruction::Dup1, // [dst, i, dst, count, value]
                 masm::Instruction::Dup1, // [i, dst, i, dst, count, value]
-                masm::Instruction::PushU32(value_size.try_into().expect("invalid value size")), /* [value_size, i,
-                             * dst, ..] */
+                masm::Instruction::PushU32(value_size), /* [value_size, i,
+                                          * dst, ..] */
                 masm::Instruction::U32OverflowingMadd, // [value_size * i + dst, i, dst, count, value]
                 masm::Instruction::Assertz,            // [aligned_dst, i, dst, count, value..]
             ],
@@ -1085,21 +604,49 @@ impl OpEmitter<'_> {
         match value_size {
             // Word-sized values have an optimized intrinsic we can lean on
             16 => {
-                // [src, dst, count]
-                self.emit(masm::Instruction::MovUp2, span);
-                // [count, src, dst]
+                // We have to convert byte addresses to element addresses
+                self.emit_all(
+                    [
+                        // Convert `src` to element address, and assert aligned to an element address
+                        //
+                        // TODO: We should probably also assert that the address is word-aligned, but
+                        // that is going to happen anyway. That said, the closer to the source the
+                        // better for debugging.
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Convert `dst` to an element address the same way
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Swap with `count` to get us into the correct ordering: [count, src, dst]
+                        masm::Instruction::Swap2,
+                    ],
+                    span,
+                );
                 self.raw_exec("std::mem::memcopy", span);
                 return;
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
             // intrinsic for word-sized values, but we have to compute a new `count` by
             // multiplying `count` by the number of words in each value
-            size if size % 16 == 0 => {
+            size if size > 16 && size % 16 == 0 => {
                 let factor = size / 16;
                 self.emit_all(
                     [
-                        // [src, dst, count]
-                        masm::Instruction::MovUp2, // [count, src, dst]
+                        // Convert `src` to element address, and assert aligned to an element address
+                        //
+                        // TODO: We should probably also assert that the address is word-aligned, but
+                        // that is going to happen anyway. That said, the closer to the source the
+                        // better for debugging.
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Convert `dst` to an element address the same way
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Swap with `count` to get us into the correct ordering: [count, src, dst]
+                        masm::Instruction::Swap2,
+                        // Compute the corrected count
                         masm::Instruction::U32OverflowingMulImm(factor.into()),
                         masm::Instruction::Assertz, // [count * (size / 16), src, dst]
                     ],
@@ -1190,13 +737,11 @@ impl OpEmitter<'_> {
     }
 
     fn store_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        // For all other cases, more complicated loads are required
-        let aligned = ptr.is_element_aligned();
-        match ptr.index {
-            // Naturally-aligned
-            0 if aligned => self.emit_all(
+        if ptr.is_word_aligned() {
+            self.emit_all(
                 [
                     // Stack: [a, b, c, d]
+                    masm::Instruction::U32AssertW,
                     // Swap to highest-address-first order
                     // [d, b, c, a]
                     masm::Instruction::Swap3,
@@ -1205,14 +750,26 @@ impl OpEmitter<'_> {
                     // [d, c, b, a]
                     masm::Instruction::Swap1,
                     // Write to heap
-                    masm::Instruction::MemStoreWImm(ptr.waddr.into()),
+                    masm::Instruction::MemStoreWImm(ptr.addr.into()),
                     masm::Instruction::DropW,
                 ],
                 span,
-            ),
-            _ => {
-                todo!("quad-word stores currently require 32-byte alignment")
-            }
+            );
+        } else if ptr.is_element_aligned() {
+            self.emit_all(
+                [
+                    masm::Instruction::U32AssertW,
+                    masm::Instruction::MemStoreImm(ptr.addr.into()),
+                    masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
+                    masm::Instruction::MemStoreImm((ptr.addr + 2).into()),
+                    masm::Instruction::MemStoreImm((ptr.addr + 3).into()),
+                ],
+                span,
+            );
+        } else {
+            // Delegate to `store_qw` to handle unaligned stores
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::store_qw", span);
         }
     }
 
@@ -1226,44 +783,19 @@ impl OpEmitter<'_> {
     }
 
     fn store_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        // For all other cases, more complicated stores are required
-        let aligned = ptr.is_element_aligned();
-        match ptr.index {
-            // Naturally-aligned
-            0 if aligned => self.emit_all(
+        if ptr.is_element_aligned() {
+            self.emit_all(
                 [
-                    // Swap value to highest-address-first order
-                    masm::Instruction::Swap1,
-                    // Load existing word
-                    masm::Instruction::PadW,
-                    // [d, c, b, a, v_lo, v_hi]
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // Replace bottom two elements with value
-                    // [b, c, d, a, v_lo, v_hi]
-                    masm::Instruction::Swap2,
-                    // [c, d, a, v_lo, v_hi]
-                    masm::Instruction::Drop,
-                    // [a, d, c, v_lo, v_hi]
-                    masm::Instruction::Swap2,
-                    // [d, c, v_lo, v_hi]
-                    masm::Instruction::Drop,
-                    masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                    masm::Instruction::DropW,
+                    masm::Instruction::U32Assert2,
+                    masm::Instruction::MemStoreImm(ptr.addr.into()),
+                    masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
                 ],
                 span,
-            ),
-            _ => {
-                // TODO: Optimize double-word stores when pointer is contant
-                self.emit_all(
-                    [
-                        masm::Instruction::PushU8(ptr.offset),
-                        masm::Instruction::PushU8(ptr.index),
-                        masm::Instruction::PushU32(ptr.waddr),
-                    ],
-                    span,
-                );
-                self.raw_exec("intrinsics::mem::store_dw", span);
-            }
+            );
+        } else {
+            // Delegate to `store_dw` to handle unaligned stores
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::store_dw", span);
         }
     }
 
@@ -1281,223 +813,15 @@ impl OpEmitter<'_> {
 
     /// Stores a single 32-bit machine word to the given immediate address.
     fn store_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        let is_aligned = ptr.is_element_aligned();
-        let rshift = 32 - ptr.offset;
-        match ptr.index {
-            0 if is_aligned => self.emit(masm::Instruction::MemStoreImm(ptr.waddr.into()), span),
-            0 => {
-                let mask_hi = u32::MAX << rshift;
-                let mask_lo = u32::MAX >> (ptr.offset as u32);
-                self.emit_all(
-                    [
-                        // Load the word
-                        masm::Instruction::PadW,
-                        // [w3, w2, w1, w0, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [w1, w3, w2, w0, value]
-                        masm::Instruction::MovUp2,
-                        masm::Instruction::PushU32(mask_lo),
-                        // [w1_masked, w3, w2, w0, value]
-                        masm::Instruction::U32And,
-                        // [w0, w1_masked, w3, w2, value]
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::PushU32(mask_hi),
-                        // [w0_masked, w1_masked, w3, w2, value]
-                        masm::Instruction::U32And,
-                        // [value, w0_masked, w1_masked, w3, w2, value]
-                        masm::Instruction::Dup4,
-                        // [value, w0_masked, w1_masked, w3, w2, value]
-                        masm::Instruction::U32ShrImm(ptr.offset.into()),
-                        // [w0', w1_masked, w3, w2, value]
-                        masm::Instruction::U32Or,
-                        // [w1_masked, w0', w3, w2, value]
-                        masm::Instruction::Swap1,
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::U32ShlImm(rshift.into()),
-                        // [w1', w0', w3, w2]
-                        masm::Instruction::U32Or,
-                        masm::Instruction::MovUp3,
-                        // [w3, w2, w1', w0']
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            1 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    // [d, c, _, a, value]
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // [value, d, c, _, a]
-                    masm::Instruction::MovUp4,
-                    // [_, d, c, value, a]
-                    masm::Instruction::Swap3,
-                    // [d, c, value, a]
-                    masm::Instruction::Drop,
-                    // Write the word back to the cell
-                    masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                    // Clean up the operand stack
-                    masm::Instruction::DropW,
-                ],
+        if ptr.is_element_aligned() {
+            self.emit_all(
+                [masm::Instruction::U32Assert, masm::Instruction::MemStoreImm(ptr.addr.into())],
                 span,
-            ),
-            1 => {
-                let mask_hi = u32::MAX << rshift;
-                let mask_lo = u32::MAX >> (ptr.offset as u32);
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        // the load is across both the second and third elements
-                        // [w3, w2, w1, w0, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [w2, w3, w1, w0, value]
-                        masm::Instruction::Swap1,
-                        masm::Instruction::PushU32(mask_lo),
-                        // [w2_masked, w3, w1, w0, value]
-                        masm::Instruction::U32And,
-                        // [w1, w2_masked, w3, w0, value]
-                        masm::Instruction::MovUp2,
-                        masm::Instruction::PushU32(mask_hi),
-                        // [w1_masked, w2_masked, w3, w0, value]
-                        masm::Instruction::U32And,
-                        // [value, w1_masked, w2_masked, w3, w0, value]
-                        masm::Instruction::Dup4,
-                        masm::Instruction::U32ShrImm(ptr.offset.into()),
-                        // [w1', w2_masked, w3, w0, value]
-                        masm::Instruction::U32Or,
-                        // [w2_masked, w1', w3, w0, value]
-                        masm::Instruction::Swap1,
-                        // [value, w2_masked, w1', w3, w0]
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::U32ShlImm(rshift.into()),
-                        // [w2', w1', w3, w0, value]
-                        masm::Instruction::U32Or,
-                        // [w0, w2', w1', w3, value]
-                        masm::Instruction::MovUp3,
-                        // [w3, w2', w1', w0, value]
-                        masm::Instruction::Swap3,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            2 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    // [d, _, b, a, value]
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // [value, d, _, b, a]
-                    masm::Instruction::MovUp4,
-                    // [_, d, value, b, a]
-                    masm::Instruction::Swap2,
-                    masm::Instruction::Drop,
-                    // Write the word back to the cell
-                    masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                    // Clean up the operand stack
-                    masm::Instruction::DropW,
-                ],
-                span,
-            ),
-            2 => {
-                let mask_hi = u32::MAX << (rshift as u32);
-                let mask_lo = u32::MAX >> (ptr.offset as u32);
-                self.emit_all(
-                    [
-                        // the load is across both the third and fourth elements
-                        masm::Instruction::PadW,
-                        // [w3, w2, w1, w0, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::PushU32(mask_lo),
-                        // [w3_masked, w2, w1, w0, value]
-                        masm::Instruction::U32And,
-                        // [w2, w3_masked, w1, w0, value]
-                        masm::Instruction::Swap1,
-                        masm::Instruction::PushU32(mask_hi),
-                        // [w2_masked, w3_masked, w1, w0, value]
-                        masm::Instruction::U32And,
-                        // [value, w2_masked, w3_masked, w1, w0, value]
-                        masm::Instruction::Dup4,
-                        masm::Instruction::U32ShrImm(ptr.offset.into()),
-                        // [w2', w3_masked, w1, w0, value]
-                        masm::Instruction::U32Or,
-                        // [w3_masked, w2', w1, w0, value]
-                        masm::Instruction::Swap1,
-                        // [value, w3_masked, w2', w1, w0]
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::U32ShlImm(rshift.into()),
-                        // [w3', w2', w1, w0]
-                        masm::Instruction::U32Or,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            3 if is_aligned => self.emit_all(
-                [
-                    // Load a quad-word
-                    masm::Instruction::PadW,
-                    // [_, c, b, a, value]
-                    masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                    // [c, b, a, value]
-                    masm::Instruction::Drop,
-                    // [value, c, b, a]
-                    masm::Instruction::MovUp3,
-                    // Write the word back to the cell
-                    masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                    // Clean up the operand stack
-                    masm::Instruction::DropW,
-                ],
-                span,
-            ),
-            3 => {
-                // This is a rather annoying edge case, as it requires us to store bits
-                // across two different words. We start with the "hi" bits that go at
-                // the end of the first word, and then handle the "lo" bits in a simpler
-                // fashion
-                let mask_hi = u32::MAX << rshift;
-                let mask_lo = u32::MAX >> (ptr.offset as u32);
-                self.emit_all(
-                    [
-                        // the load crosses a word boundary, start with the element containing
-                        // the highest-addressed bits
-                        // [w0, value]
-                        masm::Instruction::MemLoadImm((ptr.waddr + 1).into()),
-                        masm::Instruction::PushU32(mask_lo),
-                        // [w0_masked, value]
-                        masm::Instruction::U32And,
-                        // [value, w0_masked, value]
-                        masm::Instruction::Dup1,
-                        // [w0', value]
-                        masm::Instruction::U32ShlImm(rshift.into()),
-                        masm::Instruction::U32Or,
-                        // Store it
-                        // [value]
-                        masm::Instruction::MemStoreImm((ptr.waddr + 1).into()),
-                        // Load the first word
-                        masm::Instruction::PadW,
-                        // [w3, w2, w1, w0, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        masm::Instruction::PushU32(mask_hi),
-                        // [w3_masked, w2, w1, w0, value]
-                        masm::Instruction::U32And,
-                        // [value, w3_masked, w2, w1, w0]
-                        masm::Instruction::MovUp4,
-                        masm::Instruction::U32ShrImm(ptr.offset.into()),
-                        // [w3', w2, w1, w0]
-                        masm::Instruction::U32Or,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            _ => unreachable!(),
+            );
+        } else {
+            // Delegate to `store_sw` to handle unaligned stores
+            self.push_native_ptr(ptr, span);
+            self.raw_exec("intrinsics::mem::store_sw", span);
         }
     }
 
@@ -1514,61 +838,7 @@ impl OpEmitter<'_> {
 
     fn store_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         assert!(ptr.is_element_aligned(), "felt values must be naturally aligned");
-        match ptr.index {
-            0 => self.emit(masm::Instruction::MemStoreImm(ptr.waddr.into()), span),
-            1 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        // [d, c, _, a, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [value, d, c, _, a]
-                        masm::Instruction::MovUp4,
-                        // [_, d, c, value, a]
-                        masm::Instruction::Swap3,
-                        // [d, c, value, a]
-                        masm::Instruction::Drop,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            2 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        // [d, _, b, a, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [value, d, _, b, a]
-                        masm::Instruction::MovUp4,
-                        // [_, d, value, b, a]
-                        masm::Instruction::Swap2,
-                        masm::Instruction::Drop,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            3 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::PadW,
-                        // [_, c, b, a, value]
-                        masm::Instruction::MemLoadWImm(ptr.waddr.into()),
-                        // [c, b, a, value]
-                        masm::Instruction::Drop,
-                        // [value, c, b, a]
-                        masm::Instruction::MovUp3,
-                        masm::Instruction::MemStoreWImm(ptr.waddr.into()),
-                        masm::Instruction::DropW,
-                    ],
-                    span,
-                );
-            }
-            _ => unreachable!(),
-        }
+        self.emit(masm::Instruction::MemStoreImm(ptr.addr.into()), span);
     }
 
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {

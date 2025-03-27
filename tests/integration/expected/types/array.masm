@@ -31,14 +31,8 @@ export.sum_arr
                 u32mod
                 u32assert
                 assertz.err=250
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
+                u32divmod.4
                 swap.1
-                u32div.4
-                movup.2
-                u32div.16
                 exec.::intrinsics::mem::load_sw
                 movup.2
                 u32wrapping_add

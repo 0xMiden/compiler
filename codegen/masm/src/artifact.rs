@@ -405,7 +405,7 @@ impl MasmComponent {
             block
                 .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
             // write_ptr
-            block.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.waddr))));
+            block.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.addr))));
             // num_words
             block.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.size_in_words() as u32))));
             // [num_words, write_ptr, COM, ..] -> [write_ptr']

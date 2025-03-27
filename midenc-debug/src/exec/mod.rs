@@ -6,6 +6,6 @@ mod trace;
 pub use self::{
     executor::Executor,
     host::DebuggerHost,
-    state::{Chiplets, DebugExecutor},
+    state::{DebugExecutor, MemoryChiplet},
     trace::{ExecutionTrace, TraceEvent, TraceHandler},
 };
