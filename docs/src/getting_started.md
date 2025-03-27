@@ -80,11 +80,7 @@ in the future, but for now it is expected that you implement your own optimizati
 
 ## Known bugs and limitations
 
-For the latest information on known bugs, see the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues).
-
-See [Known Limitations](appendix/known-limitations.md) for details on what functionality is
-missing or only partially implemented.
-
+For the latest information on known bugs and limitations, see the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues).
 
 ## Where to start?
 
