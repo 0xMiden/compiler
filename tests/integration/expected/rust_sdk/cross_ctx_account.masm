@@ -6,6 +6,25 @@ export.process-felt
 end
 
 
+export.init
+
+        push.2162688
+        exec.::intrinsics::mem::heap_init
+        push.5121323707957172480
+        push.16385291266171272914
+        push.3612753469884014922
+        push.8597705872349702967
+        adv.push_mapval
+        push.262144
+        push.3
+        exec.::std::mem::pipe_preimage_to_memory
+        drop
+        push.1048576
+        u32assert
+        mem_store.262144
+end
+
+
 # mod miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
 
 proc.__wasm_call_ctors
@@ -91,26 +110,14 @@ proc.__rustc::__rust_realloc
                     push.1
                     u32overflowing_madd
                     assertz
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
+                    u32divmod.4
                     swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
                     exec.::intrinsics::mem::load_sw
                     push.128
                     u32and
                     swap.1
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
+                    u32divmod.4
                     swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
                     dup.2
                     dup.2
                     dup.2
@@ -233,14 +240,8 @@ proc.wit_bindgen_rt::run_ctors_once
         push.0
         add
         u32assert
-        dup.0
-        u32mod.16
-        dup.0
-        u32mod.4
+        u32divmod.4
         swap.1
-        u32div.4
-        movup.2
-        u32div.16
         exec.::intrinsics::mem::load_sw
         push.128
         u32and
@@ -258,14 +259,8 @@ proc.wit_bindgen_rt::run_ctors_once
             push.0
             add
             u32assert
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
+            u32divmod.4
             swap.1
-            u32div.4
-            movup.2
-            u32div.16
             dup.2
             dup.2
             dup.2
@@ -344,14 +339,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 u32mod
                 u32assert
                 assertz.err=250
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
+                u32divmod.4
                 swap.1
-                u32div.4
-                movup.2
-                u32div.16
                 exec.::intrinsics::mem::load_sw
                 push.0
                 neq
@@ -378,14 +367,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                     swap.1
                     u32wrapping_add
                     swap.1
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
+                    u32divmod.4
                     swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
                     exec.::intrinsics::mem::store_sw
                     push.0
                     swap.3
@@ -397,14 +380,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 u32mod
                 u32assert
                 assertz.err=250
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
+                u32divmod.4
                 swap.1
-                u32div.4
-                movup.2
-                u32div.16
                 exec.::intrinsics::mem::load_sw
                 push.0
                 dup.3
@@ -434,14 +411,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                     movup.3
                     u32wrapping_add
                     swap.1
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
+                    u32divmod.4
                     swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
                     exec.::intrinsics::mem::store_sw
                     push.1
                     swap.1

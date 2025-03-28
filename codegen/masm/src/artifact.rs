@@ -79,17 +79,23 @@ impl Rodata {
 
     /// Attempt to convert this rodata object to its equivalent representation in felts
     ///
+    /// See [Self::bytes_to_elements] for more details.
+    pub fn to_elements(&self) -> Result<Vec<miden_processor::Felt>, String> {
+        Self::bytes_to_elements(self.data.as_slice())
+    }
+
+    /// Attempt to convert the given bytes to their equivalent representation in felts
+    ///
     /// The resulting felts will be in padded out to the nearest number of words, i.e. if the data
     /// only takes up 3 felts worth of bytes, then the resulting `Vec` will contain 4 felts, so that
     /// the total size is a valid number of words.
-    pub fn to_elements(&self) -> Result<Vec<miden_processor::Felt>, String> {
+    pub fn bytes_to_elements(bytes: &[u8]) -> Result<Vec<miden_processor::Felt>, String> {
         use miden_core::FieldElement;
         use miden_processor::Felt;
 
-        let data = self.data.as_slice();
-        let mut felts = Vec::with_capacity(data.len() / 4);
-        let mut iter = data.iter().copied().array_chunks::<4>();
-        felts.extend(iter.by_ref().map(|bytes| Felt::new(u32::from_le_bytes(bytes) as u64)));
+        let mut felts = Vec::with_capacity(bytes.len() / 4);
+        let mut iter = bytes.iter().copied().array_chunks::<4>();
+        felts.extend(iter.by_ref().map(|chunk| Felt::new(u32::from_le_bytes(chunk) as u64)));
         if let Some(remainder) = iter.into_remainder() {
             let mut chunk = [0u8; 4];
             for (i, byte) in remainder.into_iter().enumerate() {
@@ -98,7 +104,9 @@ impl Rodata {
             felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
         }
 
-        let padding = (self.size_in_words() * 4).abs_diff(felts.len());
+        let size_in_felts = bytes.len().next_multiple_of(4) / 4;
+        let size_in_words = size_in_felts.next_multiple_of(4) / 4;
+        let padding = (size_in_words * 4).abs_diff(felts.len());
         felts.resize(felts.len() + padding, Felt::ZERO);
 
         Ok(felts)
@@ -174,6 +182,7 @@ impl MasmComponent {
         let debug_mode = session.options.emit_debug_decorators();
 
         log::debug!(
+            target: "assembly",
             "assembling executable with entrypoint '{}' (debug_mode={})",
             entrypoint,
             debug_mode
@@ -185,7 +194,7 @@ impl MasmComponent {
         // Link extra libraries
         for library in link_libraries.iter().cloned() {
             for module in library.module_infos() {
-                log::debug!("registering '{}' with assembler", module.path());
+                log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.insert(module.path().clone());
             }
             assembler.add_library(library)?;
@@ -202,13 +211,14 @@ impl MasmComponent {
         for module in modules.iter().cloned() {
             if lib_modules.contains(module.path()) {
                 log::warn!(
+                    target: "assembly",
                     "module '{}' is already registered with the assembler as library's module, \
                      skipping",
                     module.path()
                 );
                 continue;
             }
-            log::debug!("adding '{}' to assembler", module.path());
+            log::debug!(target: "assembly", "adding '{}' to assembler", module.path());
             let kind = module.kind();
             assembler.add_module_with_options(
                 module,
@@ -222,6 +232,7 @@ impl MasmComponent {
 
         let emit_test_harness = session.get_flag("test_harness");
         let main = self.generate_main(entrypoint, emit_test_harness)?;
+        log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
         let advice_map: miden_core::AdviceMap = self
             .rodata
@@ -243,6 +254,7 @@ impl MasmComponent {
 
         let debug_mode = session.options.emit_debug_decorators();
         log::debug!(
+            target: "assembly",
             "assembling library of {} modules (debug_mode={})",
             self.modules.len(),
             debug_mode
@@ -255,7 +267,7 @@ impl MasmComponent {
         // Link extra libraries
         for library in link_libraries.iter().cloned() {
             for module in library.module_infos() {
-                log::debug!("registering '{}' with assembler", module.path());
+                log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.push(module.path().clone());
             }
             assembler.add_library(library)?;
@@ -266,13 +278,14 @@ impl MasmComponent {
         for module in self.modules.iter().cloned() {
             if lib_modules.contains(module.path()) {
                 log::warn!(
+                    target: "assembly",
                     "module '{}' is already registered with the assembler as library's module, \
                      skipping",
                     module.path()
                 );
                 continue;
             }
-            log::debug!("adding '{}' to assembler", module.path());
+            log::debug!(target: "assembly", "adding '{}' to assembler", module.path());
             modules.push(module);
         }
         let lib = assembler.assemble_library(modules)?;
@@ -313,25 +326,19 @@ impl MasmComponent {
         let span = SourceSpan::default();
         let body = {
             let mut block = masm::Block::new(span, Vec::with_capacity(64));
-            // Initialize dynamic heap
-            block.push(Op::Inst(Span::new(span, Inst::PushU32(self.heap_base))));
-            let heap_init = masm::ProcedureName::new("heap_init").unwrap();
-            let memory_intrinsics = masm::LibraryPath::new("intrinsics::mem").unwrap();
-            block.push(Op::Inst(Span::new(
-                span,
-                Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
-                    name: heap_init,
-                    path: memory_intrinsics,
-                }),
-            )));
-            // Initialize data segments from advice stack
-            self.emit_data_segment_initialization(&mut block);
-            // Possibly initialize test harness
+            // Invoke component initializer, if present
+            if let Some(init) = self.init.as_ref() {
+                block.push(Op::Inst(Span::new(span, Inst::Exec(init.clone()))));
+            }
+
+            // Initialize test harness, if requested
             if emit_test_harness {
                 self.emit_test_harness(&mut block);
             }
+
             // Invoke the program entrypoint
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
+
             // Truncate the stack to 16 elements on exit
             let truncate_stack = InvocationTarget::AbsoluteProcedurePath {
                 name: ProcedureName::new("truncate_stack").unwrap(),
@@ -366,6 +373,7 @@ impl MasmComponent {
 
         // => [num_words, dest_ptr] on operand stack
         block.push(Op::Inst(Span::new(span, Inst::AdvPush(2.into()))));
+        // => [C, B, A, dest_ptr] on operand stack
         block.push(Op::Inst(Span::new(
             span,
             Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
@@ -373,52 +381,12 @@ impl MasmComponent {
                 path: std_mem,
             }),
         )));
-        // Drop HASH
+        // Drop C, B, A
+        block.push(Op::Inst(Span::new(span, Inst::DropW)));
+        block.push(Op::Inst(Span::new(span, Inst::DropW)));
         block.push(Op::Inst(Span::new(span, Inst::DropW)));
         // Drop dest_ptr
         block.push(Op::Inst(Span::new(span, Inst::Drop)));
-    }
-
-    /// Emit the sequence of instructions necessary to consume rodata from the advice stack and
-    /// populate the global heap with the data segments of this program, verifying that the
-    /// commitments match.
-    fn emit_data_segment_initialization(&self, block: &mut masm::Block) {
-        use masm::{Instruction as Inst, Op};
-
-        // Emit data segment initialization code
-        //
-        // NOTE: This depends on the program being executed with the data for all data
-        // segments having been placed in the advice map with the same commitment and
-        // encoding used here. The program will fail to execute if this is not set up
-        // correctly.
-        //
-        // TODO(pauls): To facilitate automation of this, we should emit an inputs file to
-        // disk that maps each segment to a commitment and its data encoded as binary. This
-        // can then be loaded into the advice provider during VM init.
-        let pipe_preimage_to_memory = masm::ProcedureName::new("pipe_preimage_to_memory").unwrap();
-        let std_mem = masm::LibraryPath::new("std::mem").unwrap();
-
-        let span = SourceSpan::default();
-        for rodata in self.rodata.iter() {
-            // Move rodata from advice map to advice stack
-            block.push(Op::Inst(Span::new(span, Inst::PushWord(rodata.digest.into())))); // COM
-            block
-                .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
-            // write_ptr
-            block.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.waddr))));
-            // num_words
-            block.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.size_in_words() as u32))));
-            // [num_words, write_ptr, COM, ..] -> [write_ptr']
-            block.push(Op::Inst(Span::new(
-                span,
-                Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
-                    name: pipe_preimage_to_memory.clone(),
-                    path: std_mem.clone(),
-                }),
-            )));
-            // drop write_ptr'
-            block.push(Op::Inst(Span::new(span, Inst::Drop)));
-        }
     }
 }
 

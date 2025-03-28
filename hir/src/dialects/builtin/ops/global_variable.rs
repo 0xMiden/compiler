@@ -13,7 +13,7 @@ use crate::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
     },
-    AsSymbolRef, Context, Ident, OpPrinter, Operation, Report, Spanned, Symbol, SymbolName,
+    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, Report, Spanned, Symbol, SymbolName,
     SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,
 };
 
@@ -166,7 +166,9 @@ impl OpPrinter for GlobalSymbol {
     ) -> crate::formatter::Document {
         use crate::formatter::*;
 
-        let prefix = display(self.op.name())
+        let results = crate::print::render_operation_results(self.as_operation());
+        let prefix = results
+            + display(self.op.name())
             + const_text(" ")
             + const_text("@")
             + display(&self.symbol().path);

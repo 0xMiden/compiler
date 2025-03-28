@@ -15,7 +15,7 @@ pub use midenc_codegen_masm::TraceEvent;
 use midenc_hir::Type;
 use midenc_session::Session;
 
-use super::Chiplets;
+use super::MemoryChiplet;
 use crate::{debug::CallStack, felt::PopFromStack, DebuggerHost, TestFelt};
 
 /// A callback to be executed when a [TraceEvent] occurs at a given clock cycle
@@ -38,7 +38,7 @@ pub enum MemoryReadError {
 pub struct ExecutionTrace {
     pub(super) root_context: ContextId,
     pub(super) last_cycle: RowIndex,
-    pub(super) chiplets: Chiplets,
+    pub(super) memory: MemoryChiplet,
     pub(super) outputs: StackOutputs,
     pub(super) trace_len_summary: TraceLenSummary,
 }
@@ -85,18 +85,20 @@ impl ExecutionTrace {
     ) -> Option<Word> {
         use miden_core::FieldElement;
 
-        let words = self.chiplets.get_mem_state_at(ctx, clk);
-        let addr = addr as u64;
-        match words.binary_search_by_key(&addr, |item| item.0) {
-            Ok(index) => Some(words[index].1),
-            Err(_) => Some([Felt::ZERO; 4]),
-        }
+        const ZERO: Word = [Felt::ZERO; 4];
+
+        Some(
+            self.memory
+                .get_word(ctx, addr)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .unwrap_or(ZERO),
+        )
     }
 
     /// Read the word at the given Miden memory address and element offset
     #[track_caller]
-    pub fn read_memory_element(&self, addr: u32, index: u8) -> Option<Felt> {
-        self.read_memory_element_in_context(addr, index, self.root_context, self.last_cycle)
+    pub fn read_memory_element(&self, addr: u32) -> Option<Felt> {
+        self.memory.get_value(self.root_context, addr)
     }
 
     /// Read the word at the given Miden memory address and element offset, under `ctx`, at cycle
@@ -105,13 +107,10 @@ impl ExecutionTrace {
     pub fn read_memory_element_in_context(
         &self,
         addr: u32,
-        index: u8,
         ctx: ContextId,
-        clk: RowIndex,
+        _clk: RowIndex,
     ) -> Option<Felt> {
-        assert!(index < 4, "invalid element index");
-        self.read_memory_word_in_context(addr, ctx, clk)
-            .map(|word| word[index as usize])
+        self.memory.get_value(ctx, addr)
     }
 
     /// Read a raw byte vector from `addr`, under `ctx`, at cycle `clk`, sufficient to hold a value
@@ -127,32 +126,13 @@ impl ExecutionTrace {
         let size = ty.size_in_bytes();
         let mut buf = Vec::with_capacity(size);
 
-        let size_in_words = ty.size_in_words();
-        let mut elems = Vec::with_capacity(size_in_words);
+        let size_in_felts = ty.size_in_felts();
+        let mut elems = Vec::with_capacity(size_in_felts);
 
-        if addr.is_word_aligned() {
-            for i in 0..size_in_words {
-                let addr = addr.waddr.checked_add(i as u32).ok_or(MemoryReadError::OutOfBounds)?;
-                elems.extend(self.read_memory_word_in_context(addr, ctx, clk).unwrap_or_default());
-            }
-        } else if addr.is_element_aligned() {
-            let leading =
-                self.read_memory_word_in_context(addr.waddr, ctx, clk).unwrap_or_default();
-            for item in leading.into_iter().skip(addr.index as usize) {
-                elems.push(item);
-            }
-            for i in 1..size_in_words {
-                let addr = addr.waddr.checked_add(i as u32).ok_or(MemoryReadError::OutOfBounds)?;
-                elems.extend(self.read_memory_word_in_context(addr, ctx, clk).unwrap_or_default());
-            }
-            let trailing_addr = addr
-                .waddr
-                .checked_add(size_in_words as u32)
-                .ok_or(MemoryReadError::OutOfBounds)?;
-            let trailing =
-                self.read_memory_word_in_context(trailing_addr, ctx, clk).unwrap_or_default();
-            for item in trailing.into_iter().take(4 - addr.index as usize) {
-                elems.push(item);
+        if addr.is_element_aligned() {
+            for i in 0..size_in_felts {
+                let addr = addr.addr.checked_add(i as u32).ok_or(MemoryReadError::OutOfBounds)?;
+                elems.push(self.read_memory_element_in_context(addr, ctx, clk).unwrap_or_default());
             }
         } else {
             return Err(MemoryReadError::UnalignedRead);
@@ -195,7 +175,7 @@ impl ExecutionTrace {
         let ptr = NativePtr::from_ptr(addr);
         if TypeId::of::<T>() == TypeId::of::<Felt>() {
             assert_eq!(ptr.offset, 0, "cannot read values of type Felt from unaligned addresses");
-            let elem = self.read_memory_element_in_context(ptr.waddr, ptr.index, ctx, clk)?;
+            let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
             let mut stack = VecDeque::from([TestFelt(elem)]);
             return Some(T::try_pop(&mut stack).unwrap_or_else(|| {
                 panic!(
@@ -210,7 +190,7 @@ impl ExecutionTrace {
                 if (4 - ptr.offset as usize) < n {
                     todo!("unaligned, split read")
                 }
-                let elem = self.read_memory_element_in_context(ptr.waddr, ptr.index, ctx, clk)?;
+                let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
                 let elem = if ptr.offset > 0 {
                     let mask = 2u64.pow(32 - (ptr.offset as u32 * 8)) - 1;
                     let elem = elem.as_int() & mask;
@@ -231,7 +211,7 @@ impl ExecutionTrace {
                 todo!("unaligned, split read")
             }
             4 => {
-                let elem = self.read_memory_element_in_context(ptr.waddr, ptr.index, ctx, clk)?;
+                let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
                 let mut stack = VecDeque::from([TestFelt(elem)]);
                 Some(T::try_pop(&mut stack).unwrap_or_else(|| {
                     panic!(
@@ -245,7 +225,7 @@ impl ExecutionTrace {
                 todo!("unaligned, split read")
             }
             n if n <= 16 => {
-                let word = self.read_memory_word_in_context(ptr.waddr, ctx, clk)?;
+                let word = self.read_memory_word_in_context(ptr.addr, ctx, clk)?;
                 let mut stack = VecDeque::from_iter(word.into_iter().map(TestFelt));
                 Some(T::try_pop(&mut stack).unwrap_or_else(|| {
                     panic!(
@@ -262,11 +242,8 @@ impl ExecutionTrace {
                     todo!()
                 } else {
                     for i in 0..chunks_needed {
-                        let abs_i = i + ptr.index as u32;
-                        let word = ptr.waddr + (abs_i / 4);
-                        let index = (abs_i % 4) as u8;
                         let elem = self
-                            .read_memory_element_in_context(word, index, ctx, clk)
+                            .read_memory_element_in_context(ptr.addr + i, ctx, clk)
                             .expect("invalid memory access");
                         buf.push_back(TestFelt(elem));
                     }

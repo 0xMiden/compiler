@@ -1,7 +1,7 @@
 use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
-use midenc_hir::{dialects::builtin, Block, Operation, ProgramPoint, ValueRange, ValueRef};
+use midenc_hir::{Block, Operation, ProgramPoint, ValueRange, ValueRef};
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -15,7 +15,6 @@ use crate::{
 };
 
 pub(crate) struct BlockEmitter<'b> {
-    pub function: &'b builtin::Function,
     pub liveness: &'b LivenessAnalysis,
     pub link_info: &'b LinkInfo,
     pub invoked: &'b mut BTreeSet<masm::Invoke>,
@@ -26,7 +25,6 @@ pub(crate) struct BlockEmitter<'b> {
 impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
-            function: self.function,
             liveness: self.liveness,
             link_info: self.link_info,
             invoked: self.invoked,

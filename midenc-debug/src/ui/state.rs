@@ -192,7 +192,7 @@ impl State {
             }
             let felt = self
                 .execution_trace
-                .read_memory_element_in_context(expr.addr.waddr, expr.addr.index, context, cycle)
+                .read_memory_element_in_context(expr.addr.addr, context, cycle)
                 .unwrap_or(Felt::ZERO);
             write_with_format_type!(output, expr, felt.as_int());
         } else if matches!(expr.ty, Type::Array(ref elem_ty, 4) if elem_ty.as_ref() == &Type::Felt)
@@ -200,7 +200,7 @@ impl State {
             if !expr.addr.is_word_aligned() {
                 return Err("read failed: type 'word' must be aligned to a word boundary".into());
             }
-            let word = self.execution_trace.read_memory_word(expr.addr.waddr).unwrap_or_default();
+            let word = self.execution_trace.read_memory_word(expr.addr.addr).unwrap_or_default();
             output.push('[');
             for (i, elem) in word.iter().enumerate() {
                 if i > 0 {

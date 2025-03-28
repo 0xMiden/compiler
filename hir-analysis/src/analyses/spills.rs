@@ -443,7 +443,7 @@ impl Analysis for SpillAnalysis {
     ) -> Result<(), Report> {
         log::debug!(target: "spills", "running spills analysis for {}", op.as_operation());
 
-        let liveness = analysis_manager.get_analysis_for::<LivenessAnalysis, Function>()?;
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
         self.compute(op, &liveness, analysis_manager)
     }
 

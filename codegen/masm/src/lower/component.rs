@@ -1,6 +1,9 @@
-use alloc::sync::Arc;
+use alloc::{collections::BTreeSet, sync::Arc};
 
-use midenc_hir::{dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, Span, ValueRef};
+use midenc_hir::{
+    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef,
+};
+use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned};
 
 use crate::{
@@ -49,17 +52,10 @@ impl ToMasmComponent for builtin::Component {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let mut modules = Vec::default();
-        if requires_init {
-            modules.push(Arc::new(masm::Module::new(
-                masm::ModuleKind::Library,
-                component_path.clone(),
-            )));
-        }
         let init = if requires_init {
             Some(masm::InvocationTarget::AbsoluteProcedurePath {
                 name: masm::ProcedureName::new("init").unwrap(),
-                path: component_path.clone(),
+                path: component_path,
             })
         } else {
             None
@@ -67,6 +63,31 @@ impl ToMasmComponent for builtin::Component {
 
         // Initialize the MASM component with basic information we have already
         let id = link_info.component().clone();
+
+        // Define the initial component modules set
+        //
+        // The top-level component module is always defined, but may be empty
+        let modules =
+            vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, id.to_library_path()))];
+
+        // Compute rodata segments for the component
+        let rodata = link_info
+            .segment_layout()
+            .iter()
+            .map(|segment_ref| {
+                let segment = segment_ref.borrow();
+                let data = segment.initializer();
+                let felts = crate::Rodata::bytes_to_elements(data.as_slice())
+                    .expect("invalid data segment initializer");
+                let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
+                crate::Rodata {
+                    component: link_info.component().clone(),
+                    digest,
+                    start: super::NativePtr::from_ptr(*segment.offset()),
+                    data,
+                }
+            })
+            .collect();
 
         // Compute the first page boundary after the end of the globals table to use as the start
         // of the dynamic heap when the program is executed
@@ -80,7 +101,7 @@ impl ToMasmComponent for builtin::Component {
             init,
             entrypoint,
             kernel: None,
-            rodata: Default::default(),
+            rodata,
             heap_base,
             stack_pointer,
             modules,
@@ -89,6 +110,8 @@ impl ToMasmComponent for builtin::Component {
             analysis_manager,
             component: &mut masm_component,
             link_info: &link_info,
+            init_body: Default::default(),
+            invoked_from_init: Default::default(),
         };
 
         builder.build(self)?;
@@ -101,11 +124,38 @@ struct MasmComponentBuilder<'a> {
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
+    init_body: Vec<masm::Op>,
+    invoked_from_init: BTreeSet<masm::Invoke>,
 }
 
 impl MasmComponentBuilder<'_> {
     /// Convert the component body to Miden Assembly
     pub fn build(mut self, component: &builtin::Component) -> Result<(), Report> {
+        use masm::{Instruction as Inst, InvocationTarget, Op};
+
+        // If a component-level init is required, emit code to initialize the heap before any other
+        // initialization code.
+        if self.component.init.is_some() {
+            let span = component.span();
+
+            // Heap metadata initialization
+            let heap_base = self.component.heap_base;
+            self.init_body.push(masm::Op::Inst(Span::new(span, Inst::PushU32(heap_base))));
+            let heap_init = masm::ProcedureName::new("heap_init").unwrap();
+            let memory_intrinsics = masm::LibraryPath::new("intrinsics::mem").unwrap();
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
+                    name: heap_init,
+                    path: memory_intrinsics,
+                }),
+            )));
+
+            // Data segment initialization
+            self.emit_data_segment_initialization();
+        }
+
+        // Translate component body
         let region = component.body();
         let block = region.entry();
         for op in block.body() {
@@ -123,6 +173,29 @@ impl MasmComponentBuilder<'_> {
             }
         }
 
+        // Finalize the component-level init, if required
+        if self.component.init.is_some() {
+            let module =
+                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+
+            let init_name = masm::ProcedureName::new("init").unwrap();
+            let init_body = core::mem::take(&mut self.init_body);
+            let init = masm::Procedure::new(
+                Default::default(),
+                masm::Visibility::Public,
+                init_name,
+                0,
+                masm::Block::new(component.span(), init_body),
+            );
+
+            module.define_procedure(masm::Export::Procedure(init))?;
+        } else {
+            assert!(
+                self.init_body.is_empty(),
+                "the need for an 'init' function was not expected, but code was generated for one"
+            );
+        }
+
         Ok(())
     }
 
@@ -137,6 +210,8 @@ impl MasmComponentBuilder<'_> {
                 .analysis_manager
                 .nest(interface.as_operation().as_operation_ref()),
             link_info: self.link_info,
+            init_body: &mut self.init_body,
+            invoked_from_init: &mut self.invoked_from_init,
         };
         builder.build_from_interface(interface)?;
 
@@ -153,6 +228,8 @@ impl MasmComponentBuilder<'_> {
             module: &mut masm_module,
             analysis_manager: self.analysis_manager.nest(module.as_operation_ref()),
             link_info: self.link_info,
+            init_body: &mut self.init_body,
+            invoked_from_init: &mut self.invoked_from_init,
         };
         builder.build(module)?;
 
@@ -174,12 +251,54 @@ impl MasmComponentBuilder<'_> {
         assert_eq!(
             module.path().num_components(),
             1,
-            "expected top-level namespace module, but one has not been defined"
+            "expected top-level namespace module, but one has not been defined (in '{}' of '{}')",
+            module.path(),
+            function.path()
         );
-
         module.define_procedure(masm::Export::Procedure(procedure))?;
 
         Ok(())
+    }
+
+    /// Emit the sequence of instructions necessary to consume rodata from the advice stack and
+    /// populate the global heap with the data segments of this component, verifying that the
+    /// commitments match.
+    fn emit_data_segment_initialization(&mut self) {
+        use masm::{Instruction as Inst, InvocationTarget, Op};
+
+        // Emit data segment initialization code
+        //
+        // NOTE: This depends on the program being executed with the data for all data segments
+        // having been placed in the advice map with the same commitment and encoding used here.
+        // The program will fail to execute if this is not set up correctly.
+        let pipe_preimage_to_memory = masm::ProcedureName::new("pipe_preimage_to_memory").unwrap();
+        let std_mem = masm::LibraryPath::new("std::mem").unwrap();
+
+        let span = SourceSpan::default();
+        for rodata in self.component.rodata.iter() {
+            // Push the commitment hash (`COM`) for this data onto the operand stack
+            self.init_body
+                .push(Op::Inst(Span::new(span, Inst::PushWord(rodata.digest.into()))));
+            // Move rodata from the advice map, using the commitment as key, to the advice stack
+            self.init_body
+                .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
+            // write_ptr
+            assert!(rodata.start.addr.is_multiple_of(4), "rodata segments must be word-aligned");
+            self.init_body.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.addr))));
+            // num_words
+            self.init_body
+                .push(Op::Inst(Span::new(span, Inst::PushU32(rodata.size_in_words() as u32))));
+            // [num_words, write_ptr, COM, ..] -> [write_ptr']
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
+                    name: pipe_preimage_to_memory.clone(),
+                    path: std_mem.clone(),
+                }),
+            )));
+            // drop write_ptr'
+            self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
+        }
     }
 }
 
@@ -187,6 +306,8 @@ struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
+    init_body: &'a mut Vec<masm::Op>,
+    invoked_from_init: &'a mut BTreeSet<masm::Invoke>,
 }
 
 impl MasmModuleBuilder<'_> {
@@ -196,7 +317,9 @@ impl MasmModuleBuilder<'_> {
         for op in block.body() {
             if let Some(function) = op.downcast_ref::<builtin::Function>() {
                 self.define_function(function)?;
-            } else if op.is::<builtin::Segment>() || op.is::<builtin::GlobalVariable>() {
+            } else if let Some(gv) = op.downcast_ref::<builtin::GlobalVariable>() {
+                self.emit_global_variable_initializer(gv)?;
+            } else if op.is::<builtin::Segment>() {
                 continue;
             } else {
                 panic!(
@@ -236,6 +359,55 @@ impl MasmModuleBuilder<'_> {
         )?;
 
         self.module.define_procedure(masm::Export::Procedure(procedure))?;
+
+        Ok(())
+    }
+
+    fn emit_global_variable_initializer(
+        &mut self,
+        gv: &builtin::GlobalVariable,
+    ) -> Result<(), Report> {
+        // We don't emit anything for declarations
+        if gv.is_declaration() {
+            return Ok(());
+        }
+
+        // We compute liveness for global variables independently
+        let analysis_manager = self.analysis_manager.nest(gv.as_operation_ref());
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+
+        // Emit the initializer block
+        let initializer_region = gv.region(0);
+        let initializer_block = initializer_region.entry();
+        let mut block_emitter = BlockEmitter {
+            liveness: &liveness,
+            link_info: self.link_info,
+            invoked: self.invoked_from_init,
+            target: Default::default(),
+            stack: Default::default(),
+        };
+        block_emitter.emit_inline(&initializer_block);
+
+        // Sanity checks
+        assert_eq!(block_emitter.stack.len(), 1, "expected only global variable value on stack");
+        let return_ty = block_emitter.stack.peek().unwrap().ty();
+        assert_eq!(
+            &return_ty,
+            gv.ty(),
+            "expected initializer to return value of same type as declaration"
+        );
+
+        // Write the initialized value to the computed storage offset for this global
+        let computed_addr = self
+            .link_info
+            .globals_layout()
+            .get_computed_addr(gv.as_global_var_ref())
+            .expect("undefined global variable");
+        block_emitter.emitter().store_imm(computed_addr, gv.span());
+
+        // Extend the generated init function with the code to initialize this global
+        let mut body = core::mem::take(&mut block_emitter.target);
+        self.init_body.append(&mut body);
 
         Ok(())
     }
@@ -298,8 +470,7 @@ impl MasmFunctionBuilder {
 
         log::trace!(target: "codegen", "lowering {}", function.as_operation());
 
-        let liveness =
-            analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         let mut invoked = BTreeSet::default();
         let entry = function.entry_block();
@@ -311,7 +482,6 @@ impl MasmFunctionBuilder {
             }
         }
         let emitter = BlockEmitter {
-            function,
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,

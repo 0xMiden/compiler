@@ -25,7 +25,7 @@ impl FromStr for ReadMemoryExpr {
 
         let ty = args.ty.unwrap_or_else(|| Type::Array(Box::new(Type::Felt), 4));
         let addr = match args.mode {
-            MemoryMode::Word => NativePtr::new(args.addr, 0, 0),
+            MemoryMode::Word => NativePtr::new(args.addr, 0),
             MemoryMode::Byte => NativePtr::from_ptr(args.addr),
         };
         Ok(Self {

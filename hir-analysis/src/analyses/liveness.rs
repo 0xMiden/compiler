@@ -3,10 +3,9 @@ mod next_use_set;
 use core::borrow::Borrow;
 
 use midenc_hir::{
-    dialects::builtin::Function,
     dominance::DominanceInfo,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
-    Backward, Block, BlockRef, CallOpInterface, EntityRef, Op, Operation, ProgramPoint,
+    Backward, Block, BlockRef, CallOpInterface, EntityRef, Operation, ProgramPoint,
     RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Spanned, SymbolTable, ValueRef,
 };
 
@@ -98,105 +97,8 @@ impl LivenessAnalysis {
         &self.solver
     }
 
-    #[inline(always)]
-    pub fn query(&self) -> LivenessAnalysisAdaptor<'_> {
-        LivenessAnalysisAdaptor {
-            solver: &self.solver,
-        }
-    }
-
     /// Returns true if `value` is live on entry to `block`
     #[inline]
-    pub fn is_live_at_start<V>(&self, value: V, block: BlockRef) -> bool
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().is_live_at_start(value, block)
-    }
-
-    /// Returns true if `value` is live at the block terminator of `block`
-    #[inline]
-    pub fn is_live_at_end<V>(&self, value: V, block: BlockRef) -> bool
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().is_live_at_end(value, block)
-    }
-
-    /// Returns true if `value` is live at the entry of `op`
-    #[inline]
-    pub fn is_live_before<V>(&self, value: V, op: &Operation) -> bool
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().is_live_before(value, op)
-    }
-
-    /// Returns true if `value` is live on exit from `op`
-    #[inline]
-    pub fn is_live_after<V>(&self, value: V, op: &Operation) -> bool
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().is_live_after(value, op)
-    }
-
-    /// Returns true if `value` is live after entering `op`, i.e. when executing any of its child
-    /// regions.
-    ///
-    /// This will return true if `value` is live after exiting from any of `op`'s regions, as well
-    /// as in the case where none of `op`'s regions are executed and control is transferred to the
-    /// next op in the containing block.
-    #[inline]
-    pub fn is_live_after_entry<V>(&self, value: V, op: &Operation) -> bool
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().is_live_after_entry(value, op)
-    }
-
-    #[inline]
-    pub fn next_use_after<V>(&self, value: V, op: &Operation) -> u32
-    where
-        V: Borrow<ValueRef>,
-    {
-        self.query().next_use_after(value, op)
-    }
-
-    #[inline]
-    pub fn is_block_executable(&self, block: BlockRef) -> bool {
-        self.query().is_block_executable(block)
-    }
-
-    #[inline]
-    pub fn next_uses_at(&self, anchor: &ProgramPoint) -> Option<EntityRef<'_, NextUseSet>> {
-        self.solver
-            .get::<Lattice<NextUseSet>, _>(anchor)
-            .map(|next_uses| EntityRef::map(next_uses, |nu| nu.value()))
-    }
-}
-
-/// A query adaptor for a [DataFlowSolver] reference that lets you query it for liveness analysis
-/// results.
-#[repr(transparent)]
-pub struct LivenessAnalysisAdaptor<'a> {
-    solver: &'a DataFlowSolver,
-}
-
-impl<'a> LivenessAnalysisAdaptor<'a> {
-    #[inline(always)]
-    pub fn new(solver: &'a DataFlowSolver) -> Self {
-        Self { solver }
-    }
-}
-
-impl LivenessAnalysisAdaptor<'_> {
-    #[inline(always)]
-    pub fn solver(&self) -> &DataFlowSolver {
-        self.solver
-    }
-
-    /// Returns true if `value` is live on entry to `block`
     pub fn is_live_at_start<V>(&self, value: V, block: BlockRef) -> bool
     where
         V: Borrow<ValueRef>,
@@ -206,6 +108,7 @@ impl LivenessAnalysisAdaptor<'_> {
     }
 
     /// Returns true if `value` is live at the block terminator of `block`
+    #[inline]
     pub fn is_live_at_end<V>(&self, value: V, block: BlockRef) -> bool
     where
         V: Borrow<ValueRef>,
@@ -215,6 +118,7 @@ impl LivenessAnalysisAdaptor<'_> {
     }
 
     /// Returns true if `value` is live at the entry of `op`
+    #[inline]
     pub fn is_live_before<V>(&self, value: V, op: &Operation) -> bool
     where
         V: Borrow<ValueRef>,
@@ -224,6 +128,7 @@ impl LivenessAnalysisAdaptor<'_> {
     }
 
     /// Returns true if `value` is live on exit from `op`
+    #[inline]
     pub fn is_live_after<V>(&self, value: V, op: &Operation) -> bool
     where
         V: Borrow<ValueRef>,
@@ -238,6 +143,7 @@ impl LivenessAnalysisAdaptor<'_> {
     /// This will return true if `value` is live after exiting from any of `op`'s regions, as well
     /// as in the case where none of `op`'s regions are executed and control is transferred to the
     /// next op in the containing block.
+    #[inline]
     pub fn is_live_after_entry<V>(&self, value: V, op: &Operation) -> bool
     where
         V: Borrow<ValueRef>,
@@ -266,6 +172,7 @@ impl LivenessAnalysisAdaptor<'_> {
         false
     }
 
+    #[inline]
     pub fn next_use_after<V>(&self, value: V, op: &Operation) -> u32
     where
         V: Borrow<ValueRef>,
@@ -274,12 +181,14 @@ impl LivenessAnalysisAdaptor<'_> {
         next_uses.map(|nu| nu.distance(value)).unwrap_or(u32::MAX)
     }
 
+    #[inline]
     pub fn is_block_executable(&self, block: BlockRef) -> bool {
         self.solver
             .get::<Executable, _>(&ProgramPoint::at_start_of(block))
             .is_none_or(|state| state.is_live())
     }
 
+    #[inline]
     pub fn next_uses_at(&self, anchor: &ProgramPoint) -> Option<EntityRef<'_, NextUseSet>> {
         self.solver
             .get::<Lattice<NextUseSet>, _>(anchor)
@@ -288,7 +197,7 @@ impl LivenessAnalysisAdaptor<'_> {
 }
 
 impl Analysis for LivenessAnalysis {
-    type Target = Function;
+    type Target = Operation;
 
     fn name(&self) -> &'static str {
         "liveness"
@@ -303,7 +212,7 @@ impl Analysis for LivenessAnalysis {
         self.solver.load::<SparseConstantPropagation>();
         self.solver.load::<Liveness>();
         self.solver
-            .initialize_and_run(op.as_operation(), analysis_manager)
+            .initialize_and_run(op, analysis_manager)
             .expect("liveness analysis failed");
 
         Ok(())

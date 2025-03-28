@@ -148,9 +148,14 @@ fn rust_sdk_cross_ctx_account() {
         .map(|e| format!("{}::{}", e.module, e.name.as_str()))
         .collect::<Vec<_>>();
     dbg!(&exports);
-    assert!(lib.exports().any(|export| {
-        export.module.to_string() == expected_module && export.name.as_str() == expected_function
-    }));
+    assert!(
+        lib.exports().any(|export| {
+            export.module.to_string() == expected_module
+                && export.name.as_str() == expected_function
+        }),
+        "expected one of the exports to contain module '{expected_module}' and function \
+         '{expected_function}"
+    );
     // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/441 is resolved
     //
     // Test that the package loads
