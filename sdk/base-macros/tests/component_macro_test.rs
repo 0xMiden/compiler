@@ -1,16 +1,6 @@
 extern crate miden_base_macros;
+use miden_base::{StorageMap, Value};
 use miden_base_macros::component;
-
-// TODO: can we pull the real storage types from Miden SDK?
-
-// Mocks for now
-pub struct Value {
-    pub slot: u8,
-}
-
-pub struct StorageMap {
-    pub slot: u8,
-}
 
 #[component]
 struct TestComponent {

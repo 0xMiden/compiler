@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use miden_objects::account::{
-    AccountComponentMetadata, AccountType, MapRepresentation, StorageEntry, StoragePlaceholder,
-    WordRepresentation,
+    AccountComponentMetadata, AccountType, MapRepresentation, StorageEntry, StorageValueName,
+    TemplateType, WordRepresentation,
 };
 use semver::Version;
 
@@ -44,43 +44,46 @@ impl AccountComponentMetadataBuilder {
         description: Option<String>,
         slot: u8,
         field_type: &syn::Type,
-        field_type_str: Option<String>,
+        field_type_attr: Option<String>,
     ) {
-        // TODO: store field_type_str
         let type_path = if let syn::Type::Path(type_path) = field_type {
-            Some(type_path)
+            type_path
         } else {
-            None
+            panic!("failed to get type path {:?}", field_type)
         };
 
-        if let Some(type_path) = type_path {
-            if let Some(segment) = type_path.path.segments.last() {
-                let type_name = segment.ident.to_string();
-
-                match type_name.as_str() {
-                    "StorageMap" => {
-                        if let Ok(entry) = StorageEntry::new_map(
-                            name.to_string(),
-                            description,
-                            slot,
-                            MapRepresentation::Template(StoragePlaceholder::new("key").unwrap()),
-                        ) {
-                            self.storage.push(entry);
-                        }
+        if let Some(segment) = type_path.path.segments.last() {
+            let type_name = segment.ident.to_string();
+            let storage_value_name =
+                StorageValueName::new(name).expect("well formed storage value name");
+            match type_name.as_str() {
+                "StorageMap" => {
+                    let mut map_repr = MapRepresentation::new(vec![], storage_value_name);
+                    if let Some(description) = description {
+                        map_repr = map_repr.with_description(description);
                     }
-                    "Value" => {
-                        self.storage.push(StorageEntry::new_value(
-                            name.to_string(),
-                            description,
-                            slot,
-                            WordRepresentation::Template(
-                                StoragePlaceholder::new("map_key").unwrap(),
-                            ),
-                        ));
-                    }
-                    _ => panic!("unexpected field type: {}", type_name),
+                    self.storage.push(StorageEntry::new_map(slot, map_repr));
                 }
+                "Value" => {
+                    let r#type = if let Some(field_type) = field_type_attr {
+                        TemplateType::new(&field_type)
+                            .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
+                    } else {
+                        TemplateType::native_word()
+                    };
+                    self.storage.push(StorageEntry::new_value(
+                        slot,
+                        WordRepresentation::Template {
+                            r#type,
+                            name: storage_value_name,
+                            description,
+                        },
+                    ));
+                }
+                _ => panic!("unexpected field type: {}", type_name),
             }
+        } else {
+            panic!("failed to get last segment of the type path {:?}", type_path)
         }
     }
 
