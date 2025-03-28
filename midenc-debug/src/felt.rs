@@ -288,8 +288,8 @@ impl<const N: usize> PopFromStack for [u8; N] {
 ///
 /// [[{b0, ..b3}, {b4, ..b7}, {b8..b11}, {b12, ..b15}], ..]
 ///
-/// In other words, it produces words that when placed on the stack and written to memory
-/// word-by-word, that memory will be laid out in the correct byte order.
+/// In short, it produces words that when placed on the stack and written to memory word-by-word,
+/// the original bytes will be laid out in Miden's memory in the correct order.
 pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
     // 1. Chunk bytes up into felts
     let mut iter = bytes.iter().array_chunks::<4>();

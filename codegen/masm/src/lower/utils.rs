@@ -553,8 +553,7 @@ mod tests {
 
         // Obtain liveness
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
-        let liveness =
-            analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
         let link_info = LinkInfo::new(builtin::ComponentId {
@@ -569,9 +568,7 @@ mod tests {
 
         // Instantiate block emitter
         let mut invoked = Default::default();
-        let function = function_ref.borrow();
         let emitter = BlockEmitter {
-            function: &function,
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -580,6 +577,7 @@ mod tests {
         };
 
         // Lower input
+        let function = function_ref.borrow();
         let entry = function.entry_block();
         let body = emitter.emit(&entry.borrow());
 
@@ -654,8 +652,7 @@ mod tests {
 
         // Obtain liveness
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
-        let liveness =
-            analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
         let link_info = LinkInfo::new(builtin::ComponentId {
@@ -670,9 +667,7 @@ mod tests {
 
         // Instantiate block emitter
         let mut invoked = Default::default();
-        let function = function_ref.borrow();
         let emitter = BlockEmitter {
-            function: &function,
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -681,6 +676,7 @@ mod tests {
         };
 
         // Lower input
+        let function = function_ref.borrow();
         let entry = function.entry_block();
         let body = emitter.emit(&entry.borrow());
 
@@ -874,8 +870,7 @@ mod tests {
 
         // Obtain liveness
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
-        let liveness =
-            analysis_manager.get_analysis_for::<LivenessAnalysis, builtin::Function>()?;
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
         let link_info = LinkInfo::new(builtin::ComponentId {
@@ -890,9 +885,7 @@ mod tests {
 
         // Instantiate block emitter
         let mut invoked = Default::default();
-        let function = function_ref.borrow();
         let emitter = BlockEmitter {
-            function: &function,
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -901,6 +894,7 @@ mod tests {
         };
 
         // Lower input
+        let function = function_ref.borrow();
         let entry = function.entry_block();
         let body = emitter.emit(&entry.borrow());
 

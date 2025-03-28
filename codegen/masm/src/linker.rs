@@ -1,7 +1,9 @@
 use midenc_hir::{
     dialects::builtin::{self, DataSegmentError, SegmentRef},
-    Alignable, FxHashMap,
+    Alignable, FxHashMap, Symbol,
 };
+
+const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 
 pub struct LinkInfo {
     component: builtin::ComponentId,
@@ -19,7 +21,7 @@ impl LinkInfo {
             globals_layout: Default::default(),
             segment_layout: Default::default(),
             reserved_memory_pages: 0,
-            page_size: 2u32.pow(16),
+            page_size: DEFAULT_PAGE_SIZE,
         }
     }
 
@@ -70,7 +72,9 @@ pub struct Linker {
 
 impl Default for Linker {
     fn default() -> Self {
-        Self::new(0, 2u32.pow(16))
+        // Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
+        const DEFAULT_RESERVATION: u32 = 16;
+        Self::new(DEFAULT_RESERVATION, DEFAULT_PAGE_SIZE)
     }
 }
 
@@ -80,7 +84,7 @@ impl Linker {
             assert!(page_size.is_power_of_two());
             page_size
         } else {
-            2u32.pow(16)
+            DEFAULT_PAGE_SIZE
         };
         Self {
             globals_layout: GlobalVariableLayout::new(reserved_memory_pages * page_size, page_size),
@@ -122,6 +126,9 @@ impl Linker {
                     }
 
                     if let Some(global) = item.downcast_ref::<builtin::GlobalVariable>() {
+                        if global.is_declaration() {
+                            continue;
+                        }
                         self.globals_layout.insert(global);
                     }
                 }
@@ -131,7 +138,7 @@ impl Linker {
         // 3. Layout global variables in the next page following the last data segment
         let next_available_offset = self.segment_layout.next_available_offset();
         self.globals_layout.global_table_offset = core::cmp::max(
-            (self.reserved_memory_pages * self.page_size).next_multiple_of(32),
+            (self.reserved_memory_pages * self.page_size).next_multiple_of(4),
             next_available_offset,
         );
 
@@ -199,7 +206,6 @@ impl GlobalVariableLayout {
     /// Get the statically-allocated address at which the global variable `gv` is to be placed.
     ///
     /// This function returns `None` if the given global variable is unresolvable.
-    #[allow(unused)]
     pub fn get_computed_addr(&self, gv: builtin::GlobalVariableRef) -> Option<u32> {
         self.offsets.get(&gv).copied()
     }

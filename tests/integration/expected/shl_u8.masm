@@ -1,3 +1,21 @@
+# mod root_ns:root@1.0.0
+
+export.init
+
+        push.2162688
+        exec.::intrinsics::mem::heap_init
+        push.1048576
+        u32assert
+        mem_store.262144
+        push.1048576
+        u32assert
+        mem_store.262145
+        push.1048576
+        u32assert
+        mem_store.262146
+end
+
+
 # mod root_ns:root@1.0.0::test_rust_b211bf2251e0ca4732fe0f4b9390e5838c61a0ef97c8b47f099f8c5ab3657e7f
 
 export.entrypoint

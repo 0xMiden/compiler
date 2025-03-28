@@ -6,7 +6,7 @@ use std::{
 };
 
 use miden_assembly::Library as CompiledLibrary;
-use miden_core::{Program, StackInputs, Word};
+use miden_core::{debuginfo::SourceManagerExt, Program, StackInputs, Word};
 use miden_mast_package::{
     Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
     MemDependencyResolverByDigest, ResolvedDependency,
@@ -151,7 +151,6 @@ impl Executor {
         let process_state: ProcessState = (&process).into();
         let root_context = process_state.ctx();
         let result = process.execute(program, &mut host);
-        #[allow(clippy::useless_asref)]
         let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
         let mut iter = VmStateIterator::new(process, result);
         let mut callstack = CallStack::new(trace_events);
@@ -188,6 +187,29 @@ impl Executor {
             if let Err(err) = step {
                 render_execution_error(err, &executor, session);
             }
+
+            /*
+                // Uncomment if debugging an integration test that uses the executor,
+                // and you want to get some better information about where things went
+                // wrong. In the future I will try to improve our test runner's output
+                // to incorporate this information instead of what we currently get
+                let step = step.unwrap();
+                dbg!(step.op.as_ref());
+                dbg!(step.asmop.as_ref());
+                let line_number = step.asmop.as_ref().and_then(|asmop| {
+                    asmop.as_ref().location().map(|loc| {
+                        let path = loc.path();
+                        let file = session
+                            .diagnostics
+                            .source_manager_ref()
+                            .load_file(std::path::Path::new(path.as_ref()))
+                            .unwrap();
+                        file.content().line_index(loc.start)
+                    })
+                });
+                dbg!(line_number.map(|li| li.number().get()));
+                dbg!(&step.stack);
+            */
 
             /*
             if let Some(op) = state.op {

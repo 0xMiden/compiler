@@ -6,6 +6,25 @@ export.process-felt
 end
 
 
+export.init
+
+        push.2162688
+        exec.::intrinsics::mem::heap_init
+        push.5121323707957172480
+        push.16385291266171272914
+        push.3612753469884014922
+        push.8597705872349702967
+        adv.push_mapval
+        push.262144
+        push.3
+        exec.::std::mem::pipe_preimage_to_memory
+        drop
+        push.1048576
+        u32assert
+        mem_store.262144
+end
+
+
 # mod miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
 
 proc.__wasm_call_ctors

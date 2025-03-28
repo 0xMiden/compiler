@@ -1,11 +1,11 @@
 public builtin.function @test_wrapper() {
 ^block4:
-    builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : (ptr u8)
+    v0 = builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : (ptr u8)
     v1 = hir.bitcast v0 : (ptr i32);
     v2 = hir.load v1 : i32;
     v3 = arith.constant 9 : i32;
     v4 = arith.add v2, v3 : i32 #[overflow = wrapping];
-    builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : (ptr u8)
+    v5 = builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : (ptr u8)
     v6 = hir.bitcast v5 : (ptr i32);
     hir.store v6, v4;
     cf.br ^block5;

@@ -1,3 +1,30 @@
+# mod root_ns:root@1.0.0
+
+export.init
+
+        push.2162688
+        exec.::intrinsics::mem::heap_init
+        push.2552035692683956824
+        push.5323511717551755022
+        push.6168074652703322390
+        push.2298154438505521656
+        adv.push_mapval
+        push.262144
+        push.3
+        exec.::std::mem::pipe_preimage_to_memory
+        drop
+        push.1048576
+        u32assert
+        mem_store.262144
+        push.1048616
+        u32assert
+        mem_store.262145
+        push.1048624
+        u32assert
+        mem_store.262146
+end
+
+
 # mod root_ns:root@1.0.0::test_rust_d63291a98b435c53f58385d5782fb46f0b0b78bee8e860843e7223106d66f7d6
 
 export.sum_arr
