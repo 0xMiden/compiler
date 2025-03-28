@@ -18,7 +18,7 @@ pub struct AccountComponentMetadataBuilder {
     version: Version,
 
     /// A set of supported target account types for this component.
-    targets: BTreeSet<AccountType>,
+    supported_types: BTreeSet<AccountType>,
 
     /// A list of storage entries defining the component's storage layout and initialization
     /// values.
@@ -33,7 +33,7 @@ impl AccountComponentMetadataBuilder {
             name,
             description: String::new(),
             version: Version::parse("0.0.1").unwrap(),
-            targets: BTreeSet::new(),
+            supported_types: BTreeSet::new(),
             storage: Vec::new(),
         }
     }
@@ -92,7 +92,7 @@ impl AccountComponentMetadataBuilder {
             self.name,
             self.description,
             self.version,
-            self.targets,
+            self.supported_types,
             self.storage,
         )
         .expect("failed to build AccountComponentMetadata")
