@@ -27,6 +27,25 @@ pub struct LinkOutput {
     pub packages: BTreeMap<Symbol, Arc<miden_mast_package::Package>>,
 }
 
+impl LinkOutput {
+    // Load link libraries from the given [midenc_session::Session]
+    pub fn link_libraries_from(&mut self, session: &Session) -> Result<(), Report> {
+        assert!(self.mast.is_empty(), "link libraries already loaded!");
+        for link_lib in session.options.link_libraries.iter() {
+            log::debug!(
+                "registering link library '{}' ({}, from {:#?}) with linker",
+                link_lib.name,
+                link_lib.kind,
+                link_lib.path.as_ref()
+            );
+            let lib = link_lib.load(session).map(Arc::new)?;
+            self.mast.push(lib);
+        }
+
+        Ok(())
+    }
+}
+
 /// This stage gathers together the parsed inputs, constructs a [World] representing all of the
 /// parsed non-Wasm inputs and specified link libraries, and then parses the Wasm input(s) in the
 /// context of that world. If successful, there are no undefined symbols present in the program.
@@ -94,18 +113,6 @@ impl Stage for LinkStage {
             }
         }
 
-        // Load link libraries now
-        for link_lib in context.session().options.link_libraries.iter() {
-            log::debug!(
-                "registering link library '{}' ({}, from {:#?}) with linker",
-                link_lib.name,
-                link_lib.kind,
-                link_lib.path.as_ref()
-            );
-            let lib = link_lib.load(context.session()).map(Arc::new)?;
-            mast.push(lib);
-        }
-
         // Parse and translate the component WebAssembly using the constructed World
         let component_wasm =
             component_wasm.ok_or_else(|| Report::msg("expected at least one wasm input"))?;
@@ -124,6 +131,16 @@ impl Stage for LinkStage {
             }
         };
 
+        let mut link_output = LinkOutput {
+            world,
+            component,
+            masm,
+            mast: Vec::with_capacity(context.session().options.link_libraries.len()),
+            packages,
+        };
+
+        link_output.link_libraries_from(context.session())?;
+
         if context.session().parse_only() {
             log::debug!("stopping compiler early (parse-only=true)");
             return Err(CompilerStopped.into());
@@ -135,13 +152,7 @@ impl Stage for LinkStage {
             return Err(CompilerStopped.into());
         }
 
-        Ok(LinkOutput {
-            world,
-            component,
-            masm,
-            mast,
-            packages,
-        })
+        Ok(link_output)
     }
 }
 

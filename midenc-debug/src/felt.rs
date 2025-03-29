@@ -1,280 +1,612 @@
 use std::collections::VecDeque;
 
-use miden_core::StarkField;
+use miden_core::{FieldElement, StarkField, Word};
 use miden_processor::Felt as RawFelt;
+use midenc_hir::{smallvec, SmallVec};
 use proptest::{
     arbitrary::Arbitrary,
     strategy::{BoxedStrategy, Strategy},
 };
 use serde::Deserialize;
 
-pub trait PushToStack: Sized {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        let mut ptr = self as *const Self as *const u8;
-        let mut num_bytes = core::mem::size_of::<Self>();
-        let mut buf = Vec::with_capacity(num_bytes / core::mem::size_of::<u32>());
-        while num_bytes > 0 {
-            let mut next = [0u8; 4];
-            let consume = core::cmp::min(4, num_bytes);
-            unsafe {
-                ptr.copy_to_nonoverlapping(next.as_mut_ptr(), consume);
-                ptr = ptr.byte_add(consume);
+pub trait ToMidenRepr {
+    /// Convert this type into its raw byte representation
+    ///
+    /// The order of bytes in the resulting vector should be little-endian, i.e. the least
+    /// significant bytes come first.
+    fn to_bytes(&self) -> SmallVec<[u8; 16]>;
+    /// Convert this type into one or more field elements, where the order of the elements is such
+    /// that the byte representation of `self` is in little-endian order, i.e. the least significant
+    /// bytes come first.
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        let bytes = self.to_bytes();
+        let num_felts = bytes.len().next_multiple_of(4) / 4;
+        let mut felts = SmallVec::<[RawFelt; 4]>::with_capacity(num_felts);
+        let mut chunks = bytes.into_iter().array_chunks::<4>();
+        for chunk in chunks.by_ref() {
+            felts.push(RawFelt::new(u32::from_ne_bytes(chunk) as u64));
+        }
+        if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
+            let mut chunk = [0u8; 4];
+            for (i, byte) in remainder.enumerate() {
+                chunk[i] = byte;
             }
-            num_bytes -= consume;
-            buf.push(RawFelt::new(u32::from_be_bytes(next) as u64));
+            felts.push(RawFelt::new(u32::from_ne_bytes(chunk) as u64));
         }
-
-        for item in buf.into_iter().rev() {
-            stack.push(item);
-        }
+        felts
     }
-}
-
-pub trait PopFromStack: Sized {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        use core::mem::MaybeUninit;
-
-        let mut num_bytes = core::mem::size_of::<Self>();
-        let mut result = MaybeUninit::<Self>::uninit();
-        let mut ptr = result.as_mut_ptr() as *mut u8;
-        while num_bytes > 0 {
-            let next = stack.pop_front().expect("expected more operand stack elements");
-            let next_bytes = (next.0.as_int() as u32).to_be_bytes();
-            let consume = core::cmp::min(4, num_bytes);
-            unsafe {
-                next_bytes.as_ptr().copy_to_nonoverlapping(ptr, consume);
-                ptr = ptr.byte_add(consume);
+    /// Convert this type into one or more words, zero-padding as needed, such that:
+    ///
+    /// * The field elements within each word is in little-endian order, i.e. the least significant
+    ///   bytes of come first.
+    /// * Each word, if pushed on the operand stack element-by-element, would leave the element
+    ///   with the most significant bytes on top of the stack (including padding)
+    fn to_words(&self) -> SmallVec<[Word; 1]> {
+        let felts = self.to_felts();
+        let num_words = felts.len().next_multiple_of(4) / 4;
+        let mut words = SmallVec::<[Word; 1]>::with_capacity(num_words);
+        let mut chunks = felts.into_iter().array_chunks::<4>();
+        for mut word in chunks.by_ref() {
+            word.reverse();
+            words.push(word);
+        }
+        if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
+            let mut word = [RawFelt::ZERO; 4];
+            for (i, felt) in remainder.enumerate() {
+                word[i] = felt;
             }
-            num_bytes -= consume;
+            word.reverse();
+            words.push(word);
         }
-        Some(unsafe { result.assume_init() })
+        words
     }
-}
 
-impl PushToStack for bool {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u64))
+    /// Push this value on the given operand stack using [Self::to_felts] representation
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        let felts = self.to_felts();
+        for felt in felts.into_iter().rev() {
+            stack.push(felt);
+        }
     }
-}
-impl PopFromStack for bool {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() != 0)
-    }
-}
 
-impl PushToStack for u8 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u64))
-    }
-}
-impl PopFromStack for u8 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as u8)
-    }
-}
-
-impl PushToStack for i8 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u8 as u64))
-    }
-}
-impl PopFromStack for i8 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as i8)
-    }
-}
-
-impl PushToStack for u16 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u64))
-    }
-}
-impl PopFromStack for u16 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as u16)
-    }
-}
-
-impl PushToStack for i16 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u16 as u64))
-    }
-}
-impl PopFromStack for i16 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as i16)
-    }
-}
-
-impl PushToStack for u32 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u64))
-    }
-}
-impl PopFromStack for u32 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as u32)
-    }
-}
-
-impl PushToStack for i32 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(RawFelt::new(*self as u32 as u64))
-    }
-}
-impl PopFromStack for i32 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front().unwrap().0.as_int() as i32)
-    }
-}
-
-impl PushToStack for u64 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        let lo = self.rem_euclid(2u64.pow(32));
-        let hi = self.div_euclid(2u64.pow(32));
-        stack.push(RawFelt::new(lo));
-        stack.push(RawFelt::new(hi));
-    }
-}
-impl PopFromStack for u64 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        let hi = stack.pop_front().unwrap().0.as_int() * 2u64.pow(32);
-        let lo = stack.pop_front().unwrap().0.as_int();
-        Some(hi + lo)
-    }
-}
-
-impl PushToStack for i64 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        (*self as u64).try_push(stack)
-    }
-}
-impl PopFromStack for i64 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        u64::try_pop(stack).map(|value| value as i64)
-    }
-}
-
-impl PushToStack for u128 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        let lo = self.rem_euclid(2u128.pow(64));
-        let hi = self.div_euclid(2u128.pow(64));
-        (lo as u64).try_push(stack);
-        (hi as u64).try_push(stack);
-    }
-}
-impl PopFromStack for u128 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        let hi = (u64::try_pop(stack).unwrap() as u128) * 2u128.pow(64);
-        let lo = u64::try_pop(stack).unwrap() as u128;
-        Some(hi + lo)
-    }
-}
-
-impl PushToStack for i128 {
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        (*self as u128).try_push(stack)
-    }
-}
-impl PopFromStack for i128 {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        u128::try_pop(stack).map(|value| value as i128)
-    }
-}
-
-impl PushToStack for RawFelt {
-    #[inline(always)]
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(*self);
-    }
-}
-impl PopFromStack for RawFelt {
-    #[inline(always)]
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        Some(stack.pop_front()?.0)
-    }
-}
-
-impl PushToStack for [RawFelt; 4] {
-    #[inline(always)]
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.extend(self.iter().copied().rev());
-    }
-}
-impl PopFromStack for [RawFelt; 4] {
-    #[inline(always)]
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        let a = stack.pop_front()?;
-        let b = stack.pop_front()?;
-        let c = stack.pop_front()?;
-        let d = stack.pop_front()?;
-        Some([a.0, b.0, c.0, d.0])
-    }
-}
-
-impl PushToStack for Felt {
-    #[inline(always)]
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.push(self.0);
-    }
-}
-impl PopFromStack for Felt {
-    #[inline(always)]
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        stack.pop_front()
-    }
-}
-
-impl PushToStack for [Felt; 4] {
-    #[inline(always)]
-    fn try_push(&self, stack: &mut Vec<RawFelt>) {
-        stack.extend(self.iter().map(|f| f.0).rev());
-    }
-}
-impl PopFromStack for [Felt; 4] {
-    #[inline(always)]
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        let a = stack.pop_front()?;
-        let b = stack.pop_front()?;
-        let c = stack.pop_front()?;
-        let d = stack.pop_front()?;
-        Some([a, b, c, d])
-    }
-}
-
-impl<const N: usize> PopFromStack for [u8; N] {
-    fn try_pop(stack: &mut VecDeque<Felt>) -> Option<Self> {
-        use midenc_hir::FieldElement;
-        let mut out = [0u8; N];
-
-        let chunk_size = (out.len() / 4) + (out.len() % 4 > 0) as usize;
-        for i in 0..chunk_size {
-            let elem: u32 = PopFromStack::try_pop(stack)?;
-            let bytes = elem.to_le_bytes();
-            let offset = i * 4;
-            if offset + 3 < N {
-                out[offset] = bytes[0];
-                out[offset + 1] = bytes[1];
-                out[offset + 2] = bytes[2];
-                out[offset + 3] = bytes[3];
-            } else if offset + 2 < N {
-                out[offset] = bytes[0];
-                out[offset + 1] = bytes[1];
-                out[offset + 2] = bytes[2];
-                break;
-            } else if offset + 1 < N {
-                out[offset] = bytes[0];
-                out[offset + 1] = bytes[1];
-                break;
-            } else if offset < N {
-                out[offset] = bytes[0];
-                break;
-            } else {
-                break;
+    /// Push this value in its [Self::to_words] representation, on the given stack.
+    ///
+    /// This function is designed for encoding values that will be placed on the advice stack and
+    /// copied into Miden VM memory by the compiler-emitted test harness.
+    ///
+    /// Returns the number of words that were pushed on the stack
+    fn push_words_to_advice_stack(&self, stack: &mut Vec<RawFelt>) -> usize {
+        let words = self.to_words();
+        let num_words = words.len();
+        for word in words.into_iter().rev() {
+            for felt in word.into_iter() {
+                stack.push(felt);
             }
         }
+        num_words
+    }
+}
 
-        Some(out)
+pub trait FromMidenRepr: Sized {
+    /// Returns the size of this type as encoded by [ToMidenRepr::to_felts]
+    fn size_in_felts() -> usize;
+    /// Extract a value of this type from `bytes`, where:
+    ///
+    /// * It is assumed that bytes is always padded out to 4 byte alignment
+    /// * It is assumed that the bytes are in little-endian order, as encoded by [ToMidenRepr]
+    fn from_bytes(bytes: &[u8]) -> Self;
+    /// Extract a value of this type as encoded in a vector of field elements, where:
+    ///
+    /// * The order of the field elements is little-endian, i.e. the element holding the least
+    ///   significant bytes comes first.
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        let mut bytes = SmallVec::<[u8; 16]>::with_capacity(felts.len() * 4);
+        for felt in felts {
+            let chunk = (felt.as_int() as u32).to_ne_bytes();
+            bytes.extend(chunk);
+        }
+        Self::from_bytes(&bytes)
+    }
+    /// Extract a value of this type as encoded in a vector of words, where:
+    ///
+    /// * The order of the words is little-endian, i.e. the word holding the least significant
+    ///   bytes comes first.
+    /// * The order of the field elements in each word is in big-endian order, i.e. the element
+    ///   with the most significant byte is at the start of the word, and the element with the
+    ///   least significant byte is at the end of the word. This corresponds to the order in
+    ///   which elements are placed on the operand stack when preparing to read or write them
+    ///   from Miden's memory.
+    fn from_words(words: &[Word]) -> Self {
+        let mut felts = SmallVec::<[RawFelt; 4]>::with_capacity(words.len() * 4);
+        for word in words {
+            for felt in word.iter().copied().rev() {
+                felts.push(felt);
+            }
+        }
+        Self::from_felts(&felts)
+    }
+
+    /// Pop a value of this type from `stack` based on the canonical representation of this type
+    /// on the operand stack when writing it to memory (and as read from memory).
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        let needed = Self::size_in_felts();
+        let mut felts = SmallVec::<[RawFelt; 4]>::with_capacity(needed);
+        for _ in 0..needed {
+            felts.push(stack.pop().unwrap());
+        }
+        Self::from_felts(&felts)
+    }
+}
+
+impl ToMidenRepr for bool {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        smallvec![*self as u8]
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u64));
+    }
+}
+
+impl FromMidenRepr for bool {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        match bytes[0] {
+            0 => false,
+            1 => true,
+            n => panic!("invalid byte representation for boolean: {n:0x}"),
+        }
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        match felts[0].as_int() {
+            0 => false,
+            1 => true,
+            n => panic!("invalid byte representation for boolean: {n:0x}"),
+        }
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        match stack.pop().unwrap().as_int() {
+            0 => false,
+            1 => true,
+            n => panic!("invalid byte representation for boolean: {n:0x}"),
+        }
+    }
+}
+
+impl ToMidenRepr for u8 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        smallvec![*self]
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u64));
+    }
+}
+
+impl FromMidenRepr for u8 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    #[inline(always)]
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0]
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u8
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u8
+    }
+}
+
+impl ToMidenRepr for i8 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        smallvec![*self as u8]
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u8 as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u8 as u64));
+    }
+}
+
+impl FromMidenRepr for i8 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    #[inline(always)]
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0] as i8
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u8 as i8
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u8 as i8
+    }
+}
+
+impl ToMidenRepr for u16 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_ne_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u64));
+    }
+}
+
+impl FromMidenRepr for u16 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 2);
+        u16::from_ne_bytes([bytes[0], bytes[1]])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u16
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u16
+    }
+}
+
+impl ToMidenRepr for i16 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_ne_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u16 as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u16 as u64));
+    }
+}
+
+impl FromMidenRepr for i16 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 2);
+        i16::from_ne_bytes([bytes[0], bytes[1]])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u16 as i16
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u16 as i16
+    }
+}
+
+impl ToMidenRepr for u32 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_ne_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u64));
+    }
+}
+
+impl FromMidenRepr for u32 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 4);
+        u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u32
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u32
+    }
+}
+
+impl ToMidenRepr for i32 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_ne_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![RawFelt::new(*self as u32 as u64)]
+    }
+
+    fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
+        stack.push(RawFelt::new(*self as u32 as u64));
+    }
+}
+
+impl FromMidenRepr for i32 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 4);
+        i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0].as_int() as u32 as i32
+    }
+
+    fn pop_from_stack(stack: &mut Vec<RawFelt>) -> Self {
+        stack.pop().unwrap().as_int() as u32 as i32
+    }
+}
+
+impl ToMidenRepr for u64 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_be_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        let bytes = self.to_be_bytes();
+        let hi = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let lo = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        smallvec![RawFelt::new(hi as u64), RawFelt::new(lo as u64)]
+    }
+}
+
+impl FromMidenRepr for u64 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        2
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 8);
+        u64::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        assert!(felts.len() >= 2);
+        let hi = (felts[0].as_int() as u32).to_be_bytes();
+        let lo = (felts[1].as_int() as u32).to_be_bytes();
+        u64::from_be_bytes([hi[0], hi[1], hi[2], hi[3], lo[0], lo[1], lo[2], lo[3]])
+    }
+}
+
+impl ToMidenRepr for i64 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_be_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        (*self as u64).to_felts()
+    }
+}
+
+impl FromMidenRepr for i64 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        2
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u64::from_bytes(bytes) as i64
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        u64::from_felts(felts) as i64
+    }
+}
+
+impl ToMidenRepr for u128 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_be_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        let bytes = self.to_be_bytes();
+        let hi_h =
+            RawFelt::new(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as u64);
+        let hi_l =
+            RawFelt::new(u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as u64);
+        let lo_h =
+            RawFelt::new(u32::from_be_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as u64);
+        let lo_l =
+            RawFelt::new(u32::from_be_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as u64);
+        smallvec![hi_h, hi_l, lo_h, lo_l]
+    }
+}
+
+impl FromMidenRepr for u128 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        4
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= 16);
+        u128::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        ])
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        assert!(felts.len() >= 4);
+        let hi_h = (felts[0].as_int() as u32).to_be_bytes();
+        let hi_l = (felts[1].as_int() as u32).to_be_bytes();
+        let lo_h = (felts[2].as_int() as u32).to_be_bytes();
+        let lo_l = (felts[3].as_int() as u32).to_be_bytes();
+        u128::from_be_bytes([
+            hi_h[0], hi_h[1], hi_h[2], hi_h[3], hi_l[0], hi_l[1], hi_l[2], hi_l[3], lo_h[0],
+            lo_h[1], lo_h[2], lo_h[3], lo_l[0], lo_l[1], lo_l[2], lo_l[3],
+        ])
+    }
+}
+
+impl ToMidenRepr for i128 {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(&self.to_be_bytes())
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        (*self as u128).to_felts()
+    }
+}
+
+impl FromMidenRepr for i128 {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        4
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u128::from_bytes(bytes) as i128
+    }
+
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        u128::from_felts(felts) as i128
+    }
+}
+
+impl ToMidenRepr for RawFelt {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        panic!("field elements have no canonical byte representation")
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![*self]
+    }
+
+    fn to_words(&self) -> SmallVec<[Word; 1]> {
+        let mut word = [RawFelt::ZERO; 4];
+        word[0] = *self;
+        smallvec![word]
+    }
+}
+
+impl FromMidenRepr for RawFelt {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        panic!("field elements have no canonical byte representation")
+    }
+
+    #[inline(always)]
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        felts[0]
+    }
+
+    #[inline(always)]
+    fn from_words(words: &[Word]) -> Self {
+        words[0][0]
+    }
+}
+
+impl ToMidenRepr for Felt {
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        panic!("field elements have no canonical byte representation")
+    }
+
+    fn to_felts(&self) -> SmallVec<[RawFelt; 4]> {
+        smallvec![self.0]
+    }
+
+    fn to_words(&self) -> SmallVec<[Word; 1]> {
+        let mut word = [RawFelt::ZERO; 4];
+        word[0] = self.0;
+        smallvec![word]
+    }
+}
+
+impl FromMidenRepr for Felt {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        1
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        panic!("field elements have no canonical byte representation")
+    }
+
+    #[inline(always)]
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        Felt(felts[0])
+    }
+
+    #[inline(always)]
+    fn from_words(words: &[Word]) -> Self {
+        Felt(words[0][0])
+    }
+}
+
+impl<const N: usize> ToMidenRepr for [u8; N] {
+    #[inline]
+    fn to_bytes(&self) -> SmallVec<[u8; 16]> {
+        SmallVec::from_slice(self)
+    }
+}
+
+impl<const N: usize> FromMidenRepr for [u8; N] {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        N.next_multiple_of(4) / 4
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= N, "insufficient bytes");
+        Self::try_from(&bytes[..N]).unwrap()
     }
 }
 
@@ -286,37 +618,45 @@ impl<const N: usize> PopFromStack for [u8; N] {
 ///
 /// This will produce a vector of words laid out like so:
 ///
-/// [[{b0, ..b3}, {b4, ..b7}, {b8..b11}, {b12, ..b15}], ..]
+/// [[{b12, ..b15}, {b8..b11}, {b4, ..b7}, {b0, ..b3}], [{b31, ..}, ..]]
 ///
 /// In short, it produces words that when placed on the stack and written to memory word-by-word,
 /// the original bytes will be laid out in Miden's memory in the correct order.
 pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
     // 1. Chunk bytes up into felts
     let mut iter = bytes.iter().array_chunks::<4>();
-    let buf_size = (bytes.len() / 4) + (bytes.len() % 4 > 0) as usize;
-    let padding = buf_size % 8;
-    let mut buf = Vec::with_capacity(buf_size + padding);
+    let padded_bytes = bytes.len().next_multiple_of(16);
+    let num_felts = padded_bytes / 4;
+    let mut buf = Vec::with_capacity(num_felts);
     for chunk in iter.by_ref() {
-        let n = u32::from_le_bytes([*chunk[0], *chunk[1], *chunk[2], *chunk[3]]);
+        let n = u32::from_ne_bytes([*chunk[0], *chunk[1], *chunk[2], *chunk[3]]);
         buf.push(n);
     }
     // Zero-pad the buffer to nearest whole element
-    if let Some(rest) = iter.into_remainder() {
+    if let Some(rest) = iter.into_remainder().filter(|r| r.len() > 0) {
         let mut n_buf = [0u8; 4];
         for (i, byte) in rest.into_iter().enumerate() {
             n_buf[i] = *byte;
         }
-        buf.push(u32::from_le_bytes(n_buf));
+        buf.push(u32::from_ne_bytes(n_buf));
     }
     // Zero-pad the buffer to nearest whole word
-    let padded_buf_size = buf_size + padding;
-    buf.resize(padded_buf_size, 0);
+    buf.resize(num_felts, 0);
     // Chunk into words, and push them in largest-address first order
-    let word_size = (padded_buf_size / 4) + (padded_buf_size % 4 > 0) as usize;
-    let mut words = Vec::with_capacity(word_size);
-    for mut word_chunk in buf.into_iter().map(|elem| RawFelt::new(elem as u64)).array_chunks::<4>()
-    {
-        words.push(word_chunk);
+    let num_words = num_felts / 4;
+    let mut words = Vec::with_capacity(num_words);
+    let mut iter = buf.into_iter().map(|elem| RawFelt::new(elem as u64)).array_chunks::<4>();
+    for mut word in iter.by_ref() {
+        word.reverse();
+        words.push(word);
+    }
+    if let Some(extra) = iter.into_remainder().filter(|r| r.len() > 0) {
+        let mut word = [RawFelt::ZERO; 4];
+        for (i, felt) in extra.enumerate() {
+            word[i] = felt;
+        }
+        word.reverse();
+        words.push(word);
     }
     words
 }
@@ -527,7 +867,145 @@ impl Arbitrary for Felt {
 mod tests {
     use std::collections::VecDeque;
 
-    use super::{bytes_to_words, PopFromStack};
+    use super::{bytes_to_words, FromMidenRepr, ToMidenRepr};
+
+    #[test]
+    fn bool_roundtrip() {
+        let encoded = true.to_bytes();
+        let decoded = <bool as FromMidenRepr>::from_bytes(&encoded);
+        assert!(decoded);
+
+        let encoded = true.to_felts();
+        let decoded = <bool as FromMidenRepr>::from_felts(&encoded);
+        assert!(decoded);
+
+        let encoded = true.to_words();
+        let decoded = <bool as FromMidenRepr>::from_words(&encoded);
+        assert!(decoded);
+
+        let mut stack = Vec::default();
+        true.push_to_operand_stack(&mut stack);
+        let popped = <bool as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert!(popped);
+    }
+
+    #[test]
+    fn u8_roundtrip() {
+        let encoded = u8::MAX.to_bytes();
+        let decoded = <u8 as FromMidenRepr>::from_bytes(&encoded);
+        assert_eq!(decoded, u8::MAX);
+
+        let encoded = u8::MAX.to_felts();
+        let decoded = <u8 as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, u8::MAX);
+
+        let encoded = u8::MAX.to_words();
+        let decoded = <u8 as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, u8::MAX);
+
+        let mut stack = Vec::default();
+        u8::MAX.push_to_operand_stack(&mut stack);
+        let popped = <u8 as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, u8::MAX);
+    }
+
+    #[test]
+    fn u16_roundtrip() {
+        let encoded = u16::MAX.to_bytes();
+        let decoded = <u16 as FromMidenRepr>::from_bytes(&encoded);
+        assert_eq!(decoded, u16::MAX);
+
+        let encoded = u16::MAX.to_felts();
+        let decoded = <u16 as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, u16::MAX);
+
+        let encoded = u16::MAX.to_words();
+        let decoded = <u16 as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, u16::MAX);
+
+        let mut stack = Vec::default();
+        u16::MAX.push_to_operand_stack(&mut stack);
+        let popped = <u16 as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, u16::MAX);
+    }
+
+    #[test]
+    fn u32_roundtrip() {
+        let encoded = u32::MAX.to_bytes();
+        let decoded = <u32 as FromMidenRepr>::from_bytes(&encoded);
+        assert_eq!(decoded, u32::MAX);
+
+        let encoded = u32::MAX.to_felts();
+        let decoded = <u32 as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, u32::MAX);
+
+        let encoded = u32::MAX.to_words();
+        let decoded = <u32 as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, u32::MAX);
+
+        let mut stack = Vec::default();
+        u32::MAX.push_to_operand_stack(&mut stack);
+        let popped = <u32 as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, u32::MAX);
+    }
+
+    #[test]
+    fn u64_roundtrip() {
+        let encoded = u64::MAX.to_bytes();
+        let decoded = <u64 as FromMidenRepr>::from_bytes(&encoded);
+        assert_eq!(decoded, u64::MAX);
+
+        let encoded = u64::MAX.to_felts();
+        let decoded = <u64 as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, u64::MAX);
+
+        let encoded = u64::MAX.to_words();
+        let decoded = <u64 as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, u64::MAX);
+
+        let mut stack = Vec::default();
+        u64::MAX.push_to_operand_stack(&mut stack);
+        let popped = <u64 as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, u64::MAX);
+    }
+
+    #[test]
+    fn u128_roundtrip() {
+        let encoded = u128::MAX.to_bytes();
+        let decoded = <u128 as FromMidenRepr>::from_bytes(&encoded);
+        assert_eq!(decoded, u128::MAX);
+
+        let encoded = u128::MAX.to_felts();
+        let decoded = <u128 as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, u128::MAX);
+
+        let encoded = u128::MAX.to_words();
+        let decoded = <u128 as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, u128::MAX);
+
+        let mut stack = Vec::default();
+        u128::MAX.push_to_operand_stack(&mut stack);
+        let popped = <u128 as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, u128::MAX);
+    }
+
+    #[test]
+    fn byte_array_roundtrip() {
+        let bytes = [0, 1, 2, 3, 4, 5, 6, 7];
+
+        let encoded = bytes.to_felts();
+        let decoded = <[u8; 8] as FromMidenRepr>::from_felts(&encoded);
+        assert_eq!(decoded, bytes);
+
+        let encoded = bytes.to_words();
+        let decoded = <[u8; 8] as FromMidenRepr>::from_words(&encoded);
+        assert_eq!(decoded, bytes);
+
+        let mut stack = Vec::default();
+        bytes.push_to_operand_stack(&mut stack);
+        let popped = <[u8; 8] as FromMidenRepr>::pop_from_stack(&mut stack);
+        assert_eq!(popped, bytes);
+    }
 
     #[test]
     fn bytes_to_words_test() {
@@ -537,10 +1015,15 @@ mod tests {
         ];
         let words = bytes_to_words(&bytes);
         assert_eq!(words.len(), 2);
-        assert_eq!(words[0][0].as_int() as u32, u32::from_le_bytes([1, 2, 3, 4]));
-        assert_eq!(words[0][1].as_int() as u32, u32::from_le_bytes([5, 6, 7, 8]));
-        assert_eq!(words[0][2].as_int() as u32, u32::from_le_bytes([9, 10, 11, 12]));
-        assert_eq!(words[0][3].as_int() as u32, u32::from_le_bytes([13, 14, 15, 16]));
+        // Words should be in little-endian order, elements of the word should be in big-endian
+        assert_eq!(words[0][3].as_int() as u32, u32::from_ne_bytes([1, 2, 3, 4]));
+        assert_eq!(words[0][2].as_int() as u32, u32::from_ne_bytes([5, 6, 7, 8]));
+        assert_eq!(words[0][1].as_int() as u32, u32::from_ne_bytes([9, 10, 11, 12]));
+        assert_eq!(words[0][0].as_int() as u32, u32::from_ne_bytes([13, 14, 15, 16]));
+
+        // Make sure bytes_to_words and to_words agree
+        let to_words_output = bytes.to_words();
+        assert_eq!(words.as_slice(), to_words_output.as_slice());
     }
 
     #[test]
@@ -550,8 +1033,7 @@ mod tests {
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let words = bytes_to_words(&bytes);
-        let mut stack = VecDeque::from_iter(words.into_iter().flatten().map(super::Felt));
-        let out: [u8; 32] = PopFromStack::try_pop(&mut stack).unwrap();
+        let out = <[u8; 32] as FromMidenRepr>::from_words(&words);
         assert_eq!(&out, &bytes);
     }
 }

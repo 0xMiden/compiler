@@ -4,7 +4,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use miden_core::Felt;
-use midenc_debug::{Executor, PopFromStack};
+use midenc_debug::{Executor, FromMidenRepr};
 use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
@@ -23,9 +23,9 @@ pub fn run_masm_vs_rust<T>(
     session: &Session,
 ) -> Result<(), TestCaseError>
 where
-    T: Clone + PopFromStack + std::cmp::PartialEq + std::fmt::Debug,
+    T: Clone + FromMidenRepr + PartialEq + std::fmt::Debug,
 {
-    let exec = Executor::for_package(package, args.to_vec(), session)
+    let exec = Executor::for_package(package, args.iter().copied(), session)
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let output = exec.execute_into(&package.unwrap_program(), session);
     std::dbg!(&output);

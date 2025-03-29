@@ -1,5 +1,5 @@
 use expect_test::expect_file;
-use midenc_debug::PushToStack;
+use midenc_debug::ToMidenRepr;
 use proptest::{
     prelude::*,
     test_runner::{TestError, TestRunner},
@@ -37,8 +37,9 @@ macro_rules! test_bin_op {
                         let rs_out = a $op b;
                         dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        PushToStack::try_push(&b, &mut args);
-                        PushToStack::try_push(&a, &mut args);
+                        b.push_to_operand_stack(&mut args);
+                        a.push_to_operand_stack(&mut args);
+                        dbg!(&args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -76,7 +77,7 @@ macro_rules! test_unary_op {
                         let rs_out = $op a;
                         dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.try_push(&mut args);
+                        a.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -115,8 +116,8 @@ macro_rules! test_func_two_arg {
                         let rust_out = $func(a, b);
                         dbg!(&rust_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        b.try_push(&mut args);
-                        a.try_push(&mut args);
+                        b.push_to_operand_stack(&mut args);
+                        a.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rust_out, &package, &args, &test.session)
                     });
                 match res {
@@ -301,9 +302,9 @@ test_int_op!(shl, <<, i8, 0..i8::MAX, 0u8..8);
 
 test_int_op!(shr, >>, i64, i64::MIN..=i64::MAX, 0u64..=63);
 test_int_op!(shr, >>, u64, 0..=u64::MAX, 0u64..=63);
-test_int_op!(shr, >>, u32, 0..u32::MAX, 0..32);
-test_int_op!(shr, >>, u16, 0..u16::MAX, 0..16);
-test_int_op!(shr, >>, u8, 0..u8::MAX, 0..8);
+test_int_op!(shr, >>, u32, 0..u32::MAX, 0u32..32);
+test_int_op!(shr, >>, u16, 0..u16::MAX, 0u32..16);
+test_int_op!(shr, >>, u8, 0..u8::MAX, 0u32..8);
 // # The following tests use small signed operands which we don't fully support yet
 //test_int_op!(shr, >>, i8, i8::MIN..=i8::MAX, 0..=7);
 //test_int_op!(shr, >>, i16, i16::MIN..=i16::MAX, 0..=15);

@@ -3315,6 +3315,8 @@ dependencies = [
  "midenc-codegen-masm",
  "midenc-compile",
  "midenc-debug",
+ "midenc-dialect-arith",
+ "midenc-dialect-hir",
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",

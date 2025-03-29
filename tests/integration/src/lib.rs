@@ -6,8 +6,14 @@
 
 mod cargo_proj;
 mod compiler_test;
+pub mod testing;
 
-pub use compiler_test::{default_session, CargoTest, CompilerTest, CompilerTestBuilder, RustcTest};
+pub use self::{
+    compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest},
+    testing::setup::default_session,
+};
 
+#[cfg(test)]
+mod codegen;
 #[cfg(test)]
 mod rust_masm_tests;

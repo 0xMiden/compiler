@@ -21,7 +21,7 @@ pub use self::{
     config::DebuggerConfig,
     debug::*,
     exec::*,
-    felt::{bytes_to_words, Felt, Felt as TestFelt, PopFromStack, PushToStack},
+    felt::{bytes_to_words, Felt, Felt as TestFelt, FromMidenRepr, ToMidenRepr},
 };
 
 pub type ExecutionResult<T> = Result<T, Report>;
