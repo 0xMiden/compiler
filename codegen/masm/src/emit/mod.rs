@@ -738,18 +738,18 @@ mod tests {
             assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::PushU32(1))));
             assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::PushU32(2))));
             assert_eq!(&ops[2], &Op::Inst(Span::new(span, masm::Instruction::PushU8(3))));
-            assert_eq!(&ops[3], &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::ONE))));
             assert_eq!(
-                &ops[4],
+                &ops[3],
                 &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::ZERO)))
             );
+            assert_eq!(&ops[4], &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::ONE))));
             assert_eq!(
                 &ops[5],
-                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(3))))
+                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(u32::MAX as u64))))
             );
             assert_eq!(
                 &ops[6],
-                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(u32::MAX as u64))))
+                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(3))))
             );
         }
 
