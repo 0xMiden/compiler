@@ -298,14 +298,14 @@ builtin.component miden:storage-example/foo@1.0.0 {
         public builtin.function @miden:storage-example/foo@1.0.0#test-storage-item-low(v242: felt, v243: felt, v244: felt, v245: felt) -> felt {
         ^block33(v242: felt, v243: felt, v244: felt, v245: felt):
             v247 = arith.constant 0 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v248 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v249 = hir.bitcast v248 : (ptr i32);
             v250 = hir.load v249 : i32;
             v251 = arith.constant 128 : i32;
             v252 = arith.sub v250, v251 : i32 #[overflow = wrapping];
             v253 = arith.constant -32 : i32;
             v254 = arith.band v252, v253 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v255 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v256 = hir.bitcast v255 : (ptr i32);
             hir.store v256, v254;
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen_rt::run_ctors_once()
@@ -398,7 +398,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.assertz v320 #[code = 250];
             v321 = hir.int_to_ptr v318 : (ptr felt);
             v322 = hir.load v321 : felt;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v323 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v324 = hir.bitcast v323 : (ptr i32);
             hir.store v324, v250;
             cf.br ^block34(v322);
@@ -409,14 +409,14 @@ builtin.component miden:storage-example/foo@1.0.0 {
         public builtin.function @miden:storage-example/foo@1.0.0#test-storage-item-high(v325: felt, v326: felt, v327: felt, v328: felt) -> felt {
         ^block37(v325: felt, v326: felt, v327: felt, v328: felt):
             v330 = arith.constant 0 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v331 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v332 = hir.bitcast v331 : (ptr i32);
             v333 = hir.load v332 : i32;
             v334 = arith.constant 96 : i32;
             v335 = arith.sub v333, v334 : i32 #[overflow = wrapping];
             v336 = arith.constant -32 : i32;
             v337 = arith.band v335, v336 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v338 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v339 = hir.bitcast v338 : (ptr i32);
             hir.store v339, v337;
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen_rt::run_ctors_once()
@@ -466,7 +466,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.assertz v372 #[code = 250];
             v373 = hir.int_to_ptr v370 : (ptr felt);
             v374 = hir.load v373 : felt;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v375 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v376 = hir.bitcast v375 : (ptr i32);
             hir.store v376, v333;
             cf.br ^block38(v374);
@@ -477,14 +477,14 @@ builtin.component miden:storage-example/foo@1.0.0 {
         public builtin.function @miden:storage-example/foo@1.0.0#test-storage-map-item-high(v377: felt, v378: felt, v379: felt, v380: felt, v381: felt, v382: felt, v383: felt, v384: felt) -> felt {
         ^block39(v377: felt, v378: felt, v379: felt, v380: felt, v381: felt, v382: felt, v383: felt, v384: felt):
             v386 = arith.constant 0 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v387 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v388 = hir.bitcast v387 : (ptr i32);
             v389 = hir.load v388 : i32;
             v390 = arith.constant 192 : i32;
             v391 = arith.sub v389, v390 : i32 #[overflow = wrapping];
             v392 = arith.constant -32 : i32;
             v393 = arith.band v391, v392 : i32;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v394 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v395 = hir.bitcast v394 : (ptr i32);
             hir.store v395, v393;
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen_rt::run_ctors_once()
@@ -645,7 +645,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.assertz v511 #[code = 250];
             v512 = hir.int_to_ptr v509 : (ptr felt);
             v513 = hir.load v512 : felt;
-            builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
+            v514 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : (ptr u8)
             v515 = hir.bitcast v514 : (ptr i32);
             hir.store v515, v389;
             cf.br ^block40(v513);
