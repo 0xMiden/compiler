@@ -458,6 +458,8 @@ impl Compiler {
     ) -> Session {
         let cwd = self.working_dir.unwrap_or_else(current_dir);
 
+        log::trace!(target: "driver", "current working directory = {}", cwd.display());
+
         // Determine if a specific output file has been requested
         let output_file = match self.output_file {
             Some(path) => Some(OutputFile::Real(path)),

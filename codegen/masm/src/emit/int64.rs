@@ -752,9 +752,9 @@ impl OpEmitter<'_> {
 /// and `lo` is the least significant limb.
 #[inline(always)]
 pub fn to_raw_parts(value: u64) -> (u32, u32) {
-    let bytes = value.to_le_bytes();
-    let hi = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let lo = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    let bytes = value.to_be_bytes();
+    let hi = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let lo = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     (hi, lo)
 }
 

@@ -23,7 +23,7 @@ use midenc_session::{
 };
 
 use super::{DebugExecutor, DebuggerHost, ExecutionTrace, TraceEvent};
-use crate::{debug::CallStack, felt::PopFromStack, TestFelt};
+use crate::{debug::CallStack, FromMidenRepr, TestFelt};
 
 /// The [Executor] is responsible for executing a program with the Miden VM.
 ///
@@ -52,18 +52,21 @@ impl Executor {
     }
 
     /// Construct the executor with the given inputs and adds dependencies from the given package
-    pub fn for_package(
+    pub fn for_package<I>(
         package: &miden_mast_package::Package,
-        args: Vec<Felt>,
+        args: I,
         session: &Session,
-    ) -> Result<Self, Report> {
+    ) -> Result<Self, Report>
+    where
+        I: IntoIterator<Item = Felt>,
+    {
         use midenc_hir::formatter::DisplayHex;
         log::debug!(
             "creating executor for package '{}' (digest={})",
             package.name,
             DisplayHex::new(&package.digest().as_bytes())
         );
-        let mut exec = Self::new(args);
+        let mut exec = Self::new(args.into_iter().collect());
         exec.with_dependencies(&package.manifest.dependencies)?;
         log::debug!("executor created");
         Ok(exec)
@@ -188,28 +191,31 @@ impl Executor {
                 render_execution_error(err, &executor, session);
             }
 
-            /*
-                // Uncomment if debugging an integration test that uses the executor,
-                // and you want to get some better information about where things went
-                // wrong. In the future I will try to improve our test runner's output
-                // to incorporate this information instead of what we currently get
+            if log::log_enabled!(target: "executor", log::Level::Trace) {
                 let step = step.unwrap();
-                dbg!(step.op.as_ref());
-                dbg!(step.asmop.as_ref());
-                let line_number = step.asmop.as_ref().and_then(|asmop| {
-                    asmop.as_ref().location().map(|loc| {
-                        let path = loc.path();
-                        let file = session
-                            .diagnostics
-                            .source_manager_ref()
-                            .load_file(std::path::Path::new(path.as_ref()))
-                            .unwrap();
-                        file.content().line_index(loc.start)
-                    })
-                });
-                dbg!(line_number.map(|li| li.number().get()));
-                dbg!(&step.stack);
-            */
+                if let Some(op) = step.op.as_ref() {
+                    if let Some(asmop) = step.asmop.as_ref() {
+                        dbg!(&step.stack);
+                        let source_loc = asmop.as_ref().location().map(|loc| {
+                            let path = loc.path();
+                            let file = session
+                                .diagnostics
+                                .source_manager_ref()
+                                .load_file(std::path::Path::new(path.as_ref()))
+                                .unwrap();
+                            (file, loc.start)
+                        });
+                        if let Some((source_file, line_start)) = source_loc {
+                            let line_number = source_file.content().line_index(line_start).number();
+                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.name(), &line_number);
+                        } else {
+                            log::trace!(target: "executor", "in {} (no source location available)", asmop.context_name());
+                        }
+                        log::trace!(target: "executor", "  executed `{op:?}` of `{}` (cycle {}/{})", asmop.op(), asmop.cycle_idx(), asmop.num_cycles());
+                        log::trace!(target: "executor", "  stack state: {:#?}", &step.stack);
+                    }
+                }
+            }
 
             /*
             if let Some(op) = state.op {
@@ -325,7 +331,7 @@ impl Executor {
     /// Execute a program, parsing the operand stack outputs as a value of type `T`
     pub fn execute_into<T>(self, program: &Program, session: &Session) -> T
     where
-        T: PopFromStack + PartialEq,
+        T: FromMidenRepr + PartialEq,
     {
         let out = self.execute(program, session);
         out.parse_result().expect("invalid result")

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use expect_test::expect_file;
-use midenc_debug::{Executor, PopFromStack, PushToStack};
+use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{Felt, Immediate, Op, SymbolTable};
 use prop::test_runner::{Config, TestRunner};
@@ -52,9 +52,7 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let mut args = Vec::<Felt>::default();
-            PushToStack::try_push(&a, &mut args);
-
+            let args = a.to_felts();
             let exec = Executor::for_package(&package, args, &test.session)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
             let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
@@ -101,9 +99,7 @@ fn collatz() {
     TestRunner::new(Config::with_cases(4))
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
-            let mut args = Vec::<Felt>::default();
-            PushToStack::try_push(&a, &mut args);
-
+            let args = a.to_felts();
             let exec = Executor::for_package(&package, args, &test.session)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
             let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
@@ -186,9 +182,8 @@ fn is_prime() {
                 //)));
             };
             prop_assert_eq!(rust_out as i32, result);
-            let mut args = Vec::<Felt>::default();
-            PushToStack::try_push(&a, &mut args);
 
+            let args = a.to_felts();
             let exec = Executor::for_package(&package, args, &test.session)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
             let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);

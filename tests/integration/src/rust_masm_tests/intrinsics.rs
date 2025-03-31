@@ -2,7 +2,7 @@ use core::panic;
 
 use expect_test::expect_file;
 use miden_core::Felt;
-use midenc_debug::{PushToStack, TestFelt};
+use midenc_debug::{TestFelt, ToMidenRepr};
 use proptest::{
     arbitrary::any,
     test_runner::{TestError, TestRunner},
@@ -37,8 +37,8 @@ macro_rules! test_bin_op {
                         let rs_out = a_felt $op b_felt;
                         dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        PushToStack::try_push(&b, &mut args);
-                        PushToStack::try_push(&a, &mut args);
+                        b.push_to_operand_stack(&mut args);
+                        a.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {

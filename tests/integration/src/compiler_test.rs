@@ -1,11 +1,8 @@
-#![allow(dead_code)]
-
 use core::panic;
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt::{self, Write},
-    fs,
+    fmt, fs,
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -17,13 +14,16 @@ use miden_assembly::LibraryPath;
 use midenc_compile::{
     compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
 };
-use midenc_frontend_wasm::{translate, WasmTranslationConfig};
+use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident, Op,
 };
 use midenc_session::{InputFile, InputType, Session};
 
-use crate::cargo_proj::project;
+use crate::{
+    cargo_proj::project,
+    testing::{format_report, setup},
+};
 
 type LinkMasmModules = Vec<(LibraryPath, String)>;
 
@@ -112,6 +112,7 @@ pub struct RustcTest {
     target_dir: Option<PathBuf>,
     name: Cow<'static, str>,
     target: Cow<'static, str>,
+    #[allow(dead_code)]
     output_name: Option<Cow<'static, str>>,
     source_code: Cow<'static, str>,
     rustflags: Vec<Cow<'static, str>>,
@@ -185,15 +186,13 @@ pub struct CompilerTestBuilder {
     /// Extra RUSTFLAGS to set when compiling Rust code
     rustflags: Vec<Cow<'static, str>>,
     /// The cargo workspace directory of the compiler
+    #[allow(dead_code)]
     workspace_dir: String,
 }
 impl CompilerTestBuilder {
     /// Construct a new [CompilerTestBuilder] for the given source type configuration
     pub fn new(source: impl Into<CompilerTestInputType>) -> Self {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        setup::enable_compiler_instrumentation();
 
         let workspace_dir = get_workspace_dir();
         let mut source = source.into();
@@ -441,7 +440,7 @@ impl CompilerTestBuilder {
                 }));
                 // dbg!(&inputs);
 
-                let context = default_context(inputs, &self.midenc_flags);
+                let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
@@ -501,7 +500,7 @@ impl CompilerTestBuilder {
                     )
                 }));
 
-                let context = default_context(inputs, &self.midenc_flags);
+                let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
@@ -558,7 +557,7 @@ impl CompilerTestBuilder {
                     )
                 }));
 
-                let context = default_context(inputs, &self.midenc_flags);
+                let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();
                 CompilerTest {
                     config: self.config,
@@ -896,7 +895,7 @@ impl fmt::Debug for CompilerTest {
 
 impl Default for CompilerTest {
     fn default() -> Self {
-        let context = dummy_context(&[]);
+        let context = setup::dummy_context(&[]);
         let session = context.session_rc();
         Self {
             config: WasmTranslationConfig::default(),
@@ -1034,11 +1033,6 @@ impl CompilerTest {
         expected_wat_file.assert_eq(&wat);
     }
 
-    fn wasm_to_ir(&self) -> builtin::ComponentRef {
-        translate(&self.wasm_bytes(), &self.config, self.context.clone())
-            .expect("Failed to translate Wasm binary to IR component")
-    }
-
     /// Get the translated IR component, translating the Wasm if it has not been done yet
     pub fn hir(&mut self) -> builtin::ComponentRef {
         self.link_output().component
@@ -1153,24 +1147,6 @@ impl CompilerTest {
         self.package = Some(Ok(Arc::new(package)));
         Ok(())
     }
-}
-
-fn format_report(report: miden_assembly::diagnostics::Report) -> String {
-    use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-
-    let mut labels_str = String::new();
-    if let Some(labels) = report.labels() {
-        for label in labels {
-            if let Some(label) = label.label() {
-                writeln!(&mut labels_str, "{}", label).unwrap();
-            }
-        }
-    }
-
-    let mut str = PrintDiagnostic::new(report).to_string();
-    writeln!(&mut str, "{labels_str}").unwrap();
-
-    str
 }
 
 fn stdlib_sys_crate_path() -> PathBuf {
@@ -1297,52 +1273,6 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
     let mut wasm_printer = NoCustomSectionsPrinter(wasmprinter::PrintFmtWrite(&mut wat));
     config.print(wasm_bytes, &mut wasm_printer).unwrap();
     wat
-}
-
-fn dummy_context(flags: &[&str]) -> Rc<Context> {
-    let session = dummy_session(flags);
-    let context = Rc::new(Context::new(session));
-    midenc_codegen_masm::register_dialect_hooks(&context);
-    midenc_hir_eval::register_dialect_hooks(&context);
-    context
-}
-
-fn dummy_session(flags: &[&str]) -> Rc<Session> {
-    let dummy = InputFile::from_path(PathBuf::from("dummy.wasm")).unwrap();
-    default_session([dummy], flags)
-}
-
-pub fn default_context<S, I>(inputs: I, argv: &[S]) -> Rc<Context>
-where
-    I: IntoIterator<Item = InputFile>,
-    S: AsRef<str>,
-{
-    let session = default_session(inputs, argv);
-    let context = Rc::new(Context::new(session));
-    midenc_codegen_masm::register_dialect_hooks(&context);
-    midenc_hir_eval::register_dialect_hooks(&context);
-    context
-}
-
-/// Create a default session for testing
-pub fn default_session<S, I>(inputs: I, argv: &[S]) -> Rc<Session>
-where
-    I: IntoIterator<Item = InputFile>,
-    S: AsRef<str>,
-{
-    use midenc_session::diagnostics::reporting::{self, ReportHandlerOpts};
-
-    let result = reporting::set_hook(Box::new(|_| {
-        let wrapping_width = 300; // avoid wrapped file paths in the backtrace
-        Box::new(ReportHandlerOpts::new().width(wrapping_width).build())
-    }));
-    if result.is_ok() {
-        reporting::set_panic_hook();
-    }
-
-    let argv = argv.iter().map(|arg| arg.as_ref());
-    let session = midenc_compile::Compiler::new_session(inputs, None, argv);
-    Rc::new(session)
 }
 
 fn hash_string(inputs: &str) -> String {

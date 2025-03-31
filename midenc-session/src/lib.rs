@@ -141,12 +141,13 @@ impl Session {
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager>,
     ) -> Self {
-        log::debug!("creating session for {} inputs:", inputs.len());
-        if log::log_enabled!(log::Level::Debug) {
+        log::debug!(target: "driver", "creating session for {} inputs:", inputs.len());
+        if log::log_enabled!(target: "driver", log::Level::Debug) {
             for input in inputs.iter() {
-                log::debug!(" - {} ({})", input.file_name(), input.file_type());
+                log::debug!(target: "driver", " - {} ({})", input.file_name(), input.file_type());
             }
             log::debug!(
+                target: "driver",
                 " | outputs_dir = {}",
                 output_dir
                     .as_ref()
@@ -154,10 +155,11 @@ impl Session {
                     .unwrap_or("<unset>".to_string())
             );
             log::debug!(
+                target: "driver",
                 " | output_file = {}",
                 output_file.as_ref().map(|of| of.to_string()).unwrap_or("<unset>".to_string())
             );
-            log::debug!(" | target_dir = {}", target_dir.display());
+            log::debug!(target: "driver", " | target_dir = {}", target_dir.display());
         }
         let diagnostics = Arc::new(DiagnosticsHandler::new(
             options.diagnostics,
@@ -170,47 +172,71 @@ impl Session {
             .or_else(|| output_file.as_ref().and_then(|of| of.parent()))
             .map(|path| path.to_path_buf());
 
+        if let Some(output_dir) = output_dir.as_deref() {
+            log::debug!(target: "driver", " | output dir = {}", output_dir.display());
+        } else {
+            log::debug!(target: "driver", " | output dir = <unset>");
+        }
+
+        log::debug!(target: "driver", " | target = {}", &options.target);
+        log::debug!(target: "driver", " | type = {:?}", &options.project_type);
+        if log::log_enabled!(target: "driver", log::Level::Debug) {
+            for lib in options.link_libraries.iter() {
+                if let Some(path) = lib.path.as_deref() {
+                    log::debug!(target: "driver", " | linking {} library '{}' from {}", &lib.kind, &lib.name, path.display());
+                } else {
+                    log::debug!(target: "driver", " | linking {} library '{}'", &lib.kind, &lib.name);
+                }
+            }
+        }
+
         let name = options
             .name
             .clone()
             .or_else(|| {
+                log::debug!(target: "driver", "no name specified, attempting to derive from output file");
                 output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
             })
-            .unwrap_or_else(|| match inputs.first() {
-                Some(InputFile {
-                    file: InputType::Real(ref path),
-                    ..
-                }) => path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .or_else(|| path.extension().and_then(|stem| stem.to_str()))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "invalid input path: '{}' has no file stem or extension",
-                            path.display()
-                        )
-                    })
-                    .to_string(),
-                Some(
-                    input @ InputFile {
-                        file: InputType::Stdin { ref name, .. },
+            .unwrap_or_else(|| {
+                log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
+                match inputs.first() {
+                    Some(InputFile {
+                        file: InputType::Real(ref path),
                         ..
-                    },
-                ) => {
-                    let name = name.as_str();
-                    if matches!(name, "empty" | "stdin") {
-                        options
-                            .current_dir
-                            .file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .unwrap_or(name)
-                            .to_string()
-                    } else {
-                        input.filestem().to_owned()
+                    }) => path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .or_else(|| path.extension().and_then(|stem| stem.to_str()))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "invalid input path: '{}' has no file stem or extension",
+                                path.display()
+                            )
+                        })
+                        .to_string(),
+                    Some(
+                        input @ InputFile {
+                            file: InputType::Stdin { ref name, .. },
+                            ..
+                        },
+                    ) => {
+                        let name = name.as_str();
+                        if matches!(name, "empty" | "stdin") {
+                            log::debug!(target: "driver", "no good input file name to use, using current directory base name");
+                            options
+                                .current_dir
+                                .file_stem()
+                                .and_then(|stem| stem.to_str())
+                                .unwrap_or(name)
+                                .to_string()
+                        } else {
+                            input.filestem().to_owned()
+                        }
                     }
+                    None => "out".to_owned(),
                 }
-                None => "out".to_owned(),
             });
+        log::debug!(target: "driver", "artifact name set to '{name}'");
 
         let output_files = OutputFiles::new(
             name.clone(),

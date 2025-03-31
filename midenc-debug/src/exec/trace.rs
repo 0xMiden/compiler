@@ -5,18 +5,18 @@ use std::{
 };
 
 use miden_assembly::Library as CompiledLibrary;
-use miden_core::{Program, StackInputs, Word};
+use miden_core::{FieldElement, Program, StackInputs, Word};
 use miden_processor::{
     AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
     ProcessState, RowIndex, StackOutputs, TraceLenSummary, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::NativePtr;
 pub use midenc_codegen_masm::TraceEvent;
-use midenc_hir::Type;
+use midenc_hir::{SmallVec, ToSmallVec, Type};
 use midenc_session::Session;
 
 use super::MemoryChiplet;
-use crate::{debug::CallStack, felt::PopFromStack, DebuggerHost, TestFelt};
+use crate::{debug::CallStack, DebuggerHost, FromMidenRepr, TestFelt};
 
 /// A callback to be executed when a [TraceEvent] occurs at a given clock cycle
 pub type TraceHandler = dyn FnMut(RowIndex, TraceEvent);
@@ -47,10 +47,18 @@ impl ExecutionTrace {
     /// Parse the program outputs on the operand stack as a value of type `T`
     pub fn parse_result<T>(&self) -> Option<T>
     where
-        T: PopFromStack,
+        T: FromMidenRepr,
     {
-        let mut stack = VecDeque::from_iter(self.outputs.clone().iter().copied().map(TestFelt));
-        T::try_pop(&mut stack)
+        let size = <T as FromMidenRepr>::size_in_felts();
+        let stack = self.outputs.stack_truncated(size);
+        if stack.len() < size {
+            return None;
+        }
+        dbg!(stack);
+        let mut stack = stack.to_vec();
+        stack.reverse();
+        dbg!(&stack);
+        Some(<T as FromMidenRepr>::pop_from_stack(&mut stack))
     }
 
     /// Consume the [ExecutionTrace], extracting just the outputs on the operand stack
@@ -153,7 +161,7 @@ impl ExecutionTrace {
     #[track_caller]
     pub fn read_from_rust_memory<T>(&self, addr: u32) -> Option<T>
     where
-        T: core::any::Any + PopFromStack,
+        T: core::any::Any + FromMidenRepr,
     {
         self.read_from_rust_memory_in_context(addr, self.root_context, self.last_cycle)
     }
@@ -168,93 +176,44 @@ impl ExecutionTrace {
         clk: RowIndex,
     ) -> Option<T>
     where
-        T: core::any::Any + PopFromStack,
+        T: core::any::Any + FromMidenRepr,
     {
         use core::any::TypeId;
 
         let ptr = NativePtr::from_ptr(addr);
         if TypeId::of::<T>() == TypeId::of::<Felt>() {
             assert_eq!(ptr.offset, 0, "cannot read values of type Felt from unaligned addresses");
-            let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
-            let mut stack = VecDeque::from([TestFelt(elem)]);
-            return Some(T::try_pop(&mut stack).unwrap_or_else(|| {
-                panic!(
-                    "could not decode a value of type {} from {}",
-                    core::any::type_name::<T>(),
-                    addr
-                )
-            }));
         }
-        match core::mem::size_of::<T>() {
-            n if n < 4 => {
-                if (4 - ptr.offset as usize) < n {
-                    todo!("unaligned, split read")
-                }
-                let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
-                let elem = if ptr.offset > 0 {
-                    let mask = 2u64.pow(32 - (ptr.offset as u32 * 8)) - 1;
-                    let elem = elem.as_int() & mask;
-                    Felt::new(elem << (ptr.offset as u64 * 8))
-                } else {
-                    elem
-                };
-                let mut stack = VecDeque::from([TestFelt(elem)]);
-                Some(T::try_pop(&mut stack).unwrap_or_else(|| {
-                    panic!(
-                        "could not decode a value of type {} from {}",
-                        core::any::type_name::<T>(),
-                        addr
-                    )
-                }))
+        assert_eq!(ptr.offset, 0, "support for unaligned reads is not yet implemented");
+        match <T as FromMidenRepr>::size_in_felts() {
+            1 => {
+                let felt = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
+                Some(T::from_felts(&[felt]))
             }
-            4 if ptr.offset > 0 => {
-                todo!("unaligned, split read")
+            2 => {
+                let lo = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
+                let hi = self.read_memory_element_in_context(ptr.addr + 1, ctx, clk)?;
+                Some(T::from_felts(&[lo, hi]))
             }
-            4 => {
-                let elem = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
-                let mut stack = VecDeque::from([TestFelt(elem)]);
-                Some(T::try_pop(&mut stack).unwrap_or_else(|| {
-                    panic!(
-                        "could not decode a value of type {} from {}",
-                        core::any::type_name::<T>(),
-                        addr
-                    )
-                }))
-            }
-            n if n <= 16 && ptr.offset > 0 => {
-                todo!("unaligned, split read")
-            }
-            n if n <= 16 => {
-                let word = self.read_memory_word_in_context(ptr.addr, ctx, clk)?;
-                let mut stack = VecDeque::from_iter(word.into_iter().map(TestFelt));
-                Some(T::try_pop(&mut stack).unwrap_or_else(|| {
-                    panic!(
-                        "could not decode a value of type {} from {}",
-                        core::any::type_name::<T>(),
-                        addr
-                    )
-                }))
+            3 => {
+                let lo_l = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
+                let lo_h = self.read_memory_element_in_context(ptr.addr + 1, ctx, clk)?;
+                let hi_l = self.read_memory_element_in_context(ptr.addr + 2, ctx, clk)?;
+                Some(T::from_felts(&[lo_l, lo_h, hi_l]))
             }
             n => {
-                let mut buf = VecDeque::default();
-                let chunks_needed = ((n / 4) as u32) + ((n % 4) > 0) as u32;
-                if ptr.offset > 0 {
-                    todo!()
-                } else {
-                    for i in 0..chunks_needed {
-                        let elem = self
-                            .read_memory_element_in_context(ptr.addr + i, ctx, clk)
-                            .expect("invalid memory access");
-                        buf.push_back(TestFelt(elem));
-                    }
+                assert_ne!(n, 0);
+                let num_words = n.next_multiple_of(4) / 4;
+                let mut words = SmallVec::<[_; 2]>::with_capacity(num_words);
+                for word_index in 0..(num_words as u32) {
+                    let addr = ptr.addr + (word_index * 4);
+                    let mut word = self.read_memory_word(addr)?;
+                    word.reverse();
+                    dbg!(word_index, word);
+                    words.push(word);
                 }
-                Some(T::try_pop(&mut buf).unwrap_or_else(|| {
-                    panic!(
-                        "could not decode a value of type {} from {}",
-                        core::any::type_name::<T>(),
-                        addr
-                    )
-                }))
+                words.resize(num_words, [Felt::ZERO; 4]);
+                Some(T::from_words(&words))
             }
         }
     }
