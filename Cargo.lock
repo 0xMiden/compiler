@@ -3222,7 +3222,18 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72269e041e915d6c34325a8906f08a8ff6ec9b92c79ae07f3a0de8c3588694b5"
 dependencies = [
- "miden-core",
+ "miden-core 0.13.0",
+ "thiserror 2.0.11",
+ "winter-air",
+ "winter-prover",
+]
+
+[[package]]
+name = "miden-air"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
+dependencies = [
+ "miden-core 0.14.0",
  "thiserror 2.0.11",
  "winter-air",
  "winter-prover",
@@ -3237,7 +3248,24 @@ dependencies = [
  "aho-corasick",
  "lalrpop",
  "lalrpop-util",
- "miden-core",
+ "miden-core 0.13.0",
+ "miden-miette",
+ "rustc_version 0.4.1",
+ "smallvec",
+ "thiserror 2.0.11",
+ "tracing",
+ "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "miden-assembly"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
+dependencies = [
+ "aho-corasick",
+ "lalrpop",
+ "lalrpop-util",
+ "miden-core 0.14.0",
  "miden-miette",
  "rustc_version 0.4.1",
  "smallvec",
@@ -3271,7 +3299,7 @@ dependencies = [
 name = "miden-base-sys"
 version = "0.0.8"
 dependencies = [
- "miden-assembly",
+ "miden-assembly 0.14.0",
  "miden-stdlib-sys",
 ]
 
@@ -3280,6 +3308,24 @@ name = "miden-core"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8ba125a31e9ec0e732f47e639525c753973e553126cfc46cc63674049ea4134"
+dependencies = [
+ "lock_api",
+ "loom",
+ "memchr",
+ "miden-crypto",
+ "miden-formatting",
+ "miden-miette",
+ "num-derive",
+ "num-traits",
+ "thiserror 2.0.11",
+ "winter-math",
+ "winter-utils",
+]
+
+[[package]]
+name = "miden-core"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
 dependencies = [
  "lock_api",
  "loom",
@@ -3339,10 +3385,10 @@ dependencies = [
  "filetime",
  "glob",
  "log",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.14.0",
+ "miden-core 0.14.0",
  "miden-mast-package",
- "miden-processor",
+ "miden-processor 0.14.0",
  "midenc-codegen-masm",
  "midenc-compile",
  "midenc-debug",
@@ -3360,13 +3406,13 @@ dependencies = [
 
 [[package]]
 name = "miden-mast-package"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "418ddee9db301f4348751f8bc5e0776caba0aff12df709c080014b3719b33cbf"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
 dependencies = [
  "derive_more",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.14.0",
+ "miden-core 0.14.0",
+ "miden-objects",
 ]
 
 [[package]]
@@ -3419,10 +3465,10 @@ checksum = "1ea350fdd6d025d2e4791ac0769bfbc04afca404fbb20f918354dcc758debd4c"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.13.0",
+ "miden-core 0.13.0",
  "miden-crypto",
- "miden-processor",
+ "miden-processor 0.13.0",
  "miden-verifier",
  "semver 1.0.23",
  "thiserror 2.0.11",
@@ -3434,8 +3480,20 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e5f362138a7bfe6c20246de651e848566843a0d5062cc4a7a8ebff6bd14668d"
 dependencies = [
- "miden-air",
- "miden-core",
+ "miden-air 0.13.0",
+ "miden-core 0.13.0",
+ "thiserror 2.0.11",
+ "tracing",
+ "winter-prover",
+]
+
+[[package]]
+name = "miden-processor"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
+dependencies = [
+ "miden-air 0.14.0",
+ "miden-core 0.14.0",
  "thiserror 2.0.11",
  "tracing",
  "winter-prover",
@@ -3447,12 +3505,11 @@ version = "0.0.8"
 
 [[package]]
 name = "miden-stdlib"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "116d30a8db5167f88944509007b8bb7aad4fa0d9d03f2610b4e80be3a198ad37"
+version = "0.14.0"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=2239ba1aea7d5984037e791a20e0ced8c9391bd1#2239ba1aea7d5984037e791a20e0ced8c9391bd1"
 dependencies = [
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.14.0",
+ "miden-core 0.14.0",
 ]
 
 [[package]]
@@ -3485,8 +3542,8 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ae6636d1e7a9d78a973fd59ffcfd87964eee235ecdf3264569add5ff89b0d91"
 dependencies = [
- "miden-air",
- "miden-core",
+ "miden-air 0.13.0",
+ "miden-core 0.13.0",
  "thiserror 2.0.11",
  "tracing",
  "winter-verifier",
@@ -3509,10 +3566,10 @@ dependencies = [
  "expect-test",
  "inventory",
  "log",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.14.0",
+ "miden-core 0.14.0",
  "miden-mast-package",
- "miden-processor",
+ "miden-processor 0.14.0",
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3535,7 +3592,7 @@ dependencies = [
  "clap",
  "inventory",
  "log",
- "miden-assembly",
+ "miden-assembly 0.14.0",
  "miden-mast-package",
  "miden-thiserror",
  "midenc-codegen-masm",
@@ -3557,10 +3614,10 @@ dependencies = [
  "futures",
  "glob",
  "log",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.14.0",
+ "miden-core 0.14.0",
  "miden-mast-package",
- "miden-processor",
+ "miden-processor 0.14.0",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-hir",
@@ -3651,7 +3708,7 @@ dependencies = [
  "gimli",
  "indexmap 2.7.1",
  "log",
- "miden-core",
+ "miden-core 0.14.0",
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3678,7 +3735,7 @@ dependencies = [
  "intrusive-collections",
  "inventory",
  "log",
- "miden-core",
+ "miden-core 0.14.0",
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
@@ -3772,9 +3829,9 @@ dependencies = [
  "clap",
  "inventory",
  "log",
- "miden-assembly",
+ "miden-assembly 0.14.0",
  "miden-base-sys",
- "miden-core",
+ "miden-core 0.14.0",
  "miden-mast-package",
  "miden-stdlib",
  "miden-thiserror",

@@ -1,7 +1,7 @@
 use alloc::{string::ToString, vec::Vec};
 
-use miden_assembly::ast::QualifiedProcedureName;
-use miden_mast_package::{Dependency, MastArtifact, Package};
+use miden_assembly::{ast::QualifiedProcedureName, utils::Deserializable};
+use miden_mast_package::{AccountComponentMetadata, Dependency, MastArtifact, Package};
 use midenc_session::{diagnostics::IntoDiagnostic, Session};
 
 use super::*;
@@ -86,11 +86,19 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         }
     }
 
-    todo!("store outputs.account_component_metadata to the Package");
+    let account_component_metadata = if let Some(bytes) = &outputs.account_component_metadata_bytes
+    {
+        AccountComponentMetadata::read_from_bytes(bytes)
+            .expect("Failed to parse account component metadata")
+            .into()
+    } else {
+        None
+    };
 
     miden_mast_package::Package {
         name,
         mast,
         manifest,
+        account_component_metadata,
     }
 }

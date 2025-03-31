@@ -89,15 +89,27 @@ smallvec = { version = "1.14", default-features = false, features = [
 thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "0.8", features = ["preserve_order"] }
 miden-formatting = { version = "0.1", default-features = false }
-miden-assembly = { version = "0.13.0", default-features = false }
-miden-core = { version = "0.13.0", default-features = false, features = [
+
+# miden-assembly = { version = "0.13.0", default-features = false }
+# miden-core = { version = "0.13.0", default-features = false, features = [
+#     "diagnostics",
+# ] }
+# miden-processor = { version = "0.13.0", default-features = false }
+# miden-stdlib = { version = "0.13.0", default-features = false, features = [
+#     "with-debug-info",
+# ] }
+# miden-mast-package = { version = "0.13.0", default-features = false }
+
+miden-assembly = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "2239ba1aea7d5984037e791a20e0ced8c9391bd1" }
+miden-core = { version = "0.14.0", default-features = false, features = [
     "diagnostics",
-] }
-miden-processor = { version = "0.13.0", default-features = false }
-miden-stdlib = { version = "0.13.0", default-features = false, features = [
+], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "2239ba1aea7d5984037e791a20e0ced8c9391bd1" }
+miden-processor = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "2239ba1aea7d5984037e791a20e0ced8c9391bd1" }
+miden-stdlib = { version = "0.14.0", default-features = false, features = [
     "with-debug-info",
-] }
-miden-mast-package = { version = "0.13.0", default-features = false }
+], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "2239ba1aea7d5984037e791a20e0ced8c9391bd1" }
+miden-mast-package = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "2239ba1aea7d5984037e791a20e0ced8c9391bd1" }
+
 # This is here for convenience if we need to quickly use a git ref of the VM crates
 #miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 midenc-codegen-masm = { version = "0.0.8", path = "codegen/masm" }
