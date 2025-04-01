@@ -3287,6 +3287,7 @@ dependencies = [
 name = "miden-base-macros"
 version = "0.0.7"
 dependencies = [
+ "expect-test",
  "miden-base",
  "miden-objects",
  "proc-macro2",
@@ -3317,6 +3318,7 @@ dependencies = [
  "miden-miette",
  "num-derive",
  "num-traits",
+ "parking_lot",
  "thiserror 2.0.11",
  "winter-math",
  "winter-utils",
@@ -3388,6 +3390,7 @@ dependencies = [
  "miden-assembly 0.14.0",
  "miden-core 0.14.0",
  "miden-mast-package",
+ "miden-objects",
  "miden-processor 0.14.0",
  "midenc-codegen-masm",
  "midenc-compile",
@@ -3471,7 +3474,9 @@ dependencies = [
  "miden-processor 0.13.0",
  "miden-verifier",
  "semver 1.0.23",
+ "serde",
  "thiserror 2.0.11",
+ "toml",
 ]
 
 [[package]]

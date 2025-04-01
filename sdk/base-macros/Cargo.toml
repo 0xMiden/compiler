@@ -26,6 +26,8 @@ features = ["full", "parsing", "derive", "extra-traits", "printing"]
 
 [dev-dependencies]
 miden-base = { version = "0.0.7", path = "../base" }
+miden-objects = { version = "0.8", features = ["std"] }
+expect-test.workspace = true
 
 [[test]]
 name = "component_macro_test"

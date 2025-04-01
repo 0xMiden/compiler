@@ -1,4 +1,5 @@
 extern crate miden_base_macros;
+use expect_test::expect;
 use miden_base::{StorageMap, Value};
 use miden_base_macros::component;
 
@@ -28,71 +29,36 @@ fn test_component_macro_expansion() {
 
 #[test]
 fn test_component_metadata_serialization() {
-    use miden_objects::{
-        account::{
-            AccountComponentMetadata, StorageEntry, StorageValueName, TemplateType,
-            WordRepresentation,
-        },
-        utils::Deserializable,
-    };
+    use miden_objects::{account::AccountComponentMetadata, utils::Deserializable};
 
     let metadata =
         AccountComponentMetadata::read_from_bytes(&__MIDEN_ACCOUNT_COMPONENT_METADATA_BYTES)
             .expect("Failed to deserialize AccountComponentMetadata");
 
-    assert_eq!(metadata.name(), "TestComponent");
+    let toml = metadata.as_toml().unwrap();
 
-    let storage_entries = metadata.storage_entries();
-    assert_eq!(storage_entries.len(), 3);
+    expect![[r#"
+        name = "TestComponent"
+        description = ""
+        version = "0.0.1"
+        supported-types = []
 
-    // Entry 0: owner_public_key
-    match &storage_entries[0] {
-        StorageEntry::Value { slot, word_entry } => {
-            assert_eq!(*slot, 0);
-            match word_entry {
-                WordRepresentation::Template {
-                    r#type,
-                    name,
-                    description,
-                } => {
-                    assert_eq!(r#type, &TemplateType::new("auth::rpo_falcon512::pub_key").unwrap());
-                    assert_eq!(name, &StorageValueName::new("owner_public_key").unwrap());
-                    assert_eq!(description.as_deref(), Some("test value"));
-                }
-                _ => panic!("Expected WordRepresentation::Template for owner_public_key"),
-            }
-        }
-        _ => panic!("Expected StorageEntry::Value for slot 0"),
-    }
+        [[storage]]
+        name = "owner_public_key"
+        description = "test value"
+        slot = 0
+        type = "auth::rpo_falcon512::pub_key"
 
-    // Entry 1: foo_map
-    match &storage_entries[1] {
-        StorageEntry::Map { slot, map } => {
-            assert_eq!(*slot, 1);
-            assert_eq!(map.name(), &StorageValueName::new("foo_map").unwrap());
-            assert_eq!(map.description(), Some(&"test map".to_string()));
-            assert!(map.entries().is_empty());
-        }
-        _ => panic!("Expected StorageEntry::Map for slot 1"),
-    }
+        [[storage]]
+        name = "foo_map"
+        description = "test map"
+        slot = 1
+        values = []
 
-    // Entry 2: without_description
-    match &storage_entries[2] {
-        StorageEntry::Value { slot, word_entry } => {
-            assert_eq!(*slot, 2);
-            match word_entry {
-                WordRepresentation::Template {
-                    r#type,
-                    name,
-                    description,
-                } => {
-                    assert_eq!(r#type, &TemplateType::native_word());
-                    assert_eq!(name, &StorageValueName::new("without_description").unwrap());
-                    assert_eq!(description.as_deref(), None);
-                }
-                _ => panic!("Expected WordRepresentation::Template for without_description"),
-            }
-        }
-        _ => panic!("Expected StorageEntry::Value for slot 2"),
-    }
+        [[storage]]
+        name = "without_description"
+        slot = 2
+        type = "word"
+    "#]]
+    .assert_eq(&toml);
 }

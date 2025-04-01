@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use expect_test::expect_file;
+use expect_test::{expect, expect_file};
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{Felt, Immediate, Op, SymbolTable};
@@ -18,8 +18,27 @@ fn storage_example() {
     test.expect_wasm(expect_file!["../../expected/examples/storage_example.wat"]);
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
-    let _package = test.compiled_package();
-    // todo!("check AccountComponentMetadata against expected");
+    let package = test.compiled_package();
+    let toml = package.as_ref().account_component_metadata.clone().unwrap().as_toml().unwrap();
+    expect![[r#"
+        name = "MyAccount"
+        description = ""
+        version = "0.0.1"
+        supported-types = []
+
+        [[storage]]
+        name = "owner_public_key"
+        description = "test value"
+        slot = 0
+        type = "auth::rpo_falcon512::pub_key"
+
+        [[storage]]
+        name = "foo_map"
+        description = "test map"
+        slot = 1
+        values = []
+    "#]]
+    .assert_eq(&toml);
 }
 
 #[test]
