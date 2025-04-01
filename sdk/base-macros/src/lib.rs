@@ -66,8 +66,8 @@ pub fn component(
                                 let after_equals = &after_desc[equals_idx + 1..];
                                 let trimmed = after_equals.trim();
                                 // Look for opening quote
-                                if trimmed.starts_with('"') {
-                                    if let Some(closing_quote_idx) = trimmed[1..].find('"') {
+                                if let Some(stripped) = trimmed.strip_prefix('"') {
+                                    if let Some(closing_quote_idx) = stripped.find('"') {
                                         let desc_value = &trimmed[1..closing_quote_idx + 1];
                                         description = Some(desc_value.to_string());
                                     }
@@ -83,8 +83,8 @@ pub fn component(
                                 let after_equals = &after_type[equals_idx + 1..];
                                 let trimmed = after_equals.trim();
                                 // Look for opening quote
-                                if trimmed.starts_with('"') {
-                                    if let Some(closing_quote_idx) = trimmed[1..].find('"') {
+                                if let Some(stripped) = trimmed.strip_prefix('"') {
+                                    if let Some(closing_quote_idx) = stripped.find('"') {
                                         let type_val = &trimmed[1..closing_quote_idx + 1];
                                         type_value = Some(type_val.to_string());
                                     }
