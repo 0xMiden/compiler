@@ -120,12 +120,15 @@ pub fn component(
         }
     }
 
-    // Generate the constant instance declaration
-    let instance = quote! {
-        #[allow(non_upper_case_globals)]
-        const #struct_name: #struct_name = #struct_name {
-            #(#field_inits),*
-        };
+    // Generate the Default implementation
+    let default_impl = quote! {
+        impl Default for #struct_name {
+            fn default() -> Self {
+                Self {
+                    #(#field_inits),*
+                }
+            }
+        }
     };
 
     let acc_component_metadata_bytes = acc_builder.build().to_bytes();
@@ -147,7 +150,7 @@ pub fn component(
     let output = quote! {
         #input
 
-        #instance
+        #default_impl
 
         #acc_component_metadata_link_section
     };

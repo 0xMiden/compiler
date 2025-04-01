@@ -20,9 +20,10 @@ struct TestComponent {
 
 #[test]
 fn test_component_macro_expansion() {
-    assert_eq!(TestComponent.owner_public_key.slot, 0);
-    assert_eq!(TestComponent.foo_map.slot, 1);
-    assert_eq!(TestComponent.without_description.slot, 2);
+    let test_component = TestComponent::default();
+    assert_eq!(test_component.owner_public_key.slot, 0);
+    assert_eq!(test_component.foo_map.slot, 1);
+    assert_eq!(test_component.without_description.slot, 2);
 }
 
 #[test]
