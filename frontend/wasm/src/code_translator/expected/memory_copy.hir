@@ -5,9 +5,9 @@ public builtin.function @test_wrapper() {
     v2 = arith.constant 1 : i32;
     v3 = hir.bitcast v2 : u32;
     v4 = hir.bitcast v0 : u32;
-    v5 = hir.int_to_ptr v4 : (ptr u8);
+    v5 = hir.int_to_ptr v4 : ptr<byte, u8>;
     v6 = hir.bitcast v1 : u32;
-    v7 = hir.int_to_ptr v6 : (ptr u8);
+    v7 = hir.int_to_ptr v6 : ptr<byte, u8>;
     hir.mem_cpy v7, v5, v3;
     cf.br ^block5;
 ^block5:

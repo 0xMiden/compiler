@@ -22,7 +22,7 @@ builtin.component root_ns:root@1.0.0 {
                     v13 = arith.constant 4 : u32;
                     v14 = arith.mod v12, v13 : u32;
                     hir.assertz v14 #[code = 250];
-                    v15 = hir.int_to_ptr v12 : (ptr i32);
+                    v15 = hir.int_to_ptr v12 : ptr<byte, i32>;
                     v16 = hir.load v15 : i32;
                     v18 = arith.add v16, v17 : i32 #[overflow = wrapping];
                     v22 = arith.constant -1 : i32;

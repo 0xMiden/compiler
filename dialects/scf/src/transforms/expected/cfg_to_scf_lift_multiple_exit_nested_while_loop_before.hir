@@ -1,5 +1,5 @@
-public builtin.function @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
-^block0(v0: (ptr u32), v1: u32, v2: u32):
+public builtin.function @test(v0: ptr<byte, u32>, v1: u32, v2: u32) -> u32 {
+^block0(v0: ptr<byte, u32>, v1: u32, v2: u32):
     v7 = arith.constant 0 : u32;
     cf.br ^block1(v7, v7);
 ^block1(v3: u32, v4: u32):
@@ -17,7 +17,7 @@ public builtin.function @test(v0: (ptr u32), v1: u32, v2: u32) -> u32 {
     v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
     v13 = builtin.unrealized_conversion_cast v0 : u32;
     v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
-    v15 = builtin.unrealized_conversion_cast v14 : (ptr u32);
+    v15 = builtin.unrealized_conversion_cast v14 : ptr<byte, u32>;
     v16 = builtin.unrealized_conversion_cast v15 : u32;
     v17 = arith.incr v5 : u32;
     v18, v19 = arith.add_overflowing v6, v16 : i1, u32;
