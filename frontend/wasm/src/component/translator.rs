@@ -107,20 +107,21 @@ impl<'a> ComponentTranslator<'a> {
             self.initializer(&mut frame, types, init)?;
         }
 
-        let mut account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
+        let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
             .into_iter()
             .flat_map(|t| t.1.account_component_metadata_bytes.map(|slice| slice.to_vec()))
             .collect();
         assert!(
             account_component_metadata_bytes_vec.len() <= 1,
-            "expected only one core Wasm module to have account component metadata section",
+            "unexpected multiple core Wasm module to have account component metadata section",
         );
-        let account_component_metadata_bytes = account_component_metadata_bytes_vec.remove(0);
+        let account_component_metadata_bytes =
+            account_component_metadata_bytes_vec.first().map(ToOwned::to_owned);
 
         let output = FrontendOutput {
             component: self.result.component,
-            account_component_metadata_bytes: Some(account_component_metadata_bytes),
+            account_component_metadata_bytes,
         };
         Ok(output)
     }
