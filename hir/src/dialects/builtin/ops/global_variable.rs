@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-
 use smallvec::smallvec;
 
 use crate::{
@@ -13,8 +11,9 @@ use crate::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
     },
-    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, Report, Spanned, Symbol, SymbolName,
-    SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value, Visibility,
+    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
+    SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
+    Visibility,
 };
 
 pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
@@ -201,7 +200,7 @@ impl EffectOpInterface<MemoryEffect> for GlobalSymbol {
 
 impl InferTypeOpInterface for GlobalSymbol {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.addr_mut().set_type(Type::Ptr(Box::new(Type::U8)));
+        self.addr_mut().set_type(Type::from(PointerType::new(Type::U8)));
         Ok(())
     }
 }

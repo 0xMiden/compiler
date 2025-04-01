@@ -4,7 +4,7 @@ use core::{fmt, ops::Index};
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
-    self as hir, Abi, AbiParam, CallConv, FxHashMap, Immediate, Signature, Visibility,
+    self as hir, AbiParam, CallConv, FxHashMap, Immediate, Signature, SmallVec, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 use wasmparser::types::CoreTypeId;
@@ -587,14 +587,14 @@ pub fn ir_func_type(
         .params()
         .iter()
         .map(|t| ir_type(*t, diagnostics))
-        .collect::<WasmResult<Vec<hir::Type>>>()?;
+        .collect::<WasmResult<SmallVec<[hir::Type; 4]>>>()?;
     let results = ty
         .returns()
         .iter()
         .map(|t| ir_type(*t, diagnostics))
-        .collect::<WasmResult<Vec<hir::Type>>>()?;
+        .collect::<WasmResult<SmallVec<[hir::Type; 1]>>>()?;
     Ok(hir::FunctionType {
-        abi: Abi::Canonical,
+        abi: CallConv::Wasm,
         results,
         params,
     })

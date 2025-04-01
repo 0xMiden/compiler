@@ -1,6 +1,6 @@
 use midenc_hir::{
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
 };
 
@@ -24,6 +24,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     blake3.insert(
         Symbol::from(HASH_1TO1),
         FunctionType::new(
+            CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32],
             [I32, I32, I32, I32, I32, I32, I32, I32],
         ),
@@ -31,6 +32,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     blake3.insert(
         Symbol::from(HASH_2TO1),
         FunctionType::new(
+            CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32],
             [I32, I32, I32, I32, I32, I32, I32, I32],
         ),

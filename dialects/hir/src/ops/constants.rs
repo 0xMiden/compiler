@@ -29,7 +29,7 @@ has_no_effects!(ConstantPointer);
 
 impl InferTypeOpInterface for ConstantPointer {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = Type::Ptr(Box::new(self.value().pointee_type().clone()));
+        let ty = Type::from(PointerType::new(self.value().pointee_type().clone()));
         self.result_mut().set_type(ty);
 
         Ok(())
@@ -77,7 +77,7 @@ has_no_effects!(ConstantBytes);
 impl InferTypeOpInterface for ConstantBytes {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let len = self.size_in_bytes();
-        self.result_mut().set_type(Type::Array(Box::new(Type::U8), len));
+        self.result_mut().set_type(Type::from(ArrayType::new(Type::U8, len)));
 
         Ok(())
     }

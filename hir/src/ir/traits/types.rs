@@ -1,6 +1,7 @@
-use alloc::{boxed::Box, format};
+use alloc::format;
 use core::fmt;
 
+use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
 use crate::{derive, Context, Op, Operation, Report, Type};
@@ -124,7 +125,7 @@ pub trait TypeConstraint: 'static {
 
 /// A type that can be constructed as a [crate::Type]
 pub trait BuildableTypeConstraint: TypeConstraint {
-    fn build() -> crate::Type;
+    fn build(context: &Context) -> crate::Type;
 }
 
 macro_rules! type_constraint {
@@ -227,52 +228,52 @@ pub type SInt64 = And<AnySignedInteger, SizedInt<64>>;
 pub type UInt64 = And<AnyUnsignedInteger, SizedInt<64>>;
 
 impl BuildableTypeConstraint for IntFelt {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::Felt
     }
 }
 impl BuildableTypeConstraint for Bool {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I1
     }
 }
 impl BuildableTypeConstraint for UInt8 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::U8
     }
 }
 impl BuildableTypeConstraint for SInt8 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I8
     }
 }
 impl BuildableTypeConstraint for UInt16 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::U16
     }
 }
 impl BuildableTypeConstraint for SInt16 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I16
     }
 }
 impl BuildableTypeConstraint for UInt32 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::U32
     }
 }
 impl BuildableTypeConstraint for SInt32 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I32
     }
 }
 impl BuildableTypeConstraint for UInt64 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::U64
     }
 }
 impl BuildableTypeConstraint for SInt64 {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I64
     }
 }
@@ -305,22 +306,22 @@ impl<const N: usize> TypeConstraint for SizedInt<N> {
     }
 }
 impl BuildableTypeConstraint for SizedInt<8> {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I8
     }
 }
 impl BuildableTypeConstraint for SizedInt<16> {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I16
     }
 }
 impl BuildableTypeConstraint for SizedInt<32> {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I32
     }
 }
 impl BuildableTypeConstraint for SizedInt<64> {
-    fn build() -> crate::Type {
+    fn build(_context: &Context) -> crate::Type {
         crate::Type::I64
     }
 }
@@ -355,9 +356,8 @@ impl<T: TypeConstraint> TypeConstraint for PointerOf<T> {
     }
 }
 impl<T: BuildableTypeConstraint> BuildableTypeConstraint for PointerOf<T> {
-    fn build() -> crate::Type {
-        let pointee = Box::new(<T as BuildableTypeConstraint>::build());
-        crate::Type::Ptr(pointee)
+    fn build(context: &Context) -> crate::Type {
+        crate::Type::from(PointerType::new(<T as BuildableTypeConstraint>::build(context)))
     }
 }
 
@@ -388,7 +388,7 @@ impl<T: TypeConstraint> TypeConstraint for AnyArrayOf<T> {
 
     fn matches(ty: &crate::Type) -> bool {
         match ty {
-            crate::Type::Array(ref elem, _) => <T as TypeConstraint>::matches(elem),
+            crate::Type::Array(ty) => <T as TypeConstraint>::matches(ty.element_type()),
             _ => false,
         }
     }
@@ -421,17 +421,17 @@ impl<const N: usize, T: TypeConstraint> TypeConstraint for ArrayOf<N, T> {
 
     fn matches(ty: &crate::Type) -> bool {
         match ty {
-            crate::Type::Array(ref elem, arity) if *arity == N => {
-                <T as TypeConstraint>::matches(elem)
+            crate::Type::Array(ty) if ty.len() == N => {
+                <T as TypeConstraint>::matches(ty.element_type())
             }
             _ => false,
         }
     }
 }
 impl<const N: usize, T: BuildableTypeConstraint> BuildableTypeConstraint for ArrayOf<N, T> {
-    fn build() -> crate::Type {
-        let element = Box::new(<T as BuildableTypeConstraint>::build());
-        crate::Type::Array(element, N)
+    fn build(context: &Context) -> crate::Type {
+        let element = <T as BuildableTypeConstraint>::build(context);
+        crate::Type::from(crate::ArrayType::new(element, N))
     }
 }
 

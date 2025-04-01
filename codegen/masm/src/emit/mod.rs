@@ -706,7 +706,10 @@ pub fn movdnw_from_offset(offset: usize) -> masm::Instruction {
 mod tests {
     use alloc::rc::Rc;
 
-    use midenc_hir::{AbiParam, Context, Felt, FieldElement, Overflow, Signature, ValueRef};
+    use midenc_hir::{
+        AbiParam, ArrayType, Context, Felt, FieldElement, Overflow, PointerType, Signature,
+        ValueRef,
+    };
 
     use super::*;
     use crate::masm::{self, Op};
@@ -1747,7 +1750,7 @@ mod tests {
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
         let addr = Immediate::U32(128);
-        let ptr = Type::Ptr(Box::new(Type::Array(Box::new(Type::U64), 8)));
+        let ptr = Type::from(PointerType::new(Type::from(ArrayType::new(Type::U64, 8))));
 
         emitter.literal(addr, SourceSpan::default());
 
@@ -1949,7 +1952,7 @@ mod tests {
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
-        let return_ty = Type::Array(Box::new(Type::U32), 1);
+        let return_ty = Type::from(ArrayType::new(Type::U32, 1));
         let callee = masm::InvocationTarget::AbsoluteProcedurePath {
             path: masm::LibraryPath::new_from_components(
                 masm::LibraryNamespace::new("test").unwrap(),
@@ -1981,7 +1984,7 @@ mod tests {
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
-        let addr = Type::Ptr(Box::new(Type::U8));
+        let addr = Type::from(PointerType::new(Type::U8));
 
         emitter.push(addr);
         assert_eq!(emitter.stack_len(), 1);

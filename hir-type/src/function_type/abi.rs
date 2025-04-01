@@ -16,6 +16,10 @@ use core::fmt;
 /// convention used at a given call site, matches the convention of the callee, i.e. it must
 /// be the case that caller and callee agree on the convention used for that call.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
+)]
 #[repr(u8)]
 pub enum CallConv {
     /// This convention passes all arguments and results by value, and thus requires that the types
@@ -159,15 +163,32 @@ pub enum CallConv {
     ///   forbids any arguments/results of pointer type, due to the context switch that occurs.
     Kernel,
 }
+
+impl CallConv {
+    /// Returns true if this convention corresponds to one of the two Canonical ABI conventions
+    pub fn is_wasm_canonical_abi(&self) -> bool {
+        matches!(self, Self::CanonLift | Self::CanonLower)
+    }
+}
+
 impl fmt::Display for CallConv {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use miden_formatting::prettier::PrettyPrint;
+        self.pretty_print(f)
+    }
+}
+
+impl miden_formatting::prettier::PrettyPrint for CallConv {
+    fn render(&self) -> miden_formatting::prettier::Document {
+        use miden_formatting::prettier::const_text;
+
         match self {
-            Self::Fast => f.write_str("fast"),
-            Self::SystemV => f.write_str("C"),
-            Self::Wasm => f.write_str("wasm"),
-            Self::CanonLift => f.write_str("canon-lift"),
-            Self::CanonLower => f.write_str("canon-lower"),
-            Self::Kernel => f.write_str("kernel"),
+            Self::Fast => const_text("fast"),
+            Self::SystemV => const_text("C"),
+            Self::Wasm => const_text("wasm"),
+            Self::CanonLift => const_text("canon-lift"),
+            Self::CanonLower => const_text("canon-lower"),
+            Self::Kernel => const_text("kernel"),
         }
     }
 }

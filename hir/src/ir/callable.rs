@@ -351,7 +351,6 @@ impl Signature {
     /// Returns a slice containing the results of this function
     pub fn results(&self) -> &[AbiParam] {
         match self.results.as_slice() {
-            [AbiParam { ty: Type::Unit, .. }] => &[],
             [AbiParam {
                 ty: Type::Never, ..
             }] => &[],

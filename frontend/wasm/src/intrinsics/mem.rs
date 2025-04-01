@@ -2,8 +2,8 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::FunctionRef,
     interner::{symbols, Symbol},
-    AbiParam, Builder, FunctionType, Signature, SmallVec, SourceSpan, SymbolNameComponent, Type,
-    ValueRef,
+    AbiParam, Builder, CallConv, FunctionType, Signature, SmallVec, SourceSpan,
+    SymbolNameComponent, Type, ValueRef,
 };
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
@@ -21,7 +21,7 @@ const HEAP_BASE_FUNC: ([Type; 0], [Type; 1]) = ([], [Type::U32]);
 
 pub fn function_type(function: Symbol) -> Option<FunctionType> {
     match function.as_str() {
-        HEAP_BASE => Some(FunctionType::new(HEAP_BASE_FUNC.0, HEAP_BASE_FUNC.1)),
+        HEAP_BASE => Some(FunctionType::new(CallConv::Wasm, HEAP_BASE_FUNC.0, HEAP_BASE_FUNC.1)),
         _ => None,
     }
 }

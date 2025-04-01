@@ -8,7 +8,7 @@ use blink_alloc::Blink;
 use midenc_session::Session;
 use traits::BranchOpInterface;
 
-use super::*;
+use super::{traits::BuildableTypeConstraint, *};
 use crate::{
     constants::{ConstantData, ConstantId, ConstantPool},
     FxHashMap,
@@ -32,6 +32,7 @@ pub struct Context {
     registered_dialects: RefCell<FxHashMap<interner::Symbol, Rc<dyn Dialect>>>,
     dialect_hooks: RefCell<FxHashMap<interner::Symbol, Vec<DialectRegistrationHook>>>,
     constants: RefCell<ConstantPool>,
+    type_cache: RefCell<FxHashMap<core::any::TypeId, Arc<Type>>>,
     next_block_id: Cell<u32>,
     next_value_id: Cell<u32>,
 }
@@ -61,6 +62,7 @@ impl Context {
             registered_dialects: Default::default(),
             dialect_hooks: Default::default(),
             constants: Default::default(),
+            type_cache: Default::default(),
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
         }
@@ -140,6 +142,22 @@ impl Context {
 
     pub fn get_constant_size_in_bytes(&self, id: ConstantId) -> usize {
         self.constants.borrow().get_by_ref(id).len()
+    }
+
+    pub fn get_cached_type<T: BuildableTypeConstraint>(&self) -> Option<Arc<Type>> {
+        self.type_cache.borrow().get(&core::any::TypeId::of::<T>()).cloned()
+    }
+
+    pub fn get_or_insert_type<T: BuildableTypeConstraint>(&self) -> Arc<Type> {
+        match self.get_cached_type::<T>() {
+            Some(ty) => ty,
+            None => {
+                let ty = Arc::new(<T as BuildableTypeConstraint>::build(self));
+                let mut types = self.type_cache.borrow_mut();
+                types.insert(core::any::TypeId::of::<T>(), Arc::clone(&ty));
+                ty
+            }
+        }
     }
 
     /// Get a new [OpBuilder] for this context

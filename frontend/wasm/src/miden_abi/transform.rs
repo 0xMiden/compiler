@@ -1,8 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, SymbolNameComponent,
-    SymbolPath, Type, ValueRef,
+    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, PointerType,
+    SymbolNameComponent, SymbolPath, Type, ValueRef,
 };
 
 use super::{stdlib, tx_kernel};
@@ -186,7 +186,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
             builder.add(ptr_u32, imm_val, span).expect("failed add")
         };
         let addr = builder
-            .inttoptr(eff_ptr, Type::Ptr(value_ty.into()), span)
+            .inttoptr(eff_ptr, Type::from(PointerType::new(value_ty)), span)
             .expect("failed inttoptr");
         builder.store(addr, *value, span).expect("failed store");
     }

@@ -1,6 +1,6 @@
 use midenc_hir::{
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
 };
 
@@ -26,31 +26,33 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut account: FunctionTypeMap = Default::default();
     account.insert(
         Symbol::from(ADD_ASSET),
-        FunctionType::new([Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     account.insert(
         Symbol::from(REMOVE_ASSET),
-        FunctionType::new([Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
-    account.insert(Symbol::from(GET_ID), FunctionType::new([], [Felt]));
+    account.insert(Symbol::from(GET_ID), FunctionType::new(CallConv::Wasm, [], [Felt]));
     account.insert(
         Symbol::from(GET_STORAGE_ITEM),
-        FunctionType::new([Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
     account.insert(
         Symbol::from(SET_STORAGE_ITEM),
         FunctionType::new(
+            CallConv::Wasm,
             [Felt, Felt, Felt, Felt, Felt],
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
         ),
     );
     account.insert(
         Symbol::from(GET_STORAGE_MAP_ITEM),
-        FunctionType::new([Felt, Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     account.insert(
         Symbol::from(SET_STORAGE_MAP_ITEM),
         FunctionType::new(
+            CallConv::Wasm,
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
         ),

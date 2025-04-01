@@ -1,7 +1,7 @@
 use alloc::{alloc::Layout, collections::VecDeque};
 use core::cmp::{self, Ordering};
 
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 use super::*;
 
@@ -72,336 +72,323 @@ impl Type {
             | Self::U32
             | Self::Ptr(_)
             | Self::I16
-            | Self::U16) => {
+            | Self::U16
+            | Self::Function(_)) => {
                 let len = ty.size_in_bytes();
                 let remaining = len - n;
                 match (n, remaining) {
                     (0, _) | (_, 0) => unreachable!(),
                     (1, 1) => (Type::U8, Some(Type::U8)),
-                    (1, remaining) => (Type::U8, Some(Type::Array(Box::new(Type::U8), remaining))),
-                    (taken, 1) => (Type::Array(Box::new(Type::U8), taken), Some(Type::U8)),
+                    (1, remaining) => {
+                        (Type::U8, Some(Type::from(ArrayType::new(Type::U8, remaining))))
+                    }
+                    (taken, 1) => (Type::from(ArrayType::new(Type::U8, taken)), Some(Type::U8)),
                     (taken, remaining) => (
-                        Type::Array(Box::new(Type::U8), taken),
-                        Some(Type::Array(Box::new(Type::U8), remaining)),
+                        Type::from(ArrayType::new(Type::U8, taken)),
+                        Some(Type::from(ArrayType::new(Type::U8, remaining))),
                     ),
                 }
             }
-            Self::NativePtr(pointee, _) => {
-                let struct_ty = Type::Struct(StructType {
-                    repr: TypeRepr::Default,
-                    size: 12,
-                    fields: Vec::from([
-                        StructField {
-                            index: 0,
-                            align: 4,
-                            offset: 0,
-                            ty: Type::Ptr(pointee),
-                        },
-                        StructField {
-                            index: 1,
-                            align: 4,
-                            offset: 4,
-                            ty: Type::U8,
-                        },
-                        StructField {
-                            index: 2,
-                            align: 4,
-                            offset: 8,
-                            ty: Type::U8,
-                        },
-                    ]),
-                });
-                struct_ty.split(n)
-            }
-            Self::Array(elem_ty, 1) => elem_ty.split(n),
-            Self::Array(elem_ty, array_len) => {
-                let elem_size = elem_ty.size_in_bytes();
-                if n >= elem_size {
-                    // The requested split consumes 1 or more elements..
-                    let take = n / elem_size;
-                    let extra = n % elem_size;
-                    if extra == 0 {
-                        // The split is on an element boundary
-                        let split = match take {
-                            1 => (*elem_ty).clone(),
-                            _ => Self::Array(elem_ty.clone(), take),
-                        };
-                        let rest = match array_len - take {
-                            0 => unreachable!(),
-                            1 => *elem_ty,
-                            len => Self::Array(elem_ty, len),
-                        };
-                        (split, Some(rest))
+            Self::Array(array_type) => match &*array_type {
+                ArrayType {
+                    ty: elem_ty,
+                    len: 1,
+                } => elem_ty.clone().split(n),
+                ArrayType {
+                    ty: elem_ty,
+                    len: array_len,
+                } => {
+                    let elem_size = elem_ty.size_in_bytes();
+                    if n >= elem_size {
+                        // The requested split consumes 1 or more elements..
+                        let take = n / elem_size;
+                        let extra = n % elem_size;
+                        if extra == 0 {
+                            // The split is on an element boundary
+                            let split = match take {
+                                1 => (*elem_ty).clone(),
+                                _ => Self::from(ArrayType::new(elem_ty.clone(), take)),
+                            };
+                            let rest = match array_len - take {
+                                0 => unreachable!(),
+                                1 => elem_ty.clone(),
+                                len => Self::from(ArrayType::new(elem_ty.clone(), len)),
+                            };
+                            (split, Some(rest))
+                        } else {
+                            // The element type must be split somewhere in order to get the input type
+                            // down to the requested size
+                            let (partial1, partial2) = (*elem_ty).clone().split(elem_size - extra);
+                            match array_len - take {
+                                0 => unreachable!(),
+                                1 => {
+                                    let taken = Self::from(ArrayType::new(elem_ty.clone(), take));
+                                    let split = Self::from(StructType::new_with_repr(
+                                        TypeRepr::packed(1),
+                                        [taken, partial1],
+                                    ));
+                                    (split, partial2)
+                                }
+                                remaining => {
+                                    let remaining_input =
+                                        Self::from(ArrayType::new(elem_ty.clone(), remaining));
+                                    let taken = Self::from(ArrayType::new(elem_ty.clone(), take));
+                                    let split = Self::from(StructType::new_with_repr(
+                                        TypeRepr::packed(1),
+                                        [taken, partial1],
+                                    ));
+                                    let rest = Self::from(StructType::new_with_repr(
+                                        TypeRepr::packed(1),
+                                        [partial2.unwrap(), remaining_input],
+                                    ));
+                                    (split, Some(rest))
+                                }
+                            }
+                        }
                     } else {
-                        // The element type must be split somewhere in order to get the input type
-                        // down to the requested size
-                        let (partial1, partial2) = (*elem_ty).clone().split(elem_size - extra);
-                        match array_len - take {
+                        // The requested split consumes less than one element
+                        let (partial1, partial2) = (*elem_ty).clone().split(n);
+                        let remaining_input = match array_len - 1 {
                             0 => unreachable!(),
-                            1 => {
-                                let taken = Self::Array(elem_ty, take);
-                                let split = Self::Struct(StructType::new_with_repr(
-                                    TypeRepr::packed(1),
-                                    [taken, partial1],
-                                ));
-                                (split, partial2)
-                            }
-                            remaining => {
-                                let remaining_input = Self::Array(elem_ty.clone(), remaining);
-                                let taken = Self::Array(elem_ty, take);
-                                let split = Self::Struct(StructType::new_with_repr(
-                                    TypeRepr::packed(1),
-                                    [taken, partial1],
-                                ));
-                                let rest = Self::Struct(StructType::new_with_repr(
-                                    TypeRepr::packed(1),
-                                    [partial2.unwrap(), remaining_input],
-                                ));
-                                (split, Some(rest))
-                            }
-                        }
-                    }
-                } else {
-                    // The requested split consumes less than one element
-                    let (partial1, partial2) = (*elem_ty).clone().split(n);
-                    let remaining_input = match array_len - 1 {
-                        0 => unreachable!(),
-                        1 => (*elem_ty).clone(),
-                        len => Self::Array(elem_ty, len - 1),
-                    };
-                    let rest = Self::Struct(StructType::new_with_repr(
-                        TypeRepr::packed(1),
-                        [partial2.unwrap(), remaining_input],
-                    ));
-                    (partial1, Some(rest))
-                }
-            }
-            Self::Struct(StructType {
-                repr: TypeRepr::Transparent,
-                fields,
-                ..
-            }) => {
-                let underlying = fields
-                    .into_iter()
-                    .find(|f| !f.ty.is_zst())
-                    .expect("invalid type: expected non-zero sized field");
-                underlying.ty.split(n)
-            }
-            Self::Struct(struct_ty) => {
-                let original_repr = struct_ty.repr;
-                let original_size = struct_ty.size;
-                let mut fields = VecDeque::from(struct_ty.fields);
-                let mut split = StructType {
-                    repr: original_repr,
-                    size: 0,
-                    fields: Vec::new(),
-                };
-                let mut remaining = StructType {
-                    repr: TypeRepr::packed(1),
-                    size: 0,
-                    fields: Vec::new(),
-                };
-                let mut needed: u32 = n.try_into().expect(
-                    "invalid type split: number of bytes is larger than what is representable in \
-                     memory",
-                );
-                let mut current_offset = 0u32;
-                while let Some(mut field) = fields.pop_front() {
-                    let padding = field.offset - current_offset;
-                    // If the padding was exactly what was needed, add it to the `split`
-                    // struct, and then place the remaining fields in a new struct
-                    let original_offset = field.offset;
-                    if padding == needed {
-                        split.size += needed;
-                        // Handle the edge case where padding is at the front of the struct
-                        if split.fields.is_empty() {
-                            split.fields.push(StructField {
-                                index: 0,
-                                align: 1,
-                                offset: 0,
-                                ty: Type::Array(Box::new(Type::U8), needed as usize),
-                            });
-                        }
-                        let mut prev_offset = original_offset;
-                        let mut field_offset = 0;
-                        field.index = 0;
-                        field.offset = field_offset;
-                        remaining.repr = TypeRepr::Default;
-                        remaining.size = original_size - split.size;
-                        remaining.fields.reserve(1 + fields.len());
-                        field_offset += field.ty.size_in_bytes() as u32;
-                        remaining.fields.push(field);
-                        for (index, mut field) in fields.into_iter().enumerate() {
-                            field.index = (index + 1) as u8;
-                            let align_offset = field.offset - prev_offset;
-                            let field_size = field.ty.size_in_bytes() as u32;
-                            prev_offset = field.offset + field_size;
-                            field.offset = field_offset + align_offset;
-                            field_offset += align_offset;
-                            field_offset += field_size;
-                            remaining.fields.push(field);
-                        }
-                        break;
-                    }
-
-                    // If the padding is more than was needed, we fill out the rest of the
-                    // request by padding the size of the `split` struct, and then adjust
-                    // the remaining struct to account for the leftover padding.
-                    if padding > needed {
-                        // The struct size must match the requested split size
-                        split.size += needed;
-                        // Handle the edge case where padding is at the front of the struct
-                        if split.fields.is_empty() {
-                            split.fields.push(StructField {
-                                index: 0,
-                                align: 1,
-                                offset: 0,
-                                ty: Type::Array(Box::new(Type::U8), needed as usize),
-                            });
-                        }
-                        // What's left must account for what has been split off
-                        let leftover_padding = u16::try_from(padding - needed).expect(
-                            "invalid type: padding is larger than maximum allowed alignment",
-                        );
-                        let effective_alignment = leftover_padding.prev_power_of_two();
-                        let align_offset = leftover_padding % effective_alignment;
-                        let default_alignment = cmp::max(
-                            fields.iter().map(|f| f.align).max().unwrap_or(1),
-                            field.align,
-                        );
-                        let repr = match default_alignment.cmp(&effective_alignment) {
-                            Ordering::Equal => TypeRepr::Default,
-                            Ordering::Greater => TypeRepr::packed(effective_alignment),
-                            Ordering::Less => TypeRepr::align(effective_alignment),
+                            1 => (*elem_ty).clone(),
+                            len => Self::from(ArrayType::new(elem_ty.clone(), len - 1)),
                         };
-                        let mut prev_offset = original_offset;
-                        let mut field_offset = align_offset as u32;
-                        field.index = 0;
-                        field.offset = field_offset;
-                        remaining.repr = repr;
-                        remaining.size = original_size - split.size;
-                        remaining.fields.reserve(1 + fields.len());
-                        field_offset += field.ty.size_in_bytes() as u32;
-                        remaining.fields.push(field);
-                        for (index, mut field) in fields.into_iter().enumerate() {
-                            field.index = (index + 1) as u8;
-                            let align_offset = field.offset - prev_offset;
-                            let field_size = field.ty.size_in_bytes() as u32;
-                            prev_offset = field.offset + field_size;
-                            field.offset = field_offset + align_offset;
-                            field_offset += align_offset;
-                            field_offset += field_size;
-                            remaining.fields.push(field);
-                        }
-                        break;
+                        let rest = Self::from(StructType::new_with_repr(
+                            TypeRepr::packed(1),
+                            [partial2.unwrap(), remaining_input],
+                        ));
+                        (partial1, Some(rest))
                     }
+                }
+            },
+            Self::Struct(struct_ty) => match &*struct_ty {
+                StructType {
+                    repr: TypeRepr::Transparent,
+                    fields,
+                    ..
+                } => {
+                    let underlying = fields
+                        .into_iter()
+                        .find(|f| !f.ty.is_zst())
+                        .expect("invalid type: expected non-zero sized field");
+                    underlying.ty.clone().split(n)
+                }
+                struct_ty => {
+                    let original_repr = struct_ty.repr;
+                    let original_size = struct_ty.size;
+                    let mut fields = VecDeque::from_iter(struct_ty.fields.iter().cloned());
+                    let mut split = StructType {
+                        repr: original_repr,
+                        size: 0,
+                        fields: smallvec![],
+                    };
+                    let mut remaining = StructType {
+                        repr: TypeRepr::packed(1),
+                        size: 0,
+                        fields: smallvec![],
+                    };
+                    let mut needed: u32 = n.try_into().expect(
+                        "invalid type split: number of bytes is larger than what is representable \
+                         in memory",
+                    );
+                    let mut current_offset = 0u32;
+                    while let Some(mut field) = fields.pop_front() {
+                        let padding = field.offset - current_offset;
+                        // If the padding was exactly what was needed, add it to the `split`
+                        // struct, and then place the remaining fields in a new struct
+                        let original_offset = field.offset;
+                        if padding == needed {
+                            split.size += needed;
+                            // Handle the edge case where padding is at the front of the struct
+                            if split.fields.is_empty() {
+                                split.fields.push(StructField {
+                                    index: 0,
+                                    align: 1,
+                                    offset: 0,
+                                    ty: Type::from(ArrayType::new(Type::U8, needed as usize)),
+                                });
+                            }
+                            let mut prev_offset = original_offset;
+                            let mut field_offset = 0;
+                            field.index = 0;
+                            field.offset = field_offset;
+                            remaining.repr = TypeRepr::Default;
+                            remaining.size = original_size - split.size;
+                            remaining.fields.reserve(1 + fields.len());
+                            field_offset += field.ty.size_in_bytes() as u32;
+                            remaining.fields.push(field);
+                            for (index, mut field) in fields.into_iter().enumerate() {
+                                field.index = (index + 1) as u8;
+                                let align_offset = field.offset - prev_offset;
+                                let field_size = field.ty.size_in_bytes() as u32;
+                                prev_offset = field.offset + field_size;
+                                field.offset = field_offset + align_offset;
+                                field_offset += align_offset;
+                                field_offset += field_size;
+                                remaining.fields.push(field);
+                            }
+                            break;
+                        }
 
-                    // The padding must be less than what was needed, so consume it, and
-                    // then process the current field for the rest of the request
-                    split.size += padding;
-                    needed -= padding;
-                    current_offset += padding;
-                    let field_size = field.ty.size_in_bytes() as u32;
-                    // If the field fully satisifies the remainder of the request, then
-                    // finalize the `split` struct, and place remaining fields in a trailing
-                    // struct with an appropriate repr
-                    if field_size == needed {
+                        // If the padding is more than was needed, we fill out the rest of the
+                        // request by padding the size of the `split` struct, and then adjust
+                        // the remaining struct to account for the leftover padding.
+                        if padding > needed {
+                            // The struct size must match the requested split size
+                            split.size += needed;
+                            // Handle the edge case where padding is at the front of the struct
+                            if split.fields.is_empty() {
+                                split.fields.push(StructField {
+                                    index: 0,
+                                    align: 1,
+                                    offset: 0,
+                                    ty: Type::from(ArrayType::new(Type::U8, needed as usize)),
+                                });
+                            }
+                            // What's left must account for what has been split off
+                            let leftover_padding = u16::try_from(padding - needed).expect(
+                                "invalid type: padding is larger than maximum allowed alignment",
+                            );
+                            let effective_alignment = leftover_padding.prev_power_of_two();
+                            let align_offset = leftover_padding % effective_alignment;
+                            let default_alignment = cmp::max(
+                                fields.iter().map(|f| f.align).max().unwrap_or(1),
+                                field.align,
+                            );
+                            let repr = match default_alignment.cmp(&effective_alignment) {
+                                Ordering::Equal => TypeRepr::Default,
+                                Ordering::Greater => TypeRepr::packed(effective_alignment),
+                                Ordering::Less => TypeRepr::align(effective_alignment),
+                            };
+                            let mut prev_offset = original_offset;
+                            let mut field_offset = align_offset as u32;
+                            field.index = 0;
+                            field.offset = field_offset;
+                            remaining.repr = repr;
+                            remaining.size = original_size - split.size;
+                            remaining.fields.reserve(1 + fields.len());
+                            field_offset += field.ty.size_in_bytes() as u32;
+                            remaining.fields.push(field);
+                            for (index, mut field) in fields.into_iter().enumerate() {
+                                field.index = (index + 1) as u8;
+                                let align_offset = field.offset - prev_offset;
+                                let field_size = field.ty.size_in_bytes() as u32;
+                                prev_offset = field.offset + field_size;
+                                field.offset = field_offset + align_offset;
+                                field_offset += align_offset;
+                                field_offset += field_size;
+                                remaining.fields.push(field);
+                            }
+                            break;
+                        }
+
+                        // The padding must be less than what was needed, so consume it, and
+                        // then process the current field for the rest of the request
+                        split.size += padding;
+                        needed -= padding;
+                        current_offset += padding;
+                        let field_size = field.ty.size_in_bytes() as u32;
+                        // If the field fully satisifies the remainder of the request, then
+                        // finalize the `split` struct, and place remaining fields in a trailing
+                        // struct with an appropriate repr
+                        if field_size == needed {
+                            split.size += field_size;
+                            field.offset = current_offset;
+                            split.fields.push(field);
+
+                            debug_assert!(
+                                !fields.is_empty(),
+                                "expected struct that is the exact size of the split request to \
+                                 have been handled elsewhere"
+                            );
+
+                            remaining.repr = original_repr;
+                            remaining.size = original_size - split.size;
+                            remaining.fields.reserve(fields.len());
+                            let mut prev_offset = current_offset + field_size;
+                            let mut field_offset = 0;
+                            for (index, mut field) in fields.into_iter().enumerate() {
+                                field.index = index as u8;
+                                let align_offset = field.offset - prev_offset;
+                                let field_size = field.ty.size_in_bytes() as u32;
+                                prev_offset = field.offset + field_size;
+                                field.offset = field_offset + align_offset;
+                                field_offset += align_offset;
+                                field_offset += field_size;
+                                remaining.fields.push(field);
+                            }
+                            break;
+                        }
+
+                        // If the field is larger than what is needed, we have to split it
+                        if field_size > needed {
+                            split.size += needed;
+
+                            // Add the portion needed to `split`
+                            let index = field.index;
+                            let offset = current_offset;
+                            let align = field.align;
+                            let (partial1, partial2) = field.ty.split(needed as usize);
+                            // The second half of the split will always be a type
+                            let partial2 = partial2.unwrap();
+                            split.fields.push(StructField {
+                                index,
+                                offset,
+                                align,
+                                ty: partial1,
+                            });
+
+                            // Build a struct with the remaining fields and trailing partial field
+                            let mut prev_offset = current_offset + needed;
+                            let mut field_offset = needed + partial2.size_in_bytes() as u32;
+                            remaining.size = original_size - split.size;
+                            remaining.fields.reserve(1 + fields.len());
+                            remaining.fields.push(StructField {
+                                index: 0,
+                                offset: 1,
+                                align: 1,
+                                ty: partial2,
+                            });
+                            for (index, mut field) in fields.into_iter().enumerate() {
+                                field.index = (index + 1) as u8;
+                                let align_offset = field.offset - prev_offset;
+                                let field_size = field.ty.size_in_bytes() as u32;
+                                prev_offset = field.offset + needed + field_size;
+                                field.offset = field_offset + align_offset;
+                                field_offset += align_offset;
+                                field_offset += field_size;
+                                remaining.fields.push(field);
+                            }
+                            break;
+                        }
+
+                        // We need to process more fields for this request (i.e. field_size < needed)
+                        needed -= field_size;
                         split.size += field_size;
                         field.offset = current_offset;
+                        current_offset += field_size;
                         split.fields.push(field);
-
-                        debug_assert!(
-                            !fields.is_empty(),
-                            "expected struct that is the exact size of the split request to have \
-                             been handled elsewhere"
-                        );
-
-                        remaining.repr = original_repr;
-                        remaining.size = original_size - split.size;
-                        remaining.fields.reserve(fields.len());
-                        let mut prev_offset = current_offset + field_size;
-                        let mut field_offset = 0;
-                        for (index, mut field) in fields.into_iter().enumerate() {
-                            field.index = index as u8;
-                            let align_offset = field.offset - prev_offset;
-                            let field_size = field.ty.size_in_bytes() as u32;
-                            prev_offset = field.offset + field_size;
-                            field.offset = field_offset + align_offset;
-                            field_offset += align_offset;
-                            field_offset += field_size;
-                            remaining.fields.push(field);
-                        }
-                        break;
                     }
 
-                    // If the field is larger than what is needed, we have to split it
-                    if field_size > needed {
-                        split.size += needed;
-
-                        // Add the portion needed to `split`
-                        let index = field.index;
-                        let offset = current_offset;
-                        let align = field.align;
-                        let (partial1, partial2) = field.ty.split(needed as usize);
-                        // The second half of the split will always be a type
-                        let partial2 = partial2.unwrap();
-                        split.fields.push(StructField {
-                            index,
-                            offset,
-                            align,
-                            ty: partial1,
-                        });
-
-                        // Build a struct with the remaining fields and trailing partial field
-                        let mut prev_offset = current_offset + needed;
-                        let mut field_offset = needed + partial2.size_in_bytes() as u32;
-                        remaining.size = original_size - split.size;
-                        remaining.fields.reserve(1 + fields.len());
-                        remaining.fields.push(StructField {
-                            index: 0,
-                            offset: 1,
-                            align: 1,
-                            ty: partial2,
-                        });
-                        for (index, mut field) in fields.into_iter().enumerate() {
-                            field.index = (index + 1) as u8;
-                            let align_offset = field.offset - prev_offset;
-                            let field_size = field.ty.size_in_bytes() as u32;
-                            prev_offset = field.offset + needed + field_size;
-                            field.offset = field_offset + align_offset;
-                            field_offset += align_offset;
-                            field_offset += field_size;
-                            remaining.fields.push(field);
-                        }
-                        break;
+                    let split = if split.fields.len() > 1 {
+                        Type::from(split)
+                    } else {
+                        split.fields.pop().map(|f| f.ty).unwrap()
+                    };
+                    match remaining.fields.len() {
+                        0 => (split, None),
+                        1 => (split, remaining.fields.pop().map(|f| f.ty)),
+                        _ => (split, Some(remaining.into())),
                     }
-
-                    // We need to process more fields for this request (i.e. field_size < needed)
-                    needed -= field_size;
-                    split.size += field_size;
-                    field.offset = current_offset;
-                    current_offset += field_size;
-                    split.fields.push(field);
                 }
-
-                let split = if split.fields.len() > 1 {
-                    Type::Struct(split)
-                } else {
-                    split.fields.pop().map(|f| f.ty).unwrap()
-                };
-                match remaining.fields.len() {
-                    0 => (split, None),
-                    1 => (split, remaining.fields.pop().map(|f| f.ty)),
-                    _ => (split, Some(remaining.into())),
-                }
-            }
+            },
             Type::List(_) => {
                 todo!("invalid type: list has no defined representation yet, so cannot be split")
             }
             // These types either have no size, or are 1 byte in size, so must have
             // been handled above when checking if the size of the type is <= the
             // requested split size
-            Self::Unknown | Self::Unit | Self::Never | Self::I1 | Self::U8 | Self::I8 => {
+            Self::Unknown | Self::Never | Self::I1 | Self::U8 | Self::I8 => {
                 unreachable!()
             }
         }
@@ -411,7 +398,7 @@ impl Type {
     pub fn min_alignment(&self) -> usize {
         match self {
             // These types don't have a meaningful alignment, so choose byte-aligned
-            Self::Unknown | Self::Unit | Self::Never => 1,
+            Self::Unknown | Self::Never => 1,
             // Felts must be naturally aligned to a 32-bit boundary (4 bytes)
             Self::Felt => 4,
             // 256-bit and 128-bit integers must be word-aligned
@@ -419,7 +406,7 @@ impl Type {
             // 64-bit integers and floats must be element-aligned
             Self::I64 | Self::U64 | Self::F64 => 4,
             // 32-bit integers and pointers must be element-aligned
-            Self::I32 | Self::U32 | Self::Ptr(_) | Self::NativePtr(..) => 4,
+            Self::I32 | Self::U32 | Self::Ptr(_) | Self::Function(..) => 4,
             // 16-bit integers can be naturally aligned
             Self::I16 | Self::U16 => 2,
             // 8-bit integers and booleans can be naturally aligned
@@ -427,7 +414,7 @@ impl Type {
             // Structs use the minimum alignment of their first field, or 1 if a zero-sized type
             Self::Struct(ref struct_ty) => struct_ty.min_alignment(),
             // Arrays use the minimum alignment of their element type
-            Self::Array(ref element_ty, _) => element_ty.min_alignment(),
+            Self::Array(ref array_ty) => array_ty.min_alignment(),
             // Lists use the minimum alignment of their element type
             Self::List(ref element_ty) => element_ty.min_alignment(),
         }
@@ -437,7 +424,7 @@ impl Type {
     pub fn size_in_bits(&self) -> usize {
         match self {
             // These types have no representation in memory
-            Self::Unknown | Self::Unit | Self::Never => 0,
+            Self::Unknown | Self::Never => 0,
             // Booleans are represented as i1
             Self::I1 => 1,
             // Integers are naturally sized
@@ -453,22 +440,10 @@ impl Type {
             Self::I128 | Self::U128 => 128,
             Self::U256 => 256,
             // Raw pointers  are 32-bits, the same size as the native integer width, u32
-            Self::Ptr(_) => 32,
-            // Native pointers are essentially a tuple/struct, composed of three 32-bit parts
-            Self::NativePtr(..) => 96,
+            Self::Ptr(_) | Self::Function(_) => 32,
             // Packed structs have no alignment padding between fields
             Self::Struct(ref struct_ty) => struct_ty.size as usize * 8,
-            // Zero-sized arrays have no size in memory
-            Self::Array(_, 0) => 0,
-            // An array of one element is the same as just the element
-            Self::Array(ref element_ty, 1) => element_ty.size_in_bits(),
-            // All other arrays require alignment padding between elements
-            Self::Array(ref element_ty, n) => {
-                let min_align = element_ty.min_alignment() * 8;
-                let element_size = element_ty.size_in_bits();
-                let padded_element_size = element_size.align_up(min_align);
-                element_size + (padded_element_size * (n - 1))
-            }
+            Self::Array(ref array_ty) => array_ty.size_in_bits(),
             Type::List(_) => todo!(
                 "invalid type: list has no defined representation yet, so its size cannot be \
                  determined"
@@ -543,69 +518,7 @@ impl Type {
     }
 }
 
-/// This trait represents an alignable primitive integer value representing an address
-pub trait Alignable {
-    /// This function computes the offset, in bytes, needed to align `self` upwards so that
-    /// it is aligned to `align` bytes.
-    ///
-    /// The following must be true, or this function will panic:
-    ///
-    /// * `align` is non-zero
-    /// * `align` is a power of two
-    fn align_offset(self, align: Self) -> Self;
-    /// This function aligns `self` to the specified alignment (in bytes), aligning upwards.
-    ///
-    /// The following must be true, or this function will panic:
-    ///
-    /// * `align` is non-zero
-    /// * `align` is a power of two
-    /// * `self` + `align` must be less than `Self::MAX`
-    fn align_up(self, align: Self) -> Self;
-
-    /// Compute the nearest power of two less than or equal to `self`
-    fn prev_power_of_two(self) -> Self;
-}
-
-macro_rules! alignable {
-    ($($ty:ty),+) => {
-        $(
-            alignable_impl!($ty);
-        )*
-    };
-}
-
-macro_rules! alignable_impl {
-    ($ty:ty) => {
-        #[allow(unstable_name_collisions)]
-        impl Alignable for $ty {
-            #[inline]
-            fn align_offset(self, align: Self) -> Self {
-                self.align_up(align) - self
-            }
-
-            #[inline]
-            fn align_up(self, align: Self) -> Self {
-                assert_ne!(align, 0);
-                assert!(align.is_power_of_two());
-                self.checked_next_multiple_of(align).expect("alignment overflow")
-            }
-
-            #[inline]
-            fn prev_power_of_two(self) -> Self {
-                if self.is_power_of_two() {
-                    self
-                } else {
-                    cmp::max(self.next_power_of_two() / 2, 1)
-                }
-            }
-        }
-    };
-}
-
-alignable!(u8, u16, u32, u64, usize);
-
 #[cfg(test)]
-#[allow(unstable_name_collisions)]
 mod tests {
     use smallvec::smallvec;
 
@@ -613,7 +526,7 @@ mod tests {
 
     #[test]
     fn struct_type_test() {
-        let ptr_ty = Type::Ptr(Box::new(Type::U32));
+        let ptr_ty = Type::from(PointerType::new(Type::U32));
         // A struct with default alignment and padding between fields
         let struct_ty = StructType::new([ptr_ty.clone(), Type::U8, Type::I32]);
         assert_eq!(struct_ty.min_alignment(), ptr_ty.min_alignment());
@@ -715,199 +628,33 @@ mod tests {
 
     #[test]
     fn type_to_raw_parts_test() {
-        let ty = Type::Array(Box::new(Type::U8), 5);
+        let ty = Type::from(ArrayType::new(Type::U8, 5));
         assert_eq!(
             ty.to_raw_parts(),
-            Some(smallvec![Type::Array(Box::new(Type::U8), 4), Type::U8,])
+            Some(smallvec![Type::from(ArrayType::new(Type::U8, 4)), Type::U8,])
         );
 
-        let ty = Type::Array(Box::new(Type::I16), 3);
+        let ty = Type::from(ArrayType::new(Type::I16, 3));
         assert_eq!(
             ty.to_raw_parts(),
-            Some(smallvec![Type::Array(Box::new(Type::I16), 2), Type::I16,])
+            Some(smallvec![Type::from(ArrayType::new(Type::I16, 2)), Type::I16,])
         );
 
-        let native_ptr_ty = Type::NativePtr(Box::new(Type::U32), AddressSpace::Root);
-        let ptr_ty = Type::Ptr(Box::new(Type::U32));
-        let ty = Type::Array(Box::new(native_ptr_ty), 2);
-        assert_eq!(
-            ty.to_raw_parts(),
-            Some(smallvec![
-                ptr_ty.clone(),
-                Type::U8,
-                Type::U8,
-                ptr_ty.clone(),
-                Type::U8,
-                Type::U8
-            ])
-        );
+        let ptr_ty = Type::from(PointerType::new(Type::U32));
 
         // Default struct
-        let ty = Type::Struct(StructType::new([ptr_ty.clone(), Type::U8, Type::I32]));
+        let ty = Type::from(StructType::new([ptr_ty.clone(), Type::U8, Type::I32]));
         assert_eq!(ty.to_raw_parts(), Some(smallvec![ptr_ty.clone(), Type::U8, Type::I32,]));
 
         // Packed struct
-        let ty = Type::Struct(StructType::new_with_repr(
+        let ty = Type::from(StructType::new_with_repr(
             TypeRepr::packed(1),
             [ptr_ty.clone(), Type::U8, Type::I32],
         ));
-        let partial_ty = Type::Struct(StructType::new_with_repr(
+        let partial_ty = Type::from(StructType::new_with_repr(
             TypeRepr::packed(1),
-            [Type::U8, Type::Array(Box::new(Type::U8), 3)],
+            [Type::U8, Type::from(ArrayType::new(Type::U8, 3))],
         ));
         assert_eq!(ty.to_raw_parts(), Some(smallvec![ptr_ty.clone(), partial_ty, Type::U8]));
-    }
-
-    #[test]
-    fn alignable_next_multiple_of() {
-        let addr = 0u32;
-        assert_eq!(addr.next_multiple_of(1), 0);
-        assert_eq!(addr.next_multiple_of(2), 0);
-        assert_eq!(addr.next_multiple_of(4), 0);
-        assert_eq!(addr.next_multiple_of(8), 0);
-        assert_eq!(addr.next_multiple_of(16), 0);
-        assert_eq!(addr.next_multiple_of(32), 0);
-
-        let addr = 1u32;
-        assert_eq!(addr.next_multiple_of(1), 1);
-        assert_eq!(addr.next_multiple_of(2), 2);
-        assert_eq!(addr.next_multiple_of(4), 4);
-        assert_eq!(addr.next_multiple_of(8), 8);
-        assert_eq!(addr.next_multiple_of(16), 16);
-        assert_eq!(addr.next_multiple_of(32), 32);
-
-        let addr = 2u32;
-        assert_eq!(addr.next_multiple_of(1), 2);
-        assert_eq!(addr.next_multiple_of(2), 2);
-        assert_eq!(addr.next_multiple_of(4), 4);
-        assert_eq!(addr.next_multiple_of(8), 8);
-        assert_eq!(addr.next_multiple_of(16), 16);
-        assert_eq!(addr.next_multiple_of(32), 32);
-
-        let addr = 3u32;
-        assert_eq!(addr.next_multiple_of(1), 3);
-        assert_eq!(addr.next_multiple_of(2), 4);
-        assert_eq!(addr.next_multiple_of(4), 4);
-        assert_eq!(addr.next_multiple_of(8), 8);
-        assert_eq!(addr.next_multiple_of(16), 16);
-        assert_eq!(addr.next_multiple_of(32), 32);
-
-        let addr = 127u32;
-        assert_eq!(addr.next_multiple_of(1), 127);
-        assert_eq!(addr.next_multiple_of(2), 128);
-        assert_eq!(addr.next_multiple_of(4), 128);
-        assert_eq!(addr.next_multiple_of(8), 128);
-        assert_eq!(addr.next_multiple_of(16), 128);
-        assert_eq!(addr.next_multiple_of(32), 128);
-
-        let addr = 130u32;
-        assert_eq!(addr.next_multiple_of(1), 130);
-        assert_eq!(addr.next_multiple_of(2), 130);
-        assert_eq!(addr.next_multiple_of(4), 132);
-        assert_eq!(addr.next_multiple_of(8), 136);
-        assert_eq!(addr.next_multiple_of(16), 144);
-        assert_eq!(addr.next_multiple_of(32), 160);
-    }
-
-    #[test]
-    fn alignable_align_offset_test() {
-        let addr = 0u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 0);
-        assert_eq!(addr.align_offset(4), 0);
-        assert_eq!(addr.align_offset(8), 0);
-        assert_eq!(addr.align_offset(16), 0);
-        assert_eq!(addr.align_offset(32), 0);
-
-        let addr = 1u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 1);
-        assert_eq!(addr.align_offset(4), 3);
-        assert_eq!(addr.align_offset(8), 7);
-        assert_eq!(addr.align_offset(16), 15);
-        assert_eq!(addr.align_offset(32), 31);
-
-        let addr = 2u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 0);
-        assert_eq!(addr.align_offset(4), 2);
-        assert_eq!(addr.align_offset(8), 6);
-        assert_eq!(addr.align_offset(16), 14);
-        assert_eq!(addr.align_offset(32), 30);
-
-        let addr = 3u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 1);
-        assert_eq!(addr.align_offset(4), 1);
-        assert_eq!(addr.align_offset(8), 5);
-        assert_eq!(addr.align_offset(16), 13);
-        assert_eq!(addr.align_offset(32), 29);
-
-        let addr = 127u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 1);
-        assert_eq!(addr.align_offset(4), 1);
-        assert_eq!(addr.align_offset(8), 1);
-        assert_eq!(addr.align_offset(16), 1);
-        assert_eq!(addr.align_offset(32), 1);
-
-        let addr = 130u32;
-        assert_eq!(addr.align_offset(1), 0);
-        assert_eq!(addr.align_offset(2), 0);
-        assert_eq!(addr.align_offset(4), 2);
-        assert_eq!(addr.align_offset(8), 6);
-        assert_eq!(addr.align_offset(16), 14);
-        assert_eq!(addr.align_offset(32), 30);
-    }
-
-    #[test]
-    fn alignable_align_up_test() {
-        let addr = 0u32;
-        assert_eq!(addr.align_up(1), 0);
-        assert_eq!(addr.align_up(2), 0);
-        assert_eq!(addr.align_up(4), 0);
-        assert_eq!(addr.align_up(8), 0);
-        assert_eq!(addr.align_up(16), 0);
-        assert_eq!(addr.align_up(32), 0);
-
-        let addr = 1u32;
-        assert_eq!(addr.align_up(1), 1);
-        assert_eq!(addr.align_up(2), 2);
-        assert_eq!(addr.align_up(4), 4);
-        assert_eq!(addr.align_up(8), 8);
-        assert_eq!(addr.align_up(16), 16);
-        assert_eq!(addr.align_up(32), 32);
-
-        let addr = 2u32;
-        assert_eq!(addr.align_up(1), 2);
-        assert_eq!(addr.align_up(2), 2);
-        assert_eq!(addr.align_up(4), 4);
-        assert_eq!(addr.align_up(8), 8);
-        assert_eq!(addr.align_up(16), 16);
-        assert_eq!(addr.align_up(32), 32);
-
-        let addr = 3u32;
-        assert_eq!(addr.align_up(1), 3);
-        assert_eq!(addr.align_up(2), 4);
-        assert_eq!(addr.align_up(4), 4);
-        assert_eq!(addr.align_up(8), 8);
-        assert_eq!(addr.align_up(16), 16);
-        assert_eq!(addr.align_up(32), 32);
-
-        let addr = 127u32;
-        assert_eq!(addr.align_up(1), 127);
-        assert_eq!(addr.align_up(2), 128);
-        assert_eq!(addr.align_up(4), 128);
-        assert_eq!(addr.align_up(8), 128);
-        assert_eq!(addr.align_up(16), 128);
-        assert_eq!(addr.align_up(32), 128);
-
-        let addr = 130u32;
-        assert_eq!(addr.align_up(1), 130);
-        assert_eq!(addr.align_up(2), 130);
-        assert_eq!(addr.align_up(4), 132);
-        assert_eq!(addr.align_up(8), 136);
-        assert_eq!(addr.align_up(16), 144);
-        assert_eq!(addr.align_up(32), 160);
     }
 }

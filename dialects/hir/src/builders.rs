@@ -1,6 +1,6 @@
 use midenc_hir::{
-    dialects::builtin::*, AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, Report,
-    Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::builtin::*, AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType,
+    Report, Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
 };
 
 use crate::*;
@@ -194,7 +194,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let global_sym = gs_builder(base, offset)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
         let ty = base.borrow().ty().clone();
-        let typed_addr = self.bitcast(addr, Type::Ptr(ty.into()), span)?;
+        let typed_addr = self.bitcast(addr, Type::from(PointerType::new(ty)), span)?;
         self.load(typed_addr, span)
     }
 
@@ -209,7 +209,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let global_sym = gs_builder(global_var, 0)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
         let ty = global_var.borrow().ty().clone();
-        let typed_addr = self.bitcast(addr, Type::Ptr(ty.into()), span)?;
+        let typed_addr = self.bitcast(addr, Type::from(PointerType::new(ty)), span)?;
         self.store(typed_addr, value, span)
     }
 

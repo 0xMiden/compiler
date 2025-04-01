@@ -83,8 +83,8 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        markers::*, ArrayAttr, Attribute, AttributeSet, AttributeValue, CallConv, DictAttr,
-        Overflow, SetAttr, Visibility,
+        markers::*, ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow,
+        SetAttr, Visibility,
     },
     direction::{Backward, Direction, Forward},
     eq::DynPartialEq,

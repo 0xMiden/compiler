@@ -146,7 +146,7 @@ impl Foldable for IntToPtr {
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let attr = PointerAttr::new(*value, Type::Ptr(Box::new(self.ty().clone())));
+            let attr = PointerAttr::new(*value, Type::from(PointerType::new(self.ty().clone())));
             results.push(OpFoldResult::Attribute(Box::new(attr)));
             FoldResult::Ok(())
         } else {

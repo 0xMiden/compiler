@@ -19,7 +19,7 @@ use midenc_dialect_hir::{assertions, HirOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
     dialects::builtin::BuiltinOpBuilder,
-    BlockRef, Builder, Felt, FieldElement, Immediate,
+    BlockRef, Builder, Felt, FieldElement, Immediate, PointerType,
     Type::{self, *},
     ValueRef,
 };
@@ -689,7 +689,7 @@ fn prepare_addr<B: ?Sized + Builder>(
             builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
         }
     };
-    builder.inttoptr(full_addr_int, Type::Ptr(ptr_ty.clone().into()), span)
+    builder.inttoptr(full_addr_int, Type::from(PointerType::new(ptr_ty.clone())), span)
 }
 
 fn translate_call<B: ?Sized + Builder>(
