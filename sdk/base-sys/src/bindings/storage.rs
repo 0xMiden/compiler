@@ -5,10 +5,10 @@ use super::StorageCommitmentRoot;
 #[allow(improper_ctypes)]
 #[link(wasm_import_module = "miden:core-import/account@1.0.0")]
 extern "C" {
-    #[link_name = "get-storage-item"]
+    #[link_name = "get-item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);
 
-    #[link_name = "set-storage-item"]
+    #[link_name = "set-item"]
     pub fn extern_set_storage_item(
         index: Felt,
         v0: Felt,
@@ -18,7 +18,7 @@ extern "C" {
         ptr: *mut (StorageCommitmentRoot, Word),
     );
 
-    #[link_name = "get-storage-map-item"]
+    #[link_name = "get-map-item"]
     pub fn extern_get_storage_map_item(
         index: Felt,
         k0: Felt,
@@ -28,7 +28,7 @@ extern "C" {
         ptr: *mut Word,
     );
 
-    #[link_name = "set-storage-map-item"]
+    #[link_name = "set-map-item"]
     pub fn extern_set_storage_map_item(
         index: Felt,
         k0: Felt,

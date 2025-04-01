@@ -37,13 +37,13 @@ interface account {
     get-id: func() -> f32;
 
     /// Gets an item from the account storage
-    get-storage-item: func(index: f32, result-ptr: s32);
+    get-item: func(index: f32, result-ptr: s32);
     /// Sets an item in the account storage
-    set-storage-item: func(index: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
+    set-item: func(index: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
     /// Gets a map item from the account storage
-    get-storage-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, result-ptr: s32);
+    get-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, result-ptr: s32);
     /// Sets a map item in the account storage
-    set-storage-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
+    set-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
 }
 
 

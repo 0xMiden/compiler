@@ -16,12 +16,10 @@ fn storage_example() {
         CompilerTest::rust_source_cargo_miden("../../examples/storage-example", config, []);
 
     test.expect_wasm(expect_file!["../../expected/examples/storage_example.wat"]);
-    test.expect_ir_unoptimized(expect_file![
-        "../../expected/examples/storage_example_unoptimized.hir"
-    ]);
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
-    // test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
-    // let _package = test.compiled_package();
+    test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
+    let _package = test.compiled_package();
+    todo!("check AccountComponentMetadata against expected");
 }
 
 #[test]
