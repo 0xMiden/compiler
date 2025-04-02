@@ -1,6 +1,7 @@
 use core::ops::{Index, IndexMut};
 
 use super::felt::Felt;
+use crate::felt;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(C, align(32))]
@@ -25,6 +26,18 @@ impl From<Word> for [Felt; 4] {
     #[inline(always)]
     fn from(word: Word) -> Self {
         [word.inner.0, word.inner.1, word.inner.2, word.inner.3]
+    }
+}
+impl From<Felt> for Word {
+    fn from(value: Felt) -> Self {
+        Word {
+            inner: (felt!(0), felt!(0), felt!(0), value),
+        }
+    }
+}
+impl From<Word> for Felt {
+    fn from(value: Word) -> Self {
+        value.inner.3
     }
 }
 impl Index<usize> for Word {

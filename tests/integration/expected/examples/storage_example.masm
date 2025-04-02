@@ -1,26 +1,14 @@
 # mod miden:storage-example/foo@1.0.0
 
-export.test-storage-item-low
+export.set-asset-qty
 
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#test-storage-item-low
+        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#set-asset-qty
 end
 
 
-export.test-storage-map-item-low
+export.get-asset-qty
 
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#test-storage-map-item-low
-end
-
-
-export.test-storage-item-high
-
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#test-storage-item-high
-end
-
-
-export.test-storage-map-item-high
-
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#test-storage-map-item-high
+        exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#get-asset-qty
 end
 
 
@@ -76,85 +64,6 @@ proc.miden_base_sys::bindings::storage::extern_get_storage_item
         swap.1
         exec.::intrinsics::mem::store_felt
         push.12
-        add
-        u32assert
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-end
-
-
-proc.miden_base_sys::bindings::storage::extern_set_storage_item
-
-        exec.::miden::account::set_item
-        movup.8
-        dup.0
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.4
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.8
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.12
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.16
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.20
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.24
-        dup.1
-        swap.1
-        add
-        u32assert
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.28
         add
         u32assert
         u32divmod.4
@@ -393,122 +302,14 @@ proc.__rustc::__rust_realloc
 end
 
 
-export.miden:storage-example/foo@1.0.0#test-storage-item-low
+export.miden:storage-example/foo@1.0.0#set-asset-qty
 
         push.1048576
         u32divmod.4
         swap.1
         exec.::intrinsics::mem::load_sw
         push.4294967264
-        push.96
-        dup.2
-        swap.1
-        u32wrapping_sub
-        u32and
-        push.1048576
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_sw
-        exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen_rt::run_ctors_once
-        push.76
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.72
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.68
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.64
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.64
-        dup.1
-        swap.1
-        u32wrapping_add
-        push.0
-        dup.2
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_item
-        push.0
-        dup.1
-        swap.1
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_item
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.1048576
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_sw
-end
-
-
-export.miden:storage-example/foo@1.0.0#test-storage-map-item-low
-
-        push.1048576
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_sw
-        push.4294967264
-        push.160
+        push.128
         dup.2
         swap.1
         u32wrapping_sub
@@ -530,7 +331,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-low
         u32mod
         u32assert
         assertz.err=250
-        dup.6
+        movup.10
         swap.1
         u32divmod.4
         swap.1
@@ -545,7 +346,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-low
         u32mod
         u32assert
         assertz.err=250
-        dup.5
+        movup.9
         swap.1
         u32divmod.4
         swap.1
@@ -560,7 +361,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-low
         u32mod
         u32assert
         assertz.err=250
-        dup.4
+        movup.8
         swap.1
         u32divmod.4
         swap.1
@@ -572,292 +373,170 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-low
         u32mod
         u32assert
         assertz.err=250
-        dup.3
+        movup.7
         swap.1
         u32divmod.4
         swap.1
         exec.::intrinsics::mem::store_felt
-        push.108
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.104
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.100
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.96
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.140
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.136
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.132
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.128
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.128
-        dup.1
-        swap.1
-        u32wrapping_add
-        push.96
+        push.0
+        push.32
         dup.2
         swap.1
         u32wrapping_add
-        push.1
+        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_item
+        push.44
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::load_felt
+        push.40
+        dup.2
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::load_felt
+        push.36
+        dup.3
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::load_felt
         push.32
         dup.4
+        add
+        u32assert
+        push.4
+        dup.1
         swap.1
-        u32wrapping_add
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_map_item
+        u32mod
+        u32assert
+        assertz.err=250
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::load_felt
+        push.0
         push.1
-        push.32
-        dup.2
-        swap.1
-        u32wrapping_add
-        dup.2
-        swap.2
-        swap.1
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_map_item
-        push.32
-        swap.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.1048576
-        movup.2
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_sw
-end
-
-
-export.miden:storage-example/foo@1.0.0#test-storage-item-high
-
-        push.1048576
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_sw
-        push.4294967264
-        push.96
-        dup.2
-        swap.1
-        u32wrapping_sub
-        u32and
-        push.1048576
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_sw
-        exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen_rt::run_ctors_once
-        push.76
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.72
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.68
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.64
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
+        movup.8
         movup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.64
-        dup.1
-        swap.1
-        u32wrapping_add
-        push.0
-        dup.2
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_item
-        push.0
-        dup.1
-        swap.1
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_item
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
+        eq
+        neq
+        neq
+        if.true
+
+            dropw
+            movdn.4
+            dropw
+        else
+
+            push.0
+            push.1
+            movup.7
+            movup.3
+            eq
+            neq
+            neq
+            if.true
+
+                drop
+                drop
+                drop
+                movdn.3
+                drop
+                drop
+                drop
+            else
+
+                push.0
+                push.1
+                movup.6
+                movup.3
+                eq
+                neq
+                neq
+                if.true
+
+                    drop
+                    drop
+                    movdn.2
+                    drop
+                    drop
+                else
+
+                    push.0
+                    push.1
+                    movup.5
+                    movup.3
+                    eq
+                    neq
+                    neq
+                    if.true
+
+                        drop
+                        swap.1
+                        drop
+                    else
+
+                        push.96
+                        dup.1
+                        swap.1
+                        u32wrapping_add
+                        movup.3
+                        swap.1
+                        exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
+                        push.96
+                        dup.1
+                        swap.1
+                        u32wrapping_add
+                        push.1
+                        push.32
+                        dup.3
+                        swap.1
+                        u32wrapping_add
+                        movup.2
+                        swap.3
+                        movdn.2
+                        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_map_item
+                    end
+                end
+            end
+        end
         push.1048576
-        movup.2
-        swap.1
         u32divmod.4
         swap.1
         exec.::intrinsics::mem::store_sw
 end
 
 
-export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
+export.miden:storage-example/foo@1.0.0#get-asset-qty
 
         push.1048576
         u32divmod.4
         swap.1
         exec.::intrinsics::mem::load_sw
         push.4294967264
-        push.160
+        push.64
         dup.2
         swap.1
         u32wrapping_sub
@@ -879,7 +558,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
         u32mod
         u32assert
         assertz.err=250
-        dup.6
+        movup.6
         swap.1
         u32divmod.4
         swap.1
@@ -894,7 +573,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
         u32mod
         u32assert
         assertz.err=250
-        dup.5
+        movup.5
         swap.1
         u32divmod.4
         swap.1
@@ -909,7 +588,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
         u32mod
         u32assert
         assertz.err=250
-        dup.4
+        movup.4
         swap.1
         u32divmod.4
         swap.1
@@ -921,145 +600,11 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
         u32mod
         u32assert
         assertz.err=250
-        dup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.108
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.104
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.100
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.96
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
         movup.3
         swap.1
         u32divmod.4
         swap.1
         exec.::intrinsics::mem::store_felt
-        push.140
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.136
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.132
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.128
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        movup.3
-        swap.1
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::store_felt
-        push.128
-        dup.1
-        swap.1
-        u32wrapping_add
-        push.96
-        dup.2
-        swap.1
-        u32wrapping_add
-        push.1
-        push.32
-        dup.4
-        swap.1
-        u32wrapping_add
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_map_item
         push.1
         push.32
         dup.2
@@ -1069,7 +614,7 @@ export.miden:storage-example/foo@1.0.0#test-storage-map-item-high
         swap.2
         swap.1
         exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_map_item
-        push.32
+        push.44
         swap.1
         add
         u32assert
@@ -1391,71 +936,6 @@ proc.miden_base_sys::bindings::storage::get_item
 end
 
 
-proc.miden_base_sys::bindings::storage::set_item
-
-        dup.2
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.4
-        dup.4
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.8
-        dup.5
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.12
-        movup.6
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz.err=250
-        u32divmod.4
-        swap.1
-        exec.::intrinsics::mem::load_felt
-        push.255
-        movup.6
-        swap.1
-        u32and
-        movup.2
-        swap.3
-        movdn.2
-        swap.1
-        swap.4
-        swap.1
-        exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::extern_set_storage_item
-end
-
-
 proc.miden_base_sys::bindings::storage::get_map_item
 
         dup.2
@@ -1638,6 +1118,67 @@ proc.miden_base_sys::bindings::storage::set_map_item
         swap.8
         swap.1
         exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::extern_set_storage_map_item
+end
+
+
+proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
+
+        push.12
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        movup.2
+        swap.1
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::store_felt
+        push.8
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        push.0
+        swap.1
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::store_felt
+        push.4
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        push.0
+        swap.1
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::store_felt
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz.err=250
+        push.0
+        swap.1
+        u32divmod.4
+        swap.1
+        exec.::intrinsics::mem::store_felt
 end
 
 

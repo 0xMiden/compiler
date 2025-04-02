@@ -44,6 +44,12 @@ impl From<CoreAsset> for Word {
     }
 }
 
+impl AsRef<Word> for CoreAsset {
+    fn as_ref(&self) -> &Word {
+        &self.inner
+    }
+}
+
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,

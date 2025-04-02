@@ -33,7 +33,7 @@ fn storage_example() {
         type = "auth::rpo_falcon512::pub_key"
 
         [[storage]]
-        name = "foo_map"
+        name = "asset_qty_map"
         description = "test map"
         slot = 1
         values = []
