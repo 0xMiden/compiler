@@ -1,3 +1,5 @@
+#![feature(proc_macro_span)]
+
 use account_component_metadata::AccountComponentMetadataBuilder;
 use miden_objects::utils::Serializable;
 use proc_macro2::Literal;
@@ -12,8 +14,82 @@ pub fn component(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
+    use std::fs;
+
+    use proc_macro::Span;
     use quote::quote;
+    use semver::Version;
     use syn::parse_macro_input;
+    use toml::Value;
+
+    // --- Determine package metadata ---
+    // Find Cargo.toml by searching upwards from the file where the macro is invoked
+    let source_file_path = Span::call_site().source_file().path();
+    let mut current_dir =
+        source_file_path.parent().expect("Source file must have a parent directory");
+    let cargo_toml_path = loop {
+        let potential_path = current_dir.join("Cargo.toml");
+        if potential_path.is_file() {
+            break potential_path;
+        }
+        match current_dir.parent() {
+            Some(parent) => current_dir = parent,
+            None => panic!(
+                "Could not find Cargo.toml searching upwards from {}",
+                source_file_path.display()
+            ),
+        }
+    };
+
+    let cargo_toml_content = fs::read_to_string(&cargo_toml_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", cargo_toml_path.display(), e));
+    let cargo_toml: Value = cargo_toml_content
+        .parse::<Value>()
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", cargo_toml_path.display(), e));
+
+    let package_table = cargo_toml.get("package").unwrap_or_else(|| {
+        panic!("Cargo.toml ({}) does not contain a [package] table", cargo_toml_path.display())
+    });
+
+    let name = package_table
+        .get("name")
+        .and_then(|n| n.as_str())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            panic!("Missing 'name' field in [package] table of {}", cargo_toml_path.display())
+        });
+
+    let version_str = package_table.get("version").and_then(|v| v.as_str()).unwrap_or_else(|| {
+        if cargo_toml_path.display().to_string().starts_with("sdk/base-macros") {
+            // We're in our own base-macros crate in a test defined in this crate with
+            // version.workspace = true and we can skip the version field
+            "0.0.0"
+        } else {
+            // We're running in a user crate and the version is required
+            panic!(
+                "Missing 'version' field in [package] table of {} (version.workspace = true is \
+                 not yet supported)",
+                cargo_toml_path.display()
+            )
+        }
+    });
+    let version = Version::parse(version_str).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse version '{}' from {}: {}",
+            version_str,
+            cargo_toml_path.display(),
+            e
+        )
+    });
+
+    // Get description from Cargo.toml (optional)
+    let description = package_table
+        .get("description")
+        .and_then(|d| d.as_str())
+        .map(String::from)
+        .unwrap_or_default(); // Default to empty string if not found
+
+    // --- End determine package metadata ---
 
     // Parse the input as an item struct
     let mut input = parse_macro_input!(item as syn::ItemStruct);
@@ -22,7 +98,8 @@ pub fn component(
     // Create a vector to hold field initializations
     let mut field_inits = Vec::new();
 
-    let mut acc_builder = AccountComponentMetadataBuilder::new(struct_name.to_string());
+    // Use parsed name, version, and description for the builder
+    let mut acc_builder = AccountComponentMetadataBuilder::new(name, version, description);
 
     // Process each field in the struct to extract storage slot info
     if let syn::Fields::Named(ref mut named_fields) = input.fields {

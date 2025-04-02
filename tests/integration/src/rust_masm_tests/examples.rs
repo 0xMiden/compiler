@@ -21,9 +21,9 @@ fn storage_example() {
     let package = test.compiled_package();
     let toml = package.as_ref().account_component_metadata.clone().unwrap().as_toml().unwrap();
     expect![[r#"
-        name = "MyAccount"
-        description = ""
-        version = "0.0.1"
+        name = "storage-example"
+        description = "A simple example of a Miden account storage API"
+        version = "0.1.0"
         supported-types = []
 
         [[storage]]

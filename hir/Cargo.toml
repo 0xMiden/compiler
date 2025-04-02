@@ -33,7 +33,7 @@ midenc-hir-macros.workspace = true
 midenc-session.workspace = true
 rustc-hash.workspace = true
 rustc-demangle = "0.1.19"
-semver = { version = "1.0", default-features = false }
+semver.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 

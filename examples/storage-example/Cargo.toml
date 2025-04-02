@@ -1,5 +1,6 @@
 [package]
 name = "storage-example"
+description = "A simple example of a Miden account storage API"
 version = "0.1.0"
 edition = "2021"
 

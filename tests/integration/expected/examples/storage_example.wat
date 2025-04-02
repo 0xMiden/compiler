@@ -403,7 +403,7 @@
       call $cabi_realloc_wit_bindgen_0_28_0
     )
     (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\13MyAccount\01\0b0.0.1\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\0ffoo_map\01\11test map")
+    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\0ffoo_map\01\11test map")
   )
   (alias export 0 "heap-base" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
@@ -480,5 +480,6 @@
     )
   )
   (export (;4;) "miden:storage-example/foo@1.0.0" (instance 3))
+  (@custom "description" "A simple example of a Miden account storage API")
   (@custom "version" "0.1.0")
 )

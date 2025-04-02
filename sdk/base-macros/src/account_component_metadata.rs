@@ -25,15 +25,13 @@ pub struct AccountComponentMetadataBuilder {
     storage: Vec<StorageEntry>,
 }
 
-// TODO: parse `description`, `version` and `targets` from Cargo.toml
-
 impl AccountComponentMetadataBuilder {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, version: Version, description: String) -> Self {
         AccountComponentMetadataBuilder {
             name,
-            description: String::new(),
-            version: Version::parse("0.0.1").unwrap(),
-            supported_types: BTreeSet::new(),
+            description,
+            version,
+            supported_types: BTreeSet::new(), // TODO: Parse targets from Cargo.toml
             storage: Vec::new(),
         }
     }

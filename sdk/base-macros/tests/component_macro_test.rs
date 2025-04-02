@@ -1,6 +1,7 @@
 extern crate miden_base_macros;
 use expect_test::expect;
-use miden_base::{StorageMap, Value};
+// NOTE: StorageMap and Value imports might be needed again once the macro works
+// use miden_base::{StorageMap, Value};
 use miden_base_macros::component;
 
 #[component]
@@ -10,13 +11,16 @@ struct TestComponent {
         description = "test value",
         type = "auth::rpo_falcon512::pub_key"
     )]
-    owner_public_key: Value,
+    // NOTE: Type might need adjustment if miden_base::Value is not in scope
+    owner_public_key: miden_base::Value,
 
     #[storage(slot(1), description = "test map")]
-    foo_map: StorageMap,
+    // NOTE: Type might need adjustment if miden_base::StorageMap is not in scope
+    foo_map: miden_base::StorageMap,
 
     #[storage(slot(2))]
-    without_description: Value,
+    // NOTE: Type might need adjustment if miden_base::Value is not in scope
+    without_description: miden_base::Value,
 }
 
 #[test]
@@ -38,9 +42,9 @@ fn test_component_metadata_serialization() {
     let toml = metadata.as_toml().unwrap();
 
     expect![[r#"
-        name = "TestComponent"
-        description = ""
-        version = "0.0.1"
+        name = "miden-base-macros"
+        description = "Provides proc macro support for Miden rollup SDK"
+        version = "0.0.7"
         supported-types = []
 
         [[storage]]
