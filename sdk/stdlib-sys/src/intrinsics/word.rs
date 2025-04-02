@@ -53,3 +53,9 @@ impl IndexMut<usize> for Word {
         }
     }
 }
+
+impl AsRef<Word> for Word {
+    fn as_ref(&self) -> &Word {
+        self
+    }
+}

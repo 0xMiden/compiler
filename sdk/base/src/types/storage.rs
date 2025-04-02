@@ -10,11 +10,11 @@ pub struct Value {
     pub slot: u8,
 }
 
-impl ValueAccess<Word> for Value {
+impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
     /// Returns an item value from the account storage.
     #[inline(always)]
-    fn read(&self) -> Word {
-        storage::get_item(self.slot)
+    fn read(&self) -> V {
+        storage::get_item(self.slot).into()
     }
 
     /// Sets an item `value` in the account storage and returns (new_root, old_value)
@@ -22,8 +22,9 @@ impl ValueAccess<Word> for Value {
     /// - new_root is the new storage commitment.
     /// - old_value is the previous value of the item.
     #[inline(always)]
-    fn write(&self, value: Word) -> (StorageCommitmentRoot, Word) {
-        storage::set_item(self.slot, value)
+    fn write(&self, value: V) -> (StorageCommitmentRoot, V) {
+        let (root, old_word) = storage::set_item(self.slot, value.into());
+        (root, old_word.into())
     }
 }
 
@@ -36,11 +37,13 @@ pub struct StorageMap {
     pub slot: u8,
 }
 
-impl StorageMapAccess<Word, Word> for StorageMap {
+impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K, V>
+    for StorageMap
+{
     /// Returns a map item value from the account storage.
     #[inline(always)]
-    fn read(&self, key: &Word) -> Word {
-        storage::get_map_item(self.slot, key)
+    fn read(&self, key: &K) -> V {
+        storage::get_map_item(self.slot, key.as_ref()).into()
     }
 
     /// Sets a map item `value` in the account storage and returns (old_root, old_value)
@@ -48,7 +51,8 @@ impl StorageMapAccess<Word, Word> for StorageMap {
     /// - old_root is the old map root.
     /// - old_value is the previous value of the item.
     #[inline(always)]
-    fn write(&self, key: Word, value: Word) -> (StorageCommitmentRoot, Word) {
-        storage::set_map_item(self.slot, key, value)
+    fn write(&self, key: K, value: V) -> (StorageCommitmentRoot, V) {
+        let (root, old_word) = storage::set_map_item(self.slot, key.into(), value.into());
+        (root, old_word.into())
     }
 }

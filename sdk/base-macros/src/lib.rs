@@ -25,8 +25,9 @@ pub fn component(
     // --- Determine package metadata ---
     // Find Cargo.toml by searching upwards from the file where the macro is invoked
     let source_file_path = Span::call_site().source_file().path();
-    let mut current_dir =
-        source_file_path.parent().expect("Source file must have a parent directory");
+    let mut current_dir = source_file_path.parent().unwrap_or_else(|| {
+        panic!("Source file {} must have a parent directory", source_file_path.display())
+    });
     let cargo_toml_path = loop {
         let potential_path = current_dir.join("Cargo.toml");
         if potential_path.is_file() {

@@ -32,6 +32,18 @@ impl CoreAsset {
     }
 }
 
+impl From<Word> for CoreAsset {
+    fn from(value: Word) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<CoreAsset> for Word {
+    fn from(val: CoreAsset) -> Self {
+        val.inner
+    }
+}
+
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,

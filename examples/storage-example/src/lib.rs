@@ -23,7 +23,9 @@ bindings::export!(MyAccount with_types_in bindings);
 
 mod bindings;
 
-use miden::{component, storage, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
+use miden::{
+    component, storage, CoreAsset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word,
+};
 
 #[component]
 struct MyAccount {
@@ -66,14 +68,22 @@ impl foo::Guest for MyAccount {
     fn test_storage_item_high(value: Word) -> Felt {
         let my_account = MyAccount::default();
         let (_new_root, _old_value) = my_account.owner_public_key.write(value.clone());
-        let high_retrieved = my_account.owner_public_key.read();
+        let high_retrieved: Word = my_account.owner_public_key.read();
         high_retrieved[0]
     }
 
     fn test_storage_map_item_high(key: Word, value: Word) -> Felt {
         let my_account = MyAccount::default();
         let (_old_map_root, _old_map_value) = my_account.foo_map.write(key.clone(), value.clone());
-        let retrieved_map_value = my_account.foo_map.read(&key);
+        let retrieved_map_value: Word = my_account.foo_map.read(&key);
         retrieved_map_value[0]
+    }
+}
+
+impl MyAccount {
+    fn test_asset(asset: CoreAsset) -> CoreAsset {
+        let my_account = MyAccount::default();
+        let (_new_root, _old_value) = my_account.owner_public_key.write(asset);
+        my_account.owner_public_key.read()
     }
 }

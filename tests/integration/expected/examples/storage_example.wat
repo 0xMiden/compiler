@@ -52,10 +52,10 @@
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (export "memory" (memory 0))
+    (export "miden:storage-example/foo@1.0.0#test-storage-item-low" (func $miden:storage-example/foo@1.0.0#test-storage-item-low))
+    (export "miden:storage-example/foo@1.0.0#test-storage-map-item-low" (func $miden:storage-example/foo@1.0.0#test-storage-map-item-low))
     (export "miden:storage-example/foo@1.0.0#test-storage-item-high" (func $miden:storage-example/foo@1.0.0#test-storage-item-high))
     (export "miden:storage-example/foo@1.0.0#test-storage-map-item-high" (func $miden:storage-example/foo@1.0.0#test-storage-map-item-high))
-    (export "miden:storage-example/foo@1.0.0#test-storage-map-item-low" (func $miden:storage-example/foo@1.0.0#test-storage-map-item-high))
-    (export "miden:storage-example/foo@1.0.0#test-storage-item-low" (func $miden:storage-example/foo@1.0.0#test-storage-item-high))
     (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
     (export "cabi_realloc" (func $cabi_realloc))
     (elem (;0;) (i32.const 1) func $storage_example::bindings::__link_custom_section_describing_imports $cabi_realloc)
@@ -92,7 +92,7 @@
       end
       local.get 2
     )
-    (func $miden:storage-example/foo@1.0.0#test-storage-item-high (;9;) (type 7) (param f32 f32 f32 f32) (result f32)
+    (func $miden:storage-example/foo@1.0.0#test-storage-item-low (;9;) (type 7) (param f32 f32 f32 f32) (result f32)
       (local i32 i32)
       global.get $__stack_pointer
       local.tee 4
@@ -131,7 +131,7 @@
       global.set $__stack_pointer
       local.get 3
     )
-    (func $miden:storage-example/foo@1.0.0#test-storage-map-item-high (;10;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden:storage-example/foo@1.0.0#test-storage-map-item-low (;10;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       (local i32 i32)
       global.get $__stack_pointer
       local.tee 8
@@ -202,14 +202,124 @@
       global.set $__stack_pointer
       local.get 3
     )
-    (func $cabi_realloc_wit_bindgen_0_28_0 (;11;) (type 6) (param i32 i32 i32 i32) (result i32)
+    (func $miden:storage-example/foo@1.0.0#test-storage-item-high (;11;) (type 7) (param f32 f32 f32 f32) (result f32)
+      (local i32 i32)
+      global.get $__stack_pointer
+      local.tee 4
+      i32.const 96
+      i32.sub
+      i32.const -32
+      i32.and
+      local.tee 5
+      global.set $__stack_pointer
+      call $wit_bindgen_rt::run_ctors_once
+      local.get 5
+      local.get 3
+      f32.store offset=76
+      local.get 5
+      local.get 2
+      f32.store offset=72
+      local.get 5
+      local.get 1
+      f32.store offset=68
+      local.get 5
+      local.get 0
+      f32.store offset=64
+      local.get 5
+      i32.const 0
+      local.get 5
+      i32.const 64
+      i32.add
+      call $miden_base_sys::bindings::storage::set_item
+      local.get 5
+      i32.const 0
+      call $miden_base_sys::bindings::storage::get_item
+      local.get 5
+      f32.load
+      local.set 3
+      local.get 4
+      global.set $__stack_pointer
+      local.get 3
+    )
+    (func $miden:storage-example/foo@1.0.0#test-storage-map-item-high (;12;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+      (local i32 i32)
+      global.get $__stack_pointer
+      local.tee 8
+      i32.const 160
+      i32.sub
+      i32.const -32
+      i32.and
+      local.tee 9
+      global.set $__stack_pointer
+      call $wit_bindgen_rt::run_ctors_once
+      local.get 9
+      local.get 3
+      f32.store offset=12
+      local.get 9
+      local.get 2
+      f32.store offset=8
+      local.get 9
+      local.get 1
+      f32.store offset=4
+      local.get 9
+      local.get 0
+      f32.store
+      local.get 9
+      local.get 3
+      f32.store offset=108
+      local.get 9
+      local.get 2
+      f32.store offset=104
+      local.get 9
+      local.get 1
+      f32.store offset=100
+      local.get 9
+      local.get 0
+      f32.store offset=96
+      local.get 9
+      local.get 7
+      f32.store offset=140
+      local.get 9
+      local.get 6
+      f32.store offset=136
+      local.get 9
+      local.get 5
+      f32.store offset=132
+      local.get 9
+      local.get 4
+      f32.store offset=128
+      local.get 9
+      i32.const 32
+      i32.add
+      i32.const 1
+      local.get 9
+      i32.const 96
+      i32.add
+      local.get 9
+      i32.const 128
+      i32.add
+      call $miden_base_sys::bindings::storage::set_map_item
+      local.get 9
+      i32.const 32
+      i32.add
+      i32.const 1
+      local.get 9
+      call $miden_base_sys::bindings::storage::get_map_item
+      local.get 9
+      f32.load offset=32
+      local.set 3
+      local.get 8
+      global.set $__stack_pointer
+      local.get 3
+    )
+    (func $cabi_realloc_wit_bindgen_0_28_0 (;13;) (type 6) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
       local.get 3
       call $wit_bindgen_rt::cabi_realloc
     )
-    (func $wit_bindgen_rt::cabi_realloc (;12;) (type 6) (param i32 i32 i32 i32) (result i32)
+    (func $wit_bindgen_rt::cabi_realloc (;14;) (type 6) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
         block ;; label = @2
           block ;; label = @3
@@ -240,7 +350,7 @@
       end
       local.get 2
     )
-    (func $wit_bindgen_rt::run_ctors_once (;13;) (type 4)
+    (func $wit_bindgen_rt::run_ctors_once (;15;) (type 4)
       block ;; label = @1
         i32.const 0
         i32.load8_u offset=1048617
@@ -251,7 +361,7 @@
         i32.store8 offset=1048617
       end
     )
-    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;14;) (type 9) (param i32 i32 i32) (result i32)
+    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;16;) (type 9) (param i32 i32 i32) (result i32)
       (local i32 i32)
       block ;; label = @1
         local.get 1
@@ -323,7 +433,7 @@
       end
       unreachable
     )
-    (func $miden_base_sys::bindings::storage::get_item (;15;) (type 10) (param i32 i32)
+    (func $miden_base_sys::bindings::storage::get_item (;17;) (type 10) (param i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -331,7 +441,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_get_storage_item
     )
-    (func $miden_base_sys::bindings::storage::set_item (;16;) (type 11) (param i32 i32 i32)
+    (func $miden_base_sys::bindings::storage::set_item (;18;) (type 11) (param i32 i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -347,7 +457,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_set_storage_item
     )
-    (func $miden_base_sys::bindings::storage::get_map_item (;17;) (type 11) (param i32 i32 i32)
+    (func $miden_base_sys::bindings::storage::get_map_item (;19;) (type 11) (param i32 i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -363,7 +473,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_get_storage_map_item
     )
-    (func $miden_base_sys::bindings::storage::set_map_item (;18;) (type 12) (param i32 i32 i32 i32)
+    (func $miden_base_sys::bindings::storage::set_map_item (;20;) (type 12) (param i32 i32 i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -387,7 +497,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_set_storage_map_item
     )
-    (func $core::ptr::alignment::Alignment::max (;19;) (type 5) (param i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;21;) (type 5) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -395,7 +505,7 @@
       i32.gt_u
       select
     )
-    (func $cabi_realloc (;20;) (type 6) (param i32 i32 i32 i32) (result i32)
+    (func $cabi_realloc (;22;) (type 6) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
