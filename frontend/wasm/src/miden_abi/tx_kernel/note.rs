@@ -1,6 +1,6 @@
 use midenc_hir::{
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
 };
 
@@ -18,7 +18,7 @@ pub const GET_INPUTS: &str = "get_inputs";
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut note: FunctionTypeMap = Default::default();
-    note.insert(Symbol::from(GET_INPUTS), FunctionType::new([I32], [I32, I32]));
+    note.insert(Symbol::from(GET_INPUTS), FunctionType::new(CallConv::Wasm, [I32], [I32, I32]));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m
 }

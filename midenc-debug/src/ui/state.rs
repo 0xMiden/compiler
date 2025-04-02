@@ -195,8 +195,10 @@ impl State {
                 .read_memory_element_in_context(expr.addr.addr, context, cycle)
                 .unwrap_or(Felt::ZERO);
             write_with_format_type!(output, expr, felt.as_int());
-        } else if matches!(expr.ty, Type::Array(ref elem_ty, 4) if elem_ty.as_ref() == &Type::Felt)
-        {
+        } else if matches!(
+            expr.ty,
+            Type::Array(ref array_ty) if array_ty.element_type() == &Type::Felt && array_ty.len() == 4
+        ) {
             if !expr.addr.is_word_aligned() {
                 return Err("read failed: type 'word' must be aligned to a word boundary".into());
             }

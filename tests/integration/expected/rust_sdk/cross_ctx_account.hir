@@ -53,9 +53,9 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 ^block16:
                     v32 = hir.bitcast v25 : u32;
                     v33 = hir.bitcast v11 : u32;
-                    v34 = hir.int_to_ptr v33 : (ptr u8);
+                    v34 = hir.int_to_ptr v33 : ptr<byte, u8>;
                     v35 = hir.bitcast v5 : u32;
-                    v36 = hir.int_to_ptr v35 : (ptr u8);
+                    v36 = hir.int_to_ptr v35 : ptr<byte, u8>;
                     hir.mem_cpy v36, v34, v32;
                     scf.yield v11;
                 };
@@ -146,7 +146,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v77 = arith.constant 1048617 : u32;
             v242 = arith.constant 0 : u32;
             v78 = arith.add v242, v77 : u32 #[overflow = checked];
-            v79 = hir.int_to_ptr v78 : (ptr u8);
+            v79 = hir.int_to_ptr v78 : ptr<byte, u8>;
             v80 = hir.load v79 : u8;
             v75 = arith.constant 0 : i32;
             v81 = arith.zext v80 : u32;
@@ -162,7 +162,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v244 = arith.constant 1048617 : u32;
                 v245 = arith.constant 0 : u32;
                 v91 = arith.add v245, v244 : u32 #[overflow = checked];
-                v92 = hir.int_to_ptr v91 : (ptr u8);
+                v92 = hir.int_to_ptr v91 : ptr<byte, u8>;
                 hir.store v92, v240;
                 scf.yield ;
             };
@@ -219,7 +219,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                     v131 = arith.constant 4 : u32;
                     v132 = arith.mod v130, v131 : u32;
                     hir.assertz v132 #[code = 250];
-                    v133 = hir.int_to_ptr v130 : (ptr i32);
+                    v133 = hir.int_to_ptr v130 : ptr<byte, i32>;
                     v134 = hir.load v133 : i32;
                     v278 = arith.constant 0 : i32;
                     v136 = arith.neq v134, v278 : i1;
@@ -239,7 +239,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                         v141 = arith.shl v138, v246 : u32;
                         v142 = hir.bitcast v141 : i32;
                         v143 = arith.add v137, v142 : i32 #[overflow = wrapping];
-                        v147 = hir.int_to_ptr v144 : (ptr i32);
+                        v147 = hir.int_to_ptr v144 : ptr<byte, i32>;
                         hir.store v147, v143;
                         v275 = arith.constant 0 : i32;
                         scf.yield v93, v129, v114, v275;
@@ -248,7 +248,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                     v274 = arith.constant 4 : u32;
                     v152 = arith.mod v150, v274 : u32;
                     hir.assertz v152 #[code = 250];
-                    v153 = hir.int_to_ptr v150 : (ptr i32);
+                    v153 = hir.int_to_ptr v150 : ptr<byte, i32>;
                     v154 = hir.load v153 : i32;
                     v273 = arith.constant 0 : i32;
                     v158 = hir.bitcast v263 : u32;
@@ -270,7 +270,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                         v167 = arith.mod v165, v272 : u32;
                         hir.assertz v167 #[code = 250];
                         v164 = arith.add v154, v263 : i32 #[overflow = wrapping];
-                        v168 = hir.int_to_ptr v165 : (ptr i32);
+                        v168 = hir.int_to_ptr v165 : ptr<byte, i32>;
                         hir.store v168, v164;
                         v271 = arith.constant 1 : u32;
                         v170 = arith.add v154, v264 : i32 #[overflow = wrapping];

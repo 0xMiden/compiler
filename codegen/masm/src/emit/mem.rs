@@ -1,25 +1,14 @@
 use miden_core::{Felt, FieldElement};
-use midenc_hir::{dialects::builtin::LocalVariable, SourceSpan, StructType, Type};
+use midenc_hir::{
+    dialects::builtin::LocalVariable, AddressSpace, ArrayType, PointerType, SourceSpan, StructType,
+    Type,
+};
 
 use super::{masm, OpEmitter};
 use crate::lower::NativePtr;
 
 /// Allocation
 impl OpEmitter<'_> {
-    /// Return the base address of the heap
-    #[allow(unused)]
-    pub fn heap_base(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::heap_base", span);
-        self.push(Type::Ptr(Box::new(Type::U8)));
-    }
-
-    /// Return the address of the top of the heap
-    #[allow(unused)]
-    pub fn heap_top(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::heap_top", span);
-        self.push(Type::Ptr(Box::new(Type::U8)));
-    }
-
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -46,7 +35,10 @@ impl OpEmitter<'_> {
         let local_index = local.absolute_offset();
         let ty = local.ty();
         self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::Ptr(Box::new(ty.clone())));
+        self.push(Type::from(PointerType::new_with_address_space(
+            ty.clone(),
+            AddressSpace::Element,
+        )));
         self.load(ty, span)
     }
 
@@ -58,9 +50,9 @@ impl OpEmitter<'_> {
     pub fn load(&mut self, ty: Type, span: SourceSpan) {
         let ptr = self.stack.pop().expect("operand stack is empty");
         match ptr.ty() {
-            Type::Ptr(_) => {
+            Type::Ptr(ref ptr_ty) => {
                 // Convert the pointer to a native pointer representation
-                self.convert_to_native_ptr(span);
+                self.convert_to_native_ptr(ptr_ty, span);
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word(None, span),
@@ -106,18 +98,22 @@ impl OpEmitter<'_> {
     ///
     /// Instructions which must act on a pointer will expect the stack to have these values in that
     /// order so that they can perform any necessary re-alignment.
-    fn convert_to_native_ptr(&mut self, span: SourceSpan) {
-        self.emit_all(
-            [
-                // Obtain the byte offset and element address
-                //
-                // [offset, addr]
-                masm::Instruction::U32DivModImm(4.into()),
-                // Swap fields into expected order
-                masm::Instruction::Swap1,
-            ],
-            span,
-        );
+    fn convert_to_native_ptr(&mut self, ty: &PointerType, span: SourceSpan) {
+        if ty.is_byte_pointer() {
+            self.emit_all(
+                [
+                    // Obtain the byte offset and element address
+                    //
+                    // [offset, addr]
+                    masm::Instruction::U32DivModImm(4.into()),
+                    // Swap fields into expected order
+                    masm::Instruction::Swap1,
+                ],
+                span,
+            );
+        } else {
+            self.emit_all([masm::Instruction::PushU8(0), masm::Instruction::Swap1], span);
+        }
     }
 
     /// Push a [NativePtr] value to the operand stack in the expected stack representation.
@@ -439,7 +435,10 @@ impl OpEmitter<'_> {
     pub fn store_local(&mut self, local: &LocalVariable, span: SourceSpan) {
         let local_index = local.absolute_offset();
         self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::Ptr(Box::new(local.ty())));
+        self.push(Type::from(PointerType::new_with_address_space(
+            local.ty(),
+            AddressSpace::Element,
+        )));
         self.store(span)
     }
 
@@ -456,16 +455,16 @@ impl OpEmitter<'_> {
         let value_ty = value.ty();
         assert!(!value_ty.is_zst(), "cannot store a zero-sized type in memory");
         match ptr_ty {
-            Type::Ptr(_) => {
+            Type::Ptr(ref ptr_ty) => {
                 // Convert the pointer to a native pointer representation
-                self.convert_to_native_ptr(span);
+                self.convert_to_native_ptr(ptr_ty, span);
                 match value_ty {
                     Type::I128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word(None, span),
                     Type::Felt => self.store_felt(None, span),
                     Type::I32 | Type::U32 => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
-                    Type::Array(ref elem_ty, _) => self.store_array(elem_ty, None, span),
+                    Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
                     Type::Struct(ref struct_ty) => self.store_struct(struct_ty, None, span),
                     ty => unimplemented!(
                         "invalid store: support for storing {ty} has not been implemented"
@@ -494,7 +493,7 @@ impl OpEmitter<'_> {
             Type::Felt => self.store_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
-            Type::Array(ref elem_ty, _) => self.store_array(elem_ty, Some(ptr), span),
+            Type::Array(ref array_ty) => self.store_array(array_ty, Some(ptr), span),
             Type::Struct(ref struct_ty) => self.store_struct(struct_ty, Some(ptr), span),
             ty => {
                 unimplemented!("invalid store: support for storing {ty} has not been implemented")
@@ -898,7 +897,7 @@ impl OpEmitter<'_> {
         self.store_word_imm(ptr, span);
     }
 
-    fn store_array(&mut self, _element_ty: &Type, _ptr: Option<NativePtr>, _span: SourceSpan) {
+    fn store_array(&mut self, _ty: &ArrayType, _ptr: Option<NativePtr>, _span: SourceSpan) {
         todo!()
     }
 

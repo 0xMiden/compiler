@@ -369,8 +369,8 @@ mod tests {
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
     use expect_test::expect_file;
     use midenc_hir::{
-        dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, Report,
-        Signature, SourceSpan, Type,
+        dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType,
+        Report, Signature, SourceSpan, Type,
     };
 
     use super::*;
@@ -506,7 +506,7 @@ mod tests {
             let name = Ident::new("test".into(), span);
             let signature = Signature::new(
                 [
-                    AbiParam::new(Type::Ptr(Box::new(Type::U32))),
+                    AbiParam::new(Type::from(PointerType::new(Type::U32))),
                     AbiParam::new(Type::U32),
                     AbiParam::new(Type::U32),
                 ],
@@ -580,8 +580,11 @@ mod tests {
         let addr = builder.unrealized_conversion_cast(ptr, Type::U32, span)?;
         let cell_addr = builder.add_unchecked(addr, addr_offset, span)?;
         // This represents a bitcast
-        let cell_ptr =
-            builder.unrealized_conversion_cast(cell_addr, Type::Ptr(Box::new(Type::U32)), span)?;
+        let cell_ptr = builder.unrealized_conversion_cast(
+            cell_addr,
+            Type::from(PointerType::new(Type::U32)),
+            span,
+        )?;
         // This represents a load
         let cell = builder.unrealized_conversion_cast(cell_ptr, Type::U32, span)?;
         let new_col_offset = builder.incr(col_offset, span)?;
@@ -618,7 +621,7 @@ mod tests {
             let name = Ident::new("test".into(), span);
             let signature = Signature::new(
                 [
-                    AbiParam::new(Type::Ptr(Box::new(Type::U32))),
+                    AbiParam::new(Type::from(PointerType::new(Type::U32))),
                     AbiParam::new(Type::U32),
                     AbiParam::new(Type::U32),
                 ],
@@ -697,8 +700,11 @@ mod tests {
         let addr = builder.unrealized_conversion_cast(ptr, Type::U32, span)?;
         let cell_addr = builder.add_unchecked(addr, addr_offset, span)?;
         // This represents a bitcast
-        let cell_ptr =
-            builder.unrealized_conversion_cast(cell_addr, Type::Ptr(Box::new(Type::U32)), span)?;
+        let cell_ptr = builder.unrealized_conversion_cast(
+            cell_addr,
+            Type::from(PointerType::new(Type::U32)),
+            span,
+        )?;
         // This represents a load
         let cell = builder.unrealized_conversion_cast(cell_ptr, Type::U32, span)?;
         let new_col_offset = builder.incr(col_offset, span)?;

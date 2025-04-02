@@ -558,7 +558,7 @@ impl fmt::Debug for OperandStack {
 mod tests {
     use alloc::rc::Rc;
 
-    use midenc_hir::{BuilderExt, Context, StructType};
+    use midenc_hir::{ArrayType, BuilderExt, Context, PointerType, StructType};
 
     use super::*;
 
@@ -685,9 +685,9 @@ mod tests {
         let mut stack = OperandStack::default();
         let context = Rc::new(Context::default());
 
-        let ptr_u8 = Type::Ptr(Box::new(Type::U8));
-        let array_u8 = Type::Array(Box::new(Type::U8), 4);
-        let struct_ty = Type::Struct(StructType::new([Type::U64, Type::U8]));
+        let ptr_u8 = Type::from(PointerType::new(Type::U8));
+        let array_u8 = Type::from(ArrayType::new(Type::U8, 4));
+        let struct_ty = Type::from(StructType::new([Type::U64, Type::U8]));
         let block = context.create_block_with_params([ptr_u8, array_u8, Type::U32, struct_ty]);
         let block = block.borrow();
         let values = block.arguments();
@@ -798,8 +798,11 @@ mod tests {
         let one = Immediate::U32(1);
         let two = Type::U64;
         let three = Type::U64;
-        let struct_a =
-            Type::Struct(StructType::new([Type::Ptr(Box::new(Type::U8)), Type::U16, Type::U32]));
+        let struct_a = Type::from(StructType::new([
+            Type::from(PointerType::new(Type::U8)),
+            Type::U16,
+            Type::U32,
+        ]));
 
         // push
         stack.push(zero);

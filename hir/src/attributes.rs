@@ -1,11 +1,10 @@
-mod call_conv;
 mod overflow;
 mod visibility;
 
 use alloc::{boxed::Box, collections::BTreeMap, vec, vec::Vec};
 use core::{any::Any, borrow::Borrow, fmt};
 
-pub use self::{call_conv::CallConv, overflow::Overflow, visibility::Visibility};
+pub use self::{overflow::Overflow, visibility::Visibility};
 use crate::{interner::Symbol, Immediate};
 
 pub mod markers {

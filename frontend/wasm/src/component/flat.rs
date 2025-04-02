@@ -6,7 +6,7 @@
 
 use midenc_hir::{
     diagnostics::{miette, Diagnostic},
-    Abi, AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, Signature,
+    AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, PointerType, Signature,
     StructType, Type, Visibility,
 };
 
@@ -24,7 +24,6 @@ pub enum CanonicalTypeError {
 pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
-        Type::Unit => vec![],
         Type::I1 => vec![AbiParam {
             ty: Type::I32,
             purpose: ArgumentPurpose::Default,
@@ -67,14 +66,16 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
             .into_iter()
             .flatten()
             .collect(),
-        Type::Array(elem_ty, len) => vec![AbiParam::new(*elem_ty.clone()); *len],
+        Type::Array(array_ty) => {
+            vec![AbiParam::new(array_ty.element_type().clone()); array_ty.len()]
+        }
         Type::List(elem_ty) => vec![
             // pointer to the list element type
-            AbiParam::sret(Type::Ptr(elem_ty.clone())),
+            AbiParam::sret(Type::from(PointerType::new(elem_ty.as_ref().clone()))),
             // length of the list
             AbiParam::new(Type::I32),
         ],
-        Type::Unknown | Type::Never | Type::Ptr(_) | Type::NativePtr(..) => {
+        Type::Unknown | Type::Never | Type::Ptr(_) | Type::Function(_) => {
             return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
     })
@@ -103,7 +104,11 @@ pub fn flatten_function_type(
     // flattened results is currently limited to 1 due to various parts of the toolchain (notably
     // the C ABI) not yet being able to express multi-value returns. Hopefully this limitation is
     // temporary and can be lifted before the Component Model is fully standardized.
-    assert_eq!(func_ty.abi, Abi::Wasm, "expected Wasm CM type");
+    assert!(
+        func_ty.abi.is_wasm_canonical_abi(),
+        "unexpected function abi: {:?}",
+        &func_ty.abi
+    );
     const MAX_FLAT_PARAMS: usize = 16;
     const MAX_FLAT_RESULTS: usize = 1;
     let mut flat_params = flatten_types(&func_ty.params)?;
@@ -114,8 +119,8 @@ pub fn flatten_function_type(
         // When there are too many flat values, in general, a single `i32` pointer can be passed instead
         // (pointing to a tuple in linear memory). When lowering into linear memory, this requires the
         // Canonical ABI to call `realloc` to allocate space to put the tuple.
-        let tuple = Type::Struct(StructType::new(func_ty.params.clone()));
-        flat_params = vec![AbiParam::sret(Type::Ptr(tuple.into()))];
+        let tuple = Type::from(StructType::new(func_ty.params.clone()));
+        flat_params = vec![AbiParam::sret(Type::from(PointerType::new(tuple)))];
     }
     if flat_results.len() > MAX_FLAT_RESULTS {
         // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
@@ -128,10 +133,10 @@ pub fn flatten_function_type(
         let result = func_ty.results.first().expect("unexpected empty results").clone();
         match cc {
             CallConv::CanonLift => {
-                flat_results = vec![AbiParam::sret(Type::Ptr(result.into()))];
+                flat_results = vec![AbiParam::sret(Type::from(PointerType::new(result)))];
             }
             CallConv::CanonLower => {
-                flat_params.push(AbiParam::sret(Type::Ptr(result.into())));
+                flat_params.push(AbiParam::sret(Type::from(PointerType::new(result))));
                 flat_results = vec![];
             }
             _ => panic!("unexpected call convention, only CanonLift and CanonLower are supported"),

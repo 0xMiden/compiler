@@ -124,12 +124,11 @@ pub fn emit_zero<B: ?Sized + Builder>(
         | Type::U128
         | Type::U256
         | Type::Ptr(_)
-        | Type::NativePtr(..)
         | Type::Struct(_)
         | Type::Array(..)
         | Type::List(_)
+        | Type::Function(_)
         | Type::Unknown
-        | Type::Unit
         | Type::Never => {
             unsupported_diag!(diagnostics, "cannot emit zero value for type: {:?}", ty);
         }

@@ -6,7 +6,7 @@ public builtin.function @test_wrapper() {
     v3 = arith.constant 8 : u32;
     v4 = arith.mod v2, v3 : u32;
     hir.assertz v4 #[code = 250];
-    v5 = hir.int_to_ptr v2 : (ptr i64);
+    v5 = hir.int_to_ptr v2 : ptr<byte, i64>;
     hir.store v5, v1;
     cf.br ^block5;
 ^block5:

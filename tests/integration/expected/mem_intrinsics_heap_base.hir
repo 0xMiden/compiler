@@ -15,7 +15,7 @@ builtin.component root_ns:root@1.0.0 {
             v22 = arith.mod v20, v21 : u32;
             hir.assertz v22 #[code = 250];
             v17 = arith.constant 1 : i32;
-            v23 = hir.int_to_ptr v20 : (ptr i32);
+            v23 = hir.int_to_ptr v20 : ptr<byte, i32>;
             hir.store v23, v17;
             v147 = arith.constant 4 : u32;
             v24 = hir.bitcast v0 : u32;
@@ -23,14 +23,14 @@ builtin.component root_ns:root@1.0.0 {
             v146 = arith.constant 4 : u32;
             v28 = arith.mod v26, v146 : u32;
             hir.assertz v28 #[code = 250];
-            v29 = hir.int_to_ptr v26 : (ptr i32);
+            v29 = hir.int_to_ptr v26 : ptr<byte, i32>;
             hir.store v29, v12;
             v31 = hir.bitcast v0 : u32;
             v145 = arith.constant 4 : u32;
             v33 = arith.mod v31, v145 : u32;
             hir.assertz v33 #[code = 250];
             v144 = arith.constant 1 : i32;
-            v34 = hir.int_to_ptr v31 : (ptr i32);
+            v34 = hir.int_to_ptr v31 : ptr<byte, i32>;
             hir.store v34, v144;
             v38 = hir.bitcast v12 : u32;
             v143 = arith.constant 4 : u32;
@@ -38,7 +38,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.assertz v40 #[code = 250];
             v140 = arith.constant 1 : u32;
             v37 = arith.shl v1, v140 : i32;
-            v41 = hir.int_to_ptr v38 : (ptr i32);
+            v41 = hir.int_to_ptr v38 : ptr<byte, i32>;
             hir.store v41, v37;
             builtin.ret ;
         ^block9:
@@ -104,7 +104,7 @@ builtin.component root_ns:root@1.0.0 {
                     v85 = arith.constant 4 : u32;
                     v86 = arith.mod v84, v85 : u32;
                     hir.assertz v86 #[code = 250];
-                    v87 = hir.int_to_ptr v84 : (ptr i32);
+                    v87 = hir.int_to_ptr v84 : ptr<byte, i32>;
                     v88 = hir.load v87 : i32;
                     v180 = arith.constant 0 : i32;
                     v90 = arith.neq v88, v180 : i1;
@@ -124,7 +124,7 @@ builtin.component root_ns:root@1.0.0 {
                         v95 = arith.shl v92, v148 : u32;
                         v96 = hir.bitcast v95 : i32;
                         v97 = arith.add v91, v96 : i32 #[overflow = wrapping];
-                        v101 = hir.int_to_ptr v98 : (ptr i32);
+                        v101 = hir.int_to_ptr v98 : ptr<byte, i32>;
                         hir.store v101, v97;
                         v177 = arith.constant 0 : i32;
                         scf.yield v47, v83, v68, v177;
@@ -133,7 +133,7 @@ builtin.component root_ns:root@1.0.0 {
                     v176 = arith.constant 4 : u32;
                     v106 = arith.mod v104, v176 : u32;
                     hir.assertz v106 #[code = 250];
-                    v107 = hir.int_to_ptr v104 : (ptr i32);
+                    v107 = hir.int_to_ptr v104 : ptr<byte, i32>;
                     v108 = hir.load v107 : i32;
                     v175 = arith.constant 0 : i32;
                     v112 = hir.bitcast v165 : u32;
@@ -155,7 +155,7 @@ builtin.component root_ns:root@1.0.0 {
                         v121 = arith.mod v119, v174 : u32;
                         hir.assertz v121 #[code = 250];
                         v118 = arith.add v108, v165 : i32 #[overflow = wrapping];
-                        v122 = hir.int_to_ptr v119 : (ptr i32);
+                        v122 = hir.int_to_ptr v119 : ptr<byte, i32>;
                         hir.store v122, v118;
                         v173 = arith.constant 1 : u32;
                         v124 = arith.add v108, v166 : i32 #[overflow = wrapping];

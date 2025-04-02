@@ -1,6 +1,6 @@
 use midenc_hir::{
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
 };
 
@@ -20,7 +20,11 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut note: FunctionTypeMap = Default::default();
     note.insert(
         Symbol::from(CREATE_NOTE),
-        FunctionType::new([Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt], [Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt],
+        ),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m

@@ -6,7 +6,7 @@ use midenc_hir::{
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
     interner::Symbol,
-    smallvec, Abi, BuilderExt, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
+    smallvec, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
     SymbolPath,
 };
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
@@ -320,7 +320,7 @@ impl<'a> ComponentTranslator<'a> {
         let type_func_idx = types.convert_component_func_type(frame.types, canon_lift.ty).unwrap();
 
         let component_types = types.resources_mut_and_types().1;
-        let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
+        let func_ty = convert_lifted_func_ty(CallConv::CanonLift, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         generate_export_lifting_function(
             &mut self.result,
@@ -487,6 +487,7 @@ impl<'a> ComponentTranslator<'a> {
 }
 
 fn convert_lifted_func_ty(
+    abi: CallConv,
     ty: &TypeFuncIndex,
     component_types: &super::ComponentTypes,
 ) -> FunctionType {
@@ -504,7 +505,7 @@ fn convert_lifted_func_ty(
     FunctionType {
         params,
         results,
-        abi: Abi::Wasm,
+        abi,
     }
 }
 
@@ -522,7 +523,7 @@ fn canon_lower_func(
         .map_err(Report::msg)?;
 
     let component_types = types.resources_mut_and_types().1;
-    let func_ty = convert_lifted_func_ty(&type_func_idx, component_types);
+    let func_ty = convert_lifted_func_ty(CallConv::CanonLower, &type_func_idx, component_types);
 
     let mut path = module_path.clone();
     path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));

@@ -6,6 +6,7 @@
 
 pub mod resources;
 
+use alloc::sync::Arc;
 use core::{hash::Hash, ops::Index};
 
 use anyhow::{bail, Result};
@@ -1770,20 +1771,20 @@ pub fn interface_type_to_ir(
                 .fields
                 .iter()
                 .map(|f| interface_type_to_ir(&f.ty, component_types));
-            midenc_hir::Type::Struct(midenc_hir::StructType::new(tys))
+            midenc_hir::Type::from(midenc_hir::StructType::new(tys))
         }
         InterfaceType::Variant(_) => todo!(),
         InterfaceType::List(idx) => {
             let element_ty =
                 interface_type_to_ir(&component_types.lists[*idx].element, component_types);
-            midenc_hir::Type::List(Box::new(element_ty))
+            midenc_hir::Type::List(Arc::new(element_ty))
         }
         InterfaceType::Tuple(tuple_idx) => {
             let tys = component_types.tuples[*tuple_idx]
                 .types
                 .iter()
                 .map(|t| interface_type_to_ir(t, component_types));
-            midenc_hir::Type::Struct(midenc_hir::StructType::new(tys))
+            midenc_hir::Type::from(midenc_hir::StructType::new(tys))
         }
         InterfaceType::Flags(_) => todo!(),
         InterfaceType::Enum(_) => todo!(),

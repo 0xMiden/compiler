@@ -1,6 +1,6 @@
 use midenc_hir::{
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
 };
 
@@ -22,6 +22,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     funcs.insert(
         Symbol::from(PIPE_WORDS_TO_MEMORY),
         FunctionType::new(
+            CallConv::Wasm,
             [
                 Felt, // num_words
                 I32,  // write_ptr
@@ -35,6 +36,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     funcs.insert(
         Symbol::from(PIPE_DOUBLE_WORDS_TO_MEMORY),
         FunctionType::new(
+            CallConv::Wasm,
             [
                 Felt, Felt, Felt, Felt, // C
                 Felt, Felt, Felt, Felt, // B

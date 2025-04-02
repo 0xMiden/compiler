@@ -4,7 +4,8 @@ use midenc_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::BuiltinOpBuilder, AbiParam, Felt, Signature, SourceSpan, Type, ValueRef,
+    dialects::builtin::BuiltinOpBuilder, AbiParam, Felt, PointerType, Signature, SourceSpan, Type,
+    ValueRef,
 };
 use proptest::{
     prelude::any,
@@ -36,7 +37,7 @@ fn load_sw() {
 
         // Generate a `test` module with `main` function that invokes `load_sw` when lowered to MASM
         let signature = Signature::new(
-            [AbiParam::new(Type::Ptr(Box::new(Type::U32)))],
+            [AbiParam::new(Type::from(PointerType::new(Type::U32)))],
             [AbiParam::new(Type::U32)],
         );
         setup::build_entrypoint(link_output.component, &signature, |builder| {
@@ -114,7 +115,7 @@ fn load_dw() {
 
         // Generate a `test` module with `main` function that invokes `load_sw` when lowered to MASM
         let signature = Signature::new(
-            [AbiParam::new(Type::Ptr(Box::new(Type::U64)))],
+            [AbiParam::new(Type::from(PointerType::new(Type::U64)))],
             [AbiParam::new(Type::U64)],
         );
         setup::build_entrypoint(link_output.component, &signature, |builder| {

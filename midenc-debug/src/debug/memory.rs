@@ -2,11 +2,12 @@ use std::{
     ffi::{OsStr, OsString},
     fmt,
     str::FromStr,
+    sync::Arc,
 };
 
 use clap::{Parser, ValueEnum};
 use midenc_codegen_masm::NativePtr;
-use midenc_hir::Type;
+use midenc_hir::{ArrayType, PointerType, Type};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadMemoryExpr {
@@ -23,7 +24,7 @@ impl FromStr for ReadMemoryExpr {
         let argv = s.split_whitespace();
         let args = Read::parse(argv)?;
 
-        let ty = args.ty.unwrap_or_else(|| Type::Array(Box::new(Type::Felt), 4));
+        let ty = args.ty.unwrap_or_else(|| Type::from(ArrayType::new(Type::Felt, 4)));
         let addr = match args.mode {
             MemoryMode::Word => NativePtr::new(args.addr, 0),
             MemoryMode::Byte => NativePtr::from_ptr(args.addr),
@@ -121,8 +122,8 @@ impl clap::builder::TypedValueParser for TypeParser {
             "u64" => Type::U64,
             "u128" => Type::U128,
             "felt" => Type::Felt,
-            "word" => Type::Array(Box::new(Type::Felt), 4),
-            "ptr" | "pointer" => Type::Ptr(Box::new(Type::U32)),
+            "word" => Type::from(ArrayType::new(Type::Felt, 4)),
+            "ptr" | "pointer" => Type::from(PointerType::new(Type::U32)),
             _ => {
                 return Err(Error::raw(
                     ErrorKind::InvalidValue,
