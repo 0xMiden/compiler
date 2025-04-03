@@ -1,32 +1,28 @@
 # mod root_ns:root@1.0.0
 
 export.init
-
-        push.2162688
-        exec.::intrinsics::mem::heap_init
-        push.1048576
-        u32assert
-        mem_store.262144
-        push.1048576
-        u32assert
-        mem_store.262145
-        push.1048576
-        u32assert
-        mem_store.262146
+    push.2162688
+    exec.::intrinsics::mem::heap_init
+    push.1048576
+    u32assert
+    mem_store.262144
+    push.1048576
+    u32assert
+    mem_store.262145
+    push.1048576
+    u32assert
+    mem_store.262146
 end
-
 
 # mod root_ns:root@1.0.0::test_rust_b008d40be4d6e94465c1a26de42c380b06e09a3774e7a937bf5c338fd437b333
 
 export.entrypoint
-
-        movdn.3
-        movdn.3
-        movdn.3
-        movdn.3
-        movdn.3
-        movdn.3
-        exec.::std::math::u64::gte
+    movdn.3
+    movdn.3
+    movdn.3
+    movdn.3
+    movdn.3
+    movdn.3
+    exec.::std::math::u64::gte
 end
-
 

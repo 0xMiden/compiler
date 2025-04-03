@@ -1,24 +1,20 @@
 # mod root_ns:root@1.0.0
 
 export.init
-
-        push.2162688
-        exec.::intrinsics::mem::heap_init
-        push.1048576
-        u32assert
-        mem_store.262144
+    push.2162688
+    exec.::intrinsics::mem::heap_init
+    push.1048576
+    u32assert
+    mem_store.262144
 end
-
 
 # mod root_ns:root@1.0.0::eq_felt
 
 export.entrypoint
-
-        push.1
-        swap.1
-        movup.2
-        eq
-        eq
+    push.1
+    swap.1
+    movup.2
+    eq
+    eq
 end
-
 
