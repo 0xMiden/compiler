@@ -123,8 +123,9 @@ fn process_import(
                     SymbolNameComponent::Leaf(Symbol::intern(&import.field))
                 ],
             };
-            let module_arg =
-                module_args.get(&import_path).expect("unexpected import '{import_path}'");
+            let module_arg = module_args
+                .get(&import_path)
+                .unwrap_or_else(|| panic!("unexpected import '{import_path}'"));
             process_module_arg(
                 module_builder,
                 world_builder,

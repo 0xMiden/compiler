@@ -427,10 +427,10 @@ fn recover_wasm_cm_interfaces(
             );
             let component_parts = component_parts
                 .map(Span::unknown)
-                .map(masm::Ident::new_unchecked)
-                .chain([masm::Ident::new_unchecked(Span::unknown(Arc::from(interface)))]);
+                .map(masm::Ident::from_raw_parts)
+                .chain([masm::Ident::from_raw_parts(Span::unknown(Arc::from(interface)))]);
             let path = masm::LibraryPath::new_from_components(ns, component_parts);
-            let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(
+            let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                 Span::unknown(Arc::from(function)),
             ));
             let new_export = masm::QualifiedProcedureName::new(path, name);

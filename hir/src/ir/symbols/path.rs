@@ -281,13 +281,13 @@ impl SymbolPath {
             None => {
                 return LibraryPath::new_from_components(LibraryNamespace::Anon, parts);
             }
-            Some(component) => LibraryNamespace::from_ident_unchecked(Ident::new_unchecked(
+            Some(component) => LibraryNamespace::from_ident_unchecked(Ident::from_raw_parts(
                 Span::new(SourceSpan::default(), component.as_symbol_name().as_str().into()),
             )),
         };
 
         for component in components {
-            let id = Ident::new_unchecked(Span::new(
+            let id = Ident::from_raw_parts(Span::new(
                 SourceSpan::default(),
                 component.as_symbol_name().as_str().into(),
             ));

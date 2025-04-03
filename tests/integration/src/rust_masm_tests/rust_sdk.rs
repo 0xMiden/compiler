@@ -156,15 +156,13 @@ fn rust_sdk_cross_ctx_account() {
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}"
     );
-    // TODO: uncomment after https://github.com/0xPolygonMiden/compiler/issues/441 is resolved
-    //
     // Test that the package loads
-    // let bytes = package.to_bytes();
-    // let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+    let bytes = package.to_bytes();
+    let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
 }
 
 #[test]
-#[ignore = "until https://github.com/0xPolygonMiden/compiler/issues/441 is resolved"]
+#[ignore = "until https://github.com/0xMiden/compiler/issues/476 is resolved"]
 fn rust_sdk_cross_ctx_note() {
     // Build cross-ctx-account package
     let args: Vec<String> = [

@@ -1,32 +1,28 @@
 # mod root_ns:root@1.0.0
 
 export.init
-
-        push.2162688
-        exec.::intrinsics::mem::heap_init
-        push.1048576
-        u32assert
-        mem_store.262144
-        push.1048576
-        u32assert
-        mem_store.262145
-        push.1048576
-        u32assert
-        mem_store.262146
+    push.2162688
+    exec.::intrinsics::mem::heap_init
+    push.1048576
+    u32assert
+    mem_store.262144
+    push.1048576
+    u32assert
+    mem_store.262145
+    push.1048576
+    u32assert
+    mem_store.262146
 end
-
 
 # mod root_ns:root@1.0.0::test_rust_96d61f728452f9b581e6c765749adb51e9f48ad7e7527bde3c25a5943fa1a541
 
 export.entrypoint
-
-        push.15
-        movup.2
-        swap.1
-        u32and
-        swap.1
-        swap.1
-        u32shr
+    push.15
+    movup.2
+    swap.1
+    u32and
+    swap.1
+    swap.1
+    u32shr
 end
-
 
