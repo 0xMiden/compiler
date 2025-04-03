@@ -29,8 +29,10 @@ impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
 }
 
 pub trait StorageMapAccess<K, V> {
-    fn read(&self, key: &K) -> V;
-    fn write(&self, key: K, value: V) -> (StorageCommitmentRoot, V);
+    /// Returns a map item value for `key` from the account storage.
+    fn get(&self, key: &K) -> V;
+    /// Sets a map item `value` for `key` in the account storage and returns (old_root, old_value)
+    fn set(&self, key: K, value: V) -> (StorageCommitmentRoot, V);
 }
 
 pub struct StorageMap {
@@ -42,7 +44,7 @@ impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K
 {
     /// Returns a map item value from the account storage.
     #[inline(always)]
-    fn read(&self, key: &K) -> V {
+    fn get(&self, key: &K) -> V {
         storage::get_map_item(self.slot, key.as_ref()).into()
     }
 
@@ -51,7 +53,7 @@ impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K
     /// - old_root is the old map root.
     /// - old_value is the previous value of the item.
     #[inline(always)]
-    fn write(&self, key: K, value: V) -> (StorageCommitmentRoot, V) {
+    fn set(&self, key: K, value: V) -> (StorageCommitmentRoot, V) {
         let (root, old_word) = storage::set_map_item(self.slot, key.into(), value.into());
         (root, old_word.into())
     }
