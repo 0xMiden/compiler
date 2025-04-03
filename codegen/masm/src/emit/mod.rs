@@ -196,7 +196,7 @@ impl<'a> OpEmitter<'a> {
     /// It is assumed that all necessary operands are on the operand stack in the correct position
     fn raw_exec(&mut self, callee: &str, span: SourceSpan) {
         let callee: midenc_hir::FunctionIdent = callee.parse().unwrap();
-        let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(Span::new(
+        let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             span,
             callee.function.as_str().into(),
         )));

@@ -1041,7 +1041,7 @@ impl HirLowering for hir::Exec {
 
         // Convert the path components to an absolute procedure path
         let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::new_unchecked(
+        let name = masm::ProcedureName::from_raw_parts(
             path.pop().expect("expected at least two path components"),
         );
         let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
@@ -1095,7 +1095,7 @@ impl HirLowering for hir::Call {
 
         // Convert the path components to an absolute procedure path
         let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::new_unchecked(
+        let name = masm::ProcedureName::from_raw_parts(
             path.pop().expect("expected at least two path components"),
         );
         let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };

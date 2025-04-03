@@ -40,7 +40,7 @@ impl ToMasmComponent for builtin::Component {
                 let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
                     Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
                 })?;
-                let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(
+                let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                     Span::new(entry_id.function.span, entry_id.function.as_str().into()),
                 ));
                 let path = component_path.clone().append_unchecked(entry_id.module);
@@ -425,7 +425,7 @@ impl MasmFunctionBuilder {
         use midenc_hir::{Symbol, Visibility};
 
         let name = function.name();
-        let name = masm::ProcedureName::new_unchecked(masm::Ident::new_unchecked(Span::new(
+        let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             name.span,
             name.as_str().into(),
         )));
