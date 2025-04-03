@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
 use expect_test::{expect, expect_file};
+use miden_core::utils::Deserializable;
+use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{Felt, Immediate, Op, SymbolTable};
@@ -19,7 +21,12 @@ fn storage_example() {
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
     let package = test.compiled_package();
-    let toml = package.as_ref().account_component_metadata.clone().unwrap().as_toml().unwrap();
+    let account_component_metadata_bytes =
+        package.as_ref().account_component_metadata_bytes.clone().unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+        .unwrap()
+        .as_toml()
+        .unwrap();
     expect![[r#"
         name = "storage-example"
         description = "A simple example of a Miden account storage API"

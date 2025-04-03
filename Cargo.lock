@@ -3231,7 +3231,7 @@ dependencies = [
 [[package]]
 name = "miden-air"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "miden-core 0.14.0",
  "thiserror 2.0.11",
@@ -3260,7 +3260,7 @@ dependencies = [
 [[package]]
 name = "miden-assembly"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "aho-corasick",
  "lalrpop",
@@ -3328,7 +3328,7 @@ dependencies = [
 [[package]]
 name = "miden-core"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "lock_api",
  "loom",
@@ -3411,12 +3411,11 @@ dependencies = [
 [[package]]
 name = "miden-mast-package"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "derive_more",
  "miden-assembly 0.14.0",
  "miden-core 0.14.0",
- "miden-objects",
 ]
 
 [[package]]
@@ -3496,7 +3495,7 @@ dependencies = [
 [[package]]
 name = "miden-processor"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "miden-air 0.14.0",
  "miden-core 0.14.0",
@@ -3513,7 +3512,7 @@ version = "0.0.8"
 [[package]]
 name = "miden-stdlib"
 version = "0.14.0"
-source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=13deda4527b25081399ebb98627a35f058b53c2f#13deda4527b25081399ebb98627a35f058b53c2f"
+source = "git+https://github.com/0xPolygonMiden/miden-vm?rev=4f43e066e6cc50f199ec549961eebffeb153f5ef#4f43e066e6cc50f199ec549961eebffeb153f5ef"
 dependencies = [
  "miden-assembly 0.14.0",
  "miden-core 0.14.0",

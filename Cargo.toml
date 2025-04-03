@@ -101,15 +101,15 @@ miden-formatting = { version = "0.1", default-features = false }
 # miden-mast-package = { version = "0.13.0", default-features = false }
 
 # use the VM from the https://github.com/0xPolygonMiden/miden-vm/pull/1731
-miden-assembly = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "13deda4527b25081399ebb98627a35f058b53c2f" }
+miden-assembly = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4f43e066e6cc50f199ec549961eebffeb153f5ef" }
 miden-core = { version = "0.14.0", default-features = false, features = [
     "diagnostics",
-], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "13deda4527b25081399ebb98627a35f058b53c2f" }
-miden-processor = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "13deda4527b25081399ebb98627a35f058b53c2f" }
+], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4f43e066e6cc50f199ec549961eebffeb153f5ef" }
+miden-processor = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4f43e066e6cc50f199ec549961eebffeb153f5ef" }
 miden-stdlib = { version = "0.14.0", default-features = false, features = [
     "with-debug-info",
-], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "13deda4527b25081399ebb98627a35f058b53c2f" }
-miden-mast-package = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "13deda4527b25081399ebb98627a35f058b53c2f" }
+], git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4f43e066e6cc50f199ec549961eebffeb153f5ef" }
+miden-mast-package = { version = "0.14.0", default-features = false, git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4f43e066e6cc50f199ec549961eebffeb153f5ef" }
 
 # This is here for convenience if we need to quickly use a git ref of the VM crates
 #miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
