@@ -1,7 +1,7 @@
-(component
+(component $cross-ctx-note
   (type (;0;)
     (instance
-      (type (;0;) (record (field "inner" float32)))
+      (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
     )
   )
@@ -9,7 +9,7 @@
   (alias export 0 "felt" (type (;1;)))
   (type (;2;)
     (instance
-      (alias outer 1 1 (type (;0;)))
+      (alias outer $cross-ctx-note 1 (type (;0;)))
       (export (;1;) "felt" (type (eq 0)))
       (type (;2;) (func (param "input" 1) (result 1)))
       (export (;0;) "process-felt" (func (type 2)))
@@ -25,9 +25,9 @@
   (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;2;) (type 3)))
   (type (;4;)
     (instance
-      (type (;0;) (func (param "a" u32) (result float32)))
+      (type (;0;) (func (param "a" u32) (result f32)))
       (export (;0;) "from-u32" (func (type 0)))
-      (type (;1;) (func (param "a" float32) (param "b" float32)))
+      (type (;1;) (func (param "a" f32) (param "b" f32)))
       (export (;1;) "assert-eq" (func (type 1)))
     )
   )
@@ -45,15 +45,23 @@
     (import "miden:cross-ctx-account/foo@1.0.0" "process-felt" (func $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1 (;1;) (type 1)))
     (import "miden:core-import/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;2;) (type 2)))
     (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;3;) (type 3)))
+    (table (;0;) 3 3 funcref)
+    (memory (;0;) 17)
+    (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+    (export "memory" (memory 0))
+    (export "miden:base/note-script@1.0.0#note-script" (func $miden:base/note-script@1.0.0#note-script))
+    (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
+    (export "cabi_realloc" (func $cabi_realloc))
+    (elem (;0;) (i32.const 1) func $cross_ctx_note::bindings::__link_custom_section_describing_imports $cabi_realloc)
     (func $__wasm_call_ctors (;4;) (type 4))
     (func $cross_ctx_note::bindings::__link_custom_section_describing_imports (;5;) (type 4))
-    (func $__rust_alloc (;6;) (type 5) (param i32 i32) (result i32)
+    (func $__rustc::__rust_alloc (;6;) (type 5) (param i32 i32) (result i32)
       i32.const 1048616
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
-    (func $__rust_realloc (;7;) (type 6) (param i32 i32 i32 i32) (result i32)
+    (func $__rustc::__rust_realloc (;7;) (type 6) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
         i32.const 1048616
         local.get 2
@@ -62,14 +70,18 @@
         local.tee 2
         i32.eqz
         br_if 0 (;@1;)
-        local.get 2
-        local.get 0
-        local.get 1
         local.get 3
         local.get 1
         local.get 3
+        local.get 1
         i32.lt_u
         select
+        local.tee 3
+        i32.eqz
+        br_if 0 (;@1;)
+        local.get 2
+        local.get 0
+        local.get 3
         memory.copy
       end
       local.get 2
@@ -104,7 +116,7 @@
             drop
             local.get 3
             local.get 2
-            call $__rust_alloc
+            call $__rustc::__rust_alloc
             local.set 2
             br 1 (;@2;)
           end
@@ -112,7 +124,7 @@
           local.get 1
           local.get 2
           local.get 3
-          call $__rust_realloc
+          call $__rustc::__rust_realloc
           local.set 2
         end
         local.get 2
@@ -142,18 +154,19 @@
         i32.gt_u
         select
         local.tee 3
-        i32.popcnt
-        i32.const 1
-        i32.ne
+        local.get 3
+        i32.const -1
+        i32.add
+        i32.and
         br_if 0 (;@1;)
+        local.get 2
         i32.const -2147483648
         local.get 1
         local.get 3
         call $core::ptr::alignment::Alignment::max
         local.tee 1
         i32.sub
-        local.get 2
-        i32.lt_u
+        i32.gt_u
         br_if 0 (;@1;)
         i32.const 0
         local.set 3
@@ -218,14 +231,6 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (table (;0;) 3 3 funcref)
-    (memory (;0;) 17)
-    (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-    (export "memory" (memory 0))
-    (export "miden:base/note-script@1.0.0#note-script" (func $miden:base/note-script@1.0.0#note-script))
-    (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
-    (export "cabi_realloc" (func $cabi_realloc))
-    (elem (;0;) (i32.const 1) func $cross_ctx_note::bindings::__link_custom_section_describing_imports $cabi_realloc)
     (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
   )
   (alias export 3 "from-u32" (func (;0;)))
@@ -268,4 +273,5 @@
     )
   )
   (export (;5;) "miden:base/note-script@1.0.0" (instance 4))
+  (@custom "version" "0.1.0")
 )

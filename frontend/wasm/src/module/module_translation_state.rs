@@ -125,7 +125,7 @@ fn process_import(
             };
             let module_arg = module_args
                 .get(&import_path)
-                .unwrap_or_else(|| panic!("unexpected import '{import_path}'"));
+                .unwrap_or_else(|| panic!("unexpected import '{import_path:?}'"));
             process_module_arg(
                 module_builder,
                 world_builder,

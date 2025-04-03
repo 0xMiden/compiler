@@ -397,9 +397,10 @@ impl<'a> ComponentTranslator<'a> {
                     }
 
                     let module_path = SymbolPath {
-                        path: smallvec![SymbolNameComponent::Component(Symbol::intern(
-                            *arg_module_name
-                        ))],
+                        path: smallvec![
+                            SymbolNameComponent::Root,
+                            SymbolNameComponent::Component(Symbol::intern(*arg_module_name))
+                        ],
                     };
                     let arg_module = &frame.module_instances[*module_arg.1];
                     match arg_module {
