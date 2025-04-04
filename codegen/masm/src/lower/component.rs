@@ -1,7 +1,9 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
+use miden_assembly::LibraryPath;
 use midenc_hir::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef,
+    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, FunctionIdent, Op,
+    SourceSpan, Span, Symbol, ValueRef,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned};
@@ -43,7 +45,7 @@ impl ToMasmComponent for builtin::Component {
                 let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                     Span::new(entry_id.function.span, entry_id.function.as_str().into()),
                 ));
-                let path = component_path.clone().append_unchecked(entry_id.module);
+                let path = LibraryPath::new(entry_id.module).into_diagnostic()?;
                 Some(masm::InvocationTarget::AbsoluteProcedurePath { name, path })
             }
             None => None,
