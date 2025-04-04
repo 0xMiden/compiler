@@ -1,92 +1,236 @@
-# mod #anon::lower-imports-miden:cross-ctx-account/foo@1.0.0
+# mod miden:base/note-script@1.0.0
 
-use.miden:cross-ctx-account/foo@1.0.0
+export.note-script
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::miden:base/note-script@1.0.0#note-script
+end
 
-export.process-felt
+export.init
+    push.2162688
+    exec.::intrinsics::mem::heap_init
+    push.9021226855565145792
+    push.4948740029366688057
+    push.7925211860580638461
+    push.9045569689096742779
+    adv.push_mapval
+    push.262144
+    push.3
+    exec.::std::mem::pipe_preimage_to_memory
+    drop
+    push.1048576
+    u32assert
+    mem_store.262144
+end
+
+# mod miden:base/note-script@1.0.0::cross_ctx_note
+
+proc.cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
     call.::miden:cross-ctx-account/foo@1.0.0::process-felt
 end
 
-
-# mod cross_ctx_note
-
-use.intrinsics::mem
-use.lower-imports-miden:cross-ctx-account/foo@1.0.0
-use.miden:cross-ctx-account/foo@1.0.0
-
-proc."cross_ctx_note::bindings::__link_custom_section_describing_imports"
-
+proc.__wasm_call_ctors
+    nop
 end
 
+proc.cross_ctx_note::bindings::__link_custom_section_describing_imports
+    nop
+end
 
-proc."wit_bindgen_rt::cabi_realloc"
-    dup.1
-    neq.0
+proc.__rustc::__rust_alloc
+    push.1048616
+    movup.2
+    swap.1
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+end
+
+proc.__rustc::__rust_realloc
+    push.1048616
+    dup.4
+    swap.2
+    swap.4
+    swap.1
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    push.0
+    push.0
+    dup.2
+    swap.1
+    eq
+    neq
     if.true
-        exec."__rust_realloc"
-        dup.0
-        neq.0
-        if.true
-
-        else
-            push.0 assert
-        end
+        movdn.3
+        drop
+        drop
+        drop
     else
-        drop
-        drop
-        dup.1
-        eq.0
-        neq.0
+        push.0
+        dup.2
+        dup.5
+        swap.1
+        u32lt
+        neq
+        swap.1
+        swap.4
+        swap.1
+        cdrop
+        push.0
+        push.0
+        dup.2
+        swap.1
+        eq
+        neq
         if.true
-            swap.1 drop
+            drop
+            drop
         else
-            swap.1
-            exec."__rust_alloc"
-            dup.0
-            neq.0
-            if.true
-
-            else
-                push.0 assert
+            dup.2
+            movup.2
+            push.0
+            dup.3
+            push.0
+            gte
+            while.true
+                dup.2
+                dup.1
+                push.1
+                u32overflowing_madd
+                assertz
+                dup.2
+                dup.2
+                push.1
+                u32overflowing_madd
+                assertz
+                u32divmod.4
+                swap.1
+                exec.::intrinsics::mem::load_sw
+                push.128
+                u32and
+                swap.1
+                u32divmod.4
+                swap.1
+                dup.2
+                dup.2
+                dup.2
+                exec.::intrinsics::mem::load_sw
+                push.4294967040
+                u32and
+                movup.5
+                u32or
+                movdn.4
+                exec.::intrinsics::mem::store_sw
+                u32wrapping_add.1
+                dup.0
+                dup.4
+                u32gte
             end
+            dropw
         end
     end
 end
 
+export.miden:base/note-script@1.0.0#note-script
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::wit_bindgen_rt::run_ctors_once
+    push.7
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
+    push.10
+    assert_eq
+end
 
-proc."wit_bindgen_rt::run_ctors_once"
+export.cabi_realloc_wit_bindgen_0_28_0
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::wit_bindgen_rt::cabi_realloc
+end
+
+proc.wit_bindgen_rt::cabi_realloc
     push.0
-    add.1048621
-    u32assert
-    dup.0
-    u32mod.16
-    dup.0
-    u32mod.4
+    dup.2
     swap.1
-    u32div.4
+    neq
+    if.true
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note::__rustc::__rust_realloc
+        push.0
+        push.3735929054
+        movup.2
+    else
+        drop
+        drop
+        push.0
+        push.0
+        dup.3
+        swap.1
+        eq
+        neq
+        if.true
+            swap.1
+            drop
+            push.1
+            push.3735929054
+            movup.2
+            swap.1
+        else
+            swap.1
+            exec.::miden:base/note-script@1.0.0::cross_ctx_note::__rustc::__rust_alloc
+            push.0
+            push.3735929054
+            movup.2
+        end
+    end
     movup.2
-    u32div.16
+    eq.0
+    if.true
+        swap.1
+        drop
+        push.0
+        dup.1
+        swap.1
+        neq
+        if.true
+            push.0
+            swap.1
+        else
+            drop
+            push.1
+            push.3735929054
+        end
+    else
+        drop
+        push.0
+        swap.1
+    end
+    push.0
+    movup.2
+    swap.1
+    eq
+    if.true
+        nop
+    else
+        drop
+        push.0
+        assert
+    end
+end
+
+proc.wit_bindgen_rt::run_ctors_once
+    push.1048621
+    push.0
+    add
+    u32assert
+    u32divmod.4
+    swap.1
     exec.::intrinsics::mem::load_sw
     push.128
     u32and
-    neq.0
+    push.0
+    swap.1
+    neq
     if.true
-
+        nop
     else
-        exec."__wasm_call_ctors"
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note::__wasm_call_ctors
         push.1
-        push.128
-        u32and
+        push.1048621
         push.0
-        add.1048621
+        add
         u32assert
-        dup.0
-        u32mod.16
-        dup.0
-        u32mod.4
+        u32divmod.4
         swap.1
-        u32div.4
-        movup.2
-        u32div.16
         dup.2
         dup.2
         dup.2
@@ -100,352 +244,167 @@ proc."wit_bindgen_rt::run_ctors_once"
     end
 end
 
-
-proc."core::ptr::alignment::Alignment::max"
-    dup.0
-    dup.2
-    u32gt
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
-    neq.0
-    cdrop
-end
-
-
-proc."<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc"
+proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     push.32
-    dup.2
+    push.0
     push.32
+    dup.4
+    swap.1
     u32gt
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
-    neq.0
+    neq
     dup.3
     swap.1
     cdrop
-    dup.0
-    u32popcnt
-    push.1
+    push.0
+    push.4294967295
+    dup.2
+    swap.1
+    u32wrapping_add
+    dup.2
+    swap.1
+    u32and
     neq
-    neq.0
     if.true
-        push.0 assert
+        dropw
+        push.0
+        push.3735929054
     else
-        push.2147483648
-        swap.3
-        exec."core::ptr::alignment::Alignment::max"
-        dup.0
-        swap.1
-        swap.3
-        swap.1
-        u32wrapping_sub
-        dup.3
-        u32lt
-        push.0
-        push.0
-        push.4294967294
         movup.2
-        cdrop
-        u32or
-        neq.0
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note::core::ptr::alignment::Alignment::max
+        push.0
+        push.2147483648
+        dup.2
+        u32wrapping_sub
+        dup.4
+        swap.1
+        u32gt
+        neq
         if.true
-            push.0 assert
+            drop
+            drop
+            drop
+            push.0
+            push.3735929054
         else
-            dup.0
-            dup.0
-            u32mod.4
-            assertz.err=250
-            dup.2
-            swap.1
-            swap.4
-            swap.1
-            u32wrapping_add
-            push.4294967295
-            u32wrapping_add
             push.0
-            dup.3
+            dup.1
+            swap.1
             u32wrapping_sub
-            u32and
-            push.0
+            push.4294967295
             movup.4
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
+            dup.3
+            u32wrapping_add
+            u32wrapping_add
+            u32and
+            dup.2
+            push.4
+            dup.1
             swap.1
-            u32div.4
-            movup.2
-            u32div.16
+            u32mod
+            u32assert
+            assertz.err=250
+            u32divmod.4
+            swap.1
             exec.::intrinsics::mem::load_sw
-            neq.0
+            push.0
+            neq
             if.true
-                dup.2
-                dup.0
-                u32mod.4
-                assertz.err=250
-                push.268435456
-                swap.1
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
-                swap.1
-                u32div.4
-                movup.2
-                u32div.16
-                exec.::intrinsics::mem::load_sw
-                dup.0
-                swap.1
-                swap.2
-                swap.1
-                u32wrapping_sub
-                dup.3
-                u32lt
                 push.0
-                push.0
-                push.4294967294
-                movup.2
-                cdrop
-                u32or
-                neq.0
-                if.true
-                    drop
-                    movdn.3
-                    drop
-                    drop
-                    drop
-                else
-                    swap.1
-                    drop
-                    movup.2
-                    dup.1
-                    swap.1
-                    swap.3
-                    u32wrapping_add
-                    dup.2
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
-                    swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
-                    exec.::intrinsics::mem::store_sw
-                    swap.1
-                    u32mod.4
-                    assertz.err=250
-                    swap.1
-                    u32wrapping_add
-                end
+                swap.3
             else
-                dup.2
                 exec.::intrinsics::mem::heap_base
-                dup.4
                 exec.::intrinsics::mem::memory_size
+                dup.4
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz.err=250
                 push.16
+                movup.2
+                swap.1
                 u32shl
                 movup.2
                 swap.1
                 u32wrapping_add
-                dup.2
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
                 swap.1
-                u32div.4
-                movup.2
-                u32div.16
+                u32divmod.4
+                swap.1
                 exec.::intrinsics::mem::store_sw
-                dup.0
-                u32mod.4
-                assertz.err=250
-                swap.1
-                u32mod.4
-                assertz.err=250
-                push.268435456
-                swap.1
-                dup.0
-                u32mod.16
-                dup.0
-                u32mod.4
-                swap.1
-                u32div.4
-                movup.2
-                u32div.16
-                exec.::intrinsics::mem::load_sw
-                dup.0
-                swap.1
-                swap.2
-                swap.1
-                u32wrapping_sub
-                dup.3
-                u32lt
                 push.0
-                push.0
-                push.4294967294
+                swap.3
+            end
+            dup.0
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz.err=250
+            u32divmod.4
+            swap.1
+            exec.::intrinsics::mem::load_sw
+            push.0
+            dup.3
+            push.268435456
+            dup.3
+            u32wrapping_sub
+            swap.1
+            u32lt
+            neq
+            if.true
+                dropw
+                push.1
+                swap.1
+            else
+                movup.4
+                drop
+                swap.1
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz.err=250
+                dup.1
+                movup.3
+                u32wrapping_add
+                swap.1
+                u32divmod.4
+                swap.1
+                exec.::intrinsics::mem::store_sw
+                push.1
+                swap.1
                 movup.2
-                cdrop
-                u32or
-                neq.0
-                if.true
-                    drop
-                    movdn.3
-                    drop
-                    drop
-                    drop
-                else
-                    swap.1
-                    drop
-                    movup.2
-                    dup.1
-                    swap.1
-                    swap.3
-                    u32wrapping_add
-                    dup.2
-                    dup.0
-                    u32mod.16
-                    dup.0
-                    u32mod.4
-                    swap.1
-                    u32div.4
-                    movup.2
-                    u32div.16
-                    exec.::intrinsics::mem::store_sw
-                    swap.1
-                    u32mod.4
-                    assertz.err=250
-                    swap.1
-                    u32wrapping_add
-                end
+                u32wrapping_add
             end
         end
     end
-end
-
-
-proc."__rust_alloc"
-    push.1048616
+    push.0
     movup.2
     swap.1
-    exec."<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc"
-end
-
-
-proc."__rust_realloc"
-    push.1048616
-    dup.4
-    swap.2
-    swap.4
-    swap.1
-    exec."<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc"
-    dup.0
-    eq.0
-    neq.0
+    eq
     if.true
-        movdn.3 drop drop drop
+        drop
+        push.0
+        assert
     else
-        dup.1
-        dup.4
-        u32lt
-        push.0
-        push.0
-        push.4294967294
-        movup.2
-        cdrop
-        u32or
-        neq.0
-        swap.1
-        swap.4
-        swap.2
-        swap.1
-        cdrop
-        dup.2
-        movup.2
-        push.0
-        dup.3
-        gte.0
-        while.true
-            dup.2
-            dup.1
-            push.1
-            u32overflowing_madd
-            assertz
-            dup.2
-            dup.2
-            push.1
-            u32overflowing_madd
-            assertz
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
-            swap.1
-            u32div.4
-            movup.2
-            u32div.16
-            exec.::intrinsics::mem::load_sw
-            push.128
-            u32and
-            swap.1
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
-            swap.1
-            u32div.4
-            movup.2
-            u32div.16
-            dup.2
-            dup.2
-            dup.2
-            exec.::intrinsics::mem::load_sw
-            push.4294967040
-            u32and
-            movup.5
-            u32or
-            movdn.4
-            exec.::intrinsics::mem::store_sw
-            u32wrapping_add.1
-            dup.0
-            dup.4
-            u32gte
-        end
-        dropw
+        nop
     end
 end
 
-
-proc."__wasm_call_ctors"
-
+proc.core::ptr::alignment::Alignment::max
+    push.0
+    dup.2
+    dup.2
+    swap.1
+    u32gt
+    neq
+    cdrop
 end
-
 
 export.cabi_realloc
-    exec.cabi_realloc_wit_bindgen_0_28_0
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::cabi_realloc_wit_bindgen_0_28_0
 end
-
-
-export.cabi_realloc_wit_bindgen_0_28_0
-    exec."wit_bindgen_rt::cabi_realloc"
-end
-
-
-export."miden:base/note-script@1.0.0#note-script"
-    exec."wit_bindgen_rt::run_ctors_once"
-    push.7
-    exec.::lower-imports-miden:cross-ctx-account/foo@1.0.0::process-felt
-    push.10
-    assert_eq
-end
-
 

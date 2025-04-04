@@ -162,7 +162,6 @@ fn rust_sdk_cross_ctx_account() {
 }
 
 #[test]
-#[ignore = "until https://github.com/0xMiden/compiler/issues/476 is resolved"]
 fn rust_sdk_cross_ctx_note() {
     // Build cross-ctx-account package
     let args: Vec<String> = [
@@ -206,13 +205,8 @@ fn rust_sdk_cross_ctx_note() {
         ],
     );
     builder.with_entrypoint(FunctionIdent {
-        // module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
-        module: Ident::new(Symbol::intern("cross_ctx_note"), SourceSpan::default()),
-        // function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
-        function: Ident::new(
-            Symbol::intern("miden:base/note-script@1.0.0#note-script"),
-            SourceSpan::default(),
-        ),
+        module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
+        function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
     });
     let mut test = builder.build();
     let artifact_name = test.artifact_name().to_string();
