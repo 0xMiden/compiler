@@ -202,12 +202,14 @@ impl MasmComponent {
 
         // Assemble library
         let mut modules: Vec<Arc<masm::Module>> = self.modules.clone();
-        // Sort modules to ensure intrinsics are first since the target compiled module imports them
-        modules.sort_by_key(|m| {
-            let name = m.path().path().into_owned();
-            let is_intrinsic = crate::intrinsics::INTRINSICS_MODULE_NAMES.contains(&name.as_str());
-            (!is_intrinsic, name)
-        });
+
+        // We need to add modules according to their dependencies (add the dependency before the dependent)
+        // Workaround until https://github.com/0xPolygonMiden/miden-vm/issues/1669 is implemented
+        modules.reverse();
+
+        log::debug!(target: "assembly", "start adding the following modules with assembler: {}",
+            modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
+
         for module in modules.iter().cloned() {
             if lib_modules.contains(module.path()) {
                 log::warn!(
