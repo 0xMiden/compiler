@@ -2,7 +2,7 @@ builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @cross_ctx_note {
         private builtin.function @cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1(v0: felt) -> felt {
         ^block3(v0: felt):
-            v1 = hir.call v0 : felt #[callee = miden:cross-ctx-account/foo@1.0.0@1.0.0/process-felt] #[signature = (param felt) (result felt)];
+            v1 = hir.call v0 : felt #[callee = miden:cross-ctx-account/foo@1.0.0/process-felt] #[signature = (param felt) (result felt)];
             builtin.ret v1;
         };
 

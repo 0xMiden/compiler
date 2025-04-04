@@ -57,6 +57,9 @@ pub enum InvalidComponentIdError {
     #[error("invalid component id: missing component name")]
     #[diagnostic()]
     MissingName,
+    #[error("invalid component id: missing version")]
+    #[diagnostic()]
+    MissingVersion,
     #[error("invalid component version: {0}")]
     #[diagnostic()]
     InvalidVersion(#[from] crate::version::semver::Error),
@@ -69,10 +72,17 @@ impl TryFrom<&SymbolPath> for ComponentId {
         let mut components = path.components().peekable();
         components.next_if_eq(&SymbolNameComponent::Root);
 
-        let (ns, name) = match components.next().map(|c| c.as_symbol_name()) {
+        let (ns, name, version) = match components.next().map(|c| c.as_symbol_name()) {
             None => return Err(InvalidComponentIdError::MissingNamespace),
             Some(name) => match name.as_str().split_once(':') {
-                Some((ns, name)) => (SymbolName::intern(ns), SymbolName::intern(name)),
+                Some((ns, name)) => match name.split_once('@') {
+                    Some((name, version)) => (
+                        SymbolName::intern(ns),
+                        SymbolName::intern(name),
+                        Version::parse(version).map_err(InvalidComponentIdError::InvalidVersion)?,
+                    ),
+                    None => return Err(InvalidComponentIdError::MissingVersion),
+                },
                 None => return Err(InvalidComponentIdError::MissingNamespace),
             },
         };
@@ -80,7 +90,7 @@ impl TryFrom<&SymbolPath> for ComponentId {
         Ok(Self {
             namespace: ns,
             name,
-            version: Version::new(1, 0, 0),
+            version,
         })
     }
 }
