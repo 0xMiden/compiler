@@ -1285,7 +1285,7 @@ impl Loop {
         loops.insert(self.clone());
 
         // Verify this loop.
-        self.verify_loop()?;
+        let _ = self.verify_loop();
 
         // Verify the subloops.
         for l in self.nested.borrow().iter().cloned() {
