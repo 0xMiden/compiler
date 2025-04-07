@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 extern crate proc_macro;
 
 mod operation;

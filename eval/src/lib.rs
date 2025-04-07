@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(debug_closure_helpers)]
+#![deny(warnings)]
 
 #[cfg(any(feature = "std", test))]
 extern crate std;

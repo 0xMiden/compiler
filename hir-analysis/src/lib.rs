@@ -7,6 +7,7 @@
 #![feature(unsize)]
 // Specialization
 #![allow(incomplete_features)]
+#![deny(warnings)]
 
 extern crate alloc;
 #[cfg(test)]

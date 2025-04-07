@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use alloc::{borrow::Cow, format, str::FromStr, sync::Arc};
 #[cfg(feature = "std")]
 use alloc::{boxed::Box, string::ToString};

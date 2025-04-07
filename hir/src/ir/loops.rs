@@ -14,7 +14,7 @@ use crate::{
     adt::{SmallDenseMap, SmallSet},
     cfg::{Graph, Inverse, InvertibleGraph},
     pass::Analysis,
-    BlockRef, EntityWithId, Operation, OperationRef, PostOrderBlockIter, Report,
+    BlockRef, Operation, OperationRef, PostOrderBlockIter, Report,
 };
 
 /// Represents the results of analyzing an [Operation] and computing the [LoopForest] for each of
@@ -537,6 +537,8 @@ impl LoopForest {
         other_l: Rc<Loop>,
         other_loop_headers: &mut SmallDenseMap<BlockRef, Rc<Loop>, 8>,
     ) -> Result<(), Report> {
+        use crate::EntityWithId;
+
         let header = l.header();
         let other_header = other_l.header();
         if header != other_header {
@@ -1275,7 +1277,9 @@ impl Loop {
     }
 
     #[cfg(not(debug_assertions))]
-    pub fn verify_loop(&self) {}
+    pub fn verify_loop(&self) -> Result<(), Report> {
+        Ok(())
+    }
 
     /// Verify loop structure of this loop and all nested loops.
     pub fn verify_loop_nest(

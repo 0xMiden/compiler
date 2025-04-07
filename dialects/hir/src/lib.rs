@@ -5,6 +5,7 @@
 #![feature(specialization)]
 #![allow(incomplete_features)]
 #![no_std]
+#![deny(warnings)]
 
 extern crate alloc;
 

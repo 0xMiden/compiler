@@ -4,6 +4,7 @@
 #![feature(slice_split_once)]
 // Specialization
 #![allow(incomplete_features)]
+#![deny(warnings)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
