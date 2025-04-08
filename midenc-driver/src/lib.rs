@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 mod midenc;
 
 pub use clap::Error as ClapError;

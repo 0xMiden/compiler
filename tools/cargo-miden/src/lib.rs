@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use std::path::PathBuf;
 
 use anyhow::bail;

@@ -6,14 +6,14 @@ on:
       - main
       - next
     paths-ignore:
-      - '**.md'
-      - '**.txt'
-      - 'docs/**'
+      - "**.md"
+      - "**.txt"
+      - "docs/**"
   pull_request:
     paths-ignore:
-      - '**.md'
-      - '**.txt'
-      - 'docs/**'
+      - "**.md"
+      - "**.txt"
+      - "docs/**"
 
 jobs:
   lint:
@@ -96,6 +96,11 @@ jobs:
         # error occurs
         run: |
           cargo make check --tests
+      - name: Check(release)
+        # We run `check` with `--release` to check the release build (without
+        # `debug_assertions`, etc.)
+        run: |
+          cargo make check --release --tests
       - name: Test
         run: |
           cargo make test -E 'not (package(miden-integration-tests) or package(cargo-miden))'

@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(new_range_api)]
+#![deny(warnings)]
 
 extern crate alloc;
 #[cfg(test)]
