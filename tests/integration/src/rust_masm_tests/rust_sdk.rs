@@ -3,8 +3,10 @@ use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 use miden_core::{
     crypto::hash::RpoDigest,
     utils::{Deserializable, Serializable},
+    FieldElement,
 };
 use miden_mast_package::Package;
+use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
 use midenc_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -178,6 +180,218 @@ fn rust_sdk_cross_ctx_account_and_note() {
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
+}
+
+#[test]
+fn rust_sdk_counter_testnet_example() {
+    use miden_client::{
+        account::{
+            component::{BasicWallet, RpoFalcon512},
+            AccountStorageMode, AccountType,
+        },
+        builder::ClientBuilder,
+        crypto::FeltRng,
+        rpc::{Endpoint, TonicRpcClient},
+        transaction::{TransactionKernel, TransactionRequestBuilder},
+        ClientError, Felt,
+    };
+    use miden_objects::{
+        account::{AccountBuilder, AccountComponent, StorageMap, StorageSlot},
+        assembly::Assembler,
+        transaction::TransactionScript,
+    };
+    use rand::RngCore;
+
+    // Build counter package
+    let args: Vec<String> = [
+        "cargo",
+        "miden",
+        "build",
+        "--manifest-path",
+        "../../examples/counter/Cargo.toml",
+        "--lib",
+        "--release",
+        // Use the target dir of this test's cargo project to avoid issues running tests in parallel
+        // i.e. avoid using the same target dir as the basic-wallet test (see above)
+        "--target-dir",
+        "../../examples/counter-note/target",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    dbg!(env::current_dir().unwrap().display());
+
+    let outputs = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
+        .expect("Failed to compile the counter account package for counter-note");
+    let masp_path: PathBuf = outputs.first().unwrap().clone();
+
+    dbg!(&masp_path);
+
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let config = WasmTranslationConfig::default();
+
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../../examples/counter-note",
+        config,
+        [
+            "-l".into(),
+            "std".into(),
+            "-l".into(),
+            "base".into(),
+            "--link-library".into(),
+            masp_path.clone().into_os_string().into_string().unwrap().into(),
+        ],
+    );
+    builder.with_entrypoint(FunctionIdent {
+        module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
+        function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
+    });
+    let mut test = builder.build();
+    let artifact_name = test.artifact_name().to_string();
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+
+    let account_package =
+        Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
+
+    let mut builder = tokio::runtime::Builder::new_current_thread();
+    let rt = builder.enable_all().build().unwrap();
+    rt.block_on(async move {
+        // Initialize client
+        let endpoint =
+            Endpoint::new("https".to_string(), "rpc.testnet.miden.io".to_string(), Some(443));
+        let timeout_ms = 10_000;
+        let rpc_api = Arc::new(TonicRpcClient::new(&endpoint, timeout_ms));
+
+        let tmp_dir = std::env::temp_dir();
+        let keystore_path = tmp_dir.join("keystore");
+        let mut client = ClientBuilder::new()
+            .with_rpc(rpc_api)
+            .with_filesystem_keystore(keystore_path.as_path().to_str().unwrap())
+            .in_debug_mode(true)
+            .build()
+            .await
+            .unwrap();
+
+        let sync_summary = client.sync_state().await.unwrap();
+        println!("Latest block: {}", sync_summary.block_num);
+
+        println!("\n[STEP 1] Deploy a smart contract with a mapping");
+
+        let account_component = match account_package.account_component_metadata_bytes.as_deref() {
+            None => todo!(),
+            Some(bytes) => {
+                let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
+                let template = AccountComponentTemplate::new(
+                    metadata,
+                    account_package.unwrap_library().as_ref().clone(),
+                );
+                let init_storage_data = InitStorageData::default();
+                AccountComponent::from_template(&template, &init_storage_data)
+                    .unwrap()
+                    .with_supported_type(AccountType::RegularAccountImmutableCode)
+            }
+        };
+
+        // Init seed for the counter contract
+        let mut init_seed = [0_u8; 32];
+        client.rng().fill_bytes(&mut init_seed);
+
+        // Anchor block of the account
+        let anchor_block = client.get_latest_epoch_block().await.unwrap();
+
+        // Build the new `Account` with the component
+        let key_pair = miden_client::crypto::SecretKey::with_rng(client.rng());
+        let (example_contract, _seed) = AccountBuilder::new(init_seed)
+            .anchor((&anchor_block).try_into().unwrap())
+            .account_type(AccountType::RegularAccountImmutableCode)
+            .storage_mode(AccountStorageMode::Public)
+            .with_component(account_component.clone())
+            .with_component(RpoFalcon512::new(key_pair.public_key()))
+            .with_component(BasicWallet)
+            .build()
+            .unwrap();
+
+        client.add_account(&example_contract.clone(), Some(_seed), false).await.unwrap();
+
+        // -------------------------------------------------------------------------
+        // STEP 2: Call the contract with a script
+        // -------------------------------------------------------------------------
+        println!("\n[STEP 2] Call contract with script");
+
+        // Compile the transaction script with the library.
+        /*
+        let tx_script = TransactionScript::compile(
+            script_code,
+            [],
+            assembler.with_library(&account_component_lib).unwrap(),
+        )
+        .unwrap();
+         */
+
+        // Build a note
+        let note_program = package.unwrap_program();
+        let note_script = miden_client::note::NoteScript::from_parts(
+            note_program.mast_forest().clone(),
+            note_program.entrypoint(),
+        );
+
+        let tag = miden_client::note::NoteTag::from_account_id(
+            example_contract.id(),
+            miden_client::note::NoteExecutionMode::Local,
+        )
+        .unwrap();
+        let inputs = miden_client::note::NoteInputs::new(vec![]).unwrap();
+        let serial_num = client.rng().draw_word();
+        let vault = miden_client::note::NoteAssets::new(vec![]).unwrap();
+        let note_type = miden_client::note::NoteType::Public;
+        let metadata = miden_client::note::NoteMetadata::new(
+            example_contract.id(),
+            note_type,
+            tag,
+            miden_client::note::NoteExecutionHint::always(),
+            Felt::ZERO,
+        )
+        .unwrap();
+        let recipient = miden_client::note::NoteRecipient::new(serial_num, note_script, inputs);
+        let note = miden_client::note::Note::new(vault, metadata, recipient);
+
+        // Build a transaction request
+        let tx_increment_request = TransactionRequestBuilder::new()
+            .with_own_output_notes([miden_client::transaction::OutputNote::Full(note)])
+            .build()
+            .unwrap();
+
+        // Execute the transaction locally
+        let tx_result = client
+            .new_transaction(example_contract.id(), tx_increment_request)
+            .await
+            .unwrap();
+
+        let tx_id = tx_result.executed_transaction().id();
+        println!("View transaction on MidenScan: https://testnet.midenscan.com/tx/{:?}", tx_id);
+
+        // Submit transaction to the network
+        let _ = client.submit_transaction(tx_result).await;
+
+        client.sync_state().await.unwrap();
+
+        let account = client.get_account(example_contract.id()).await.unwrap();
+
+        let index = 0;
+        let key = [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0)];
+        println!(
+            "Mapping state\n Index: {:?}\n Key: {:?}\n Value: {:?}",
+            index,
+            key,
+            account.unwrap().account().storage().get_map_item(index, key)
+        );
+    });
+
+    panic!("finished");
 }
 
 #[test]
