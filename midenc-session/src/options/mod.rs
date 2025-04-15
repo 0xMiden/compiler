@@ -52,6 +52,8 @@ pub struct Options {
     pub print_ir_after_all: bool,
     /// Print IR to stdout each time the named passes are applied
     pub print_ir_after_pass: Vec<String>,
+    /// Only print the IR if the pass modified the IR structure.
+    pub print_ir_after_modified: bool,
     /// Save intermediate artifacts in memory during compilation
     pub save_temps: bool,
     /// We store any leftover argument matches in the session options for use
@@ -126,6 +128,7 @@ impl Options {
             print_cfg_after_pass: vec![],
             print_ir_after_all: false,
             print_ir_after_pass: vec![],
+            print_ir_after_modified: false,
             flags: CompileFlags::default(),
         }
     }

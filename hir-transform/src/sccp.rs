@@ -1,5 +1,5 @@
 use midenc_hir::{
-    pass::{Pass, PassExecutionState},
+    pass::{Pass, PassExecutionState, PassIdentifier, PostPassStatus},
     patterns::NoopRewriterListener,
     BlockRef, Builder, EntityMut, OpBuilder, Operation, OperationFolder, OperationName, RegionList,
     Report, SmallVec, ValueRef,
@@ -26,6 +26,10 @@ impl Pass for SparseConditionalConstantPropagation {
         "sparse-conditional-constant-propagation"
     }
 
+    fn pass_id(&self) -> Option<PassIdentifier> {
+        Some(PassIdentifier::SparseConditionalConstantPropagation)
+    }
+
     fn argument(&self) -> &'static str {
         "sparse-conditional-constant-propagation"
     }
@@ -38,7 +42,7 @@ impl Pass for SparseConditionalConstantPropagation {
         &mut self,
         mut op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report> {
+    ) -> Result<PostPassStatus, Report> {
         // Run sparse constant propagation + dead code analysis
         let mut solver = DataFlowSolver::default();
         solver.load::<DeadCodeAnalysis>();
@@ -58,7 +62,7 @@ impl SparseConditionalConstantPropagation {
         op: &mut Operation,
         _state: &mut PassExecutionState,
         solver: &DataFlowSolver,
-    ) -> Result<(), Report> {
+    ) -> Result<PostPassStatus, Report> {
         let mut worklist = SmallVec::<[BlockRef; 8]>::default();
 
         let add_to_worklist = |regions: &RegionList, worklist: &mut SmallVec<[BlockRef; 8]>| {
@@ -76,6 +80,7 @@ impl SparseConditionalConstantPropagation {
 
         add_to_worklist(op.regions(), &mut worklist);
 
+        let mut replaced_any = false;
         while let Some(mut block) = worklist.pop() {
             let mut block = block.borrow_mut();
             let body = block.body_mut();
@@ -91,8 +96,10 @@ impl SparseConditionalConstantPropagation {
                 let mut replaced_all = num_results != 0;
                 for index in 0..num_results {
                     let result = { op.borrow().get_result(index).borrow().as_value_ref() };
-                    replaced_all &=
-                        replace_with_constant(solver, &mut builder, &mut folder, result);
+                    let replaced = replace_with_constant(solver, &mut builder, &mut folder, result);
+
+                    replaced_any |= replaced;
+                    replaced_all &= replaced;
                 }
 
                 // If all of the results of the operation were replaced, try to erase the operation
@@ -112,7 +119,7 @@ impl SparseConditionalConstantPropagation {
             builder.set_insertion_point_to_start(block.as_block_ref());
 
             for arg in block.arguments() {
-                replace_with_constant(
+                replaced_any |= replace_with_constant(
                     solver,
                     &mut builder,
                     &mut folder,
@@ -121,7 +128,7 @@ impl SparseConditionalConstantPropagation {
             }
         }
 
-        Ok(())
+        Ok(replaced_any.into())
     }
 }
 

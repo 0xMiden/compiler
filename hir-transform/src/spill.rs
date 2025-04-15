@@ -4,7 +4,7 @@ use midenc_hir::{
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
-    pass::AnalysisManager,
+    pass::{AnalysisManager, PostPassStatus},
     traits::SingleRegion,
     BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
     ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
@@ -113,7 +113,7 @@ pub fn transform_spills(
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
     analysis_manager: AnalysisManager,
-) -> Result<(), Report> {
+) -> Result<PostPassStatus, Report> {
     assert!(
         op.borrow().implements::<dyn SingleRegion>(),
         "the spills transformation is not supported when the root op is multi-region"
@@ -252,7 +252,7 @@ pub fn transform_spills(
         )?;
     }
 
-    Ok(())
+    Ok(PostPassStatus::IRChanged)
 }
 
 fn rewrite_single_block_spills(

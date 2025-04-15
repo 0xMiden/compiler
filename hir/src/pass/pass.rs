@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc};
 use core::{any::Any, fmt};
 
 use super::*;
@@ -15,6 +15,9 @@ pub trait OperationPass {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
     fn name(&self) -> &'static str;
+
+    fn pass_id(&self) -> Option<PassIdentifier>;
+
     fn argument(&self) -> &'static str {
         // NOTE: Could we compute an argument string from the type name?
         ""
@@ -44,7 +47,7 @@ pub trait OperationPass {
         &mut self,
         op: OperationRef,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report>;
+    ) -> Result<PostPassStatus, Report>;
     fn run_pipeline(
         &mut self,
         pipeline: &mut OpPassManager,
@@ -59,6 +62,10 @@ where
 {
     fn as_any(&self) -> &dyn Any {
         <P as Pass>::as_any(self)
+    }
+
+    fn pass_id(&self) -> Option<PassIdentifier> {
+        <P as Pass>::pass_id(self)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -121,7 +128,7 @@ where
         &mut self,
         mut op: OperationRef,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report> {
+    ) -> Result<PostPassStatus, Report> {
         let op = <<P as Pass>::Target as PassTarget>::into_target_mut(&mut op);
         <P as Pass>::run_on_operation(self, op, state)
     }
@@ -133,6 +140,51 @@ where
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         <P as Pass>::run_pipeline(self, pipeline, op, state)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum PassIdentifier {
+    Canonicalizer,
+    ControlFlowSink,
+    LiftControlFlowToSCF,
+    OpToOpPassAdaptor,
+    SinkOperandDefs,
+    SparseConditionalConstantPropagation,
+    TransformSpills,
+}
+
+impl TryFrom<&String> for PassIdentifier {
+    type Error = Report;
+
+    fn try_from(pass_name: &String) -> Result<Self, Self::Error> {
+        match pass_name.as_str() {
+            "canonicalizer" => Ok(PassIdentifier::Canonicalizer),
+            "control-flow-sink" => Ok(PassIdentifier::ControlFlowSink),
+            "lift-control-flow" => Ok(PassIdentifier::LiftControlFlowToSCF),
+            "sink-operand-defs" => Ok(PassIdentifier::SinkOperandDefs),
+            "sparse-conditional-constant-propagation" => {
+                Ok(PassIdentifier::SparseConditionalConstantPropagation)
+            }
+            "transform-spills" => Ok(PassIdentifier::TransformSpills),
+            _ => Err(Report::msg(format!("'{pass_name}' unrecognized pass."))),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum PostPassStatus {
+    IRUnchanged,
+    IRChanged,
+}
+
+impl From<bool> for PostPassStatus {
+    fn from(ir_was_changed: bool) -> Self {
+        if ir_was_changed {
+            PostPassStatus::IRChanged
+        } else {
+            PostPassStatus::IRUnchanged
+        }
     }
 }
 
@@ -231,7 +283,7 @@ pub trait Pass: Sized + Any {
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report>;
+    ) -> Result<PostPassStatus, Report>;
     /// Schedule an arbitrary pass pipeline on the provided operation.
     ///
     /// This can be invoke any time in a pass to dynamic schedule more passes. The provided
@@ -244,6 +296,8 @@ pub trait Pass: Sized + Any {
     ) -> Result<(), Report> {
         state.run_pipeline(pipeline, op)
     }
+
+    fn pass_id(&self) -> Option<PassIdentifier>;
 }
 
 impl<P> Pass for Box<P>
@@ -268,6 +322,10 @@ where
     #[inline]
     fn name(&self) -> &'static str {
         (**self).name()
+    }
+
+    fn pass_id(&self) -> Option<PassIdentifier> {
+        (**self).pass_id()
     }
 
     #[inline]
@@ -330,7 +388,7 @@ where
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<(), Report> {
+    ) -> Result<PostPassStatus, Report> {
         (**self).run_on_operation(op, state)
     }
 
