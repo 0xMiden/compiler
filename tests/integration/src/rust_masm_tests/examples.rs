@@ -31,7 +31,7 @@ fn storage_example() {
         name = "storage-example"
         description = "A simple example of a Miden account storage API"
         version = "0.1.0"
-        supported-types = []
+        supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage]]
         name = "owner_public_key"

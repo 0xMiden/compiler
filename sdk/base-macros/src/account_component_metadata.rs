@@ -26,6 +26,12 @@ pub struct AccountComponentMetadataBuilder {
 }
 
 impl AccountComponentMetadataBuilder {
+    /// Adds a supported account type to this component metadata.
+    pub fn add_supported_type(&mut self, account_type: AccountType) {
+        self.supported_types.insert(account_type);
+    }
+
+    
     pub fn new(name: String, version: Version, description: String) -> Self {
         AccountComponentMetadataBuilder {
             name,

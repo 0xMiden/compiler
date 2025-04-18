@@ -16,6 +16,9 @@ wit-bindgen-rt = "0.28"
 [package.metadata.component]
 package = "miden:storage-example"
 
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }
 "miden:core-import" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden-core-import.wit" }

@@ -1,9 +1,9 @@
 #![feature(proc_macro_span)]
 
-use std::fs;
+use std::{fs, str::FromStr};
 
 use account_component_metadata::AccountComponentMetadataBuilder;
-use miden_objects::utils::Serializable;
+use miden_objects::{account::AccountType, utils::Serializable};
 use proc_macro::Span;
 use proc_macro2::Literal;
 use quote::quote;
@@ -19,6 +19,8 @@ struct CargoMetadata {
     name: String,
     version: Version,
     description: String,
+    /// Custom Miden field: list of supported account types
+    supported_types: Vec<String>,
 }
 
 struct StorageAttributeArgs {
@@ -131,10 +133,24 @@ fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::Erro
         .map(String::from)
         .unwrap_or_default();
 
+    let supported_types = cargo_toml
+        .get("package")
+        .and_then(|pkg| pkg.get("metadata"))
+        .and_then(|m| m.get("miden"))
+        .and_then(|m| m.get("supported-types"))
+        .and_then(|st| st.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
     Ok(CargoMetadata {
         name,
         version,
         description,
+        supported_types,
     })
 }
 
@@ -342,6 +358,21 @@ pub fn component(
 
     let mut acc_builder =
         AccountComponentMetadataBuilder::new(metadata.name, metadata.version, metadata.description);
+
+    // Populate supported account types from Cargo.toml
+    for st in &metadata.supported_types {
+        match AccountType::from_str(st) {
+            Ok(at) => acc_builder.add_supported_type(at),
+            Err(err) => {
+                return syn::Error::new(
+                    call_site_span.into(),
+                    format!("Invalid account type '{}' in supported-types: {}", st, err),
+                )
+                .to_compile_error()
+                .into()
+            }
+        }
+    }
 
     // Process fields: extract storage info, generate Default parts, update builder
     let field_inits = match process_fields(fields, &mut acc_builder) {
