@@ -187,7 +187,7 @@ where
             /* enable_tracing= */ true,
             /* enable_debugging= */ true,
         )
-        .map(|exec_opts| exec_opts.with_debugging())
+        .map(|exec_opts| exec_opts.with_debugging(true))
         .map_err(|err| serde::de::Error::custom(format!("invalid execution options: {err}")))
     })
 }
