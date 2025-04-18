@@ -32,12 +32,16 @@ struct StorageAttributeArgs {
 /// Finds and parses Cargo.toml to extract package metadata.
 fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::Error> {
     let source_file_path = call_site_span.source_file().path();
-    let mut current_dir = source_file_path.parent().ok_or_else(|| {
-        syn::Error::new(
-            call_site_span.into(),
-            format!("Source file {} must have a parent directory", source_file_path.display()),
-        )
-    })?;
+    let Some(mut current_dir) = source_file_path.parent() else {
+        // call_site is empty under rust-analyzer
+        // return some CargoMetadata to make rust-analyzer happy
+        return Ok(CargoMetadata {
+            name: String::new(),
+            version: Version::new(0, 0, 1),
+            description: String::new(),
+            supported_types: vec![],
+        });
+    };
 
     let cargo_toml_path = loop {
         let potential_path = current_dir.join("Cargo.toml");
