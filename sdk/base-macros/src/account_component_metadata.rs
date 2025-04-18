@@ -31,13 +31,12 @@ impl AccountComponentMetadataBuilder {
         self.supported_types.insert(account_type);
     }
 
-    
     pub fn new(name: String, version: Version, description: String) -> Self {
         AccountComponentMetadataBuilder {
             name,
             description,
             version,
-            supported_types: BTreeSet::new(), // TODO: Parse targets from Cargo.toml
+            supported_types: BTreeSet::new(),
             storage: Vec::new(),
         }
     }
