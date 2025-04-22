@@ -730,7 +730,9 @@ dependencies = [
  "midenc-compile",
  "midenc-session",
  "path-absolutize",
+ "serde",
  "tokio",
+ "toml",
 ]
 
 [[package]]

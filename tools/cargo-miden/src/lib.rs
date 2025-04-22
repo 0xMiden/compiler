@@ -1,8 +1,6 @@
 #![deny(warnings)]
 
-use std::path::PathBuf;
-
-use anyhow::bail;
+use anyhow::{bail, Result};
 use cargo_component::{
     config::{CargoArguments, Config},
     load_component_metadata, load_metadata, run_cargo_command,
@@ -11,12 +9,17 @@ use cargo_component_core::terminal::{Color, Terminal, Verbosity};
 use clap::{CommandFactory, Parser};
 use commands::NewCommand;
 use compile_masm::wasm_to_masm;
+use dependencies::process_miden_dependencies;
 use non_component::run_cargo_command_for_non_component;
 
 mod commands;
 mod compile_masm;
+mod dependencies;
 mod non_component;
+mod outputs;
 mod target;
+
+pub use outputs::{BuildOutput, CommandOutput};
 
 fn version() -> &'static str {
     option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
@@ -98,8 +101,10 @@ pub enum OutputType {
 }
 
 /// Runs the cargo-miden command
-/// The arguments are expected to start with `["cargo", "miden", ...]` followed by a subcommand with options
-pub fn run<T>(args: T, build_output_type: OutputType) -> anyhow::Result<Vec<PathBuf>>
+/// The arguments are expected to start with `["cargo", "miden", ...]` followed by a subcommand
+/// with options
+/// Returns the outputs of the command.
+pub fn run<T>(args: T, build_output_type: OutputType) -> Result<Option<CommandOutput>>
 where
     T: Iterator<Item = String>,
 {
@@ -107,12 +112,15 @@ where
     let args = args.skip_while(|arg| arg != "miden").collect::<Vec<_>>();
     let subcommand = detect_subcommand(args.clone());
 
-    let outputs = match subcommand.as_deref() {
+    match subcommand.as_deref() {
         // Check for built-in command or no command (shows help)
         Some(cmd) if BUILTIN_COMMANDS.contains(&cmd) => {
             match CargoMiden::parse_from(args.clone()) {
                 CargoMiden::Miden(cmd) | CargoMiden::Command(cmd) => match cmd {
-                    Command::New(cmd) => vec![cmd.exec()?],
+                    Command::New(cmd) => {
+                        let project_path = cmd.exec()?;
+                        Ok(Some(CommandOutput::NewCommandOutput { project_path }))
+                    }
                 },
             }
         }
@@ -133,7 +141,7 @@ where
             // If somehow the CLI parsed correctly despite no subcommand,
             // print the help instead
             CargoMiden::command().print_long_help()?;
-            Vec::new()
+            Ok(None)
         }
 
         _ => {
@@ -154,6 +162,9 @@ where
                     path = metadata.workspace_root.join("Cargo.toml")
                 );
             }
+
+            let all_dependency_library_paths =
+                process_miden_dependencies(&packages, &cargo_args /*, &metadata */)?;
 
             for package in packages.iter_mut() {
                 package.metadata.section.bindings.with = [
@@ -243,8 +254,15 @@ where
                     &spawn_args,
                 )?;
             }
+            assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
+            let wasm_output = wasm_outputs.first().unwrap();
             match build_output_type {
-                OutputType::Wasm => wasm_outputs,
+                OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
+                    output: BuildOutput::Wasm {
+                        artifact_path: wasm_output.clone(),
+                        dependencies: all_dependency_library_paths,
+                    },
+                })),
                 OutputType::Masm => {
                     let miden_out_dir =
                         metadata.target_directory.join("miden").join(if cargo_args.release {
@@ -256,19 +274,24 @@ where
                         std::fs::create_dir_all(&miden_out_dir)?;
                     }
 
-                    let mut outputs = Vec::new();
-                    for wasm in wasm_outputs {
-                        // so far, we only support the Miden VM programs, unless `--lib` is
-                        // specified (in our integration tests)
-                        let is_bin = !args.contains(&"--lib".to_string());
-                        let output = wasm_to_masm(&wasm, miden_out_dir.as_std_path(), is_bin)
-                            .map_err(|e| anyhow::anyhow!("{e}"))?;
-                        outputs.push(output);
-                    }
-                    outputs
+                    // so far, we only support the Miden VM programs, unless `--lib` is
+                    // specified (in our integration tests)
+                    let is_bin = !args.contains(&"--lib".to_string());
+                    let output = wasm_to_masm(
+                        wasm_output,
+                        miden_out_dir.as_std_path(),
+                        is_bin,
+                        &all_dependency_library_paths,
+                    )
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                    Ok(Some(CommandOutput::BuildCommandOutput {
+                        output: BuildOutput::Masm {
+                            artifact_path: output,
+                        },
+                    }))
                 }
             }
         }
-    };
-    Ok(outputs)
+    }
 }

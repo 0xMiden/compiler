@@ -13,6 +13,7 @@ pub fn wasm_to_masm(
     wasm_file_path: &Path,
     output_folder: &Path,
     is_bin: bool,
+    dependency_paths: &[PathBuf], // New parameter
 ) -> Result<PathBuf, Report> {
     if !output_folder.exists() {
         return Err(Report::msg(format!(
@@ -50,6 +51,13 @@ pub fn wasm_to_masm(
 
     if is_bin {
         args.push(entrypoint_opt.as_ref());
+    }
+
+    // Add dependency linker arguments (Step 3.3)
+    for dep_path in dependency_paths {
+        args.push("--link-library".as_ref());
+        // Ensure the path is valid OsStr
+        args.push(dep_path.as_os_str());
     }
 
     let session = Rc::new(Compiler::new_session([input], None, args));
