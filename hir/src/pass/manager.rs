@@ -5,7 +5,7 @@ use midenc_session::diagnostics::Severity;
 use smallvec::{smallvec, SmallVec};
 
 use super::{
-    AnalysisManager, OperationPass, Pass, PassExecutionState, PassInstrumentation,
+    AnalysisManager, OpFilter, OperationPass, Pass, PassExecutionState, PassInstrumentation,
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
@@ -29,11 +29,19 @@ pub enum PassDisplayMode {
 
 // TODO(pauls)
 #[allow(unused)]
+#[derive(Clone, Copy)]
 pub struct IRPrintingConfig {
     print_module_scope: bool,
     print_after_only_on_change: bool,
     print_after_only_on_failure: bool,
     flags: OpPrintingFlags,
+    filter: Option<OpFilter>,
+}
+
+fn print_ir(op: OperationRef, _config: &IRPrintingConfig, _pass_modified_ir: Option<bool>) {
+    let op = op.borrow();
+    // TODO(mooori) inspect `config` to determine if `op` should be printed
+    log::trace!(target: "printer", "{op}");
 }
 
 /// The main pass manager and pipeline builder
@@ -41,6 +49,8 @@ pub struct PassManager {
     context: Rc<Context>,
     /// The underlying pass manager
     pm: OpPassManager,
+    /// TODO(mooori) doc comment
+    ir_printing_config: Option<IRPrintingConfig>,
     /// A manager for pass instrumentation
     instrumentor: Rc<PassInstrumentor>,
     /// An optional crash reproducer generator, if this pass manager is setup to
@@ -61,6 +71,14 @@ impl PassManager {
         let pm = OpPassManager::new(name.as_ref(), nesting, context.clone());
         Self {
             context,
+            // TODO(mooori): pass `None` - `Some(...)`` is passed only for debug purposes.
+            ir_printing_config: Some(IRPrintingConfig {
+                print_module_scope: false,
+                print_after_only_on_change: false,
+                print_after_only_on_failure: false,
+                flags: Default::default(),
+                filter: Some(Default::default()),
+            }),
             pm,
             instrumentor: Default::default(),
             statistics: None,
@@ -150,6 +168,7 @@ impl PassManager {
             self.verification,
             Some(self.instrumentor.clone()),
             Some(&PipelineParentInfo { pass: None }),
+            self.ir_printing_config.as_ref(),
         )
     }
 
@@ -169,8 +188,9 @@ impl PassManager {
         self
     }
 
-    pub fn enable_ir_printing(&mut self, _config: IRPrintingConfig) {
-        todo!()
+    pub fn enable_ir_printing(&mut self, config: IRPrintingConfig) -> &mut Self {
+        self.ir_printing_config = Some(config);
+        self
     }
 
     pub fn enable_timing(&mut self, yes: bool) -> &mut Self {
@@ -803,6 +823,7 @@ impl OpToOpPassAdaptor {
         verify: bool,
         instrumentor: Option<Rc<PassInstrumentor>>,
         parent_info: Option<&PipelineParentInfo>,
+        ir_printing_config: Option<&IRPrintingConfig>,
     ) -> Result<(), Report> {
         assert!(
             instrumentor.is_none() || parent_info.is_some(),
@@ -824,7 +845,7 @@ impl OpToOpPassAdaptor {
         }
 
         for pass in pm.passes_mut() {
-            Self::run(&mut **pass, op, analysis_manager.clone(), verify)?;
+            Self::run(&mut **pass, op, analysis_manager.clone(), verify, ir_printing_config)?;
         }
 
         if let Some(instrumentor) = instrumentor.as_deref() {
@@ -840,6 +861,7 @@ impl OpToOpPassAdaptor {
         op: OperationRef,
         analysis_manager: AnalysisManager,
         verify: bool,
+        ir_printing_config: Option<&IRPrintingConfig>,
     ) -> Result<(), Report> {
         use crate::Spanned;
 
@@ -876,6 +898,7 @@ impl OpToOpPassAdaptor {
         };
         let callback_op = op;
         let callback_analysis_manager = analysis_manager.clone();
+        let callback_ir_printing_config = ir_printing_config.copied();
         let pipeline_callback: Box<super::pass::DynamicPipelineExecutor> = Box::new(
             move |pipeline: &mut OpPassManager, root: OperationRef| -> Result<(), Report> {
                 let pi = callback_analysis_manager.pass_instrumentor();
@@ -906,7 +929,15 @@ impl OpToOpPassAdaptor {
                 } else {
                     callback_analysis_manager.nest(root)
                 };
-                Self::run_pipeline(pipeline, root, nested_am, verify, pi, Some(&parent_info))
+                Self::run_pipeline(
+                    pipeline,
+                    root,
+                    nested_am,
+                    verify,
+                    pi,
+                    Some(&parent_info),
+                    callback_ir_printing_config.as_ref(),
+                )
             },
         );
 
@@ -922,15 +953,27 @@ impl OpToOpPassAdaptor {
             instrumentor.run_before_pass(pass, &op);
         }
 
+        // Always print the IR before applying the pass if printing is enabled.
+        if let Some(config) = ir_printing_config {
+            print_ir(op, config, None);
+        }
+
         let mut result =
             if let Some(adaptor) = pass.as_any_mut().downcast_mut::<OpToOpPassAdaptor>() {
-                adaptor.run_on_operation(op, &mut execution_state, verify)
+                adaptor.run_on_operation(op, &mut execution_state, verify, ir_printing_config)
             } else {
                 pass.run_on_operation(op, &mut execution_state)
             };
 
         // Invalidate any non-preserved analyses
         analysis_manager.invalidate(execution_state.preserved_analyses_mut());
+
+        // If the pass said that it preserved all analyses then it can't have permuted the IR
+        let ir_has_changed = !execution_state.preserved_analyses().is_all();
+
+        if let Some(config) = ir_printing_config {
+            print_ir(op, config, Some(ir_has_changed));
+        }
 
         // When `verify == true`, we run the verifier (unless the pass failed)
         if result.is_ok() && verify {
@@ -940,10 +983,7 @@ impl OpToOpPassAdaptor {
 
             // Reduce compile time by avoiding running the verifier if the pass didn't change the
             // IR since the last time the verifier was run:
-            //
-            // * If the pass said that it preserved all analyses then it can't have permuted the IR
-            let run_verifier_now = !execution_state.preserved_analyses().is_all();
-            if run_verifier_now {
+            if ir_has_changed {
                 result = Self::verify(&op, run_verifier_recursively);
             }
         }
@@ -974,6 +1014,7 @@ impl OpToOpPassAdaptor {
         op: OperationRef,
         state: &mut PassExecutionState,
         verify: bool,
+        ir_printing_config: Option<&IRPrintingConfig>,
     ) -> Result<(), Report> {
         let analysis_manager = state.analysis_manager();
         let instrumentor = analysis_manager.pass_instrumentor();
@@ -1003,6 +1044,7 @@ impl OpToOpPassAdaptor {
                             verify,
                             instrumentor.clone(),
                             Some(&parent_info),
+                            ir_printing_config,
                         )?;
                     }
                 }

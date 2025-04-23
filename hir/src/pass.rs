@@ -24,8 +24,8 @@ pub struct Print {
     target: Option<compact_str::CompactString>,
 }
 
-#[derive(Default)]
-enum OpFilter {
+#[derive(Default, Clone, Copy)]
+pub enum OpFilter {
     /// Print all operations
     #[default]
     All,
