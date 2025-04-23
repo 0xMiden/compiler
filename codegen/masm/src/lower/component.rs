@@ -45,7 +45,18 @@ impl ToMasmComponent for builtin::Component {
                 let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                     Span::new(entry_id.function.span, entry_id.function.as_str().into()),
                 ));
-                let path = LibraryPath::new(entry_id.module).into_diagnostic()?;
+
+                let path = if component_path.to_string() == "root_ns:root@1.0.0" {
+                    // We're inside the synthethic "wrapping" component for pure Rust program
+                    // compilation. Since the user does not know about it their entrypoint does not
+                    // include the synthetic component id. Append the user-provided entrypoint
+                    // module
+                    component_path.clone().append_unchecked(entry_id.module)
+                } else {
+                    // We're compiling a Wasm component and the component id is included
+                    // in the entrypoint.
+                    LibraryPath::new(entry_id.module).into_diagnostic()?
+                };
                 Some(masm::InvocationTarget::AbsoluteProcedurePath { name, path })
             }
             None => None,
