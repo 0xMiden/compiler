@@ -15,7 +15,13 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["dep:termcolor", "dep:parking_lot", "dep:clap", "anyhow/std"]
+std = [
+    "dep:termcolor",
+    "dep:parking_lot",
+    "dep:clap",
+    "anyhow/std",
+    "miden-assembly/std",
+]
 
 [dependencies]
 anyhow.workspace = true
