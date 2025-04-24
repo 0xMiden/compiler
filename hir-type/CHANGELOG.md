@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.7...midenc-hir-type-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- implement pretty-print trait for Symbol/Type
+
+### Other
+- treat warnings as compiler errors,
+- update rust toolchain, clean up deps
+- implement hir dialect ops, flesh out remaining core ir infra
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.6...midenc-hir-type-v0.0.7) - 2024-09-17
 
 ### Other

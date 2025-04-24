@@ -6,6 +6,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.7...midenc-codegen-masm-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- *(codegen)* migrate to element-addressable vm
+- implement cross-context Call op, rename IR Exec back to Call
+
+### Fixed
+- *(codegen)* incorrect conversion of u64 literal to miden repr
+- *(codegen)* incomplete global/data segment lowering
+- *(codegen)* lowering of builtin.global_symbol
+- *(codegen)* bitcasts should allow pointer-to-pointer casts
+- [#406](https://github.com/0xMiden/compiler/pull/406) order the program modules with intrinsics being the first when passed
+- relax the module name validation in ConvertHirToMasm to support the Wasm CM naming
+- skip the assembler registration for the already registered module
+- recover Wasm CM interfaces as module names in exports after
+- skip registering already registered modules in Assembler
+- fallback to `LibraryPath` unchecked ctor (Wasm CM styles names)
+- sort module imports and functions in PrettyPrint impl to stabilize
+
+### Other
+- treat warnings as compiler errors,
+- update expected masm code
+- update Miden VM to v0.13.2 and uncomment the Miden package
+- *(codegen)* improve tracing/debug output in a few places
+- update rust toolchain, clean up deps
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- switch from recognizing intrinsics module by name(substring)
+- update to the latest `miden-mast-package` (renamed from
+- update the Miden VM with updated `miden-package` crate
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- normalize use of fxhash-based hash maps
+- rename Call IR op to Exec
+- switch to `Package` without rodata,
+- [**breaking**] move `Package` to `miden-package` in the VM repo
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.6...midenc-codegen-masm-v0.0.7) - 2024-09-17
 
 ### Other

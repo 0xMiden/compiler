@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.0.7...miden-base-sys-v0.0.8) - 2025-04-24
+
+### Added
+- *(frontend)* Low-level account storage API in Miden SDK
+- *(cargo-miden)* support building Wasm component from a Cargo project
+
+### Fixed
+- include `account` module in `MidenTxKernelLibrary`;
+- fix clippy warnings
+
+### Other
+- treat warnings as compiler errors,
+- make index `u8` in account storage API in Miden SDK,
+- add missing functions in miden::account, miden:note tx kernel stubs
+- optimize codegen for `AccountId::as_felt`;
+- add note script compilation test;
+- [**breaking**] revamp Miden SDK API and expose some modules;
+- remove digest-in-function-name encoding and `MidenAbiImport::digest`,
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/miden-base-sys-v0.0.6...miden-base-sys-v0.0.7) - 2024-09-17
 
 ### Other

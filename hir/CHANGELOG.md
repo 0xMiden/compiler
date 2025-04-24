@@ -6,6 +6,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.0.7...midenc-hir-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- *(ir)* provide some useful symbol path helpers
+- *(ir)* allow converting exclusive immutable borrow into a mutable one
+- *(ir)* provide utility pass for printing ir of specific operations
+- *(frontend)* generate `CanonLower` synthetic functions for
+- *(frontend)* generate `CanonLift` synthetic functions for exports
+- add `CallConv::CrossCtx` calling convention for cross-context
+- draft Wasm CM function type flattening, checks for scalar type
+- on Miden CCABI lifting/lowering get import/export function signature from
+- store the imported function type in the component import
+- rewrite the function calls from the imported function (Miden CCABI) to
+- draft lifting function generation in `LiftImportsCrossCtxStage`
+- draft `LiftImportsCrossCtxStage` scaffolding
+- add `ComponentBuilder::load`, `with_exports` to modify
+- implement cross-context Call op, rename IR Exec back to Call
+- restore module and function names of the intrinsics and Miden
+
+### Fixed
+- *(ir)* missing result value for builtin.global_symbol when printed
+- *(ir)* resolve symbol paths without leaf
+- *(ir)* custom printer for global_symbol, add missing traits
+- *(ir)* missed closing paren in function decl signatures
+- *(ir)* would_be_trivially_dead_even_if_terminator
+- build after rebase
+- implement `FunctionBuilderExt::change_branch_destination`
+- a few rebasing issues
+- populate `Linker::allow_missing` with linked library exports
+- refine `Component` imports and exports to reference module imports
+
+### Other
+- treat warnings as compiler errors,
+- update Miden VM to v0.13.2 and uncomment the Miden package
+- *(frontend)* rework handling of symbols in frontend
+- update pre-interned symbols
+- implement MemoryEffectOpInterface for test.constant
+- specify log target during region simplification, pattern rewrites
+- update rust toolchain, clean up deps
+- move `Context::change_branch_destination` to be a method in `BranchOpInterface`
+- use `OpBuilder` in `ComponentBuilder::define_function`
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- update the Miden VM with updated `miden-package` crate
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- normalize use of fxhash-based hash maps
+- replace `CallConv::CrossCtx` with `CanonLift` and `CanonLower`
+- rename `CanonAbiImport::interface_function_ty`
+- switch from passing `Module` to `Component` in the compiler stages
+- rename Call IR op to Exec
+- add note script compilation test;
+- remove digest-in-function-name encoding and `MidenAbiImport::digest`,
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-v0.0.6...midenc-hir-v0.0.7) - 2024-09-17
 
 ### Other

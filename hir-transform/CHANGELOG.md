@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.7...midenc-hir-transform-v0.0.8) - 2025-04-24
+
+### Fixed
+- *(ir)* address a few aliasing violations when full tracing is enabled
+
+### Other
+- treat warnings as compiler errors,
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- normalize use of fxhash-based hash maps
+- rename Call IR op to Exec
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-transform-v0.0.6...midenc-hir-transform-v0.0.7) - 2024-09-17
 
 ### Other

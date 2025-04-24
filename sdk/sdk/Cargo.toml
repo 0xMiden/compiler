@@ -15,6 +15,6 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-miden-sdk-alloc = { version = "0.0.7", path = "../alloc" }
-miden-stdlib-sys = { version = "0.0.7", path = "../stdlib-sys" }
-miden-base-sys = { version = "0.0.7", path = "../base-sys", features = ["bindings"] }
+miden-sdk-alloc = { version = "0.0.8", path = "../alloc" }
+miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
+miden-base-sys = { version = "0.0.8", path = "../base-sys", features = ["bindings"] }

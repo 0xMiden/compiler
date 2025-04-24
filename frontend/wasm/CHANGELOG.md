@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.7...midenc-frontend-wasm-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+
+### Fixed
+- *(codegen)* incomplete global/data segment lowering
+
+### Other
+- update Miden VM to v0.13.2 and uncomment the Miden package
+- update expect tests with type printer changes
+- update expect tests
+- *(frontend)* rework handling of symbols in frontend
+- Move the new Wasm frontend to `frontend/wasm` and remove the old
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-frontend-wasm-v0.0.6...midenc-frontend-wasm-v0.0.7) - 2024-09-17
 
 ### Other

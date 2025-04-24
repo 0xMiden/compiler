@@ -28,7 +28,7 @@ miden-mast-package.workspace = true
 miden-stdlib.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-hir-macros.workspace = true
-miden-base-sys = { version = "0.0.7", path = "../sdk/base-sys", features = [
+miden-base-sys = { version = "0.0.8", path = "../sdk/base-sys", features = [
     "masl-lib",
 ] }
 parking_lot = { workspace = true, optional = true }

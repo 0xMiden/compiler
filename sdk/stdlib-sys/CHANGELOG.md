@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.0.7...miden-stdlib-sys-v0.0.8) - 2025-04-24
+
+### Added
+- add custom dependencies to `Executor` resolver,
+- restore module and function names of the intrinsics and Miden
+- *(cargo-miden)* support building Wasm component from a Cargo project
+
+### Fixed
+- refine `Component` imports and exports to reference module imports
+
+### Other
+- treat warnings as compiler errors,
+- rename `Felt::from_u32_unchecked` to `Felt::from_u32`
+- [**breaking**] revamp Miden SDK API and expose some modules;
+- remove digest-in-function-name encoding and `MidenAbiImport::digest`,
+
 ## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/miden-stdlib-sys-v0.0.5...miden-stdlib-sys-v0.0.6) - 2024-09-06
 
 ### Other
