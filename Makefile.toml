@@ -185,6 +185,13 @@ description = "Runs cargo check on the workspace"
 command = "cargo"
 args = ["check", "${@}"]
 
+[tasks.check-each]
+category = "Build"
+description = "Runs cargo check on each member of the workspace independently"
+workspace = true
+command = "cargo"
+args = ["check", "${@}"]
+
 [tasks.clean]
 category = "Build"
 description = "Clean build artifacts"

@@ -101,6 +101,11 @@ jobs:
         # `debug_assertions`, etc.)
         run: |
           cargo make check --release --tests
+      - name: Check each member (release)
+        # To uncover any compilation errors hidden by the workspace feature
+        # unification and avoid surprises on publishing the crates.
+        run: |
+          cargo make check-each --release --all-features
       - name: Test
         run: |
           cargo make test -E 'not (package(miden-integration-tests) or package(cargo-miden))'
