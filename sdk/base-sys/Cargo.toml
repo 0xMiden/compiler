@@ -18,7 +18,7 @@ miden-assembly = { workspace = true, optional = true }
 miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys", optional = true }
 
 [build-dependencies]
-miden-assembly = { workspace = true, optional = true }
+miden-assembly = { workspace = true, optional = true, features = ["std"] }
 
 [features]
 default = []
