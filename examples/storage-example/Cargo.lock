@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "miden"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "miden-base-sys",
  "miden-sdk-alloc",
@@ -13,18 +13,18 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "miden-stdlib-sys",
 ]
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.0.7"
+version = "0.0.8"
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.0.7"
+version = "0.0.8"
 
 [[package]]
 name = "storage-example"
