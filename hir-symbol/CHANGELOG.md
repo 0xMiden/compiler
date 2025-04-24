@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-symbol-v0.0.7...midenc-hir-symbol-v0.0.8) - 2025-04-24
+
+### Added
+- implement pretty-print trait for Symbol/Type
+- support no-std builds of midenc_hir_symbol
+
+### Fixed
+- expose sync module from hir-symbol
+
+### Other
+- treat warnings as compiler errors,
+- update pre-interned symbols
+- update rust toolchain, clean up deps
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- codegen
+- normalize use of fxhash-based hash maps
+- implement hir dialect ops, flesh out remaining core ir infra
+- basic structure landed, starting refinement
+
 ## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/midenc-hir-symbol-v0.0.5...midenc-hir-symbol-v0.0.6) - 2024-09-06
 
 ### Other

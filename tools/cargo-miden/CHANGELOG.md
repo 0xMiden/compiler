@@ -6,6 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.0.7...cargo-miden-v0.0.8) - 2025-04-24
+
+### Added
+- switch cargo-miden to use v0.7.0 tag in rust-templates repo
+- add `--program`, `--account`, `--note` flags
+- draft wasm/masm output request in cargo-miden
+- *(cargo-miden)* support building Wasm component from a Cargo project
+
+### Fixed
+- although we support only `--program` in cargo-miden,
+- hide --account and --note options, make --program option default,
+- refine `Component` imports and exports to reference module imports
+- cast `count` parameter in Wasm `memory.copy` op to U32;
+
+### Other
+- treat warnings as compiler errors,
+- update rust toolchain, clean up deps
+- switch to the published version `v0.21` of the `cargo-component`
+- emit optimized ir, rather than initial translated ir during tests
+- switch uses of hir crates to hir2
+- update `cargo-component` (without `env_vars` parameter)
+- set `RUSTFLAGS` env var instead of passing it to
+- update wit-bindgen and cargo-component to the latest patched versions
+- update `cargo miden new` to use `v0.8.0` of the program template
+- update to the latest `miden-mast-package` (renamed from
+- optimize codegen for `AccountId::as_felt`;
+- add note script compilation test;
+- [**breaking**] rename `miden-sdk` crate to `miden` [#338](https://github.com/0xMiden/compiler/pull/338)
+- remove `miden:core-import/types` custom types
+- clean up todos
+- skip Miden SDK function generation in bindings.rs
+- add check for the proper artifact file extension in the cargo-miden test
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/cargo-miden-v0.0.6...cargo-miden-v0.0.7) - 2024-09-17
 
 ### Fixed

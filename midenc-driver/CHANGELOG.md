@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-driver-v0.0.7...midenc-driver-v0.0.8) - 2025-04-24
+
+### Other
+- treat warnings as compiler errors,
+- rename hir2 crates
+- switch uses of hir crates to hir2
+- add `midenc run` inputs file example
+
 ## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/midenc-driver-v0.0.5...midenc-driver-v0.0.6) - 2024-09-06
 
 ### Added
