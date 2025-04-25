@@ -44,6 +44,9 @@ interface account {
     get-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, result-ptr: s32);
     /// Sets a map item in the account storage
     set-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
+
+    /// Increments the account nonce by the provided value.
+    incr-nonce: func(value: u32);
 }
 
 

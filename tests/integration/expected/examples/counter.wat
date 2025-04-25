@@ -21,6 +21,8 @@
       (export (;0;) "get-map-item" (func (type 0)))
       (type (;1;) (func (param "index" f32) (param "key0" f32) (param "key1" f32) (param "key2" f32) (param "key3" f32) (param "value0" f32) (param "value1" f32) (param "value2" f32) (param "value3" f32) (param "result-ptr" s32)))
       (export (;1;) "set-map-item" (func (type 1)))
+      (type (;2;) (func (param "value" u32)))
+      (export (;2;) "incr-nonce" (func (type 2)))
     )
   )
   (import "miden:core-import/account@1.0.0" (instance (;2;) (type 2)))
@@ -35,21 +37,23 @@
     (type (;0;) (func (param i32) (result f32)))
     (type (;1;) (func (param f32 f32) (result f32)))
     (type (;2;) (func (result i32)))
-    (type (;3;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;4;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
-    (type (;5;) (func))
-    (type (;6;) (func (param i32 i32) (result i32)))
-    (type (;7;) (func (param i32 i32 i32 i32) (result i32)))
-    (type (;8;) (func (result f32)))
-    (type (;9;) (func (param i32 i32 i32) (result i32)))
-    (type (;10;) (func (param i32 i32 i32)))
-    (type (;11;) (func (param i32 i32 i32 i32)))
-    (type (;12;) (func (param i32 f32)))
+    (type (;3;) (func (param i32)))
+    (type (;4;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;5;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;6;) (func))
+    (type (;7;) (func (param i32 i32) (result i32)))
+    (type (;8;) (func (param i32 i32 i32 i32) (result i32)))
+    (type (;9;) (func (result f32)))
+    (type (;10;) (func (param i32 i32 i32) (result i32)))
+    (type (;11;) (func (param i32 i32 i32)))
+    (type (;12;) (func (param i32 i32 i32 i32)))
+    (type (;13;) (func (param i32 f32)))
     (import "miden:core-import/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
     (import "miden:core-import/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
     (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
-    (import "miden:core-import/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;3;) (type 3)))
-    (import "miden:core-import/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;4;) (type 4)))
+    (import "miden:core-import/account@1.0.0" "incr-nonce" (func $miden_base_sys::bindings::account::extern_account_incr_nonce (;3;) (type 3)))
+    (import "miden:core-import/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;4;) (type 4)))
+    (import "miden:core-import/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;5;) (type 5)))
     (table (;0;) 3 3 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -59,15 +63,15 @@
     (export "cabi_realloc_wit_bindgen_0_28_0" (func $cabi_realloc_wit_bindgen_0_28_0))
     (export "cabi_realloc" (func $cabi_realloc))
     (elem (;0;) (i32.const 1) func $counter_contract::bindings::__link_custom_section_describing_imports $cabi_realloc)
-    (func $__wasm_call_ctors (;5;) (type 5))
-    (func $counter_contract::bindings::__link_custom_section_describing_imports (;6;) (type 5))
-    (func $__rustc::__rust_alloc (;7;) (type 6) (param i32 i32) (result i32)
+    (func $__wasm_call_ctors (;6;) (type 6))
+    (func $counter_contract::bindings::__link_custom_section_describing_imports (;7;) (type 6))
+    (func $__rustc::__rust_alloc (;8;) (type 7) (param i32 i32) (result i32)
       i32.const 1048612
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
-    (func $__rustc::__rust_realloc (;8;) (type 7) (param i32 i32 i32 i32) (result i32)
+    (func $__rustc::__rust_realloc (;9;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
         i32.const 1048612
         local.get 2
@@ -92,7 +96,7 @@
       end
       local.get 2
     )
-    (func $miden:counter-contract/counter@0.1.0#get-count (;9;) (type 8) (result f32)
+    (func $miden:counter-contract/counter@0.1.0#get-count (;10;) (type 9) (result f32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       local.tee 0
@@ -151,7 +155,7 @@
       global.set $__stack_pointer
       local.get 3
     )
-    (func $miden:counter-contract/counter@0.1.0#increment-count (;10;) (type 8) (result f32)
+    (func $miden:counter-contract/counter@0.1.0#increment-count (;11;) (type 9) (result f32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       local.tee 0
@@ -241,18 +245,20 @@
       i32.const 128
       i32.add
       call $miden_base_sys::bindings::storage::set_map_item
+      i32.const 1
+      call $miden_base_sys::bindings::account::incr_nonce
       local.get 1
       global.set $__stack_pointer
       local.get 3
     )
-    (func $cabi_realloc_wit_bindgen_0_28_0 (;11;) (type 7) (param i32 i32 i32 i32) (result i32)
+    (func $cabi_realloc_wit_bindgen_0_28_0 (;12;) (type 8) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
       local.get 3
       call $wit_bindgen_rt::cabi_realloc
     )
-    (func $wit_bindgen_rt::cabi_realloc (;12;) (type 7) (param i32 i32 i32 i32) (result i32)
+    (func $wit_bindgen_rt::cabi_realloc (;13;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
         block ;; label = @2
           block ;; label = @3
@@ -283,7 +289,7 @@
       end
       local.get 2
     )
-    (func $wit_bindgen_rt::run_ctors_once (;13;) (type 5)
+    (func $wit_bindgen_rt::run_ctors_once (;14;) (type 6)
       block ;; label = @1
         i32.const 0
         i32.load8_u offset=1048617
@@ -294,7 +300,7 @@
         i32.store8 offset=1048617
       end
     )
-    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;14;) (type 9) (param i32 i32 i32) (result i32)
+    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;15;) (type 10) (param i32 i32 i32) (result i32)
       (local i32 i32)
       block ;; label = @1
         local.get 1
@@ -366,7 +372,11 @@
       end
       unreachable
     )
-    (func $miden_base_sys::bindings::storage::get_map_item (;15;) (type 10) (param i32 i32 i32)
+    (func $miden_base_sys::bindings::account::incr_nonce (;16;) (type 3) (param i32)
+      local.get 0
+      call $miden_base_sys::bindings::account::extern_account_incr_nonce
+    )
+    (func $miden_base_sys::bindings::storage::get_map_item (;17;) (type 11) (param i32 i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -382,7 +392,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_get_storage_map_item
     )
-    (func $miden_base_sys::bindings::storage::set_map_item (;16;) (type 11) (param i32 i32 i32 i32)
+    (func $miden_base_sys::bindings::storage::set_map_item (;18;) (type 12) (param i32 i32 i32 i32)
       local.get 1
       i32.const 255
       i32.and
@@ -406,7 +416,7 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_set_storage_map_item
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;17;) (type 12) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;19;) (type 13) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
@@ -430,7 +440,7 @@
       local.get 2
       f32.store
     )
-    (func $core::ptr::alignment::Alignment::max (;18;) (type 6) (param i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;20;) (type 7) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -438,7 +448,7 @@
       i32.gt_u
       select
     )
-    (func $cabi_realloc (;19;) (type 7) (param i32 i32 i32 i32) (result i32)
+    (func $cabi_realloc (;21;) (type 8) (param i32 i32 i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 2
@@ -461,13 +471,16 @@
   (core instance (;1;)
     (export "heap-base" (func 2))
   )
-  (alias export 2 "get-map-item" (func (;3;)))
+  (alias export 2 "incr-nonce" (func (;3;)))
   (core func (;3;) (canon lower (func 3)))
-  (alias export 2 "set-map-item" (func (;4;)))
+  (alias export 2 "get-map-item" (func (;4;)))
   (core func (;4;) (canon lower (func 4)))
+  (alias export 2 "set-map-item" (func (;5;)))
+  (core func (;5;) (canon lower (func 5)))
   (core instance (;2;)
-    (export "get-map-item" (func 3))
-    (export "set-map-item" (func 4))
+    (export "incr-nonce" (func 3))
+    (export "get-map-item" (func 4))
+    (export "set-map-item" (func 5))
   )
   (core instance (;3;) (instantiate 0
       (with "miden:core-import/intrinsics-felt@1.0.0" (instance 0))
@@ -478,11 +491,11 @@
   (alias core export 3 "memory" (core memory (;0;)))
   (alias export 3 "felt" (type (;4;)))
   (type (;5;) (func (result 4)))
-  (alias core export 3 "miden:counter-contract/counter@0.1.0#get-count" (core func (;5;)))
-  (alias core export 3 "cabi_realloc" (core func (;6;)))
-  (func (;5;) (type 5) (canon lift (core func 5)))
-  (alias core export 3 "miden:counter-contract/counter@0.1.0#increment-count" (core func (;7;)))
-  (func (;6;) (type 5) (canon lift (core func 7)))
+  (alias core export 3 "miden:counter-contract/counter@0.1.0#get-count" (core func (;6;)))
+  (alias core export 3 "cabi_realloc" (core func (;7;)))
+  (func (;6;) (type 5) (canon lift (core func 6)))
+  (alias core export 3 "miden:counter-contract/counter@0.1.0#increment-count" (core func (;8;)))
+  (func (;7;) (type 5) (canon lift (core func 8)))
   (alias export 3 "felt" (type (;6;)))
   (component (;0;)
     (type (;0;) (record (field "inner" f32)))
@@ -497,8 +510,8 @@
     (export (;3;) "increment-count" (func 1) (func (type 5)))
   )
   (instance (;4;) (instantiate 0
-      (with "import-func-get-count" (func 5))
-      (with "import-func-increment-count" (func 6))
+      (with "import-func-get-count" (func 6))
+      (with "import-func-increment-count" (func 7))
       (with "import-type-felt" (type 6))
       (with "import-type-felt0" (type 4))
     )

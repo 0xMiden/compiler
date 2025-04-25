@@ -20,6 +20,7 @@ pub const GET_STORAGE_ITEM: &str = "get_item";
 pub const SET_STORAGE_ITEM: &str = "set_item";
 pub const GET_STORAGE_MAP_ITEM: &str = "get_map_item";
 pub const SET_STORAGE_MAP_ITEM: &str = "set_map_item";
+pub const INCR_NONCE: &str = "incr_nonce";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -57,6 +58,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
         ),
     );
+    account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [I32], []));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), account);
     m
 }

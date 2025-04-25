@@ -21,7 +21,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 mod bindings;
 
 use bindings::exports::miden::counter_contract::counter::Guest;
-use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
+use miden::{account, component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
 // Define the main contract struct
 #[component]
@@ -56,6 +56,8 @@ impl Guest for CounterContract {
         let new_value = current_value + felt!(1);
         // Write the new value back to the storage map
         contract.count_map.set(key, new_value);
+        // Increment the nonce of this Miden account
+        account::incr_nonce(1);
         new_value
     }
 }

@@ -27,6 +27,10 @@ end
 
 # mod miden:counter-contract/counter@0.1.0::counter_contract
 
+proc.miden_base_sys::bindings::account::extern_account_incr_nonce
+    exec.::miden::account::incr_nonce
+end
+
 proc.miden_base_sys::bindings::storage::extern_get_storage_map_item
     exec.::miden::account::get_map_item
     movup.4
@@ -710,6 +714,8 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     swap.1
     u32wrapping_add
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::storage::set_map_item
+    push.1
+    exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::account::incr_nonce
     push.1048576
     movup.2
     swap.1
@@ -976,6 +982,10 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     else
         nop
     end
+end
+
+proc.miden_base_sys::bindings::account::incr_nonce
+    exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::account::extern_account_incr_nonce
 end
 
 proc.miden_base_sys::bindings::storage::get_map_item
