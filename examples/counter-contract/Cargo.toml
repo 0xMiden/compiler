@@ -1,0 +1,45 @@
+[package]
+name = "counter-contract"
+description = "A simple example of a Miden counter contract using the Account Storage API"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../sdk/sdk" }
+wit-bindgen-rt = "0.28"
+
+[package.metadata.component]
+package = "miden:counter-contract"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
+[package.metadata.component.target.dependencies]
+"miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }
+"miden:core-import" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden-core-import.wit" }
+
+
+[profile.release]
+# optimize the output for size
+opt-level = "z"
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+
+[profile.dev]
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = true

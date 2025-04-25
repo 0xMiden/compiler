@@ -219,3 +219,34 @@ fn is_prime() {
             panic!("{err}");
         });
 }
+
+#[test]
+fn counter_contract() {
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_source_cargo_miden("../../examples/counter-contract", config, []);
+
+    test.expect_wasm(expect_file!["../../expected/examples/counter.wat"]);
+    test.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
+    test.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
+    let package = test.compiled_package();
+    let account_component_metadata_bytes =
+        package.as_ref().account_component_metadata_bytes.clone().unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+        .unwrap()
+        .as_toml()
+        .unwrap();
+    expect![[r#"
+        name = "counter-contract"
+        description = "A simple example of a Miden counter contract using the Account Storage API"
+        version = "0.1.0"
+        supported-types = ["RegularAccountUpdatableCode"]
+
+        [[storage]]
+        name = "count_map"
+        description = "counter contract storage map"
+        slot = 0
+        values = []
+    "#]]
+    .assert_eq(&toml);
+}
