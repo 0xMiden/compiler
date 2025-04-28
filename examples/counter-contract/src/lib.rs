@@ -23,10 +23,10 @@ mod bindings;
 use bindings::exports::miden::counter_contract::counter::Guest;
 use miden::{account, component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
-// Define the main contract struct
+/// Main contract structure for the counter example.
 #[component]
 struct CounterContract {
-    // Define the storage field for the counter value
+    /// Storage map holding the counter value.
     #[storage(slot(0), description = "counter contract storage map")]
     count_map: StorageMap,
 }
@@ -34,7 +34,7 @@ struct CounterContract {
 bindings::export!(CounterContract with_types_in bindings);
 
 impl Guest for CounterContract {
-    // Function to retrieve the current counter value
+    /// Returns the current counter value stored in the contract's storage map.
     fn get_count() -> Felt {
         // Get the instance of the contract
         let contract = CounterContract::default();
@@ -44,7 +44,7 @@ impl Guest for CounterContract {
         contract.count_map.get(&key)
     }
 
-    // Function to increment the counter value
+    /// Increments the counter value stored in the contract's storage map by one.
     fn increment_count() -> Felt {
         // Get the instance of the contract
         let contract = CounterContract::default();
