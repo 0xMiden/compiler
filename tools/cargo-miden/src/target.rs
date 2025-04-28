@@ -6,6 +6,27 @@ use std::{
 
 use anyhow::{bail, Result};
 
+/// Represents whether the Cargo project is a Miden program or a library.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectType {
+    Program,
+    Library,
+}
+
+/// Detects whether the project is a Miden program or library based on Cargo metadata.
+pub fn detect_project_type(metadata: &cargo_metadata::Metadata) -> ProjectType {
+    // is `[package.metadata.miden]` is present then it's a library, otherwise it's a program
+    metadata.root_package().map_or(ProjectType::Program, |root_pkg| {
+        root_pkg.metadata.as_object().map_or(ProjectType::Program, |meta_obj| {
+            if meta_obj.contains_key("miden") {
+                ProjectType::Library
+            } else {
+                ProjectType::Program
+            }
+        })
+    })
+}
+
 pub fn install_wasm32_wasip1() -> Result<()> {
     let sysroot = get_sysroot()?;
     if sysroot.join("lib/rustlib/wasm32-wasip1").exists() {

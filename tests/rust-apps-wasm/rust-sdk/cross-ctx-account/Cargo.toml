@@ -39,6 +39,9 @@ overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
 
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
 # TODO: switch to miden table
 [package.metadata.component]
 package = "miden:cross-ctx-account"
