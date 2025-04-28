@@ -731,6 +731,7 @@ dependencies = [
  "midenc-session",
  "path-absolutize",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
 ]

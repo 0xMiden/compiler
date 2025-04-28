@@ -37,6 +37,7 @@ tokio.workspace = true
 cargo-config2 = "0.1.24"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+serde_json = "1.0"                                 # Added serde_json
 
 [dev-dependencies]
 miden-mast-package.workspace = true

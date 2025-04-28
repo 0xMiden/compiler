@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use cargo_component::{
     config::{CargoArguments, Config},
     load_component_metadata, load_metadata, run_cargo_command,
@@ -163,8 +163,11 @@ where
                 );
             }
 
-            let all_dependency_library_paths =
-                process_miden_dependencies(&packages, &cargo_args /*, &metadata */)?;
+            // Get the root package being built
+            let root_package =
+                metadata.root_package().context("Metadata is missing a root package")?;
+
+            let dependency_packages_paths = process_miden_dependencies(root_package, &cargo_args)?;
 
             for package in packages.iter_mut() {
                 package.metadata.section.bindings.with = [
@@ -260,7 +263,7 @@ where
                 OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
                     output: BuildOutput::Wasm {
                         artifact_path: wasm_output.clone(),
-                        dependencies: all_dependency_library_paths,
+                        dependencies: dependency_packages_paths,
                     },
                 })),
                 OutputType::Masm => {
@@ -281,7 +284,7 @@ where
                         wasm_output,
                         miden_out_dir.as_std_path(),
                         is_bin,
-                        &all_dependency_library_paths,
+                        &dependency_packages_paths,
                     )
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
