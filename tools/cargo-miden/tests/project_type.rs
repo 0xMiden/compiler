@@ -1,6 +1,7 @@
-use cargo_miden::ProjectType;
-use cargo_metadata::MetadataCommand;
 use std::path::Path;
+
+use cargo_metadata::MetadataCommand;
+use cargo_miden::ProjectType;
 
 #[test]
 fn test_project_type_detection() {
@@ -24,10 +25,7 @@ fn test_project_type_detection() {
                 panic!("Failed to find manifest path for {}: {}", example_name, e)
             });
 
-        println!(
-            "Testing project type detection for: {}",
-            example_manifest_path.display()
-        );
+        println!("Testing project type detection for: {}", example_manifest_path.display());
 
         let metadata = MetadataCommand::new()
             .manifest_path(&example_manifest_path)
