@@ -385,7 +385,7 @@ export.store_sw # [addr, offset, value]
         mem_store     # []
     else
         # convert offset to bits
-        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset]
+        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value]
 
         # the store is across an element boundary
         #
@@ -403,6 +403,8 @@ export.store_sw # [addr, offset, value]
         # manipulate the bits of the two target elements, such that the 32-bit word we're storing
         # is placed at the correct offset from the start of the memory cell when viewing the cell
         # as a set of 4 32-bit chunks
+        #
+        # First, mask out the bits we're going to overwrite in the two elements we loaded
         movup.4 u32and         # [e1_masked, mask_hi, rshift, e0, addr, bit_offset, value]
         movup.3 movup.2 u32and # [e0_masked, e1_masked, rshift, addr, bit_offset, value]
 
@@ -410,14 +412,15 @@ export.store_sw # [addr, offset, value]
         # combine them with the preserved bits of the original contents of the cell
         #
         # first, the contents of e0
-        dup.7 movup.7    # [bit_offset, value, e0_masked, e1_masked, rshift, addr, value]
-        u32shr           # [value >> bit_offset, e0_masked, e1_masked, rshift, addr, value]
+        dup.5 movup.5    # [bit_offset, value, e0_masked, e1_masked, rshift, addr, value]
+        u32shl           # [value << bit_offset, e0_masked, e1_masked, rshift, addr, value]
         u32or            # [e0', e1_masked, rshift, addr, value]
+
         # then the contents of w1
         swap.1           # [e1_masked, e0', rshift, addr, value]
         movup.4          # [value, e1_masked, e0', rshift, addr]
         movup.3          # [rshift, value, e1_masked, e0', addr]
-        u32shl           # [value << rshift, e1_masked, e0', addr]
+        u32shr           # [value >> rshift, e1_masked, e0', addr]
         u32or            # [e1', e0', addr]
 
         # finally, write back the updated elements
