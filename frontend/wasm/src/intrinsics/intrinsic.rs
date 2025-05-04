@@ -4,7 +4,7 @@ use midenc_hir::{
     FunctionType, SymbolNameComponent, SymbolPath,
 };
 
-use super::{felt, mem};
+use super::{debug, felt, mem};
 
 /// Error raised when an attempt is made to use or load an unrecognized intrinsic
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -18,6 +18,8 @@ pub struct UnknownIntrinsicError(SymbolPath);
 /// intrinsic up to the point it was encoded in this type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Intrinsic {
+    /// A debugging intrinsic
+    Debug(Symbol),
     /// A memory intrinsic
     Mem(Symbol),
     /// A field element intrinsic
@@ -56,6 +58,7 @@ impl TryFrom<&SymbolPath> for Intrinsic {
             .ok_or_else(|| UnknownIntrinsicError(path.clone()))?;
 
         match kind {
+            symbols::Debug => Ok(Self::Debug(function)),
             symbols::Mem => Ok(Self::Mem(function)),
             symbols::Felt => Ok(Self::Felt(function)),
             _ => Err(UnknownIntrinsicError(path.clone())),
@@ -75,6 +78,7 @@ impl Intrinsic {
     /// intrinsic is defined.
     pub fn module_name(&self) -> Symbol {
         match self {
+            Self::Debug(_) => symbols::Debug,
             Self::Mem(_) => symbols::Mem,
             Self::Felt(_) => symbols::Felt,
         }
@@ -83,6 +87,7 @@ impl Intrinsic {
     /// Get a [SymbolPath] corresponding to the module containing this intrinsic
     pub fn module_path(&self) -> SymbolPath {
         match self {
+            Self::Debug(_) => SymbolPath::from_iter(debug::MODULE_PREFIX.iter().copied()),
             Self::Mem(_) => SymbolPath::from_iter(mem::MODULE_PREFIX.iter().copied()),
             Self::Felt(_) => SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()),
         }
@@ -91,7 +96,7 @@ impl Intrinsic {
     /// Get the name of the intrinsic function as a [Symbol]
     pub fn function_name(&self) -> Symbol {
         match self {
-            Self::Mem(function) | Self::Felt(function) => *function,
+            Self::Debug(function) | Self::Mem(function) | Self::Felt(function) => *function,
         }
     }
 
@@ -101,6 +106,8 @@ impl Intrinsic {
     pub fn function_type(&self) -> Option<FunctionType> {
         match self {
             Self::Mem(function) => mem::function_type(*function),
+            // All debugging intrinsics are currently implemented as native instructions
+            Self::Debug(_) => None,
             // All field element intrinsics are currently implemented as native instructions
             Self::Felt(_) => None,
         }
@@ -114,7 +121,7 @@ impl Intrinsic {
             Self::Mem(function) => {
                 mem::function_type(*function).map(IntrinsicsConversionResult::FunctionType)
             }
-            Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
+            Self::Debug(_) | Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
         }
     }
 }

@@ -65,6 +65,14 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         self.assert_eq(lhs, rhs, span)
     }
 
+    fn breakpoint(
+        &mut self,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Breakpoint>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Breakpoint, _>(span);
+        op_builder()
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.

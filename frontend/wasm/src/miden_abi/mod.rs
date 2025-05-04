@@ -114,6 +114,8 @@ pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, 
         Ok(SymbolPath::from_masm_module_id(intrinsics::mem::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/intrinsics-felt") {
         Ok(SymbolPath::from_masm_module_id(intrinsics::felt::MODULE_ID))
+    } else if wasm_module_id.starts_with("miden:core-import/intrinsics-debug") {
+        Ok(SymbolPath::from_masm_module_id(intrinsics::debug::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/account") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::account::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/note") {

@@ -94,7 +94,10 @@ use miden_assembly::ast::InvokeKind;
 use midenc_hir::{Immediate, Operation, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
-use crate::masm::{self as masm, Op};
+use crate::{
+    masm::{self as masm, Op},
+    TraceEvent,
+};
 
 /// This structure is used to emit the Miden Assembly ops corresponding to an IR instruction.
 ///
@@ -202,8 +205,11 @@ impl<'a> OpEmitter<'a> {
         )));
         let path = masm::LibraryPath::new(callee.module.as_str()).unwrap();
         let target = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
-        let inst = masm::Instruction::Exec(target);
-        self.emit(inst, span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::Exec(target), span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
     }
 
     /// Emit `op` to the current block

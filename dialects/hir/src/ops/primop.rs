@@ -95,3 +95,18 @@ impl EffectOpInterface<MemoryEffect> for MemCpy {
         ])
     }
 }
+
+#[operation(
+    dialect = HirDialect,
+    implements(MemoryEffectOpInterface)
+)]
+pub struct Breakpoint {}
+
+impl EffectOpInterface<MemoryEffect> for Breakpoint {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        EffectIterator::from_smallvec(smallvec![
+            EffectInstance::new(MemoryEffect::Read),
+            EffectInstance::new(MemoryEffect::Write),
+        ])
+    }
+}

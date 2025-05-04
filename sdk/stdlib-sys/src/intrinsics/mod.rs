@@ -1,5 +1,6 @@
 use core::ops::{Deref, DerefMut};
 
+pub mod debug;
 mod felt;
 mod word;
 

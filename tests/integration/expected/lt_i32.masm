@@ -2,7 +2,9 @@
 
 export.init
     push.2162688
+    trace.240
     exec.::intrinsics::mem::heap_init
+    trace.252
     push.1048576
     u32assert
     mem_store.262144
@@ -18,6 +20,10 @@ end
 
 export.entrypoint
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::i32::is_lt
+    trace.252
+    nop
 end
 
