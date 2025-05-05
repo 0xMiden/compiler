@@ -88,4 +88,4 @@ See `midenc run --help` for the inputs file format.
 
 ## Examples
 
-Check out the [examples](https://github.com/0xPolygonMiden/compiler/tree/next/examples) for some `cargo-miden` project examples.
+Check out the [examples](https://github.com/0xMiden/compiler/tree/next/examples) for some `cargo-miden` project examples.
