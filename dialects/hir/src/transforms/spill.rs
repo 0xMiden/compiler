@@ -42,7 +42,7 @@ impl Pass for TransformSpills {
         if function.is_declaration() {
             log::debug!(target: "insert-spills", "function has no body, no spills needed!");
             state.preserved_analyses_mut().preserve_all();
-            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         }
         let mut analysis =
@@ -51,7 +51,7 @@ impl Pass for TransformSpills {
         if !analysis.has_spills() {
             log::debug!(target: "insert-spills", "no spills needed!");
             state.preserved_analyses_mut().preserve_all();
-            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         }
 

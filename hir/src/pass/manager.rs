@@ -1048,7 +1048,7 @@ impl OpToOpPassAdaptor {
                 }
             }
         }
-        state.set_post_pass_status(PostPassStatus::IRUnchanged);
+        state.set_post_pass_status(PostPassStatus::Unchanged);
         Ok(())
     }
 }

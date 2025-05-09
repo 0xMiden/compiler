@@ -174,16 +174,16 @@ impl TryFrom<&String> for PassIdentifier {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PostPassStatus {
-    IRUnchanged,
-    IRChanged,
+    Unchanged,
+    Changed,
 }
 
 impl From<bool> for PostPassStatus {
     fn from(ir_was_changed: bool) -> Self {
         if ir_was_changed {
-            PostPassStatus::IRChanged
+            PostPassStatus::Changed
         } else {
-            PostPassStatus::IRUnchanged
+            PostPassStatus::Unchanged
         }
     }
 }
@@ -434,7 +434,7 @@ impl PassExecutionState {
             analysis_manager,
             preserved_analyses: Default::default(),
             pipeline_executor,
-            post_pass_status: PostPassStatus::IRUnchanged,
+            post_pass_status: PostPassStatus::Unchanged,
         }
     }
 

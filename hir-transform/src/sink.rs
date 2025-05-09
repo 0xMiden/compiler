@@ -109,7 +109,7 @@ impl Pass for ControlFlowSink {
 
         let dominfo = state.analysis_manager().get_analysis::<DominanceInfo>()?;
 
-        let mut sunk = PostPassStatus::IRUnchanged;
+        let mut sunk = PostPassStatus::Unchanged;
         operation.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
             let regions_to_sink = {
                 let op = op.borrow();
@@ -195,7 +195,7 @@ impl Pass for SinkOperandDefs {
         // then process the worklist, moving everything into position.
         let mut worklist = alloc::collections::VecDeque::default();
 
-        let mut changed = PostPassStatus::IRUnchanged;
+        let mut changed = PostPassStatus::Unchanged;
         // Visit ops in "true" post-order (i.e. block bodies are visited bottom-up).
         operation.raw_postwalk_all::<Backward, _>(|operation: OperationRef| {
             // Determine if any of this operation's operands represent one of the following:
@@ -320,7 +320,7 @@ impl Pass for SinkOperandDefs {
                         log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
                         operand.borrow_mut().set(replacement);
 
-                        changed = PostPassStatus::IRChanged;
+                        changed = PostPassStatus::Changed;
                         // If no other uses of this value remain, then remove the original
                         // operation, as it is now dead.
                         if !operand_value.borrow().is_used() {
@@ -367,7 +367,7 @@ impl Pass for SinkOperandDefs {
                         log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
                         sink_state.replacements.insert(operand_value, replacement);
                         operand.borrow_mut().set(replacement);
-                        changed = PostPassStatus::IRChanged;
+                        changed = PostPassStatus::Changed;
                     } else {
                         log::trace!(target: "sink-operand-defs", "    defining op is a constant with no other uses, moving into place");
                         // The original op can be moved

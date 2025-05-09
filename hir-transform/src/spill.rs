@@ -252,7 +252,7 @@ pub fn transform_spills(
         )?;
     }
 
-    Ok(PostPassStatus::IRChanged)
+    Ok(PostPassStatus::Changed)
 }
 
 fn rewrite_single_block_spills(

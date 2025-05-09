@@ -100,7 +100,7 @@ impl Pass for Canonicalizer {
     ) -> Result<(), Report> {
         let Some(rewrites) = self.rewrites.as_ref() else {
             log::debug!("skipping canonicalization as there are no rewrite patterns to apply");
-            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         };
         let op = {

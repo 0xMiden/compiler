@@ -134,7 +134,7 @@ impl Pass for LiftControlFlowToSCF {
         });
 
         if result.was_interrupted() {
-            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return result.into_result();
         }
 
