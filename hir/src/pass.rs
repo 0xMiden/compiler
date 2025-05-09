@@ -192,7 +192,7 @@ impl Print {
 
         // Always print, unless "only_when_modified" has been set and there have not been changes.
         let modification_filter =
-            !matches!((self.only_when_modified, ir_changed), (true, PostPassStatus::Unchanged));
+            !matches!(ir_changed, PostPassStatus::IRUnchanged if self.only_when_modified);
 
         pass_filter && modification_filter
     }
