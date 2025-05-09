@@ -100,7 +100,7 @@ impl Pass for ControlFlowSink {
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let op = op.into_entity_ref();
         log::debug!(target: "control-flow-sink", "sinking operations in {op}");
 
@@ -137,7 +137,9 @@ impl Pass for ControlFlowSink {
             );
         });
 
-        Ok(sunk)
+        state.set_post_pass_status(sunk);
+
+        Ok(())
     }
 }
 
@@ -180,8 +182,8 @@ impl Pass for SinkOperandDefs {
     fn run_on_operation(
         &mut self,
         op: EntityMut<'_, Self::Target>,
-        _state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+        state: &mut PassExecutionState,
+    ) -> Result<(), Report> {
         let operation = op.as_operation_ref();
         drop(op);
 
@@ -409,7 +411,8 @@ impl Pass for SinkOperandDefs {
             }
         }
 
-        Ok(changed)
+        state.set_post_pass_status(changed);
+        Ok(())
     }
 }
 

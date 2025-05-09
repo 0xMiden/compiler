@@ -1,5 +1,5 @@
 use midenc_hir::{
-    pass::{Pass, PassExecutionState, PassIdentifier, PostPassStatus},
+    pass::{Pass, PassExecutionState, PassIdentifier},
     patterns::NoopRewriterListener,
     BlockRef, Builder, EntityMut, OpBuilder, Operation, OperationFolder, OperationName, RegionList,
     Report, SmallVec, ValueRef,
@@ -42,7 +42,7 @@ impl Pass for SparseConditionalConstantPropagation {
         &mut self,
         mut op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         // Run sparse constant propagation + dead code analysis
         let mut solver = DataFlowSolver::default();
         solver.load::<DeadCodeAnalysis>();
@@ -60,9 +60,9 @@ impl SparseConditionalConstantPropagation {
     fn rewrite(
         &mut self,
         op: &mut Operation,
-        _state: &mut PassExecutionState,
+        state: &mut PassExecutionState,
         solver: &DataFlowSolver,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let mut worklist = SmallVec::<[BlockRef; 8]>::default();
 
         let add_to_worklist = |regions: &RegionList, worklist: &mut SmallVec<[BlockRef; 8]>| {
@@ -128,7 +128,9 @@ impl SparseConditionalConstantPropagation {
             }
         }
 
-        Ok(replaced_any.into())
+        state.set_post_pass_status(replaced_any.into());
+
+        Ok(())
     }
 }
 

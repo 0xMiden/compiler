@@ -194,7 +194,7 @@ impl Print {
         }
     }
 
-    fn should_print(&self, pass: &dyn OperationPass, ir_changed: PostPassStatus) -> bool {
+    fn should_print(&self, pass: &dyn OperationPass, ir_changed: &PostPassStatus) -> bool {
         let pass_filter = self.pass_filter(pass);
 
         // Always print, unless "only_when_modified" has been set and there have not been changes.
@@ -236,8 +236,10 @@ impl PassInstrumentation for Print {
         &mut self,
         pass: &dyn OperationPass,
         op: &OperationRef,
-        changed: PostPassStatus,
+        post_execution_state: &PassExecutionState,
     ) {
+        let changed = post_execution_state.post_pass_status();
+
         if self.should_print(pass, changed) {
             log::trace!("After the {} pass", pass.name());
             let op = op.borrow();

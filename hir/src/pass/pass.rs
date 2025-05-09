@@ -47,7 +47,7 @@ pub trait OperationPass {
         &mut self,
         op: OperationRef,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report>;
+    ) -> Result<(), Report>;
     fn run_pipeline(
         &mut self,
         pipeline: &mut OpPassManager,
@@ -128,7 +128,7 @@ where
         &mut self,
         mut op: OperationRef,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let op = <<P as Pass>::Target as PassTarget>::into_target_mut(&mut op);
         <P as Pass>::run_on_operation(self, op, state)
     }
@@ -283,7 +283,7 @@ pub trait Pass: Sized + Any {
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report>;
+    ) -> Result<(), Report>;
     /// Schedule an arbitrary pass pipeline on the provided operation.
     ///
     /// This can be invoke any time in a pass to dynamic schedule more passes. The provided
@@ -388,7 +388,7 @@ where
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         (**self).run_on_operation(op, state)
     }
 
@@ -419,6 +419,7 @@ pub struct PassExecutionState {
     // rooted at the provided operation.
     #[allow(unused)]
     pipeline_executor: Option<Box<DynamicPipelineExecutor>>,
+    post_pass_status: PostPassStatus,
 }
 impl PassExecutionState {
     pub fn new(
@@ -433,6 +434,7 @@ impl PassExecutionState {
             analysis_manager,
             preserved_analyses: Default::default(),
             pipeline_executor,
+            post_pass_status: PostPassStatus::IRUnchanged,
         }
     }
 
@@ -459,6 +461,16 @@ impl PassExecutionState {
     #[inline(always)]
     pub fn preserved_analyses_mut(&mut self) -> &mut PreservedAnalyses {
         &mut self.preserved_analyses
+    }
+
+    #[inline(always)]
+    pub fn post_pass_status(&self) -> &PostPassStatus {
+        &self.post_pass_status
+    }
+
+    #[inline(always)]
+    pub fn set_post_pass_status(&mut self, post_pass_status: PostPassStatus) {
+        self.post_pass_status = post_pass_status;
     }
 
     pub fn run_pipeline(

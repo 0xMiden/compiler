@@ -992,8 +992,7 @@ impl OpToOpPassAdaptor {
             if result.is_err() {
                 instrumentor.run_after_pass_failed(pass, &op);
             } else {
-                let in_result = result.as_ref().unwrap_or(&PostPassStatus::IRUnchanged);
-                instrumentor.run_after_pass(pass, &op, *in_result);
+                instrumentor.run_after_pass(pass, &op, &execution_state);
             }
         }
 
@@ -1015,7 +1014,7 @@ impl OpToOpPassAdaptor {
         op: OperationRef,
         state: &mut PassExecutionState,
         verify: bool,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let analysis_manager = state.analysis_manager();
         let instrumentor = analysis_manager.pass_instrumentor();
         let parent_info = PipelineParentInfo {
@@ -1049,8 +1048,8 @@ impl OpToOpPassAdaptor {
                 }
             }
         }
-
-        Ok(PostPassStatus::IRUnchanged)
+        state.set_post_pass_status(PostPassStatus::IRUnchanged);
+        Ok(())
     }
 }
 
@@ -1091,7 +1090,7 @@ impl Pass for OpToOpPassAdaptor {
         &mut self,
         _op: EntityMut<'_, Operation>,
         _state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         unreachable!("unexpected call to `Pass::run_on_operation` for OpToOpPassAdaptor")
     }
 }

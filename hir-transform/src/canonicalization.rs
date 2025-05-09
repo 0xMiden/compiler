@@ -97,10 +97,11 @@ impl Pass for Canonicalizer {
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let Some(rewrites) = self.rewrites.as_ref() else {
             log::debug!("skipping canonicalization as there are no rewrite patterns to apply");
-            return Ok(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            return Ok(());
         };
         let op = {
             let ptr = op.as_operation_ref();
@@ -146,7 +147,9 @@ impl Pass for Canonicalizer {
                 changed
             }
         };
+        let ir_changed = changed.into();
+        state.set_post_pass_status(ir_changed);
 
-        Ok(changed.into())
+        Ok(())
     }
 }

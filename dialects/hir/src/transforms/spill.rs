@@ -35,14 +35,15 @@ impl Pass for TransformSpills {
         &mut self,
         op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
-    ) -> Result<PostPassStatus, Report> {
+    ) -> Result<(), Report> {
         let function = op.into_entity_ref();
         log::debug!(target: "insert-spills", "computing and inserting spills for {}", function.as_operation());
 
         if function.is_declaration() {
             log::debug!(target: "insert-spills", "function has no body, no spills needed!");
             state.preserved_analyses_mut().preserve_all();
-            return Ok(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            return Ok(());
         }
         let mut analysis =
             state.analysis_manager().get_analysis_for::<SpillAnalysis, Function>()?;
@@ -50,7 +51,8 @@ impl Pass for TransformSpills {
         if !analysis.has_spills() {
             log::debug!(target: "insert-spills", "no spills needed!");
             state.preserved_analyses_mut().preserve_all();
-            return Ok(PostPassStatus::IRUnchanged);
+            state.set_post_pass_status(PostPassStatus::IRUnchanged);
+            return Ok(());
         }
 
         // Take ownership of the spills analysis so that we can mutate the analysis state during
@@ -66,7 +68,17 @@ impl Pass for TransformSpills {
 
         let op = function.as_operation_ref();
         drop(function);
-        transforms::transform_spills(op, analysis, &mut interface, state.analysis_manager().clone())
+
+        let transform_result = transforms::transform_spills(
+            op,
+            analysis,
+            &mut interface,
+            state.analysis_manager().clone(),
+        )?;
+
+        state.set_post_pass_status(transform_result);
+
+        return Ok(());
     }
 }
 
