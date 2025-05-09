@@ -428,7 +428,7 @@ impl Session {
 }
 
 /// This enum describes the different target environments targetable by the compiler
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(ValueEnum))]
 pub enum TargetEnv {
     /// The emulator environment, which has a more restrictive instruction set

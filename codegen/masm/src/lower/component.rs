@@ -46,11 +46,16 @@ impl ToMasmComponent for builtin::Component {
                     Span::new(entry_id.function.span, entry_id.function.as_str().into()),
                 ));
 
-                let path = if component_path.to_string() == "root_ns:root@1.0.0" {
-                    // We're inside the synthethic "wrapping" component for pure Rust program
-                    // compilation. Since the user does not know about it their entrypoint does not
-                    // include the synthetic component id. Append the user-provided entrypoint
-                    // module
+                // Check if we're inside the synthetic "wrapper" component used for pure Rust
+                // compilation. Since the user does not know about it, their entrypoint does not
+                // include the synthetic component path. We append the user-provided path to the
+                // root component path here if needed.
+                //
+                // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
+                // cannot currently do so because we do not have sufficient Cargo metadata yet in
+                // 'cargo miden build' to detect the target env, and we default it to 'rollup'
+                let is_wrapper = component_path.path() == "root_ns:root@1.0.0";
+                let path = if is_wrapper {
                     component_path.clone().append_unchecked(entry_id.module)
                 } else {
                     // We're compiling a Wasm component and the component id is included
