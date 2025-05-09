@@ -4,7 +4,7 @@ use midenc_hir::{
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
-    pass::{Pass, PassExecutionState, PassIdentifier, PostPassStatus},
+    pass::{Pass, PassExecutionState, PostPassStatus},
     traits::{ConstantLike, Terminator},
     Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
     OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
@@ -84,10 +84,6 @@ impl Pass for ControlFlowSink {
         "control-flow-sink"
     }
 
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        Some(PassIdentifier::ControlFlowSink)
-    }
-
     fn argument(&self) -> &'static str {
         "control-flow-sink"
     }
@@ -165,10 +161,6 @@ impl Pass for SinkOperandDefs {
 
     fn name(&self) -> &'static str {
         "sink-operand-defs"
-    }
-
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        Some(PassIdentifier::SinkOperandDefs)
     }
 
     fn argument(&self) -> &'static str {

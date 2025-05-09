@@ -3,7 +3,7 @@ use alloc::rc::Rc;
 use midenc_hir::{
     adt::SmallDenseMap,
     dialects::builtin::{Function, FunctionRef, LocalVariable},
-    pass::{Pass, PassExecutionState, PassIdentifier, PostPassStatus},
+    pass::{Pass, PassExecutionState, PostPassStatus},
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
     SourceSpan, Spanned, Symbol, ValueRef,
 };
@@ -17,10 +17,6 @@ impl Pass for TransformSpills {
 
     fn name(&self) -> &'static str {
         "transform-spills"
-    }
-
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        Some(PassIdentifier::TransformSpills)
     }
 
     fn argument(&self) -> &'static str {

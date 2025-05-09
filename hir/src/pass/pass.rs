@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, format, rc::Rc};
+use alloc::{boxed::Box, rc::Rc};
 use core::{any::Any, fmt};
 
 use super::*;
@@ -15,8 +15,6 @@ pub trait OperationPass {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
     fn name(&self) -> &'static str;
-
-    fn pass_id(&self) -> Option<PassIdentifier>;
 
     fn argument(&self) -> &'static str {
         // NOTE: Could we compute an argument string from the type name?
@@ -62,10 +60,6 @@ where
 {
     fn as_any(&self) -> &dyn Any {
         <P as Pass>::as_any(self)
-    }
-
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        <P as Pass>::pass_id(self)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -140,35 +134,6 @@ where
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         <P as Pass>::run_pipeline(self, pipeline, op, state)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum PassIdentifier {
-    Canonicalizer,
-    ControlFlowSink,
-    LiftControlFlowToSCF,
-    OpToOpPassAdaptor,
-    SinkOperandDefs,
-    SparseConditionalConstantPropagation,
-    TransformSpills,
-}
-
-impl TryFrom<&String> for PassIdentifier {
-    type Error = Report;
-
-    fn try_from(pass_name: &String) -> Result<Self, Self::Error> {
-        match pass_name.as_str() {
-            "canonicalizer" => Ok(PassIdentifier::Canonicalizer),
-            "control-flow-sink" => Ok(PassIdentifier::ControlFlowSink),
-            "lift-control-flow" => Ok(PassIdentifier::LiftControlFlowToSCF),
-            "sink-operand-defs" => Ok(PassIdentifier::SinkOperandDefs),
-            "sparse-conditional-constant-propagation" => {
-                Ok(PassIdentifier::SparseConditionalConstantPropagation)
-            }
-            "transform-spills" => Ok(PassIdentifier::TransformSpills),
-            _ => Err(Report::msg(format!("'{pass_name}' unrecognized pass."))),
-        }
     }
 }
 
@@ -296,8 +261,6 @@ pub trait Pass: Sized + Any {
     ) -> Result<(), Report> {
         state.run_pipeline(pipeline, op)
     }
-
-    fn pass_id(&self) -> Option<PassIdentifier>;
 }
 
 impl<P> Pass for Box<P>
@@ -322,10 +285,6 @@ where
     #[inline]
     fn name(&self) -> &'static str {
         (**self).name()
-    }
-
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        (**self).pass_id()
     }
 
     #[inline]

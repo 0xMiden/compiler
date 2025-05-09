@@ -7,19 +7,18 @@ pub mod registry;
 mod specialization;
 pub mod statistics;
 
+use alloc::string::String;
+
 pub use self::{
     analysis::{Analysis, AnalysisManager, OperationAnalysis, PreservedAnalyses},
     instrumentation::{PassInstrumentation, PassInstrumentor, PipelineParentInfo},
     manager::{IRPrintingConfig, Nesting, OpPassManager, PassDisplayMode, PassManager},
-    pass::{OperationPass, Pass, PassExecutionState, PassIdentifier, PostPassStatus},
+    pass::{OperationPass, Pass, PassExecutionState, PostPassStatus},
     registry::{PassInfo, PassPipelineInfo},
     specialization::PassTarget,
     statistics::{PassStatistic, Statistic, StatisticValue},
 };
-use crate::{
-    alloc::{string::String, vec::Vec},
-    EntityRef, Operation, OperationName, OperationRef,
-};
+use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec};
 
 /// Handles IR printing, based on the [`IRPrintingConfig`] passed in
 /// [Print::new]. Currently, this struct is managed by the [`PassManager`]'s [`PassInstrumentor`],
@@ -54,7 +53,7 @@ enum SelectedPasses {
     /// Enable all passes for IR Printing.
     All,
     /// Just select a subset of passes for IR printing.
-    Just(Vec<PassIdentifier>),
+    Just(SmallVec<[String; 1]>),
 }
 
 #[allow(dead_code)]
@@ -183,13 +182,7 @@ impl Print {
     fn pass_filter(&self, pass: &dyn OperationPass) -> bool {
         match &self.selected_passes {
             Some(SelectedPasses::All) => true,
-            Some(SelectedPasses::Just(passes)) => passes.iter().any(|p| {
-                if let Some(p_type) = pass.pass_id() {
-                    *p == p_type
-                } else {
-                    false
-                }
-            }),
+            Some(SelectedPasses::Just(passes)) => passes.iter().any(|p| pass.name() == *p),
             None => false,
         }
     }

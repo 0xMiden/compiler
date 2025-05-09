@@ -1,4 +1,10 @@
-use alloc::{boxed::Box, collections::BTreeMap, format, rc::Rc, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    format,
+    rc::Rc,
+    string::{String, ToString},
+};
 
 use compact_str::{CompactString, ToCompactString};
 use midenc_session::{diagnostics::Severity, Options};
@@ -9,7 +15,7 @@ use super::{
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
-    pass::{pass::PassIdentifier, PostPassStatus, Print},
+    pass::{PostPassStatus, Print},
     traits::IsolatedFromAbove,
     Context, EntityMut, OpPrintingFlags, OpRegistration, Operation, OperationName, OperationRef,
     Report,
@@ -37,7 +43,7 @@ pub struct IRPrintingConfig {
     pub print_after_only_on_failure: bool,
     // NOTE: Taken from the Options struct
     pub print_ir_after_all: bool,
-    pub print_ir_after_pass: Vec<PassIdentifier>,
+    pub print_ir_after_pass: SmallVec<[String; 1]>,
     pub print_ir_after_modified: bool,
     pub flags: OpPrintingFlags,
 }
@@ -46,11 +52,8 @@ impl TryFrom<&Options> for IRPrintingConfig {
     type Error = Report;
 
     fn try_from(options: &Options) -> Result<Self, Self::Error> {
-        let pass_filters: Vec<PassIdentifier> = options
-            .print_ir_after_pass
-            .iter()
-            .map(|a| a.try_into())
-            .collect::<Result<Vec<PassIdentifier>, Report>>()?;
+        let pass_filters = options.print_ir_after_pass.clone();
+
         if options.print_ir_after_all && !pass_filters.is_empty() {
             return Err(Report::msg(
                 "Flags `print_ir_after_all` and `print_ir_after_pass` are mutually exclusive. \
@@ -58,9 +61,10 @@ impl TryFrom<&Options> for IRPrintingConfig {
                     .to_string(),
             ));
         };
+
         Ok(IRPrintingConfig {
             print_ir_after_all: options.print_ir_after_all,
-            print_ir_after_pass: pass_filters,
+            print_ir_after_pass: pass_filters.into(),
             print_ir_after_modified: options.print_ir_after_modified,
             ..Default::default()
         })
@@ -1058,10 +1062,6 @@ impl Pass for OpToOpPassAdaptor {
 
     fn name(&self) -> &'static str {
         crate::interner::Symbol::intern(self.name()).as_str()
-    }
-
-    fn pass_id(&self) -> Option<PassIdentifier> {
-        None
     }
 
     #[inline(always)]
