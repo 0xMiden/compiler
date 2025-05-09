@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - normalize use of fxhash-based hash maps
 - rename Call IR op to Exec
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-transform-v0.0.6...midenc-hir-transform-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.6...midenc-hir-transform-v0.0.7) - 2024-09-17
 
 ### Other
 - fix up new clippy warnings
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-transform-v0.0.1...midenc-hir-transform-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.1...midenc-hir-transform-v0.0.2) - 2024-08-28
 
 ### Fixed
 - inoperative --print-ir-after-*, add --print-cfg-after-*
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add additional tracing to treeify pass
 - remove miden-diagnostics, start making midenc-session no-std-compatible
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-transform-v0.0.0...midenc-hir-transform-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.0...midenc-hir-transform-v0.0.1) - 2024-07-18
 
 ### Added
 - enable spills transformation in default pipeline
@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - clean up docs and implementation of spills rewrite
 - transform tests, fixes
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates

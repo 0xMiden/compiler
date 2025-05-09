@@ -94,7 +94,7 @@ test_bool_op_total!(eq, ==);
 
 // TODO: Comparison operators are not defined for Felt, so we cannot compile a Rust equivalent for
 // the semantic test
-// see https://github.com/0xPolygonMiden/compiler/issues/175
+// see https://github.com/0xMiden/compiler/issues/175
 // test_bool_op_total!(gt, >);
 // test_bool_op_total!(lt, <);
 // test_bool_op_total!(ge, >=);

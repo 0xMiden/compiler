@@ -32,9 +32,9 @@ version = "0.0.8"
 rust-version = "1.86"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
-repository = "https://github.com/0xPolygonMiden/compiler"
-homepage = "https://github.com/0xPolygonMiden/compiler"
-documentation = "https://github.com/0xPolygonMiden/compiler"
+repository = "https://github.com/0xMiden/compiler"
+homepage = "https://github.com/0xMiden/compiler"
+documentation = "https://github.com/0xMiden/compiler"
 categories = ["compilers"]
 keywords = ["compiler", "miden"]
 license = "MIT"
@@ -99,7 +99,7 @@ miden-stdlib = { version = "0.13.0", default-features = false, features = [
 ] }
 miden-mast-package = { version = "0.13.0", default-features = false }
 # This is here for convenience if we need to quickly use a git ref of the VM crates
-#miden-assembly = { version = "0.11.0", git = "https://github.com/0xPolygonMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
+#miden-assembly = { version = "0.11.0", git = "https://github.com/0xMiden/miden-vm", rev = "4d23f948bbf0c8fb7cd7ecba80bb02d37c1724bb" }
 midenc-codegen-masm = { version = "0.0.8", path = "codegen/masm" }
 midenc-dialect-arith = { version = "0.0.8", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.0.8", path = "dialects/hir" }

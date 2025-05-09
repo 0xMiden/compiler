@@ -22,13 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-driver-v0.0.0...midenc-driver-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-driver-v0.0.0...midenc-driver-v0.0.1) - 2024-07-18
 
 ### Added
 - implement compiler driver, update midenc
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - set crates versions to 0.0.0, and `publish = false` for tests
 - ensure all relevant crates are prefixed with `midenc-`
 - add formatter config, format most crates

@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - normalize use of fxhash-based hash maps
 - rename Call IR op to Exec
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-analysis-v0.0.6...midenc-hir-analysis-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.0.6...midenc-hir-analysis-v0.0.7) - 2024-09-17
 
 ### Other
 - fix up new clippy warnings
@@ -33,17 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.3](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-analysis-v0.0.2...midenc-hir-analysis-v0.0.3) - 2024-08-30
+## [0.0.3](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.0.2...midenc-hir-analysis-v0.0.3) - 2024-08-30
 
 ### Other
-- Merge pull request [#284](https://github.com/0xPolygonMiden/compiler/pull/284) from 0xPolygonMiden/bitwalker/abi-transform-test-fixes
+- Merge pull request [#284](https://github.com/0xMiden/compiler/pull/284) from 0xMiden/bitwalker/abi-transform-test-fixes
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-analysis-v0.0.1...midenc-hir-analysis-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.0.1...midenc-hir-analysis-v0.0.2) - 2024-08-28
 
 ### Fixed
 - *(frontend-wasm)* reserve memory allocated for use by rust
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-analysis-v0.0.0...midenc-hir-analysis-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.0.0...midenc-hir-analysis-v0.0.1) - 2024-07-18
 
 ### Added
 - *(analysis)* implement iterated dominance frontier queries
@@ -73,10 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - hir and hir-analysis tests
 
 ### Other
-- Merge pull request [#244](https://github.com/0xPolygonMiden/compiler/pull/244) from 0xPolygonMiden/bitwalker/load-store-reordering
+- Merge pull request [#244](https://github.com/0xMiden/compiler/pull/244) from 0xMiden/bitwalker/load-store-reordering
 - clean up docs and implementation of spills rewrite
 - *(analysis)* improve dominance frontier docs
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates

@@ -31,12 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - clean up unused deps
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-symbol-v0.0.1...midenc-hir-symbol-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-hir-symbol-v0.0.1...midenc-hir-symbol-v0.0.2) - 2024-08-28
 
 ### Added
 - implement packaging prototype
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-symbol-v0.0.0...midenc-hir-symbol-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-hir-symbol-v0.0.0...midenc-hir-symbol-v0.0.1) - 2024-07-18
 
 ### Added
 - add attributes to the ir
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add hir-symbol crate
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates

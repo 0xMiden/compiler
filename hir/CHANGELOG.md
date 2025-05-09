@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add note script compilation test;
 - remove digest-in-function-name encoding and `MidenAbiImport::digest`,
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-v0.0.6...midenc-hir-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.0.6...midenc-hir-v0.0.7) - 2024-09-17
 
 ### Other
 - fix up new clippy warnings
@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - clean up unused deps
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-v0.0.1...midenc-hir-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.0.1...midenc-hir-v0.0.2) - 2024-08-28
 
 ### Added
 - implement packaging prototype
@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - remove miden-diagnostics, start making midenc-session no-std-compatible
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-v0.0.0...midenc-hir-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.0.0...midenc-hir-v0.0.1) - 2024-07-18
 
 ### Added
 - implement memset, memcpy, mem_grow, mem_size, and bitcast ops
@@ -191,10 +191,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - hir and hir-analysis tests
 
 ### Other
-- Merge pull request [#237](https://github.com/0xPolygonMiden/compiler/pull/237) from 0xPolygonMiden/greenhat/emu-print-stack-option
+- Merge pull request [#237](https://github.com/0xMiden/compiler/pull/237) from 0xMiden/greenhat/emu-print-stack-option
 - use `BTreeSet` for "dirty" memory addresses(ordered) in the emulator
 - add `Emulator::print_trace` option to print the current stack
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates
 - update the Miden VM deps to the `ddf536c` commit with `if.true` empty
@@ -208,7 +208,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - remove formatter
 - draft a layout for intrinsics semantic tests,
 - since all the Miden ABI transformation happens in the frontend
-- Merge pull request [#140](https://github.com/0xPolygonMiden/compiler/pull/140) from 0xPolygonMiden/greenhat/i138-rust-miden-sdk
+- Merge pull request [#140](https://github.com/0xMiden/compiler/pull/140) from 0xMiden/greenhat/i138-rust-miden-sdk
 - add `FunctionType::abi` and ditch redundant `*FunctionType`
 - skip printing the import name for `MidenAbiImport` component import
 - intern module name and all names used in the module
@@ -218,13 +218,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add Wasm component translation support to the integration tests;
 - add formatter config, format most crates
 - update rust toolchain to latest nightly
-- Merge pull request [#100](https://github.com/0xPolygonMiden/compiler/pull/100) from 0xPolygonMiden/greenhat/i89-translate-wasm-cm
+- Merge pull request [#100](https://github.com/0xMiden/compiler/pull/100) from 0xMiden/greenhat/i89-translate-wasm-cm
 - move `LiftedFunctionType` to `miden-hir-type` crate
 - use `digest` name for MAST root hashes;
 - remove `MastRootHash` in favor of `RpoDigest`;
 - move `MastRootHash` and `Interface*` types to their modules;
 - add missing doc comments
-- Merge pull request [#99](https://github.com/0xPolygonMiden/compiler/pull/99) from 0xPolygonMiden/bitwalker/book
+- Merge pull request [#99](https://github.com/0xMiden/compiler/pull/99) from 0xMiden/bitwalker/book
 - set up mdbook deploy
 - add guides for compiling rust->masm
 - remove unused dependencies

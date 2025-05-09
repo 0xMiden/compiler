@@ -148,7 +148,7 @@ impl NewCommand {
                     None => ProjectTemplate::default().to_string(),
                 };
                 TemplatePath {
-                    git: Some("https://github.com/0xPolygonMiden/rust-templates".into()),
+                    git: Some("https://github.com/0xMiden/rust-templates".into()),
                     tag: Some(TEMPLATES_REPO_TAG.into()),
                     auto_path: Some(project_kind_str),
                     ..Default::default()

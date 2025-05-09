@@ -6,7 +6,7 @@ multilingual = false
 title = "The Miden compiler"
 
 [output.html]
-git-repository-url = "https://github.com/0xPolygonMiden/compiler"
+git-repository-url = "https://github.com/0xMiden/compiler"
 
 [preprocessor.katex]
 after = ["links"]

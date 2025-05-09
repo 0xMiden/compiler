@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update rust toolchain, clean up deps
 - implement hir dialect ops, flesh out remaining core ir infra
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.6...midenc-hir-type-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.6...midenc-hir-type-v0.0.7) - 2024-09-17
 
 ### Other
 - fix up new clippy warnings
@@ -27,20 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.3](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.2...midenc-hir-type-v0.0.3) - 2024-08-30
+## [0.0.3](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.2...midenc-hir-type-v0.0.3) - 2024-08-30
 
 ### Fixed
 - *(codegen)* broken return via pointer transformation
 
 ### Other
-- Merge pull request [#284](https://github.com/0xPolygonMiden/compiler/pull/284) from 0xPolygonMiden/bitwalker/abi-transform-test-fixes
+- Merge pull request [#284](https://github.com/0xMiden/compiler/pull/284) from 0xMiden/bitwalker/abi-transform-test-fixes
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.1...midenc-hir-type-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.1...midenc-hir-type-v0.0.2) - 2024-08-28
 
 ### Added
 - implement packaging prototype
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.0...midenc-hir-type-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.0...midenc-hir-type-v0.0.1) - 2024-07-18
 
 ### Added
 - draft Miden ABI function types encoding and retrieval
@@ -63,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - rewrite incorrect type layout code
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add a description for miden-hir-type crate
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add Wasm component translation support to the integration tests;
 - add formatter config, format most crates
 - update rust toolchain to latest nightly
-- Merge pull request [#100](https://github.com/0xPolygonMiden/compiler/pull/100) from 0xPolygonMiden/greenhat/i89-translate-wasm-cm
+- Merge pull request [#100](https://github.com/0xMiden/compiler/pull/100) from 0xMiden/greenhat/i89-translate-wasm-cm
 - move `LiftedFunctionType` to `miden-hir-type` crate
 - set up mdbook deploy
 - add guides for compiling rust->masm

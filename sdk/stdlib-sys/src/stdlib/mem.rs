@@ -119,7 +119,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         let Result { b, .. } = ret_area.assume_init();
-        // B (second) is the hash (see https://github.com/0xPolygonMiden/miden-vm/blob/3a957f7c90176914bda2139f74bff9e5700d59ac/stdlib/asm/crypto/hashes/native.masm#L1-L16 )
+        // B (second) is the hash (see https://github.com/0xMiden/miden-vm/blob/3a957f7c90176914bda2139f74bff9e5700d59ac/stdlib/asm/crypto/hashes/native.masm#L1-L16 )
         (b, buf)
     }
 }
