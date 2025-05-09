@@ -46,15 +46,14 @@ export.global_var_update
     u32assert
     u32divmod.4
     swap.1
-    dup.2
-    dup.2
-    dup.2
+    dup.1
+    dup.1
     exec.::intrinsics::mem::load_sw
     push.4294967040
     u32and
-    movup.5
+    movup.3
     u32or
-    movdn.4
+    movdn.2
     exec.::intrinsics::mem::store_sw
 end
 

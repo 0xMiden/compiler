@@ -1,7 +1,9 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
+use miden_assembly::LibraryPath;
 use midenc_hir::{
-    dialects::builtin, pass::AnalysisManager, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef,
+    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, FunctionIdent, Op,
+    SourceSpan, Span, Symbol, ValueRef,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned};
@@ -43,7 +45,23 @@ impl ToMasmComponent for builtin::Component {
                 let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                     Span::new(entry_id.function.span, entry_id.function.as_str().into()),
                 ));
-                let path = component_path.clone().append_unchecked(entry_id.module);
+
+                // Check if we're inside the synthetic "wrapper" component used for pure Rust
+                // compilation. Since the user does not know about it, their entrypoint does not
+                // include the synthetic component path. We append the user-provided path to the
+                // root component path here if needed.
+                //
+                // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
+                // cannot currently do so because we do not have sufficient Cargo metadata yet in
+                // 'cargo miden build' to detect the target env, and we default it to 'rollup'
+                let is_wrapper = component_path.path() == "root_ns:root@1.0.0";
+                let path = if is_wrapper {
+                    component_path.clone().append_unchecked(entry_id.module)
+                } else {
+                    // We're compiling a Wasm component and the component id is included
+                    // in the entrypoint.
+                    LibraryPath::new(entry_id.module).into_diagnostic()?
+                };
                 Some(masm::InvocationTarget::AbsoluteProcedurePath { name, path })
             }
             None => None,

@@ -851,25 +851,26 @@ impl OpEmitter<'_> {
             return;
         }
 
-        // Duplicate the address
-        self.emit_all(
-            [masm::Instruction::Dup2, masm::Instruction::Dup2, masm::Instruction::Dup2],
-            span,
-        );
+        // Duplicate the address: [addr, offset, addr, offset, value]
+        self.emit_all([masm::Instruction::Dup1, masm::Instruction::Dup1], span);
 
-        // Load the current 32-bit value at `ptr`
+        // Load the current 32-bit value at `ptr`: [prev, addr, offset, value]
         self.load_word(ptr, span);
 
         // Mask out the bits we're going to be writing from the loaded value
+        // => [masked, addr, offset, value]
         let mask = u32::MAX << type_size;
         self.const_mask_u32(mask, span);
 
-        // Mix in the bits we want to write: [masked, addr1, addr2, addr3, value]
-        self.emit(masm::Instruction::MovUp5, span);
+        // Mix in the bits we want to write:
+        // => [value, masked, addr, offset]
+        self.emit(masm::Instruction::MovUp3, span);
+        // => [new_value, addr, offset]
         self.bor_u32(span);
 
-        // Store the combined bits: [value, addr1, addr2, addr3]
-        self.emit(masm::Instruction::MovDn4, span);
+        // Store the combined bits:
+        // => [addr, offset, new_value]
+        self.emit(masm::Instruction::MovDn2, span);
         self.store_word(ptr, span);
     }
 

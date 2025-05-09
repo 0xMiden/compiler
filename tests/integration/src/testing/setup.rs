@@ -88,8 +88,9 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> LinkOutput {
     };
     let mut world_builder = WorldBuilder::new(world);
     let name = Ident::with_empty_span("root".into());
+    let ns_name = Ident::with_empty_span("root_ns".into());
     let component = world_builder
-        .define_component(name, name, Version::new(1, 0, 0))
+        .define_component(ns_name, name, Version::new(1, 0, 0))
         .unwrap_or_else(|err| panic!("failed to define component:\n{}", format_report(err)));
 
     let mut link_output = LinkOutput {

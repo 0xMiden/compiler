@@ -121,6 +121,7 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
         info.register_operation_trait::<hir::Bitcast, dyn HirLowering>();
         //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
         info.register_operation_trait::<hir::Exec, dyn HirLowering>();
+        info.register_operation_trait::<hir::Call, dyn HirLowering>();
         info.register_operation_trait::<hir::Store, dyn HirLowering>();
         info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();
         info.register_operation_trait::<hir::Load, dyn HirLowering>();
