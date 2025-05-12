@@ -1,5 +1,6 @@
 [package]
 name = "storage-example"
+description = "A simple example of a Miden account storage API"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,6 +15,9 @@ wit-bindgen-rt = "0.28"
 
 [package.metadata.component]
 package = "miden:storage-example"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
 
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }

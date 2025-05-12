@@ -86,9 +86,12 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         }
     }
 
+    let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
+
     miden_mast_package::Package {
         name,
         mast,
         manifest,
+        account_component_metadata_bytes,
     }
 }

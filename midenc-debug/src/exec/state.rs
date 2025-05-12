@@ -93,7 +93,9 @@ impl DebugExecutor {
         let chiplets0 = chiplets.clone();
         let get_state_at = move |context, clk| chiplets0.memory.get_state_at(context, clk);
         let chiplets1 = chiplets.clone();
-        let get_word = move |context, addr| chiplets1.memory.get_word(context, addr);
+        let get_word = move |context, addr| {
+            chiplets1.memory.get_word(context, addr).map_err(ExecutionError::MemoryError)
+        };
         let get_value = move |context, addr| chiplets.memory.get_value(context, addr);
 
         let memory = MemoryChiplet {

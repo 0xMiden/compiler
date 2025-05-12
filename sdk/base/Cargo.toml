@@ -1,6 +1,6 @@
 [package]
-name = "miden"
-description = "Miden SDK"
+name = "miden-base"
+description = "Miden rollup Rust SDK"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -11,13 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
-[lib]
-crate-type = ["rlib"]
-
 [dependencies]
-miden-sdk-alloc = { version = "0.0.8", path = "../alloc" }
-miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
-miden-base = { version = "0.0.8", path = "../base" }
 miden-base-sys = { version = "0.0.8", path = "../base-sys", features = [
     "bindings",
 ] }
+miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
+miden-base-macros = { version = "0.0.8", path = "../base-macros" }

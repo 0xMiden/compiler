@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
-use expect_test::expect_file;
+use expect_test::{expect, expect_file};
+use miden_core::utils::Deserializable;
+use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{Felt, Immediate, Op, SymbolTable};
@@ -16,12 +18,34 @@ fn storage_example() {
         CompilerTest::rust_source_cargo_miden("../../examples/storage-example", config, []);
 
     test.expect_wasm(expect_file!["../../expected/examples/storage_example.wat"]);
-    test.expect_ir_unoptimized(expect_file![
-        "../../expected/examples/storage_example_unoptimized.hir"
-    ]);
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
-    // test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
-    // let _package = test.compiled_package();
+    test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
+    let package = test.compiled_package();
+    let account_component_metadata_bytes =
+        package.as_ref().account_component_metadata_bytes.clone().unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+        .unwrap()
+        .as_toml()
+        .unwrap();
+    expect![[r#"
+        name = "storage-example"
+        description = "A simple example of a Miden account storage API"
+        version = "0.1.0"
+        supported-types = ["RegularAccountUpdatableCode"]
+
+        [[storage]]
+        name = "owner_public_key"
+        description = "test value"
+        slot = 0
+        type = "auth::rpo_falcon512::pub_key"
+
+        [[storage]]
+        name = "asset_qty_map"
+        description = "test map"
+        slot = 1
+        values = []
+    "#]]
+    .assert_eq(&toml);
 }
 
 #[test]

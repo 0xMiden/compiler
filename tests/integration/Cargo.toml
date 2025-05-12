@@ -40,6 +40,7 @@ sha2 = "0.10"
 walkdir = "2.5.0"
 
 [dev-dependencies]
+miden-objects = { version = "0.8", features = ["std"] }
 blake3 = "1.5"
 concat-idents = "1.1"
 miden-core.workspace = true

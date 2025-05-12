@@ -434,7 +434,10 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             // debug.
             other => {
                 self.validator.payload(&other).into_diagnostic()?;
-                unsupported_diag!(&self.session.diagnostics, "unsupported section {other:?}");
+                unsupported_diag!(
+                    &self.session.diagnostics,
+                    "unsupported component section {other:?}"
+                );
             }
         }
 
@@ -606,12 +609,16 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         // module and actual function translation is deferred until this
         // entire process has completed.
         self.validator.module_section(&range).into_diagnostic()?;
-        let parsed_module = ModuleEnvironment::new(
+        let module_environment = ModuleEnvironment::new(
             self.config,
             self.validator,
             self.types.module_types_builder_mut(),
-        )
-        .parse(parser, &component[range.start..range.end], &self.session.diagnostics)?;
+        );
+        let parsed_module = module_environment.parse(
+            parser,
+            &component[range.start..range.end],
+            &self.session.diagnostics,
+        )?;
         let static_idx = self.static_modules.push(parsed_module);
         self.result.initializers.push(LocalInitializer::ModuleStatic(static_idx));
         // Set a fallback name for the newly added parsed module to be used if

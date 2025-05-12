@@ -6,7 +6,7 @@ use midenc_session::{diagnostics::Report, Session};
 use super::{translator::ComponentTranslator, ComponentTypesBuilder, ParsedRootComponent};
 use crate::{
     component::ComponentParser, error::WasmResult, supported_component_model_features,
-    WasmTranslationConfig,
+    FrontendOutput, WasmTranslationConfig,
 };
 
 fn parse<'data>(
@@ -28,7 +28,7 @@ pub fn translate_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<midenc_hir::dialects::builtin::ComponentRef> {
+) -> WasmResult<FrontendOutput> {
     let (mut component_types_builder, mut parsed_root_component) =
         parse(config, wasm, context.session())?;
     let dialect = context.get_or_register_dialect::<BuiltinDialect>();

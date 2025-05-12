@@ -24,7 +24,7 @@ fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
         )"#,
     );
     let wasm = wat::parse_str(wat).unwrap();
-    let world_ref = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
         .map_err(|e| {
             if let Some(labels) = e.labels() {
                 for label in labels {
@@ -36,9 +36,9 @@ fn check_op(wat_op: &str, expected_ir: expect_test::ExpectFile) {
         })
         .unwrap();
 
-    let world = world_ref.borrow();
+    let component = output.component.borrow();
     let mut w = String::new();
-    world
+    component
         .as_operation()
         .prewalk(|op: &Operation| {
             if let Some(_function) = op.downcast_ref::<builtin::Function>() {

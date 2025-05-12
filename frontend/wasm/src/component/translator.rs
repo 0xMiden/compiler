@@ -4,7 +4,7 @@ use cranelift_entity::PrimaryMap;
 use midenc_hir::{
     self as hir2,
     diagnostics::Report,
-    dialects::builtin::{self, ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
+    dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
     interner::Symbol,
     smallvec, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
     SymbolPath,
@@ -32,7 +32,7 @@ use crate::{
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
-    unsupported_diag, WasmTranslationConfig,
+    unsupported_diag, FrontendOutput, WasmTranslationConfig,
 };
 
 /// A translator from the linearized Wasm component model to the Miden IR component
@@ -100,14 +100,30 @@ impl<'a> ComponentTranslator<'a> {
         mut self,
         root_component: &'a ParsedComponent,
         types: &mut ComponentTypesBuilder,
-    ) -> WasmResult<ComponentRef> {
+    ) -> WasmResult<FrontendOutput> {
         let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
 
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
 
-        Ok(self.result.component)
+        let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
+            .nested_modules
+            .into_iter()
+            .flat_map(|t| t.1.account_component_metadata_bytes.map(|slice| slice.to_vec()))
+            .collect();
+        assert!(
+            account_component_metadata_bytes_vec.len() <= 1,
+            "unexpected multiple core Wasm module to have account component metadata section",
+        );
+        let account_component_metadata_bytes =
+            account_component_metadata_bytes_vec.first().map(ToOwned::to_owned);
+
+        let output = FrontendOutput {
+            component: self.result.component,
+            account_component_metadata_bytes,
+        };
+        Ok(output)
     }
 
     fn initializer(

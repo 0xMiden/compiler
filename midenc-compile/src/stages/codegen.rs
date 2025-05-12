@@ -18,6 +18,8 @@ pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
     pub link_libraries: Vec<Arc<Library>>,
     pub link_packages: BTreeMap<Symbol, Arc<Package>>,
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
+    pub account_component_metadata_bytes: Option<Vec<u8>>,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -76,6 +78,7 @@ impl Stage for CodegenStage {
             component: Arc::from(masm_component),
             link_libraries,
             link_packages,
+            account_component_metadata_bytes: linker_output.account_component_metadata_bytes,
         })
     }
 }

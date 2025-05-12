@@ -14,3 +14,26 @@ export.get_id
     push.1
     assertz
 end
+
+export.get_item
+    push.1
+    assertz
+end
+
+export.set_item
+    push.1
+    assertz
+end
+
+export.get_map_item
+    push.1
+    assertz
+end
+
+
+export.set_map_item
+    push.1
+    assertz
+end
+
+

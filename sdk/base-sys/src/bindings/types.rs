@@ -27,8 +27,26 @@ impl CoreAsset {
         CoreAsset { inner: word.into() }
     }
 
-    pub fn as_word(&self) -> Word {
-        self.inner
+    pub fn as_word(&self) -> &Word {
+        &self.inner
+    }
+}
+
+impl From<Word> for CoreAsset {
+    fn from(value: Word) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<CoreAsset> for Word {
+    fn from(val: CoreAsset) -> Self {
+        val.inner
+    }
+}
+
+impl AsRef<Word> for CoreAsset {
+    fn as_ref(&self) -> &Word {
+        &self.inner
     }
 }
 
@@ -49,3 +67,6 @@ pub struct NoteId(pub(crate) Felt);
 pub struct NoteType {
     pub inner: Felt,
 }
+
+#[repr(transparent)]
+pub struct StorageCommitmentRoot(Word);
