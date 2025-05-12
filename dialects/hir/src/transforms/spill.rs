@@ -74,7 +74,7 @@ impl Pass for TransformSpills {
 
         state.set_post_pass_status(transform_result);
 
-        return Ok(());
+        Ok(())
     }
 }
 
