@@ -84,7 +84,7 @@ pub fn generate_export_lifting_function(
         .collect();
 
     // NOTE: handle CC lifting/lowering for non-scalar types
-    // see https://github.com/0xPolygonMiden/compiler/issues/369
+    // see https://github.com/0xMiden/compiler/issues/369
 
     let exec = fb
         .exec(core_export_func_ref, core_export_func_sig, args, span)

@@ -25,7 +25,7 @@ pub fn get_inputs() -> Vec<Felt> {
         // and by 4 again we get the word address).
         let ptr = (inputs.as_mut_ptr() as usize) / 16;
         // The MASM for this function is here:
-        // https://github.com/0xPolygonMiden/miden-base/blob/3cbe8d59dcf4ccc9c380b7c8417ac6178fc6b86a/miden-lib/asm/miden/note.masm#L69-L102
+        // https://github.com/0xMiden/miden-base/blob/3cbe8d59dcf4ccc9c380b7c8417ac6178fc6b86a/miden-lib/asm/miden/note.masm#L69-L102
         // #! Writes the inputs of the currently execute note into memory starting at the specified
         // address. #!
         // #! Inputs: [dest_ptr]

@@ -460,7 +460,7 @@ mod tests {
         }
     }
 
-    /// This test reproduces https://github.com/0xPolygonMiden/compiler/issues/200
+    /// This test reproduces https://github.com/0xMiden/compiler/issues/200
     /// where v7 value should be duplicated on the stack
     #[test]
     fn operand_movement_constraint_solver_duplicate() {

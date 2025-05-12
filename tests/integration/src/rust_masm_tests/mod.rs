@@ -30,7 +30,7 @@ where
     let output = exec.execute_into(&package.unwrap_program(), session);
     std::dbg!(&output);
     prop_assert_eq!(rust_out.clone(), output, "VM output mismatch");
-    // TODO: Uncomment after https://github.com/0xPolygonMiden/compiler/issues/228 is fixed
+    // TODO: Uncomment after https://github.com/0xMiden/compiler/issues/228 is fixed
     // let emul_out: T = (*execute_emulator(ir_program.clone(), args).first().unwrap()).into();
     // prop_assert_eq!(rust_out, emul_out, "Emulator output mismatch");
     Ok(())

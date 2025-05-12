@@ -27,7 +27,7 @@ hands dirty.
 To install the `midenc`, clone the compiler repo first:
 
 ```bash
-git clone https://github.com/0xpolygonmiden/compiler
+git clone https://github.com/0xMiden/compiler
 ```
 
 Then, run the following in your shell in the cloned repo folder:
@@ -124,5 +124,5 @@ resulting Wasm module, see [this guide](../guides/rust_to_wasm.md).
 2. If you already have a WebAssembly module, or know how to produce one, and want to learn how to
 compile it to Miden Assembly, see [this guide](../guides/wasm_to_masm.md).
 
-You may also be interested in our [basic account project template](https://github.com/0xpolygonmiden/rust-templates/tree/main/account/template),
+You may also be interested in our [basic account project template](https://github.com/0xMiden/rust-templates/tree/main/account/template),
 as a starting point for your own Rust project.

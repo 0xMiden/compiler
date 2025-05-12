@@ -1,7 +1,7 @@
 # Known limitations
 
 > [!TIP]
-> See the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues) for information
+> See the [issue tracker](https://github.com/0xMiden/compiler/issues) for information
 > on known bugs. This document focuses on missing/incomplete features, rather than bugs.
 
 The compiler is still in its early stages of development, so there are various features that are
@@ -36,8 +36,8 @@ find a better/more natural representation for `Felt` in WebAssembly.
 ### Function call indirection
 
 - Status: **Unimplemented**
-- Tracking Issue: [#32](https://github.com/0xPolygonMiden/compiler/issues/32)
-- Release Milestone: [Beta 1](https://github.com/0xPolygonMiden/compiler/milestone/4)
+- Tracking Issue: [#32](https://github.com/0xMiden/compiler/issues/32)
+- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 This feature corresponds to `call_indirect` in WebAssembly, and is associated with Rust features
 such as trait objects (which use indirection to call trait methods), and closures. Note that the
@@ -109,8 +109,8 @@ fn main() -> u32 {
 ### Miden SDK
 
 - Status: **Incomplete**
-- Tracking Issue: [#159](https://github.com/0xPolygonMiden/compiler/issues/159) and [#158](https://github.com/0xPolygonMiden/compiler/issues/158)
-- Release Milestone: [Beta 1](https://github.com/0xPolygonMiden/compiler/milestone/4)
+- Tracking Issue: [#159](https://github.com/0xMiden/compiler/issues/159) and [#158](https://github.com/0xMiden/compiler/issues/158)
+- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 The Miden SDK for Rust, is a Rust crate that provides the implementation of native Miden types, as
 well as bindings to the Miden standard library and transaction kernel APIs.
@@ -124,7 +124,7 @@ APIs which are lesser used.
 ### Rust/Miden FFI (foreign function interface) and interop
 
 - Status: **Internal Use Only**
-- Tracking Issue: [#304](https://github.com/0xPolygonMiden/compiler/issues/304)
+- Tracking Issue: [#304](https://github.com/0xMiden/compiler/issues/304)
 - Release Milestone: TBD
 
 While the compiler has functionality to link against native Miden Assembly libraries, binding
@@ -150,8 +150,8 @@ and Miden packaging. Once present, we can open up the FFI for general use.
 ### Dynamic procedure invocation
 
 - Status: **Unimplemented**
-- Tracking Issue: [#32](https://github.com/0xPolygonMiden/compiler/issues/32)
-- Release Milestone: [Beta 1](https://github.com/0xPolygonMiden/compiler/milestone/4)
+- Tracking Issue: [#32](https://github.com/0xMiden/compiler/issues/32)
+- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 This is a dependency of [Function Call Indirection](#function-call-indirection) described above,
 and is the mechanism by which we can perform indirect calls in Miden. In order to implement support
@@ -175,8 +175,8 @@ which has its "address" taken, and use the hash of the stub in place of the actu
 ### Cross-context procedure invocation
 
 - Status: **Unimplemented**
-- Tracking Issue: [#303](https://github.com/0xPolygonMiden/compiler/issues/303)
-- Release Milestone: [Beta 2](https://github.com/0xPolygonMiden/compiler/milestone/5)
+- Tracking Issue: [#303](https://github.com/0xMiden/compiler/issues/303)
+- Release Milestone: [Beta 2](https://github.com/0xMiden/compiler/milestone/5)
 
 This is required in order to support representing Miden accounts and note scripts in Rust, and
 compilation to Miden Assembly.
@@ -213,8 +213,8 @@ subfeatures being implemented first.
 ### Package format
 
 - Status: **Experimental**
-- Tracking Issue: [#121](https://github.com/0xPolygonMiden/compiler/issues/121)
-- Release Milestone: [Beta 1](https://github.com/0xPolygonMiden/compiler/milestone/4)
+- Tracking Issue: [#121](https://github.com/0xMiden/compiler/issues/121)
+- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 This feature represents the ability to compile and distribute a single artifact that contains
 the compiled MAST, and all required and optional metadata to make linking against, and executing

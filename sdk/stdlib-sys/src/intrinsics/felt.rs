@@ -74,7 +74,7 @@ macro_rules! felt {
         const VALUE: u64 = $value as u64;
         // assert!(VALUE <= Felt::M, "Invalid Felt value, must be >= 0 and <= 2^64 - 2^32 + 1");
         // Temporarily switch to `from_u32` to use `bitcast` and avoid checks.
-        // see https://github.com/0xPolygonMiden/compiler/issues/361
+        // see https://github.com/0xMiden/compiler/issues/361
         assert!(VALUE <= u32::MAX as u64, "Invalid value, must be >= 0 and <= 2^32");
         const VALUE_U32: u32 = $value as u32;
         Felt::from_u32(VALUE_U32)

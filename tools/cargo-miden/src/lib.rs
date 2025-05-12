@@ -173,7 +173,7 @@ where
                 package.metadata.section.bindings.skip = vec![
                     // Our function names can clash with user's function names leading to
                     // skipping the bindings generation of the user's function names
-                    // see https://github.com/0xPolygonMiden/compiler/issues/341
+                    // see https://github.com/0xMiden/compiler/issues/341
                     "remove-asset",
                     "create-note",
                     "heap-base",

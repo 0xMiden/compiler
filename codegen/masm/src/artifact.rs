@@ -138,7 +138,7 @@ impl fmt::Display for MasmComponent {
             // Skip printing the standard library modules and intrinsics
             // modules to focus on the user-defined modules and avoid the
             // stack overflow error when printing large programs
-            // https://github.com/0xPolygonMiden/miden-formatting/issues/4
+            // https://github.com/0xMiden/miden-formatting/issues/4
             let module_name = module.path().path();
             if INTRINSICS_MODULE_NAMES.contains(&module_name.as_ref()) {
                 continue;
@@ -204,7 +204,7 @@ impl MasmComponent {
         let mut modules: Vec<Arc<masm::Module>> = self.modules.clone();
 
         // We need to add modules according to their dependencies (add the dependency before the dependent)
-        // Workaround until https://github.com/0xPolygonMiden/miden-vm/issues/1669 is implemented
+        // Workaround until https://github.com/0xMiden/miden-vm/issues/1669 is implemented
         modules.reverse();
 
         log::debug!(target: "assembly", "start adding the following modules with assembler: {}",

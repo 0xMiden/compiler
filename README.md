@@ -20,7 +20,7 @@ emit Miden Assembly for.
 to compile Wasm or HIR modules/programs to Miden Assembly and test them.
 
 > [!TIP] 
-> We've published initial [documentation](https://0xpolygonmiden.github.io/compiler) 
+> We've published initial [documentation](https://0xMiden.github.io/compiler) 
 > in mdBook format for easier reading, also accessible in the `docs` directory. This documentation 
 > covers how to get started with the compiler, provides a couple guides for currently supported
 > use cases, and contains appendices that go into detail about various design aspects of the 
