@@ -31,7 +31,7 @@ use crate::{
 ///
 /// This is a temporary solution until we compile an account code as Wasm
 /// component. To be able to do it we need wit-bindgen type re-mapping implemented first (see
-/// https://github.com/0xPolygonMiden/compiler/issues/116)
+/// https://github.com/0xMiden/compiler/issues/116)
 pub fn translate_module_as_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,

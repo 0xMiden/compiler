@@ -90,7 +90,7 @@ pub fn generate_import_lowering_function(
         .expect("failed to define the import function");
 
     // NOTE: handle CC lifting/lowering for non-scalar types
-    // see https://github.com/0xPolygonMiden/compiler/issues/369
+    // see https://github.com/0xMiden/compiler/issues/369
 
     let call = fb
         .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)

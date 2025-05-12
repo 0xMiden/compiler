@@ -21,17 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(frontend)* rework handling of symbols in frontend
 - Move the new Wasm frontend to `frontend/wasm` and remove the old
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-frontend-wasm-v0.0.6...midenc-frontend-wasm-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.6...midenc-frontend-wasm-v0.0.7) - 2024-09-17
 
 ### Other
 - *(rustfmt)* disable wrap_comments due to broken behavior
 
-## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/midenc-frontend-wasm-v0.0.5...midenc-frontend-wasm-v0.0.6) - 2024-09-06
+## [0.0.6](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.5...midenc-frontend-wasm-v0.0.6) - 2024-09-06
 
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-frontend-wasm-v0.0.1...midenc-frontend-wasm-v0.0.2) - 2024-08-30
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.1...midenc-frontend-wasm-v0.0.2) - 2024-08-30
 
 ### Fixed
 - *(codegen)* broken return via pointer transformation
@@ -39,10 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(frontend-wasm)* incorrect types applied to certain primops
 
 ### Other
-- Merge pull request [#284](https://github.com/0xPolygonMiden/compiler/pull/284) from 0xPolygonMiden/bitwalker/abi-transform-test-fixes
+- Merge pull request [#284](https://github.com/0xMiden/compiler/pull/284) from 0xMiden/bitwalker/abi-transform-test-fixes
 - update expect tests due to codegen changes
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-frontend-wasm-v0.0.0...midenc-frontend-wasm-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.0...midenc-frontend-wasm-v0.0.1) - 2024-07-18
 
 ### Added
 - implement support for wasm typed select
@@ -124,24 +124,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pass SourceSpan in translate_operator
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - extend and update integration tests
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates
 - rename `miden-prelude` to `miden-stdlib-sys` in SDK
 - ensure all relevant crates are prefixed with `midenc-`
-- Merge pull request [#187](https://github.com/0xPolygonMiden/compiler/pull/187) from 0xPolygonMiden/bitwalker/account-compilation-fixes
+- Merge pull request [#187](https://github.com/0xMiden/compiler/pull/187) from 0xMiden/bitwalker/account-compilation-fixes
 - check rustfmt on CI, format code with rustfmt
 - run clippy on CI, fix all clippy warnings
 - use midenc driver for non-cargo-based fixtures in
 - use midenc driver to compile cargo-based fixtures
 - handle assembler refactoring changes
-- Merge pull request [#170](https://github.com/0xPolygonMiden/compiler/pull/170) from 0xPolygonMiden/greenhat/i159-tx-kernel-func-11apr
-- Merge pull request [#155](https://github.com/0xPolygonMiden/compiler/pull/155) from 0xPolygonMiden/greenhat/i144-stdlib
+- Merge pull request [#170](https://github.com/0xMiden/compiler/pull/170) from 0xMiden/greenhat/i159-tx-kernel-func-11apr
+- Merge pull request [#155](https://github.com/0xMiden/compiler/pull/155) from 0xMiden/greenhat/i144-stdlib
 - remove repetitive words
-- Merge pull request [#151](https://github.com/0xPolygonMiden/compiler/pull/151) from 0xPolygonMiden/greenhat/i144-native-felt
-- Merge pull request [#140](https://github.com/0xPolygonMiden/compiler/pull/140) from 0xPolygonMiden/greenhat/i138-rust-miden-sdk
+- Merge pull request [#151](https://github.com/0xMiden/compiler/pull/151) from 0xMiden/greenhat/i144-native-felt
+- Merge pull request [#140](https://github.com/0xMiden/compiler/pull/140) from 0xMiden/greenhat/i138-rust-miden-sdk
 - remove `dylib` from `crate-type` in Miden SDK crates
 - do not inline `miden_sdk_function_type` function
 - add `FunctionType::abi` and ditch redundant `*FunctionType`
@@ -162,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update frontend expect tests with format changes
 - add formatter config, format most crates
 - update rust toolchain to latest nightly
-- Merge pull request [#100](https://github.com/0xPolygonMiden/compiler/pull/100) from 0xPolygonMiden/greenhat/i89-translate-wasm-cm
+- Merge pull request [#100](https://github.com/0xMiden/compiler/pull/100) from 0xMiden/greenhat/i89-translate-wasm-cm
 - move `LiftedFunctionType` to `miden-hir-type` crate
 - use `digest` name for MAST root hashes;
 - remove `MastRootHash` in favor of `RpoDigest`;
@@ -190,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - lazy IR compilation in integration tests
 - move module specific code to separate module in frontend-wasm
 - remove unused dependencies
-- Merge pull request [#61](https://github.com/0xPolygonMiden/compiler/pull/61) from 0xPolygonMiden/greenhat/cargo-ext-i60
+- Merge pull request [#61](https://github.com/0xMiden/compiler/pull/61) from 0xMiden/greenhat/cargo-ext-i60
 - make `WasmTranslationConfig::module_name_fallback` non-optional
 - switch from emiting MASM in CodegenStage, and switch to output folder in cargo extension
 - remove `miden_frontend_wasm::translate_program`

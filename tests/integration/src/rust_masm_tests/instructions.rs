@@ -205,7 +205,7 @@ test_unary_op!(neg, -, i64, (i64::MIN + 1)..=i64::MAX);
 
 // Comparison ops
 
-// enable when https://github.com/0xPolygonMiden/compiler/issues/56 is fixed
+// enable when https://github.com/0xMiden/compiler/issues/56 is fixed
 test_func_two_arg!(min, core::cmp::min, i32, i32, i32);
 test_func_two_arg!(min, core::cmp::min, u32, u32, u32);
 test_func_two_arg!(min, core::cmp::min, u8, u8, u8);

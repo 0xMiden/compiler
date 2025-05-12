@@ -11,7 +11,7 @@ Welcome to the documentation for the Miden compiler toolchain.
 The documentation found here should provide a good starting point for the current capabilities of
 the toolchain, however if you find something that is not covered, but is not listed as
 unimplemented or a known limitation, please let us know by reporting an issue on the compiler
-[issue tracker](https://github.com/0xpolygonmiden/compiler/issues).
+[issue tracker](https://github.com/0xMiden/compiler/issues).
 
 ## What is provided?
 
@@ -80,7 +80,7 @@ in the future, but for now it is expected that you implement your own optimizati
 
 ## Known bugs and limitations
 
-For the latest information on known bugs and limitations, see the [issue tracker](https://github.com/0xpolygonmiden/compiler/issues).
+For the latest information on known bugs and limitations, see the [issue tracker](https://github.com/0xMiden/compiler/issues).
 
 ## Where to start?
 
