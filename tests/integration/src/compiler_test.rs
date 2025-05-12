@@ -337,14 +337,9 @@ impl CompilerTestBuilder {
 
         // Cargo-based source types share a lot of configuration in common
         match self.source {
-            CompilerTestInputType::CargoMiden(ref config) => {
+            CompilerTestInputType::CargoMiden(_) => {
                 let manifest_path = project_dir.join("Cargo.toml");
-                command
-                    .arg("--manifest-path")
-                    .arg(manifest_path)
-                    .arg("--release")
-                    .arg("--target")
-                    .arg(config.target.as_ref());
+                command.arg("--manifest-path").arg(manifest_path).arg("--release");
             }
 
             CompilerTestInputType::Cargo(ref config) => {
