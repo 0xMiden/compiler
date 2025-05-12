@@ -56,7 +56,6 @@ enum SelectedPasses {
     Just(SmallVec<[String; 1]>),
 }
 
-#[allow(dead_code)]
 #[derive(Default, Debug)]
 enum OpFilter {
     /// Print all operations
@@ -64,8 +63,14 @@ enum OpFilter {
     All,
     /// Print any `Symbol` operation, optionally filtering by symbols whose name contains a given
     /// string.
+    /// NOTE: Currently marked as `dead_code` since it is not configured via the CLI. See
+    /// [`Print::with_symbol_filter`] for more details.
+    #[allow(dead_code)]
     Symbol(Option<&'static str>),
     /// Print only operations of the given type
+    /// NOTE: Currently marked as `dead_code` since it is not configured via the CLI. See
+    /// [`Print::with_symbol_filter`] for more details.
+    #[allow(dead_code)]
     Type {
         dialect: crate::interner::Symbol,
         op: crate::interner::Symbol,
@@ -99,10 +104,12 @@ impl Print {
         self
     }
 
-    #[allow(unused_mut)]
-    fn with_symbol_filter(mut self, _config: &IRPrintingConfig) -> Self {
-        // NOTE: At the moment, symbol filtering is not processed by the CLI. However, were it to be
-        // added, it could be done inside this function
+    /// Configure which operations are printed. This is set via the different variants present in
+    /// [`OpFilter`].
+    ///
+    /// NOTE: At the moment, all operations are shown because symbol filtering is not processed by
+    /// the CLI. If added, this function could be expanded to process it.
+    fn with_symbol_filter(self, _config: &IRPrintingConfig) -> Self {
         self.with_all_symbols()
     }
 
