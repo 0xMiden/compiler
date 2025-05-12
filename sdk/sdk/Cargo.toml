@@ -17,6 +17,7 @@ crate-type = ["rlib"]
 [dependencies]
 miden-sdk-alloc = { version = "0.0.8", path = "../alloc" }
 miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
+miden-base = { version = "0.0.8", path = "../base" }
 miden-base-sys = { version = "0.0.8", path = "../base-sys", features = [
     "bindings",
 ] }

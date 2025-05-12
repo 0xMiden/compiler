@@ -3276,7 +3276,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -3285,7 +3285,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "expect-test",
  "miden-base",

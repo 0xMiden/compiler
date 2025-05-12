@@ -23,6 +23,6 @@ toml.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
-miden-base = { version = "0.0.7", path = "../base" }
+miden-base = { version = "0.0.8", path = "../base" }
 miden-objects = { version = "0.8", features = ["std"] }
 expect-test.workspace = true
