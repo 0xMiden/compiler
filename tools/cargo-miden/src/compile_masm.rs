@@ -6,7 +6,7 @@ use std::{
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report, WrapErr},
-    InputFile, OutputType,
+    InputFile, OutputType, TargetEnv,
 };
 
 use crate::ProjectType;
@@ -16,6 +16,7 @@ pub fn wasm_to_masm(
     output_folder: &Path,
     dependency_paths: &[PathBuf], // New parameter
     project_type: ProjectType,
+    target_env: TargetEnv,
 ) -> Result<PathBuf, Report> {
     if !output_folder.exists() {
         return Err(Report::msg(format!(
@@ -50,9 +51,13 @@ pub fn wasm_to_masm(
         output_file.as_os_str(),
         project_type_arg.as_ref(),
         "--verbose".as_ref(),
-        "--target".as_ref(),
-        "rollup".as_ref(),
     ];
+
+    // Only add --target rollup for Rollup target environments
+    if let TargetEnv::Rollup = target_env {
+        args.push("--target".as_ref());
+        args.push("rollup".as_ref());
+    }
 
     if project_type == ProjectType::Program {
         args.push(entrypoint_opt.as_ref());

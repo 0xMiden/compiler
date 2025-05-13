@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use midenc_session::TargetEnv;
 
 /// Represents whether the Cargo project is a Miden program or a library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,18 +14,38 @@ pub enum ProjectType {
     Library,
 }
 
-/// Detects whether the project is a Miden program or library based on Cargo metadata.
+/// Detects the target environment based on Cargo metadata.
+pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetEnv {
+    // Check if [package.metadata.miden] is present
+    let has_miden_metadata = metadata.root_package().is_some_and(|root_pkg| {
+        root_pkg
+            .metadata
+            .as_object()
+            .is_some_and(|meta_obj| meta_obj.contains_key("miden"))
+    });
+    if has_miden_metadata {
+        // Assume `RollupTarget::Account` since we're not yet detecting rollup target type.
+        TargetEnv::Rollup
+    } else {
+        TargetEnv::Base
+    }
+}
+
+/// Determines the project type based on the target environment
+pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType {
+    match target_env {
+        TargetEnv::Base => ProjectType::Program,
+        TargetEnv::Rollup => ProjectType::Library,
+        TargetEnv::Emu => {
+            panic!("Emulator target environment is not supported for project type detection",)
+        }
+    }
+}
+
+/// Detect the project type
 pub fn detect_project_type(metadata: &cargo_metadata::Metadata) -> ProjectType {
-    // is `[package.metadata.miden]` is present then it's a library, otherwise it's a program
-    metadata.root_package().map_or(ProjectType::Program, |root_pkg| {
-        root_pkg.metadata.as_object().map_or(ProjectType::Program, |meta_obj| {
-            if meta_obj.contains_key("miden") {
-                ProjectType::Library
-            } else {
-                ProjectType::Program
-            }
-        })
-    })
+    let target_env = detect_target_environment(metadata);
+    target_environment_to_project_type(target_env)
 }
 
 pub fn install_wasm32_wasip1() -> Result<()> {

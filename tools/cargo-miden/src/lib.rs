@@ -11,7 +11,9 @@ use commands::NewCommand;
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
 use non_component::run_cargo_command_for_non_component;
-pub use target::{detect_project_type, ProjectType};
+pub use target::{
+    detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
+};
 
 mod commands;
 mod compile_masm;
@@ -152,7 +154,8 @@ where
             // dbg!(&cargo_args);
             let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
 
-            let project_type = target::detect_project_type(&metadata);
+            let target_env = target::detect_target_environment(&metadata);
+            let project_type = target::target_environment_to_project_type(target_env);
 
             let mut packages = load_component_metadata(
                 &metadata,
@@ -286,6 +289,7 @@ where
                         miden_out_dir.as_std_path(),
                         &dependency_packages_paths,
                         project_type,
+                        target_env,
                     )
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
