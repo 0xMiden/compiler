@@ -4,7 +4,6 @@ use alloc::{
     format,
     rc::Rc,
     string::{String, ToString},
-    vec::Vec,
 };
 
 use compact_str::{CompactString, ToCompactString};
@@ -53,27 +52,7 @@ impl TryFrom<&Options> for IRPrintingConfig {
     type Error = Report;
 
     fn try_from(options: &Options) -> Result<Self, Self::Error> {
-        let available_passes = [
-            "canonicalizer",
-            "control-flow-sink",
-            "lift-control-flow",
-            "sink-operand-defs",
-            "sparse-conditional-constant-propagation",
-            "transform-spills",
-        ];
-
-        let pass_filters: Vec<_> = {
-            let invalid_pass = options
-                .print_ir_after_pass
-                .iter()
-                .find(|pass| !available_passes.contains(&pass.as_str()));
-
-            if let Some(invalid_pass) = invalid_pass {
-                Err(Report::msg(format!("'{invalid_pass}' unrecognized pass.")))
-            } else {
-                Ok(options.print_ir_after_pass.clone())
-            }
-        }?;
+        let pass_filters = options.print_ir_after_pass.clone();
 
         if options.print_ir_after_all && !pass_filters.is_empty() {
             return Err(Report::msg(
