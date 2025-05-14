@@ -115,6 +115,7 @@ impl DialectRegistration for TestDialect {
 
     fn register_operations(info: &mut DialectInfo) {
         info.register_operation::<ops::Add>();
+        info.register_operation::<ops::InvalidOpsWithReturn>();
         info.register_operation::<ops::Mul>();
         info.register_operation::<ops::Shl>();
         info.register_operation::<ops::Ret>();

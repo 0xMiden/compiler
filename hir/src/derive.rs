@@ -136,7 +136,7 @@ mod tests {
 
     use crate::{
         attributes::Overflow,
-        dialects::test::{self, Add},
+        dialects::test::{self, Add, InvalidOpsWithReturn},
         Builder, BuilderExt, Context, Op, Operation, Report, Spanned,
     };
 

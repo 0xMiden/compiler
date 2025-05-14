@@ -130,3 +130,19 @@ pub struct Neq {
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
 has_no_effects!(Neq);
+
+/// Invalid operation that breaks the SameOperandsAndResultType trait
+#[operation(
+     dialect = TestDialect,
+     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+ )]
+pub struct InvalidOpsWithReturn {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyUnsignedInteger,
+    #[attr]
+    overflow: Overflow,
+}
