@@ -4,7 +4,7 @@ use core::fmt;
 use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
-use crate::{derive, Context, Op, Operation, Report, Type};
+use crate::{derive, ir::value::Value, Context, Op, Operation, Report, Type};
 
 /// OpInterface to compute the return type(s) of an operation.
 pub trait InferTypeOpInterface: Op {
@@ -74,6 +74,81 @@ derive! {
     /// as a super trait, check the operands using its implementation, and then check the results
     /// separately
     pub trait SameOperandsAndResultType {}
+
+    verify {
+        fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
+            // TODO: Later inherit from SameTypeOperands
+            let mut operands = op.operands().iter();
+            if let Some(first_operand) = operands.next() {
+                let (expected_ty, set_by) = {
+                    let operand = first_operand.borrow();
+                    let value = operand.value();
+                    (value.ty().clone(), value.span())
+                };
+
+                let mut results = op.results().iter();
+
+                for operand in operands {
+                    let operand = operand.borrow();
+                    let value = operand.value();
+                    let value_ty = value.ty();
+                    if value_ty != &expected_ty {
+                        return Err(context
+                            .session()
+                            .diagnostics
+                            .diagnostic(Severity::Error)
+                            .with_message(::alloc::format!("invalid operation {}", op.name()))
+                            .with_primary_label(
+                                op.span,
+                                "this operation expects all operands to be of the same type"
+                            )
+                            .with_secondary_label(
+                                set_by,
+                                "inferred the expected type from this value"
+                            )
+                            .with_secondary_label(
+                                value.span(),
+                                "which differs from this value"
+                            )
+                            .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
+                            .into_report()
+                        );
+                    }
+                }
+
+                for result in results {
+                    let result = result.borrow();
+                    let value = result.as_value_ref().borrow();
+                    let result_ty = result.ty();
+
+                    if result_ty != &expected_ty {
+                        return Err(context
+                            .session()
+                            .diagnostics
+                            .diagnostic(Severity::Error)
+                            .with_message(::alloc::format!("invalid operation result {}", op.name()))
+                            .with_primary_label(
+                                op.span,
+                                "this operation expects all operands to be of the same type"
+                            )
+                            .with_secondary_label(
+                                set_by,
+                                "inferred the expected type from this value"
+                            )
+                            .with_secondary_label(
+                                value.span(),
+                                "which differs from this value"
+                            )
+                            .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
+                            .into_report()
+                        );
+                    }
+                };
+            }
+
+            Ok(())
+        }
+    }
 }
 
 /// An operation trait that indicates it expects a variable number of operands, matching the given
