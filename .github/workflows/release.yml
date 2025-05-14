@@ -30,7 +30,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/next' }}
       - name: Publish
-        uses: MarcoIeni/release-plz-action@v0.5
+        uses: release-plz/action@v0.5
         with:
           # Only run the `release` command that publishes any unpublished crates.
           command: release
