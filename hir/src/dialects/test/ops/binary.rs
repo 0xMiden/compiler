@@ -74,3 +74,19 @@ impl InferTypeOpInterface for Shl {
         Ok(())
     }
 }
+
+/// Invalid operation that breaks the SameOperandsAndResultType trait
+#[operation(
+    dialect = TestDialect,
+    traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+)]
+pub struct InvalidOpsWithReturn {
+    #[operand]
+    lhs: AnyInteger,
+    #[operand]
+    rhs: AnyInteger,
+    #[result]
+    result: AnyUnsignedInteger,
+    #[attr]
+    overflow: Overflow,
+}
