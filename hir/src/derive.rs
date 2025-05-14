@@ -207,7 +207,6 @@ mod tests {
         ));
     }
 
-    #[ignore = "until https://github.com/0xMiden/compiler/issues/378 is fixed"]
     #[test]
     #[should_panic = "expected 'u32', got 'i64'"]
     fn derived_op_verifier_test() {
