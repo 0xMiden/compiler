@@ -86,7 +86,7 @@ derive! {
                     (value.ty().clone(), value.span())
                 };
 
-                let mut results = op.results().iter();
+                let results = op.results().iter();
 
                 for operand in operands {
                     let operand = operand.borrow();

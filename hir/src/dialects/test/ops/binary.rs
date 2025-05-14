@@ -75,10 +75,11 @@ impl InferTypeOpInterface for Shl {
     }
 }
 
-/// Invalid operation that breaks the SameOperandsAndResultType trait
+/// Invalid operation that breaks the SameOperandsAndResultType trait (used for testing).
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    implements(InferTypeOpInterface)
 )]
 pub struct InvalidOpsWithReturn {
     #[operand]
@@ -87,6 +88,11 @@ pub struct InvalidOpsWithReturn {
     rhs: AnyInteger,
     #[result]
     result: AnyUnsignedInteger,
-    #[attr]
-    overflow: Overflow,
+}
+
+impl InferTypeOpInterface for InvalidOpsWithReturn {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::U64);
+        Ok(())
+    }
 }

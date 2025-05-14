@@ -212,4 +212,28 @@ mod tests {
         let op = op_builder(lhs, invalid_rhs, Overflow::Wrapping);
         let _op = op.unwrap();
     }
+
+    /// Fails if [`InvalidOpsWithReturn`] is created successfully. [`InvalidOpsWithReturn`] is a
+    /// struct that has differing types in its result and arguments, despite implementing the
+    /// [`SameOperandsAndResultType`] trait.
+    #[test]
+    #[should_panic = "expected 'i32', got 'u64'"]
+    fn same_operands_and_result_type_verifier_test() {
+        use crate::{SourceSpan, Type};
+
+        let context = Rc::new(Context::default());
+        let block = context.create_block_with_params([Type::I32, Type::I32]);
+        let (lhs, rhs) = {
+            let block = block.borrow();
+            let lhs = block.get_argument(0).upcast::<dyn crate::Value>();
+            let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
+            (lhs, rhs)
+        };
+        let mut builder = context.builder();
+        builder.set_insertion_point_to_end(block);
+        // Try to create instance of AddOp with mismatched operand types
+        let op_builder = builder.create::<InvalidOpsWithReturn, _>(SourceSpan::default());
+        let op = op_builder(lhs, rhs);
+        let _op = op.unwrap();
+    }
 }
