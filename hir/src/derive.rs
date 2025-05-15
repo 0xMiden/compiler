@@ -101,11 +101,11 @@ macro_rules! __derive_op_trait {
 
         impl $crate::Verify<dyn $OpTrait> for $crate::Operation {
             fn should_verify(&self, _context: &$crate::Context) -> bool {
-                self.implements::<dyn $OpTrait>()
                 $(
-                    &&
                     self.implements::<dyn $ParentTrait>()
+                    &&
                 )*
+                self.implements::<dyn $OpTrait>()
             }
 
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
