@@ -10,41 +10,7 @@ pub use midenc_hir_macros::operation;
 macro_rules! derive {
     (
         $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-
-        verify {
-            $(
-                fn $verify_fn:ident($op:ident: &$OperationPath:path, $ctx:ident: &$ContextPath:path) -> $VerifyResult:ty $verify:block
-            )+
-        }
-
-        $($t:tt)*
-    ) => {
-        $crate::__derive_op_trait! {
-            $(#[$outer])*
-            $vis trait $OpTrait {
-                $(
-                    $OpTraitItem:item
-                )*
-            }
-
-            verify {
-                $(
-                    fn $verify_fn($op: &$OperationPath, $ctx: &$ContextPath) -> $VerifyResult $verify
-                )*
-            }
-        }
-
-        $($t)*
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident : $( $ParentTrait:ident ),* $(,)? {
+        $vis:vis trait $OpTrait:ident $(:)? $( $ParentTrait:ident ),* $(,)? {
             $(
                 $OpTraitItem:item
             )*
@@ -104,55 +70,7 @@ macro_rules! derive {
 macro_rules! __derive_op_trait {
     (
         $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-
-        verify {
-            $(
-                fn $verify_fn:ident($op:ident: &$OperationPath:path, $ctx:ident: &$ContextPath:path) -> $VerifyResult:ty $verify:block
-            )+
-        }
-    ) => {
-        $(#[$outer])*
-        $vis trait $OpTrait {
-            $(
-                $OpTraitItem
-            )*
-        }
-
-        impl<T: $crate::Op + $OpTrait> $crate::Verify<dyn $OpTrait> for T {
-            #[inline]
-            fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
-                <$crate::Operation as $crate::Verify<dyn $OpTrait>>::verify(self.as_operation(), context)
-            }
-        }
-
-        impl $crate::Verify<dyn $OpTrait> for $crate::Operation {
-            fn should_verify(&self, _context: &$crate::Context) -> bool {
-                self.implements::<dyn $OpTrait>()
-            }
-
-            fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
-                $(
-                    #[inline]
-                    fn $verify_fn($op: &$OperationPath, $ctx: &$ContextPath) -> $VerifyResult $verify
-                )*
-
-                $(
-                    $verify_fn(self, context)?;
-                )*
-
-                Ok(())
-            }
-        }
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident : $( $ParentTrait:ident ),* $(,)? {
+        $vis:vis trait $OpTrait:ident $(:)? $( $ParentTrait:ident ),* $(,)? {
             $(
                 $OpTraitItem:item
             )*
