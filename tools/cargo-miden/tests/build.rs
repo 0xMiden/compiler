@@ -62,8 +62,15 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     let args = new_project_args(project_name, template);
 
-    let outputs = run(args.into_iter(), OutputType::Masm).expect("Failed to create new project");
-    let new_project_path = outputs.first().unwrap().canonicalize().unwrap();
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create new project")
+        .expect("'cargo miden new' should return Some(CommandOutput)");
+    let new_project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
+            project_path.canonicalize().unwrap()
+        }
+        other => panic!("Expected NewCommandOutput, got {:?}", other),
+    };
     dbg!(&new_project_path);
     assert!(new_project_path.exists());
     assert_eq!(new_project_path, expected_new_project_dir.canonicalize().unwrap());
@@ -71,9 +78,16 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
-    let outputs = run(args, OutputType::Masm).expect("Failed to compile with the dev profile");
-    assert_eq!(outputs.len(), 1);
-    let expected_masm_path = outputs.first().unwrap();
+    let output = run(args, OutputType::Masm)
+        .expect("Failed to compile with the dev profile")
+        .expect("'cargo miden build' should return Some(CommandOutput)");
+    let expected_masm_path = match output {
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
+            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
+            other => panic!("Expected Masm output, got {:?}", other),
+        },
+        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+    };
     dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
@@ -83,9 +97,16 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     // build with the release profile
     let args = ["cargo", "miden", "build", "--release"].iter().map(|s| s.to_string());
-    let outputs = run(args, OutputType::Masm).expect("Failed to compile with the release profile");
-    assert_eq!(outputs.len(), 1);
-    let expected_masm_path = outputs.first().unwrap();
+    let output = run(args, OutputType::Masm)
+        .expect("Failed to compile with the release profile")
+        .expect("'cargo miden build --release' should return Some(CommandOutput)");
+    let expected_masm_path = match output {
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
+            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
+            other => panic!("Expected Masm output, got {:?}", other),
+        },
+        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+    };
     dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");

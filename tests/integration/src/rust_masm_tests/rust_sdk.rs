@@ -90,9 +90,14 @@ fn rust_sdk_p2id_note_script() {
     .map(|s| s.to_string())
     .collect();
     dbg!(env::current_dir().unwrap().display());
-    let outputs = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
-        .expect("Failed to compile the basic-wallet package");
-    let masp_path: PathBuf = outputs.first().unwrap().clone();
+    let build_output = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
+        .expect("Failed to compile the basic-wallet package")
+        .expect("'cargo miden build' for basic-wallet should return Some(CommandOutput)")
+        .unwrap_build_output(); // Use the new method
+    let masp_path = match build_output {
+        cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
+        other => panic!("Expected Masm output for basic-wallet, got {:?}", other),
+    };
     dbg!(&masp_path);
 
     //
@@ -163,31 +168,6 @@ fn rust_sdk_cross_ctx_account() {
 
 #[test]
 fn rust_sdk_cross_ctx_note() {
-    // Build cross-ctx-account package
-    let args: Vec<String> = [
-        "cargo",
-        "miden",
-        "build",
-        "--manifest-path",
-        "../rust-apps-wasm/rust-sdk/cross-ctx-account/Cargo.toml",
-        "--lib",
-        "--release",
-        // Use the target dir of this test's cargo project to avoid issues running tests in parallel
-        // i.e. avoid using the same target dir as the basic-wallet test (see above)
-        "--target-dir",
-        "../rust-apps-wasm/rust-sdk/cross-ctx-note/target",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    dbg!(env::current_dir().unwrap().display());
-
-    let outputs = cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Masm)
-        .expect("Failed to compile the cross-ctx-account package for cross-ctx-note");
-    let masp_path: PathBuf = outputs.first().unwrap().clone();
-
-    dbg!(&masp_path);
-
     let _ = env_logger::builder().is_test(true).try_init();
 
     let config = WasmTranslationConfig::default();
@@ -195,14 +175,7 @@ fn rust_sdk_cross_ctx_note() {
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-note",
         config,
-        [
-            "-l".into(),
-            "std".into(),
-            "-l".into(),
-            "base".into(),
-            "--link-library".into(),
-            masp_path.clone().into_os_string().into_string().unwrap().into(),
-        ],
+        ["-l".into(), "std".into(), "-l".into(), "base".into()],
     );
     builder.with_entrypoint(FunctionIdent {
         module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
@@ -215,10 +188,12 @@ fn rust_sdk_cross_ctx_note() {
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     let package = test.compiled_package();
     let mut exec = Executor::new(vec![]);
-    let account_package =
-        Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
-    exec.dependency_resolver_mut()
-        .add(account_package.digest(), account_package.into());
+    for dep_path in test.dependencies {
+        let account_package =
+            Arc::new(Package::read_from_bytes(&std::fs::read(dep_path).unwrap()).unwrap());
+        exec.dependency_resolver_mut()
+            .add(account_package.digest(), account_package.into());
+    }
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }

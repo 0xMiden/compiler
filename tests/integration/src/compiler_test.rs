@@ -182,7 +182,7 @@ pub struct CompilerTestBuilder {
     /// The extra MASM modules to link to the compiled MASM program
     link_masm_modules: LinkMasmModules,
     /// Extra flags to pass to the midenc driver
-    midenc_flags: Vec<Cow<'static, str>>,
+    midenc_flags: Vec<String>,
     /// Extra RUSTFLAGS to set when compiling Rust code
     rustflags: Vec<Cow<'static, str>>,
     /// The cargo workspace directory of the compiler
@@ -225,8 +225,7 @@ impl CompilerTestBuilder {
         ]);
         let mut midenc_flags = vec!["--debug".into(), "--verbose".into()];
         if let Some(entrypoint) = entrypoint {
-            midenc_flags
-                .extend(["--entrypoint".into(), format!("{}", entrypoint.display()).into()]);
+            midenc_flags.extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         }
         Self {
             config: Default::default(),
@@ -269,7 +268,7 @@ impl CompilerTestBuilder {
             None => (),
         }
         self.midenc_flags
-            .extend(["--entrypoint".into(), format!("{}", entrypoint.display()).into()]);
+            .extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         self
     }
 
@@ -278,7 +277,7 @@ impl CompilerTestBuilder {
         &mut self,
         flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> &mut Self {
-        self.midenc_flags.extend(flags);
+        self.midenc_flags.extend(flags.into_iter().map(|s| s.to_string()));
         self
     }
 
@@ -306,7 +305,7 @@ impl CompilerTestBuilder {
 
     /// Consume the builder, invoke any tools required to obtain the inputs for the test, and if
     /// successful, return a [CompilerTest], ready for evaluation.
-    pub fn build(self) -> CompilerTest {
+    pub fn build(mut self) -> CompilerTest {
         // Set up the command used to compile the test inputs (typically Rust -> Wasm)
         let mut command = match self.source {
             CompilerTestInputType::CargoMiden(_) => {
@@ -398,31 +397,26 @@ impl CompilerTestBuilder {
 
         // Build test
         match self.source {
-            CompilerTestInputType::CargoMiden(config) => {
-                let expected_wasm_artifact_path = config.wasm_artifact_path();
-                let skip_rust_compilation =
-                    std::env::var("SKIP_RUST").is_ok() && expected_wasm_artifact_path.exists();
-                let wasm_artifact_path = if !skip_rust_compilation {
-                    let mut args = vec![command.get_program().to_str().unwrap().to_string()];
-                    let cmd_args: Vec<String> = command
-                        .get_args()
-                        .collect::<Vec<&OsStr>>()
-                        .iter()
-                        .map(|s| s.to_str().unwrap().to_string())
-                        .collect();
-                    args.extend(cmd_args);
-                    let wasm_artifacts =
-                        cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm).unwrap();
-                    assert_eq!(
-                        wasm_artifacts.len(),
-                        1,
-                        "expected one Wasm artifact, got {:?}",
-                        wasm_artifacts
-                    );
-                    wasm_artifacts.first().unwrap().clone()
-                } else {
-                    drop(command);
-                    expected_wasm_artifact_path
+            CompilerTestInputType::CargoMiden(..) => {
+                let mut args = vec![command.get_program().to_str().unwrap().to_string()];
+                let cmd_args: Vec<String> = command
+                    .get_args()
+                    .collect::<Vec<&OsStr>>()
+                    .iter()
+                    .map(|s| s.to_str().unwrap().to_string())
+                    .collect();
+                args.extend(cmd_args);
+                let build_output =
+                    cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm)
+                        .unwrap()
+                        .expect("'cargo miden build' should return Some(CommandOutput)")
+                        .unwrap_build_output(); // Use the new method
+                let (wasm_artifact_path, dependencies) = match build_output {
+                    cargo_miden::BuildOutput::Wasm {
+                        artifact_path,
+                        dependencies,
+                    } => (artifact_path, dependencies),
+                    other => panic!("Expected Wasm output, got {:?}", other),
                 };
                 let artifact_name =
                     wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
@@ -440,6 +434,10 @@ impl CompilerTestBuilder {
                 }));
                 // dbg!(&inputs);
 
+                for dep in &dependencies {
+                    self.midenc_flags.push("--link-library".to_string());
+                    self.midenc_flags.push(dep.to_str().unwrap().to_string());
+                }
                 let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();
                 CompilerTest {
@@ -448,6 +446,7 @@ impl CompilerTestBuilder {
                     context,
                     artifact_name: artifact_name.into(),
                     entrypoint: self.entrypoint,
+                    dependencies,
                     ..Default::default()
                 }
             }
@@ -874,6 +873,8 @@ pub struct CompilerTest {
     ir_masm_program: Option<Result<Arc<midenc_codegen_masm::MasmComponent>, String>>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
+    /// Miden packages for dependencies
+    pub dependencies: Vec<PathBuf>,
 }
 
 impl fmt::Debug for CompilerTest {
@@ -907,6 +908,7 @@ impl Default for CompilerTest {
             masm_src: None,
             ir_masm_program: None,
             package: None,
+            dependencies: Vec::new(),
         }
     }
 }

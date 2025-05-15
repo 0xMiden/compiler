@@ -39,6 +39,10 @@ overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
 
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:cross-ctx-account" = { path = "../cross-ctx-account" }
+
 # TODO: switch to miden table
 [package.metadata.component]
 package = "miden:cross-ctx-note"
