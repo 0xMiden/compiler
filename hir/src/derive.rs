@@ -76,12 +76,6 @@ macro_rules! derive {
         $($t)*
     };
 
-
-
-
-
-
-
     (
         $(#[$outer:meta])*
         $vis:vis trait $OpTrait:ident {
