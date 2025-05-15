@@ -845,6 +845,9 @@ impl OpToOpPassAdaptor {
         instrumentor: Option<Rc<PassInstrumentor>>,
         parent_info: Option<&PipelineParentInfo>,
     ) -> Result<(), Report> {
+
+        Self::verify(&op, true)?;
+
         assert!(
             instrumentor.is_none() || parent_info.is_some(),
             "expected parent info if instrumentor is provided"
