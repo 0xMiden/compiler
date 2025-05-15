@@ -148,8 +148,12 @@ mod tests {
 
     use crate::{
         attributes::Overflow,
-        dialects::test::{self, Add, InvalidOpsWithReturn},
-        Builder, BuilderExt, Context, Op, Operation, Report, Spanned,
+        dialects::{
+            builtin,
+            test::{self, Add, InvalidOpsWithReturn},
+        },
+        pass::{Nesting, PassManager},
+        BlockArgument, Builder, BuilderExt, Context, Op, Operation, Report, Spanned, ValueId,
     };
 
     derive! {
@@ -210,19 +214,33 @@ mod tests {
         use crate::{SourceSpan, Type};
 
         let context = Rc::new(Context::default());
+
         let block = context.create_block_with_params([Type::U32, Type::I64]);
+
+        context.get_or_register_dialect::<test::TestDialect>();
+        context.registered_dialects();
+
+        // let lhs =
+        //     BlockArgument::new(SourceSpan::default(), ValueId::from_u32(0), Type::U32, None, 0);
+
         let (lhs, invalid_rhs) = {
             let block = block.borrow();
             let lhs = block.get_argument(0).upcast::<dyn crate::Value>();
             let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
             (lhs, rhs)
         };
-        let mut builder = context.builder();
+
+        let mut builder = context.clone().builder();
         builder.set_insertion_point_to_end(block);
         // Try to create instance of AddOp with mismatched operand types
         let op_builder = builder.create::<Add, _>(SourceSpan::default());
         let op = op_builder(lhs, invalid_rhs, Overflow::Wrapping);
-        let _op = op.unwrap();
+        let op = op.unwrap();
+
+        // Construct a pass manager with the default pass pipeline
+        let mut pm = PassManager::on::<Add>(context.clone(), Nesting::Implicit);
+        // Run pass pipeline
+        pm.run(op.as_operation_ref()).unwrap();
     }
 
     /// Fails if [`InvalidOpsWithReturn`] is created successfully. [`InvalidOpsWithReturn`] is a

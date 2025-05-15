@@ -257,10 +257,10 @@ where
         };
 
         // Run op-specific verification
-        {
-            let op: super::EntityRef<T> = op.borrow();
-            op.verify(self.builder.context())?;
-        }
+        // {
+        //     let op: super::EntityRef<T> = op.borrow();
+        //     op.verify(self.builder.context())?;
+        // }
 
         // Insert op at current insertion point, if set
         if self.builder.insertion_point().is_valid() {
