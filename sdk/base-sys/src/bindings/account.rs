@@ -11,6 +11,8 @@ extern "C" {
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut CoreAsset);
     #[link_name = "remove-asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut CoreAsset);
+    #[link_name = "incr-nonce"]
+    pub fn extern_account_incr_nonce(value: i32);
 }
 
 /// Get the account ID of the currently executing note account.
@@ -59,5 +61,15 @@ pub fn remove_asset(asset: CoreAsset) -> CoreAsset {
             ret_area.as_mut_ptr(),
         );
         ret_area.assume_init()
+    }
+}
+
+/// Increments the account nonce by the provided value.
+///
+/// Panics:
+/// - If the underlying kernel procedure panics.
+pub fn incr_nonce(value: u32) {
+    unsafe {
+        extern_account_incr_nonce(value as i32);
     }
 }

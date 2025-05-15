@@ -1,7 +1,6 @@
-cargo-features = ["trim-paths"]
-
 [package]
-name = "cross-ctx-account"
+name = "counter-contract"
+description = "A simple example of a Miden counter contract using the Account Storage API"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,10 +10,18 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
-# and transaction kernel API for the Miden rollup
-miden = { path = "../../../../sdk/sdk" }
+miden = { path = "../../sdk/sdk" }
 wit-bindgen-rt = "0.28"
+
+[package.metadata.component]
+package = "miden:counter-contract"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
+[package.metadata.component.target.dependencies]
+"miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }
+"miden:core-import" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden-core-import.wit" }
 
 
 [profile.release]
@@ -25,7 +32,6 @@ opt-level = "z"
 # ensures that panics do not pull in a bunch of standard
 # library code unintentionally
 panic = "abort"
-trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
 # Explicitly disable panic infrastructure on Wasm, as
@@ -37,18 +43,3 @@ opt-level = 1
 debug-assertions = true
 overflow-checks = false
 debug = true
-trim-paths = ["diagnostics", "object"]
-
-[package.metadata.miden]
-supported-types = ["RegularAccountUpdatableCode"]
-
-# TODO: switch to miden table
-[package.metadata.component]
-package = "miden:cross-ctx-account"
-
-[package.metadata.component.target.dependencies]
-"miden:base" = { path = "../wit-sdk/miden.wit" }
-"miden:core-import" = { path = "../wit-sdk/miden-core-import.wit" }
-
-[package.metadata.cargo-machete]
-ignored = ["wit-bindgen-rt"]

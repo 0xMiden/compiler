@@ -6,14 +6,17 @@ use std::{
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report, WrapErr},
-    InputFile, OutputType,
+    InputFile, OutputType, TargetEnv,
 };
+
+use crate::ProjectType;
 
 pub fn wasm_to_masm(
     wasm_file_path: &Path,
     output_folder: &Path,
-    is_bin: bool,
     dependency_paths: &[PathBuf], // New parameter
+    project_type: ProjectType,
+    target_env: TargetEnv,
 ) -> Result<PathBuf, Report> {
     if !output_folder.exists() {
         return Err(Report::msg(format!(
@@ -36,20 +39,27 @@ pub fn wasm_to_masm(
         .unwrap();
     let output_file =
         output_folder.join(masm_file_name).with_extension(OutputType::Masp.extension());
-    let project_type = if is_bin { "--exe" } else { "--lib" };
+    let project_type_arg = match project_type {
+        ProjectType::Program => "--exe",
+        ProjectType::Library => "--lib",
+    };
     let entrypoint_opt = format!("--entrypoint={masm_file_name}::entrypoint");
     let mut args: Vec<&std::ffi::OsStr> = vec![
         "--output-dir".as_ref(),
         output_folder.as_os_str(),
         "-o".as_ref(),
         output_file.as_os_str(),
-        project_type.as_ref(),
+        project_type_arg.as_ref(),
         "--verbose".as_ref(),
-        "--target".as_ref(),
-        "rollup".as_ref(),
     ];
 
-    if is_bin {
+    // Only add --target rollup for Rollup target environments
+    if let TargetEnv::Rollup = target_env {
+        args.push("--target".as_ref());
+        args.push("rollup".as_ref());
+    }
+
+    if project_type == ProjectType::Program {
         args.push(entrypoint_opt.as_ref());
     }
 

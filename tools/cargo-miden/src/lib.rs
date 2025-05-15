@@ -11,6 +11,9 @@ use commands::NewCommand;
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
 use non_component::run_cargo_command_for_non_component;
+pub use target::{
+    detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
+};
 
 mod commands;
 mod compile_masm;
@@ -150,6 +153,10 @@ where
             let cargo_args = CargoArguments::parse_from(args.clone().into_iter())?;
             // dbg!(&cargo_args);
             let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
+
+            let target_env = target::detect_target_environment(&metadata);
+            let project_type = target::target_environment_to_project_type(target_env);
+
             let mut packages = load_component_metadata(
                 &metadata,
                 cargo_args.packages.iter(),
@@ -277,14 +284,12 @@ where
                         std::fs::create_dir_all(&miden_out_dir)?;
                     }
 
-                    // so far, we only support the Miden VM programs, unless `--lib` is
-                    // specified (in our integration tests)
-                    let is_bin = !args.contains(&"--lib".to_string());
                     let output = wasm_to_masm(
                         wasm_output,
                         miden_out_dir.as_std_path(),
-                        is_bin,
                         &dependency_packages_paths,
+                        project_type,
+                        target_env,
                     )
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
