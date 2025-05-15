@@ -52,7 +52,7 @@ pub use self::{
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
         add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
-        LibraryPathComponent, LinkLibrary, BASE, STDLIB,
+        LibraryPathComponent, LinkLibrary, STDLIB,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},

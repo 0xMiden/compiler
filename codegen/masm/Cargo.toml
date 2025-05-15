@@ -22,6 +22,7 @@ miden-assembly.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
+miden-lib.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-dialect-arith.workspace = true

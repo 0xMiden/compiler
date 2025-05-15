@@ -12,9 +12,7 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-miden-base-sys = { version = "0.0.8", path = "../base-sys", features = [
-    "bindings",
-] }
+miden-base-sys = { version = "0.0.8", path = "../base-sys" }
 miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
 miden-base-macros = { version = "0.0.8", path = "../base-macros" }
 

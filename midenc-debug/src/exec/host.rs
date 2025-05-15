@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroU32, sync::Arc};
 
 use miden_core::crypto::hash::RpoDigest;
 use miden_processor::{
@@ -73,23 +73,11 @@ impl Host for DebuggerHost {
         Ok(())
     }
 
-    fn on_assert_failed(&mut self, process: ProcessState, err_code: u32) -> ExecutionError {
+    fn on_assert_failed(&mut self, process: ProcessState, err_code: miden_core::Felt) {
         let clk = process.clk();
         if let Some(handler) = self.on_assert_failed.as_mut() {
-            handler(clk, TraceEvent::AssertionFailed(core::num::NonZeroU32::new(err_code)));
-        }
-        let err_msg = match err_code {
-            midenc_dialect_hir::assertions::ASSERT_FAILED_ALIGNMENT => Some(
-                "failed alignment: use of memory address violates minimum alignment requirements \
-                 for that use"
-                    .to_string(),
-            ),
-            _ => None,
-        };
-        ExecutionError::FailedAssertion {
-            clk,
-            err_code,
-            err_msg,
+            // TODO: We're truncating the error code here, but we may need to handle the full range
+            handler(clk, TraceEvent::AssertionFailed(NonZeroU32::new(err_code.as_int() as u32)));
         }
     }
 
