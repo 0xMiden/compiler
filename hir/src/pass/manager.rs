@@ -846,7 +846,9 @@ impl OpToOpPassAdaptor {
         parent_info: Option<&PipelineParentInfo>,
     ) -> Result<(), Report> {
 
-        Self::verify(&op, true)?;
+        if verify {
+            Self::verify(&op, true)?;
+        }
 
         assert!(
             instrumentor.is_none() || parent_info.is_some(),
