@@ -77,7 +77,6 @@ derive! {
 
     verify {
         fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            // TODO: Later inherit from SameTypeOperands
             let mut operands = op.operands().iter();
             if let Some(first_operand) = operands.next() {
                 let (expected_ty, set_by) = {
@@ -101,7 +100,7 @@ derive! {
                             .with_message(::alloc::format!("invalid operation result {}", op.name()))
                             .with_primary_label(
                                 op.span,
-                                "this operation expects all operands to be of the same type"
+                                "this operation expects the operands and the results to be of the same type"
                             )
                             .with_secondary_label(
                                 set_by,
