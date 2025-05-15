@@ -4,7 +4,7 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(SameOperandsAndResultType),
+    traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct MemGrow {

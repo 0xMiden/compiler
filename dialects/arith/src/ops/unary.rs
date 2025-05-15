@@ -28,7 +28,7 @@ macro_rules! infer_return_ty_for_unary_op {
 /// Increment
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Incr {
@@ -44,7 +44,7 @@ has_no_effects!(Incr);
 /// Negation
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Neg {
@@ -60,7 +60,7 @@ has_no_effects!(Neg);
 /// Modular inverse
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Inv {
@@ -76,7 +76,7 @@ has_no_effects!(Inv);
 /// log2(operand)
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Ilog2 {
@@ -92,7 +92,7 @@ has_no_effects!(Ilog2);
 /// pow2(operand)
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Pow2 {
@@ -108,7 +108,7 @@ has_no_effects!(Pow2);
 /// Logical NOT
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
 
     )]
@@ -125,7 +125,7 @@ has_no_effects!(Not);
 /// Bitwise NOT
 #[operation (
         dialect = ArithDialect,
-        traits(UnaryOp, SameOperandsAndResultType),
+        traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface)
     )]
 pub struct Bnot {

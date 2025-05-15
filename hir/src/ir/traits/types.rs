@@ -73,7 +73,7 @@ derive! {
     /// TODO(pauls): Implement verification for this. Ideally we could require `SameTypeOperands`
     /// as a super trait, check the operands using its implementation, and then check the results
     /// separately
-    pub trait SameOperandsAndResultType {}
+    pub trait SameOperandsAndResultType: SameTypeOperands {}
 
     verify {
         fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
