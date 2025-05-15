@@ -195,9 +195,7 @@ fn rust_sdk_cross_ctx_note() {
             .add(account_package.digest(), account_package.into());
     }
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
-    // TODO: uncomment after Paul's fix for mem intrinsics (failing u32 assert) is merged
-    //
-    // let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
 
 #[test]
