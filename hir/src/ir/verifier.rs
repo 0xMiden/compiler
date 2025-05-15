@@ -60,7 +60,6 @@ pub trait Verify<Trait: ?Sized> {
     #[inline(always)]
     #[allow(unused_variables)]
     fn should_verify(&self, context: &Context) -> bool {
-        std::dbg!("Default");
         true
     }
     /// Apply this verifier, but only if [Verify::should_verify] returns true.
