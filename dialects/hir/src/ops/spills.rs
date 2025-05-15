@@ -5,7 +5,7 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    traits(SameOperandsAndResultType),
+    traits(SameTypeOperands, SameOperandsAndResultType),
     implements(MemoryEffectOpInterface, SpillLike)
 )]
 pub struct Spill {
@@ -34,7 +34,7 @@ impl EffectOpInterface<MemoryEffect> for Spill {
 
 #[operation(
     dialect = HirDialect,
-    traits(SameOperandsAndResultType),
+    traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, ReloadLike)
 )]
 pub struct Reload {
