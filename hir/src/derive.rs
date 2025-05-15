@@ -259,11 +259,16 @@ mod tests {
             let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
             (lhs, rhs)
         };
-        let mut builder = context.builder();
+        let mut builder = context.clone().builder();
         builder.set_insertion_point_to_end(block);
         // Try to create instance of AddOp with mismatched operand types
         let op_builder = builder.create::<InvalidOpsWithReturn, _>(SourceSpan::default());
         let op = op_builder(lhs, rhs);
-        let _op = op.unwrap();
+        let op = op.unwrap();
+
+        // Construct a pass manager with the default pass pipeline
+        let mut pm = PassManager::on::<InvalidOpsWithReturn>(context.clone(), Nesting::Implicit);
+        // Run pass pipeline
+        pm.run(op.as_operation_ref()).unwrap();
     }
 }
