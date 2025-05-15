@@ -88,34 +88,6 @@ derive! {
 
                 let results = op.results().iter();
 
-                for operand in operands {
-                    let operand = operand.borrow();
-                    let value = operand.value();
-                    let value_ty = value.ty();
-                    if value_ty != &expected_ty {
-                        return Err(context
-                            .session()
-                            .diagnostics
-                            .diagnostic(Severity::Error)
-                            .with_message(::alloc::format!("invalid operation {}", op.name()))
-                            .with_primary_label(
-                                op.span,
-                                "this operation expects all operands to be of the same type"
-                            )
-                            .with_secondary_label(
-                                set_by,
-                                "inferred the expected type from this value"
-                            )
-                            .with_secondary_label(
-                                value.span(),
-                                "which differs from this value"
-                            )
-                            .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
-                            .into_report()
-                        );
-                    }
-                }
-
                 for result in results {
                     let result = result.borrow();
                     let value = result.as_value_ref().borrow();
