@@ -41,7 +41,7 @@
 // Some of the above features require us to disable these warnings
 #![allow(incomplete_features)]
 #![allow(internal_features)]
-// #![deny(warnings)]
+#![deny(warnings)]
 
 extern crate alloc;
 
