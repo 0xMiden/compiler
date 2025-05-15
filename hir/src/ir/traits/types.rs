@@ -68,11 +68,20 @@ derive! {
 }
 
 derive! {
-    /// Op expects all operands and results to be of the same type
+    /// Op expects all operands and results to be of the same type.
+    /// NOTE: Operations that implements this trait must also explicitely implement
+    /// [`SameTypeOperands`]. This can be achieved by using the "traits" filed in the [#operation]
+    /// macro.
+    /// Like so:
     ///
-    /// TODO(pauls): Implement verification for this. Ideally we could require `SameTypeOperands`
-    /// as a super trait, check the operands using its implementation, and then check the results
-    /// separately
+    /// #[operation (
+    ///         dialect = ArithDialect,
+    ///         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
+    ///         implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    /// )]
+    /// pub struct SomeOp {
+    ///       (...)
+    /// }
     pub trait SameOperandsAndResultType: SameTypeOperands {}
 
     verify {

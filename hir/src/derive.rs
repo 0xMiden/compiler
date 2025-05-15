@@ -1,6 +1,11 @@
 pub use midenc_hir_macros::operation;
 
 /// This macro is used to generate the boilerplate for operation trait implementations.
+/// Super traits have to be declared as a comma separated list of traits, instead of the traditional
+/// "+" separated list of traits.
+/// Example:
+///
+/// pub trait SomeTrait: SuperTraitA, SuperTraitB {}
 #[macro_export]
 macro_rules! derive {
     (
