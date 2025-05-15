@@ -39,7 +39,7 @@ macro_rules! derive {
 
     (
         $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident : $ParentTrait:ident {
+        $vis:vis trait $OpTrait:ident : $( $ParentTrait:ident ),* $(,)? {
             $(
                 $OpTraitItem:item
             )*
@@ -55,7 +55,7 @@ macro_rules! derive {
     ) => {
         $crate::__derive_op_trait! {
             $(#[$outer])*
-            $vis trait $OpTrait : $ParentTrait {
+            $vis trait $OpTrait : $( $ParentTrait , )*   {
                 $(
                     $OpTraitItem:item
                 )*
@@ -153,7 +153,7 @@ macro_rules! __derive_op_trait {
 
     (
         $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident : $ParentTrait:ident {
+        $vis:vis trait $OpTrait:ident : $( $ParentTrait:ident ),* $(,)? {
             $(
                 $OpTraitItem:item
             )*
@@ -166,7 +166,7 @@ macro_rules! __derive_op_trait {
         }
     ) => {
         $(#[$outer])*
-        $vis trait $OpTrait : $ParentTrait {
+        $vis trait $OpTrait : $( $ParentTrait + )* {
             $(
                 $OpTraitItem
             )*
@@ -175,7 +175,9 @@ macro_rules! __derive_op_trait {
         impl<T: $crate::Op + $OpTrait> $crate::Verify<dyn $OpTrait> for T {
             #[inline]
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
+                $(
                 <$crate::Operation as $crate::Verify<dyn $ParentTrait>>::verify(self.as_operation(), context)?;
+                 )*
                 <$crate::Operation as $crate::Verify<dyn $OpTrait>>::verify(self.as_operation(), context)
             }
         }
@@ -183,8 +185,10 @@ macro_rules! __derive_op_trait {
         impl $crate::Verify<dyn $OpTrait> for $crate::Operation {
             fn should_verify(&self, _context: &$crate::Context) -> bool {
                 self.implements::<dyn $OpTrait>()
+                $(
                     &&
-                self.implements::<dyn $ParentTrait>()
+                    self.implements::<dyn $ParentTrait>()
+                )*
             }
 
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
