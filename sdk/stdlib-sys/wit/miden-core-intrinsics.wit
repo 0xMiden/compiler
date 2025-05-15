@@ -1,0 +1,24 @@
+package miden:core-intrinsics@1.0.0;
+
+// The function signatures should be kept in sync with the signatures in the
+// Rust SDK `extern` functions (see `/sdk`);
+
+interface intrinsics-mem {
+
+    heap-base: func() -> s32;
+}
+
+interface intrinsics-felt {
+
+    add: func(a: f32, b: f32) -> f32;
+    eq: func(a: f32, b: f32) -> bool;
+    from-u64-unchecked: func(a: u64) -> f32;
+    from-u32: func(a: u32) -> f32;
+    from-u8: func(a: u8) -> f32;
+    assert-eq: func(a: f32, b: f32);
+}
+
+world intrinsics {
+    import intrinsics-mem;
+    import intrinsics-felt;
+}

@@ -37,16 +37,90 @@ fn test_templates() {
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
 
-    // let account = build_new_project_from_template("--account");
-    // assert!(account.is_library());
+    let account = build_new_project_from_template("--account");
+    assert!(account.is_library());
 
-    // let package = build_new_project_from_template(
-    //     &(format!(
-    //         "--template-path={}/../../../rust-templates/program",
-    //         std::env::var("CARGO_MANIFEST_DIR").unwrap()
-    //     )),
-    // );
-    // assert!(package.is_program());
+    // Check that account projects have WIT files
+    verify_wit_files_for_template("--account");
+
+    // Check that note script projects have WIT files
+    verify_wit_files_for_template("--note");
+
+    // Verify program projects don't have WIT files
+    verify_no_wit_files_for_template("--program");
+}
+
+/// Verify that the expected WIT files are present for account and note script templates
+fn verify_wit_files_for_template(template: &str) {
+    let restore_dir = env::current_dir().unwrap();
+    let temp_dir = env::temp_dir();
+    env::set_current_dir(&temp_dir).unwrap();
+    let project_name = format!("test_wit_files_{}", template.replace("--", ""));
+    let expected_new_project_dir = &temp_dir.join(&project_name);
+    if expected_new_project_dir.exists() {
+        fs::remove_dir_all(expected_new_project_dir).unwrap();
+    }
+
+    // Create the project
+    let args = new_project_args(&project_name, template);
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create new project")
+        .expect("Expected build output");
+    let new_project_path = output.unwrap_new_output();
+    env::set_current_dir(&new_project_path).unwrap();
+
+    // Verify the wit directory exists
+    let wit_dir = new_project_path.join("wit");
+    assert!(wit_dir.exists(), "WIT directory should exist for {} template", template);
+    assert!(wit_dir.is_dir(), "WIT path should be a directory");
+
+    // Check that all expected WIT files are present
+    let expected_wit_files = [
+        "miden.wit",
+        "miden-core-base.wit",
+        "miden-core-stdlib.wit",
+        "miden-core-intrinsics.wit",
+    ];
+
+    for file in &expected_wit_files {
+        let file_path = wit_dir.join(file);
+        assert!(file_path.exists(), "WIT file {} should exist for {} template", file, template);
+        assert!(file_path.metadata().unwrap().len() > 0, "WIT file {} should not be empty", file);
+    }
+
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(new_project_path).unwrap();
+}
+
+/// Verify that WIT files are not present for program template
+fn verify_no_wit_files_for_template(template: &str) {
+    let restore_dir = env::current_dir().unwrap();
+    let temp_dir = env::temp_dir();
+    env::set_current_dir(&temp_dir).unwrap();
+    let project_name = format!("test_no_wit_files_{}", template.replace("--", ""));
+    let expected_new_project_dir = &temp_dir.join(&project_name);
+    if expected_new_project_dir.exists() {
+        fs::remove_dir_all(expected_new_project_dir).unwrap();
+    }
+
+    // Create the project
+    let args = new_project_args(&project_name, template);
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create new project")
+        .expect("Expected build output");
+    let new_project_path = output.unwrap_new_output();
+    env::set_current_dir(&new_project_path).unwrap();
+
+    // Verify the wit directory does not exist or is empty for program template
+    let wit_dir = new_project_path.join("wit");
+    assert!(
+        !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
+        "WIT directory should not exist or be empty for {} template",
+        template
+    );
+
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(new_project_path).unwrap();
 }
 
 fn build_new_project_from_template(template: &str) -> Package {

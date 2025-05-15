@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::StorageCommitmentRoot;
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-import/account@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
     #[link_name = "get-item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);

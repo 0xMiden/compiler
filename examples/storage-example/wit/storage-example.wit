@@ -10,7 +10,9 @@ interface foo {
 }
 
 world foo-world {
-    include miden:core-import/all@1.0.0;
+    include miden:core-intrinsics/intrinsics@1.0.0;
+    include miden:core-stdlib/stdlib@1.0.0;
+    include miden:core-base/base@1.0.0;
 
     export foo;
 }

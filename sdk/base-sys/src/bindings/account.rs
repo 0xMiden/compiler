@@ -3,7 +3,7 @@ use miden_stdlib_sys::Felt;
 use super::types::{AccountId, CoreAsset};
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-import/account@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
     #[link_name = "get-id"]
     pub fn extern_account_get_id() -> AccountId;

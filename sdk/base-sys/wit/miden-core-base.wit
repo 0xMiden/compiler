@@ -1,27 +1,7 @@
-package miden:core-import@1.0.0;
+package miden:core-base@1.0.0;
 
 // The function signatures should be kept in sync with the signatures in the
 // Rust SDK `extern` functions (see `/sdk`);
-
-interface intrinsics-mem {
-
-    heap-base: func() -> s32;
-}
-
-interface intrinsics-felt {
-
-    add: func(a: f32, b: f32) -> f32;
-    eq: func(a: f32, b: f32) -> bool;
-    from-u64-unchecked: func(a: u64) -> f32;
-    from-u32: func(a: u32) -> f32;
-    from-u8: func(a: u8) -> f32;
-    assert-eq: func(a: f32, b: f32);
-}
-
-interface stdlib-crypto-hashes-blake3 {
-
-    hash-one-to-one: func(a0: s32, a1: s32, a2: s32, a3: s32, a4: s32, a5: s32, a6: s32, a7: s32, result-ptr: s32);
-}
 
 interface account {
 
@@ -80,12 +60,8 @@ interface tx {
 
 }
 
-world all {
-    import intrinsics-mem;
-    import intrinsics-felt;
-    import stdlib-crypto-hashes-blake3;
+world base {
     import account;
     import note;
     import tx;
-
 }

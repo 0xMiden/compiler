@@ -24,6 +24,14 @@ impl CommandOutput {
             _ => panic!("called `unwrap_build_output()` on a non-BuildCommandOutput value"),
         }
     }
+
+    /// Panics if the output is not `NewCommandOutput`, otherwise returns the inner project path.
+    pub fn unwrap_new_output(self) -> PathBuf {
+        match self {
+            CommandOutput::NewCommandOutput { project_path } => project_path,
+            _ => panic!("called `unwrap_new_output()` on a non-NewCommandOutput value"),
+        }
+    }
 }
 
 /// Represents the specific artifact produced by the `build` command.

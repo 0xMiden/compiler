@@ -18,14 +18,14 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @__rustc::__rust_alloc(v2: i32, v3: i32) -> i32 {
         ^block13(v2: i32, v3: i32):
-            v5 = arith.constant 1048616 : i32;
+            v5 = arith.constant 1048600 : i32;
             v6 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v5, v3, v2) : i32
             builtin.ret v6;
         };
 
         private builtin.function @__rustc::__rust_realloc(v7: i32, v8: i32, v9: i32, v10: i32) -> i32 {
         ^block15(v7: i32, v8: i32, v9: i32, v10: i32):
-            v12 = arith.constant 1048616 : i32;
+            v12 = arith.constant 1048600 : i32;
             v13 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v12, v9, v10) : i32
             v200 = arith.constant 0 : i32;
             v14 = arith.constant 0 : i32;
@@ -151,7 +151,7 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block32:
-            v79 = arith.constant 1048621 : u32;
+            v79 = arith.constant 1048605 : u32;
             v243 = arith.constant 0 : u32;
             v80 = arith.add v243, v79 : u32 #[overflow = checked];
             v81 = hir.int_to_ptr v80 : ptr<byte, u8>;
@@ -167,7 +167,7 @@ builtin.component miden:base/note-script@1.0.0 {
             ^block35:
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/__wasm_call_ctors()
                 v241 = arith.constant 1 : u8;
-                v245 = arith.constant 1048621 : u32;
+                v245 = arith.constant 1048605 : u32;
                 v246 = arith.constant 0 : u32;
                 v93 = arith.add v246, v245 : u32 #[overflow = checked];
                 v94 = hir.int_to_ptr v93 : ptr<byte, u8>;
@@ -320,7 +320,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret_imm 1048576;
         };
 
-        builtin.segment readonly @1048576 = 0x00000002000000010000000100000001000000010000000100000001000000010000000100000001;
+        builtin.segment readonly @1048576 = 0x000000020000000100000001000000010000000100000001;
     };
 
     public builtin.function @note-script() {

@@ -15,3 +15,7 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
+
+[features]
+default = []
+wit = []

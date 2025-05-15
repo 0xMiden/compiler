@@ -20,8 +20,10 @@ package = "miden:counter-contract"
 supported-types = ["RegularAccountUpdatableCode"]
 
 [package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }
-"miden:core-import" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden-core-import.wit" }
+"miden:base" = { path = "../../sdk/base/wit/miden.wit" }
+"miden:core-intrinsics" = { path = "../../sdk/stdlib-sys/wit/miden-core-intrinsics.wit" }
+"miden:core-stdlib" = { path = "../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
+"miden:core-base" = { path = "../../sdk/base-sys/wit/miden-core-base.wit" }
 
 
 [profile.release]
