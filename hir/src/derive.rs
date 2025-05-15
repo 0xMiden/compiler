@@ -148,12 +148,9 @@ mod tests {
 
     use crate::{
         attributes::Overflow,
-        dialects::{
-            builtin,
-            test::{self, Add, InvalidOpsWithReturn},
-        },
+        dialects::test::{self, Add, InvalidOpsWithReturn},
         pass::{Nesting, PassManager},
-        BlockArgument, Builder, BuilderExt, Context, Op, Operation, Report, Spanned, ValueId,
+        Builder, BuilderExt, Context, Op, Operation, Report, Spanned,
     };
 
     derive! {
@@ -218,9 +215,6 @@ mod tests {
 
         context.get_or_register_dialect::<test::TestDialect>();
         context.registered_dialects();
-
-        // let lhs =
-        //     BlockArgument::new(SourceSpan::default(), ValueId::from_u32(0), Type::U32, None, 0);
 
         let (lhs, invalid_rhs) = {
             let block = block.borrow();
