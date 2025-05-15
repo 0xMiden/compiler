@@ -175,6 +175,7 @@ macro_rules! __derive_op_trait {
         impl<T: $crate::Op + $OpTrait> $crate::Verify<dyn $OpTrait> for T {
             #[inline]
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
+                <$crate::Operation as $crate::Verify<dyn $ParentTrait>>::verify(self.as_operation(), context)?;
                 <$crate::Operation as $crate::Verify<dyn $OpTrait>>::verify(self.as_operation(), context)
             }
         }
@@ -182,6 +183,8 @@ macro_rules! __derive_op_trait {
         impl $crate::Verify<dyn $OpTrait> for $crate::Operation {
             fn should_verify(&self, _context: &$crate::Context) -> bool {
                 self.implements::<dyn $OpTrait>()
+                    &&
+                self.implements::<dyn $ParentTrait>()
             }
 
             fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
