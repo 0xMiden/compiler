@@ -5,7 +5,7 @@ use compact_str::CompactString;
 use smallvec::SmallVec;
 
 use super::OperationPass;
-use crate::{OperationName, OperationRef};
+use crate::{pass::PassExecutionState, OperationName, OperationRef};
 
 #[allow(unused_variables)]
 pub trait PassInstrumentation {
@@ -13,6 +13,7 @@ pub trait PassInstrumentation {
         &mut self,
         name: Option<&OperationName>,
         parent_info: &PipelineParentInfo,
+        op: OperationRef,
     ) {
     }
     fn run_after_pipeline(
@@ -22,7 +23,13 @@ pub trait PassInstrumentation {
     ) {
     }
     fn run_before_pass(&mut self, pass: &dyn OperationPass, op: &OperationRef) {}
-    fn run_after_pass(&mut self, pass: &dyn OperationPass, op: &OperationRef) {}
+    fn run_after_pass(
+        &mut self,
+        pass: &dyn OperationPass,
+        op: &OperationRef,
+        post_execution_state: &PassExecutionState,
+    ) {
+    }
     fn run_after_pass_failed(&mut self, pass: &dyn OperationPass, op: &OperationRef) {}
     fn run_before_analysis(&mut self, name: &str, id: &TypeId, op: &OperationRef) {}
     fn run_after_analysis(&mut self, name: &str, id: &TypeId, op: &OperationRef) {}
@@ -38,8 +45,9 @@ impl<P: ?Sized + PassInstrumentation> PassInstrumentation for Box<P> {
         &mut self,
         name: Option<&OperationName>,
         parent_info: &PipelineParentInfo,
+        op: OperationRef,
     ) {
-        (**self).run_before_pipeline(name, parent_info);
+        (**self).run_before_pipeline(name, parent_info, op);
     }
 
     fn run_after_pipeline(
@@ -54,8 +62,13 @@ impl<P: ?Sized + PassInstrumentation> PassInstrumentation for Box<P> {
         (**self).run_before_pass(pass, op);
     }
 
-    fn run_after_pass(&mut self, pass: &dyn OperationPass, op: &OperationRef) {
-        (**self).run_after_pass(pass, op);
+    fn run_after_pass(
+        &mut self,
+        pass: &dyn OperationPass,
+        op: &OperationRef,
+        post_execution_state: &PassExecutionState,
+    ) {
+        (**self).run_after_pass(pass, op, post_execution_state);
     }
 
     fn run_after_pass_failed(&mut self, pass: &dyn OperationPass, op: &OperationRef) {
@@ -81,8 +94,9 @@ impl PassInstrumentor {
         &self,
         name: Option<&OperationName>,
         parent_info: &PipelineParentInfo,
+        op: OperationRef,
     ) {
-        self.instrument(|pi| pi.run_before_pipeline(name, parent_info));
+        self.instrument(|pi| pi.run_before_pipeline(name, parent_info, op));
     }
 
     pub fn run_after_pipeline(
@@ -97,8 +111,13 @@ impl PassInstrumentor {
         self.instrument(|pi| pi.run_before_pass(pass, op));
     }
 
-    pub fn run_after_pass(&self, pass: &dyn OperationPass, op: &OperationRef) {
-        self.instrument(|pi| pi.run_after_pass(pass, op));
+    pub fn run_after_pass(
+        &self,
+        pass: &dyn OperationPass,
+        op: &OperationRef,
+        post_execution_state: &PassExecutionState,
+    ) {
+        self.instrument(|pi| pi.run_after_pass(pass, op, post_execution_state));
     }
 
     pub fn run_after_pass_failed(&self, pass: &dyn OperationPass, op: &OperationRef) {

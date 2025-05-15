@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, format, rc::Rc};
 
 use midenc_hir::{
-    pass::{OperationPass, Pass, PassExecutionState},
+    pass::{OperationPass, Pass, PassExecutionState, PostPassStatus},
     patterns::{self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet},
     Context, EntityMut, Operation, OperationName, Report, Spanned,
 };
@@ -96,6 +96,7 @@ impl Pass for Canonicalizer {
     ) -> Result<(), Report> {
         let Some(rewrites) = self.rewrites.as_ref() else {
             log::debug!("skipping canonicalization as there are no rewrite patterns to apply");
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         };
         let op = {
@@ -129,15 +130,21 @@ impl Pass for Canonicalizer {
         }
 
         let op = op.borrow();
-        match converged {
+        let changed = match converged {
             Ok(changed) => {
-                log::debug!("canonicalization converged for '{}', changed={changed}", op.name())
+                log::debug!("canonicalization converged for '{}', changed={changed}", op.name());
+                changed
             }
-            Err(changed) => log::warn!(
-                "canonicalization failed to converge for '{}', changed={changed}",
-                op.name()
-            ),
-        }
+            Err(changed) => {
+                log::warn!(
+                    "canonicalization failed to converge for '{}', changed={changed}",
+                    op.name()
+                );
+                changed
+            }
+        };
+        let ir_changed = changed.into();
+        state.set_post_pass_status(ir_changed);
 
         Ok(())
     }

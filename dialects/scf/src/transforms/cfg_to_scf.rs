@@ -7,7 +7,7 @@ use midenc_hir::{
     diagnostics::Severity,
     dialects::builtin,
     dominance::DominanceInfo,
-    pass::{Pass, PassExecutionState},
+    pass::{Pass, PassExecutionState, PostPassStatus},
     Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
     SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
 };
@@ -130,6 +130,7 @@ impl Pass for LiftControlFlowToSCF {
         });
 
         if result.was_interrupted() {
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return result.into_result();
         }
 
@@ -140,6 +141,8 @@ impl Pass for LiftControlFlowToSCF {
         if !changed {
             state.preserved_analyses_mut().preserve_all();
         }
+
+        state.set_post_pass_status(changed.into());
 
         Ok(())
     }

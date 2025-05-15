@@ -339,6 +339,13 @@ pub struct UnstableOptions {
         )
     )]
     pub print_ir_after_pass: Vec<String>,
+    /// Only print the IR if the pass modified the IR structure. If this flag is set, and no IR
+    /// filter flag is; then the default behavior is to print the IR after every pass.
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Passes")
+    )]
+    pub print_ir_after_modified: bool,
 }
 
 impl CodegenOptions {
@@ -505,6 +512,7 @@ impl Compiler {
         options.print_cfg_after_pass = unstable.print_cfg_after_pass;
         options.print_ir_after_all = unstable.print_ir_after_all;
         options.print_ir_after_pass = unstable.print_ir_after_pass;
+        options.print_ir_after_modified = unstable.print_ir_after_modified;
 
         // Establish --target-dir
         let target_dir = if self.target_dir.is_absolute() {

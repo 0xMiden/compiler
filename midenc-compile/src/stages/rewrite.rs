@@ -3,7 +3,7 @@ use alloc::boxed::Box;
 use midenc_dialect_hir::transforms::TransformSpills;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir::{
-    pass::{Nesting, PassManager},
+    pass::{IRPrintingConfig, Nesting, PassManager},
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
     Op,
 };
@@ -22,6 +22,7 @@ impl Stage for ApplyRewritesStage {
     }
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        let ir_print_config: IRPrintingConfig = (&context.as_ref().session().options).try_into()?;
         log::debug!(target: "driver", "applying rewrite passes");
         // TODO(pauls): Set up pass registration for new pass infra
         /*
@@ -48,7 +49,8 @@ impl Stage for ApplyRewritesStage {
         */
 
         // Construct a pass manager with the default pass pipeline
-        let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
+        let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit)
+            .enable_ir_printing(ir_print_config);
 
         let mut rewrite_config = GreedyRewriteConfig::default();
         rewrite_config.with_region_simplification_level(RegionSimplificationLevel::Normal);

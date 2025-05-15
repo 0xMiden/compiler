@@ -3,7 +3,7 @@ use alloc::rc::Rc;
 use midenc_hir::{
     adt::SmallDenseMap,
     dialects::builtin::{Function, FunctionRef, LocalVariable},
-    pass::{Pass, PassExecutionState},
+    pass::{Pass, PassExecutionState, PostPassStatus},
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
     SourceSpan, Spanned, Symbol, ValueRef,
 };
@@ -38,6 +38,7 @@ impl Pass for TransformSpills {
         if function.is_declaration() {
             log::debug!(target: "insert-spills", "function has no body, no spills needed!");
             state.preserved_analyses_mut().preserve_all();
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         }
         let mut analysis =
@@ -46,6 +47,7 @@ impl Pass for TransformSpills {
         if !analysis.has_spills() {
             log::debug!(target: "insert-spills", "no spills needed!");
             state.preserved_analyses_mut().preserve_all();
+            state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         }
 
@@ -62,7 +64,17 @@ impl Pass for TransformSpills {
 
         let op = function.as_operation_ref();
         drop(function);
-        transforms::transform_spills(op, analysis, &mut interface, state.analysis_manager().clone())
+
+        let transform_result = transforms::transform_spills(
+            op,
+            analysis,
+            &mut interface,
+            state.analysis_manager().clone(),
+        )?;
+
+        state.set_post_pass_status(transform_result);
+
+        Ok(())
     }
 }
 

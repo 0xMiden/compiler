@@ -15,6 +15,7 @@ pub trait OperationPass {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
     fn name(&self) -> &'static str;
+
     fn argument(&self) -> &'static str {
         // NOTE: Could we compute an argument string from the type name?
         ""
@@ -133,6 +134,22 @@ where
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         <P as Pass>::run_pipeline(self, pipeline, op, state)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum PostPassStatus {
+    Unchanged,
+    Changed,
+}
+
+impl From<bool> for PostPassStatus {
+    fn from(ir_was_changed: bool) -> Self {
+        if ir_was_changed {
+            PostPassStatus::Changed
+        } else {
+            PostPassStatus::Unchanged
+        }
     }
 }
 
@@ -361,6 +378,7 @@ pub struct PassExecutionState {
     // rooted at the provided operation.
     #[allow(unused)]
     pipeline_executor: Option<Box<DynamicPipelineExecutor>>,
+    post_pass_status: PostPassStatus,
 }
 impl PassExecutionState {
     pub fn new(
@@ -375,6 +393,7 @@ impl PassExecutionState {
             analysis_manager,
             preserved_analyses: Default::default(),
             pipeline_executor,
+            post_pass_status: PostPassStatus::Unchanged,
         }
     }
 
@@ -401,6 +420,16 @@ impl PassExecutionState {
     #[inline(always)]
     pub fn preserved_analyses_mut(&mut self) -> &mut PreservedAnalyses {
         &mut self.preserved_analyses
+    }
+
+    #[inline(always)]
+    pub fn post_pass_status(&self) -> &PostPassStatus {
+        &self.post_pass_status
+    }
+
+    #[inline(always)]
+    pub fn set_post_pass_status(&mut self, post_pass_status: PostPassStatus) {
+        self.post_pass_status = post_pass_status;
     }
 
     pub fn run_pipeline(

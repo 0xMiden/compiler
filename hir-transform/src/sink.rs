@@ -4,7 +4,7 @@ use midenc_hir::{
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
-    pass::{Pass, PassExecutionState},
+    pass::{Pass, PassExecutionState, PostPassStatus},
     traits::{ConstantLike, Terminator},
     Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
     OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
@@ -105,6 +105,7 @@ impl Pass for ControlFlowSink {
 
         let dominfo = state.analysis_manager().get_analysis::<DominanceInfo>()?;
 
+        let mut sunk = PostPassStatus::Unchanged;
         operation.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
             let regions_to_sink = {
                 let op = op.borrow();
@@ -118,7 +119,7 @@ impl Pass for ControlFlowSink {
             };
 
             // Sink side-effect free operations.
-            control_flow_sink(
+            sunk = control_flow_sink(
                 &regions_to_sink,
                 &dominfo,
                 |op: &Operation, _region: &Region| op.is_memory_effect_free(),
@@ -131,6 +132,8 @@ impl Pass for ControlFlowSink {
                 },
             );
         });
+
+        state.set_post_pass_status(sunk);
 
         Ok(())
     }
@@ -171,7 +174,7 @@ impl Pass for SinkOperandDefs {
     fn run_on_operation(
         &mut self,
         op: EntityMut<'_, Self::Target>,
-        _state: &mut PassExecutionState,
+        state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         let operation = op.as_operation_ref();
         drop(op);
@@ -184,6 +187,7 @@ impl Pass for SinkOperandDefs {
         // then process the worklist, moving everything into position.
         let mut worklist = alloc::collections::VecDeque::default();
 
+        let mut changed = PostPassStatus::Unchanged;
         // Visit ops in "true" post-order (i.e. block bodies are visited bottom-up).
         operation.raw_postwalk_all::<Backward, _>(|operation: OperationRef| {
             // Determine if any of this operation's operands represent one of the following:
@@ -308,6 +312,7 @@ impl Pass for SinkOperandDefs {
                         log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
                         operand.borrow_mut().set(replacement);
 
+                        changed = PostPassStatus::Changed;
                         // If no other uses of this value remain, then remove the original
                         // operation, as it is now dead.
                         if !operand_value.borrow().is_used() {
@@ -354,6 +359,7 @@ impl Pass for SinkOperandDefs {
                         log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
                         sink_state.replacements.insert(operand_value, replacement);
                         operand.borrow_mut().set(replacement);
+                        changed = PostPassStatus::Changed;
                     } else {
                         log::trace!(target: "sink-operand-defs", "    defining op is a constant with no other uses, moving into place");
                         // The original op can be moved
@@ -397,6 +403,7 @@ impl Pass for SinkOperandDefs {
             }
         }
 
+        state.set_post_pass_status(changed);
         Ok(())
     }
 }
@@ -548,12 +555,14 @@ pub fn control_flow_sink<P, F>(
     dominfo: &DominanceInfo,
     should_move_into_region: P,
     move_into_region: F,
-) where
+) -> PostPassStatus
+where
     P: Fn(&Operation, &Region) -> bool,
     F: Fn(OperationRef, RegionRef),
 {
     let sinker = Sinker::new(dominfo, should_move_into_region, move_into_region);
-    sinker.sink_regions(regions);
+    let sunk_regions = sinker.sink_regions(regions);
+    (sunk_regions > 0).into()
 }
 
 /// Populates `regions` with regions of the provided region branch op that are executed at most once

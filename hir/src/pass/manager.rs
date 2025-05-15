@@ -1,7 +1,13 @@
-use alloc::{boxed::Box, collections::BTreeMap, format, rc::Rc, string::ToString};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    format,
+    rc::Rc,
+    string::{String, ToString},
+};
 
 use compact_str::{CompactString, ToCompactString};
-use midenc_session::diagnostics::Severity;
+use midenc_session::{diagnostics::Severity, Options};
 use smallvec::{smallvec, SmallVec};
 
 use super::{
@@ -9,8 +15,10 @@ use super::{
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
-    traits::IsolatedFromAbove, Context, EntityMut, OpPrintingFlags, OpRegistration, Operation,
-    OperationName, OperationRef, Report,
+    pass::{PostPassStatus, Print},
+    traits::IsolatedFromAbove,
+    Context, EntityMut, OpPrintingFlags, OpRegistration, Operation, OperationName, OperationRef,
+    Report,
 };
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -29,11 +37,38 @@ pub enum PassDisplayMode {
 
 // TODO(pauls)
 #[allow(unused)]
+#[derive(Default, Debug)]
 pub struct IRPrintingConfig {
-    print_module_scope: bool,
-    print_after_only_on_change: bool,
-    print_after_only_on_failure: bool,
-    flags: OpPrintingFlags,
+    pub print_module_scope: bool,
+    pub print_after_only_on_failure: bool,
+    // NOTE: Taken from the Options struct
+    pub print_ir_after_all: bool,
+    pub print_ir_after_pass: SmallVec<[String; 1]>,
+    pub print_ir_after_modified: bool,
+    pub flags: OpPrintingFlags,
+}
+
+impl TryFrom<&Options> for IRPrintingConfig {
+    type Error = Report;
+
+    fn try_from(options: &Options) -> Result<Self, Self::Error> {
+        let pass_filters = options.print_ir_after_pass.clone();
+
+        if options.print_ir_after_all && !pass_filters.is_empty() {
+            return Err(Report::msg(
+                "Flags `print_ir_after_all` and `print_ir_after_pass` are mutually exclusive. \
+                 Please select only one."
+                    .to_string(),
+            ));
+        };
+
+        Ok(IRPrintingConfig {
+            print_ir_after_all: options.print_ir_after_all,
+            print_ir_after_pass: pass_filters.into(),
+            print_ir_after_modified: options.print_ir_after_modified,
+            ..Default::default()
+        })
+    }
 }
 
 /// The main pass manager and pipeline builder
@@ -169,8 +204,14 @@ impl PassManager {
         self
     }
 
-    pub fn enable_ir_printing(&mut self, _config: IRPrintingConfig) {
-        todo!()
+    pub fn enable_ir_printing(mut self, config: IRPrintingConfig) -> Self {
+        let print = Print::new(&config);
+
+        if let Some(print) = print {
+            let print = Box::new(print);
+            self.add_instrumentation(print);
+        }
+        self
     }
 
     pub fn enable_timing(&mut self, yes: bool) -> &mut Self {
@@ -820,7 +861,7 @@ impl OpToOpPassAdaptor {
         let mut op_name = None;
         if let Some(instrumentor) = instrumentor.as_deref() {
             op_name = pm.name().cloned();
-            instrumentor.run_before_pipeline(op_name.as_ref(), parent_info.as_ref().unwrap());
+            instrumentor.run_before_pipeline(op_name.as_ref(), parent_info.as_ref().unwrap(), op);
         }
 
         for pass in pm.passes_mut() {
@@ -943,8 +984,11 @@ impl OpToOpPassAdaptor {
             //
             // * If the pass said that it preserved all analyses then it can't have permuted the IR
             let run_verifier_now = !execution_state.preserved_analyses().is_all();
+
             if run_verifier_now {
-                result = Self::verify(&op, run_verifier_recursively);
+                if let Err(verification_result) = Self::verify(&op, run_verifier_recursively) {
+                    result = result.map_err(|_| verification_result);
+                }
             }
         }
 
@@ -952,12 +996,12 @@ impl OpToOpPassAdaptor {
             if result.is_err() {
                 instrumentor.run_after_pass_failed(pass, &op);
             } else {
-                instrumentor.run_after_pass(pass, &op);
+                instrumentor.run_after_pass(pass, &op, &execution_state);
             }
         }
 
         // Return the pass result
-        result
+        result.map(|_| ())
     }
 
     fn verify(op: &OperationRef, verify_recursively: bool) -> Result<(), Report> {
@@ -1008,7 +1052,7 @@ impl OpToOpPassAdaptor {
                 }
             }
         }
-
+        state.set_post_pass_status(PostPassStatus::Unchanged);
         Ok(())
     }
 }
