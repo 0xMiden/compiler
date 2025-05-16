@@ -57,7 +57,7 @@ impl ProjectTemplate {
 
 impl Default for ProjectTemplate {
     fn default() -> Self {
-        Self::program()
+        Self::account()
     }
 }
 
