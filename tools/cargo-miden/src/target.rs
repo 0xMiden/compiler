@@ -24,7 +24,6 @@ pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetE
             .is_some_and(|meta_obj| meta_obj.contains_key("miden"))
     });
     if has_miden_metadata {
-        // Assume `RollupTarget::Account` since we're not yet detecting rollup target type.
         TargetEnv::Rollup
     } else {
         TargetEnv::Base

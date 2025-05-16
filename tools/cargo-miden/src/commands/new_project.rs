@@ -13,9 +13,11 @@ use clap::Args;
 /// desired commit.
 const TEMPLATES_REPO_TAG: &str = "v0.9.0";
 
+pub const WIT_DEPS_PATH: &str = "wit-deps";
+
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
-#[derive(Clone, Args)]
+#[derive(Clone, Debug, Args)]
 pub struct ProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
@@ -185,7 +187,8 @@ impl NewCommand {
             .context("Failed to scaffold new Miden project from the template")?;
 
         // Deploy WIT files if creating an account or note script project
-        if self.template.as_ref().is_some_and(|t| t.account || t.note) {
+        let project_template = self.template.unwrap_or_default();
+        if project_template.account || project_template.note {
             deploy_wit_files(&self.path).context("Failed to deploy WIT files to the project")?;
         }
 
@@ -196,7 +199,7 @@ impl NewCommand {
 /// Deploy WIT files to the project's wit directory
 fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     // Create wit directory
-    let wit_dir = project_path.join("wit-deps");
+    let wit_dir = project_path.join(WIT_DEPS_PATH);
     fs::create_dir_all(&wit_dir)?;
 
     // Write WIT files from stdlib-sys

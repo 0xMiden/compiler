@@ -63,7 +63,7 @@ pub fn wasm_to_masm(
         args.push(entrypoint_opt.as_ref());
     }
 
-    // Add dependency linker arguments (Step 3.3)
+    // Add dependency linker arguments
     for dep_path in dependency_paths {
         args.push("--link-library".as_ref());
         // Ensure the path is valid OsStr
