@@ -13,10 +13,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.4809000212975027843
-    push.8892770453206013076
-    push.6114325285720887833
-    push.16345472731708777366
+    push.15405202155026927637
+    push.4585559732917965286
+    push.8410442968930442118
+    push.8306771088384821152
     adv.push_mapval
     push.262144
     push.2
@@ -48,7 +48,7 @@ proc.cross_ctx_note::bindings::__link_custom_section_describing_imports
 end
 
 proc.__rustc::__rust_alloc
-    push.1048600
+    push.1048604
     movup.2
     swap.1
     trace.240
@@ -59,7 +59,7 @@ proc.__rustc::__rust_alloc
 end
 
 proc.__rustc::__rust_realloc
-    push.1048600
+    push.1048604
     dup.4
     swap.2
     swap.4
@@ -259,7 +259,7 @@ proc.wit_bindgen_rt::cabi_realloc
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048605
+    push.1048609
     push.0
     add
     u32assert
@@ -284,7 +284,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048605
+        push.1048609
         push.0
         add
         u32assert

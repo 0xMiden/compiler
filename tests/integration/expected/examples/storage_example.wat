@@ -73,14 +73,14 @@
     (func $__wasm_call_ctors (;6;) (type 6))
     (func $storage_example::bindings::__link_custom_section_describing_imports (;7;) (type 6))
     (func $__rustc::__rust_alloc (;8;) (type 7) (param i32 i32) (result i32)
-      i32.const 1048612
+      i32.const 1048616
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
     (func $__rustc::__rust_realloc (;9;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048612
+        i32.const 1048616
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -239,7 +239,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048616
+            i32.load8_u offset=1048620
             drop
             local.get 3
             local.get 2
@@ -263,12 +263,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;14;) (type 6)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048617
+        i32.load8_u offset=1048621
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048617
+        i32.store8 offset=1048621
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;15;) (type 11) (param i32 i32 i32) (result i32)
@@ -430,7 +430,7 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
     (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map")
   )
   (alias export 1 "eq" (func (;0;)))

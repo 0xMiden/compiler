@@ -12,14 +12,14 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
 
         private builtin.function @__rustc::__rust_alloc(v0: i32, v1: i32) -> i32 {
         ^block10(v0: i32, v1: i32):
-            v3 = arith.constant 1048596 : i32;
+            v3 = arith.constant 1048600 : i32;
             v4 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v3, v1, v0) : i32
             builtin.ret v4;
         };
 
         private builtin.function @__rustc::__rust_realloc(v5: i32, v6: i32, v7: i32, v8: i32) -> i32 {
         ^block12(v5: i32, v6: i32, v7: i32, v8: i32):
-            v10 = arith.constant 1048596 : i32;
+            v10 = arith.constant 1048600 : i32;
             v11 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v10, v7, v8) : i32
             v200 = arith.constant 0 : i32;
             v12 = arith.constant 0 : i32;
@@ -143,7 +143,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block29:
-            v77 = arith.constant 1048601 : u32;
+            v77 = arith.constant 1048605 : u32;
             v242 = arith.constant 0 : u32;
             v78 = arith.add v242, v77 : u32 #[overflow = checked];
             v79 = hir.int_to_ptr v78 : ptr<byte, u8>;
@@ -159,7 +159,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             ^block32:
                 hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__wasm_call_ctors()
                 v240 = arith.constant 1 : u8;
-                v244 = arith.constant 1048601 : u32;
+                v244 = arith.constant 1048605 : u32;
                 v245 = arith.constant 0 : u32;
                 v91 = arith.add v245, v244 : u32 #[overflow = checked];
                 v92 = hir.int_to_ptr v91 : ptr<byte, u8>;
@@ -312,7 +312,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret_imm 1048576;
         };
 
-        builtin.segment readonly @1048576 = 0x0000000200000001000000010000000100000001;
+        builtin.segment readonly @1048576 = 0x000000020000000100000001000000010000000100000001;
     };
 
     public builtin.function @process-felt(v190: felt) -> felt {

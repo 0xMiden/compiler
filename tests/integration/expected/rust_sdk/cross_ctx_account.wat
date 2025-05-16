@@ -45,14 +45,14 @@
     (func $__wasm_call_ctors (;3;) (type 3))
     (func $cross_ctx_account::bindings::__link_custom_section_describing_imports (;4;) (type 3))
     (func $__rustc::__rust_alloc (;5;) (type 4) (param i32 i32) (result i32)
-      i32.const 1048596
+      i32.const 1048600
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
     (func $__rustc::__rust_realloc (;6;) (type 5) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048596
+        i32.const 1048600
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -99,7 +99,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048600
+            i32.load8_u offset=1048604
             drop
             local.get 3
             local.get 2
@@ -123,12 +123,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;10;) (type 3)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048601
+        i32.load8_u offset=1048605
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048601
+        i32.store8 offset=1048605
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;11;) (type 7) (param i32 i32 i32) (result i32)
@@ -218,7 +218,7 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
   )
   (alias export 1 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))

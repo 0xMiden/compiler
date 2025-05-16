@@ -18,7 +18,14 @@ interface intrinsics-felt {
     assert-eq: func(a: f32, b: f32);
 }
 
+interface intrinsics-debug {
+
+    break: func();
+
+}
+
 world intrinsics {
     import intrinsics-mem;
     import intrinsics-felt;
+    import intrinsics-debug;
 }
