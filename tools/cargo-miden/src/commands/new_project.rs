@@ -196,7 +196,7 @@ impl NewCommand {
 /// Deploy WIT files to the project's wit directory
 fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     // Create wit directory
-    let wit_dir = project_path.join("wit");
+    let wit_dir = project_path.join("wit-deps");
     fs::create_dir_all(&wit_dir)?;
 
     // Write WIT files from stdlib-sys
