@@ -248,12 +248,28 @@ category = "Test"
 description = "Runs all tests"
 dependencies = ["test-rust"]
 
+[tasks.install-cargo-miden]
+category = "Install"
+description = "Builds cargo-miden and installs it globally via the cargo bin directory"
+command = "cargo"
+args = [
+    "install",
+    "--locked",
+    "--path",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/cargo-miden",
+    "--${MIDENC_BUILD_PROFILE}",
+    "--force",
+    "--bin",
+    "cargo-miden",
+]
+
 [tasks.install-midenc]
 category = "Install"
 description = "Builds midenc and installs it globally via the cargo bin directory"
 command = "cargo"
 args = [
     "install",
+    "--locked",
     "--path",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/midenc",
     "--${MIDENC_BUILD_PROFILE}",
