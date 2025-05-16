@@ -847,8 +847,8 @@ impl OpToOpPassAdaptor {
     ) -> Result<(), Report> {
 
         if verify {
-            // We run an initial recursive verification, since this is potentially the first
-            // verification done in the operations
+            // We run an initial recursive verification, since this is the first verification done
+            // to the operations
             Self::verify(&op, true)?;
         }
 
