@@ -23,16 +23,16 @@ bindings::export!(MyAccount with_types_in bindings);
 
 mod bindings;
 
-use miden::{blake3_hash_1to1, felt, CoreAsset, Felt, NoteType, Recipient, Tag};
+use miden::{blake3_hash_1to1, felt, Asset, Felt, NoteType, Recipient, Tag};
 
 struct MyAccount;
 
 impl basic_wallet::Guest for MyAccount {
-    fn receive_asset(asset: CoreAsset) {
+    fn receive_asset(asset: Asset) {
         miden::account::add_asset(asset);
     }
 
-    fn send_asset(asset: CoreAsset, tag: Tag, note_type: NoteType, recipient: Recipient) {
+    fn send_asset(asset: Asset, tag: Tag, note_type: NoteType, recipient: Recipient) {
         let asset = miden::account::remove_asset(asset);
         miden::tx::create_note(asset, tag, note_type, recipient);
     }
@@ -53,7 +53,7 @@ impl aux::Guest for MyAccount {
         todo!()
     }
 
-    fn process_core_asset(input: CoreAsset) -> CoreAsset {
+    fn process_core_asset(input: Asset) -> CoreAsset {
         todo!()
     }
 }

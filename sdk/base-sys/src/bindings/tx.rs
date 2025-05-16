@@ -1,6 +1,6 @@
 use miden_stdlib_sys::Felt;
 
-use super::types::{CoreAsset, NoteId, NoteType, Recipient, Tag};
+use super::types::{Asset, NoteId, NoteType, Recipient, Tag};
 
 #[link(wasm_import_module = "miden:core-import/tx@1.0.0")]
 extern "C" {
@@ -22,12 +22,7 @@ extern "C" {
 /// Creates a new note.  asset is the asset to be included in the note.  tag is
 /// the tag to be included in the note.  recipient is the recipient of the note.
 /// Returns the id of the created note.
-pub fn create_note(
-    asset: CoreAsset,
-    tag: Tag,
-    note_type: NoteType,
-    recipient: Recipient,
-) -> NoteId {
+pub fn create_note(asset: Asset, tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteId {
     unsafe {
         extern_tx_create_note(
             asset.inner[0],

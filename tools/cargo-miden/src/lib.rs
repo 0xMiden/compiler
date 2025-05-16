@@ -182,7 +182,7 @@ where
                 package.metadata.section.bindings.with = [
                     ("miden:base/core-types@1.0.0/felt", "miden::Felt"),
                     ("miden:base/core-types@1.0.0/word", "miden::Word"),
-                    ("miden:base/core-types@1.0.0/core-asset", "miden::CoreAsset"),
+                    ("miden:base/core-types@1.0.0/asset", "miden::Asset"),
                     ("miden:base/core-types@1.0.0/account-id", "miden::AccountId"),
                     ("miden:base/core-types@1.0.0/tag", "miden::Tag"),
                     ("miden:base/core-types@1.0.0/note-type", "miden::NoteType"),

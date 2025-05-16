@@ -18,13 +18,13 @@ impl From<AccountId> for Felt {
 }
 
 #[repr(transparent)]
-pub struct CoreAsset {
+pub struct Asset {
     pub inner: Word,
 }
 
-impl CoreAsset {
+impl Asset {
     pub fn new(word: impl Into<Word>) -> Self {
-        CoreAsset { inner: word.into() }
+        Asset { inner: word.into() }
     }
 
     pub fn as_word(&self) -> &Word {
@@ -32,19 +32,19 @@ impl CoreAsset {
     }
 }
 
-impl From<Word> for CoreAsset {
+impl From<Word> for Asset {
     fn from(value: Word) -> Self {
         Self::new(value)
     }
 }
 
-impl From<CoreAsset> for Word {
-    fn from(val: CoreAsset) -> Self {
+impl From<Asset> for Word {
+    fn from(val: Asset) -> Self {
         val.inner
     }
 }
 
-impl AsRef<Word> for CoreAsset {
+impl AsRef<Word> for Asset {
     fn as_ref(&self) -> &Word {
         &self.inner
     }
