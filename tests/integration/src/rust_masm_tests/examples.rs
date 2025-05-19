@@ -257,12 +257,9 @@ fn counter_contract() {
 #[test]
 fn counter_note() {
     let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../../examples/counter-note",
-        config,
-        // TODO: Why? detected `--targe rollup` should include them.
-        ["-l".into(), "std".into(), "-l".into(), "base".into()],
-    );
+    let mut builder =
+        CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
+
     // TODO: how would a user set it? Hard-code for now?
     builder.with_entrypoint(FunctionIdent {
         module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),

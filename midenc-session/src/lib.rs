@@ -51,7 +51,8 @@ pub use self::{
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
-        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
+        add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
+        LibraryPathComponent, LinkLibrary, BASE, STDLIB,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},

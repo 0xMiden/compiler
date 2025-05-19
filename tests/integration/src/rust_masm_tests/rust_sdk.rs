@@ -117,10 +117,6 @@ fn rust_sdk_p2id_note_script() {
         "../rust-apps-wasm/rust-sdk/p2id-note",
         config,
         [
-            "-l".into(),
-            "std".into(),
-            "-l".into(),
-            "base".into(),
             "--link-library".into(),
             masp_path.into_os_string().into_string().unwrap().into(),
         ],
@@ -175,7 +171,7 @@ fn rust_sdk_cross_ctx_note() {
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-note",
         config,
-        ["-l".into(), "std".into(), "-l".into(), "base".into()],
+        [],
     );
     builder.with_entrypoint(FunctionIdent {
         module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
