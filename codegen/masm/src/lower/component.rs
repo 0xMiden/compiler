@@ -12,7 +12,7 @@ use crate::{
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
-    masm,
+    masm, TraceEvent,
 };
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
@@ -163,11 +163,17 @@ impl MasmComponentBuilder<'_> {
             let memory_intrinsics = masm::LibraryPath::new("intrinsics::mem").unwrap();
             self.init_body.push(Op::Inst(Span::new(
                 span,
+                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+            )));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
                 Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
                     name: heap_init,
                     path: memory_intrinsics,
                 }),
             )));
+            self.init_body
+                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
 
             // Data segment initialization
             self.emit_data_segment_initialization();
@@ -309,11 +315,17 @@ impl MasmComponentBuilder<'_> {
             // [num_words, write_ptr, COM, ..] -> [write_ptr']
             self.init_body.push(Op::Inst(Span::new(
                 span,
+                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+            )));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
                 Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
                     name: pipe_preimage_to_memory.clone(),
                     path: std_mem.clone(),
                 }),
             )));
+            self.init_body
+                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
             // drop write_ptr'
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }

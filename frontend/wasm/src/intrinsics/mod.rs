@@ -2,6 +2,7 @@ mod intrinsic;
 
 pub use self::intrinsic::*;
 
+pub mod debug;
 pub mod felt;
 pub mod mem;
 
@@ -21,6 +22,7 @@ fn modules() -> &'static FxHashSet<SymbolPath> {
         let mut s = FxHashSet::default();
         s.insert(SymbolPath::from_iter(mem::MODULE_PREFIX.iter().copied()));
         s.insert(SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()));
+        s.insert(SymbolPath::from_iter(debug::MODULE_PREFIX.iter().copied()));
         s
     });
     &MODULES
@@ -35,6 +37,9 @@ pub fn convert_intrinsics_call<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<SmallVec<[ValueRef; 1]>> {
     match intrinsic {
+        Intrinsic::Debug(function) => {
+            debug::convert_debug_intrinsics(function, function_ref, args, builder, span)
+        }
         Intrinsic::Mem(function) => {
             mem::convert_mem_intrinsics(function, function_ref, args, builder, span)
         }

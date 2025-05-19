@@ -130,5 +130,6 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
         info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
         info.register_operation_trait::<hir::MemSet, dyn HirLowering>();
         info.register_operation_trait::<hir::MemCpy, dyn HirLowering>();
+        info.register_operation_trait::<hir::Breakpoint, dyn HirLowering>();
     });
 }

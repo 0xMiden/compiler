@@ -4,6 +4,7 @@ use midenc_hir::{
 };
 
 use super::{int64, masm, OpEmitter};
+use crate::TraceEvent;
 
 impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 1
@@ -254,7 +255,11 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
         self.emit(masm::Instruction::Exec(callee), span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
     }
 
     /// Execute the given procedure in a new context.
@@ -268,7 +273,11 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
         self.emit(masm::Instruction::Call(callee), span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
     }
 
     fn process_call_signature(

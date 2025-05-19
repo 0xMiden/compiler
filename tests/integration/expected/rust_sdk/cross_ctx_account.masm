@@ -1,12 +1,18 @@
 # mod miden:cross-ctx-account/foo@1.0.0
 
 export.process-felt
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden:cross-ctx-account/foo@1.0.0#process-felt
+    trace.252
+    nop
 end
 
 export.init
     push.2162688
+    trace.240
     exec.::intrinsics::mem::heap_init
+    trace.252
     push.5121323707957172480
     push.16385291266171272914
     push.3612753469884014922
@@ -14,7 +20,9 @@ export.init
     adv.push_mapval
     push.262144
     push.3
+    trace.240
     exec.::std::mem::pipe_preimage_to_memory
+    trace.252
     drop
     push.1048576
     u32assert
@@ -35,7 +43,11 @@ proc.__rustc::__rust_alloc
     push.1048612
     movup.2
     swap.1
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    trace.252
+    nop
 end
 
 proc.__rustc::__rust_realloc
@@ -44,7 +56,11 @@ proc.__rustc::__rust_realloc
     swap.2
     swap.4
     swap.1
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    trace.252
+    nop
     push.0
     push.0
     dup.2
@@ -96,7 +112,11 @@ proc.__rustc::__rust_realloc
                 assertz
                 u32divmod.4
                 swap.1
+                trace.240
+                nop
                 exec.::intrinsics::mem::load_sw
+                trace.252
+                nop
                 push.128
                 u32and
                 swap.1
@@ -104,13 +124,21 @@ proc.__rustc::__rust_realloc
                 swap.1
                 dup.1
                 dup.1
+                trace.240
+                nop
                 exec.::intrinsics::mem::load_sw
+                trace.252
+                nop
                 push.4294967040
                 u32and
                 movup.3
                 u32or
                 movdn.2
+                trace.240
+                nop
                 exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
                 u32wrapping_add.1
                 dup.0
                 dup.4
@@ -122,13 +150,21 @@ proc.__rustc::__rust_realloc
 end
 
 export.miden:cross-ctx-account/foo@1.0.0#process-felt
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen_rt::run_ctors_once
+    trace.252
+    nop
     push.3
     add
 end
 
 export.cabi_realloc_wit_bindgen_0_28_0
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen_rt::cabi_realloc
+    trace.252
+    nop
 end
 
 proc.wit_bindgen_rt::cabi_realloc
@@ -137,7 +173,11 @@ proc.wit_bindgen_rt::cabi_realloc
     swap.1
     neq
     if.true
+        trace.240
+        nop
         exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__rustc::__rust_realloc
+        trace.252
+        nop
         push.0
         push.3735929054
         movup.2
@@ -159,7 +199,11 @@ proc.wit_bindgen_rt::cabi_realloc
             swap.1
         else
             swap.1
+            trace.240
+            nop
             exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__rustc::__rust_alloc
+            trace.252
+            nop
             push.0
             push.3735929054
             movup.2
@@ -207,7 +251,11 @@ proc.wit_bindgen_rt::run_ctors_once
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.128
     u32and
     push.0
@@ -216,7 +264,11 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
+        trace.240
+        nop
         exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__wasm_call_ctors
+        trace.252
+        nop
         push.1
         push.1048617
         push.0
@@ -226,13 +278,21 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         dup.1
         dup.1
+        trace.240
+        nop
         exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.4294967040
         u32and
         movup.3
         u32or
         movdn.2
+        trace.240
+        nop
         exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
     end
 end
 
@@ -262,7 +322,11 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
         push.3735929054
     else
         movup.2
+        trace.240
+        nop
         exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::core::ptr::alignment::Alignment::max
+        trace.252
+        nop
         push.0
         push.2147483648
         dup.2
@@ -297,15 +361,27 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             assertz.err=250
             u32divmod.4
             swap.1
+            trace.240
+            nop
             exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.0
             neq
             if.true
                 push.0
                 swap.3
             else
+                trace.240
+                nop
                 exec.::intrinsics::mem::heap_base
+                trace.252
+                nop
+                trace.240
+                nop
                 exec.::intrinsics::mem::memory_size
+                trace.252
+                nop
                 dup.4
                 push.4
                 dup.1
@@ -323,7 +399,11 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32divmod.4
                 swap.1
+                trace.240
+                nop
                 exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
                 push.0
                 swap.3
             end
@@ -336,7 +416,11 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             assertz.err=250
             u32divmod.4
             swap.1
+            trace.240
+            nop
             exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.0
             dup.3
             push.268435456
@@ -365,7 +449,11 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32divmod.4
                 swap.1
+                trace.240
+                nop
                 exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
                 push.1
                 swap.1
                 movup.2
@@ -397,6 +485,10 @@ proc.core::ptr::alignment::Alignment::max
 end
 
 export.cabi_realloc
+    trace.240
+    nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::cabi_realloc_wit_bindgen_0_28_0
+    trace.252
+    nop
 end
 

@@ -30,6 +30,16 @@ impl TraceEvent {
     pub fn is_frame_end(&self) -> bool {
         matches!(self, Self::FrameEnd)
     }
+
+    pub fn as_u32(self) -> u32 {
+        match self {
+            Self::FrameStart => TRACE_FRAME_START,
+            Self::FrameEnd => TRACE_FRAME_END,
+            Self::AssertionFailed(None) => 0,
+            Self::AssertionFailed(Some(code)) => code.get(),
+            Self::Unknown(event) => event,
+        }
+    }
 }
 impl From<u32> for TraceEvent {
     fn from(raw: u32) -> Self {

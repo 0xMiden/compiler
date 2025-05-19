@@ -104,6 +104,7 @@ ub = {}
 account = {}
 blake3 = {}
 crypto = {}
+debug = {}
 dsa = {}
 hashes = {}
 intrinsics = {}
