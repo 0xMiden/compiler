@@ -168,6 +168,16 @@ fn rust_sdk_cross_ctx_note() {
 
     let config = WasmTranslationConfig::default();
 
+    // Build counter account package
+    let builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cross-ctx-account",
+        config.clone(),
+        [],
+    );
+    let mut test = builder.build();
+    let account_package = test.compiled_package();
+
+    // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-note",
         config,
@@ -175,16 +185,6 @@ fn rust_sdk_cross_ctx_note() {
     );
 
     let mut test = builder.build();
-    let account_package = Arc::new(
-        Package::read_from_bytes(
-            &std::fs::read(
-                "../rust-apps-wasm/rust-sdk/cross-ctx-account/target/miden/release/\
-                 cross_ctx_account.masp",
-            )
-            .unwrap(),
-        )
-        .unwrap(),
-    );
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
