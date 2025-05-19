@@ -168,28 +168,31 @@ fn rust_sdk_cross_ctx_note() {
 
     let config = WasmTranslationConfig::default();
 
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+    let builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-note",
         config,
         [],
     );
-    builder.with_entrypoint(FunctionIdent {
-        module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
-        function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
-    });
+
     let mut test = builder.build();
+    let account_package = Arc::new(
+        Package::read_from_bytes(
+            &std::fs::read(
+                "../rust-apps-wasm/rust-sdk/cross-ctx-account/target/miden/release/\
+                 cross_ctx_account.masp",
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    );
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
     let package = test.compiled_package();
     let mut exec = Executor::new(vec![]);
-    for dep_path in test.dependencies {
-        let account_package =
-            Arc::new(Package::read_from_bytes(&std::fs::read(dep_path).unwrap()).unwrap());
-        exec.dependency_resolver_mut()
-            .add(account_package.digest(), account_package.into());
-    }
+    exec.dependency_resolver_mut()
+        .add(account_package.digest(), account_package.into());
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }

@@ -375,7 +375,7 @@ pub fn add_target_link_libraries(
                 link_libraries_out.push(LinkLibrary::std());
             }
         }
-        TargetEnv::Rollup => {
+        TargetEnv::Rollup { .. } => {
             if !link_libraries_out.iter().any(|ll| ll.name == "std") {
                 link_libraries_out.push(LinkLibrary::std());
             }
