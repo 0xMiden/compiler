@@ -39,14 +39,20 @@ overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
 
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:counter-contract" = { path = "../counter-contract" }
+
 # TODO: switch to miden table
 [package.metadata.component]
 package = "miden:counter-note"
 
 [package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden.wit" }
-"miden:core-import" = { path = "../../tests/rust-apps-wasm/rust-sdk/wit-sdk/miden-core-import.wit" }
-"miden:counter" = { path = "../counter/wit/counter.wit" }
+"miden:base" = { path = "../../sdk/base/wit/miden.wit" }
+"miden:core-intrinsics" = { path = "../../sdk/stdlib-sys/wit/miden-core-intrinsics.wit" }
+"miden:core-stdlib" = { path = "../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
+"miden:core-base" = { path = "../../sdk/base-sys/wit/miden-core-base.wit" }
+"miden:counter-contract" = { path = "../counter-contract/wit/counter.wit" }
 
 [package.metadata.cargo-machete]
 ignored = ["wit-bindgen-rt"]

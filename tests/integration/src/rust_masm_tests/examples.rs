@@ -1,11 +1,14 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use expect_test::{expect, expect_file};
 use miden_core::utils::Deserializable;
+use miden_mast_package::Package;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{Felt, Immediate, Op, SymbolTable};
+use midenc_hir::{
+    interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
+};
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -249,4 +252,40 @@ fn counter_contract() {
         values = []
     "#]]
     .assert_eq(&toml);
+}
+
+#[test]
+fn counter_note() {
+    let config = WasmTranslationConfig::default();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../../examples/counter-note",
+        config,
+        // TODO: Why? detected `--targe rollup` should include them.
+        ["-l".into(), "std".into(), "-l".into(), "base".into()],
+    );
+    // TODO: how would a user set it? Hard-code for now?
+    builder.with_entrypoint(FunctionIdent {
+        module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
+        function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
+    });
+
+    let mut test = builder.build();
+
+    test.expect_wasm(expect_file!["../../expected/examples/counter_note.wat"]);
+    test.expect_ir(expect_file!["../../expected/examples/counter_note.hir"]);
+    test.expect_masm(expect_file!["../../expected/examples/counter_note.masm"]);
+    let package = test.compiled_package();
+    assert!(package.is_program(), "expected program");
+
+    // TODO: uncomment after https://github.com/0xMiden/compiler/pull/508 is merged
+    //
+    // let mut exec = Executor::new(vec![]);
+    // for dep_path in test.dependencies {
+    //     let account_package =
+    //         Arc::new(Package::read_from_bytes(&std::fs::read(dep_path).unwrap()).unwrap());
+    //     exec.dependency_resolver_mut()
+    //         .add(account_package.digest(), account_package.into());
+    // }
+    // exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    // let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
