@@ -12,9 +12,11 @@ extern crate std;
 
 use alloc::{
     borrow::ToOwned,
+    format,
     string::{String, ToString},
     vec::Vec,
 };
+use core::str::FromStr;
 
 mod color;
 pub mod diagnostics;
@@ -39,8 +41,6 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
-#[cfg(feature = "std")]
-use clap::ValueEnum;
 pub use miden_assembly;
 use midenc_hir_symbol::Symbol;
 
@@ -51,7 +51,8 @@ pub use self::{
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
-        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, BASE, STDLIB,
+        add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
+        LibraryPathComponent, LinkLibrary, BASE, STDLIB,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
@@ -74,7 +75,7 @@ impl ProjectType {
         match target {
             // We default to compiling a program unless we find later
             // that we do not have an entrypoint.
-            TargetEnv::Base | TargetEnv::Rollup => Self::Program,
+            TargetEnv::Base | TargetEnv::Rollup { .. } => Self::Program,
             // The emulator can run either programs or individual library functions,
             // so we compile as a library and delegate the choice of how to run it
             // to the emulator
@@ -430,7 +431,6 @@ impl Session {
 
 /// This enum describes the different target environments targetable by the compiler
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "std", derive(ValueEnum))]
 pub enum TargetEnv {
     /// The emulator environment, which has a more restrictive instruction set
     Emu,
@@ -438,14 +438,52 @@ pub enum TargetEnv {
     #[default]
     Base,
     /// The Miden Rollup environment, using the Rollup kernel
-    Rollup,
+    Rollup { target: RollupTarget },
 }
 impl fmt::Display for TargetEnv {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Emu => f.write_str("emu"),
             Self::Base => f.write_str("base"),
-            Self::Rollup => f.write_str("rollup"),
+            Self::Rollup { target } => f.write_str(&format!("rollup:{}", target)),
+        }
+    }
+}
+
+impl FromStr for TargetEnv {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "emu" => Ok(Self::Emu),
+            "base" => Ok(Self::Base),
+            "rollup" => Ok(Self::Rollup {
+                target: RollupTarget::default(),
+            }),
+            "rollup:account" => Ok(Self::Rollup {
+                target: RollupTarget::Account,
+            }),
+            "rollup:note_script" => Ok(Self::Rollup {
+                target: RollupTarget::NoteScript,
+            }),
+            _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
+        }
+    }
+}
+
+/// This enum describes the different rollup targets
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub enum RollupTarget {
+    #[default]
+    Account,
+    NoteScript,
+}
+
+impl fmt::Display for RollupTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Account => f.write_str("account"),
+            Self::NoteScript => f.write_str("note_script"),
         }
     }
 }

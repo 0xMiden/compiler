@@ -1,11 +1,14 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use expect_test::{expect, expect_file};
 use miden_core::utils::Deserializable;
+use miden_mast_package::Package;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{Felt, Immediate, Op, SymbolTable};
+use midenc_hir::{
+    interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
+};
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -62,11 +65,7 @@ fn fibonacci() {
     }
 
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../../examples/fibonacci",
-        config,
-        ["--entrypoint=fibonacci::entrypoint".into()],
-    );
+    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/fibonacci", config, []);
     test.expect_wasm(expect_file!["../../expected/examples/fib.wat"]);
     test.expect_ir(expect_file!["../../expected/examples/fib.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/fib.masm"]);
@@ -108,11 +107,7 @@ fn collatz() {
     }
 
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../../examples/collatz",
-        config,
-        ["--entrypoint=collatz::entrypoint".into()],
-    );
+    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/collatz", config, []);
     let artifact_name = "collatz";
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
@@ -164,11 +159,7 @@ fn is_prime() {
     }
 
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../../examples/is-prime",
-        config,
-        ["--entrypoint=is_prime::entrypoint".into()],
-    );
+    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/is-prime", config, []);
     let artifact_name = "is_prime";
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
@@ -249,4 +240,31 @@ fn counter_contract() {
         values = []
     "#]]
     .assert_eq(&toml);
+}
+
+#[test]
+fn counter_note() {
+    let config = WasmTranslationConfig::default();
+    let builder =
+        CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
+
+    let mut test = builder.build();
+
+    test.expect_wasm(expect_file!["../../expected/examples/counter_note.wat"]);
+    test.expect_ir(expect_file!["../../expected/examples/counter_note.hir"]);
+    test.expect_masm(expect_file!["../../expected/examples/counter_note.masm"]);
+    let package = test.compiled_package();
+    assert!(package.is_program(), "expected program");
+
+    // TODO: uncomment after the testing environment implemented (node, devnet, etc.)
+    //
+    // let mut exec = Executor::new(vec![]);
+    // for dep_path in test.dependencies {
+    //     let account_package =
+    //         Arc::new(Package::read_from_bytes(&std::fs::read(dep_path).unwrap()).unwrap());
+    //     exec.dependency_resolver_mut()
+    //         .add(account_package.digest(), account_package.into());
+    // }
+    // exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    // let trace = exec.execute(&package.unwrap_program(), &test.session);
 }

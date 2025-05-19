@@ -47,7 +47,7 @@ pub enum BuildOutput {
     Wasm {
         /// Path to the compiled WASM file.
         artifact_path: PathBuf,
-        /// Miden package for each dependency
-        dependencies: Vec<PathBuf>,
+        /// Additional arguments passed to the Miden compiler.
+        midenc_flags: Vec<String>,
     },
 }

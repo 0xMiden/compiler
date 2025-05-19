@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+use std::path::Path;
+
 use anyhow::{bail, Context, Result};
 use cargo_component::{
     config::{CargoArguments, Config},
@@ -11,7 +13,7 @@ use commands::NewCommand;
 pub use commands::WIT_DEPS_PATH;
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
-use midenc_session::TargetEnv;
+use midenc_session::{RollupTarget, TargetEnv};
 use non_component::run_cargo_command_for_non_component;
 pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
@@ -262,7 +264,7 @@ where
                 wasm_outputs_res
             })?;
             // dbg!(&wasm_outputs);
-            if target_env == TargetEnv::Rollup {
+            if matches!(target_env, TargetEnv::Rollup { .. }) {
                 assert_eq!(
                     wasm_outputs.len(),
                     1,
@@ -280,11 +282,21 @@ where
             }
             assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
             let wasm_output = wasm_outputs.first().unwrap();
+
+            let mut midenc_flags = midenc_flags_from_target(target_env, project_type, wasm_output);
+
+            // Add dependency linker arguments
+            for dep_path in dependency_packages_paths {
+                midenc_flags.push("--link-library".to_string());
+                // Ensure the path is valid OsStr
+                midenc_flags.push(dep_path.to_str().unwrap().to_string());
+            }
+
             match build_output_type {
                 OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
                     output: BuildOutput::Wasm {
                         artifact_path: wasm_output.clone(),
-                        dependencies: dependency_packages_paths,
+                        midenc_flags,
                     },
                 })),
                 OutputType::Masm => {
@@ -298,14 +310,9 @@ where
                         std::fs::create_dir_all(&miden_out_dir)?;
                     }
 
-                    let output = wasm_to_masm(
-                        wasm_output,
-                        miden_out_dir.as_std_path(),
-                        &dependency_packages_paths,
-                        project_type,
-                        target_env,
-                    )
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let output =
+                        wasm_to_masm(wasm_output, miden_out_dir.as_std_path(), midenc_flags)
+                            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                     Ok(Some(CommandOutput::BuildCommandOutput {
                         output: BuildOutput::Masm {
@@ -316,4 +323,44 @@ where
             }
         }
     }
+}
+
+fn midenc_flags_from_target(
+    target_env: TargetEnv,
+    project_type: ProjectType,
+    wasm_output: &Path,
+) -> Vec<String> {
+    let mut midenc_args = Vec::new();
+
+    match target_env {
+        TargetEnv::Base | TargetEnv::Emu => match project_type {
+            ProjectType::Program => {
+                midenc_args.push("--exe".into());
+                let masm_module_name = wasm_output
+                    .file_stem()
+                    .expect("invalid wasm file path: no file stem")
+                    .to_str()
+                    .unwrap();
+                let entrypoint_opt = format!("--entrypoint={masm_module_name}::entrypoint");
+                midenc_args.push(entrypoint_opt);
+            }
+            ProjectType::Library => midenc_args.push("--lib".into()),
+        },
+        TargetEnv::Rollup { target } => {
+            midenc_args.push("--target".into());
+            match target {
+                RollupTarget::Account => {
+                    midenc_args.push("rollup:account".into());
+                    midenc_args.push("--lib".into());
+                }
+                RollupTarget::NoteScript => {
+                    midenc_args.push("rollup:note_script".into());
+                    midenc_args.push("--exe".into());
+                    midenc_args
+                        .push("--entrypoint=miden:base/note-script@1.0.0::note-script".to_string())
+                }
+            }
+        }
+    }
+    midenc_args
 }

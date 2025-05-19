@@ -7,6 +7,7 @@ use std::ffi::OsString;
 #[cfg(feature = "std")]
 use clap::{builder::ArgPredicate, Parser};
 use midenc_session::{
+    add_target_link_libraries,
     diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
     OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
@@ -187,18 +188,17 @@ pub struct Compiler {
     /// while the latter will be located in the search path based on its KIND.
     ///
     /// See below for valid KINDs:
-    #[cfg_attr(feature = "std", arg(
-        long = "link-library",
-        short = 'l',
-        value_name = "[KIND=]NAME",
-        value_delimiter = ',',
-        default_value_ifs([
-            ("target", "base", "std"),
-            ("target", "rollup", "std,base"),
-        ]),
-        next_line_help(true),
-        help_heading = "Linker"
-    ))]
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "link-library",
+            short = 'l',
+            value_name = "[KIND=]NAME",
+            value_delimiter = ',',
+            next_line_help(true),
+            help_heading = "Linker"
+        )
+    )]
     pub link_libraries: Vec<LinkLibrary>,
     /// Specify one or more output types for the compiler to emit
     ///
@@ -502,7 +502,8 @@ impl Compiler {
             .with_optimization(self.opt_level)
             .with_output_types(output_types);
         options.search_paths = self.search_path;
-        options.link_libraries = self.link_libraries;
+        let link_libraries = add_target_link_libraries(self.link_libraries, &self.target);
+        options.link_libraries = link_libraries;
         options.entrypoint = self.entrypoint;
         options.parse_only = codegen.parse_only;
         options.analyze_only = codegen.analyze_only;

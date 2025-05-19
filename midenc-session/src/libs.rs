@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use alloc::{borrow::Cow, format, str::FromStr, sync::Arc};
+use alloc::{borrow::Cow, format, str::FromStr, sync::Arc, vec::Vec};
 #[cfg(feature = "std")]
 use alloc::{boxed::Box, string::ToString};
 use core::fmt;
@@ -14,7 +14,7 @@ use miden_core::utils::Deserializable;
 use miden_stdlib::StdLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 
-use crate::{diagnostics::Report, PathBuf, Session};
+use crate::{diagnostics::Report, PathBuf, Session, TargetEnv};
 #[cfg(feature = "std")]
 use crate::{
     diagnostics::{IntoDiagnostic, WrapErr},
@@ -78,6 +78,24 @@ pub struct LinkLibrary {
     pub kind: LibraryKind,
 }
 impl LinkLibrary {
+    /// Construct a LinkLibrary for Miden stdlib
+    pub fn std() -> Self {
+        LinkLibrary {
+            name: "std".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
+    /// Construct a LinkLibrary for Miden base(rollup/tx kernel) library
+    pub fn base() -> Self {
+        LinkLibrary {
+            name: "base".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
     #[cfg(not(feature = "std"))]
     pub fn load(&self, _session: &Session) -> Result<CompiledLibrary, Report> {
         // Handle libraries shipped with the compiler, or via Miden crates
@@ -342,4 +360,30 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
             })
         }
     }
+}
+
+/// Add libraries required by the target environment to the list of libraries to link against only
+/// if they are not already present.
+pub fn add_target_link_libraries(
+    link_libraries_in: Vec<LinkLibrary>,
+    target: &TargetEnv,
+) -> Vec<LinkLibrary> {
+    let mut link_libraries_out = link_libraries_in;
+    match target {
+        TargetEnv::Base | TargetEnv::Emu => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+        }
+        TargetEnv::Rollup { .. } => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+
+            if !link_libraries_out.iter().any(|ll| ll.name == "base") {
+                link_libraries_out.push(LinkLibrary::base());
+            }
+        }
+    }
+    link_libraries_out
 }
