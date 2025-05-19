@@ -1,16 +1,16 @@
 use miden_stdlib_sys::Felt;
 
-use super::types::{AccountId, CoreAsset};
+use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-import/account@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
     #[link_name = "get-id"]
     pub fn extern_account_get_id() -> AccountId;
     #[link_name = "add-asset"]
-    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut CoreAsset);
+    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "remove-asset"]
-    pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut CoreAsset);
+    pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "incr-nonce"]
     pub fn extern_account_incr_nonce(value: i32);
 }
@@ -30,9 +30,9 @@ pub fn get_id() -> AccountId {
 /// - If the asset is not valid.
 /// - If the total value of two fungible assets is greater than or equal to 2^63.
 /// - If the vault already contains the same non-fungible asset.
-pub fn add_asset(asset: CoreAsset) -> CoreAsset {
+pub fn add_asset(asset: Asset) -> Asset {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<CoreAsset>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_account_add_asset(
             asset.inner[0],
             asset.inner[1],
@@ -50,9 +50,9 @@ pub fn add_asset(asset: CoreAsset) -> CoreAsset {
 /// - The fungible asset is not found in the vault.
 /// - The amount of the fungible asset in the vault is less than the amount to be removed.
 /// - The non-fungible asset is not found in the vault.
-pub fn remove_asset(asset: CoreAsset) -> CoreAsset {
+pub fn remove_asset(asset: Asset) -> Asset {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<CoreAsset>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_account_remove_asset(
             asset.inner[0],
             asset.inner[1],

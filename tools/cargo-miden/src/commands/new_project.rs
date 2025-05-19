@@ -1,4 +1,7 @@
-use std::{fmt, path::PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
@@ -8,11 +11,13 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.8.0";
+const TEMPLATES_REPO_TAG: &str = "v0.9.0";
+
+pub const WIT_DEPS_PATH: &str = "wit-deps";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
-#[derive(Clone, Args)]
+#[derive(Clone, Debug, Args)]
 pub struct ProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
@@ -54,7 +59,7 @@ impl ProjectTemplate {
 
 impl Default for ProjectTemplate {
     fn default() -> Self {
-        Self::program()
+        Self::account()
     }
 }
 
@@ -95,6 +100,8 @@ pub struct NewCommand {
     #[clap(long, hide(true))]
     pub compiler_branch: Option<String>,
 }
+
+use std::{fs, io::Write};
 
 impl NewCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
@@ -143,7 +150,7 @@ impl NewCommand {
                 ..Default::default()
             },
             None => {
-                let project_kind_str = match self.template {
+                let project_kind_str = match self.template.as_ref() {
                     Some(kind) => kind.to_string(),
                     None => ProjectTemplate::default().to_string(),
                 };
@@ -178,13 +185,50 @@ impl NewCommand {
         };
         cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
+
+        // Deploy WIT files if creating an account or note script project
+        let project_template = self.template.unwrap_or_default();
+        if project_template.account || project_template.note {
+            deploy_wit_files(&self.path).context("Failed to deploy WIT files to the project")?;
+        }
+
         Ok(self.path)
     }
 }
 
-fn set_default_test_compiler(define: &mut Vec<String>) {
-    use std::path::Path;
+/// Deploy WIT files to the project's wit directory
+fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
+    // Create wit directory
+    let wit_dir = project_path.join(WIT_DEPS_PATH);
+    fs::create_dir_all(&wit_dir)?;
 
+    // Write WIT files from stdlib-sys
+    write_wit_file(
+        &wit_dir.join("miden-core-stdlib.wit"),
+        miden_stdlib_sys::stdlib_wit::STDLIB_WIT,
+    )?;
+    write_wit_file(
+        &wit_dir.join("miden-core-intrinsics.wit"),
+        miden_stdlib_sys::stdlib_wit::INTRINSICS_WIT,
+    )?;
+
+    // Write WIT file from base-sys
+    write_wit_file(&wit_dir.join("miden-core-base.wit"), miden_base_sys::base_sys_wit::BASE_WIT)?;
+
+    // Write WIT file from base
+    write_wit_file(&wit_dir.join("miden.wit"), miden_base::base_wit::MIDEN_WIT)?;
+
+    Ok(())
+}
+
+/// Helper function to write a WIT file
+fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
+    let mut file = fs::File::create(path)?;
+    file.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+fn set_default_test_compiler(define: &mut Vec<String>) {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let compiler_path = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
     define.push(format!("compiler_path={}", compiler_path.display()));

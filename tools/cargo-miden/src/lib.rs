@@ -8,8 +8,10 @@ use cargo_component::{
 use cargo_component_core::terminal::{Color, Terminal, Verbosity};
 use clap::{CommandFactory, Parser};
 use commands::NewCommand;
+pub use commands::WIT_DEPS_PATH;
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
+use midenc_session::TargetEnv;
 use non_component::run_cargo_command_for_non_component;
 pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
@@ -180,7 +182,7 @@ where
                 package.metadata.section.bindings.with = [
                     ("miden:base/core-types@1.0.0/felt", "miden::Felt"),
                     ("miden:base/core-types@1.0.0/word", "miden::Word"),
-                    ("miden:base/core-types@1.0.0/core-asset", "miden::CoreAsset"),
+                    ("miden:base/core-types@1.0.0/asset", "miden::Asset"),
                     ("miden:base/core-types@1.0.0/account-id", "miden::AccountId"),
                     ("miden:base/core-types@1.0.0/tag", "miden::Tag"),
                     ("miden:base/core-types@1.0.0/note-type", "miden::NoteType"),
@@ -242,7 +244,7 @@ where
             let mut wasm_outputs = rt.block_on(async {
                 let config = Config::new(terminal, None).await?;
                 let client = config.client(None, cargo_args.offline).await?;
-                run_cargo_command(
+                let wasm_outputs_res = run_cargo_command(
                     client,
                     &config,
                     &metadata,
@@ -251,10 +253,22 @@ where
                     &cargo_args,
                     &spawn_args,
                 )
-                .await
+                .await;
+
+                if let Err(e) = wasm_outputs_res {
+                    config.terminal().error(format!("{e:?}"))?;
+                    std::process::exit(1);
+                };
+                wasm_outputs_res
             })?;
             // dbg!(&wasm_outputs);
-            if wasm_outputs.is_empty() {
+            if target_env == TargetEnv::Rollup {
+                assert_eq!(
+                    wasm_outputs.len(),
+                    1,
+                    "expected Wasm component artifact for rollup target"
+                );
+            } else if wasm_outputs.is_empty() {
                 // crates that don't have a WIT component are ignored by the
                 // `cargo-component` run_cargo_command and return no outputs.
                 // Build them with our own version of run_cargo_command

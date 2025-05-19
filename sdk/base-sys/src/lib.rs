@@ -7,3 +7,6 @@ pub mod bindings;
 
 #[cfg(feature = "masl-lib")]
 pub mod masl;
+
+#[cfg(feature = "wit")]
+pub mod base_sys_wit;

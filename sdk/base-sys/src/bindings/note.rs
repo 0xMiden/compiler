@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::Felt;
 
-use super::CoreAsset;
+use super::Asset;
 
 #[link(wasm_import_module = "miden:core-import/note@1.0.0")]
 extern "C" {
@@ -42,6 +42,6 @@ pub fn get_inputs() -> Vec<Felt> {
     inputs
 }
 
-pub fn get_assets() -> Vec<CoreAsset> {
+pub fn get_assets() -> Vec<Asset> {
     todo!()
 }

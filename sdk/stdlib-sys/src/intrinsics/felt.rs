@@ -2,7 +2,7 @@
 
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[link(wasm_import_module = "miden:core-import/intrinsics-felt@1.0.0")]
+#[link(wasm_import_module = "miden:core-intrinsics/intrinsics-felt@1.0.0")]
 extern "C" {
     #[link_name = "from-u64-unchecked"]
     fn extern_from_u64_unchecked(value: u64) -> Felt;

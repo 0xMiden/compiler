@@ -27,3 +27,5 @@ default = []
 "bindings" = ["dep:miden-stdlib-sys"]
 # MASL library for Miden rollup (tx kernel, etc.) used by the compiler in the link phase
 "masl-lib" = ["dep:miden-assembly"]
+# WIT files for Wasm Component Model
+"wit" = []

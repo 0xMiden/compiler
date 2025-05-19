@@ -22,7 +22,7 @@
       (export (;0;) "heap-base" (func (type 0)))
     )
   )
-  (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;2;) (type 3)))
+  (import "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance (;2;) (type 3)))
   (type (;4;)
     (instance
       (type (;0;) (func (param "a" u32) (result f32)))
@@ -31,7 +31,7 @@
       (export (;1;) "assert-eq" (func (type 1)))
     )
   )
-  (import "miden:core-import/intrinsics-felt@1.0.0" (instance (;3;) (type 4)))
+  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;3;) (type 4)))
   (core module (;0;)
     (type (;0;) (func (param i32) (result f32)))
     (type (;1;) (func (param f32) (result f32)))
@@ -41,10 +41,10 @@
     (type (;5;) (func (param i32 i32) (result i32)))
     (type (;6;) (func (param i32 i32 i32 i32) (result i32)))
     (type (;7;) (func (param i32 i32 i32) (result i32)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
     (import "miden:cross-ctx-account/foo@1.0.0" "process-felt" (func $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1 (;1;) (type 1)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;2;) (type 2)))
-    (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;3;) (type 3)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;2;) (type 2)))
+    (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;3;) (type 3)))
     (table (;0;) 3 3 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -56,14 +56,14 @@
     (func $__wasm_call_ctors (;4;) (type 4))
     (func $cross_ctx_note::bindings::__link_custom_section_describing_imports (;5;) (type 4))
     (func $__rustc::__rust_alloc (;6;) (type 5) (param i32 i32) (result i32)
-      i32.const 1048616
+      i32.const 1048604
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
     (func $__rustc::__rust_realloc (;7;) (type 6) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048616
+        i32.const 1048604
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -112,7 +112,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048620
+            i32.load8_u offset=1048608
             drop
             local.get 3
             local.get 2
@@ -136,12 +136,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;11;) (type 4)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048621
+        i32.load8_u offset=1048609
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048621
+        i32.store8 offset=1048609
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;12;) (type 7) (param i32 i32 i32) (result i32)
@@ -231,7 +231,7 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
   )
   (alias export 3 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
@@ -252,9 +252,9 @@
     (export "heap-base" (func 3))
   )
   (core instance (;3;) (instantiate 0
-      (with "miden:core-import/intrinsics-felt@1.0.0" (instance 0))
+      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 0))
       (with "miden:cross-ctx-account/foo@1.0.0" (instance 1))
-      (with "miden:core-import/intrinsics-mem@1.0.0" (instance 2))
+      (with "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance 2))
     )
   )
   (alias core export 3 "memory" (core memory (;0;)))

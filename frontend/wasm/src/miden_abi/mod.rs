@@ -110,13 +110,13 @@ pub fn recover_imported_masm_function_id(
 /// Returns the pre-renamed (expected at the linking stage) module name
 /// or given `wasm_module_id` if the module is not an intrinsic or Miden SDK module
 pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, Symbol> {
-    if wasm_module_id.starts_with("miden:core-import/intrinsics-mem") {
+    if wasm_module_id.starts_with("miden:core-intrinsics/intrinsics-mem") {
         Ok(SymbolPath::from_masm_module_id(intrinsics::mem::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/intrinsics-felt") {
+    } else if wasm_module_id.starts_with("miden:core-intrinsics/intrinsics-felt") {
         Ok(SymbolPath::from_masm_module_id(intrinsics::felt::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/intrinsics-debug") {
+    } else if wasm_module_id.starts_with("miden:core-intrinsics/intrinsics-debug") {
         Ok(SymbolPath::from_masm_module_id(intrinsics::debug::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/account") {
+    } else if wasm_module_id.starts_with("miden:core-base/account") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::account::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/note") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::note::MODULE_ID))

@@ -76,14 +76,14 @@ builtin.component miden:counter-contract/counter@0.1.0 {
 
         private builtin.function @__rustc::__rust_alloc(v63: i32, v64: i32) -> i32 {
         ^block18(v63: i32, v64: i32):
-            v66 = arith.constant 1048612 : i32;
+            v66 = arith.constant 1048616 : i32;
             v67 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v66, v64, v63) : i32
             builtin.ret v67;
         };
 
         private builtin.function @__rustc::__rust_realloc(v68: i32, v69: i32, v70: i32, v71: i32) -> i32 {
         ^block20(v68: i32, v69: i32, v70: i32, v71: i32):
-            v73 = arith.constant 1048612 : i32;
+            v73 = arith.constant 1048616 : i32;
             v74 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v73, v70, v71) : i32
             v584 = arith.constant 0 : i32;
             v75 = arith.constant 0 : i32;
@@ -480,7 +480,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block47:
-            v338 = arith.constant 1048617 : u32;
+            v338 = arith.constant 1048621 : u32;
             v762 = arith.constant 0 : u32;
             v339 = arith.add v762, v338 : u32 #[overflow = checked];
             v340 = hir.int_to_ptr v339 : ptr<byte, u8>;
@@ -496,7 +496,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             ^block50:
                 hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/__wasm_call_ctors()
                 v760 = arith.constant 1 : u8;
-                v764 = arith.constant 1048617 : u32;
+                v764 = arith.constant 1048621 : u32;
                 v765 = arith.constant 0 : u32;
                 v352 = arith.add v765, v764 : u32 #[overflow = checked];
                 v353 = hir.int_to_ptr v352 : ptr<byte, u8>;
@@ -801,7 +801,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret_imm 1048576;
         };
 
-        builtin.segment readonly @1048576 = 0x000000020000000100000001000000010000000100000001000000010000000100000001;
+        builtin.segment readonly @1048576 = 0x00000002000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @get-count() -> felt {
