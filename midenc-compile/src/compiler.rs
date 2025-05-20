@@ -213,6 +213,7 @@ pub struct Compiler {
             long = "emit",
             value_name = "SPEC",
             value_delimiter = ',',
+            env = "MIDENC_EMIT",
             next_line_help(true),
             help_heading = "Output"
         )
