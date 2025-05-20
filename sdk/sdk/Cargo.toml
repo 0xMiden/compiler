@@ -18,14 +18,8 @@ crate-type = ["rlib"]
 miden-sdk-alloc = { version = "0.0.8", path = "../alloc" }
 miden-stdlib-sys = { version = "0.0.8", path = "../stdlib-sys" }
 miden-base = { version = "0.0.8", path = "../base" }
-miden-base-sys = { version = "0.0.8", path = "../base-sys", features = [
-    "bindings",
-] }
+miden-base-sys = { version = "0.0.8", path = "../base-sys" }
 
 [features]
 default = []
-wit = [
-    "miden-base/wit",
-    "miden-base-sys/wit", 
-    "miden-stdlib-sys/wit"
-]
+wit = ["miden-base/wit", "miden-base-sys/wit", "miden-stdlib-sys/wit"]

@@ -1,6 +1,0 @@
-# Stubs for miden::note tx kernel module
-
-export.get_inputs
-    push.1
-    assertz
-end

@@ -10,9 +10,8 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 1
     ///
     /// This operation consumes the input value.
-    pub fn assert(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assert(&mut self, _code: Option<u32>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
-        let code = code.unwrap_or_default();
         match arg.ty() {
             Type::Felt
             | Type::U32
@@ -22,7 +21,7 @@ impl OpEmitter<'_> {
             | Type::U8
             | Type::I8
             | Type::I1 => {
-                self.emit(masm::Instruction::AssertWithError(code.into()), span);
+                self.emit(masm::Instruction::Assert, span);
             }
             Type::I128 | Type::U128 => {
                 self.emit_all(
@@ -33,19 +32,13 @@ impl OpEmitter<'_> {
                             Felt::ZERO,
                             Felt::ONE,
                         ]),
-                        masm::Instruction::AssertEqwWithError(code.into()),
+                        masm::Instruction::AssertEqw,
                     ],
                     span,
                 );
             }
             Type::U64 | Type::I64 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::AssertzWithError(code.into()),
-                        masm::Instruction::AssertWithError(code.into()),
-                    ],
-                    span,
-                );
+                self.emit_all([masm::Instruction::Assertz, masm::Instruction::Assert], span);
             }
             ty if !ty.is_integer() => {
                 panic!("invalid argument to assert: expected integer, got {ty}")
@@ -57,9 +50,8 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 0
     ///
     /// This operation consumes the input value.
-    pub fn assertz(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assertz(&mut self, _code: Option<u32>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
-        let code = code.unwrap_or_default();
         match arg.ty() {
             Type::Felt
             | Type::U32
@@ -69,23 +61,14 @@ impl OpEmitter<'_> {
             | Type::U8
             | Type::I8
             | Type::I1 => {
-                self.emit(masm::Instruction::AssertzWithError(code.into()), span);
+                self.emit(masm::Instruction::Assertz, span);
             }
             Type::U64 | Type::I64 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::AssertzWithError(code.into()),
-                        masm::Instruction::AssertzWithError(code.into()),
-                    ],
-                    span,
-                );
+                self.emit_all([masm::Instruction::Assertz, masm::Instruction::Assertz], span);
             }
             Type::U128 | Type::I128 => {
                 self.emit_all(
-                    [
-                        masm::Instruction::PushWord([Felt::ZERO; 4]),
-                        masm::Instruction::AssertEqwWithError(code.into()),
-                    ],
+                    [masm::Instruction::PushWord([Felt::ZERO; 4]), masm::Instruction::AssertEqw],
                     span,
                 );
             }

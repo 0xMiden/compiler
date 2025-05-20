@@ -358,7 +358,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             swap.1
             u32mod
             u32assert
-            assertz.err=250
+            assertz
             u32divmod.4
             swap.1
             trace.240
@@ -388,7 +388,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32mod
                 u32assert
-                assertz.err=250
+                assertz
                 push.16
                 movup.2
                 swap.1
@@ -413,7 +413,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             swap.1
             u32mod
             u32assert
-            assertz.err=250
+            assertz
             u32divmod.4
             swap.1
             trace.240
@@ -442,7 +442,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32mod
                 u32assert
-                assertz.err=250
+                assertz
                 dup.1
                 movup.3
                 u32wrapping_add

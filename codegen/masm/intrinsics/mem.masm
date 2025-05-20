@@ -17,7 +17,7 @@ const.HEAP_INFO_MAGIC=HEAP_INFO_ADDR + 3
 const.HEAP_END=0x10000000 # 2^30 * 4 (i.e. byte address, not element address)
 
 # The assertion error code used when intrinsics are used without calling heap_init
-const.HEAP_ERR=0x68656170 # b"heap"
+const.HEAP_ERR="rust heap has not been initialized"
 
 # u32::MAX | -1i32
 const.NEG1=4294967295

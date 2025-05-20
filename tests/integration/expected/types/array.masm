@@ -55,7 +55,7 @@ export.sum_arr
             swap.1
             u32mod
             u32assert
-            assertz.err=250
+            assertz
             u32divmod.4
             swap.1
             trace.240

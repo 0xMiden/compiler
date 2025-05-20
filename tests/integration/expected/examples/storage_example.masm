@@ -423,7 +423,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.10
     swap.1
     u32divmod.4
@@ -442,7 +442,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.9
     swap.1
     u32divmod.4
@@ -461,7 +461,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.8
     swap.1
     u32divmod.4
@@ -477,7 +477,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.7
     swap.1
     u32divmod.4
@@ -506,7 +506,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -523,7 +523,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -540,7 +540,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -557,7 +557,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -700,7 +700,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.6
     swap.1
     u32divmod.4
@@ -719,7 +719,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.5
     swap.1
     u32divmod.4
@@ -738,7 +738,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.4
     swap.1
     u32divmod.4
@@ -754,7 +754,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.3
     swap.1
     u32divmod.4
@@ -786,7 +786,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1005,7 +1005,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             swap.1
             u32mod
             u32assert
-            assertz.err=250
+            assertz
             u32divmod.4
             swap.1
             trace.240
@@ -1035,7 +1035,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32mod
                 u32assert
-                assertz.err=250
+                assertz
                 push.16
                 movup.2
                 swap.1
@@ -1060,7 +1060,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             swap.1
             u32mod
             u32assert
-            assertz.err=250
+            assertz
             u32divmod.4
             swap.1
             trace.240
@@ -1089,7 +1089,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32mod
                 u32assert
-                assertz.err=250
+                assertz
                 dup.1
                 movup.3
                 u32wrapping_add
@@ -1140,7 +1140,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1157,7 +1157,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1174,7 +1174,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1191,7 +1191,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1223,7 +1223,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1240,7 +1240,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1257,7 +1257,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1274,7 +1274,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1288,7 +1288,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1305,7 +1305,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1322,7 +1322,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1339,7 +1339,7 @@ proc.miden_base_sys::bindings::storage::set_map_item
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -1380,7 +1380,7 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     movup.2
     swap.1
     u32divmod.4
@@ -1399,7 +1399,7 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     push.0
     swap.1
     u32divmod.4
@@ -1418,7 +1418,7 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     push.0
     swap.1
     u32divmod.4
@@ -1433,7 +1433,7 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     push.0
     swap.1
     u32divmod.4

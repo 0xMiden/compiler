@@ -6,7 +6,10 @@ use midenc_hir::{
     SourceSpan, Span, Symbol, ValueRef,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
-use midenc_session::diagnostics::{Report, Spanned};
+use midenc_session::{
+    diagnostics::{Report, Spanned},
+    TargetEnv,
+};
 
 use crate::{
     artifact::MasmComponent,
@@ -107,6 +110,12 @@ impl ToMasmComponent for builtin::Component {
             })
             .collect();
 
+        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+            Some(miden_lib::transaction::TransactionKernel::kernel())
+        } else {
+            None
+        };
+
         // Compute the first page boundary after the end of the globals table to use as the start
         // of the dynamic heap when the program is executed
         let heap_base = link_info.reserved_memory_bytes()
@@ -118,7 +127,7 @@ impl ToMasmComponent for builtin::Component {
             id,
             init,
             entrypoint,
-            kernel: None,
+            kernel,
             rodata,
             heap_base,
             stack_pointer,
