@@ -47,6 +47,7 @@ pub fn wasm_to_masm(
 
     let session = Rc::new(Compiler::new_session([input], None, args));
     let context = Rc::new(Context::new(session));
+    println!("Creating Miden package {}", output_file.display());
     midenc_compile::compile(context.clone())?;
     Ok(output_file)
 }

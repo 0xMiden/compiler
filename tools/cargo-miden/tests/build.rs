@@ -34,6 +34,10 @@ fn test_templates() {
     // empty template means no template option is passing, thus using the default project template
     let r#default = build_new_project_from_template("");
     assert!(r#default.is_library());
+
+    let note = build_new_project_from_template("--note");
+    assert!(note.is_program());
+
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
 
@@ -81,6 +85,20 @@ fn build_new_project_from_template(template: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir();
     env::set_current_dir(&temp_dir).unwrap();
+
+    if template == "--note" {
+        // create the counter contract cargo project since the note depends on it
+        let project_name = "counter-contract";
+        let expected_new_project_dir = &temp_dir.join(project_name);
+        dbg!(&expected_new_project_dir);
+        if expected_new_project_dir.exists() {
+            fs::remove_dir_all(expected_new_project_dir).unwrap();
+        }
+        let output = run(new_project_args(project_name, "").into_iter(), OutputType::Masm)
+            .expect("Failed to create new counter-contract dependency project")
+            .expect("'cargo miden new' should return Some(CommandOutput)");
+    }
+
     let project_name = "test_proj_underscore";
     let expected_new_project_dir = &temp_dir.join(project_name);
     dbg!(&expected_new_project_dir);
