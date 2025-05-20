@@ -11,7 +11,7 @@ a template to spin up a new Miden project in Rust, and takes care of orchestrati
 > make sure you have it installed first:
 >
 > ```bash
-> rustup toolchain install nightly-2025-01-16
+> rustup toolchain install nightly-2025-03-20
 > ```
 >
 > NOTE: You can also use the latest nightly, but the specific nightly shown here is known to

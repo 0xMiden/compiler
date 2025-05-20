@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.9.0";
+const TEMPLATES_REPO_TAG: &str = "v0.10.0";
 
 pub const WIT_DEPS_PATH: &str = "wit-deps";
 
@@ -22,11 +22,11 @@ pub struct ProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
     program: bool,
-    /// Miden rollup account
-    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "note"]))]
+    /// Miden rollup account (default)
+    #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
     account: bool,
     /// Miden rollup note script
-    #[clap(hide(true), long, group = "template", conflicts_with_all(["program", "account"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "account"]))]
     note: bool,
 }
 
