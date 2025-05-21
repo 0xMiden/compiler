@@ -300,11 +300,9 @@ impl DependencyResolution {
                     .await?;
 
                 let mut buf = Vec::new();
-                tokio_util::io::StreamReader::new(
-                    stream.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)),
-                )
-                .read_to_end(&mut buf)
-                .await?;
+                tokio_util::io::StreamReader::new(stream.map_err(std::io::Error::other))
+                    .read_to_end(&mut buf)
+                    .await?;
                 buf
             }
         };

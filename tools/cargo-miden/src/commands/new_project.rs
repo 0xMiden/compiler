@@ -13,6 +13,7 @@ use clap::Args;
 /// desired commit.
 const TEMPLATES_REPO_TAG: &str = "v0.10.0";
 
+/// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags

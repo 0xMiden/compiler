@@ -1,10 +1,5 @@
 //! Cargo support for WebAssembly components.
 
-// TODO: remove after unused code is removed
-#![allow(clippy::all)]
-//
-#![deny(missing_docs)]
-
 use core::lock::{LockFile, LockFileResolver};
 use std::{
     borrow::Cow,
@@ -863,8 +858,7 @@ fn componentize(
     cwd: &Path,
     bytes: &[u8],
 ) -> Result<()> {
-    let is_command =
-        artifact.profile.test || artifact.target.crate_types.iter().any(|t| *t == CrateType::Bin);
+    let is_command = artifact.profile.test || artifact.target.crate_types.contains(&CrateType::Bin);
 
     log::debug!(
         "componentizing WebAssembly module `{path}` as a {kind} component (fresh = {fresh})",
@@ -956,7 +950,7 @@ fn add_component_metadata(
             .description
             .as_ref()
             .map(|d| wasm_metadata::Description::new(d.clone())),
-        licenses: package.license.as_ref().map(|s| wasm_metadata::Licenses::new(&s)).transpose()?,
+        licenses: package.license.as_ref().map(|s| wasm_metadata::Licenses::new(s)).transpose()?,
         source: package
             .repository
             .as_ref()

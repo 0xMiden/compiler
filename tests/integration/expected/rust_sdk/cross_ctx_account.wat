@@ -262,6 +262,6 @@
     )
   )
   (export (;4;) "miden:cross-ctx-account/foo@1.0.0" (instance 3))
-  (@custom "revision" "f0ff05aca81e9dc579899223d2f19bb7200fbffd")
+  (@custom "revision" "0a5cebbab6c413c3da755e6f8903dd4b108cca2a")
   (@custom "version" "0.1.0")
 )

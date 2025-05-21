@@ -1,4 +1,7 @@
+//! `cargo-miden` as a library
+
 #![deny(warnings)]
+#![deny(missing_docs)]
 
 use std::path::Path;
 
@@ -103,7 +106,9 @@ where
 
 /// Requested output type for the `build` command
 pub enum OutputType {
+    /// Wasm component or core Wasm module
     Wasm,
+    /// Miden package
     Masm,
     // Hir,
 }

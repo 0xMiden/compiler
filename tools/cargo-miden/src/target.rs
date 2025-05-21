@@ -10,7 +10,9 @@ use midenc_session::{RollupTarget, TargetEnv};
 /// Represents whether the Cargo project is a Miden program or a library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectType {
+    /// Miden program
     Program,
+    /// Miden library
     Library,
 }
 
