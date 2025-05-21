@@ -53,7 +53,7 @@ derive! {
                             )
                             .with_secondary_label(
                                 value.span(),
-                                "which differs from this value"
+                                "which differs from this value's type"
                             )
                             .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
                             .into_report()
@@ -69,8 +69,8 @@ derive! {
 
 derive! {
     /// Op expects all operands and results to be of the same type.
-    /// NOTE: Operations that implements this trait must also explicitely implement
-    /// [`SameTypeOperands`]. This can be achieved by using the "traits" filed in the [#operation]
+    /// NOTE: Operations that implement this trait must also explicitly implement
+    /// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
     /// macro.
     /// Like so:
     ///
@@ -117,7 +117,7 @@ derive! {
                             )
                             .with_secondary_label(
                                 value.span(),
-                                "which differs from this value"
+                                "which differs from this value's type"
                             )
                             .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
                             .into_report()
