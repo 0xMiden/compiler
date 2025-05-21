@@ -355,10 +355,12 @@ pub struct ComponentMetadata {
     /// The crate name.
     pub name: String,
     /// The version of the crate.
+    #[allow(unused)]
     pub version: Version,
     /// The path to the cargo manifest file.
     pub manifest_path: PathBuf,
     /// The last modified time of the manifest file.
+    #[allow(unused)]
     pub modified_at: SystemTime,
     /// The component section in `Cargo.toml`.
     pub section: ComponentSection,

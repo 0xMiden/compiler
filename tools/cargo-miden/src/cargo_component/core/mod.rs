@@ -8,9 +8,7 @@ use anyhow::Context;
 use semver::VersionReq;
 use wasm_pkg_client::PackageRef;
 
-pub mod command;
 pub mod lock;
-pub mod progress;
 pub mod registry;
 pub mod terminal;
 
@@ -35,6 +33,7 @@ pub fn cache_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
 }
 
 /// Represents a versioned component package name.
+#[allow(unused)]
 #[derive(Clone)]
 pub struct VersionedPackageName {
     /// The package name.

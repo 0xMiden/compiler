@@ -73,6 +73,7 @@ impl CargoPackageSpec {
     }
 
     /// Loads Cargo.toml in the current directory, attempts to find the matching package from metadata.
+    #[allow(unused)]
     pub fn find_current_package_spec(metadata: &Metadata) -> Option<Self> {
         let current_manifest = std::fs::read_to_string("Cargo.toml").ok()?;
         let document: DocumentMut = current_manifest.parse().ok()?;
@@ -399,6 +400,7 @@ pub struct CargoArguments {
 
 impl CargoArguments {
     /// Determines if network access is allowed based on the configuration.
+    #[allow(unused)]
     pub fn network_allowed(&self) -> bool {
         !self.frozen && !self.offline
     }
@@ -409,6 +411,7 @@ impl CargoArguments {
     }
 
     /// Parses the arguments from the environment.
+    #[allow(unused)]
     pub fn parse() -> Result<Self> {
         Self::parse_from(std::env::args().skip(1))
     }
@@ -509,6 +512,7 @@ impl Config {
     }
 
     /// Gets the package configuration.
+    #[allow(unused)]
     pub fn pkg_config(&self) -> &wasm_pkg_client::Config {
         &self.pkg_config
     }

@@ -247,6 +247,7 @@ impl Terminal {
         self.0.borrow().verbosity
     }
 
+    #[allow(unused)]
     pub(crate) fn state_mut(&self) -> std::cell::RefMut<'_, TerminalState> {
         self.0.borrow_mut()
     }

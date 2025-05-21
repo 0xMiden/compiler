@@ -407,6 +407,7 @@ impl<'a> DependencyResolver<'a> {
     /// Creates a new dependency resolver. If `config` is `None`, then the resolver will be set to
     /// offline mode and a lock file must be given as well. Anything that will require network
     /// access will fail in offline mode.
+    #[allow(unused)]
     pub fn new(
         config: Option<Config>,
         lock_file: Option<LockFileResolver<'a>>,

@@ -1,15 +1,11 @@
 //! Cargo support for WebAssembly components.
 
-// TODO: after build and start cleaning
-#![allow(unused)]
+// TODO: remove after unused code is removed
 #![allow(clippy::all)]
 //
 #![deny(missing_docs)]
 
-use core::{
-    lock::{LockFile, LockFileResolver, LockedPackage, LockedPackageVersion},
-    terminal::Colors,
-};
+use core::lock::{LockFile, LockFileResolver};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -32,22 +28,16 @@ use git::GitMetadata;
 use lock::{acquire_lock_file_ro, acquire_lock_file_rw};
 use metadata::ComponentMetadata;
 use registry::{PackageDependencyResolution, PackageResolutionMap};
-use semver::Version;
 use shell_escape::escape;
 use target::install_wasm32_wasip2;
 use tempfile::NamedTempFile;
-use wasm_pkg_client::{
-    caching::{CachingClient, FileCache},
-    PackageRef, PublishOpts, Registry,
-};
+use wasm_pkg_client::caching::{CachingClient, FileCache};
 use wasmparser::{Parser, Payload};
 use wit_component::ComponentEncoder;
 
 mod bindings;
-pub mod commands;
 pub mod config;
 pub mod core;
-mod generator;
 mod git;
 mod lock;
 mod metadata;
@@ -942,22 +932,6 @@ fn componentize(
     Ok(())
 }
 
-/// Represents options for a publish operation.
-pub struct PublishOptions<'a> {
-    /// The package to publish.
-    pub package: &'a Package,
-    /// The registry URL to publish to.
-    pub registry: Option<&'a Registry>,
-    /// The name of the package being published.
-    pub name: &'a PackageRef,
-    /// The version of the package being published.
-    pub version: &'a Version,
-    /// The path to the package being published.
-    pub path: &'a Path,
-    /// Whether to perform a dry run or not.
-    pub dry_run: bool,
-}
-
 /// Read metadata from `Cargo.toml` and add it to the component
 fn add_component_metadata(
     package: &Package,
@@ -997,195 +971,4 @@ fn add_component_metadata(
         version: Some(wasm_metadata::Version::new(package.version.to_string())),
     };
     metadata.to_wasm(wasm)
-}
-
-/// Publish a component for the given workspace and publish options.
-pub async fn publish(
-    config: &Config,
-    client: Arc<CachingClient<FileCache>>,
-    options: &PublishOptions<'_>,
-) -> Result<()> {
-    if options.dry_run {
-        config
-            .terminal()
-            .warn("not publishing component to the registry due to the --dry-run option")?;
-        return Ok(());
-    }
-
-    let bytes = fs::read(options.path).with_context(|| {
-        format!("failed to read component `{path}`", path = options.path.display())
-    })?;
-
-    config
-        .terminal()
-        .status("Publishing", format!("component {path}", path = options.path.display()))?;
-
-    let (name, version) = client
-        .client()?
-        .publish_release_data(
-            Box::pin(std::io::Cursor::new(bytes)),
-            PublishOpts {
-                package: Some((options.name.to_owned(), options.version.to_owned())),
-                registry: options.registry.cloned(),
-            },
-        )
-        .await?;
-
-    config.terminal().status("Published", format!("package `{name}` v{version}"))?;
-
-    Ok(())
-}
-
-/// Update the dependencies in the lock file.
-///
-/// This updates only `Cargo-component.lock`.
-pub async fn update_lockfile(
-    client: Arc<CachingClient<FileCache>>,
-    config: &Config,
-    metadata: &Metadata,
-    packages: &[PackageComponentMetadata<'_>],
-    lock_update_allowed: bool,
-    locked: bool,
-    dry_run: bool,
-) -> Result<()> {
-    // Read the current lock file and generate a new one
-    let map = create_resolution_map(client, packages, None).await?;
-
-    let file_lock = acquire_lock_file_ro(config.terminal(), metadata)?;
-    let orig_lock_file = file_lock
-        .as_ref()
-        .map(|f| {
-            LockFile::read(f.file()).with_context(|| {
-                format!("failed to read lock file `{path}`", path = f.path().display())
-            })
-        })
-        .transpose()?
-        .unwrap_or_default();
-
-    let new_lock_file = map.to_lock_file();
-
-    for old_pkg in &orig_lock_file.packages {
-        let new_pkg = match new_lock_file
-            .packages
-            .binary_search_by_key(&old_pkg.key(), LockedPackage::key)
-            .map(|index| &new_lock_file.packages[index])
-        {
-            Ok(pkg) => pkg,
-            Err(_) => {
-                // The package is no longer a dependency
-                for old_ver in &old_pkg.versions {
-                    config.terminal().status_with_color(
-                        if dry_run { "Would remove" } else { "Removing" },
-                        format!(
-                            "dependency `{name}` v{version}",
-                            name = old_pkg.name,
-                            version = old_ver.version,
-                        ),
-                        Colors::Red,
-                    )?;
-                }
-                continue;
-            }
-        };
-
-        for old_ver in &old_pkg.versions {
-            let new_ver = match new_pkg
-                .versions
-                .binary_search_by_key(&old_ver.key(), LockedPackageVersion::key)
-                .map(|index| &new_pkg.versions[index])
-            {
-                Ok(ver) => ver,
-                Err(_) => {
-                    // The version of the package is no longer a dependency
-                    config.terminal().status_with_color(
-                        if dry_run { "Would remove" } else { "Removing" },
-                        format!(
-                            "dependency `{name}` v{version}",
-                            name = old_pkg.name,
-                            version = old_ver.version,
-                        ),
-                        Colors::Red,
-                    )?;
-                    continue;
-                }
-            };
-
-            // The version has changed
-            if old_ver.version != new_ver.version {
-                config.terminal().status_with_color(
-                    if dry_run { "Would update" } else { "Updating" },
-                    format!(
-                        "dependency `{name}` v{old} -> v{new}",
-                        name = old_pkg.name,
-                        old = old_ver.version,
-                        new = new_ver.version
-                    ),
-                    Colors::Cyan,
-                )?;
-            }
-        }
-    }
-
-    for new_pkg in &new_lock_file.packages {
-        let old_pkg = match orig_lock_file
-            .packages
-            .binary_search_by_key(&new_pkg.key(), LockedPackage::key)
-            .map(|index| &orig_lock_file.packages[index])
-        {
-            Ok(pkg) => pkg,
-            Err(_) => {
-                // The package is new
-                for new_ver in &new_pkg.versions {
-                    config.terminal().status_with_color(
-                        if dry_run { "Would add" } else { "Adding" },
-                        format!(
-                            "dependency `{name}` v{version}",
-                            name = new_pkg.name,
-                            version = new_ver.version,
-                        ),
-                        Colors::Green,
-                    )?;
-                }
-                continue;
-            }
-        };
-
-        for new_ver in &new_pkg.versions {
-            if old_pkg
-                .versions
-                .binary_search_by_key(&new_ver.key(), LockedPackageVersion::key)
-                .map(|index| &old_pkg.versions[index])
-                .is_err()
-            {
-                // The version is new
-                config.terminal().status_with_color(
-                    if dry_run { "Would add" } else { "Adding" },
-                    format!(
-                        "dependency `{name}` v{version}",
-                        name = new_pkg.name,
-                        version = new_ver.version,
-                    ),
-                    Colors::Green,
-                )?;
-            }
-        }
-    }
-
-    if dry_run {
-        config
-            .terminal()
-            .warn("not updating component lock file due to --dry-run option")?;
-    } else {
-        // Update the lock file
-        if new_lock_file != orig_lock_file {
-            drop(file_lock);
-            let file_lock =
-                acquire_lock_file_rw(config.terminal(), metadata, lock_update_allowed, locked)?;
-            new_lock_file.write(file_lock.file(), "cargo-component").with_context(|| {
-                format!("failed to write lock file `{path}`", path = file_lock.path().display())
-            })?;
-        }
-    }
-
-    Ok(())
 }
