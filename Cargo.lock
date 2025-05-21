@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-miden"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "cargo-config2",
@@ -3152,7 +3152,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -3162,44 +3162,14 @@ dependencies = [
 
 [[package]]
 name = "miden-air"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72269e041e915d6c34325a8906f08a8ff6ec9b92c79ae07f3a0de8c3588694b5"
-dependencies = [
- "miden-core 0.13.0",
- "thiserror 2.0.11",
- "winter-air",
- "winter-prover",
-]
-
-[[package]]
-name = "miden-air"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71f9878c75891951ac4e8dd42793a84c4d07e5aaf27a8c88bfc097b70cd2c1cd"
 dependencies = [
- "miden-core 0.14.0",
+ "miden-core",
  "thiserror 2.0.11",
  "winter-air",
  "winter-prover",
-]
-
-[[package]]
-name = "miden-assembly"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce5680a0e75470389b65cc00900422ad7e1aa7972477c75ff88f63c3a01671e9"
-dependencies = [
- "aho-corasick",
- "lalrpop",
- "lalrpop-util",
- "miden-core 0.13.0",
- "miden-miette",
- "rustc_version 0.4.1",
- "smallvec",
- "thiserror 2.0.11",
- "tracing",
- "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -3211,7 +3181,7 @@ dependencies = [
  "aho-corasick",
  "lalrpop",
  "lalrpop-util",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-miette",
  "rustc_version 0.4.1",
  "smallvec",
@@ -3222,7 +3192,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -3231,11 +3201,11 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "expect-test",
  "miden-base",
- "miden-objects 0.8.1",
+ "miden-objects",
  "proc-macro2",
  "quote",
  "semver 1.0.23",
@@ -3245,30 +3215,10 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
- "miden-assembly 0.14.0",
+ "miden-assembly",
  "miden-stdlib-sys",
-]
-
-[[package]]
-name = "miden-core"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8ba125a31e9ec0e732f47e639525c753973e553126cfc46cc63674049ea4134"
-dependencies = [
- "lock_api",
- "loom",
- "memchr",
- "miden-crypto",
- "miden-formatting",
- "miden-miette",
- "num-derive",
- "num-traits",
- "parking_lot",
- "thiserror 2.0.11",
- "winter-math",
- "winter-utils",
 ]
 
 [[package]]
@@ -3322,7 +3272,7 @@ dependencies = [
 
 [[package]]
 name = "miden-integration-tests"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3335,11 +3285,11 @@ dependencies = [
  "filetime",
  "glob",
  "log",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
  "miden-mast-package",
- "miden-objects 0.8.1",
- "miden-processor 0.14.0",
+ "miden-objects",
+ "miden-processor",
  "midenc-codegen-masm",
  "midenc-compile",
  "midenc-debug",
@@ -3361,8 +3311,8 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cb98502ec0b2fb58846cdecbaefd7dc1e1655d86c2302c28a3f80a470cdd1d4"
 dependencies = [
- "miden-assembly 0.14.0",
- "miden-objects 0.9.0",
+ "miden-assembly",
+ "miden-objects",
  "miden-stdlib",
  "regex",
  "thiserror 2.0.11",
@@ -3376,8 +3326,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ac5c6cd42aa414dab432b3e9d293aba392a4e549cfdf16e08698038d393d846"
 dependencies = [
  "derive_more",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
 ]
 
 [[package]]
@@ -3424,53 +3374,21 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.8.1"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea350fdd6d025d2e4791ac0769bfbc04afca404fbb20f918354dcc758debd4c"
+checksum = "76b4c5d037aa609fb247141a0707f0012a12ff7e14bba350b6f119a2010a65f9"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
- "miden-assembly 0.13.0",
- "miden-core 0.13.0",
+ "miden-assembly",
+ "miden-core",
  "miden-crypto",
- "miden-processor 0.13.0",
- "miden-verifier 0.13.0",
+ "miden-processor",
+ "miden-verifier",
  "semver 1.0.23",
  "serde",
  "thiserror 2.0.11",
  "toml",
-]
-
-[[package]]
-name = "miden-objects"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79c18344890011856c9b2d6cadf2b93b14b595ad4af2d746ab6234fe3af7a19d"
-dependencies = [
- "bech32",
- "getrandom 0.3.2",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
- "miden-crypto",
- "miden-processor 0.14.0",
- "miden-verifier 0.14.0",
- "semver 1.0.23",
- "serde",
- "thiserror 2.0.11",
- "toml",
-]
-
-[[package]]
-name = "miden-processor"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e5f362138a7bfe6c20246de651e848566843a0d5062cc4a7a8ebff6bd14668d"
-dependencies = [
- "miden-air 0.13.0",
- "miden-core 0.13.0",
- "thiserror 2.0.11",
- "tracing",
- "winter-prover",
 ]
 
 [[package]]
@@ -3479,8 +3397,8 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796a5c11589731286ca1cb761b13be13e69e4e0606a5469ce815491989402ea"
 dependencies = [
- "miden-air 0.14.0",
- "miden-core 0.14.0",
+ "miden-air",
+ "miden-core",
  "miden-miette",
  "thiserror 2.0.11",
  "tracing",
@@ -3489,7 +3407,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.0.8"
+version = "0.1.0"
 
 [[package]]
 name = "miden-stdlib"
@@ -3497,13 +3415,13 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "887189ccce4f9bbf15dfdaff0e6842fb138a7432a8f21adde756fac114b07184"
 dependencies = [
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
 ]
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.0.8"
+version = "0.1.0"
 
 [[package]]
 name = "miden-thiserror"
@@ -3527,25 +3445,12 @@ dependencies = [
 
 [[package]]
 name = "miden-verifier"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ae6636d1e7a9d78a973fd59ffcfd87964eee235ecdf3264569add5ff89b0d91"
-dependencies = [
- "miden-air 0.13.0",
- "miden-core 0.13.0",
- "thiserror 2.0.11",
- "tracing",
- "winter-verifier",
-]
-
-[[package]]
-name = "miden-verifier"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b6edc80bf70f276be1c001748c1edf10bea6273a57ee3694fd73d79050fc09"
 dependencies = [
- "miden-air 0.14.0",
- "miden-core 0.14.0",
+ "miden-air",
+ "miden-core",
  "thiserror 2.0.11",
  "tracing",
  "winter-verifier",
@@ -3553,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "midenc"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "env_logger",
  "human-panic",
@@ -3562,17 +3467,17 @@ dependencies = [
 
 [[package]]
 name = "midenc-codegen-masm"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "env_logger",
  "expect-test",
  "inventory",
  "log",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
  "miden-lib",
  "miden-mast-package",
- "miden-processor 0.14.0",
+ "miden-processor",
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3590,12 +3495,12 @@ dependencies = [
 
 [[package]]
 name = "midenc-compile"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "clap",
  "inventory",
  "log",
- "miden-assembly 0.14.0",
+ "miden-assembly",
  "miden-mast-package",
  "miden-thiserror",
  "midenc-codegen-masm",
@@ -3610,18 +3515,18 @@ dependencies = [
 
 [[package]]
 name = "midenc-debug"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "clap",
  "crossterm",
  "futures",
  "glob",
  "log",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
  "miden-lib",
  "miden-mast-package",
- "miden-processor 0.14.0",
+ "miden-processor",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-hir",
@@ -3640,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-arith"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "midenc-hir",
  "paste",
@@ -3648,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-cf"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "log",
  "midenc-dialect-arith",
@@ -3657,7 +3562,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-hir"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "log",
  "midenc-dialect-arith",
@@ -3669,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-scf"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "bitvec",
  "env_logger 0.11.5",
@@ -3684,14 +3589,14 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-ub"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "midenc-hir",
 ]
 
 [[package]]
 name = "midenc-driver"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "clap",
  "log",
@@ -3704,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -3713,7 +3618,7 @@ dependencies = [
  "gimli",
  "indexmap 2.7.1",
  "log",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3728,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
@@ -3740,7 +3645,7 @@ dependencies = [
  "intrusive-collections",
  "inventory",
  "log",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
@@ -3755,7 +3660,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-analysis"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "bitvec",
  "blink-alloc",
@@ -3765,7 +3670,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-eval"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "log",
  "miden-thiserror",
@@ -3780,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-macros"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "Inflector",
  "darling",
@@ -3791,7 +3696,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-symbol"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "Inflector",
  "compact_str",
@@ -3806,7 +3711,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-transform"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "log",
  "midenc-hir",
@@ -3816,7 +3721,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-type"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-formatting",
  "paste",
@@ -3828,14 +3733,14 @@ dependencies = [
 
 [[package]]
 name = "midenc-session"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "inventory",
  "log",
- "miden-assembly 0.14.0",
- "miden-core 0.14.0",
+ "miden-assembly",
+ "miden-core",
  "miden-lib",
  "miden-mast-package",
  "miden-stdlib",
