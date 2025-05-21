@@ -518,5 +518,6 @@
   )
   (export (;5;) "miden:counter-contract/counter@0.1.0" (instance 4))
   (@custom "description" "A simple example of a Miden counter contract using the Account Storage API")
+  (@custom "revision" "f0ff05aca81e9dc579899223d2f19bb7200fbffd")
   (@custom "version" "0.1.0")
 )

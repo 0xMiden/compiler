@@ -273,5 +273,6 @@
     )
   )
   (export (;5;) "miden:base/note-script@1.0.0" (instance 4))
+  (@custom "revision" "f0ff05aca81e9dc579899223d2f19bb7200fbffd")
   (@custom "version" "0.1.0")
 )

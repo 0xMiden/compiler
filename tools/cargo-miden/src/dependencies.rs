@@ -5,10 +5,10 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use cargo_component::config::CargoArguments;
 use cargo_metadata::{camino, Package};
 use serde::Deserialize;
 
+use super::cargo_component::config::CargoArguments;
 use crate::{BuildOutput, OutputType};
 
 /// Defines dependency (the rhs of the dependency `"ns:package" = { path = "..." }` pair)

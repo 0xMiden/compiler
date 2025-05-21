@@ -1,6 +1,5 @@
 use anyhow::Ok;
-use cargo_component_core::terminal::{Color, Terminal, Verbosity};
-use cargo_miden::{run, OutputType};
+use cargo_miden::{run, Color, OutputType, Terminal, Verbosity};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger
