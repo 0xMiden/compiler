@@ -37,6 +37,7 @@ pub struct CargoTest {
     entrypoint: Option<Cow<'static, str>>,
     build_std: bool,
     build_alloc: bool,
+    release: bool,
 }
 impl CargoTest {
     /// Create a new `cargo` test with the given name, and project directory
@@ -54,6 +55,7 @@ impl CargoTest {
             entrypoint: None,
             build_std: false,
             build_alloc: false,
+            release: true,
         }
     }
 
@@ -105,7 +107,7 @@ impl CargoTest {
         self.project_dir
             .join("target")
             .join(self.target.as_ref())
-            .join("release")
+            .join(if self.release { "release" } else { "debug" })
             .join(self.name.as_ref())
             .with_extension("wasm")
     }
@@ -296,6 +298,16 @@ impl CompilerTestBuilder {
         self
     }
 
+    /// Specify if the test fixture should be compiled in release mode
+    pub fn with_release(&mut self, release: bool) -> &mut Self {
+        match self.source {
+            CompilerTestInputType::Cargo(ref mut config) => config.release = release,
+            CompilerTestInputType::CargoMiden(ref mut config) => config.release = release,
+            CompilerTestInputType::Rustc(_) => (),
+        }
+        self
+    }
+
     /// Add additional Miden Assembly module sources, to be linked with the program under test.
     pub fn link_with_masm_module(
         &mut self,
@@ -343,9 +355,12 @@ impl CompilerTestBuilder {
 
         // Cargo-based source types share a lot of configuration in common
         match self.source {
-            CompilerTestInputType::CargoMiden(_) => {
+            CompilerTestInputType::CargoMiden(ref config) => {
                 let manifest_path = project_dir.join("Cargo.toml");
-                command.arg("--manifest-path").arg(manifest_path).arg("--release");
+                command.arg("--manifest-path").arg(manifest_path);
+                if config.release {
+                    command.arg("--release");
+                }
             }
 
             CompilerTestInputType::Cargo(ref config) => {
@@ -353,10 +368,12 @@ impl CompilerTestBuilder {
                 command
                     .arg("--manifest-path")
                     .arg(manifest_path)
-                    .arg("--release")
                     .arg("--target")
                     .arg(config.target.as_ref());
 
+                if config.release {
+                    command.arg("--release");
+                }
                 if config.build_std {
                     // compile std as part of crate graph compilation
                     // https://doc.rust-lang.org/cargo/reference/unstable.html#build-std
@@ -419,6 +436,7 @@ impl CompilerTestBuilder {
                     } => (artifact_path, midenc_flags),
                     other => panic!("Expected Wasm output, got {:?}", other),
                 };
+                // dbg!(&wasm_artifact_path);
                 // dbg!(&extra_midenc_flags);
                 self.midenc_flags.append(&mut extra_midenc_flags);
                 let artifact_name =
@@ -1038,8 +1056,11 @@ impl CompilerTest {
     /// The compiled Wasm component/module
     fn wasm_bytes(&self) -> Vec<u8> {
         match &self.session.inputs[0].file {
-            InputType::Real(file_path) => fs::read(file_path)
-                .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display())),
+            InputType::Real(file_path) => {
+                dbg!(&file_path);
+                fs::read(file_path)
+                    .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display()))
+            }
             InputType::Stdin { name: _, input } => input.clone(),
         }
     }

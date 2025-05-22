@@ -279,23 +279,6 @@ where
                     &spawn_args,
                 )?
             };
-            // dbg!(&wasm_outputs);
-            // if matches!(target_env, TargetEnv::Rollup { .. }) {
-            //     assert_eq!(
-            //         wasm_outputs.len(),
-            //         1,
-            //         "expected Wasm component artifact for rollup target"
-            //     );
-            // } else if wasm_outputs.is_empty() {
-            //     // crates that don't have a WIT component are ignored by the
-            //     // `cargo-component` run_cargo_command and return no outputs.
-            //     // Build them with our own version of run_cargo_command
-            //     wasm_outputs = run_cargo_command_for_non_component(
-            //         subcommand.as_deref(),
-            //         &cargo_args,
-            //         &spawn_args,
-            //     )?;
-            // }
             assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
             let wasm_output = wasm_outputs.first().unwrap();
 
