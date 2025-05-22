@@ -129,7 +129,7 @@ where
             .define_module(Ident::with_empty_span("test".into()))
             .unwrap_or_else(|err| panic!("failed to define module:\n{}", format_report(err)))
     };
-    let mut function = {
+    let function = {
         let mut module_builder = ModuleBuilder::new(module);
         module_builder
             .define_function(Ident::with_empty_span("main".into()), signature.clone())
@@ -138,10 +138,9 @@ where
 
     // Define function body
     {
-        let mut func = function.borrow_mut();
-        let context = func.as_operation().context_rc();
+        let context = function.borrow().as_operation().context_rc();
         let mut builder = OpBuilder::new(context);
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
         build(&mut builder);
     }
 

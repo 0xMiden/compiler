@@ -7,10 +7,11 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef},
     traits::{BranchOpInterface, Terminator},
-    BlockRef, Builder, Context, FxHashMap, FxHashSet, Ident, Listener, ListenerType, OpBuilder,
-    OperationRef, ProgramPoint, RegionRef, Signature, SourceSpan, Type, ValueRef,
+    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
+    ValueRef,
 };
 
 use crate::ssa::{SSABuilder, SideEffects, Variable};
@@ -124,7 +125,7 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
-    pub fn new(func: &'c mut Function, builder: &'c mut OpBuilder<SSABuilderListener>) -> Self {
+    pub fn new(func: FunctionRef, builder: &'c mut OpBuilder<SSABuilderListener>) -> Self {
         let func_ctx = builder.listener().map(|l| l.builder.clone()).unwrap();
         debug_assert!(func_ctx.borrow().is_empty());
 
@@ -136,11 +137,11 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
 
 impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     pub fn name(&self) -> Ident {
-        *self.inner.func.name()
+        *self.inner.func.borrow().name()
     }
 
-    pub fn signature(&self) -> &Signature {
-        self.inner.func.signature()
+    pub fn signature(&self) -> EntityRef<'_, Signature> {
+        EntityRef::map(self.inner.func.borrow(), |f| f.signature())
     }
 
     #[inline]
@@ -189,8 +190,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             "You can't add block parameters after adding any instruction"
         );
 
-        #[allow(clippy::unnecessary_to_owned)]
-        for argtyp in self.signature().results().to_vec() {
+        let results = SmallVec::<[_; 2]>::from_iter(self.signature().results().iter().cloned());
+        for argtyp in results {
             self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
         }
     }
