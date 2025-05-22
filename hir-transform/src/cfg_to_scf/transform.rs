@@ -5,9 +5,9 @@ use midenc_hir::{
     cfg::Graph,
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     formatter::DisplayValues,
-    smallvec, AsValueRange, Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef,
-    ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type, Usable, Value,
-    ValueRange, ValueRef,
+    smallvec, AsValueRange, Block, BlockRef, Builder, Context, EntityWithId, FxHashMap, OpBuilder,
+    OperationRef, ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
+    Usable, Value, ValueRange, ValueRef,
 };
 
 use super::{
@@ -607,16 +607,25 @@ impl<'a> TransformationContext<'a> {
         }
 
         // Collapse to a single continuation block, or None
-        let mut continuation = continuation_edges.iter().fold(None, |acc, e| match acc {
-            None => Some(e.get_successor()),
-            Some(prev) => {
-                if BlockRef::ptr_eq(&prev, &e.get_successor()) {
-                    Some(prev)
-                } else {
-                    None
+        let mut continuation = None;
+        {
+            for edge in continuation_edges.iter() {
+                match continuation.as_ref() {
+                    None => {
+                        continuation = Some(edge.get_successor());
+                    }
+                    Some(prev) => {
+                        if !BlockRef::ptr_eq(prev, &edge.get_successor()) {
+                            continuation = None;
+                            break;
+                        }
+                    }
                 }
             }
-        });
+        }
+
+        log::trace!(target: "cfg-to-scf", " continuation = {:?}", continuation.map(|c| c.borrow().id()));
+        log::trace!(target: "cfg-to-scf", " continuation_post_dominates_all_regions = {continuation_post_dominates_all_regions}");
 
         // In Case 3, or if not all continuation edges have the same entry block, create a single
         // entry block as continuation for all branch regions.
