@@ -19,7 +19,6 @@ use bindings::BindingsGenerator;
 use cargo_config2::{PathAndArgs, TargetTripleRef};
 use cargo_metadata::{Artifact, CrateType, Message, Metadata, MetadataCommand, Package};
 use config::{CargoArguments, CargoPackageSpec, Config};
-use git::GitMetadata;
 use lock::{acquire_lock_file_ro, acquire_lock_file_rw};
 use metadata::ComponentMetadata;
 use registry::{PackageDependencyResolution, PackageResolutionMap};
@@ -33,7 +32,6 @@ use wit_component::ComponentEncoder;
 mod bindings;
 pub mod config;
 pub mod core;
-mod git;
 mod lock;
 mod metadata;
 mod registry;
@@ -900,11 +898,9 @@ fn componentize(
         .validate(true);
 
     let package = &cargo_metadata[&artifact.package_id];
-    let git = GitMetadata::from_package(package)?;
-    let component = add_component_metadata(package, git.as_ref(), &encoder.encode()?)
-        .with_context(|| {
-            format!("failed to add metadata to output component `{path}`", path = path.display())
-        })?;
+    let component = add_component_metadata(package, &encoder.encode()?).with_context(|| {
+        format!("failed to add metadata to output component `{path}`", path = path.display())
+    })?;
 
     // To make the write atomic, first write to a temp file and then rename the file
     let temp_dir = cargo_metadata.target_directory.join("tmp");
@@ -927,11 +923,7 @@ fn componentize(
 }
 
 /// Read metadata from `Cargo.toml` and add it to the component
-fn add_component_metadata(
-    package: &Package,
-    git: Option<&GitMetadata>,
-    wasm: &[u8],
-) -> Result<Vec<u8>> {
+fn add_component_metadata(package: &Package, wasm: &[u8]) -> Result<Vec<u8>> {
     let metadata = wasm_metadata::AddMetadata {
         name: Some(package.name.clone()),
         language: vec![("Rust".to_string(), "".to_string())],
@@ -961,7 +953,7 @@ fn add_component_metadata(
             .as_ref()
             .map(|s| wasm_metadata::Homepage::new(s.to_string().as_str()))
             .transpose()?,
-        revision: git.map(|git| wasm_metadata::Revision::new(git.commit().to_string())),
+        revision: None,
         version: Some(wasm_metadata::Version::new(package.version.to_string())),
     };
     metadata.to_wasm(wasm)
