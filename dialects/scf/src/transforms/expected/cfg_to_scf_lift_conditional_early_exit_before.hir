@@ -1,0 +1,25 @@
+public builtin.function @test(v0: u32, v1: u32, v2: u32, v3: u32) -> u32 {
+^block0(v0: u32, v1: u32, v2: u32, v3: u32):
+    v5 = arith.constant 0 : u32;
+    v6 = arith.neq v1, v5 : i1;
+    cf.cond_br v6 ^block2, ^block3;
+^block1(v4: u32):
+    v7 = arith.eq v4, v5 : i1;
+    v8 = arith.neq v7, v5 : i1;
+    cf.cond_br v8 ^block6, ^block7;
+^block2:
+    v9 = arith.incr v0 : u32;
+    cf.br ^block1(v9);
+^block3:
+    v10 = arith.neq v3, v5 : i1;
+    cf.cond_br v10 ^block4, ^block5;
+^block4:
+    v11 = arith.incr v3 : u32;
+    cf.br ^block1(v11);
+^block5:
+    builtin.ret v2;
+^block6:
+    ub.unreachable ;
+^block7:
+    builtin.ret v4;
+};
