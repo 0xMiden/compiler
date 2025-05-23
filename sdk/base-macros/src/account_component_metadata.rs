@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use miden_objects::account::{
-    AccountComponentMetadata, AccountType, MapRepresentation, StorageEntry, StorageValueName,
-    TemplateType, WordRepresentation,
+    component::FieldIdentifier, AccountComponentMetadata, AccountType, MapRepresentation,
+    StorageEntry, StorageValueName, TemplateType, WordRepresentation,
 };
 use semver::Version;
 
@@ -78,8 +78,10 @@ impl AccountComponentMetadataBuilder {
                         slot,
                         WordRepresentation::Template {
                             r#type,
-                            name: storage_value_name,
-                            description,
+                            identifier: FieldIdentifier {
+                                name: storage_value_name,
+                                description,
+                            },
                         },
                     ));
                 }

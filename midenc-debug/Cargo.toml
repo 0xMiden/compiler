@@ -25,7 +25,6 @@ miden-processor.workspace = true
 midenc-session.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-hir.workspace = true
-midenc-dialect-hir.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 proptest.workspace = true

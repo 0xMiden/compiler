@@ -483,7 +483,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "miden"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -493,32 +493,14 @@ dependencies = [
 
 [[package]]
 name = "miden-air"
-version = "0.13.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00e2e77c57ae798e02553af158c04d467f6479ab798a8c84459d343a89ff9c50"
+checksum = "71f9878c75891951ac4e8dd42793a84c4d07e5aaf27a8c88bfc097b70cd2c1cd"
 dependencies = [
- "miden-core 0.13.2",
+ "miden-core",
  "thiserror 2.0.12",
  "winter-air",
  "winter-prover",
-]
-
-[[package]]
-name = "miden-assembly"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75d1cb02d807c2481f365feca966bedb74c66c765923d04c3c23ea678afaf148"
-dependencies = [
- "aho-corasick",
- "lalrpop",
- "lalrpop-util",
- "miden-core 0.13.2",
- "miden-miette",
- "rustc_version 0.4.1",
- "smallvec",
- "thiserror 2.0.12",
- "tracing",
- "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -530,7 +512,7 @@ dependencies = [
  "aho-corasick",
  "lalrpop",
  "lalrpop-util",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-miette",
  "rustc_version 0.4.1",
  "smallvec",
@@ -541,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -550,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
  "miden-objects",
  "proc-macro2",
@@ -562,29 +544,9 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.0.8"
+version = "0.1.0"
 dependencies = [
- "miden-assembly 0.14.0",
  "miden-stdlib-sys",
-]
-
-[[package]]
-name = "miden-core"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7d408e01421b5df2e4cfaf1a91efefe3fb5b729f1c99b668d3a69eec0044a6b"
-dependencies = [
- "lock_api",
- "loom",
- "memchr",
- "miden-crypto",
- "miden-formatting",
- "miden-miette",
- "num-derive",
- "num-traits",
- "thiserror 2.0.12",
- "winter-math",
- "winter-utils",
 ]
 
 [[package]]
@@ -672,14 +634,14 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.8.1"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea350fdd6d025d2e4791ac0769bfbc04afca404fbb20f918354dcc758debd4c"
+checksum = "76b4c5d037aa609fb247141a0707f0012a12ff7e14bba350b6f119a2010a65f9"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
- "miden-assembly 0.13.2",
- "miden-core 0.13.2",
+ "miden-assembly",
+ "miden-core",
  "miden-crypto",
  "miden-processor",
  "miden-verifier",
@@ -689,12 +651,13 @@ dependencies = [
 
 [[package]]
 name = "miden-processor"
-version = "0.13.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4e70b053c587014396d06be3502e3952777923bee11729b7514c060fdc0d2c8"
+checksum = "2796a5c11589731286ca1cb761b13be13e69e4e0606a5469ce815491989402ea"
 dependencies = [
  "miden-air",
- "miden-core 0.13.2",
+ "miden-core",
+ "miden-miette",
  "thiserror 2.0.12",
  "tracing",
  "winter-prover",
@@ -702,20 +665,20 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.0.8"
+version = "0.1.0"
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.0.8"
+version = "0.1.0"
 
 [[package]]
 name = "miden-verifier"
-version = "0.13.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20ae024b022569d7117891a83cf51ccd5bceeda248f30690b394a6dfc4607061"
+checksum = "a2b6edc80bf70f276be1c001748c1edf10bea6273a57ee3694fd73d79050fc09"
 dependencies = [
  "miden-air",
- "miden-core 0.13.2",
+ "miden-core",
  "thiserror 2.0.12",
  "tracing",
  "winter-verifier",
