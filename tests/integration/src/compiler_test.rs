@@ -406,13 +406,15 @@ impl CompilerTestBuilder {
                         .unwrap()
                         .expect("'cargo miden build' should return Some(CommandOutput)")
                         .unwrap_build_output(); // Use the new method
-                let (wasm_artifact_path, dependencies) = match build_output {
+                let (wasm_artifact_path, mut extra_midenc_flags) = match build_output {
                     cargo_miden::BuildOutput::Wasm {
                         artifact_path,
-                        dependencies,
-                    } => (artifact_path, dependencies),
+                        midenc_flags,
+                    } => (artifact_path, midenc_flags),
                     other => panic!("Expected Wasm output, got {:?}", other),
                 };
+                dbg!(&extra_midenc_flags);
+                self.midenc_flags.append(&mut extra_midenc_flags);
                 let artifact_name =
                     wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
                 let input_file = InputFile::from_path(wasm_artifact_path).unwrap();
@@ -429,10 +431,6 @@ impl CompilerTestBuilder {
                 }));
                 // dbg!(&inputs);
 
-                for dep in &dependencies {
-                    self.midenc_flags.push("--link-library".to_string());
-                    self.midenc_flags.push(dep.to_str().unwrap().to_string());
-                }
                 let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();
                 CompilerTest {
@@ -441,7 +439,6 @@ impl CompilerTestBuilder {
                     context,
                     artifact_name: artifact_name.into(),
                     entrypoint: self.entrypoint,
-                    dependencies,
                     ..Default::default()
                 }
             }
@@ -583,7 +580,6 @@ impl CompilerTestBuilder {
             CargoTest::new(name, cargo_project_folder.as_ref().to_path_buf()),
         ));
         builder.with_wasm_translation_config(config);
-        builder.with_midenc_flags(["--target".into(), "rollup".into()]);
         builder.with_midenc_flags(midenc_flags);
         builder
     }
@@ -868,8 +864,6 @@ pub struct CompilerTest {
     ir_masm_program: Option<Result<Arc<midenc_codegen_masm::MasmComponent>, String>>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
-    /// Miden packages for dependencies
-    pub dependencies: Vec<PathBuf>,
 }
 
 impl fmt::Debug for CompilerTest {
@@ -903,7 +897,6 @@ impl Default for CompilerTest {
             masm_src: None,
             ir_masm_program: None,
             package: None,
-            dependencies: Vec::new(),
         }
     }
 }

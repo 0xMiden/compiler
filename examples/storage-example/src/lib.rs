@@ -23,7 +23,7 @@ bindings::export!(MyAccount with_types_in bindings);
 
 mod bindings;
 
-use miden::{component, CoreAsset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
+use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
 
 #[component]
 struct MyAccount {
@@ -49,7 +49,7 @@ struct MyAccount {
 // }
 
 impl foo::Guest for MyAccount {
-    fn set_asset_qty(pub_key: Word, asset: CoreAsset, qty: Felt) {
+    fn set_asset_qty(pub_key: Word, asset: Asset, qty: Felt) {
         let my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.read();
         if pub_key == owner_key {
@@ -57,7 +57,7 @@ impl foo::Guest for MyAccount {
         }
     }
 
-    fn get_asset_qty(asset: CoreAsset) -> Felt {
+    fn get_asset_qty(asset: Asset) -> Felt {
         let my_account = MyAccount::default();
         my_account.asset_qty_map.get(&asset)
     }

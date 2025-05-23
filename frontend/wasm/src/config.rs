@@ -1,6 +1,7 @@
 use alloc::borrow::Cow;
 
 /// Configuration for the WASM translation.
+#[derive(Clone)]
 pub struct WasmTranslationConfig {
     /// The source file name.
     /// This is used as a fallback for module/component name if it's not parsed from the Wasm

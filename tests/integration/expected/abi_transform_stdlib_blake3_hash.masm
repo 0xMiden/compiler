@@ -2,7 +2,9 @@
 
 export.init
     push.2162688
+    trace.240
     exec.::intrinsics::mem::heap_init
+    trace.252
     push.1048576
     u32assert
     mem_store.262144
@@ -11,14 +13,22 @@ end
 # mod root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
 
 proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
+    trace.240
+    nop
     exec.::std::crypto::hashes::blake3::hash_1to1
+    trace.252
+    nop
     movup.8
     dup.0
     movup.2
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -28,7 +38,11 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -38,7 +52,11 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.12
     dup.1
     swap.1
@@ -48,7 +66,11 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.16
     dup.1
     swap.1
@@ -58,7 +80,11 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.20
     dup.1
     swap.1
@@ -68,7 +94,11 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.24
     dup.1
     swap.1
@@ -78,20 +108,32 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.28
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
 end
 
 export.entrypoint
     push.1048576
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4294967264
     push.32
     dup.2
@@ -103,60 +145,96 @@ export.entrypoint
     swap.1
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     dup.3
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.5
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.6
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.12
     dup.7
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
     dup.8
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.20
     dup.9
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.24
     dup.10
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.28
     movup.11
     add
     u32assert
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     dup.8
     movup.3
     swap.5
@@ -168,7 +246,11 @@ export.entrypoint
     swap.7
     swap.1
     swap.8
+    trace.240
+    nop
     exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
+    trace.252
+    nop
     push.24
     dup.1
     add
@@ -178,17 +260,25 @@ export.entrypoint
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
     push.24
     dup.5
     swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
     push.16
     dup.1
     add
@@ -198,17 +288,25 @@ export.entrypoint
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
     push.16
     dup.5
     swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
     push.8
     dup.1
     add
@@ -218,33 +316,53 @@ export.entrypoint
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
     push.8
     dup.5
     swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
-    assertz.err=250
+    assertz
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
     movup.3
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
     push.1048576
     u32divmod.4
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
 end
 

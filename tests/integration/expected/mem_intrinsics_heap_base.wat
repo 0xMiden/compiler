@@ -3,7 +3,7 @@
   (type (;1;) (func (param i32 i32)))
   (type (;2;) (func (param i32 i32) (result i32)))
   (type (;3;) (func (param i32 i32 i32) (result i32)))
-  (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;0;) (type 0)))
+  (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;0;) (type 0)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)

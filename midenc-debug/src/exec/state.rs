@@ -5,7 +5,8 @@ use std::{
 
 use miden_core::Word;
 use miden_processor::{
-    ContextId, ExecutionError, Operation, RowIndex, StackOutputs, VmState, VmStateIterator,
+    ContextId, ExecutionError, MemoryAddress, MemoryError, Operation, RowIndex, StackOutputs,
+    VmState, VmStateIterator,
 };
 
 use super::ExecutionTrace;
@@ -93,9 +94,7 @@ impl DebugExecutor {
         let chiplets0 = chiplets.clone();
         let get_state_at = move |context, clk| chiplets0.memory.get_state_at(context, clk);
         let chiplets1 = chiplets.clone();
-        let get_word = move |context, addr| {
-            chiplets1.memory.get_word(context, addr).map_err(ExecutionError::MemoryError)
-        };
+        let get_word = move |context, addr| chiplets1.memory.get_word(context, addr);
         let get_value = move |context, addr| chiplets.memory.get_value(context, addr);
 
         let memory = MemoryChiplet {
@@ -132,9 +131,9 @@ impl Iterator for DebugExecutor {
 // Dirty, gross, horrible hack until miden_processor::chiplets::Chiplets is exported
 pub struct MemoryChiplet {
     get_value: Box<dyn Fn(ContextId, u32) -> Option<miden_core::Felt>>,
-    get_word: Box<dyn Fn(ContextId, u32) -> Result<Option<miden_core::Word>, ExecutionError>>,
+    get_word: Box<dyn Fn(ContextId, u32) -> Result<Option<miden_core::Word>, MemoryError>>,
     #[allow(clippy::type_complexity)]
-    get_state_at: Box<dyn Fn(ContextId, RowIndex) -> Vec<(u64, miden_core::Felt)>>,
+    get_state_at: Box<dyn Fn(ContextId, RowIndex) -> Vec<(MemoryAddress, miden_core::Felt)>>,
 }
 
 impl MemoryChiplet {
@@ -144,7 +143,7 @@ impl MemoryChiplet {
     }
 
     #[inline]
-    pub fn get_word(&self, context: ContextId, addr: u32) -> Result<Option<Word>, ExecutionError> {
+    pub fn get_word(&self, context: ContextId, addr: u32) -> Result<Option<Word>, MemoryError> {
         (self.get_word)(context, addr)
     }
 
@@ -153,7 +152,7 @@ impl MemoryChiplet {
         &self,
         context: ContextId,
         clk: RowIndex,
-    ) -> Vec<(u64, miden_core::Felt)> {
+    ) -> Vec<(MemoryAddress, miden_core::Felt)> {
         (self.get_state_at)(context, clk)
     }
 }

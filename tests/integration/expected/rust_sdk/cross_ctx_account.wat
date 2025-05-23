@@ -5,7 +5,7 @@
       (export (;0;) "heap-base" (func (type 0)))
     )
   )
-  (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;0;) (type 0)))
+  (import "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance (;0;) (type 0)))
   (type (;1;)
     (instance
       (type (;0;) (func (param "a" f32) (param "b" f32) (result f32)))
@@ -14,7 +14,7 @@
       (export (;1;) "from-u32" (func (type 1)))
     )
   )
-  (import "miden:core-import/intrinsics-felt@1.0.0" (instance (;1;) (type 1)))
+  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;1;) (type 1)))
   (type (;2;)
     (instance
       (type (;0;) (record (field "inner" f32)))
@@ -31,9 +31,9 @@
     (type (;5;) (func (param i32 i32 i32 i32) (result i32)))
     (type (;6;) (func (param f32) (result f32)))
     (type (;7;) (func (param i32 i32 i32) (result i32)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
-    (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
+    (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
     (table (;0;) 3 3 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -45,14 +45,14 @@
     (func $__wasm_call_ctors (;3;) (type 3))
     (func $cross_ctx_account::bindings::__link_custom_section_describing_imports (;4;) (type 3))
     (func $__rustc::__rust_alloc (;5;) (type 4) (param i32 i32) (result i32)
-      i32.const 1048612
+      i32.const 1048600
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
     (func $__rustc::__rust_realloc (;6;) (type 5) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048612
+        i32.const 1048600
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -99,7 +99,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048616
+            i32.load8_u offset=1048604
             drop
             local.get 3
             local.get 2
@@ -123,12 +123,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;10;) (type 3)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048617
+        i32.load8_u offset=1048605
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048617
+        i32.store8 offset=1048605
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;11;) (type 7) (param i32 i32 i32) (result i32)
@@ -218,7 +218,7 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
   )
   (alias export 1 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
@@ -234,8 +234,8 @@
     (export "heap-base" (func 2))
   )
   (core instance (;2;) (instantiate 0
-      (with "miden:core-import/intrinsics-felt@1.0.0" (instance 0))
-      (with "miden:core-import/intrinsics-mem@1.0.0" (instance 1))
+      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 0))
+      (with "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance 1))
     )
   )
   (alias core export 2 "memory" (core memory (;0;)))

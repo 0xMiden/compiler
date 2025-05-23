@@ -2,7 +2,9 @@
 
 export.init
     push.2162688
+    trace.240
     exec.::intrinsics::mem::heap_init
+    trace.252
     push.1048576
     u32assert
     mem_store.262144
@@ -31,6 +33,10 @@ export.entrypoint
     assert
     movdn.2
     movup.2
+    trace.240
+    nop
     exec.::std::math::u64::shr
+    trace.252
+    nop
 end
 

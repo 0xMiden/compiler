@@ -3,10 +3,10 @@ package miden:basic-wallet@1.0.0;
 use miden:base/core-types@1.0.0;
 
 interface basic-wallet {
-    use core-types.{core-asset, tag, recipient, note-type, felt};
+    use core-types.{asset, tag, recipient, note-type, felt};
 
-    receive-asset: func(core-asset: core-asset);
-    send-asset: func(core-asset: core-asset, tag: tag, note-type: note-type, recipient: recipient);
+    receive-asset: func(asset: asset);
+    send-asset: func(core-asset: asset, tag: tag, note-type: note-type, recipient: recipient);
 }
 
 interface aux {
@@ -14,7 +14,7 @@ interface aux {
     test-felt-intrinsics: func(a: felt, b: felt) -> felt;
     test-stdlib: func(input: list<u8>) -> list<u8>;
     process-list-felt: func(input: list<felt>) -> list<felt>;
-    process-core-asset: func(input: core-asset) -> core-asset;
+    process-core-asset: func(input: asset) -> asset;
 }
 
 

@@ -2,7 +2,9 @@
 
 export.init
     push.2162688
+    trace.240
     exec.::intrinsics::mem::heap_init
+    trace.252
     push.1048576
     u32assert
     mem_store.262144
@@ -17,6 +19,10 @@ end
 # mod root_ns:root@1.0.0::test_rust_ab1d59bc3952451e2ac6a22333bf5458760622594546976d2d1488d607497ae7
 
 export.entrypoint
+    trace.240
+    nop
     exec.::std::math::u64::xor
+    trace.252
+    nop
 end
 

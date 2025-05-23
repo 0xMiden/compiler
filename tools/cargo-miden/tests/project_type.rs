@@ -2,7 +2,7 @@ use std::path::Path;
 
 use cargo_metadata::MetadataCommand;
 use cargo_miden::ProjectType;
-use midenc_session::TargetEnv;
+use midenc_session::{RollupTarget, TargetEnv};
 
 #[test]
 fn test_project_type_detection() {
@@ -10,10 +10,29 @@ fn test_project_type_detection() {
     let examples = [
         // (example_name, expected_project_type, expected_target_environment)
         ("collatz", ProjectType::Program, TargetEnv::Base),
-        ("counter-contract", ProjectType::Library, TargetEnv::Rollup),
+        (
+            "counter-contract",
+            ProjectType::Library,
+            TargetEnv::Rollup {
+                target: RollupTarget::Account,
+            },
+        ),
+        (
+            "counter-note",
+            ProjectType::Program,
+            TargetEnv::Rollup {
+                target: RollupTarget::NoteScript,
+            },
+        ),
         ("fibonacci", ProjectType::Program, TargetEnv::Base),
         ("is-prime", ProjectType::Program, TargetEnv::Base),
-        ("storage-example", ProjectType::Library, TargetEnv::Rollup),
+        (
+            "storage-example",
+            ProjectType::Library,
+            TargetEnv::Rollup {
+                target: RollupTarget::Account,
+            },
+        ),
     ];
 
     for (example_name, expected_type, expected_env) in examples {

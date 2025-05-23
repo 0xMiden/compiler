@@ -19,7 +19,7 @@ use midenc_codegen_masm::{NativePtr, Rodata};
 use midenc_hir::Type;
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report},
-    LinkLibrary, Session, BASE, STDLIB,
+    LinkLibrary, Session, STDLIB,
 };
 
 use super::{DebugExecutor, DebuggerHost, ExecutionTrace, TraceEvent};
@@ -42,7 +42,8 @@ impl Executor {
     pub fn new(args: Vec<Felt>) -> Self {
         let mut resolver = MemDependencyResolverByDigest::default();
         resolver.add(*STDLIB.digest(), STDLIB.clone().into());
-        resolver.add(*BASE.digest(), BASE.clone().into());
+        let base_lib = miden_lib::MidenLib::default().as_ref().clone();
+        resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
         Self {
             stack: StackInputs::new(args).expect("invalid stack inputs"),
             advice: AdviceInputs::default(),

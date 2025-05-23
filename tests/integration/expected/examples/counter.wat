@@ -5,7 +5,7 @@
       (export (;0;) "heap-base" (func (type 0)))
     )
   )
-  (import "miden:core-import/intrinsics-mem@1.0.0" (instance (;0;) (type 0)))
+  (import "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance (;0;) (type 0)))
   (type (;1;)
     (instance
       (type (;0;) (func (param "a" f32) (param "b" f32) (result f32)))
@@ -14,7 +14,7 @@
       (export (;1;) "from-u32" (func (type 1)))
     )
   )
-  (import "miden:core-import/intrinsics-felt@1.0.0" (instance (;1;) (type 1)))
+  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;1;) (type 1)))
   (type (;2;)
     (instance
       (type (;0;) (func (param "index" f32) (param "key0" f32) (param "key1" f32) (param "key2" f32) (param "key3" f32) (param "result-ptr" s32)))
@@ -25,7 +25,7 @@
       (export (;2;) "incr-nonce" (func (type 2)))
     )
   )
-  (import "miden:core-import/account@1.0.0" (instance (;2;) (type 2)))
+  (import "miden:core-base/account@1.0.0" (instance (;2;) (type 2)))
   (type (;3;)
     (instance
       (type (;0;) (record (field "inner" f32)))
@@ -48,12 +48,12 @@
     (type (;11;) (func (param i32 i32 i32)))
     (type (;12;) (func (param i32 i32 i32 i32)))
     (type (;13;) (func (param i32 f32)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
-    (import "miden:core-import/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
-    (import "miden:core-import/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
-    (import "miden:core-import/account@1.0.0" "incr-nonce" (func $miden_base_sys::bindings::account::extern_account_incr_nonce (;3;) (type 3)))
-    (import "miden:core-import/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;4;) (type 4)))
-    (import "miden:core-import/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;5;) (type 5)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
+    (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
+    (import "miden:core-base/account@1.0.0" "incr-nonce" (func $miden_base_sys::bindings::account::extern_account_incr_nonce (;3;) (type 3)))
+    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;4;) (type 4)))
+    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;5;) (type 5)))
     (table (;0;) 3 3 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -66,14 +66,14 @@
     (func $__wasm_call_ctors (;6;) (type 6))
     (func $counter_contract::bindings::__link_custom_section_describing_imports (;7;) (type 6))
     (func $__rustc::__rust_alloc (;8;) (type 7) (param i32 i32) (result i32)
-      i32.const 1048612
+      i32.const 1048616
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
     (func $__rustc::__rust_realloc (;9;) (type 8) (param i32 i32 i32 i32) (result i32)
       block ;; label = @1
-        i32.const 1048612
+        i32.const 1048616
         local.get 2
         local.get 3
         call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -268,7 +268,7 @@
             i32.eqz
             br_if 2 (;@1;)
             i32.const 0
-            i32.load8_u offset=1048616
+            i32.load8_u offset=1048620
             drop
             local.get 3
             local.get 2
@@ -292,12 +292,12 @@
     (func $wit_bindgen_rt::run_ctors_once (;14;) (type 6)
       block ;; label = @1
         i32.const 0
-        i32.load8_u offset=1048617
+        i32.load8_u offset=1048621
         br_if 0 (;@1;)
         call $__wasm_call_ctors
         i32.const 0
         i32.const 1
-        i32.store8 offset=1048617
+        i32.store8 offset=1048621
       end
     )
     (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;15;) (type 10) (param i32 i32 i32) (result i32)
@@ -455,7 +455,7 @@
       local.get 3
       call $cabi_realloc_wit_bindgen_0_28_0
     )
-    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\02\00\00\00")
     (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\03\01\00\01\13count_map\019counter contract storage map")
   )
   (alias export 1 "from-u32" (func (;0;)))
@@ -483,9 +483,9 @@
     (export "set-map-item" (func 5))
   )
   (core instance (;3;) (instantiate 0
-      (with "miden:core-import/intrinsics-felt@1.0.0" (instance 0))
-      (with "miden:core-import/intrinsics-mem@1.0.0" (instance 1))
-      (with "miden:core-import/account@1.0.0" (instance 2))
+      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 0))
+      (with "miden:core-intrinsics/intrinsics-mem@1.0.0" (instance 1))
+      (with "miden:core-base/account@1.0.0" (instance 2))
     )
   )
   (alias core export 3 "memory" (core memory (;0;)))

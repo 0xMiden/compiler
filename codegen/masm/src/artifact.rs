@@ -14,7 +14,7 @@ use midenc_session::{
     Session,
 };
 
-use crate::{lower::NativePtr, masm};
+use crate::{lower::NativePtr, masm, TraceEvent};
 
 pub struct MasmComponent {
     pub id: builtin::ComponentId,
@@ -339,7 +339,13 @@ impl MasmComponent {
             }
 
             // Invoke the program entrypoint
+            block.push(Op::Inst(Span::new(
+                span,
+                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+            )));
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
+            block
+                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
 
             // Truncate the stack to 16 elements on exit
             let truncate_stack = InvocationTarget::AbsoluteProcedurePath {
@@ -376,6 +382,7 @@ impl MasmComponent {
         // => [num_words, dest_ptr] on operand stack
         block.push(Op::Inst(Span::new(span, Inst::AdvPush(2.into()))));
         // => [C, B, A, dest_ptr] on operand stack
+        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
         block.push(Op::Inst(Span::new(
             span,
             Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
@@ -383,6 +390,7 @@ impl MasmComponent {
                 path: std_mem,
             }),
         )));
+        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
         // Drop C, B, A
         block.push(Op::Inst(Span::new(span, Inst::DropW)));
         block.push(Op::Inst(Span::new(span, Inst::DropW)));

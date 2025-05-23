@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use alloc::{borrow::Cow, format, str::FromStr, sync::Arc};
+use alloc::{borrow::Cow, format, str::FromStr, sync::Arc, vec::Vec};
 #[cfg(feature = "std")]
 use alloc::{boxed::Box, string::ToString};
 use core::fmt;
@@ -8,13 +8,12 @@ use core::fmt;
 pub use miden_assembly::{
     Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
 };
-use miden_base_sys::masl::tx::MidenTxKernelLibrary;
 #[cfg(feature = "std")]
 use miden_core::utils::Deserializable;
 use miden_stdlib::StdLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 
-use crate::{diagnostics::Report, PathBuf, Session};
+use crate::{diagnostics::Report, PathBuf, Session, TargetEnv};
 #[cfg(feature = "std")]
 use crate::{
     diagnostics::{IntoDiagnostic, WrapErr},
@@ -23,8 +22,6 @@ use crate::{
 
 pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
     LazyLock::new(|| Arc::new(StdLibrary::default().into()));
-pub static BASE: LazyLock<Arc<CompiledLibrary>> =
-    LazyLock::new(|| Arc::new(MidenTxKernelLibrary::default().into()));
 
 /// The types of libraries that can be linked against during compilation
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -78,12 +75,30 @@ pub struct LinkLibrary {
     pub kind: LibraryKind,
 }
 impl LinkLibrary {
+    /// Construct a LinkLibrary for Miden stdlib
+    pub fn std() -> Self {
+        LinkLibrary {
+            name: "std".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
+    /// Construct a LinkLibrary for Miden base(rollup/tx kernel) library
+    pub fn base() -> Self {
+        LinkLibrary {
+            name: "base".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
     #[cfg(not(feature = "std"))]
     pub fn load(&self, _session: &Session) -> Result<CompiledLibrary, Report> {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => Ok((*STDLIB).as_ref().clone()),
-            "base" => Ok((*BASE).as_ref().clone()),
+            "base" => Ok(miden_lib::MidenLib::default().as_ref().clone()),
             name => Err(Report::msg(format!(
                 "link library '{name}' cannot be loaded: compiler was built without standard \
                  library"
@@ -100,7 +115,7 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => return Ok((*STDLIB).as_ref().clone()),
-            "base" => return Ok((*BASE).as_ref().clone()),
+            "base" => return Ok(miden_lib::MidenLib::default().as_ref().clone()),
             _ => (),
         }
 
@@ -342,4 +357,30 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
             })
         }
     }
+}
+
+/// Add libraries required by the target environment to the list of libraries to link against only
+/// if they are not already present.
+pub fn add_target_link_libraries(
+    link_libraries_in: Vec<LinkLibrary>,
+    target: &TargetEnv,
+) -> Vec<LinkLibrary> {
+    let mut link_libraries_out = link_libraries_in;
+    match target {
+        TargetEnv::Base | TargetEnv::Emu => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+        }
+        TargetEnv::Rollup { .. } => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+
+            if !link_libraries_out.iter().any(|ll| ll.name == "base") {
+                link_libraries_out.push(LinkLibrary::base());
+            }
+        }
+    }
+    link_libraries_out
 }

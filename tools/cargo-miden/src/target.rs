@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use midenc_session::TargetEnv;
+use midenc_session::{RollupTarget, TargetEnv};
 
 /// Represents whether the Cargo project is a Miden program or a library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,18 +16,26 @@ pub enum ProjectType {
 
 /// Detects the target environment based on Cargo metadata.
 pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetEnv {
-    // Check if [package.metadata.miden] is present
-    let has_miden_metadata = metadata.root_package().is_some_and(|root_pkg| {
-        root_pkg
-            .metadata
-            .as_object()
-            .is_some_and(|meta_obj| meta_obj.contains_key("miden"))
-    });
-    if has_miden_metadata {
-        // Assume `RollupTarget::Account` since we're not yet detecting rollup target type.
-        TargetEnv::Rollup
+    let Some(root_pkg) = metadata.root_package() else {
+        return TargetEnv::Base;
+    };
+    let Some(meta_obj) = root_pkg.metadata.as_object() else {
+        return TargetEnv::Base;
+    };
+    let Some(miden_meta) = meta_obj.get("miden") else {
+        return TargetEnv::Base;
+    };
+    let Some(miden_meta_obj) = miden_meta.as_object() else {
+        return TargetEnv::Base;
+    };
+    if miden_meta_obj.contains_key("supported-types") {
+        TargetEnv::Rollup {
+            target: RollupTarget::Account,
+        }
     } else {
-        TargetEnv::Base
+        TargetEnv::Rollup {
+            target: RollupTarget::NoteScript,
+        }
     }
 }
 
@@ -35,7 +43,10 @@ pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetE
 pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType {
     match target_env {
         TargetEnv::Base => ProjectType::Program,
-        TargetEnv::Rollup => ProjectType::Library,
+        TargetEnv::Rollup { target } => match target {
+            RollupTarget::Account => ProjectType::Library,
+            RollupTarget::NoteScript => ProjectType::Program,
+        },
         TargetEnv::Emu => {
             panic!("Emulator target environment is not supported for project type detection",)
         }

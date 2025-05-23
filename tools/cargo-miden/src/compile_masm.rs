@@ -6,17 +6,13 @@ use std::{
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report, WrapErr},
-    InputFile, OutputType, TargetEnv,
+    InputFile, OutputType,
 };
-
-use crate::ProjectType;
 
 pub fn wasm_to_masm(
     wasm_file_path: &Path,
     output_folder: &Path,
-    dependency_paths: &[PathBuf], // New parameter
-    project_type: ProjectType,
-    target_env: TargetEnv,
+    mut midenc_args: Vec<String>,
 ) -> Result<PathBuf, Report> {
     if !output_folder.exists() {
         return Err(Report::msg(format!(
@@ -39,39 +35,19 @@ pub fn wasm_to_masm(
         .unwrap();
     let output_file =
         output_folder.join(masm_file_name).with_extension(OutputType::Masp.extension());
-    let project_type_arg = match project_type {
-        ProjectType::Program => "--exe",
-        ProjectType::Library => "--lib",
-    };
-    let entrypoint_opt = format!("--entrypoint={masm_file_name}::entrypoint");
-    let mut args: Vec<&std::ffi::OsStr> = vec![
-        "--output-dir".as_ref(),
-        output_folder.as_os_str(),
-        "-o".as_ref(),
-        output_file.as_os_str(),
-        project_type_arg.as_ref(),
-        "--verbose".as_ref(),
+
+    let mut args: Vec<String> = vec![
+        "--output-dir".to_string(),
+        output_folder.to_str().unwrap().to_string(),
+        "-o".to_string(),
+        output_file.to_str().unwrap().to_string(),
+        "--verbose".to_string(),
     ];
-
-    // Only add --target rollup for Rollup target environments
-    if let TargetEnv::Rollup = target_env {
-        args.push("--target".as_ref());
-        args.push("rollup".as_ref());
-    }
-
-    if project_type == ProjectType::Program {
-        args.push(entrypoint_opt.as_ref());
-    }
-
-    // Add dependency linker arguments (Step 3.3)
-    for dep_path in dependency_paths {
-        args.push("--link-library".as_ref());
-        // Ensure the path is valid OsStr
-        args.push(dep_path.as_os_str());
-    }
+    args.append(&mut midenc_args);
 
     let session = Rc::new(Compiler::new_session([input], None, args));
     let context = Rc::new(Context::new(session));
+    println!("Creating Miden package {}", output_file.display());
     midenc_compile::compile(context.clone())?;
     Ok(output_file)
 }

@@ -3,14 +3,16 @@ package miden:storage-example@1.0.0;
 use miden:base/core-types@1.0.0;
 
 interface foo {
-    use core-types.{felt, word, core-asset};
+    use core-types.{felt, word, asset};
 
-    set-asset-qty: func(pub-key: word, asset: core-asset, qty: felt);
-    get-asset-qty: func(asset: core-asset) -> felt;
+    set-asset-qty: func(pub-key: word, asset: asset, qty: felt);
+    get-asset-qty: func(asset: asset) -> felt;
 }
 
 world foo-world {
-    include miden:core-import/all@1.0.0;
+    include miden:core-intrinsics/intrinsics@1.0.0;
+    include miden:core-stdlib/stdlib@1.0.0;
+    include miden:core-base/base@1.0.0;
 
     export foo;
 }

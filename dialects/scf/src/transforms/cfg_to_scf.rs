@@ -437,6 +437,139 @@ mod tests {
         Ok(())
     }
 
+    /// This test ensures that the CF->SCF transformation is correctly applied to unstructured
+    /// conditional control flow, where one branch leads to an early exit from the function, while
+    /// the other branch performs additional computation before exiting.
+    #[test]
+    fn cfg_to_scf_lift_conditional_early_exit() -> Result<(), Report> {
+        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+            .is_test(true)
+            .format_timestamp(None)
+            .try_init();
+
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+
+        let span = SourceSpan::default();
+        let mut function = {
+            let builder = builder.create::<builtin::Function, (_, _)>(span);
+            let name = Ident::new("test".into(), span);
+            let signature = Signature::new(
+                [
+                    AbiParam::new(Type::U32),
+                    AbiParam::new(Type::U32),
+                    AbiParam::new(Type::U32),
+                    AbiParam::new(Type::U32),
+                ],
+                [AbiParam::new(Type::U32)],
+            );
+            builder(name, signature).unwrap()
+        };
+
+        // Define function body
+        let mut func = function.borrow_mut();
+        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+
+        // This is the HIR we derived this test case from originally, as reported in issue #510
+        //
+        // public builtin.function @cabi_realloc_wit_bindgen_0_28_0(v325: i32, v326: i32, v327: i32, v328: i32) -> i32 {
+        //     ^block32(v325: i32, v326: i32, v327: i32, v328: i32):
+        //         v330 = arith.constant 0 : i32;
+        //         v331 = arith.neq v326, v330 : i1;
+        //         cf.cond_br v331 ^block35, ^block36;
+        //     ^block34(v343: i32):
+        //         v345 = arith.eq v343, v330 : i1;
+        //         v346 = arith.zext v345 : u32;
+        //         v347 = hir.bitcast v346 : i32;
+        //         v349 = arith.neq v347, v330 : i1;
+        //         cf.cond_br v349 ^block39, ^block40;
+        //     ^block35:
+        //         v342 = hir.exec @miden:test-proj-underscore/test-proj-underscore@0.1.0/test_proj_underscore/_RNvCs95KLPZDDxvS_7___rustc14___rust_realloc(v325, v326, v327, v328) : i32
+        //         cf.br ^block34(v342);
+        //     ^block36:
+        //         v333 = arith.neq v328, v330 : i1;
+        //         cf.cond_br v333 ^block37, ^block38;
+        //     ^block37:
+        //         v341 = hir.exec @miden:test-proj-underscore/test-proj-underscore@0.1.0/test_proj_underscore/_RNvCs95KLPZDDxvS_7___rustc12___rust_alloc(v328, v327) : i32
+        //         cf.br ^block34(v341);
+        //     ^block38:
+        //         builtin.ret v327;
+        //     ^block39:
+        //         ub.unreachable ;
+        //     ^block40:
+        //         builtin.ret v343;
+        //     };
+
+        let block32 = builder.current_block();
+        let block34 = builder.create_block();
+        let v343 = builder.append_block_param(block34, Type::U32, span);
+        let block35 = builder.create_block();
+        let block36 = builder.create_block();
+        let block37 = builder.create_block();
+        let block38 = builder.create_block();
+        let block39 = builder.create_block();
+        let block40 = builder.create_block();
+
+        let (v325, v326, v327, v328) = {
+            let block32 = block32.borrow();
+            let args = block32.arguments();
+            let arg0: midenc_hir::ValueRef = args[0].upcast();
+            let arg2: midenc_hir::ValueRef = args[2].upcast();
+            let arg3: midenc_hir::ValueRef = args[3].upcast();
+            (arg0, args[1].upcast(), arg2, arg3)
+        };
+
+        let v330 = builder.u32(0, span);
+        let v331 = builder.neq(v326, v330, span)?;
+        builder.cond_br(v331, block35, [], block36, [], span)?;
+
+        builder.switch_to_block(block34);
+        let v345 = builder.eq(v343, v330, span)?;
+        let v349 = builder.neq(v345, v330, span)?;
+        builder.cond_br(v349, block39, [], block40, [], span)?;
+
+        builder.switch_to_block(block35);
+        let v342 = builder.incr(v325, span)?;
+        builder.br(block34, [v342], span)?;
+
+        builder.switch_to_block(block36);
+        let v333 = builder.neq(v328, v330, span)?;
+        builder.cond_br(v333, block37, [], block38, [], span)?;
+
+        builder.switch_to_block(block37);
+        let v341 = builder.incr(v328, span)?;
+        builder.br(block34, [v341], span)?;
+
+        builder.switch_to_block(block38);
+        builder.ret(Some(v327), span)?;
+
+        builder.switch_to_block(block39);
+        builder.unreachable(span);
+
+        builder.switch_to_block(block40);
+        builder.ret(Some(v343), span)?;
+
+        let operation = func.as_operation_ref();
+        drop(func);
+
+        // Run transformation on function body
+        let input = format!("{}", &operation.borrow());
+        expect_file!["expected/cfg_to_scf_lift_conditional_early_exit_before.hir"]
+            .assert_eq(&input);
+
+        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
+        pm.add_pass(Box::new(LiftControlFlowToSCF));
+        pm.run(operation)?;
+
+        // Verify that the function body now consists of a single `scf.if` operation, followed by
+        // a `cf.switch`, which branches to either a return, or an unreachable.
+        let output = format!("{}", &operation.borrow());
+        expect_file!["expected/cfg_to_scf_lift_conditional_early_exit_after.hir"]
+            .assert_eq(&output);
+
+        Ok(())
+    }
+
     #[test]
     fn cfg_to_scf_lift_simple_while_loop() -> Result<(), Report> {
         let context = Rc::new(Context::default());
