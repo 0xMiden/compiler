@@ -128,19 +128,19 @@ fn rust_sdk_p2id_note_script() {
 }
 
 #[test]
-fn rust_sdk_cross_ctx_account() {
+fn rust_sdk_cross_ctx_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/cross-ctx-account",
-        config,
+        config.clone(),
         [],
     );
     let artifact_name = test.artifact_name().to_string();
     test.expect_wasm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/{artifact_name}.masm")]);
-    let package = test.compiled_package();
-    let lib = package.unwrap_library();
+    let account_package = test.compiled_package();
+    let lib = account_package.unwrap_library();
     let expected_module = "miden:cross-ctx-account/foo@1.0.0";
     let expected_function = "process-felt";
     let exports = lib
@@ -158,24 +158,8 @@ fn rust_sdk_cross_ctx_account() {
          '{expected_function}"
     );
     // Test that the package loads
-    let bytes = package.to_bytes();
+    let bytes = account_package.to_bytes();
     let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
-}
-
-#[test]
-fn rust_sdk_cross_ctx_note() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    let config = WasmTranslationConfig::default();
-
-    // Build counter account package
-    let builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-account",
-        config.clone(),
-        [],
-    );
-    let mut test = builder.build();
-    let account_package = test.compiled_package();
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
