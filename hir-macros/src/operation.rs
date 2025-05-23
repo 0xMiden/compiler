@@ -719,7 +719,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                 #with_successors
                 #with_results
 
-                // Finalize construction of this op, verifying it
+                // Finalize construction of this op
                 #build_op
             }
         });
