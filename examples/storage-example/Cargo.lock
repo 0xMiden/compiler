@@ -538,7 +538,6 @@ dependencies = [
 name = "miden-base-sys"
 version = "0.1.0"
 dependencies = [
- "miden-assembly",
  "miden-stdlib-sys",
 ]
 

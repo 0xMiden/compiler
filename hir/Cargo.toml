@@ -23,6 +23,7 @@ bitflags.workspace = true
 blink-alloc.workspace = true
 compact_str.workspace = true
 hashbrown.workspace = true
+hashbrown_old_nightly_hack.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
 log.workspace = true
