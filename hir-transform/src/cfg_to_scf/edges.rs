@@ -47,7 +47,7 @@ impl core::fmt::Display for Edge {
         write!(
             f,
             "{} -> {} (index {})",
-            self.get_predecessor(),
+            self.from_block,
             self.get_successor(),
             self.successor_index
         )

@@ -5,9 +5,9 @@ use midenc_hir::{
     cfg::Graph,
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     formatter::DisplayValues,
-    smallvec, AsValueRange, Block, BlockRef, Builder, Context, FxHashMap, OpBuilder, OperationRef,
-    ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type, Usable, Value,
-    ValueRange, ValueRef,
+    smallvec, AsValueRange, Block, BlockRef, Builder, Context, EntityWithId, FxHashMap, OpBuilder,
+    OperationRef, ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
+    Usable, Value, ValueRange, ValueRef,
 };
 
 use super::{
@@ -274,6 +274,11 @@ impl<'a> TransformationContext<'a> {
     ) -> Result<SmallVec<[BlockRef; 4]>, Report> {
         use midenc_hir::cfg::StronglyConnectedComponents;
 
+        log::trace!(
+            target: "cfg-to-scf",
+            "transforming cycles to structured loops from region entry {region_entry}"
+        );
+
         let mut new_sub_regions = SmallVec::<[BlockRef; 4]>::default();
 
         let scc_iter = StronglyConnectedComponents::new(&region_entry);
@@ -411,7 +416,14 @@ impl<'a> TransformationContext<'a> {
         &mut self,
         mut region_entry: BlockRef,
     ) -> Result<SmallVec<[BlockRef; 4]>, Report> {
+        log::trace!(
+            target: "cfg-to-scf",
+            "transforming conditional control flow for region reachable from {region_entry}"
+        );
+
         let num_successors = region_entry.borrow().num_successors();
+
+        log::trace!(target: "cfg-to-scf", "{region_entry} has {num_successors} successors");
 
         // Trivial region.
         if num_successors == 0 {
@@ -489,8 +501,12 @@ impl<'a> TransformationContext<'a> {
                         not_continuation.insert(block);
                     }
                 }
+
+                log::trace!(target: "cfg-to-scf", "computed region for successor {dest} as [{}]", DisplayValues::new(block_list.iter()));
             }
         }
+
+        log::trace!(target: "cfg-to-scf", "non-continuation blocks: [{}]", DisplayValues::new(not_continuation.iter()));
 
         // Finds all relevant edges and checks the shape of the control flow graph at this point.
         //
@@ -563,11 +579,17 @@ impl<'a> TransformationContext<'a> {
         for (entry_edge, branch_region) in
             SuccessorEdges::new(region_entry).zip(successor_branch_regions.iter_mut())
         {
+            log::trace!(
+                target: "cfg-to-scf",
+                "analyzing branch region for edge {entry_edge}: [{}]",
+                DisplayValues::new(branch_region.iter())
+            );
+
             // If the branch region is empty then the branch target itself is part of the
             // continuation.
             if branch_region.is_empty() {
                 continuation_edges.push(entry_edge);
-                log::trace!(target: "cfg-to-scf", " empty branch region for edge {} -> {}", entry_edge.from_block, entry_edge.get_successor());
+                log::trace!(target: "cfg-to-scf", " branch region is empty");
                 no_successor_has_continuation_edge = false;
                 continue;
             }
@@ -575,6 +597,7 @@ impl<'a> TransformationContext<'a> {
             for block_ref in branch_region.iter() {
                 let block = block_ref.borrow();
                 if is_region_exit_block(&block) {
+                    log::trace!(target: "cfg-to-scf", " {} is a region exit", block);
                     // If a return-like op is part of the branch region then the continuation no
                     // longer post-dominates the branch region. Add all its incoming edges to edge
                     // list to create the single-exit block for all branch regions.
@@ -589,6 +612,7 @@ impl<'a> TransformationContext<'a> {
                 }
 
                 for edge in SuccessorEdges::new(*block_ref) {
+                    log::trace!(target: "cfg-to-scf",  "analyzing successor edge {edge}");
                     if not_continuation.contains(&edge.get_successor()) {
                         continue;
                     }
@@ -599,24 +623,39 @@ impl<'a> TransformationContext<'a> {
             }
         }
 
+        log::trace!(
+            target: "cfg-to-scf",
+            " found continuation edges: [{}]", DisplayValues::new(continuation_edges.iter())
+        );
+
         // Case 2: Keep the control flow op but process its successors further.
         if no_successor_has_continuation_edge {
+            log::trace!(target: "cfg-to-scf", " no successor has a continuation edge");
             let term = region_entry.borrow().terminator().unwrap();
             let term = term.borrow();
             return Ok(term.successor_iter().map(|s| s.dest.borrow().successor()).collect());
         }
 
         // Collapse to a single continuation block, or None
-        let mut continuation = continuation_edges.iter().fold(None, |acc, e| match acc {
-            None => Some(e.get_successor()),
-            Some(prev) => {
-                if BlockRef::ptr_eq(&prev, &e.get_successor()) {
-                    Some(prev)
-                } else {
-                    None
+        let mut continuation = None;
+        {
+            for edge in continuation_edges.iter() {
+                match continuation.as_ref() {
+                    None => {
+                        continuation = Some(edge.get_successor());
+                    }
+                    Some(prev) => {
+                        if !BlockRef::ptr_eq(prev, &edge.get_successor()) {
+                            continuation = None;
+                            break;
+                        }
+                    }
                 }
             }
-        });
+        }
+
+        log::trace!(target: "cfg-to-scf", " continuation = {:?}", continuation.map(|c| c.borrow().id()));
+        log::trace!(target: "cfg-to-scf", " continuation_post_dominates_all_regions = {continuation_post_dominates_all_regions}");
 
         // In Case 3, or if not all continuation edges have the same entry block, create a single
         // entry block as continuation for all branch regions.
@@ -625,6 +664,7 @@ impl<'a> TransformationContext<'a> {
             let span = term.borrow().span();
             let multiplexer = self.create_single_entry_block(span, &continuation_edges)?;
             continuation = Some(multiplexer.get_multiplexer_block());
+            log::trace!(target: "cfg-to-scf", " created new single entry continuation = {}", multiplexer.get_multiplexer_block());
         }
 
         // Trigger reprocessing of Case 3 after creating the single entry block.

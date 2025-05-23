@@ -3734,6 +3734,7 @@ name = "midenc-dialect-scf"
 version = "0.0.8"
 dependencies = [
  "bitvec",
+ "env_logger 0.11.5",
  "expect-test",
  "log",
  "midenc-dialect-arith",
