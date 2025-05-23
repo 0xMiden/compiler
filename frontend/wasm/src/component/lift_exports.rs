@@ -4,7 +4,7 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder},
+    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
     interner::Symbol,
     CallConv, FunctionType, Ident, Op, SourceSpan, SymbolPath, ValueRange, ValueRef,
 };
@@ -47,7 +47,7 @@ pub fn generate_export_lifting_function(
 
     let export_func_ident =
         Ident::new(Symbol::intern(export_func_name.to_string()), SourceSpan::default());
-    let mut export_func_ref =
+    let export_func_ref =
         component_builder.define_function(export_func_ident, cross_ctx_export_sig.clone())?;
 
     let core_export_module_path = core_export_func_path.without_leaf();
@@ -62,16 +62,14 @@ pub fn generate_export_lifting_function(
     let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
     assert_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig);
 
-    let mut export_func = export_func_ref.borrow_mut();
-    let context = export_func.as_operation().context_rc();
+    let (span, context) = {
+        let export_func = export_func_ref.borrow();
+        (export_func.name().span, export_func.as_operation().context_rc())
+    };
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
         midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
-    let span = export_func.name().span;
-    let mut fb = FunctionBuilderExt::new(
-        export_func.as_mut().downcast_mut::<Function>().unwrap(),
-        &mut op_builder,
-    );
+    let mut fb = FunctionBuilderExt::new(export_func_ref, &mut op_builder);
 
     let entry_block = fb.current_block();
     fb.seal_block(entry_block); // Declare all predecessors known.

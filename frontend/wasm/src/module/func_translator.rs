@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function},
+    dialects::builtin::{BuiltinOpBuilder, FunctionRef},
     BlockRef, Builder, Context, Op,
 };
 use midenc_session::{
@@ -61,7 +61,7 @@ impl FuncTranslator {
         &mut self,
         body: &FunctionBody<'_>,
         // mod_func_builder: &mut FunctionBuilder<'_>,
-        func: &mut Function,
+        func: FunctionRef,
         module_state: &mut ModuleTranslationState,
         module: &ParsedModule<'_>,
         mod_types: &ModuleTypesBuilder,
@@ -69,7 +69,8 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
     ) -> WasmResult<()> {
-        let mut op_builder = midenc_hir::OpBuilder::new(func.as_operation().context_rc())
+        let context = func.borrow().as_operation().context_rc();
+        let mut op_builder = midenc_hir::OpBuilder::new(context)
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
 
@@ -82,7 +83,10 @@ impl FuncTranslator {
         // function and its return values.
         let exit_block = builder.create_block();
         builder.append_block_params_for_function_returns(exit_block);
-        self.state.initialize(builder.signature(), exit_block);
+        {
+            let signature = builder.signature();
+            self.state.initialize(&signature, exit_block);
+        }
 
         let mut reader = body.get_locals_reader().into_diagnostic()?;
 
@@ -122,9 +126,9 @@ fn declare_parameters<B: ?Sized + Builder>(
     let sig_len = builder.signature().params().len();
     let mut next_local = 0;
     for i in 0..sig_len {
-        let abi_param = &builder.signature().params()[i];
+        let abi_param = builder.signature().params()[i].clone();
         let local = Variable::new(next_local);
-        builder.declare_var(local, abi_param.ty.clone());
+        builder.declare_var(local, abi_param.ty);
         next_local += 1;
 
         let param_value = entry_block.borrow().arguments()[i];

@@ -8,7 +8,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, Function, ModuleBuilder, WorldBuilder,
+        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
     },
     CallConv, FunctionType, Op, Report, Signature, SymbolPath, ValueRef,
 };
@@ -49,20 +49,18 @@ pub fn generate_import_lowering_function(
     }
     assert_core_wasm_signature_equivalence(&core_func_sig, &import_lowered_sig);
 
-    let mut core_func_ref = module_builder
+    let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), core_func_sig.clone())
         .expect("failed to define the core function");
 
-    let mut core_func = core_func_ref.borrow_mut();
-    let context = core_func.as_operation().context_rc();
+    let (span, context) = {
+        let core_func = core_func_ref.borrow();
+        (core_func.name().span, core_func.as_operation().context_rc())
+    };
     let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder =
         midenc_hir::OpBuilder::new(context).with_listener(SSABuilderListener::new(func_ctx));
-    let span = core_func.name().span;
-    let mut fb = FunctionBuilderExt::new(
-        core_func.as_mut().downcast_mut::<Function>().unwrap(),
-        &mut op_builder,
-    );
+    let mut fb = FunctionBuilderExt::new(core_func_ref, &mut op_builder);
 
     let entry_block = fb.current_block();
     fb.seal_block(entry_block); // Declare all predecessors known.

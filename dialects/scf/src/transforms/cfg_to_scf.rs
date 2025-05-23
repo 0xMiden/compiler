@@ -384,7 +384,7 @@ mod tests {
         let mut builder = OpBuilder::new(context.clone());
 
         let span = SourceSpan::default();
-        let mut function = {
+        let function = {
             let builder = builder.create::<builtin::Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
             let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
@@ -392,8 +392,7 @@ mod tests {
         };
 
         // Define function body
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
 
         let if_is_zero = builder.create_block();
         let if_is_nonzero = builder.create_block();
@@ -418,9 +417,7 @@ mod tests {
         builder.switch_to_block(exit_block);
         builder.ret(Some(return_val), span)?;
 
-        let operation = func.as_operation_ref();
-        drop(func);
-
+        let operation = function.as_operation_ref();
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
         expect_file!["expected/cfg_to_scf_lift_simple_conditional_before.hir"].assert_eq(&input);
@@ -451,7 +448,7 @@ mod tests {
         let mut builder = OpBuilder::new(context.clone());
 
         let span = SourceSpan::default();
-        let mut function = {
+        let function = {
             let builder = builder.create::<builtin::Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
             let signature = Signature::new(
@@ -467,8 +464,7 @@ mod tests {
         };
 
         // Define function body
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
 
         // This is the HIR we derived this test case from originally, as reported in issue #510
         //
@@ -549,8 +545,7 @@ mod tests {
         builder.switch_to_block(block40);
         builder.ret(Some(v343), span)?;
 
-        let operation = func.as_operation_ref();
-        drop(func);
+        let operation = function.as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
@@ -576,7 +571,7 @@ mod tests {
         let mut builder = OpBuilder::new(context.clone());
 
         let span = SourceSpan::default();
-        let mut function = {
+        let function = {
             let builder = builder.create::<builtin::Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
             let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
@@ -584,8 +579,7 @@ mod tests {
         };
 
         // Define function body
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
 
         let loop_header = builder.create_block();
         let n = builder.append_block_param(loop_header, Type::U32, span);
@@ -612,8 +606,7 @@ mod tests {
         let counter_prime = builder.incr(counter, span)?;
         builder.br(loop_header, [n_prime, counter_prime], span)?;
 
-        let operation = func.as_operation_ref();
-        drop(func);
+        let operation = function.as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
@@ -637,7 +630,7 @@ mod tests {
         let mut builder = OpBuilder::new(context.clone());
 
         let span = SourceSpan::default();
-        let mut function = {
+        let function = {
             let builder = builder.create::<builtin::Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
             let signature = Signature::new(
@@ -670,8 +663,7 @@ mod tests {
         //     return sum;
         // }
         //
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
 
         let outer_loop_header = builder.create_block();
         let inner_loop_header = builder.create_block();
@@ -727,8 +719,7 @@ mod tests {
         let new_sum = builder.add_unchecked(col_sum, cell, span)?;
         builder.br(inner_loop_header, [new_col_offset, new_sum], span)?;
 
-        let operation = func.as_operation_ref();
-        drop(func);
+        let operation = function.as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
@@ -752,7 +743,7 @@ mod tests {
         let mut builder = OpBuilder::new(context.clone());
 
         let span = SourceSpan::default();
-        let mut function = {
+        let function = {
             let builder = builder.create::<builtin::Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
             let signature = Signature::new(
@@ -789,8 +780,7 @@ mod tests {
         //     return sum;
         // }
         //
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
 
         let outer_loop_header = builder.create_block();
         let inner_loop_header = builder.create_block();
@@ -857,8 +847,7 @@ mod tests {
         builder.switch_to_block(has_overflowed);
         builder.ret_imm(midenc_hir::Immediate::U32(u32::MAX), span)?;
 
-        let operation = func.as_operation_ref();
-        drop(func);
+        let operation = function.as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());

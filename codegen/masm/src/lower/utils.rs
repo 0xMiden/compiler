@@ -511,7 +511,7 @@ mod tests {
 
         let mut builder = OpBuilder::new(context.clone());
 
-        let mut function_ref = builder.create_function(
+        let function_ref = builder.create_function(
             Ident::with_empty_span("test".into()),
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
@@ -520,9 +520,8 @@ mod tests {
         )?;
 
         let (a, b) = {
-            let mut function = function_ref.borrow_mut();
-            let span = function.span();
-            let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+            let span = function_ref.span();
+            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
@@ -598,7 +597,7 @@ mod tests {
 
         let mut builder = OpBuilder::new(context.clone());
 
-        let mut function_ref = builder.create_function(
+        let function_ref = builder.create_function(
             Ident::with_empty_span("test".into()),
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
@@ -607,9 +606,8 @@ mod tests {
         )?;
 
         let (a, b) = {
-            let mut function = function_ref.borrow_mut();
-            let span = function.span();
-            let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+            let span = function_ref.span();
+            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
@@ -828,7 +826,7 @@ mod tests {
     ) -> Result<(FunctionRef, masm::Block), Report> {
         let mut builder = OpBuilder::new(context.clone());
 
-        let mut function_ref = builder.create_function(
+        let function_ref = builder.create_function(
             Ident::with_empty_span("test".into()),
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
@@ -837,9 +835,8 @@ mod tests {
         )?;
 
         let (a, b) = {
-            let mut function = function_ref.borrow_mut();
-            let span = function.span();
-            let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+            let span = function_ref.span();
+            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;

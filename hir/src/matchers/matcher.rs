@@ -752,7 +752,7 @@ mod tests {
     fn setup(context: Rc<Context>) -> (ValueRef, ValueRef, ValueRef) {
         let mut builder = OpBuilder::new(Rc::clone(&context));
 
-        let mut function = {
+        let function = {
             let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
             let name = Ident::new("test".into(), SourceSpan::default());
             let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
@@ -760,8 +760,7 @@ mod tests {
         };
 
         // Define function body
-        let mut func = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut func, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
         let lhs = builder.u32(1, SourceSpan::default()).unwrap();
         let block = builder.current_block();
         let rhs = block.borrow().arguments()[0].upcast();

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
-        self, BuiltinOpBuilder, ComponentBuilder, Function, ModuleBuilder, World, WorldBuilder,
+        self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
     },
     interner::Symbol,
     version::Version,
@@ -125,20 +125,16 @@ pub fn build_ir_module(
         let func_index = parsed_module.module.func_index(defined_func_idx);
         let func_name = parsed_module.module.func_name(func_index).as_str();
 
-        let mut function_ref = module_state
-            .module_builder
-            .get_function(func_name)
-            .unwrap_or_else(|| {
+        let function_ref =
+            module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
-            })
-            .borrow_mut();
-        let func = function_ref.as_mut().downcast_mut::<Function>().unwrap();
+            });
         // let mut module_func_builder = module_builder.function(func_name.as_str(), sig.clone())?;
         let FunctionBodyData { validator, body } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
         func_translator.translate_body(
             &body,
-            func,
+            function_ref,
             module_state,
             parsed_module,
             module_types,

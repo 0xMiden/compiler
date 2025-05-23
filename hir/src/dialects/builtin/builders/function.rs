@@ -1,11 +1,12 @@
-use crate::{dialects::builtin::Function, *};
+use crate::{dialects::builtin::FunctionRef, *};
 
 pub struct FunctionBuilder<'f, B: ?Sized> {
-    pub func: &'f mut Function,
+    pub func: FunctionRef,
     builder: &'f mut B,
 }
 impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
-    pub fn new(func: &'f mut Function, builder: &'f mut B) -> Self {
+    pub fn new(mut function: FunctionRef, builder: &'f mut B) -> Self {
+        let mut func = function.borrow_mut();
         let current_block = if func.body().is_empty() {
             func.create_entry_block()
         } else {
@@ -14,25 +15,28 @@ impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
 
         builder.set_insertion_point_to_end(current_block);
 
-        Self { func, builder }
+        Self {
+            func: function,
+            builder,
+        }
     }
 
-    pub fn at(builder: &'f mut B, func: &'f mut Function, ip: ProgramPoint) -> Self {
+    pub fn at(builder: &'f mut B, func: FunctionRef, ip: ProgramPoint) -> Self {
         builder.set_insertion_point(ip);
 
         Self { func, builder }
     }
 
-    pub fn as_parts_mut(&mut self) -> (&mut Function, &mut B) {
+    pub fn as_parts_mut(&mut self) -> (FunctionRef, &mut B) {
         (self.func, self.builder)
     }
 
     pub fn body_region(&self) -> RegionRef {
-        self.func.body().as_region_ref()
+        self.func.borrow().body().as_region_ref()
     }
 
     pub fn entry_block(&self) -> BlockRef {
-        self.func.entry_block()
+        self.func.borrow().entry_block()
     }
 
     #[inline]
@@ -67,11 +71,12 @@ impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
         );
         assert_eq!(
             block.parent().map(|p| RegionRef::as_ptr(&p)),
-            Some(RegionRef::as_ptr(&self.func.body().as_region_ref())),
+            Some(RegionRef::as_ptr(&self.func.borrow().body().as_region_ref())),
             "cannot detach a block that does not belong to this function"
         );
-        let mut body = self.func.body_mut();
         unsafe {
+            let mut func = self.func.borrow_mut();
+            let mut body = func.body_mut();
             body.body_mut().cursor_mut_from_ptr(block).remove();
         }
         block.borrow_mut().uses_mut().clear();

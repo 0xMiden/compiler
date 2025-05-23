@@ -72,14 +72,13 @@ fn eval_callable_test() -> Result<(), Report> {
 
     let mut builder = OpBuilder::new(test_context.context.clone());
 
-    let mut function = builder.create_function(
+    let function = builder.create_function(
         Ident::with_empty_span("test".into()),
         Signature::new([AbiParam::new(Type::I1)], [AbiParam::new(Type::U32)]),
     )?;
 
     {
-        let mut function = function.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+        let mut builder = FunctionBuilder::new(function, &mut builder);
         let cond = builder.current_block().borrow().arguments()[0] as ValueRef;
         let conditional = builder.r#if(cond, &[Type::U32], SourceSpan::default())?;
         let result = conditional.borrow().results()[0] as ValueRef;
@@ -126,7 +125,7 @@ fn call_handling_test() -> Result<(), Report> {
     builder.create_block(module_body, None, &[]);
 
     // Define entry
-    let mut entry = builder.create_function(
+    let entry = builder.create_function(
         Ident::with_empty_span("entrypoint".into()),
         Signature::new([AbiParam::new(Type::I1)], [AbiParam::new(Type::U32)]),
     )?;
@@ -137,7 +136,7 @@ fn call_handling_test() -> Result<(), Report> {
 
     // Define callee
     let callee_signature = Signature::new([AbiParam::new(Type::I1)], [AbiParam::new(Type::I1)]);
-    let mut callee = builder
+    let callee = builder
         .create_function(Ident::with_empty_span("callee".into()), callee_signature.clone())?;
     module
         .borrow_mut()
@@ -145,8 +144,7 @@ fn call_handling_test() -> Result<(), Report> {
         .insert_new(callee, ProgramPoint::Invalid);
 
     {
-        let mut function = entry.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+        let mut builder = FunctionBuilder::new(entry, &mut builder);
         let input = builder.current_block().borrow().arguments()[0] as ValueRef;
         let call = builder.exec(callee, callee_signature, [input], SourceSpan::default())?;
         let cond = call.borrow().results()[0] as ValueRef;
@@ -169,8 +167,7 @@ fn call_handling_test() -> Result<(), Report> {
 
     // This function inverts the boolean value it receives and returns it
     {
-        let mut function = callee.borrow_mut();
-        let mut builder = FunctionBuilder::new(&mut function, &mut builder);
+        let mut builder = FunctionBuilder::new(callee, &mut builder);
         let cond = builder.current_block().borrow().arguments()[0] as ValueRef;
         let truthy = builder.i1(true, SourceSpan::default());
         let falsey = builder.i1(false, SourceSpan::default());
