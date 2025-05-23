@@ -522,8 +522,8 @@ builtin.component miden:storage-example/foo@1.0.0 {
                         v383 = arith.mod v381, v682 : u32;
                         hir.assertz v383 #[code = 250];
                         v652 = arith.constant 16 : u32;
-                        v378 = arith.shl v375, v652 : u32;
-                        v379 = hir.bitcast v378 : i32;
+                        v376 = hir.bitcast v375 : i32;
+                        v379 = arith.shl v376, v652 : i32;
                         v380 = arith.add v374, v379 : i32 #[overflow = wrapping];
                         v384 = hir.int_to_ptr v381 : ptr<byte, i32>;
                         hir.store v384, v380;

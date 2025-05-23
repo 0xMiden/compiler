@@ -121,8 +121,8 @@ builtin.component root_ns:root@1.0.0 {
                         v100 = arith.mod v98, v178 : u32;
                         hir.assertz v100 #[code = 250];
                         v148 = arith.constant 16 : u32;
-                        v95 = arith.shl v92, v148 : u32;
-                        v96 = hir.bitcast v95 : i32;
+                        v93 = hir.bitcast v92 : i32;
+                        v96 = arith.shl v93, v148 : i32;
                         v97 = arith.add v91, v96 : i32 #[overflow = wrapping];
                         v101 = hir.int_to_ptr v98 : ptr<byte, i32>;
                         hir.store v101, v97;
