@@ -11,7 +11,10 @@ use super::cargo_component::config::CargoArguments;
 use crate::target::install_wasm32_wasip1;
 
 fn is_wasm_target(target: &str) -> bool {
-    target == "wasm32-wasi" || target == "wasm32-wasip1" || target == "wasm32-unknown-unknown"
+    target == "wasm32-wasi"
+        || target == "wasm32-wasip1"
+        || target == "wasm32-wasip2"
+        || target == "wasm32-unknown-unknown"
 }
 
 pub fn run_cargo_command_for_non_component(

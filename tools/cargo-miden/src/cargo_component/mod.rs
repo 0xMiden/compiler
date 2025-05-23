@@ -1,5 +1,8 @@
 //! Cargo support for WebAssembly components.
 
+// TODO: remove after migration to wasm32-wasip2 is complete
+#![allow(unused)]
+
 use core::lock::{LockFile, LockFileResolver};
 use std::{
     borrow::Cow,
@@ -38,7 +41,10 @@ mod registry;
 mod target;
 
 fn is_wasm_target(target: &str) -> bool {
-    target == "wasm32-wasi" || target == "wasm32-wasip1" || target == "wasm32-unknown-unknown"
+    target == "wasm32-wasi"
+        || target == "wasm32-wasip1"
+        || target == "wasm32-wasip2"
+        || target == "wasm32-unknown-unknown"
 }
 
 /// Represents a cargo package paired with its component metadata.
@@ -182,7 +188,7 @@ pub async fn run_cargo_command(
     if command.buildable() {
         install_wasm32_wasip2(config)?;
 
-        // Add an implicit wasm32-wasip1 target if there isn't a wasm target present
+        // Add an implicit wasm32-wasip2 target if there isn't a wasm target present
         if !cargo_args.targets.iter().any(|t| is_wasm_target(t))
             && !cargo_config
                 .build
@@ -190,7 +196,7 @@ pub async fn run_cargo_command(
                 .as_ref()
                 .is_some_and(|v| v.iter().any(|t| is_wasm_target(t.triple())))
         {
-            cargo.arg("--target").arg("wasm32-wasip1");
+            cargo.arg("--target").arg("wasm32-wasip2");
         }
 
         if let Some(format) = &cargo_args.message_format {
@@ -237,30 +243,30 @@ pub async fn run_cargo_command(
 
     // Testing the `wasm32-wasip2` rustc target
     // dbg!(&artifacts);
-    // let outputs: Vec<Output> = artifacts
-    //     .into_iter()
-    //     .filter_map(|a| {
-    //         let path: PathBuf = a.filenames.first().unwrap().clone().into();
-    //         if path.to_str().unwrap().contains("wasm32-wasip1") {
-    //             Some(Output {
-    //                 path,
-    //                 display: Some(a.target.name),
-    //             })
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect();
+    let outputs: Vec<Output> = artifacts
+        .into_iter()
+        .filter_map(|a| {
+            let path: PathBuf = a.filenames.first().unwrap().clone().into();
+            if path.to_str().unwrap().contains("wasm32-wasip2") {
+                Some(Output {
+                    path,
+                    display: Some(a.target.name),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    let outputs = componentize_artifacts(
-        config,
-        metadata,
-        &artifacts,
-        packages,
-        &import_name_map,
-        command,
-        output_args,
-    )?;
+    // let outputs = componentize_artifacts(
+    //     config,
+    //     metadata,
+    //     &artifacts,
+    //     packages,
+    //     &import_name_map,
+    //     command,
+    //     output_args,
+    // )?;
 
     if let Some(runner) = runner {
         spawn_outputs(config, &runner, output_args, &outputs, command)?;
@@ -271,11 +277,11 @@ pub async fn run_cargo_command(
 
 fn get_runner(cargo_config: &cargo_config2::Config, serve: bool) -> Result<PathAndArgs> {
     // We check here before we actually build that a runtime is present.
-    // We first check the runner for `wasm32-wasip1` in the order from
+    // We first check the runner for `wasm32-wasip2` in the order from
     // cargo's convention for a user-supplied runtime (path or executable)
     // and use the default, namely `wasmtime`, if it is not set.
     let (runner, using_default) = cargo_config
-        .runner(TargetTripleRef::from("wasm32-wasip1"))
+        .runner(TargetTripleRef::from("wasm32-wasip2"))
         .unwrap_or_default()
         .map(|runner_override| (runner_override, false))
         .unwrap_or_else(|| {
@@ -303,7 +309,7 @@ fn get_runner(cargo_config: &cargo_config2::Config, serve: bool) -> Result<PathA
             bail!(
                 "failed to find `{wasi_runner}` specified by either the \
                  `CARGO_TARGET_WASM32_WASIP2_RUNNER`environment variable or as the \
-                 `wasm32-wasip1` runner in `.cargo/config.toml`"
+                 `wasm32-wasip2` runner in `.cargo/config.toml`"
             );
         }
     } else if which::which(&runner.path).is_err() {
