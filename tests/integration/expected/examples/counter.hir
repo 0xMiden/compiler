@@ -573,8 +573,8 @@ builtin.component miden:counter-contract/counter@0.1.0 {
                         v407 = arith.mod v405, v796 : u32;
                         hir.assertz v407 #[code = 250];
                         v766 = arith.constant 16 : u32;
-                        v402 = arith.shl v399, v766 : u32;
-                        v403 = hir.bitcast v402 : i32;
+                        v400 = hir.bitcast v399 : i32;
+                        v403 = arith.shl v400, v766 : i32;
                         v404 = arith.add v398, v403 : i32 #[overflow = wrapping];
                         v408 = hir.int_to_ptr v405 : ptr<byte, i32>;
                         hir.store v408, v404;

@@ -192,11 +192,15 @@ pub fn translate_operator<B: ?Sized + Builder>(
         /******************************* Memory management *********************************/
         Operator::MemoryGrow { .. } => {
             let arg = state.pop1_bitcasted(U32, builder, span);
-            state.push1(builder.mem_grow(arg, span)?);
+            let result = builder.mem_grow(arg, span)?;
+            // WASM memory.grow returns i32, so bitcast from U32 to I32
+            state.push1(builder.bitcast(result, I32, span)?);
         }
         Operator::MemorySize { .. } => {
             // Return total Miden memory size
-            state.push1(builder.mem_size(span)?);
+            let result = builder.mem_size(span)?;
+            // WASM memory.size returns i32, so bitcast from U32 to I32
+            state.push1(builder.bitcast(result, I32, span)?);
         }
         /******************************* Bulk memory operations *********************************/
         Operator::MemoryCopy { dst_mem, src_mem } => {

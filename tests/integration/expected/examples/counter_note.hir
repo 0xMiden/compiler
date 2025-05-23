@@ -252,8 +252,8 @@ builtin.component miden:base/note-script@1.0.0 {
                         v150 = arith.mod v148, v278 : u32;
                         hir.assertz v150 #[code = 250];
                         v248 = arith.constant 16 : u32;
-                        v145 = arith.shl v142, v248 : u32;
-                        v146 = hir.bitcast v145 : i32;
+                        v143 = hir.bitcast v142 : i32;
+                        v146 = arith.shl v143, v248 : i32;
                         v147 = arith.add v141, v146 : i32 #[overflow = wrapping];
                         v151 = hir.int_to_ptr v148 : ptr<byte, i32>;
                         hir.store v151, v147;

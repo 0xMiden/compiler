@@ -236,8 +236,8 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                         v146 = arith.mod v144, v276 : u32;
                         hir.assertz v146 #[code = 250];
                         v246 = arith.constant 16 : u32;
-                        v141 = arith.shl v138, v246 : u32;
-                        v142 = hir.bitcast v141 : i32;
+                        v139 = hir.bitcast v138 : i32;
+                        v142 = arith.shl v139, v246 : i32;
                         v143 = arith.add v137, v142 : i32 #[overflow = wrapping];
                         v147 = hir.int_to_ptr v144 : ptr<byte, i32>;
                         hir.store v147, v143;
