@@ -5,9 +5,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use cargo_component::config::CargoArguments;
 use cargo_metadata::{Artifact, Message};
 
+use super::cargo_component::config::CargoArguments;
 use crate::target::install_wasm32_wasip1;
 
 fn is_wasm_target(target: &str) -> bool {

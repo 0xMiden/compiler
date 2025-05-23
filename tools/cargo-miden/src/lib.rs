@@ -1,4 +1,7 @@
+//! `cargo-miden` as a library
+
 #![deny(warnings)]
+#![deny(missing_docs)]
 
 use std::path::Path;
 
@@ -7,7 +10,6 @@ use cargo_component::{
     config::{CargoArguments, Config},
     load_component_metadata, load_metadata, run_cargo_command,
 };
-use cargo_component_core::terminal::{Color, Terminal, Verbosity};
 use clap::{CommandFactory, Parser};
 use commands::NewCommand;
 pub use commands::WIT_DEPS_PATH;
@@ -19,6 +21,7 @@ pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
 };
 
+mod cargo_component;
 mod commands;
 mod compile_masm;
 mod dependencies;
@@ -26,6 +29,7 @@ mod non_component;
 mod outputs;
 mod target;
 
+pub use cargo_component::core::terminal::{Color, Terminal, Verbosity};
 pub use outputs::{BuildOutput, CommandOutput};
 
 fn version() -> &'static str {
@@ -102,7 +106,9 @@ where
 
 /// Requested output type for the `build` command
 pub enum OutputType {
+    /// Wasm component or core Wasm module
     Wasm,
+    /// Miden package
     Masm,
     // Hir,
 }
