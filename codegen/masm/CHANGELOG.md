@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - switch to `Package` without rodata,
 - [**breaking**] move `Package` to `miden-package` in the VM repo
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.6...midenc-codegen-masm-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.6...midenc-codegen-masm-v0.0.7) - 2024-09-17
 
 ### Other
 - fix up new clippy warnings
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.3](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.2...midenc-codegen-masm-v0.0.3) - 2024-08-30
+## [0.0.3](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.2...midenc-codegen-masm-v0.0.3) - 2024-08-30
 
 ### Fixed
 - *(codegen)* broken return via pointer transformation
@@ -68,12 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 - fix clippy warnings in tests
-- Merge pull request [#290](https://github.com/0xPolygonMiden/compiler/pull/290) from 0xPolygonMiden/greenhat/i263-mem-intrinsics-felts-tests
-- Merge pull request [#284](https://github.com/0xPolygonMiden/compiler/pull/284) from 0xPolygonMiden/bitwalker/abi-transform-test-fixes
+- Merge pull request [#290](https://github.com/0xMiden/compiler/pull/290) from 0xMiden/greenhat/i263-mem-intrinsics-felts-tests
+- Merge pull request [#284](https://github.com/0xMiden/compiler/pull/284) from 0xMiden/bitwalker/abi-transform-test-fixes
 - *(codegen)* clippy suggested some improvements
 - *(codegen)* be consistent about the way in which we push to stack
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.1...midenc-codegen-masm-v0.0.2) - 2024-08-28
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.1...midenc-codegen-masm-v0.0.2) - 2024-08-28
 
 ### Added
 - implement packaging prototype
@@ -84,9 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - use less fragile method for rodata segment init
 
 ### Other
-- Merge pull request [#269](https://github.com/0xPolygonMiden/compiler/pull/269) from 0xPolygonMiden/greenhat/i267-store-load-dw
+- Merge pull request [#269](https://github.com/0xMiden/compiler/pull/269) from 0xMiden/greenhat/i267-store-load-dw
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.0...midenc-codegen-masm-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.0...midenc-codegen-masm-v0.0.1) - 2024-07-18
 
 ### Added
 - *(codegen)* implement lowering for local var ops
@@ -162,28 +162,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(stackify)* update pass, fix various bugs uncovered in testing
 
 ### Other
-- Merge pull request [#238](https://github.com/0xPolygonMiden/compiler/pull/238) from 0xPolygonMiden/greenhat/i230-get-inputs-clk451-assert
-- Merge pull request [#237](https://github.com/0xPolygonMiden/compiler/pull/237) from 0xPolygonMiden/greenhat/emu-print-stack-option
-- Merge pull request [#244](https://github.com/0xPolygonMiden/compiler/pull/244) from 0xPolygonMiden/bitwalker/load-store-reordering
-- Merge pull request [#241](https://github.com/0xPolygonMiden/compiler/pull/241) from 0xPolygonMiden/bitwalker/operand-stack-overflow
+- Merge pull request [#238](https://github.com/0xMiden/compiler/pull/238) from 0xMiden/greenhat/i230-get-inputs-clk451-assert
+- Merge pull request [#237](https://github.com/0xMiden/compiler/pull/237) from 0xMiden/greenhat/emu-print-stack-option
+- Merge pull request [#244](https://github.com/0xMiden/compiler/pull/244) from 0xMiden/bitwalker/load-store-reordering
+- Merge pull request [#241](https://github.com/0xMiden/compiler/pull/241) from 0xMiden/bitwalker/operand-stack-overflow
 - clean up docs and implementation of spills rewrite
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - restore running MASM on the emulator along the VM in integration tests
 - update VM to the commit in next branch after the merge
 - workaround for calling the absolute path functions in the emulator
 - Fix descriptions for crates
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates
-- Merge pull request [#203](https://github.com/0xPolygonMiden/compiler/pull/203) from 0xPolygonMiden/greenhat/get-inputs-compile-succ
+- Merge pull request [#203](https://github.com/0xMiden/compiler/pull/203) from 0xMiden/greenhat/get-inputs-compile-succ
 - add duplicated stack operands test for the stack operand
 - ensure all relevant crates are prefixed with `midenc-`
 - fix clippy warning
 - draft abi transform test for stdlib blake3 hash function
-- Merge pull request [#182](https://github.com/0xPolygonMiden/compiler/pull/182) from 0xPolygonMiden/bitwalker/emit-stores
-- Merge pull request [#187](https://github.com/0xPolygonMiden/compiler/pull/187) from 0xPolygonMiden/bitwalker/account-compilation-fixes
+- Merge pull request [#182](https://github.com/0xMiden/compiler/pull/182) from 0xMiden/bitwalker/emit-stores
+- Merge pull request [#187](https://github.com/0xMiden/compiler/pull/187) from 0xMiden/bitwalker/account-compilation-fixes
 - check rustfmt on CI, format code with rustfmt
 - run clippy on CI, fix all clippy warnings
-- Merge pull request [#179](https://github.com/0xPolygonMiden/compiler/pull/179) from 0xPolygonMiden/greenhat/inttoptr-for-gv-store
+- Merge pull request [#179](https://github.com/0xMiden/compiler/pull/179) from 0xMiden/greenhat/inttoptr-for-gv-store
 - add explanatory text regarding choice of data structure in codegen entities
 - update expect tests due to formatting changes in assembler
 - handle assembler refactoring changes
@@ -192,7 +192,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update rust toolchain to latest nightly
 - a few minor improvements
 - *(docs)* fix typos
-- Merge pull request [#99](https://github.com/0xPolygonMiden/compiler/pull/99) from 0xPolygonMiden/bitwalker/book
+- Merge pull request [#99](https://github.com/0xMiden/compiler/pull/99) from 0xMiden/bitwalker/book
 - set up mdbook deploy
 - add guides for compiling rust->masm
 - remove unused dependencies

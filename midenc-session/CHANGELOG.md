@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [**breaking**] move `Package` to `miden-package` in the VM repo
 - add note script compilation test;
 
-## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.6...midenc-session-v0.0.7) - 2024-09-17
+## [0.0.7](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.6...midenc-session-v0.0.7) - 2024-09-17
 
 ### Other
 - update rust toolchain
@@ -42,12 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.4](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.3...midenc-session-v0.0.4) - 2024-08-30
+## [0.0.4](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.3...midenc-session-v0.0.4) - 2024-08-30
 
 ### Other
 - update Cargo.toml dependencies
 
-## [0.0.3](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.2...midenc-session-v0.0.3) - 2024-08-28
+## [0.0.3](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.2...midenc-session-v0.0.3) - 2024-08-28
 
 ### Added
 - implement packaging prototype
@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - remove miden-diagnostics, start making midenc-session no-std-compatible
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.1...midenc-session-v0.0.2) - 2024-08-16
+## [0.0.2](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.1...midenc-session-v0.0.2) - 2024-08-16
 
 ### Added
 - *(codegen)* propagate source spans from hir to masm
@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - unify diagnostics infa between compiler, assembler, vm
 - unify compilation, rodata init, test harness
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.0...midenc-session-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.0...midenc-session-v0.0.1) - 2024-07-18
 
 ### Added
 - implement compiler driver, update midenc
@@ -98,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - properly handle emitting final artifacts in midenc-compile
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - set crates versions to 0.0.0, and `publish = false` for tests
 - add missing descriptions to all crates
 - ensure all relevant crates are prefixed with `midenc-`
@@ -110,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - set up mdbook deploy
 - add guides for compiling rust->masm
 - remove unused dependencies
-- Merge pull request [#61](https://github.com/0xPolygonMiden/compiler/pull/61) from 0xPolygonMiden/greenhat/cargo-ext-i60
+- Merge pull request [#61](https://github.com/0xMiden/compiler/pull/61) from 0xMiden/greenhat/cargo-ext-i60
 - add mdbook skeleton
 - clear up clippy warnings
 - split up driver components into separate crates

@@ -19,19 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.2](https://github.com/0xPolygonMiden/compiler/compare/miden-sdk-alloc-v0.0.1...miden-sdk-alloc-v0.0.2) - 2024-08-30
+## [0.0.2](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.0.1...miden-sdk-alloc-v0.0.2) - 2024-08-30
 
 ### Other
-- Merge pull request [#284](https://github.com/0xPolygonMiden/compiler/pull/284) from 0xPolygonMiden/bitwalker/abi-transform-test-fixes
+- Merge pull request [#284](https://github.com/0xMiden/compiler/pull/284) from 0xMiden/bitwalker/abi-transform-test-fixes
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/miden-sdk-alloc-v0.0.0...miden-sdk-alloc-v0.0.1) - 2024-08-28
+## [0.0.1](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.0.0...miden-sdk-alloc-v0.0.1) - 2024-08-28
 
 ### Added
 - *(sdk)* introduce miden-sdk-alloc
 
 ### Other
 - set `miden-sdk-alloc` version to `0.0.0` to be in sync with
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - a few minor improvements
 - set up mdbook deploy
 - add guides for compiling rust->masm

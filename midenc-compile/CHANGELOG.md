@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - switch all crates to a single workspace version (0.0.5)
 
-## [0.0.1](https://github.com/0xPolygonMiden/compiler/compare/midenc-compile-v0.0.0...midenc-compile-v0.0.1) - 2024-07-18
+## [0.0.1](https://github.com/0xMiden/compiler/compare/midenc-compile-v0.0.0...midenc-compile-v0.0.1) - 2024-07-18
 
 ### Added
 - enable spills transformation in default pipeline
@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - properly handle emitting final artifacts in midenc-compile
 
 ### Other
-- fix typos ([#243](https://github.com/0xPolygonMiden/compiler/pull/243))
+- fix typos ([#243](https://github.com/0xMiden/compiler/pull/243))
 - set crates versions to 0.0.0, and `publish = false` for tests
 - ensure all relevant crates are prefixed with `midenc-`
 - run clippy on CI, fix all clippy warnings
@@ -91,12 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - use midenc driver to compile cargo-based fixtures
 - handle assembler refactoring changes
 - add formatter config, format most crates
-- Merge pull request [#100](https://github.com/0xPolygonMiden/compiler/pull/100) from 0xPolygonMiden/greenhat/i89-translate-wasm-cm
+- Merge pull request [#100](https://github.com/0xMiden/compiler/pull/100) from 0xMiden/greenhat/i89-translate-wasm-cm
 - a few minor improvements
 - *(docs)* fix typos
 - set up mdbook deploy
 - add guides for compiling rust->masm
-- Merge pull request [#61](https://github.com/0xPolygonMiden/compiler/pull/61) from 0xPolygonMiden/greenhat/cargo-ext-i60
+- Merge pull request [#61](https://github.com/0xMiden/compiler/pull/61) from 0xMiden/greenhat/cargo-ext-i60
 - make `WasmTranslationConfig::module_name_fallback` non-optional
 - switch from emiting MASM in CodegenStage, and switch to output folder in cargo extension
 - split up driver components into separate crates
