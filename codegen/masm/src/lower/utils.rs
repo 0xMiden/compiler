@@ -489,9 +489,9 @@ pub fn schedule_stack_realignment(
 mod tests {
     use alloc::rc::Rc;
 
-    use expect_test::expect_file;
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+    use midenc_expect_test::expect_file;
     use midenc_hir::{
         dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
         formatter::PrettyPrint,

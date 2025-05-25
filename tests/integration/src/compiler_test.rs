@@ -1017,7 +1017,7 @@ impl CompilerTest {
     }
 
     /// Compare the compiled Wasm against the expected output
-    pub fn expect_wasm(&self, expected_wat_file: expect_test::ExpectFile) {
+    pub fn expect_wasm(&self, expected_wat_file: midenc_expect_test::ExpectFile) {
         let wasm_bytes = self.wasm_bytes();
         let wat = demangle(wasm_to_wat(&wasm_bytes));
         expected_wat_file.assert_eq(&wat);
@@ -1042,7 +1042,7 @@ impl CompilerTest {
     }
 
     /// Compare the compiled(optimized) IR against the expected output
-    pub fn expect_ir(&mut self, expected_hir_file: expect_test::ExpectFile) {
+    pub fn expect_ir(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
         use midenc_hir::Op;
 
         let ir = demangle(self.hir().borrow().as_operation().to_string());
@@ -1050,7 +1050,7 @@ impl CompilerTest {
     }
 
     /// Compare the compiled(unoptimized) IR against the expected output
-    pub fn expect_ir_unoptimized(&mut self, expected_hir_file: expect_test::ExpectFile) {
+    pub fn expect_ir_unoptimized(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
         let component = compile_to_unoptimized_hir(self.context.clone())
             .map_err(format_report)
             .expect("failed to translate wasm to hir component")
@@ -1061,7 +1061,7 @@ impl CompilerTest {
     }
 
     /// Compare the compiled MASM against the expected output
-    pub fn expect_masm(&mut self, expected_masm_file: expect_test::ExpectFile) {
+    pub fn expect_masm(&mut self, expected_masm_file: midenc_expect_test::ExpectFile) {
         let program = demangle(self.masm_src().as_str());
         std::println!("{program}");
         expected_masm_file.assert_eq(&program);

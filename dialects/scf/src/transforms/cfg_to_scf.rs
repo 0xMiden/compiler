@@ -370,7 +370,7 @@ mod tests {
     use alloc::{boxed::Box, format, rc::Rc};
 
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
-    use expect_test::expect_file;
+    use midenc_expect_test::expect_file;
     use midenc_hir::{
         dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType,
         Report, Signature, SourceSpan, Type,

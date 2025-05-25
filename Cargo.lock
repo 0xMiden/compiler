@@ -1612,16 +1612,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "expect-test"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63af43ff4431e848fb47472a920f14fa71c24de13255a5692e93d4e90302acb0"
-dependencies = [
- "dissimilar",
- "once_cell",
-]
-
-[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3409,7 +3399,6 @@ dependencies = [
  "cargo_metadata",
  "concat-idents",
  "env_logger",
- "expect-test",
  "filetime",
  "glob",
  "log",
@@ -3423,6 +3412,7 @@ dependencies = [
  "midenc-debug",
  "midenc-dialect-arith",
  "midenc-dialect-hir",
+ "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
@@ -3598,7 +3588,6 @@ name = "midenc-codegen-masm"
 version = "0.1.0"
 dependencies = [
  "env_logger",
- "expect-test",
  "inventory",
  "log",
  "miden-assembly",
@@ -3612,6 +3601,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-session",
@@ -3705,11 +3695,11 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "env_logger",
- "expect-test",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-ub",
+ "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-transform",
 ]
@@ -3749,7 +3739,6 @@ dependencies = [
  "addr2line",
  "anyhow",
  "cranelift-entity",
- "expect-test",
  "gimli",
  "indexmap 2.9.0",
  "log",
@@ -3759,6 +3748,7 @@ dependencies = [
  "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-ub",
+ "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-symbol",
  "midenc-session",

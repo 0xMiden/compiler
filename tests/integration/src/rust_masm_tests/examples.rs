@@ -1,10 +1,10 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use expect_test::{expect, expect_file};
 use miden_core::utils::Deserializable;
 use miden_mast_package::Package;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
+use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,

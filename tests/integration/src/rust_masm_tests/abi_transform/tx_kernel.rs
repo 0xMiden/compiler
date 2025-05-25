@@ -1,10 +1,10 @@
 use std::fmt::Write;
 
-use expect_test::expect_file;
 use miden_assembly::LibraryPath;
 use miden_core::{Felt, FieldElement};
 use miden_processor::ExecutionError;
 use midenc_debug::Executor;
+use midenc_expect_test::expect_file;
 use midenc_session::{diagnostics::Report, Emit};
 
 use crate::CompilerTestBuilder;

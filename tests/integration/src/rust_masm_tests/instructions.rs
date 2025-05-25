@@ -1,5 +1,5 @@
-use expect_test::expect_file;
 use midenc_debug::ToMidenRepr;
+use midenc_expect_test::expect_file;
 use proptest::{
     prelude::*,
     test_runner::{TestError, TestRunner},

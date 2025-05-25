@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-use expect_test::expect_file;
 use midenc_debug::Executor;
+use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
