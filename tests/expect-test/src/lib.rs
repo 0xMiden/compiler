@@ -733,8 +733,8 @@ fn format_chunks(chunks: Vec<dissimilar::Chunk>) -> String {
     for chunk in chunks {
         let formatted = match chunk {
             dissimilar::Chunk::Equal(text) => text.into(),
-            dissimilar::Chunk::Delete(text) => format!("\x1b[4m\x1b[31m - {}\x1b[0m", text),
-            dissimilar::Chunk::Insert(text) => format!("\x1b[4m\x1b[32m + {}\x1b[0m", text),
+            dissimilar::Chunk::Delete(text) => format!("\x1b[4m\x1b[31m{}\x1b[0m", text),
+            dissimilar::Chunk::Insert(text) => format!("\x1b[4m\x1b[32m{}\x1b[0m", text),
         };
         buf.push_str(&formatted);
     }
@@ -887,5 +887,49 @@ line1
             "\"\"",
             "#\"#\"#",
         ];
+    }
+
+    #[test]
+    fn test_format_chunks_insertions() {
+        // Insertion at the beginning
+        let chunks = dissimilar::diff("world", "Hello world");
+        let result = format_chunks(chunks);
+        expect!["[4m[32mHello [0mworld"].assert_eq(&result);
+
+        // Insertion in the middle
+        let chunks = dissimilar::diff("Hello world", "Hello beautiful world");
+        let result = format_chunks(chunks);
+        expect!["Hello [4m[32mbeautiful [0mworld"].assert_eq(&result);
+
+        // Insertion at the end
+        let chunks = dissimilar::diff("Hello world", "Hello world!");
+        let result = format_chunks(chunks);
+        expect!["Hello world[4m[32m![0m"].assert_eq(&result);
+    }
+
+    #[test]
+    fn test_format_chunks_deletions() {
+        // Deletion at the beginning
+        let chunks = dissimilar::diff("Hello world", "world");
+        let result = format_chunks(chunks);
+        expect!["[4m[31mHello [0mworld"].assert_eq(&result);
+
+        // Deletion in the middle
+        let chunks = dissimilar::diff("Hello beautiful world", "Hello world");
+        let result = format_chunks(chunks);
+        expect!["Hello [4m[31mbeautiful [0mworld"].assert_eq(&result);
+
+        // Deletion at the end
+        let chunks = dissimilar::diff("Hello world!", "Hello world");
+        let result = format_chunks(chunks);
+        expect!["Hello world[4m[31m![0m"].assert_eq(&result);
+    }
+
+    #[test]
+    fn test_format_chunks_mixed() {
+        // Mixed insertion and deletion
+        let chunks = dissimilar::diff("The quick brown fox", "The slow brown fox");
+        let result = format_chunks(chunks);
+        expect!["The [4m[31mquick[0m[4m[32mslow[0m brown fox"].assert_eq(&result);
     }
 }
