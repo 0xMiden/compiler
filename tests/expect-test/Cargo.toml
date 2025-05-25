@@ -12,5 +12,5 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-dissimilar = "1"
+similar = "2"
 once_cell = "1"

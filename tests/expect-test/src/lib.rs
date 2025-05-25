@@ -492,7 +492,7 @@ impl Runtime {
         let print_help = !mem::replace(&mut self.help_printed, true);
         let help = if print_help { HELP } else { "" };
 
-        let diff = dissimilar::diff(expected, actual);
+        let diff = format_unified_diff(expected, actual);
 
         println!(
             "\n
@@ -514,11 +514,7 @@ impl Runtime {
 {}
 ----
 ",
-            position,
-            help,
-            expected,
-            actual,
-            format_chunks(diff)
+            position, help, expected, actual, diff
         );
         // Use resume_unwind instead of panic!() to prevent a backtrace, which is unnecessary noise.
         panic::resume_unwind(Box::new(()));
@@ -728,17 +724,42 @@ impl<'a> Iterator for LinesWithEnds<'a> {
     }
 }
 
-fn format_chunks(chunks: Vec<dissimilar::Chunk>) -> String {
-    let mut buf = String::new();
-    for chunk in chunks {
-        let formatted = match chunk {
-            dissimilar::Chunk::Equal(text) => text.into(),
-            dissimilar::Chunk::Delete(text) => format!("\x1b[4m\x1b[31m{}\x1b[0m", text),
-            dissimilar::Chunk::Insert(text) => format!("\x1b[4m\x1b[32m{}\x1b[0m", text),
-        };
-        buf.push_str(&formatted);
+fn format_unified_diff(expected: &str, actual: &str) -> String {
+    use similar::{ChangeTag, TextDiff};
+
+    let diff = TextDiff::from_lines(expected, actual);
+    let mut result = String::new();
+
+    for (idx, group) in diff.grouped_ops(3).into_iter().enumerate() {
+        if idx > 0 {
+            result.push('\n');
+        }
+        for op in group {
+            for change in diff.iter_changes(&op) {
+                let (sign, color) = match change.tag() {
+                    ChangeTag::Delete => ("-", "\x1b[31m"), // red
+                    ChangeTag::Insert => ("+", "\x1b[32m"), // green
+                    ChangeTag::Equal => (" ", ""),
+                };
+
+                result.push_str(color);
+                result.push_str(sign);
+                result.push(' ');
+
+                let line = change.value();
+                result.push_str(line);
+                if !line.ends_with('\n') {
+                    result.push('\n');
+                }
+
+                if !color.is_empty() {
+                    result.push_str("\x1b[0m");
+                }
+            }
+        }
     }
-    buf
+
+    result
 }
 
 #[cfg(test)]
@@ -890,46 +911,74 @@ line1
     }
 
     #[test]
-    fn test_format_chunks_insertions() {
+    fn test_format_unified_diff_insertions() {
         // Insertion at the beginning
-        let chunks = dissimilar::diff("world", "Hello world");
-        let result = format_chunks(chunks);
-        expect!["[4m[32mHello [0mworld"].assert_eq(&result);
+        let result = format_unified_diff("world", "Hello world");
+        expect![
+            "[31m- world
+[0m[32m+ Hello world
+[0m"
+        ]
+        .assert_eq(&result);
 
         // Insertion in the middle
-        let chunks = dissimilar::diff("Hello world", "Hello beautiful world");
-        let result = format_chunks(chunks);
-        expect!["Hello [4m[32mbeautiful [0mworld"].assert_eq(&result);
+        let result = format_unified_diff("Hello world", "Hello beautiful world");
+        expect![
+            "[31m- Hello world
+[0m[32m+ Hello beautiful world
+[0m"
+        ]
+        .assert_eq(&result);
 
         // Insertion at the end
-        let chunks = dissimilar::diff("Hello world", "Hello world!");
-        let result = format_chunks(chunks);
-        expect!["Hello world[4m[32m![0m"].assert_eq(&result);
+        let result = format_unified_diff("Hello world", "Hello world!");
+        expect![
+            "[31m- Hello world
+[0m[32m+ Hello world!
+[0m"
+        ]
+        .assert_eq(&result);
     }
 
     #[test]
-    fn test_format_chunks_deletions() {
+    fn test_format_unified_diff_deletions() {
         // Deletion at the beginning
-        let chunks = dissimilar::diff("Hello world", "world");
-        let result = format_chunks(chunks);
-        expect!["[4m[31mHello [0mworld"].assert_eq(&result);
+        let result = format_unified_diff("Hello world", "world");
+        expect![
+            "[31m- Hello world
+[0m[32m+ world
+[0m"
+        ]
+        .assert_eq(&result);
 
         // Deletion in the middle
-        let chunks = dissimilar::diff("Hello beautiful world", "Hello world");
-        let result = format_chunks(chunks);
-        expect!["Hello [4m[31mbeautiful [0mworld"].assert_eq(&result);
+        let result = format_unified_diff("Hello beautiful world", "Hello world");
+        expect![
+            "[31m- Hello beautiful world
+[0m[32m+ Hello world
+[0m"
+        ]
+        .assert_eq(&result);
 
         // Deletion at the end
-        let chunks = dissimilar::diff("Hello world!", "Hello world");
-        let result = format_chunks(chunks);
-        expect!["Hello world[4m[31m![0m"].assert_eq(&result);
+        let result = format_unified_diff("Hello world!", "Hello world");
+        expect![
+            "[31m- Hello world!
+[0m[32m+ Hello world
+[0m"
+        ]
+        .assert_eq(&result);
     }
 
     #[test]
-    fn test_format_chunks_mixed() {
+    fn test_format_unified_diff_mixed() {
         // Mixed insertion and deletion
-        let chunks = dissimilar::diff("The quick brown fox", "The slow brown fox");
-        let result = format_chunks(chunks);
-        expect!["The [4m[31mquick[0m[4m[32mslow[0m brown fox"].assert_eq(&result);
+        let result = format_unified_diff("The quick brown fox", "The slow brown fox");
+        expect![
+            "[31m- The quick brown fox
+[0m[32m+ The slow brown fox
+[0m"
+        ]
+        .assert_eq(&result);
     }
 }
