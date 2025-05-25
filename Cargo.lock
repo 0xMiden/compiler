@@ -3735,6 +3735,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-expect-test"
+version = "0.1.0"
+dependencies = [
+ "dissimilar",
+ "once_cell",
+]
+
+[[package]]
 name = "midenc-frontend-wasm"
 version = "0.1.0"
 dependencies = [
