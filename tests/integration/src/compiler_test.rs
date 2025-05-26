@@ -141,18 +141,20 @@ impl RustcTest {
 
 /// The various types of input artifacts that can be used to drive compiler tests
 pub enum CompilerTestInputType {
-    /// A project that uses `cargo miden build` to produce a Wasm module to use as input
+    /// A project that uses `cargo miden build` to produce a Wasm component to use as input
     CargoMiden(CargoTest),
     /// A project that uses `cargo build` to produce a core Wasm module to use as input
     Cargo(CargoTest),
     /// A project that uses `rustc` to produce a core Wasm module to use as input
     Rustc(RustcTest),
 }
+
 impl From<CargoTest> for CompilerTestInputType {
     fn from(config: CargoTest) -> Self {
         Self::Cargo(config)
     }
 }
+
 impl From<RustcTest> for CompilerTestInputType {
     fn from(config: RustcTest) -> Self {
         Self::Rustc(config)
@@ -926,34 +928,6 @@ impl CompilerTest {
             .build()
     }
 
-    /// Set the Rust source code to compile a library Cargo project to Wasm module
-    pub fn rust_source_cargo_lib(
-        cargo_project_folder: impl AsRef<Path>,
-        artifact_name: impl Into<Cow<'static, str>>,
-        is_build_std: bool,
-        entry_func_name: Option<Cow<'static, str>>,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
-        CompilerTestBuilder::rust_source_cargo_lib(
-            cargo_project_folder,
-            artifact_name,
-            is_build_std,
-            entry_func_name,
-            midenc_flags,
-        )
-        .build()
-    }
-
-    /// Set the Rust source code to compile using a Cargo project and binary bundle name
-    pub fn rust_source_cargo(
-        cargo_project_folder: &str,
-        artifact_name: impl Into<Cow<'static, str>>,
-        entrypoint: impl Into<Cow<'static, str>>,
-    ) -> Self {
-        CompilerTestBuilder::rust_source_cargo(cargo_project_folder, artifact_name, entrypoint)
-            .build()
-    }
-
     /// Set the Rust source code to compile
     pub fn rust_source_program(rust_source: impl Into<Cow<'static, str>>) -> Self {
         CompilerTestBuilder::rust_source_program(rust_source).build()
@@ -967,16 +941,6 @@ impl CompilerTest {
         CompilerTestBuilder::rust_fn_body(source, midenc_flags).build()
     }
 
-    /// Set the Rust source code to compile and add a binary operation test
-    pub fn rust_fn_body_with_artifact_name(
-        name: impl Into<Cow<'static, str>>,
-        rust_source: &str,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
-        CompilerTestBuilder::rust_fn_body_with_artifact_name(name, rust_source, midenc_flags)
-            .build()
-    }
-
     /// Set the Rust source code to compile with `miden-stdlib-sys` (stdlib + intrinsics)
     pub fn rust_fn_body_with_stdlib_sys(
         name: impl Into<Cow<'static, str>>,
@@ -986,38 +950,6 @@ impl CompilerTest {
     ) -> Self {
         CompilerTestBuilder::rust_fn_body_with_stdlib_sys(name, source, is_build_std, midenc_flags)
             .build()
-    }
-
-    /// Set the Rust source code to compile with `miden-sdk` (sdk + intrinsics)
-    pub fn rust_source_with_sdk(
-        name: impl Into<Cow<'static, str>>,
-        source: &str,
-        is_build_std: bool,
-        entrypoint: Option<Cow<'static, str>>,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
-        CompilerTestBuilder::rust_source_with_sdk(
-            name,
-            source,
-            is_build_std,
-            entrypoint,
-            midenc_flags,
-        )
-        .build()
-    }
-
-    /// Like [Self::rust_source_with_sdk], but expects the source code to be a function parameter
-    /// list and body, rather than arbitrary source code.
-    ///
-    /// NOTE: It is valid to append additional sources _after_ the closing brace of the function
-    /// body.
-    pub fn rust_fn_body_with_sdk(
-        name: impl Into<Cow<'static, str>>,
-        source: &str,
-        is_build_std: bool,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
-        CompilerTestBuilder::rust_fn_body_with_sdk(name, source, is_build_std, midenc_flags).build()
     }
 
     /// Compare the compiled Wasm against the expected output
