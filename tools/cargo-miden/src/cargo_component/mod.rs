@@ -1,16 +1,12 @@
 //! Cargo support for WebAssembly components.
 
-// TODO: remove after migration to wasm32-wasip2 is complete
-#![allow(unused)]
-
 use core::lock::{LockFile, LockFileResolver};
 use std::{
-    borrow::Cow,
     collections::HashMap,
     env,
-    fmt::{self, Write},
-    fs::{self, File},
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    fmt::{self},
+    fs::{self},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Arc,
@@ -20,17 +16,13 @@ use std::{
 use anyhow::{bail, Context, Result};
 use bindings::BindingsGenerator;
 use cargo_config2::{PathAndArgs, TargetTripleRef};
-use cargo_metadata::{Artifact, CrateType, Message, Metadata, MetadataCommand, Package};
+use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package};
 use config::{CargoArguments, CargoPackageSpec, Config};
 use lock::{acquire_lock_file_ro, acquire_lock_file_rw};
 use metadata::ComponentMetadata;
 use registry::{PackageDependencyResolution, PackageResolutionMap};
-use shell_escape::escape;
 use target::install_wasm32_wasip2;
-use tempfile::NamedTempFile;
 use wasm_pkg_client::caching::{CachingClient, FileCache};
-use wasmparser::{Parser, Payload};
-use wit_component::ComponentEncoder;
 
 mod bindings;
 pub mod config;
@@ -136,7 +128,7 @@ pub async fn run_cargo_command(
     cargo_args: &CargoArguments,
     spawn_args: &[String],
 ) -> Result<Vec<PathBuf>> {
-    let import_name_map = generate_bindings(client, config, metadata, packages, cargo_args).await?;
+    let _ = generate_bindings(client, config, metadata, packages, cargo_args).await?;
 
     let cargo_path = std::env::var("CARGO")
         .map(PathBuf::from)
@@ -241,8 +233,6 @@ pub async fn run_cargo_command(
 
     let artifacts = spawn_cargo(cargo, &cargo_path, cargo_args, command.buildable())?;
 
-    // Testing the `wasm32-wasip2` rustc target
-    // dbg!(&artifacts);
     let outputs: Vec<Output> = artifacts
         .into_iter()
         .filter_map(|a| {
@@ -257,16 +247,6 @@ pub async fn run_cargo_command(
             }
         })
         .collect();
-
-    // let outputs = componentize_artifacts(
-    //     config,
-    //     metadata,
-    //     &artifacts,
-    //     packages,
-    //     &import_name_map,
-    //     command,
-    //     output_args,
-    // )?;
 
     if let Some(runner) = runner {
         spawn_outputs(config, &runner, output_args, &outputs, command)?;
@@ -396,131 +376,6 @@ struct Output {
     display: Option<String>,
 }
 
-fn componentize_artifacts(
-    config: &Config,
-    cargo_metadata: &Metadata,
-    artifacts: &[Artifact],
-    packages: &[PackageComponentMetadata<'_>],
-    import_name_map: &HashMap<String, HashMap<String, String>>,
-    command: CargoCommand,
-    output_args: &[String],
-) -> Result<Vec<Output>> {
-    let mut outputs = Vec::new();
-    let cwd =
-        env::current_dir().with_context(|| "couldn't get the current directory of the process")?;
-
-    // Acquire the lock file to ensure any other cargo-component process waits for this to complete
-    let _file_lock = acquire_lock_file_ro(config.terminal(), cargo_metadata)?;
-
-    for artifact in artifacts {
-        for path in artifact
-            .filenames
-            .iter()
-            .filter(|p| p.extension() == Some("wasm") && p.exists())
-        {
-            let (package, metadata) =
-                match packages.iter().find(|p| p.package.id == artifact.package_id) {
-                    Some(PackageComponentMetadata { package, metadata }) => (package, metadata),
-                    _ => continue,
-                };
-
-            match read_artifact(path.as_std_path(), metadata.section_present)? {
-                ArtifactKind::Module => {
-                    log::debug!(
-                        "output file `{path}` is a WebAssembly module that will not be \
-                         componentized"
-                    );
-                    continue;
-                }
-                ArtifactKind::Componentizable(bytes) => {
-                    componentize(
-                        config,
-                        (cargo_metadata, metadata),
-                        import_name_map.get(&package.name).expect("package already processed"),
-                        artifact,
-                        path.as_std_path(),
-                        &cwd,
-                        &bytes,
-                    )?;
-                }
-                ArtifactKind::Component => {
-                    log::debug!("output file `{path}` is already a WebAssembly component");
-                }
-                ArtifactKind::Other => {
-                    log::debug!("output file `{path}` is not a WebAssembly module or component");
-                    continue;
-                }
-            }
-
-            let mut output = Output {
-                path: path.as_std_path().into(),
-                display: None,
-            };
-
-            if command.testable() && artifact.profile.test
-                || (matches!(command, CargoCommand::Run | CargoCommand::Serve)
-                    && !artifact.profile.test)
-            {
-                output.display = Some(output_display_name(
-                    cargo_metadata,
-                    artifact,
-                    path.as_std_path(),
-                    &cwd,
-                    command,
-                    output_args,
-                ));
-            }
-
-            outputs.push(output);
-        }
-    }
-
-    Ok(outputs)
-}
-
-fn output_display_name(
-    metadata: &Metadata,
-    artifact: &Artifact,
-    path: &Path,
-    cwd: &Path,
-    command: CargoCommand,
-    output_args: &[String],
-) -> String {
-    // The format of the display name is intentionally the same
-    // as what `cargo` formats for running executables.
-    let test_path = &artifact.target.src_path;
-    let short_test_path = test_path.strip_prefix(&metadata.workspace_root).unwrap_or(test_path);
-
-    if artifact.target.is_test() || artifact.target.is_bench() {
-        format!(
-            "{short_test_path} ({path})",
-            path = path.strip_prefix(cwd).unwrap_or(path).display()
-        )
-    } else if command == CargoCommand::Test {
-        format!(
-            "unittests {short_test_path} ({path})",
-            path = path.strip_prefix(cwd).unwrap_or(path).display()
-        )
-    } else if command == CargoCommand::Bench {
-        format!(
-            "benches {short_test_path} ({path})",
-            path = path.strip_prefix(cwd).unwrap_or(path).display()
-        )
-    } else {
-        let mut s = String::new();
-        write!(&mut s, "`").unwrap();
-
-        write!(&mut s, "{}", path.strip_prefix(cwd).unwrap_or(path).display()).unwrap();
-
-        for arg in output_args.iter().skip(1) {
-            write!(&mut s, " {}", escape(arg.into())).unwrap();
-        }
-
-        write!(&mut s, "`").unwrap();
-        s
-    }
-}
-
 fn spawn_outputs(
     config: &Config,
     runner: &PathAndArgs,
@@ -575,65 +430,6 @@ fn spawn_outputs(
         }
 
         Ok(())
-    }
-}
-
-enum ArtifactKind {
-    /// A WebAssembly module that will not be componentized.
-    Module,
-    /// A WebAssembly module that will be componentized.
-    Componentizable(Vec<u8>),
-    /// A WebAssembly component.
-    Component,
-    /// An artifact that is not a WebAssembly module or component.
-    Other,
-}
-
-fn read_artifact(path: &Path, mut componentizable: bool) -> Result<ArtifactKind> {
-    let mut file = File::open(path)
-        .with_context(|| format!("failed to open build output `{path}`", path = path.display()))?;
-
-    let mut header = [0; 8];
-    if file.read_exact(&mut header).is_err() {
-        return Ok(ArtifactKind::Other);
-    }
-
-    if Parser::is_core_wasm(&header) {
-        file.seek(SeekFrom::Start(0)).with_context(|| {
-            format!("failed to seek to the start of `{path}`", path = path.display())
-        })?;
-
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).with_context(|| {
-            format!("failed to read output WebAssembly module `{path}`", path = path.display())
-        })?;
-
-        if !componentizable {
-            let parser = Parser::new(0);
-            for payload in parser.parse_all(&bytes) {
-                if let Payload::CustomSection(reader) = payload.with_context(|| {
-                    format!(
-                        "failed to parse output WebAssembly module `{path}`",
-                        path = path.display()
-                    )
-                })? {
-                    if reader.name().starts_with("component-type") {
-                        componentizable = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if componentizable {
-            Ok(ArtifactKind::Componentizable(bytes))
-        } else {
-            Ok(ArtifactKind::Module)
-        }
-    } else if Parser::is_component(&header) {
-        Ok(ArtifactKind::Component)
-    } else {
-        Ok(ArtifactKind::Other)
     }
 }
 
@@ -811,156 +607,4 @@ async fn generate_package_bindings(
     }
 
     Ok(import_name_map)
-}
-
-fn adapter_bytes(
-    config: &Config,
-    metadata: &ComponentMetadata,
-    is_command: bool,
-) -> Result<Cow<'static, [u8]>> {
-    if let Some(adapter) = &metadata.section.adapter {
-        if metadata.section.proxy {
-            config.terminal().warn(
-                "ignoring `proxy` setting due to `adapter` setting being present in `Cargo.toml`",
-            )?;
-        }
-
-        return Ok(fs::read(adapter)
-            .with_context(|| {
-                format!("failed to read module adapter `{path}`", path = adapter.display())
-            })?
-            .into());
-    }
-
-    if is_command {
-        if metadata.section.proxy {
-            config
-                .terminal()
-                .warn("ignoring `proxy` setting in `Cargo.toml` for command component")?;
-        }
-
-        Ok(Cow::Borrowed(
-            wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_COMMAND_ADAPTER,
-        ))
-    } else if metadata.section.proxy {
-        Ok(Cow::Borrowed(
-            wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_PROXY_ADAPTER,
-        ))
-    } else {
-        Ok(Cow::Borrowed(
-            wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER,
-        ))
-    }
-}
-
-fn componentize(
-    config: &Config,
-    (cargo_metadata, metadata): (&Metadata, &ComponentMetadata),
-    import_name_map: &HashMap<String, String>,
-    artifact: &Artifact,
-    path: &Path,
-    cwd: &Path,
-    bytes: &[u8],
-) -> Result<()> {
-    let is_command = artifact.profile.test || artifact.target.crate_types.contains(&CrateType::Bin);
-
-    log::debug!(
-        "componentizing WebAssembly module `{path}` as a {kind} component (fresh = {fresh})",
-        path = path.display(),
-        kind = if is_command { "command" } else { "reactor" },
-        fresh = artifact.fresh,
-    );
-
-    // Only print the message if the artifact was not fresh
-    // Due to the way cargo currently works on macOS, it will overwrite
-    // a previously generated component on an up-to-date build.
-    //
-    // Therefore, we always componentize the artifact on macOS, but we
-    // only print the status message if the artifact was not fresh.
-    //
-    // See: https://github.com/rust-lang/cargo/blob/99ad42deb4b0be0cdb062d333d5e63460a94c33c/crates/cargo-util/src/paths.rs#L542-L550
-    if !artifact.fresh {
-        config.terminal().status(
-            "Creating",
-            format!("component {path}", path = path.strip_prefix(cwd).unwrap_or(path).display()),
-        )?;
-    }
-
-    let mut encoder = ComponentEncoder::default()
-        .module(bytes)?
-        .import_name_map(import_name_map.clone())
-        .adapter("wasi_snapshot_preview1", &adapter_bytes(config, metadata, is_command)?)
-        .with_context(|| {
-            format!(
-                "failed to load adapter module `{path}`",
-                path = metadata
-                    .section
-                    .adapter
-                    .as_deref()
-                    .unwrap_or_else(|| Path::new("<built-in>"))
-                    .display()
-            )
-        })?
-        .validate(true);
-
-    let package = &cargo_metadata[&artifact.package_id];
-    let component = add_component_metadata(package, &encoder.encode()?).with_context(|| {
-        format!("failed to add metadata to output component `{path}`", path = path.display())
-    })?;
-
-    // To make the write atomic, first write to a temp file and then rename the file
-    let temp_dir = cargo_metadata.target_directory.join("tmp");
-    fs::create_dir_all(&temp_dir)
-        .with_context(|| format!("failed to create directory `{temp_dir}`"))?;
-
-    let mut file = NamedTempFile::new_in(&temp_dir)
-        .with_context(|| format!("failed to create temp file in `{temp_dir}`"))?;
-
-    use std::io::Write;
-    file.write_all(&component).with_context(|| {
-        format!("failed to write output component `{path}`", path = file.path().display())
-    })?;
-
-    file.into_temp_path().persist(path).with_context(|| {
-        format!("failed to persist output component `{path}`", path = path.display())
-    })?;
-
-    Ok(())
-}
-
-/// Read metadata from `Cargo.toml` and add it to the component
-fn add_component_metadata(package: &Package, wasm: &[u8]) -> Result<Vec<u8>> {
-    let metadata = wasm_metadata::AddMetadata {
-        name: Some(package.name.clone()),
-        language: vec![("Rust".to_string(), "".to_string())],
-        processed_by: vec![(
-            env!("CARGO_PKG_NAME").to_string(),
-            option_env!("CARGO_VERSION_INFO")
-                .unwrap_or(env!("CARGO_PKG_VERSION"))
-                .to_string(),
-        )],
-        sdk: vec![],
-        authors: match package.authors.len() {
-            0 => None,
-            _ => Some(wasm_metadata::Authors::new(package.authors.join(","))),
-        },
-        description: package
-            .description
-            .as_ref()
-            .map(|d| wasm_metadata::Description::new(d.clone())),
-        licenses: package.license.as_ref().map(|s| wasm_metadata::Licenses::new(s)).transpose()?,
-        source: package
-            .repository
-            .as_ref()
-            .map(|s| wasm_metadata::Source::new(s.to_string().as_str()))
-            .transpose()?,
-        homepage: package
-            .homepage
-            .as_ref()
-            .map(|s| wasm_metadata::Homepage::new(s.to_string().as_str()))
-            .transpose()?,
-        revision: None,
-        version: Some(wasm_metadata::Version::new(package.version.to_string())),
-    };
-    metadata.to_wasm(wasm)
 }
