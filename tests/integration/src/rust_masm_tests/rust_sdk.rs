@@ -18,12 +18,11 @@ use crate::{
 #[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
 fn account() {
     let artifact_name = "miden_sdk_account_test";
-    let mut test = CompilerTest::rust_source_cargo_lib(
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/account-test",
-        artifact_name,
-        true,
-        None,
-        None,
+        config,
+        [],
     );
     test.expect_wasm(expect_file![format!(
         "../../expected/rust_sdk_account_test/{artifact_name}.wat"

@@ -689,14 +689,10 @@ dependencies = [
  "semver 1.0.26",
  "serde",
  "serde_json",
- "shell-escape",
- "tempfile",
  "tokio",
  "tokio-util",
  "toml_edit",
  "url",
- "wasi-preview1-component-adapter-provider",
- "wasm-metadata 0.227.1",
  "wasm-pkg-client",
  "wasmparser 0.227.1",
  "which",
@@ -6780,12 +6776,6 @@ checksum = "9683f9a5a998d873c0d21fcbe3c083009670149a8fab228644b8bd36b2c48cb3"
 dependencies = [
  "wit-bindgen-rt",
 ]
-
-[[package]]
-name = "wasi-preview1-component-adapter-provider"
-version = "29.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcd9f21bbde82ba59e415a8725e6ad0d0d7e9e460b1a3ccbca5bdee952c1a324"
 
 [[package]]
 name = "wasm-bindgen"

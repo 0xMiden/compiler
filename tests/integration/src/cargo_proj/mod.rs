@@ -261,7 +261,7 @@ impl ProjectBuilder {
         let computed_artifact_path_ww = self
             .root()
             .join("target")
-            .join("wasm32-wasip1")
+            .join("wasm32-wasip2")
             .join("release")
             .join(artifact_name)
             .with_extension("wasm");
