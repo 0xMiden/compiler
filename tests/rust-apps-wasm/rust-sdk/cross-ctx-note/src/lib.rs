@@ -12,6 +12,7 @@
 static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
 // Required for no-std crates
+#[cfg(not(test))]
 #[panic_handler]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
