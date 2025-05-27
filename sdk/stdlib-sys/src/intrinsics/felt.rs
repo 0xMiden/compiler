@@ -308,7 +308,7 @@ impl Ord for Felt {
     }
 }
 
-/// If `a` == 1, removes it from the stack.  Fails if `a` != 1
+/// Fails if `a` != 1
 #[inline(always)]
 pub fn assert(a: Felt) {
     unsafe {
@@ -316,7 +316,7 @@ pub fn assert(a: Felt) {
     }
 }
 
-/// If `a` == 0, removes it from the stack.  Fails if `a` != 0
+/// Fails if `a` != 0
 #[inline(always)]
 pub fn assertz(a: Felt) {
     unsafe {
@@ -324,7 +324,7 @@ pub fn assertz(a: Felt) {
     }
 }
 
-/// If `a` == `b`, removes them from the stack.  Fails if `a` != `b`
+/// Fails if `a` != `b`
 #[inline(always)]
 pub fn assert_eq(a: Felt, b: Felt) {
     unsafe {
