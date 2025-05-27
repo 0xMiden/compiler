@@ -1,0 +1,15 @@
+package miden:cross-ctx-account-word@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface foo {
+    use core-types.{word};
+
+    process-word: func(input: word) -> word;
+}
+
+world foo-world {
+    include miden:core-intrinsics/intrinsics@1.0.0;
+
+    export foo;
+}

@@ -90,6 +90,58 @@ fn rust_sdk_cross_ctx_account_and_note() {
 }
 
 #[test]
+fn rust_sdk_cross_ctx_account_and_note_word() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cross-ctx-account-word",
+        config.clone(),
+        [],
+    );
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/cross_ctx_account_word.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_account_word.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/cross_ctx_account_word.masm")]);
+    let account_package = test.compiled_package();
+    let lib = account_package.unwrap_library();
+    let expected_module = "miden:cross-ctx-account-word/foo@1.0.0";
+    let expected_function = "process-word";
+    let exports = lib
+        .exports()
+        .filter(|e| !e.module.to_string().starts_with("intrinsics"))
+        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .collect::<Vec<_>>();
+    dbg!(&exports);
+    assert!(
+        lib.exports().any(|export| {
+            export.module.to_string() == expected_module
+                && export.name.as_str() == expected_function
+        }),
+        "expected one of the exports to contain module '{expected_module}' and function \
+         '{expected_function}"
+    );
+    // Test that the package loads
+    let bytes = account_package.to_bytes();
+    let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+
+    // Build counter note
+    let builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cross-ctx-note-word",
+        config,
+        [],
+    );
+
+    let mut test = builder.build();
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word.masm")]);
+    let package = test.compiled_package();
+    let mut exec = Executor::new(vec![]);
+    exec.dependency_resolver_mut()
+        .add(account_package.digest(), account_package.into());
+    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    let trace = exec.execute(&package.unwrap_program(), &test.session);
+}
+
+#[test]
 fn pure_rust_hir2() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = WasmTranslationConfig::default();
