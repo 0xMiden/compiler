@@ -1,10 +1,10 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use expect_test::expect_file;
 use miden_core::utils::group_slice_elements;
 use miden_processor::AdviceInputs;
 use midenc_debug::{Executor, TestFelt, ToMidenRepr};
+use midenc_expect_test::expect_file;
 use midenc_hir::Felt;
 use midenc_session::Emit;
 use proptest::{

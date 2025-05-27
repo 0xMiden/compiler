@@ -1,4 +1,4 @@
-use expect_test::expect_file;
+use midenc_expect_test::expect_file;
 
 use crate::CompilerTest;
 

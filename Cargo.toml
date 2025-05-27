@@ -61,7 +61,6 @@ clap = { version = "4.5", default-features = false, features = [
 cranelift-entity = "0.120"
 compact_str = { version = "0.9", default-features = false }
 env_logger = "0.11"
-expect-test = "1.5"
 hashbrown = { version = "0.15", features = ["nightly"] }
 hashbrown_old_nightly_hack = { package = "hashbrown", version = "0.14.5", features = [
     "allocator-api2",
@@ -146,6 +145,7 @@ midenc-debug = { version = "0.1.0", path = "midenc-debug" }
 midenc-session = { version = "0.1.0", path = "midenc-session" }
 cargo-miden = { version = "0.1.0", path = "tools/cargo-miden" }
 miden-integration-tests = { version = "0.0.0", path = "tests/integration" }
+midenc-expect-test = { version = "0.1.0", path = "tools/expect-test" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
@@ -172,9 +172,6 @@ lto = "thin"
 opt-level = 3
 
 [profile.test.package.rand_chacha]
-opt-level = 3
-
-[profile.dev.package.expect-test]
 opt-level = 3
 
 [profile.dev.package.dissimilar]

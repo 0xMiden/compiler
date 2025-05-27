@@ -35,4 +35,4 @@ wasmparser.workspace = true
 
 [dev-dependencies]
 wat.workspace = true
-expect-test.workspace = true
+midenc-expect-test.workspace = true
