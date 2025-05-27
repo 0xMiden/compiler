@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Represents the structured output of a successful `cargo miden` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,4 +50,20 @@ pub enum BuildOutput {
         /// Additional arguments passed to the Miden compiler.
         midenc_flags: Vec<String>,
     },
+}
+
+impl BuildOutput {
+    /// Get a reference to the filesystem path where the build artifact was placed
+    pub fn artifact_path(&self) -> &Path {
+        match self {
+            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
+        }
+    }
+
+    /// Convert this build output to the underlying filesystem path of the build artifact
+    pub fn into_artifact_path(self) -> PathBuf {
+        match self {
+            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
+        }
+    }
 }
