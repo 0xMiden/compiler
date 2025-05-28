@@ -214,13 +214,17 @@ fn is_prime() {
 #[test]
 fn counter_contract() {
     let config = WasmTranslationConfig::default();
-    let mut test =
-        CompilerTest::rust_source_cargo_miden("../../examples/counter-contract", config, []);
-
-    test.expect_wasm(expect_file!["../../expected/examples/counter.wat"]);
-    test.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
-    test.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
-    let package = test.compiled_package();
+    let mut builder_release = CompilerTestBuilder::rust_source_cargo_miden(
+        "../../examples/counter-contract",
+        config.clone(),
+        [],
+    );
+    builder_release.with_release(true);
+    let mut test_release = builder_release.build();
+    test_release.expect_wasm(expect_file!["../../expected/examples/counter.wat"]);
+    test_release.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
+    test_release.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
+    let package = test_release.compiled_package();
     let account_component_metadata_bytes =
         package.as_ref().account_component_metadata_bytes.clone().unwrap();
     let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
@@ -243,7 +247,20 @@ fn counter_contract() {
 }
 
 #[test]
+fn counter_contract_debug_build() {
+    // This build checks the dev profile build compilation for counter-contract
+    // see https://github.com/0xMiden/compiler/issues/510
+    let config = WasmTranslationConfig::default();
+    let mut builder =
+        CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-contract", config, []);
+    builder.with_release(false);
+    let mut test = builder.build();
+    let package = test.compiled_package();
+}
+
+#[test]
 fn counter_note() {
+    // build and check counter-note
     let config = WasmTranslationConfig::default();
     let builder =
         CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);

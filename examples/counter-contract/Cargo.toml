@@ -25,7 +25,6 @@ supported-types = ["RegularAccountUpdatableCode"]
 "miden:core-stdlib" = { path = "../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
 "miden:core-base" = { path = "../../sdk/base-sys/wit/miden-core-base.wit" }
 
-
 [profile.release]
 # optimize the output for size
 opt-level = "z"
@@ -42,6 +41,6 @@ panic = "abort"
 # library code unintentionally
 panic = "abort"
 opt-level = 1
-debug-assertions = true
+debug-assertions = false
 overflow-checks = false
 debug = true
