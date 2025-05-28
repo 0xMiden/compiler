@@ -18,7 +18,7 @@ on:
 env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
-  RUST_CACHE_KEY: rust-cache-20250522
+  RUST_CACHE_KEY: rust-cache-20250528
 
 jobs:
   lint:
@@ -104,6 +104,31 @@ jobs:
         # error occurs
         run: |
           cargo make check --tests
+      - name: Test
+        run: |
+          cargo make test -E 'not (package(miden-integration-tests) or package(cargo-miden))'
+
+  check_release:
+    name: release checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # NOTE: We use a different cache for the these release checks
+          shared-key: ${{ github.workflow }}-shared-release-checks
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          save-if: ${{ github.ref == 'refs/heads/next' }}
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
       - name: Check(release)
         # We run `check` with `--release` to check the release build (without
         # `debug_assertions`, etc.)
@@ -114,9 +139,6 @@ jobs:
         # unification and avoid surprises on publishing the crates.
         run: |
           cargo make check-each --release --all-features
-      - name: Test
-        run: |
-          cargo make test -E 'not (package(miden-integration-tests) or package(cargo-miden))'
 
   midenc_integration_tests:
     name: midenc integration tests
