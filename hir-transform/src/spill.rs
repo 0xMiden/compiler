@@ -414,7 +414,8 @@ fn rewrite_single_block_spills(
         }
     }
 
-    rewrite_spill_pseudo_instructions(op.borrow().context_rc(), analysis, interface, None)
+    let context = { op.borrow().context_rc() };
+    rewrite_spill_pseudo_instructions(context, analysis, interface, None)
 }
 
 fn rewrite_cfg_spills(
