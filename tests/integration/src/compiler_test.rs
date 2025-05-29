@@ -308,6 +308,24 @@ impl CompilerTestBuilder {
         self
     }
 
+    /// Override the Cargo target directory to the specified path
+    pub fn with_target_dir(&mut self, path: impl AsRef<Path>) -> &mut Self {
+        match &mut self.source {
+            CompilerTestInputType::Cargo(CargoTest {
+                ref mut target_dir, ..
+            })
+            | CompilerTestInputType::CargoMiden(CargoTest {
+                ref mut target_dir, ..
+            })
+            | CompilerTestInputType::Rustc(RustcTest {
+                ref mut target_dir, ..
+            }) => {
+                *target_dir = Some(path.as_ref().to_path_buf());
+            }
+        }
+        self
+    }
+
     /// Add additional Miden Assembly module sources, to be linked with the program under test.
     pub fn link_with_masm_module(
         &mut self,

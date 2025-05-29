@@ -150,6 +150,7 @@ midenc-expect-test = { version = "0.1.0", path = "tools/expect-test" }
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
+#miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "f98ae87fc3f77e269c3c1e412d1b8ac650aa6fe3" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-lib = { git = "https://github.com/0xMiden/miden-base", rev = "64ba4d0f8a077dd7d8f2643ebafa155f95b1c241" }
 #miden-stdlib = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
