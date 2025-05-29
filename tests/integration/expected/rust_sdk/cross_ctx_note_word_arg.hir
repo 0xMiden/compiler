@@ -1,0 +1,93 @@
+builtin.component miden:base/note-script@1.0.0 {
+    builtin.module public @cross_ctx_note_word_arg {
+        private builtin.function @cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt) -> felt {
+        ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt):
+            v16 = hir.call v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15 : felt #[callee = miden:cross-ctx-account-word-arg/foo@1.0.0/process-word] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt)];
+            builtin.ret v16;
+        };
+
+        private builtin.function @__wasm_call_ctors() {
+        ^block8:
+            builtin.ret ;
+        };
+
+        private builtin.function @cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports() {
+        ^block10:
+            builtin.ret ;
+        };
+
+        public builtin.function @miden:base/note-script@1.0.0#note-script() {
+        ^block12:
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen_rt::run_ctors_once()
+            v85 = arith.constant 7 : felt;
+            v77 = arith.constant 15 : felt;
+            v78 = arith.constant 14 : felt;
+            v79 = arith.constant 13 : felt;
+            v80 = arith.constant 12 : felt;
+            v81 = arith.constant 11 : felt;
+            v82 = arith.constant 10 : felt;
+            v83 = arith.constant 9 : felt;
+            v84 = arith.constant 8 : felt;
+            v86 = arith.constant 6 : felt;
+            v87 = arith.constant 5 : felt;
+            v88 = arith.constant 4 : felt;
+            v89 = arith.constant 3 : felt;
+            v90 = arith.constant 2 : felt;
+            v91 = arith.constant 1 : felt;
+            v49 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v91, v90, v89, v88, v87, v86, v85, v84, v83, v82, v81, v80, v79, v78, v77, v85) : felt
+            v75 = arith.constant 458760 : felt;
+            hir.assert_eq v49, v75;
+            builtin.ret ;
+        };
+
+        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        ^block14:
+            v53 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v54 = hir.bitcast v53 : ptr<byte, i32>;
+            v55 = hir.load v54 : i32;
+            v56 = arith.constant 1048600 : i32;
+            v57 = arith.add v55, v56 : i32 #[overflow = wrapping];
+            v58 = hir.bitcast v57 : u32;
+            v59 = hir.int_to_ptr v58 : ptr<byte, u8>;
+            v60 = hir.load v59 : u8;
+            v52 = arith.constant 0 : i32;
+            v61 = arith.zext v60 : u32;
+            v62 = hir.bitcast v61 : i32;
+            v64 = arith.neq v62, v52 : i1;
+            scf.if v64{
+            ^block16:
+                scf.yield ;
+            } else {
+            ^block17:
+                v65 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v66 = hir.bitcast v65 : ptr<byte, i32>;
+                v67 = hir.load v66 : i32;
+                hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/__wasm_call_ctors()
+                v93 = arith.constant 1 : u8;
+                v95 = arith.constant 1048600 : i32;
+                v69 = arith.add v67, v95 : i32 #[overflow = wrapping];
+                v73 = hir.bitcast v69 : u32;
+                v74 = hir.int_to_ptr v73 : ptr<byte, u8>;
+                hir.store v74, v93;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x000000010000000100000001000000010000000100000001;
+    };
+
+    public builtin.function @note-script() {
+    ^block18:
+        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/miden:base/note-script@1.0.0#note-script()
+        builtin.ret ;
+    };
+};

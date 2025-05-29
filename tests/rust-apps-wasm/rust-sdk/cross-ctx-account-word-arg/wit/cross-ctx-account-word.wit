@@ -1,0 +1,15 @@
+package miden:cross-ctx-account-word-arg@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface foo {
+    use core-types.{word, felt};
+
+    process-word: func(input1: word, input2: word, input3: word, felt1: felt, felt2: felt, felt3: felt, felt4: felt) -> felt;
+}
+
+world foo-world {
+    include miden:core-intrinsics/intrinsics@1.0.0;
+
+    export foo;
+}

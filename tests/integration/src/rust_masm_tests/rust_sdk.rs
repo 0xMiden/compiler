@@ -265,3 +265,57 @@ fn rust_sdk_counter_testnet_example() {
 
     scenario.run().unwrap();
 }
+
+#[test]
+fn rust_sdk_cross_ctx_word_arg_account_and_note() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cross-ctx-account-word-arg",
+        config.clone(),
+        [],
+    );
+    test.expect_wasm(expect_file![format!(
+        "../../expected/rust_sdk/cross_ctx_account_word_arg.wat"
+    )]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_account_word_arg.hir")]);
+    test.expect_masm(expect_file![format!(
+        "../../expected/rust_sdk/cross_ctx_account_word_arg.masm"
+    )]);
+    let account_package = test.compiled_package();
+
+    let lib = account_package.unwrap_library();
+    let expected_module = "miden:cross-ctx-account-word-arg/foo@1.0.0";
+    let expected_function = "process-word";
+    let exports = lib
+        .exports()
+        .filter(|e| !e.module.to_string().starts_with("intrinsics"))
+        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .collect::<Vec<_>>();
+    dbg!(&exports);
+    assert!(
+        lib.exports().any(|export| {
+            export.module.to_string() == expected_module
+                && export.name.as_str() == expected_function
+        }),
+        "expected one of the exports to contain module '{expected_module}' and function \
+         '{expected_function}"
+    );
+
+    // Build counter note
+    let builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cross-ctx-note-word-arg",
+        config,
+        [],
+    );
+    let mut test = builder.build();
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word_arg.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word_arg.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word_arg.masm")]);
+    let package = test.compiled_package();
+    assert!(package.is_program());
+    let mut exec = Executor::new(vec![]);
+    exec.dependency_resolver_mut()
+        .add(account_package.digest(), account_package.into());
+    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    let trace = exec.execute(&package.unwrap_program(), &test.session);
+}
