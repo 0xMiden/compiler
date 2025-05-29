@@ -1,10 +1,10 @@
 (component
   (type (;0;)
     (instance
-      (type (;0;) (func (param "a" f32) (param "b" f32) (result f32)))
-      (export (;0;) "add" (func (type 0)))
-      (type (;1;) (func (param "a" u32) (result f32)))
-      (export (;1;) "from-u32" (func (type 1)))
+      (type (;0;) (func (param "a" u32) (result f32)))
+      (export (;0;) "from-u32" (func (type 0)))
+      (type (;1;) (func (param "a" f32) (param "b" f32) (result f32)))
+      (export (;1;) "add" (func (type 1)))
     )
   )
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;0;) (type 0)))
