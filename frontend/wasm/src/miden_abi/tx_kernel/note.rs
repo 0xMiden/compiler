@@ -14,11 +14,13 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 ];
 
 pub const GET_INPUTS: &str = "get_inputs";
+pub const GET_ASSETS: &str = "get_assets";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut note: FunctionTypeMap = Default::default();
     note.insert(Symbol::from(GET_INPUTS), FunctionType::new(CallConv::Wasm, [I32], [I32, I32]));
+    note.insert(Symbol::from(GET_ASSETS), FunctionType::new(CallConv::Wasm, [I32], [I32, I32]));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m
 }
