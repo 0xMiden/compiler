@@ -43,6 +43,10 @@ trim-paths = ["diagnostics", "object"]
 [package.metadata.component]
 package = "miden:cross-ctx-note-word"
 
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:cross-ctx-account-word" = { path = "../cross-ctx-account-word" }
+
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../../../sdk/base/wit/miden.wit" }
 "miden:core-intrinsics" = { path = "../../../../sdk/stdlib-sys/wit/miden-core-intrinsics.wit" }
