@@ -118,9 +118,9 @@ pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, 
         Ok(SymbolPath::from_masm_module_id(intrinsics::debug::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-base/account") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::account::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/note") {
+    } else if wasm_module_id.starts_with("miden:core-base/note") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::note::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/tx") {
+    } else if wasm_module_id.starts_with("miden:core-base/tx") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::tx::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-mem") {
         Ok(SymbolPath::from_masm_module_id(stdlib::mem::MODULE_ID))

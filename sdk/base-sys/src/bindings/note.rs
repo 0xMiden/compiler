@@ -5,7 +5,7 @@ use miden_stdlib_sys::Felt;
 
 use super::Asset;
 
-#[link(wasm_import_module = "miden:core-import/note@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/note@1.0.0")]
 extern "C" {
     #[link_name = "get-inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
@@ -43,5 +43,6 @@ pub fn get_inputs() -> Vec<Felt> {
 }
 
 pub fn get_assets() -> Vec<Asset> {
-    todo!()
+    // TODO: implement
+    Vec::new()
 }
