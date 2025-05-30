@@ -152,11 +152,20 @@ pub fn flatten_function_type(
 
 /// Checks if the given function signature needs to be transformed, i.e., if it contains a pointer
 pub fn needs_transformation(sig: &Signature) -> bool {
-    sig.params().iter().any(|param| param.purpose == ArgumentPurpose::StructReturn)
-        || sig
-            .results()
-            .iter()
-            .any(|result| result.purpose == ArgumentPurpose::StructReturn)
+    let pointer_in_params =
+        sig.params().iter().any(|param| param.purpose == ArgumentPurpose::StructReturn);
+    let pointer_in_results = sig
+        .results()
+        .iter()
+        .any(|result| result.purpose == ArgumentPurpose::StructReturn);
+
+    // Check if the total size of parameters exceeds 16 felts (the maximum stack elements
+    // accessible to the callee using the `call` instruction)
+    let params_size_in_felts: usize =
+        sig.params().iter().map(|param| param.ty.size_in_felts()).sum();
+    let exceeds_felt_limit = params_size_in_felts > 16;
+
+    pointer_in_params || pointer_in_results || exceeds_felt_limit
 }
 
 /// Asserts that the given core Wasm signature is equivalent to the given flattened signature

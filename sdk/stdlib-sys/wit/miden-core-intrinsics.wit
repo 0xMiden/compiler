@@ -1,7 +1,7 @@
 package miden:core-intrinsics@1.0.0;
 
 // The function signatures should be kept in sync with the signatures in the
-// Rust SDK `extern` functions (see `/sdk`);
+// Rust SDK `extern` functions (see `/sdk`) using `f32` instead of `Felt` type;
 
 interface intrinsics-mem {
 
@@ -10,11 +10,34 @@ interface intrinsics-mem {
 
 interface intrinsics-felt {
 
-    add: func(a: f32, b: f32) -> f32;
-    eq: func(a: f32, b: f32) -> bool;
+    // See sdk/stdlib-sys/src/intrinsics/felt.rs for `extern` function signatures
+
+    // Conversion operations
     from-u64-unchecked: func(a: u64) -> f32;
     from-u32: func(a: u32) -> f32;
-    from-u8: func(a: u8) -> f32;
+    as-u64: func(a: f32) -> u64;
+
+    // Arithmetic operations
+    add: func(a: f32, b: f32) -> f32;
+    sub: func(a: f32, b: f32) -> f32;
+    mul: func(a: f32, b: f32) -> f32;
+    div: func(a: f32, b: f32) -> f32;
+    neg: func(a: f32) -> f32;
+    inv: func(a: f32) -> f32;
+    pow2: func(a: f32) -> f32;
+    exp: func(a: f32, b: f32) -> f32;
+
+    // Comparison operations
+    eq: func(a: f32, b: f32) -> s32;
+    gt: func(a: f32, b: f32) -> s32;
+    lt: func(a: f32, b: f32) -> s32;
+    ge: func(a: f32, b: f32) -> s32;
+    le: func(a: f32, b: f32) -> s32;
+    is-odd: func(a: f32) -> s32;
+
+    // Assertion operations
+    assert: func(a: f32);
+    assertz: func(a: f32);
     assert-eq: func(a: f32, b: f32);
 }
 
