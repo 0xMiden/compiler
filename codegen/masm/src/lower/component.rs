@@ -316,7 +316,7 @@ impl MasmComponentBuilder<'_> {
             self.init_body
                 .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
             // write_ptr
-            assert!(rodata.start.addr.is_multiple_of(4), "rodata segments must be word-aligned");
+            assert!(rodata.start.is_word_aligned(), "rodata segments must be word-aligned");
             self.init_body.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.addr))));
             // num_words
             self.init_body
