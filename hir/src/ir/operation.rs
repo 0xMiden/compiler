@@ -180,7 +180,7 @@ impl EntityWithParent for Operation {
     type Parent = Block;
 }
 impl EntityListItem for Operation {
-    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, _cursor: &mut EntityCursorMut<'_, Self>) {
+    fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
         let order_offset = core::mem::offset_of!(Operation, order);
         unsafe {
             let ptr = UnsafeIntrusiveEntityRef::as_ptr(&this);
@@ -189,17 +189,13 @@ impl EntityListItem for Operation {
         }
     }
 
-    fn on_transfer(
-        _this: UnsafeIntrusiveEntityRef<Self>,
-        _from: &mut EntityList<Self>,
-        to: &mut EntityList<Self>,
-    ) {
+    fn on_transfer(_this: OperationRef, _from: &mut EntityList<Self>, to: &mut EntityList<Self>) {
         // Invalidate the ordering of the new parent block
         let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();
     }
 
-    fn on_removed(_this: UnsafeIntrusiveEntityRef<Self>, _list: &mut EntityCursorMut<'_, Self>) {
+    fn on_removed(_this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {
     }
 }
 
