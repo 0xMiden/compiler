@@ -181,6 +181,16 @@ impl EntityWithParent for Operation {
 }
 impl EntityListItem for Operation {
     fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
+        let op = this;
+        let parent = this.grandparent().unwrap().parent().unwrap();
+
+        // NOTE: We are using OperationName here to check if the Operation implements symbol since
+        // the actual Operation is already being borrowed
+        if op.name().implements::<dyn Symbol>() && parent.name().implements::<dyn SymbolTable>() {
+            std::dbg!("Here is where the SymbolTable should be modified");
+            std::println!("{} should be inserted in {}", op.name(), parent.name());
+        };
+
         let order_offset = core::mem::offset_of!(Operation, order);
         unsafe {
             let ptr = UnsafeIntrusiveEntityRef::as_ptr(&this);
