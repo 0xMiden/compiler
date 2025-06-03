@@ -96,10 +96,8 @@ derive! {
             };
 
             let results = op.results();
-            if results.is_empty() {
-                panic!("Operation: {} was marked as having SameOperandsAndResultType, however it has no results.",
-                       op.name())
-            }
+            assert!(!results.is_empty(),
+                    "Operation: {} was marked as having SameOperandsAndResultType, however it has no results.", op.name());
 
             for result in results.iter() {
                 let result = result.borrow();
