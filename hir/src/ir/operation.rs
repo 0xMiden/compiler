@@ -198,6 +198,9 @@ impl EntityListItem for Operation {
         let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();
     }
+
+    fn on_removed(_this: UnsafeIntrusiveEntityRef<Self>, _list: &mut EntityCursorMut<'_, Self>) {
+    }
 }
 
 impl EntityParent<Region> for Operation {
