@@ -95,9 +95,13 @@ derive! {
                 (value.ty().clone(), value.span())
             };
 
-            let results = op.results().iter();
+            let results = op.results();
+            if results.is_empty() {
+                panic!("Operation: {} was marked as having SameOperandsAndResultType, however it has no results.",
+                       op.name())
+            }
 
-            for result in results {
+            for result in results.iter() {
                 let result = result.borrow();
                 let value = result.as_value_ref().borrow();
                 let result_ty = result.ty();
