@@ -14,7 +14,10 @@ use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, 
 use wasmparser::Validator;
 
 use super::{
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
+    data_segments::{align_data_segments, ResolvedDataSegment},
+    module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder,
+    MemoryIndex,
 };
 use crate::{
     error::WasmResult,
@@ -203,19 +206,39 @@ fn build_data_segments(
     module_builder: &mut ModuleBuilder,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
+    // First, collect all data segments into ResolvedDataSegment structures
+    let mut resolved_segments = Vec::new();
+
     for (data_segment_idx, data_segment) in &translation.data_segments {
         let data_segment_name =
             translation.module.name_section.data_segment_names[&data_segment_idx];
         let readonly = data_segment_name.as_str().contains(".rodata");
-        let init = ConstantData::from(data_segment.data);
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
+
+        resolved_segments.push(ResolvedDataSegment {
+            offset,
+            data: data_segment.data.to_vec(),
+            name: data_segment_name.as_str().to_string(),
+            readonly,
+        });
+    }
+
+    // Apply alignment and merging
+    let aligned_segments = align_data_segments(resolved_segments);
+
+    // Now create the data segments in the module builder
+    for segment in aligned_segments {
+        let init = ConstantData::from(segment.data);
         let size = init.len() as u32;
-        if let Err(e) =
-            module_builder.define_data_segment(offset, init, readonly, SourceSpan::default())
-        {
+        if let Err(e) = module_builder.define_data_segment(
+            segment.offset,
+            init,
+            segment.readonly,
+            SourceSpan::default(),
+        ) {
             let message = format!(
-                "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
-                 '{offset}'",
+                "Failed to declare data segment '{}' with size '{}' at '{:#x}'",
+                segment.name, size, segment.offset
             );
             return Err(e.wrap_err(message));
         }
