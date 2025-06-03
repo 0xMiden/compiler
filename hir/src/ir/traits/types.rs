@@ -26,39 +26,39 @@ derive! {
     verify {
         fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
             let mut operands = op.operands().iter();
-            if let Some(first_operand) = operands.next() {
-                let (expected_ty, set_by) = {
-                    let operand = first_operand.borrow();
-                    let value = operand.value();
-                    (value.ty().clone(), value.span())
-                };
+            let first_operand = operands.next().unwrap_or_else(|| panic!("Operation: {} was marked as having SameTypeOperands, however it has no operands.",
+                                                                         op.name()));
+            let (expected_ty, set_by) = {
+                let operand = first_operand.borrow();
+                let value = operand.value();
+                (value.ty().clone(), value.span())
+            };
 
-                for operand in operands {
-                    let operand = operand.borrow();
-                    let value = operand.value();
-                    let value_ty = value.ty();
-                    if value_ty != &expected_ty {
-                        return Err(context
-                            .session()
-                            .diagnostics
-                            .diagnostic(Severity::Error)
-                            .with_message(::alloc::format!("invalid operation {}", op.name()))
-                            .with_primary_label(
-                                op.span,
-                                "this operation expects all operands to be of the same type"
-                            )
-                            .with_secondary_label(
-                                set_by,
-                                "inferred the expected type from this value"
-                            )
-                            .with_secondary_label(
-                                value.span(),
-                                "which differs from this value's type"
-                            )
-                            .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
-                            .into_report()
-                        );
-                    }
+            for operand in operands {
+                let operand = operand.borrow();
+                let value = operand.value();
+                let value_ty = value.ty();
+                if value_ty != &expected_ty {
+                    return Err(context
+                               .session()
+                               .diagnostics
+                               .diagnostic(Severity::Error)
+                               .with_message(::alloc::format!("invalid operation {}", op.name()))
+                               .with_primary_label(
+                                   op.span,
+                                   "this operation expects all operands to be of the same type"
+                               )
+                               .with_secondary_label(
+                                   set_by,
+                                   "inferred the expected type from this value"
+                               )
+                               .with_secondary_label(
+                                   value.span(),
+                                   "which differs from this value's type"
+                               )
+                               .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
+                               .into_report()
+                    );
                 }
             }
 
@@ -87,43 +87,43 @@ derive! {
     verify {
         fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
             let mut operands = op.operands().iter();
-            if let Some(first_operand) = operands.next() {
-                let (expected_ty, set_by) = {
-                    let operand = first_operand.borrow();
-                    let value = operand.value();
-                    (value.ty().clone(), value.span())
-                };
+            let first_operand = operands.next().unwrap_or_else(|| panic!("Operation: {} was marked as having SameOperandsAndResultType, however it has no operands.",
+                                                                         op.name()));
+            let (expected_ty, set_by) = {
+                let operand = first_operand.borrow();
+                let value = operand.value();
+                (value.ty().clone(), value.span())
+            };
 
-                let results = op.results().iter();
+            let results = op.results().iter();
 
-                for result in results {
-                    let result = result.borrow();
-                    let value = result.as_value_ref().borrow();
-                    let result_ty = result.ty();
+            for result in results {
+                let result = result.borrow();
+                let value = result.as_value_ref().borrow();
+                let result_ty = result.ty();
 
-                    if result_ty != &expected_ty {
-                        return Err(context
-                            .session()
-                            .diagnostics
-                            .diagnostic(Severity::Error)
-                            .with_message(::alloc::format!("invalid operation result {}", op.name()))
-                            .with_primary_label(
-                                op.span,
-                                "this operation expects the operands and the results to be of the same type"
-                            )
-                            .with_secondary_label(
-                                set_by,
-                                "inferred the expected type from this value"
-                            )
-                            .with_secondary_label(
-                                value.span(),
-                                "which differs from this value's type"
-                            )
-                            .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
-                            .into_report()
-                        );
-                    }
-                };
+                if result_ty != &expected_ty {
+                    return Err(context
+                               .session()
+                               .diagnostics
+                               .diagnostic(Severity::Error)
+                               .with_message(::alloc::format!("invalid operation result {}", op.name()))
+                               .with_primary_label(
+                                   op.span,
+                                   "this operation expects the operands and the results to be of the same type"
+                               )
+                               .with_secondary_label(
+                                   set_by,
+                                   "inferred the expected type from this value"
+                               )
+                               .with_secondary_label(
+                                   value.span(),
+                                   "which differs from this value's type"
+                               )
+                               .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
+                               .into_report()
+                    );
+                }
             }
 
             Ok(())
