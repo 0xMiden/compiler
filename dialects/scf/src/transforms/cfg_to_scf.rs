@@ -524,9 +524,9 @@ mod tests {
         builder.cond_br(v331, block35, [], block36, [], span)?;
 
         builder.switch_to_block(block34);
-        let mut v345 = builder.eq(v343, v330, span)?;
-        v345.borrow_mut().set_type(Type::U32);
-        let v349 = builder.neq(v345, v330, span)?;
+        let v345 = builder.eq(v343, v330, span)?;
+        let v346 = builder.zext(v345, Type::U32, span)?;
+        let v349 = builder.neq(v346, v330, span)?;
         builder.cond_br(v349, block39, [], block40, [], span)?;
 
         builder.switch_to_block(block35);
