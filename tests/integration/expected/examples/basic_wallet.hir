@@ -45,7 +45,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
         private builtin.function @miden_base_sys::bindings::tx::extern_tx_create_note(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt, v45: felt, v46: felt, v47: felt, v48: felt, v49: felt) -> felt {
         ^block9(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt, v45: felt, v46: felt, v47: felt, v48: felt, v49: felt):
             v50 = hir.exec @miden/tx/create_note(v40, v41, v42, v43, v44, v45, v46, v47, v48, v49) : felt
-            builtin.ret ;
+            builtin.ret v50;
         };
 
         private builtin.function @__wasm_call_ctors() {

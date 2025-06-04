@@ -3,7 +3,6 @@ use std::{
     borrow::Cow,
     ffi::OsStr,
     fmt, fs,
-    io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     rc::Rc,
@@ -28,6 +27,7 @@ use crate::{
 type LinkMasmModules = Vec<(LibraryPath, String)>;
 
 /// Configuration for tests which use as input, the artifact produced by a Cargo build
+#[derive(Debug)]
 pub struct CargoTest {
     project_dir: PathBuf,
     manifest_path: Option<Cow<'static, str>>,
@@ -145,16 +145,8 @@ impl RustcTest {
 pub enum CompilerTestInputType {
     /// A project that uses `cargo miden build` to produce a Wasm component to use as input
     CargoMiden(CargoTest),
-    /// A project that uses `cargo build` to produce a core Wasm module to use as input
-    Cargo(CargoTest),
     /// A project that uses `rustc` to produce a core Wasm module to use as input
     Rustc(RustcTest),
-}
-
-impl From<CargoTest> for CompilerTestInputType {
-    fn from(config: CargoTest) -> Self {
-        Self::Cargo(config)
-    }
 }
 
 impl From<RustcTest> for CompilerTestInputType {
@@ -209,12 +201,10 @@ impl CompilerTestBuilder {
             _ => vec![],
         };
         let entrypoint = match source {
-            CompilerTestInputType::Cargo(ref mut config) => config.entrypoint.take(),
             CompilerTestInputType::Rustc(_) => Some("__main".into()),
             CompilerTestInputType::CargoMiden(ref mut config) => config.entrypoint.take(),
         };
         let name = match source {
-            CompilerTestInputType::Cargo(ref mut config) => config.name.as_ref(),
             CompilerTestInputType::Rustc(ref mut config) => config.name.as_ref(),
             CompilerTestInputType::CargoMiden(ref mut config) => config.name.as_ref(),
         };
@@ -235,6 +225,7 @@ impl CompilerTestBuilder {
         if let Some(entrypoint) = entrypoint {
             midenc_flags.extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         }
+        dbg!(&entrypoint);
         Self {
             config: Default::default(),
             source,
@@ -301,7 +292,6 @@ impl CompilerTestBuilder {
     /// Specify if the test fixture should be compiled in release mode
     pub fn with_release(&mut self, release: bool) -> &mut Self {
         match self.source {
-            CompilerTestInputType::Cargo(ref mut config) => config.release = release,
             CompilerTestInputType::CargoMiden(ref mut config) => config.release = release,
             CompilerTestInputType::Rustc(_) => (),
         }
@@ -311,10 +301,7 @@ impl CompilerTestBuilder {
     /// Override the Cargo target directory to the specified path
     pub fn with_target_dir(&mut self, path: impl AsRef<Path>) -> &mut Self {
         match &mut self.source {
-            CompilerTestInputType::Cargo(CargoTest {
-                ref mut target_dir, ..
-            })
-            | CompilerTestInputType::CargoMiden(CargoTest {
+            CompilerTestInputType::CargoMiden(CargoTest {
                 ref mut target_dir, ..
             })
             | CompilerTestInputType::Rustc(RustcTest {
@@ -349,20 +336,12 @@ impl CompilerTestBuilder {
                 cmd.arg("miden").arg("build");
                 cmd
             }
-            CompilerTestInputType::Cargo(_) => {
-                let mut cmd = Command::new("cargo");
-                cmd.arg("build");
-                cmd
-            }
             CompilerTestInputType::Rustc(_) => Command::new("rustc"),
         };
 
         // Extract the directory in which source code is presumed to exist (or will be placed)
         let project_dir = match self.source {
             CompilerTestInputType::CargoMiden(CargoTest {
-                ref project_dir, ..
-            })
-            | CompilerTestInputType::Cargo(CargoTest {
                 ref project_dir, ..
             }) => Cow::Borrowed(project_dir.as_path()),
             CompilerTestInputType::Rustc(RustcTest { ref target_dir, .. }) => target_dir
@@ -372,46 +351,12 @@ impl CompilerTestBuilder {
         };
 
         // Cargo-based source types share a lot of configuration in common
-        match self.source {
-            CompilerTestInputType::CargoMiden(ref config) => {
-                let manifest_path = project_dir.join("Cargo.toml");
-                command.arg("--manifest-path").arg(manifest_path);
-                if config.release {
-                    command.arg("--release");
-                }
+        if let CompilerTestInputType::CargoMiden(ref config) = self.source {
+            let manifest_path = project_dir.join("Cargo.toml");
+            command.arg("--manifest-path").arg(manifest_path);
+            if config.release {
+                command.arg("--release");
             }
-
-            CompilerTestInputType::Cargo(ref config) => {
-                let manifest_path = project_dir.join("Cargo.toml");
-                command
-                    .arg("--manifest-path")
-                    .arg(manifest_path)
-                    .arg("--target")
-                    .arg(config.target.as_ref());
-
-                if config.release {
-                    command.arg("--release");
-                }
-                if config.build_std {
-                    // compile std as part of crate graph compilation
-                    // https://doc.rust-lang.org/cargo/reference/unstable.html#build-std
-                    command.arg("-Z").arg("build-std=core,alloc,std,panic_abort");
-
-                    // abort on panic without message formatting (core::fmt uses call_indirect)
-                    command.arg("-Z").arg("build-std-features=panic_immediate_abort");
-                } else if config.build_alloc {
-                    // compile libcore and liballoc as part of crate graph compilation
-                    // https://doc.rust-lang.org/cargo/reference/unstable.html#build-std
-                    command.arg("-Z").arg("build-std=core,alloc");
-
-                    // abort on panic without message formatting (core::fmt uses call_indirect)
-                    command.arg("-Z").arg("build-std-features=panic_immediate_abort");
-                }
-
-                // Render Cargo output as JSON
-                command.arg("--message-format=json-render-diagnostics");
-            }
-            _ => (),
         }
 
         // All test source types support custom RUSTFLAGS
@@ -485,65 +430,6 @@ impl CompilerTestBuilder {
                 }
             }
 
-            CompilerTestInputType::Cargo(config) => {
-                let expected_wasm_artifact_path = config.wasm_artifact_path();
-                let skip_rust_compilation =
-                    std::env::var("SKIP_RUST").is_ok() && expected_wasm_artifact_path.exists();
-                let wasm_artifact_path = if !skip_rust_compilation {
-                    let mut child = command.spawn().unwrap_or_else(|_| {
-                        panic!(
-                            "Failed to execute command: {}",
-                            command
-                                .get_args()
-                                .map(|arg| format!("'{}'", arg.to_str().unwrap()))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        )
-                    });
-                    // Find the Wasm artifacts from the cargo build output for debugging purposes
-                    let mut wasm_artifacts = find_wasm_artifacts(&mut child);
-                    let output = child.wait().expect("Couldn't get cargo's exit status");
-                    if !output.success() {
-                        report_cargo_error(child);
-                    }
-                    assert!(output.success());
-                    // filter out dependencies
-                    wasm_artifacts.retain(|path| {
-                        let path_str = path.to_str().unwrap();
-                        !path_str.contains("release/deps")
-                    });
-                    dbg!(&wasm_artifacts);
-                    assert_eq!(wasm_artifacts.len(), 1, "Expected one Wasm artifact");
-                    wasm_artifacts.swap_remove(0)
-                } else {
-                    drop(command);
-                    expected_wasm_artifact_path
-                };
-
-                let input_file = InputFile::from_path(wasm_artifact_path).unwrap();
-                let mut inputs = vec![input_file];
-                inputs.extend(self.link_masm_modules.into_iter().map(|(path, content)| {
-                    let path = path.to_string();
-                    InputFile::new(
-                        midenc_session::FileType::Masm,
-                        InputType::Stdin {
-                            name: path.into(),
-                            input: content.into_bytes(),
-                        },
-                    )
-                }));
-
-                let context = setup::default_context(inputs, &self.midenc_flags);
-                let session = context.session_rc();
-                CompilerTest {
-                    config: self.config,
-                    session,
-                    context,
-                    artifact_name: config.name,
-                    entrypoint: self.entrypoint,
-                    ..Default::default()
-                }
-            }
             CompilerTestInputType::Rustc(config) => {
                 // Ensure we have a fresh working directory prepared
                 let working_dir = config
@@ -626,50 +512,6 @@ impl CompilerTestBuilder {
         builder
     }
 
-    /// Set the Rust source code to compile a library Cargo project to Wasm module
-    pub fn rust_source_cargo_lib(
-        cargo_project_folder: impl AsRef<Path>,
-        artifact_name: impl Into<Cow<'static, str>>,
-        is_build_std: bool,
-        entry_func_name: Option<Cow<'static, str>>,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
-        let cargo_project_folder = cargo_project_folder.as_ref().to_path_buf();
-        let config = CargoTest::new(artifact_name, cargo_project_folder, "wasm32-wasip1")
-            .with_build_std(is_build_std);
-        let mut builder = CompilerTestBuilder::new(match entry_func_name {
-            Some(entry) => config.with_entrypoint(entry),
-            None => config,
-        });
-        builder.with_midenc_flags(midenc_flags);
-        builder
-    }
-
-    /// Set the Rust source code to compile using a Cargo project and binary bundle name
-    pub fn rust_source_cargo(
-        cargo_project_folder: impl AsRef<Path>,
-        artifact_name: impl Into<Cow<'static, str>>,
-        entrypoint: impl Into<Cow<'static, str>>,
-    ) -> Self {
-        let temp_dir = std::env::temp_dir();
-        let target_dir = temp_dir.join(cargo_project_folder.as_ref());
-        let project_dir = Path::new("../rust-apps-wasm")
-            .join(cargo_project_folder.as_ref())
-            .canonicalize()
-            .unwrap_or_else(|_| {
-                panic!(
-                    "unknown project folder: ../rust-apps-wasm/{}",
-                    cargo_project_folder.as_ref().display()
-                )
-            });
-        let config = CargoTest::new(artifact_name, project_dir, "wasm32-wasip1")
-            .with_build_alloc(true)
-            .with_target_dir(target_dir)
-            .with_target("wasm32-unknown-unknown")
-            .with_entrypoint(entrypoint);
-        CompilerTestBuilder::new(config)
-    }
-
     /// Set the Rust source code to compile
     pub fn rust_source_program(rust_source: impl Into<Cow<'static, str>>) -> Self {
         let rust_source = rust_source.into();
@@ -721,7 +563,7 @@ impl CompilerTestBuilder {
     pub fn rust_fn_body_with_stdlib_sys(
         name: impl Into<Cow<'static, str>>,
         source: &str,
-        is_build_std: bool,
+        config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> Self {
         let name = name.into();
@@ -785,21 +627,15 @@ impl CompilerTestBuilder {
                 .as_str(),
             )
             .build();
-        Self::rust_source_cargo_lib(
-            proj.root(),
-            name,
-            is_build_std,
-            Some("entrypoint".into()),
-            midenc_flags,
-        )
+
+        Self::rust_source_cargo_miden(proj.root(), config, midenc_flags)
     }
 
     /// Set the Rust source code to compile with `miden-sdk` (sdk + intrinsics)
     pub fn rust_source_with_sdk(
         name: impl Into<Cow<'static, str>>,
         source: &str,
-        is_build_std: bool,
-        entrypoint: Option<Cow<'static, str>>,
+        config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> Self {
         let name = name.into();
@@ -863,7 +699,7 @@ use alloc::vec::Vec;
             )
             .build();
 
-        Self::rust_source_cargo_lib(proj.root(), name, is_build_std, entrypoint, midenc_flags)
+        Self::rust_source_cargo_miden(proj.root(), config, midenc_flags)
     }
 
     /// Like `rust_source_with_sdk`, but expects the source code to be the body of a function
@@ -871,17 +707,11 @@ use alloc::vec::Vec;
     pub fn rust_fn_body_with_sdk(
         name: impl Into<Cow<'static, str>>,
         source: &str,
-        is_build_std: bool,
+        config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> Self {
         let source = format!("#[no_mangle]\npub extern \"C\" fn entrypoint{source}");
-        Self::rust_source_with_sdk(
-            name,
-            &source,
-            is_build_std,
-            Some("entrypoint".into()),
-            midenc_flags,
-        )
+        Self::rust_source_with_sdk(name, &source, config, midenc_flags)
     }
 }
 
@@ -981,10 +811,10 @@ impl CompilerTest {
     pub fn rust_fn_body_with_stdlib_sys(
         name: impl Into<Cow<'static, str>>,
         source: &str,
-        is_build_std: bool,
+        config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> Self {
-        CompilerTestBuilder::rust_fn_body_with_stdlib_sys(name, source, is_build_std, midenc_flags)
+        CompilerTestBuilder::rust_fn_body_with_stdlib_sys(name, source, config, midenc_flags)
             .build()
     }
 
@@ -1140,33 +970,6 @@ fn get_workspace_dir() -> String {
     let compiler_workspace_dir =
         cargo_manifest_dir_path.parent().unwrap().parent().unwrap().to_str().unwrap();
     compiler_workspace_dir.to_string()
-}
-
-fn report_cargo_error(child: std::process::Child) {
-    eprintln!("pwd: {:?}", std::env::current_dir().unwrap());
-    let mut stderr = Vec::new();
-    child.stderr.unwrap().read_exact(&mut stderr).expect("Failed to read stderr");
-    let stderr = String::from_utf8(stderr).expect("Failed to parse stderr");
-    eprintln!("stderr: {}", stderr);
-    panic!("Rust to Wasm compilation failed!");
-}
-
-fn find_wasm_artifacts(child: &mut std::process::Child) -> Vec<std::path::PathBuf> {
-    let mut wasm_artifacts = Vec::new();
-    let reader = std::io::BufReader::new(child.stdout.take().unwrap());
-    for message in cargo_metadata::Message::parse_stream(reader) {
-        if let cargo_metadata::Message::CompilerArtifact(artifact) =
-            message.expect("Failed to parse cargo metadata")
-        {
-            // find the Wasm artifact in artifact.filenames
-            for filename in artifact.filenames {
-                if filename.as_str().ends_with(".wasm") {
-                    wasm_artifacts.push(filename.into_std_path_buf());
-                }
-            }
-        }
-    }
-    wasm_artifacts
 }
 
 fn wasm_to_wat(wasm_bytes: &[u8]) -> String {

@@ -5,6 +5,7 @@ use miden_core::utils::group_slice_elements;
 use miden_processor::AdviceInputs;
 use midenc_debug::{Executor, TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
+use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use midenc_session::Emit;
 use proptest::{
@@ -24,10 +25,11 @@ fn test_blake3_hash() {
     let main_fn =
         "(a: [u8; 32]) -> [u8; 32] {  miden_stdlib_sys::blake3_hash_1to1(a) }".to_string();
     let artifact_name = "abi_transform_stdlib_blake3_hash";
+    let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
         artifact_name,
         &main_fn,
-        true,
+        config,
         ["--test-harness".into()],
     );
     // Test expected compilation artifacts

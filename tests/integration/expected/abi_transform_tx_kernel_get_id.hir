@@ -3,7 +3,7 @@ builtin.component root_ns:root@1.0.0 {
         private builtin.function @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
         ^block3:
             v0 = hir.exec @miden/account/get_id() : felt
-            builtin.ret ;
+            builtin.ret v0;
         };
 
         public builtin.function @entrypoint() -> felt {
