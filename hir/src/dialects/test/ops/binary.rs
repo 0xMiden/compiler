@@ -130,25 +130,3 @@ pub struct Neq {
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
 has_no_effects!(Neq);
-
-/// Invalid operation that breaks the SameOperandsAndResultType trait (used for testing).
-#[operation(
-    dialect = TestDialect,
-    traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface)
-)]
-pub struct InvalidOpsWithReturn {
-    #[operand]
-    lhs: AnyInteger,
-    #[operand]
-    rhs: AnyInteger,
-    #[result]
-    result: AnyUnsignedInteger,
-}
-
-impl InferTypeOpInterface for InvalidOpsWithReturn {
-    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.result_mut().set_type(Type::U64);
-        Ok(())
-    }
-}
