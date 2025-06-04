@@ -90,7 +90,7 @@
     unreachable
   )
   (func $__rustc::__rust_alloc (;5;) (type 5) (param i32 i32) (result i32)
-    i32.const 1048664
+    i32.const 1048636
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -98,7 +98,7 @@
   (func $__rustc::__rust_dealloc (;6;) (type 6) (param i32 i32 i32))
   (func $__rustc::__rust_alloc_zeroed (;7;) (type 5) (param i32 i32) (result i32)
     block ;; label = @1
-      i32.const 1048664
+      i32.const 1048636
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -242,7 +242,7 @@
     i32.add
     i32.const 4
     i32.const 4
-    i32.const 1048648
+    i32.const 1048620
     call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
     local.get 1
     i32.load offset=8
@@ -445,7 +445,7 @@
       i32.eqz
       br_if 0 (;@1;)
       i32.const 0
-      i32.load8_u offset=1048668
+      i32.load8_u offset=1048640
       drop
       block ;; label = @2
         local.get 3
@@ -525,5 +525,5 @@
     i32.gt_u
     select
   )
-  (data $.rodata (;0;) (i32.const 1048576) "/Users/green/src/miden/compiler-aux2/sdk/base-sys/src/bindings/note.rs\00\00\00\00\10\00F\00\00\00\13\00\00\00!\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.0/src/bindings/note.rs\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00")
 )

@@ -5,13 +5,13 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.645395216894162631
-    push.16373043622137111445
-    push.5275824784699575585
-    push.2927374892618992499
+    push.6315357860886378431
+    push.17501026810125392659
+    push.9970201546263757806
+    push.6183149152399679298
     adv.push_mapval
     push.262144
-    push.6
+    push.4
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
@@ -258,7 +258,7 @@ export.entrypoint
 end
 
 proc.__rustc::__rust_alloc
-    push.1048664
+    push.1048636
     movup.2
     swap.1
     trace.240
@@ -275,7 +275,7 @@ proc.__rustc::__rust_dealloc
 end
 
 proc.__rustc::__rust_alloc_zeroed
-    push.1048664
+    push.1048636
     dup.1
     swap.2
     swap.3
@@ -718,7 +718,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.1048648
+    push.1048620
     push.4
     push.8
     dup.3

@@ -574,6 +574,8 @@ impl CompilerTestBuilder {
                 "Cargo.toml",
                 format!(
                     r#"
+                cargo-features = ["trim-paths"]
+
                 [package]
                 name = "{name}"
                 version = "0.0.1"
@@ -592,6 +594,7 @@ impl CompilerTestBuilder {
                 # optimize for size
                 opt-level = "z"
                 debug = true
+                trim-paths = ["diagnostics", "object"]
             "#,
                     sdk_alloc_path = sdk_alloc_path.display(),
                     stdlib_sys_path = stdlib_sys_path.display(),
@@ -645,24 +648,27 @@ impl CompilerTestBuilder {
             .file(
                 "Cargo.toml",
                 format!(
-                    r#"[package]
-name = "{name}"
-version = "0.0.1"
-edition = "2021"
-authors = []
+                    r#"
+    cargo-features = ["trim-paths"]
 
-[dependencies]
-miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
-miden = {{ path = "{sdk_path}" }}
+    [package]
+    name = "{name}"
+    version = "0.0.1"
+    edition = "2021"
+    authors = []
 
-[lib]
-crate-type = ["cdylib"]
+    [dependencies]
+    miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
+    miden = {{ path = "{sdk_path}" }}
 
-[profile.release]
-panic = "abort"
-# optimize for size
-opt-level = "z"
-debug = true
+    [lib]
+    crate-type = ["cdylib"]
+
+    [profile.release]
+    panic = "abort"
+    # optimize for size
+    opt-level = "z"
+    debug = true
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),
