@@ -148,9 +148,9 @@ mod tests {
 
     use crate::{
         attributes::Overflow,
-        dialects::test::{self, Add, InvalidOpsWithReturn},
+        dialects::test::{self, Add},
         pass::{Nesting, PassManager},
-        Builder, BuilderExt, Context, Op, Operation, Report, Spanned,
+        Builder, BuilderExt, Context, Op, Operation, Report, Spanned, Value,
     };
 
     derive! {
@@ -255,12 +255,20 @@ mod tests {
         let mut builder = context.clone().builder();
         builder.set_insertion_point_to_end(block);
 
-        let op_builder = builder.create::<InvalidOpsWithReturn, _>(SourceSpan::default());
-        let op = op_builder(lhs, rhs);
-        let op = op.unwrap();
+        let op_builder = builder.create::<Add, _>(SourceSpan::default());
+        let op = op_builder(lhs, rhs, Overflow::Wrapping);
+        let mut op = op.unwrap();
+
+        // NOTE: We override the result's type in order to force the SameOperandsAndResultType
+        // verification function to trigger an error
+        {
+            let mut binding = op.borrow_mut();
+            let mut result = binding.result_mut();
+            result.set_type(Type::U64);
+        }
 
         // Construct a pass manager with the default pass pipeline
-        let mut pm = PassManager::on::<InvalidOpsWithReturn>(context.clone(), Nesting::Implicit);
+        let mut pm = PassManager::on::<Add>(context.clone(), Nesting::Implicit);
         // Run pass pipeline
         pm.run(op.as_operation_ref()).unwrap();
     }
