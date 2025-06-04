@@ -104,7 +104,10 @@ impl Stage for LinkStage {
                     } else {
                         // We represent library modules in the world so that the symbols are
                         // resolvable.
-                        todo!("need type information for masm procedures")
+                        // TODO: need type information for masm procedures.
+                        // In the meantime assume the caller is responsible for the ABI transformation
+                        // i.e. we're passing tx kernel function mocks in the integration tests.
+                        masm.push(module);
                     }
                 }
                 ParseOutput::Library(lib) => {
