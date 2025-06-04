@@ -187,7 +187,11 @@ pub fn define_func_for_miden_abi_transformation(
     func_builder.br(exit_block, results, span).expect("failed br");
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
-    func_builder.ret(None, span).expect("failed ret");
+    let arg_vals: Vec<ValueRef> = {
+        let borrow = exit_block.borrow();
+        borrow.argument_values().collect()
+    };
+    func_builder.ret(arg_vals, span).expect("failed ret");
 
     CallableFunction::Function {
         wasm_id: synth_func_id,
