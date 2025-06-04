@@ -4,6 +4,8 @@
 //! hash/unhash instructions operate on words when loaded from the advice provider. This module provides
 //! functionality to ensure all data segments meet this requirement.
 
+use midenc_hir::SmallVec;
+
 /// Represents a data segment with resolved offset
 #[derive(Debug, Clone)]
 pub struct ResolvedDataSegment {
@@ -74,7 +76,9 @@ impl ResolvedDataSegment {
 ///
 /// This function takes a collection of data segments and ensures they are all
 /// word-aligned, merging segments if necessary to avoid overlaps.
-pub fn align_data_segments(segments: Vec<ResolvedDataSegment>) -> Vec<ResolvedDataSegment> {
+pub fn align_data_segments(
+    segments: SmallVec<[ResolvedDataSegment; 2]>,
+) -> SmallVec<[ResolvedDataSegment; 2]> {
     if segments.is_empty() {
         return segments;
     }
@@ -83,7 +87,7 @@ pub fn align_data_segments(segments: Vec<ResolvedDataSegment>) -> Vec<ResolvedDa
     let mut sorted_segments = segments;
     sorted_segments.sort_by_key(|s| s.offset);
 
-    let mut result = Vec::new();
+    let mut result = SmallVec::<[ResolvedDataSegment; 2]>::new();
     let mut current_segment = sorted_segments[0].clone();
 
     for next_segment in sorted_segments.into_iter().skip(1) {
@@ -236,7 +240,7 @@ mod tests {
     #[test]
     fn test_align_data_segments_p2id_case() {
         // Simulate the p2id case
-        let segments = vec![
+        let segments = [
             ResolvedDataSegment {
                 offset: 1048576,   // 0x100000 - already aligned
                 data: vec![0; 44], // Size of the .rodata string
@@ -251,7 +255,7 @@ mod tests {
             },
         ];
 
-        let aligned = align_data_segments(segments);
+        let aligned = align_data_segments(segments.into());
 
         // Should merge into one segment since alignment causes overlap
         assert_eq!(aligned.len(), 1);

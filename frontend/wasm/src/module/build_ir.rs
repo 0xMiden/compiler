@@ -8,7 +8,7 @@ use midenc_hir::{
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, SmallVec, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
@@ -207,7 +207,7 @@ fn build_data_segments(
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     // First, collect all data segments into ResolvedDataSegment structures
-    let mut resolved_segments = Vec::new();
+    let mut resolved_segments = SmallVec::<[ResolvedDataSegment; 2]>::new();
 
     for (data_segment_idx, data_segment) in &translation.data_segments {
         let data_segment_name =
