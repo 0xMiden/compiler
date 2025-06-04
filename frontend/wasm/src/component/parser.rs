@@ -507,7 +507,9 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         self.validator.component_canonical_section(&s).into_diagnostic()?;
         for func in s {
             let types = self.validator.types(0).unwrap();
-            let init = match func.into_diagnostic()? {
+            let canonical_func = func.into_diagnostic()?;
+            log::debug!("Processing canonical function: {:?}", canonical_func);
+            let init = match canonical_func {
                 wasmparser::CanonicalFunction::Lift {
                     type_index,
                     core_func_index,
@@ -588,7 +590,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::CanonicalFunction::StreamCloseWritable { .. }
                 | wasmparser::CanonicalFunction::StreamCloseReadable { .. } => unimplemented!(),
             };
-            // dbg!(&init);
+            log::debug!("Adding canonical initializer: {:?}", init);
             self.result.initializers.push(init);
         }
         Ok(())

@@ -8,6 +8,7 @@ mod flat;
 mod lift_exports;
 pub(crate) mod lower_imports;
 mod parser;
+mod shim_bypass;
 mod translator;
 mod types;
 

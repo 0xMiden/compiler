@@ -37,7 +37,24 @@ impl foo::Guest for MyFoo {
             input.inner.2 + felt!(1),
             input.inner.3 + felt!(1),
         ]);
-        
+
         result
     }
+
+    fn process_another_word(input: Word) -> Word {
+        // Add 2 to each element
+        let result = Word::new([
+            input.inner.0 + felt!(2),
+            input.inner.1 + felt!(2),
+            input.inner.2 + felt!(2),
+            input.inner.3 + felt!(2),
+        ]);
+
+        result
+    }
+
+    fn process_felt(input: Felt) -> Felt {
+        input + felt!(3)
+    }
 }
+

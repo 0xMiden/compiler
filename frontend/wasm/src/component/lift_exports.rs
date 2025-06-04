@@ -37,12 +37,12 @@ pub fn generate_export_lifting_function(
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
     if needs_transformation(&cross_ctx_export_sig) {
-        let message = format!(
-            "Component export lifting generation. Signature for exported function {} requires \
-             lifting. This is not yet supported",
-            core_export_func_path
-        );
-        return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
+        // let message = format!(
+        //     "Component export lifting generation. Signature for exported function {} requires \
+        //      lifting. This is not yet supported",
+        //     core_export_func_path
+        // );
+        // return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
     let export_func_ident =

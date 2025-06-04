@@ -174,6 +174,8 @@ pub fn assert_core_wasm_signature_equivalence(
     wasm_core_sig: &Signature,
     flattened_sig: &Signature,
 ) {
+    // dbg!(&wasm_core_sig);
+    // dbg!(&flattened_sig);
     assert_eq!(
         wasm_core_sig.params().len(),
         flattened_sig.params().len(),
