@@ -38,7 +38,8 @@ impl ResolvedDataSegment {
             // Adjust offset down to nearest word boundary
             self.offset -= padding;
             // Prepend zeros to maintain data at correct offset
-            let mut new_data = vec![0u8; padding as usize];
+            let mut new_data = Vec::with_capacity(padding as usize + self.data.len());
+            new_data.resize(padding as usize, 0);
             new_data.extend_from_slice(&self.data);
             self.data = new_data;
         }
