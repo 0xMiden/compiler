@@ -162,7 +162,6 @@ proc.miden_base_sys::bindings::tx::extern_tx_create_note
     exec.::miden::tx::create_note
     trace.252
     nop
-    drop
 end
 
 proc.__wasm_call_ctors

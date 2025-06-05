@@ -355,7 +355,7 @@
       local.get 1
       i32.load offset=12
       local.tee 3
-      i32.const 4
+      i32.const 2
       i32.shr_u
       call $miden_base_sys::bindings::note::extern_note_get_inputs
       i32.store offset=8
@@ -393,7 +393,7 @@
       local.get 1
       i32.load offset=12
       local.tee 3
-      i32.const 4
+      i32.const 2
       i32.shr_u
       call $miden_base_sys::bindings::note::extern_note_get_assets
       i32.store offset=8
@@ -668,7 +668,7 @@
       select
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.0/src/bindings/note.rs")
-    (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\002\00\00\00\22\00\00\00")
+    (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\001\00\00\00\22\00\00\00")
   )
   (alias export 3 "assert-eq" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))

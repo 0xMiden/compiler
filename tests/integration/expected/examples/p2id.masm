@@ -13,10 +13,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.1125803303661654043
-    push.17861973813373652056
-    push.17820063615208605296
-    push.18236853488055198916
+    push.641991978469080794
+    push.209476705199303101
+    push.17844807952713820029
+    push.14233688194231886270
     adv.push_mapval
     push.262144
     push.8
@@ -51,7 +51,6 @@ proc.miden_base_sys::bindings::account::extern_account_get_id
     exec.::miden::account::get_id
     trace.252
     nop
-    drop
 end
 
 proc.miden_base_sys::bindings::note::extern_note_get_inputs
@@ -60,7 +59,7 @@ proc.miden_base_sys::bindings::note::extern_note_get_inputs
     exec.::miden::note::get_inputs
     trace.252
     nop
-    drop
+    swap.1
     drop
 end
 
@@ -70,7 +69,7 @@ proc.miden_base_sys::bindings::note::extern_note_get_assets
     exec.::miden::note::get_assets
     trace.252
     nop
-    drop
+    swap.1
     drop
 end
 
@@ -1072,7 +1071,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4
+    push.2
     dup.1
     swap.1
     u32shr
@@ -1219,7 +1218,7 @@ proc.miden_base_sys::bindings::note::get_assets
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4
+    push.2
     dup.1
     swap.1
     u32shr
