@@ -10,7 +10,8 @@ use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, ModuleBuilder, WorldBuilder},
     interner::Symbol,
-    AbiParam, FunctionType, FxHashMap, Op, Signature, SymbolNameComponent, SymbolPath, ValueRef,
+    AbiParam, FunctionType, FxHashMap, Op, Signature, SmallVec, SymbolNameComponent, SymbolPath,
+    ValueRef,
 };
 use midenc_hir_symbol::symbols;
 use transform::transform_miden_abi_call;
@@ -187,7 +188,7 @@ pub fn define_func_for_miden_abi_transformation(
     func_builder.br(exit_block, results, span).expect("failed br");
     func_builder.seal_block(exit_block);
     func_builder.switch_to_block(exit_block);
-    let arg_vals: Vec<ValueRef> = {
+    let arg_vals: SmallVec<[ValueRef; 1]> = {
         let borrow = exit_block.borrow();
         borrow.argument_values().collect()
     };
