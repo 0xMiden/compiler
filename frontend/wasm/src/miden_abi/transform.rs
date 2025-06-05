@@ -78,6 +78,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
             }
             symbols::Note => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                 tx_kernel::note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                tx_kernel::note::GET_ASSETS => Some(TransformStrategy::ListReturn),
                 _ => None,
             },
             symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {

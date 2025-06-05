@@ -1,0 +1,18 @@
+package miden:basic-wallet@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface basic-wallet {
+    use core-types.{asset, tag, recipient, note-type, felt};
+
+    receive-asset: func(asset: asset);
+    send-asset: func(core-asset: asset, tag: tag, note-type: note-type, recipient: recipient);
+}
+
+world basic-wallet-world {
+    include miden:core-intrinsics/intrinsics@1.0.0;
+    include miden:core-stdlib/stdlib@1.0.0;
+    include miden:core-base/base@1.0.0;
+
+    export basic-wallet;
+}

@@ -2,7 +2,7 @@ use miden_stdlib_sys::Felt;
 
 use super::types::{Asset, NoteId, NoteType, Recipient, Tag};
 
-#[link(wasm_import_module = "miden:core-import/tx@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/tx@1.0.0")]
 extern "C" {
     #[link_name = "create-note"]
     pub fn extern_tx_create_note(

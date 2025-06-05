@@ -12,6 +12,7 @@
 static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
 // Required for no-std crates
+#[cfg(not(test))]
 #[panic_handler]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
@@ -22,8 +23,7 @@ bindings::export!(MyNote with_types_in bindings);
 mod bindings;
 
 use bindings::{
-    exports::miden::base::note_script::Guest,
-    miden::basic_wallet::{aux::process_list_felt, basic_wallet::receive_asset},
+    exports::miden::base::note_script::Guest, miden::basic_wallet::basic_wallet::receive_asset,
 };
 use miden::*;
 
@@ -32,10 +32,6 @@ struct MyNote;
 impl Guest for MyNote {
     fn note_script() {
         let inputs = miden::note::get_inputs();
-
-        let outs = process_list_felt(&inputs);
-        assert_eq(outs[0], inputs[0]);
-
         let target_account_id_felt = inputs[0];
         let account_id = miden::account::get_id();
         assert_eq(account_id.as_felt(), target_account_id_felt);

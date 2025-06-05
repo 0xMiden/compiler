@@ -5,10 +5,12 @@ use miden_stdlib_sys::Felt;
 
 use super::Asset;
 
-#[link(wasm_import_module = "miden:core-import/note@1.0.0")]
+#[link(wasm_import_module = "miden:core-base/note@1.0.0")]
 extern "C" {
     #[link_name = "get-inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
+    #[link_name = "get-assets"]
+    pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
 }
 
 /// Get the inputs of the currently executing note.
@@ -42,6 +44,16 @@ pub fn get_inputs() -> Vec<Felt> {
     inputs
 }
 
+/// Get the assets of the currently executing note.
 pub fn get_assets() -> Vec<Asset> {
-    todo!()
+    const MAX_INPUTS: usize = 256;
+    let mut inputs: Vec<Asset> = Vec::with_capacity(MAX_INPUTS);
+    let num_inputs = unsafe {
+        let ptr = (inputs.as_mut_ptr() as usize) / 16;
+        extern_note_get_assets(ptr as *mut Felt)
+    };
+    unsafe {
+        inputs.set_len(num_inputs);
+    }
+    inputs
 }

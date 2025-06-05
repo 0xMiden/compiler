@@ -285,3 +285,22 @@ fn counter_note() {
     // exec.with_dependencies(&package.manifest.dependencies).unwrap();
     // let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
+
+#[test]
+fn basic_wallet_and_p2id() {
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_source_cargo_miden("../../examples/basic-wallet", config.clone(), []);
+    test.expect_wasm(expect_file![format!("../../expected/examples/basic_wallet.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/examples/basic_wallet.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/examples/basic_wallet.masm")]);
+    let account_package = test.compiled_package();
+    assert!(account_package.is_library(), "expected library");
+
+    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
+    test.expect_wasm(expect_file![format!("../../expected/examples/p2id.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/examples/p2id.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/examples/p2id.masm")]);
+    let note_package = test.compiled_package();
+    assert!(note_package.is_program(), "expected program");
+}
