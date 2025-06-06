@@ -204,7 +204,7 @@ fn rust_sdk_counter_testnet_example() {
         Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
 
     let key = [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0)];
-    let expected = [Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)];
+    let expected = [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)];
     scenario
         .create_account("example", account_package)
         .then()
