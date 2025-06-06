@@ -155,7 +155,6 @@ fn pure_rust_hir2() {
 
 /// This test demonstrates the use of the testnet integration test infrastructure
 #[test]
-// #[ignore = "this test needs refinement before it can be run by default"]
 fn rust_sdk_counter_testnet_example() {
     use cargo_miden::BuildOutput;
 
