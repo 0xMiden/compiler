@@ -155,7 +155,7 @@ fn pure_rust_hir2() {
 
 /// This test demonstrates the use of the testnet integration test infrastructure
 #[test]
-#[ignore = "this test needs refinement before it can be run by default"]
+// #[ignore = "this test needs refinement before it can be run by default"]
 fn rust_sdk_counter_testnet_example() {
     use cargo_miden::BuildOutput;
 
@@ -172,8 +172,6 @@ fn rust_sdk_counter_testnet_example() {
         "build",
         "--manifest-path",
         "../../examples/counter-contract/Cargo.toml",
-        "--lib",
-        "--release",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -197,16 +195,9 @@ fn rust_sdk_counter_testnet_example() {
 
     let config = WasmTranslationConfig::default();
 
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../../examples/counter-note",
-        config,
-        ["-l".into(), masp_path.clone().into_os_string().into_string().unwrap().into()],
-    );
+    let mut builder =
+        CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
     builder.with_target_dir(&target_dir);
-    builder.with_entrypoint(FunctionIdent {
-        module: Ident::new(Symbol::intern("miden:base/note-script@1.0.0"), SourceSpan::default()),
-        function: Ident::new(Symbol::intern("note-script"), SourceSpan::default()),
-    });
     let mut test = builder.build();
     let note_package = test.compiled_package();
 
