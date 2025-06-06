@@ -6,6 +6,52 @@ export.process-word
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-word
     trace.252
     nop
+    push.0
+    dup.1
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    dup.2
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    dup.3
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.12
+    movup.4
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    movdn.3
+    swap.2
 end
 
 export.process-another-word
@@ -14,6 +60,52 @@ export.process-another-word
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     trace.252
     nop
+    push.0
+    dup.1
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    dup.2
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    dup.3
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.12
+    movup.4
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    movdn.3
+    swap.2
 end
 
 export.process-felt

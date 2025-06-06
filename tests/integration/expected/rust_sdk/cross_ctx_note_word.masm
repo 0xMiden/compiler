@@ -40,12 +40,100 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     call.::miden:cross-ctx-account-word/foo@1.0.0::process-word
     trace.252
     nop
+    push.0
+    dup.5
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.4
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.3
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    movup.2
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 
 proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7
     trace.240
     nop
     call.::miden:cross-ctx-account-word/foo@1.0.0::process-another-word
+    trace.252
+    nop
+    push.0
+    dup.5
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.4
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.3
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    movup.2
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end

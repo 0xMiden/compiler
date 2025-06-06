@@ -134,11 +134,11 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word.hir")]);
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note_word.masm")]);
     let package = test.compiled_package();
-    // let mut exec = Executor::new(vec![]);
-    // exec.dependency_resolver_mut()
-    //     .add(account_package.digest(), account_package.into());
-    // exec.with_dependencies(&package.manifest.dependencies).unwrap();
-    // let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let mut exec = Executor::new(vec![]);
+    exec.dependency_resolver_mut()
+        .add(account_package.digest(), account_package.into());
+    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
 
 #[test]

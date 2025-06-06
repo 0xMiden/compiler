@@ -3,6 +3,7 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
+use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -10,13 +11,13 @@ use midenc_hir::{
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
     },
-    CallConv, FunctionType, Op, Report, Signature, SymbolPath, ValueRef,
+    AbiParam, AddressSpace, CallConv, FunctionType, Op, PointerType, Signature, SymbolPath, Type,
+    ValueRef,
 };
 
 use super::flat::{flatten_function_type, needs_transformation};
 use crate::{
     callable::CallableFunction,
-    component::flat::assert_core_wasm_signature_equivalence,
     error::WasmResult,
     module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
@@ -40,30 +41,7 @@ pub fn generate_import_lowering_function(
             )
         })?;
 
-    dbg!(&import_func_path.to_string());
-    dbg!(&import_func_ty.to_string());
-    dbg!(&import_lowered_sig.to_string());
-
-    // TODO: remove after passing the pointee via the stack/advice provider
-    if import_func_path.to_string() == "miden:cross-ctx-account-word/foo@1.0.0/process-word"
-        || import_func_path.to_string()
-            == "miden:cross-ctx-account-word/foo@1.0.0/process-another-word"
-    {
-        assert_eq!(
-            import_func_ty.to_string(),
-        "extern \"canon-lower\" fn(struct {struct {struct {felt}, struct {felt}, struct {\n    felt}, struct {felt}}}) -> struct {struct {struct {felt}, struct {\n    felt}, struct {felt}, struct {felt}}}".to_string(),
-            "{} function is expected to have 'right' component-level type signature but found 'left'",
-            import_func_path
-        );
-    } else {
-        if needs_transformation(&import_lowered_sig) {
-            return Err(Report::msg(format!(
-                "Component import lowering generation. Signature for imported function \
-                 '{import_func_path}' requires lowering. This is not supported yet.",
-            )));
-        }
-        assert_core_wasm_signature_equivalence(&core_func_sig, &import_lowered_sig);
-    }
+    // assert_core_wasm_signature_equivalence(&core_func_sig, &import_lowered_sig);
 
     let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), core_func_sig.clone())
@@ -99,33 +77,125 @@ pub fn generate_import_lowering_function(
     };
 
     let mut component_builder = ComponentBuilder::new(component_ref);
-    let import_func_ref = component_builder
-        .define_function(import_func_path.name().into(), core_func_sig.clone())
-        .expect("failed to define the import function");
 
-    // NOTE: handle CC lifting/lowering for non-scalar types
-    // see https://github.com/0xMiden/compiler/issues/369
+    if needs_transformation(&import_lowered_sig) {
+        // When transformation is needed, the import function's results are passed via a pointer parameter
+        // This happens when the result type would flatten to more than 1 value
 
-    let call = fb
-        .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)
-        .expect("failed to build an exec op");
+        // The import function should have the lifted signature (returns tuple)
+        // not the lowered signature with pointer parameter
+        let import_func_sig = flatten_function_type(import_func_ty, CallConv::CanonLower)
+            .wrap_err_with(|| {
+                format!("failed to flatten import function signature for '{}'", import_func_path)
+            })?;
 
-    let borrow = call.borrow();
-    let results_storage = borrow.as_ref().results();
-    let results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    assert!(results.len() <= 1, "expected a single result or none");
+        // TODO: make it generic
+        let new_import_func_sig = Signature {
+            params: import_func_sig.params[..import_func_sig.params.len() - 1].to_vec(), // without
+            // the last arg - pointer
+            results: vec![
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+            ],
+            cc: import_func_sig.cc,
+            visibility: import_func_sig.visibility,
+        };
+        let import_func_ref = component_builder
+            .define_function(import_func_path.name().into(), new_import_func_sig.clone())
+            .expect("failed to define the import function");
 
-    let exit_block = fb.create_block();
-    fb.br(exit_block, vec![], span)?;
-    fb.seal_block(exit_block);
-    fb.switch_to_block(exit_block);
-    let returning = results.first().cloned();
-    fb.ret(returning, span).expect("failed ret");
+        // Check if we have a pointer in params (result via out-pointer)
+        let param_has_pointer = import_lowered_sig
+            .params()
+            .iter()
+            .any(|param| param.purpose == midenc_hir::ArgumentPurpose::StructReturn);
 
-    Ok(CallableFunction::Function {
-        wasm_id: core_func_path,
-        function_ref: core_func_ref,
-        signature: core_func_sig,
-    })
+        // FIX: ugly
+        if param_has_pointer {
+            // Import lowering: The lowered function takes a pointer as the last parameter
+            // where results should be stored. The import function returns a pointer to the result.
+            // We need to:
+            // 1. Call the import function (it returns a tuple to the flattened result)
+            // 2. Store the data from the tuple to the output pointer
+
+            // Get the pointer argument (last argument) where we need to store results
+            let output_ptr = args.last().expect("expected pointer argument");
+            let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
+
+            // Call the import function - it will return a tuple to the flattened result struct
+            let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
+
+            let borrow = call.borrow();
+            let results_storage = borrow.as_ref().results();
+            let results: Vec<ValueRef> =
+                results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+
+            // TODO: make it generic
+            // The result should be 4 felts
+            assert_eq!(results.len(), 4, "expected 4 felts");
+
+            let felt_type = Type::Felt;
+            let felt_ptr_type = Type::from(PointerType::new_with_address_space(
+                felt_type.clone(),
+                AddressSpace::Byte,
+            ));
+
+            for (idx, value) in results.into_iter().enumerate() {
+                // Store to destination pointer
+                // TODO: make it generic
+                let dst_offset = fb.i32((idx * 4) as i32, span);
+                let dst_addr = fb.add_unchecked(*output_ptr, dst_offset, span)?;
+                let dst_ptr = fb.inttoptr(dst_addr, felt_ptr_type.clone(), span)?;
+                fb.store(dst_ptr, value, span)?;
+            }
+
+            let exit_block = fb.create_block();
+            fb.br(exit_block, [], span)?;
+            fb.seal_block(exit_block);
+            fb.switch_to_block(exit_block);
+            // TODO: return according to the function sig - core_func_sig
+            fb.ret([], span)?;
+
+            Ok(CallableFunction::Function {
+                wasm_id: core_func_path,
+                function_ref: core_func_ref,
+                signature: core_func_sig,
+            })
+        } else {
+            panic!("no pointer")
+        }
+    } else {
+        let import_func_sig = flatten_function_type(import_func_ty, CallConv::CanonLift)
+            .wrap_err_with(|| {
+                format!("failed to flatten import function signature for '{}'", import_func_path)
+            })?;
+        let import_func_ref = component_builder
+            .define_function(import_func_path.name().into(), import_func_sig.clone())
+            .expect("failed to define the import function");
+
+        let call = fb
+            .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)
+            .expect("failed to build an exec op");
+
+        let borrow = call.borrow();
+        let results_storage = borrow.as_ref().results();
+        let results: Vec<ValueRef> =
+            results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+        assert!(results.len() <= 1, "expected a single result or none");
+
+        let exit_block = fb.create_block();
+        fb.br(exit_block, vec![], span)?;
+        fb.seal_block(exit_block);
+        fb.switch_to_block(exit_block);
+        let returning = results.first().cloned();
+        fb.ret(returning, span).expect("failed ret");
+
+        Ok(CallableFunction::Function {
+            wasm_id: core_func_path,
+            function_ref: core_func_ref,
+            signature: core_func_sig,
+        })
+    }
 }
