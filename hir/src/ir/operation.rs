@@ -199,7 +199,8 @@ impl EntityListItem for Operation {
                      said trait",
                 );
 
-                sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
+                let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
+                assert!(is_new, "{} already exists in {}", this.name(), parent.name());
             };
         }
 
