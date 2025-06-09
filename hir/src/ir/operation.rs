@@ -188,10 +188,6 @@ impl EntityListItem for Operation {
             if this.name().implements::<dyn Symbol>()
                 && parent.name().implements::<dyn SymbolTable>()
             {
-                std::dbg!("Here is where the SymbolTable should be modified");
-                std::println!("{} should be inserted in {}", this.name(), parent.name());
-
-                // There are no borrowing problem when it comes to the symbol_table.
                 let mut symbol_table = parent.borrow_mut();
                 let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
                 let mut sym_manager = sym_manager.symbol_manager_mut();
