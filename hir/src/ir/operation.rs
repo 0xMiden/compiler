@@ -600,17 +600,15 @@ impl Operation {
         self.as_operation_ref().parent()
     }
 
-    /// NOTE: this is a duplicate of OperationRef::parent_region
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
-        self.parent().and_then(|block| block.parent())
+        self.as_operation_ref().parent_region()
     }
 
-    /// NOTE: this is a duplicate of OperationRef::parent_region
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {
-        self.parent_region().and_then(|region| region.parent())
+        self.as_operation_ref().parent_op()
     }
 
     /// Returns a handle to the nearest containing [Operation] of type `T` for this operation, if it
