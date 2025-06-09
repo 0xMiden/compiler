@@ -356,7 +356,7 @@ pub trait Rewriter: Builder + RewriterListener {
     }
 
     /// Insert an unlinked operation at the end of `ip`
-    fn insert_op_at_end(&mut self, mut op: OperationRef, ip: BlockRef) {
+    fn insert_op_at_end(&mut self, op: OperationRef, ip: BlockRef) {
         let prev = ProgramPoint::before(op);
         op.insert_at_end(ip);
         self.notify_operation_inserted(op, prev);
