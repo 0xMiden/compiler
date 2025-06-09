@@ -186,8 +186,8 @@ impl EntityListItem for Operation {
         // however they are accesible via Operation rather than OperationRefs.
         let mut parent = this.grandparent().unwrap().parent().unwrap();
 
-        // NOTE: We are using OperationName here to check if the Operation implements symbol since
-        // the actual Operation is already being borrowed in hir/src/ir/builder.rs:136
+        // NOTE: We are using OperationName here to check if the Operation implements symbol to
+        // avoid borrowing if possible
         if op.name().implements::<dyn Symbol>() && parent.name().implements::<dyn SymbolTable>() {
             std::dbg!("Here is where the SymbolTable should be modified");
             std::println!("{} should be inserted in {}", op.name(), parent.name());
@@ -197,27 +197,9 @@ impl EntityListItem for Operation {
             let sym_manager = parent.as_trait_mut::<dyn SymbolTable>().unwrap();
             let mut sym_manager = sym_manager.symbol_manager_mut();
 
-            // The problem arises when I try to obtain a SymbolRef.
-            unsafe {
-                // I am not able to obtain a symbol reference from the operation.
-                // I tried with this approach here.
-                // However, as soon as I borrow the operation to get its symbol reference, a panic
-                // is raised stating that the operation is already borrowed in
-                // hir/src/ir/builder.rs:136
-                let symbol_ref = op.borrow().as_symbol_ref().unwrap();
+            let symbol_ref = op.borrow().as_symbol_ref().unwrap();
 
-                sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
-
-                //// I even tried this pointer approach, however, the insert_new function tries to
-                //// borrow the symbol, so the same error is raised, only a couple of functions
-                //// after.
-                // let raw = OperationRef::as_ptr(&this);
-                // let op = raw.as_ref().unwrap();
-                // let symbol = op.as_symbol_ref().unwrap();
-                // let symbol_ref = symbol.as_symbol_ref();
-                //
-                // sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
-            }
+            sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
         };
 
         let order_offset = core::mem::offset_of!(Operation, order);
