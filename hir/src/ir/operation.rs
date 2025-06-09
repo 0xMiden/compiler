@@ -189,10 +189,16 @@ impl EntityListItem for Operation {
                 && parent.name().implements::<dyn SymbolTable>()
             {
                 let mut symbol_table = parent.borrow_mut();
-                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
+                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().expect(
+                    "Could not cast parent operation {parent.name()} as SymbolTable, even though \
+                     it implements said trait",
+                );
                 let mut sym_manager = sym_manager.symbol_manager_mut();
 
-                let symbol_ref = this.borrow().as_symbol_ref().unwrap();
+                let symbol_ref = this.borrow().as_symbol_ref().expect(
+                    "Could not cast operation {this.name()} as Symbol, even though it implements \
+                     said trait",
+                );
 
                 sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
             };
