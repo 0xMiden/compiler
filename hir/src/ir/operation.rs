@@ -293,6 +293,34 @@ impl OperationRef {
             block.body_mut().push_back(*self);
         }
     }
+
+    pub fn insert_before(&mut self, before: OperationRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        let mut block = before.parent().expect("'before' block is not attached to a block");
+        {
+            let mut block = block.borrow_mut();
+            let block_body = block.body_mut();
+            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
+            cursor.insert_before(*self);
+        }
+    }
+
+    pub fn insert_after(&mut self, after: OperationRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        let mut block = after.parent().expect("'after' block is not attached to a block");
+        {
+            let mut block = block.borrow_mut();
+            let block_body = block.body_mut();
+            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
+            cursor.insert_after(*self);
+        }
+    }
 }
 
 /// Read-only Metadata
@@ -1135,31 +1163,11 @@ impl Operation {
     }
 
     pub fn insert_before(&mut self, before: OperationRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        let mut block = before.parent().expect("'before' block is not attached to a block");
-        {
-            let mut block = block.borrow_mut();
-            let block_body = block.body_mut();
-            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
-            cursor.insert_before(self.as_operation_ref());
-        }
+        self.as_operation_ref().insert_before(before);
     }
 
     pub fn insert_after(&mut self, after: OperationRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        let mut block = after.parent().expect("'after' block is not attached to a block");
-        {
-            let mut block = block.borrow_mut();
-            let block_body = block.body_mut();
-            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
-            cursor.insert_after(self.as_operation_ref());
-        }
+        self.as_operation_ref().insert_after(after);
     }
 }
 
