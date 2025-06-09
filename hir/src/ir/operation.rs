@@ -184,7 +184,7 @@ impl EntityListItem for Operation {
         let op = this;
         // NOTE: There are functions that find you the closest parent and closest symbol table,
         // however they are accesible via Operation rather than OperationRefs.
-        let mut parent = this.grandparent().unwrap().parent().unwrap();
+        let mut parent = op.nearest_symbol_table().unwrap();
 
         // NOTE: We are using OperationName here to check if the Operation implements symbol to
         // avoid borrowing if possible
@@ -281,6 +281,34 @@ impl OperationRef {
             let mut block = block.borrow_mut();
             block.body_mut().push_back(*self);
         }
+    }
+
+    /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
+    /// to one
+    pub fn parent_op(&self) -> Option<OperationRef> {
+        self.parent_region().and_then(|region| region.parent())
+    }
+
+    /// Returns a handle to the containing [Region] of this operation, if it is attached to one
+    pub fn parent_region(&self) -> Option<RegionRef> {
+        self.parent().and_then(|block| block.parent())
+    }
+
+    /// TODO(fabrio): maybe remove later?
+    /// Returns the nearest [SymbolTable] from this operation.
+    ///
+    /// Returns `None` if no parent of this operation is a valid symbol table.
+    pub fn nearest_symbol_table(&self) -> Option<OperationRef> {
+        let mut parent = self.parent_op();
+        while let Some(parent_op) = parent.take() {
+            let op = parent_op.borrow();
+            if op.implements::<dyn SymbolTable>() {
+                drop(op);
+                return Some(parent_op);
+            }
+            parent = op.parent_op();
+        }
+        None
     }
 }
 
@@ -551,11 +579,13 @@ impl Operation {
         self.as_operation_ref().parent()
     }
 
+    /// TODO(fabrio): maybe remove later?
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
         self.parent().and_then(|block| block.parent())
     }
 
+    /// TODO(fabrio): maybe remove later?
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {

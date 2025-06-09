@@ -147,6 +147,7 @@ impl Operation {
         parent
     }
 
+    /// TODO(fabrio): maybe remove later?
     /// Returns the nearest [SymbolTable] from this operation.
     ///
     /// Returns `None` if no parent of this operation is a valid symbol table.
