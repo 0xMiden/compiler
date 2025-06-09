@@ -183,8 +183,7 @@ impl EntityListItem for Operation {
     fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
         let parent = this.nearest_symbol_table();
         if let Some(mut parent) = parent {
-            // NOTE: We are using OperationName here to check if the Operation implements symbol to
-            // avoid borrowing if possible
+            // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
             if this.name().implements::<dyn Symbol>()
                 && parent.name().implements::<dyn SymbolTable>()
             {
@@ -221,8 +220,7 @@ impl EntityListItem for Operation {
     fn on_removed(this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {
         let parent = this.nearest_symbol_table();
         if let Some(mut parent) = parent {
-            // NOTE: We are using OperationName here to check if the Operation implements symbol to
-            // avoid borrowing if possible
+            // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
             if this.name().implements::<dyn Symbol>()
                 && parent.name().implements::<dyn SymbolTable>()
             {
