@@ -319,7 +319,6 @@ impl OperationRef {
         self.parent().and_then(|block| block.parent())
     }
 
-    /// TODO(fabrio): maybe remove later?
     /// Returns the nearest [SymbolTable] from this operation.
     ///
     /// Returns `None` if no parent of this operation is a valid symbol table.
@@ -602,13 +601,13 @@ impl Operation {
         self.as_operation_ref().parent()
     }
 
-    /// TODO(fabrio): maybe remove later?
+    /// NOTE: this is a duplicate of OperationRef::parent_region
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
         self.parent().and_then(|block| block.parent())
     }
 
-    /// TODO(fabrio): maybe remove later?
+    /// NOTE: this is a duplicate of OperationRef::parent_region
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {
