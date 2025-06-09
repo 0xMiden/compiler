@@ -132,8 +132,8 @@ pub trait Builder: Listener {
                 block,
                 position: point,
             } => match point {
-                crate::Position::Before => op.borrow_mut().insert_at_start(block),
-                crate::Position::After => op.borrow_mut().insert_at_end(block),
+                crate::Position::Before => op.insert_at_start(block),
+                crate::Position::After => op.insert_at_end(block),
             },
             ProgramPoint::Op {
                 op: other_op,

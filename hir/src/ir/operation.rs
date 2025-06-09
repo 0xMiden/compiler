@@ -278,6 +278,28 @@ impl OperationRef {
             OperationName::clone(&*name_ptr)
         }
     }
+
+    pub fn insert_at_start(&self, mut block: BlockRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        {
+            let mut block = block.borrow_mut();
+            block.body_mut().push_front(*self);
+        }
+    }
+
+    pub fn insert_at_end(&self, mut block: BlockRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        {
+            let mut block = block.borrow_mut();
+            block.body_mut().push_back(*self);
+        }
+    }
 }
 
 /// Metadata
