@@ -1092,28 +1092,6 @@ impl Operation {
 
 /// Insertion
 impl Operation {
-    pub fn insert_at_start(&mut self, mut block: BlockRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        {
-            let mut block = block.borrow_mut();
-            block.body_mut().push_front(self.as_operation_ref());
-        }
-    }
-
-    pub fn insert_at_end(&mut self, mut block: BlockRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        {
-            let mut block = block.borrow_mut();
-            block.body_mut().push_back(self.as_operation_ref());
-        }
-    }
-
     pub fn insert_before(&mut self, before: OperationRef) {
         assert!(
             self.parent().is_none(),
