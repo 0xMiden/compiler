@@ -140,9 +140,9 @@ pub trait Builder: Listener {
                 position: point,
                 ..
             } => match point {
-                crate::Position::Before => op.borrow_mut().insert_before(other_op),
+                crate::Position::Before => op.insert_before(other_op),
                 crate::Position::After => {
-                    op.borrow_mut().insert_after(other_op);
+                    op.insert_after(other_op);
                     self.set_insertion_point(ProgramPoint::after(op));
                 }
             },
