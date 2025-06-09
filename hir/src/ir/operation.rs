@@ -1125,6 +1125,14 @@ impl Operation {
 
 /// Insertion
 impl Operation {
+    pub fn insert_at_start(&mut self, block: BlockRef) {
+        self.as_operation_ref().insert_at_start(block);
+    }
+
+    pub fn insert_at_end(&mut self, block: BlockRef) {
+        self.as_operation_ref().insert_at_end(block);
+    }
+
     pub fn insert_before(&mut self, before: OperationRef) {
         assert!(
             self.parent().is_none(),
