@@ -43,20 +43,6 @@ impl WorldBuilder {
     ) -> Result<ComponentRef, Report> {
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
         let component_ref = builder(ns, name, ver.clone())?;
-        let is_new = self
-            .world
-            .borrow_mut()
-            .symbol_manager_mut()
-            .insert_new(component_ref, crate::ProgramPoint::Invalid);
-        assert!(
-            is_new,
-            "component {} already exists in world",
-            ComponentId {
-                namespace: ns.name,
-                name: name.name,
-                version: ver
-            }
-        );
         Ok(component_ref)
     }
 
@@ -73,12 +59,6 @@ impl WorldBuilder {
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
         let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
         let module_ref = builder(name)?;
-        let is_new = self
-            .world
-            .borrow_mut()
-            .symbol_manager_mut()
-            .insert_new(module_ref, crate::ProgramPoint::Invalid);
-        assert!(is_new, "module with the name {name} already exists in world",);
         Ok(module_ref)
     }
 
