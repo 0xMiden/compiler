@@ -218,7 +218,30 @@ impl EntityListItem for Operation {
         to.borrow_mut().invalidate_op_order();
     }
 
-    fn on_removed(_this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {}
+    fn on_removed(this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {
+        let parent = this.nearest_symbol_table();
+        if let Some(mut parent) = parent {
+            // NOTE: We are using OperationName here to check if the Operation implements symbol to
+            // avoid borrowing if possible
+            if this.name().implements::<dyn Symbol>()
+                && parent.name().implements::<dyn SymbolTable>()
+            {
+                let mut symbol_table = parent.borrow_mut();
+                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().expect(
+                    "Could not cast parent operation {parent.name()} as SymbolTable, even though \
+                     it implements said trait",
+                );
+                let mut sym_manager = sym_manager.symbol_manager_mut();
+
+                let symbol_ref = this.borrow().as_symbol_ref().expect(
+                    "Could not cast operation {this.name()} as Symbol, even though it implements \
+                     said trait",
+                );
+
+                sym_manager.remove(symbol_ref);
+            };
+        }
+    }
 }
 
 impl EntityParent<Region> for Operation {
