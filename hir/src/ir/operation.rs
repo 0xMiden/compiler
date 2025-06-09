@@ -181,26 +181,26 @@ impl EntityWithParent for Operation {
 }
 impl EntityListItem for Operation {
     fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
-        let op = this;
-        // NOTE: There are functions that find you the closest parent and closest symbol table,
-        // however they are accesible via Operation rather than OperationRefs.
-        let mut parent = op.nearest_symbol_table().unwrap();
+        let parent = this.nearest_symbol_table();
+        if let Some(mut parent) = parent {
+            // NOTE: We are using OperationName here to check if the Operation implements symbol to
+            // avoid borrowing if possible
+            if this.name().implements::<dyn Symbol>()
+                && parent.name().implements::<dyn SymbolTable>()
+            {
+                std::dbg!("Here is where the SymbolTable should be modified");
+                std::println!("{} should be inserted in {}", this.name(), parent.name());
 
-        // NOTE: We are using OperationName here to check if the Operation implements symbol to
-        // avoid borrowing if possible
-        if op.name().implements::<dyn Symbol>() && parent.name().implements::<dyn SymbolTable>() {
-            std::dbg!("Here is where the SymbolTable should be modified");
-            std::println!("{} should be inserted in {}", op.name(), parent.name());
+                // There are no borrowing problem when it comes to the symbol_table.
+                let mut symbol_table = parent.borrow_mut();
+                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
+                let mut sym_manager = sym_manager.symbol_manager_mut();
 
-            // There are no borrowing problem when it comes to the parent.
-            let mut parent = parent.borrow_mut();
-            let sym_manager = parent.as_trait_mut::<dyn SymbolTable>().unwrap();
-            let mut sym_manager = sym_manager.symbol_manager_mut();
+                let symbol_ref = this.borrow().as_symbol_ref().unwrap();
 
-            let symbol_ref = op.borrow().as_symbol_ref().unwrap();
-
-            sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
-        };
+                sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
+            };
+        }
 
         let order_offset = core::mem::offset_of!(Operation, order);
         unsafe {
