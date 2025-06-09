@@ -301,12 +301,10 @@ impl OperationRef {
     pub fn nearest_symbol_table(&self) -> Option<OperationRef> {
         let mut parent = self.parent_op();
         while let Some(parent_op) = parent.take() {
-            let op = parent_op.borrow();
-            if op.implements::<dyn SymbolTable>() {
-                drop(op);
+            if parent_op.name().implements::<dyn SymbolTable>() {
                 return Some(parent_op);
             }
-            parent = op.parent_op();
+            parent = parent_op.parent_op();
         }
         None
     }
