@@ -6,6 +6,7 @@ export.note-script
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::miden:base/note-script@1.0.0#note-script
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init

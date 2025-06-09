@@ -52,6 +52,7 @@ export.process-word
     nop
     movdn.3
     swap.2
+    exec.::std::sys::truncate_stack
 end
 
 export.process-another-word
@@ -106,6 +107,7 @@ export.process-another-word
     nop
     movdn.3
     swap.2
+    exec.::std::sys::truncate_stack
 end
 
 export.process-felt
@@ -114,6 +116,7 @@ export.process-felt
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-felt
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init

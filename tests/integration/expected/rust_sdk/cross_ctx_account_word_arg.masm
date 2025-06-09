@@ -6,6 +6,7 @@ export.process-word
     exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg::miden:cross-ctx-account-word-arg/foo@1.0.0#process-word
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init

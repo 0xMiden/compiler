@@ -6,6 +6,7 @@ export.get-count
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden:counter-contract/counter@0.1.0#get-count
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.increment-count
@@ -14,6 +15,7 @@ export.increment-count
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden:counter-contract/counter@0.1.0#increment-count
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init

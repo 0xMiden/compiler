@@ -6,6 +6,7 @@ export.set-asset-qty
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#set-asset-qty
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.get-asset-qty
@@ -14,6 +15,7 @@ export.get-asset-qty
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#get-asset-qty
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init

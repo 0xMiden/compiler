@@ -6,6 +6,7 @@ export.receive-asset
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.send-asset
@@ -14,6 +15,7 @@ export.send-asset
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden:basic-wallet/basic-wallet@1.0.0#send-asset
     trace.252
     nop
+    exec.::std::sys::truncate_stack
 end
 
 export.init
