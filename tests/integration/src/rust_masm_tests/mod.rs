@@ -15,6 +15,7 @@ mod instructions;
 mod intrinsics;
 mod misc;
 mod rust_sdk;
+mod testnet;
 mod types;
 
 pub fn run_masm_vs_rust<T>(
