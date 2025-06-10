@@ -5,9 +5,38 @@ use miden:base/core-types@1.0.0;
 interface foo {
     use core-types.{word, felt};
 
+    // Test different struct shapes
+    record pair {
+        first: felt,
+        second: felt
+    }
+
+    record triple {
+        x: felt,
+        y: felt,
+        z: felt
+    }
+
+    record mixed-struct {
+        f: u64,
+        a: felt,
+        b: u32,
+        c: felt,
+    }
+
+    record nested-struct {
+        inner: pair,
+        value: felt
+    }
+
     process-word: func(input: word) -> word;
     process-another-word: func(input: word) -> word;
     process-felt: func(input: felt) -> felt;
+
+    process-pair: func(input: pair) -> pair;
+    process-triple: func(input: triple) -> triple;
+    process-mixed: func(input: mixed-struct) -> mixed-struct;
+    process-nested: func(input: nested-struct) -> nested-struct;
 }
 
 world foo-world {
