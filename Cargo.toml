@@ -165,6 +165,7 @@ codegen-units = 1
 opt-level = 2
 debug = true
 codegen-units = 1
+lto = "fat"
 
 # The following crates are always built with optimizations
 [profile.test.package.proptest]
