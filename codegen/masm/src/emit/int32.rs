@@ -353,7 +353,7 @@ impl OpEmitter<'_> {
         // Mask out any bits between N and 32.
         let unused_bits = 32 - n;
         if unused_bits > 0 {
-            self.const_mask_u32(1 << ((32 - unused_bits) - 1), span);
+            self.const_mask_u32((1 << (32 - unused_bits)) - 1, span);
         }
     }
 
