@@ -84,7 +84,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.128
+    push.255
     u32and
     push.0
     swap.1
