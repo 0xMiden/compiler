@@ -323,3 +323,78 @@ fn load_u16() {
         _ => panic!("Unexpected test result: {:?}", res),
     }
 }
+
+/// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
+#[test]
+fn load_bool() {
+    setup::enable_compiler_instrumentation();
+
+    let config = proptest::test_runner::Config::with_cases(10);
+    let res = TestRunner::new(config).run(&any::<bool>(), move |value| {
+        let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+
+        // Construct the link outputs to be populated
+        let link_output = setup::build_empty_component_for_test(context.clone());
+        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
+        // Rust stack)
+        let write_to = 17 * 2u32.pow(16);
+        let value_bytes = [value as u8];
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &value_bytes,
+        }];
+
+        // Generate a `test` module with `main` function that invokes load for bool when lowered to MASM
+        let signature = Signature::new(
+            [AbiParam::new(Type::from(PointerType::new(Type::I1)))],
+            [AbiParam::new(Type::I1)],
+        );
+        setup::build_entrypoint(link_output.component, &signature, |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
+
+        let args = [Felt::new(write_to as u64)];
+        let output = eval_link_output::<bool, _, _>(
+            link_output,
+            initializers,
+            &args,
+            context.session(),
+            |trace| {
+                let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
+                    TestCaseError::fail(format!(
+                        "expected {value} to have been written to byte address {write_to}, but \
+                         read from that address failed"
+                    ))
+                })?;
+                let stored_bool = stored != 0;
+                prop_assert_eq!(
+                    stored_bool,
+                    value,
+                    "expected {} to have been written to byte address {}, but found {} there \
+                     instead",
+                    value,
+                    write_to,
+                    stored_bool
+                );
+                Ok(())
+            },
+        )?;
+
+        prop_assert_eq!(output, value);
+
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
