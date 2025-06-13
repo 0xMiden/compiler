@@ -304,6 +304,11 @@ where
                     },
                 })),
                 OutputType::Masm => {
+                    if cargo_args.release {
+                        // user specified `--release` so let's not include any debug info into the compiled
+                        // MASM
+                        midenc_flags.push("--debug=none".into());
+                    }
                     let miden_out_dir =
                         metadata.target_directory.join("miden").join(if cargo_args.release {
                             "release"

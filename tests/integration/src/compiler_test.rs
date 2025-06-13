@@ -198,7 +198,7 @@ impl CompilerTestBuilder {
             "--remap-path-prefix".into(),
             format!("{workspace_dir}=../../").into(),
         ]);
-        let mut midenc_flags = vec!["--debug".into(), "--verbose".into()];
+        let mut midenc_flags = vec!["--verbose".into()];
         if let Some(entrypoint) = entrypoint {
             midenc_flags.extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         }
