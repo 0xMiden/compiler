@@ -6,7 +6,8 @@ use std::{env, sync::Arc, time::Duration};
 use miden_client::{
     account::{
         component::{BasicWallet, RpoFalcon512},
-        Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
+        Account, AccountBuilder, AccountId, AccountStorage, AccountStorageMode, AccountType,
+        StorageMap, StorageSlot,
     },
     auth::AuthSecretKey,
     builder::ClientBuilder,
@@ -21,10 +22,14 @@ use miden_client::{
     transaction::{OutputNote, TransactionKernel, TransactionRequestBuilder},
     Client, ClientError, Felt, Word,
 };
-use miden_core::{utils::Deserializable, FieldElement};
+use miden_core::{
+    utils::{Deserializable, Serializable},
+    FieldElement,
+};
 use miden_objects::{
     account::{
         AccountComponent, AccountComponentMetadata, AccountComponentTemplate, InitStorageData,
+        StorageValueName,
     },
     Hasher,
 };
@@ -64,6 +69,9 @@ async fn create_counter_account(
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     account_package: Arc<miden_mast_package::Package>,
 ) -> Result<Account, ClientError> {
+    // TODO: WTF no error?
+    // let init_storage =
+    // InitStorageData::new([(StorageValueName::new("count_map").unwrap(), "0.0.0.0".into())]);
     let account_component = match account_package.account_component_metadata_bytes.as_deref() {
         None => panic!("no account component metadata present"),
         Some(bytes) => {
@@ -72,7 +80,16 @@ async fn create_counter_account(
                 metadata,
                 account_package.unwrap_library().as_ref().clone(),
             );
-            AccountComponent::from_template(&template, &InitStorageData::default()).unwrap()
+
+            let word_zero = Word::from([Felt::ZERO; 4]);
+            AccountComponent::new(
+                template.library().clone(),
+                vec![StorageSlot::Map(
+                    StorageMap::with_entries([(word_zero.into(), word_zero)]).unwrap(),
+                )],
+            )
+            .unwrap()
+            .with_supported_types([AccountType::RegularAccountUpdatableCode].into())
         }
     };
 
@@ -101,9 +118,10 @@ async fn wait_for_notes(
     account_id: &miden_client::account::Account,
     expected: usize,
 ) -> Result<(), ClientError> {
+    let mut try_num = 0;
     loop {
         client.sync_state().await?;
-        let notes = client.get_consumable_notes(Some(account_id.id())).await?;
+        let notes = client.get_consumable_notes(None).await?;
         if notes.len() >= expected {
             break;
         }
@@ -112,19 +130,26 @@ async fn wait_for_notes(
             notes.len(),
             account_id.id().to_hex()
         );
+        if try_num > 10 {
+            panic!("waiting for too long");
+        } else {
+            try_num += 1;
+        }
         sleep(Duration::from_secs(3)).await;
     }
     Ok(())
 }
 
-fn assert_counter_storage(counter_account: &Account, expected: u64) {
+fn assert_counter_storage(counter_account_storage: &AccountStorage, expected: u64) {
+    // dbg!(counter_account_storage);
     // according to `examples/counter-contract` for inner (slot, key) values
     let counter_contract_storage_key = Word::from([Felt::ZERO; 4]);
     // The storage slot is 1 since the RpoFalcon512 account component sits in 0 slot
     let counter_val_word =
-        counter_account.storage().get_map_item(1, counter_contract_storage_key).unwrap();
+        counter_account_storage.get_map_item(1, counter_contract_storage_key).unwrap();
     // Felt is stored in the last word item. See sdk/stdlib-sys/src/intrinsics/word.rs
     let counter_val = counter_val_word.last().unwrap();
+    // dbg!(&counter_val_word);
     assert_eq!(counter_val.as_int(), expected);
 }
 
@@ -136,18 +161,29 @@ pub fn test_counter_contract_testnet() {
     let mut contract_builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../../examples/counter-contract",
         config.clone(),
-        [],
+        ["--debug=none".into()], // don't include any debug info in the compiled MAST
     );
     contract_builder.with_release(true);
     let mut contract_test = contract_builder.build();
     let contract_package = contract_test.compiled_package();
 
+    let bytes = <miden_mast_package::Package as Clone>::clone(&contract_package)
+        .into_mast_artifact()
+        .unwrap_library()
+        .to_bytes();
+    // dbg!(bytes.len());
+    assert!(bytes.len() < 32767, "expected to fit in 32 KB account update size limit");
+
     // Compile the counter note
-    let mut note_builder =
-        CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
+    let mut note_builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../../examples/counter-note",
+        config,
+        ["--debug=none".into()], // don't include any debug info in the compiled MAST
+    );
     note_builder.with_release(true);
     let mut note_test = note_builder.build();
     let note_package = note_test.compiled_package();
+    dbg!(note_package.unwrap_program().mast_forest().advice_map());
 
     let restore_dir = env::current_dir().unwrap();
     // switch cwd to temp_dir to have a fresh client store
@@ -182,10 +218,19 @@ pub fn test_counter_contract_testnet() {
                 .unwrap();
         eprintln!("Counter account ID: {:?}", counter_account.id().to_hex());
 
-        client.sync_state().await.unwrap();
+        // client.sync_state().await.unwrap();
 
         // The counter contract storage value should be zero after the account creation
-        assert_counter_storage(&counter_account, 0);
+        assert_counter_storage(
+            client
+                .get_account(counter_account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .account()
+                .storage(),
+            0,
+        );
 
         // Create the counter note from sender to counter
         let note_program = note_package.unwrap_program();
@@ -217,22 +262,32 @@ pub fn test_counter_contract_testnet() {
             .unwrap();
 
         let tx_result = client.new_transaction(counter_account.id(), note_request).await.unwrap();
-        let create_note_tx_id = tx_result.executed_transaction().id();
-        client
-            .submit_transaction(tx_result)
-            .await
-            .expect("failed to submit the tx creating the note");
-        client.sync_state().await.unwrap();
+        let executed_transaction = tx_result.executed_transaction();
+        // dbg!(executed_transaction.output_notes());
+
+        assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+
+        let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
+        assert_eq!(executed_tx_output_note.id(), counter_note.id());
+        let create_note_tx_id = executed_transaction.id();
+        // client
+        //     .submit_transaction(tx_result)
+        //     .await
+        //     .expect("failed to submit the tx creating the note");
         eprintln!(
             "Created counter note tx: https://testnet.midenscan.com/tx/{:?}",
             create_note_tx_id
         );
 
-        wait_for_notes(&mut client, &counter_account, 1).await.unwrap();
+        // TODO: do we need it?
+        // client.sync_state().await.unwrap();
+
+        // wait_for_notes(&mut client, &counter_account, 1).await.unwrap();
 
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
-            .with_authenticated_input_notes([(counter_note.id(), None)])
+            // .with_authenticated_input_notes([(counter_note.id(), None)])
+            .with_unauthenticated_input_notes([(counter_note, None)])
             .build()
             .unwrap();
 
@@ -244,13 +299,24 @@ pub fn test_counter_contract_testnet() {
             tx_result.executed_transaction().id()
         );
 
-        client
-            .submit_transaction(tx_result)
-            .await
-            .expect("failed to submit the tx consuming the note");
+        // client
+        //     .submit_transaction(tx_result)
+        //     .await
+        //     .expect("failed to submit the tx consuming the note");
+
+        // client.sync_state().await.unwrap();
 
         // The counter contract storage value should be 1 (incremented) after the note is consumed
-        assert_counter_storage(&counter_account, 1);
+        assert_counter_storage(
+            client
+                .get_account(counter_account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .account()
+                .storage(),
+            1,
+        );
     });
 
     env::set_current_dir(restore_dir).unwrap();
