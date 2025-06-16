@@ -133,6 +133,7 @@ pub struct Compiler {
     ))]
     pub target: TargetEnv,
     /// Specify the function to call as the entrypoint for the program
+    /// in the format `<module_name>::<function>`
     #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler", hide(true)))]
     pub entrypoint: Option<String>,
     /// Tells the compiler to produce an executable Miden program

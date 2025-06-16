@@ -45,6 +45,7 @@ pub struct Debugger {
     )]
     pub target: TargetEnv,
     /// Specify the function to call as the entrypoint for the program
+    /// in the format `<module_name>::<function>`
     #[arg(long, help_heading = "Compiler", hide(true))]
     pub entrypoint: Option<String>,
     /// Specify one or more search paths for link libraries requested via `-l`
