@@ -206,12 +206,11 @@ fn generate_lowering_with_transformation(
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
     // https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing
-    let mut offset = 0u32;
     assert_eq!(import_func_ty.results.len(), 1, "expected a single result type");
     let result_type = &import_func_ty.results[0];
     let mut results_iter = results.into_iter();
 
-    store(fb, *output_ptr, result_type, &mut offset, &mut results_iter, span)?;
+    store(fb, *output_ptr, result_type, &mut results_iter, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, [], span)?;

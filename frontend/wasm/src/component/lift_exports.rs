@@ -182,7 +182,6 @@ fn generate_lifting_with_transformation(
 
     // Load values from the core function's result pointer using recursive loading
     let mut return_values = SmallVec::<[ValueRef; 8]>::new();
-    let mut offset = 0u32;
 
     // Load results using the recursive function from canon_abi_utils
     assert_eq!(
@@ -192,7 +191,7 @@ fn generate_lifting_with_transformation(
     );
     let result_type = &export_func_ty.results[0];
 
-    load(&mut fb, result_ptr, result_type, &mut offset, &mut return_values, span)?;
+    load(&mut fb, result_ptr, result_type, &mut return_values, span)?;
 
     assert!(
         return_values.len() <= 16,
