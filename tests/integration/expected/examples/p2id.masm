@@ -347,52 +347,32 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.3735929054
         push.5
-        movup.4
+        movup.3
         swap.1
         u32shl
-        dup.2
-        dup.2
-        dup.3
-        swap.1
-        swap.6
-        swap.4
-        swap.5
-        swap.1
-        swap.7
-        swap.2
+        dup.1
         swap.3
+        swap.4
+        swap.2
+        swap.1
         push.1
         while.true
-            movup.5
-            drop
-            movup.5
-            drop
-            movup.5
-            drop
             push.0
             push.0
             dup.2
             swap.1
             eq
             neq
+            dup.0
             if.true
+                movdn.2
                 drop
                 drop
-                push.0
-                push.1
                 push.3735929054
                 dup.0
-                dup.1
-                dup.2
-                dup.3
-                swap.1
-                swap.3
-                swap.1
-                swap.4
             else
-                dup.1
+                dup.2
                 push.4
                 dup.1
                 swap.1
@@ -407,23 +387,6 @@ export.miden:base/note-script@1.0.0#note-script
                 trace.252
                 nop
                 push.4
-                dup.3
-                add
-                u32assert
-                push.4
-                dup.1
-                swap.1
-                u32mod
-                u32assert
-                assertz
-                u32divmod.4
-                swap.1
-                trace.240
-                nop
-                exec.::intrinsics::mem::load_felt
-                trace.252
-                nop
-                push.8
                 dup.4
                 add
                 u32assert
@@ -440,8 +403,25 @@ export.miden:base/note-script@1.0.0#note-script
                 exec.::intrinsics::mem::load_felt
                 trace.252
                 nop
-                push.12
+                push.8
                 dup.5
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_felt
+                trace.252
+                nop
+                push.12
+                dup.6
                 add
                 u32assert
                 push.4
@@ -464,29 +444,52 @@ export.miden:base/note-script@1.0.0#note-script
                 exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
                 trace.252
                 nop
-                push.1
-                push.0
                 push.32
-                movup.4
+                movup.3
                 swap.1
                 u32wrapping_add
                 push.4294967264
-                movup.4
+                movup.3
                 swap.1
                 u32wrapping_add
-                dup.4
-                dup.6
-                dup.8
-                swap.4
-                swap.1
-                swap.3
             end
-            movup.5
-            drop
-            movup.5
+            push.3735929054
+            dup.3
+            dup.7
+            swap.2
+            swap.1
+            cdrop
+            push.3735929054
+            dup.4
+            dup.7
+            swap.2
+            swap.1
+            cdrop
+            push.3735929054
+            dup.5
+            dup.7
+            swap.2
+            swap.1
+            cdrop
+            push.1
+            push.0
+            movup.7
+            cdrop
             push.1
             u32and
+            swap.1
+            swap.3
+            swap.5
+            swap.2
+            swap.4
+            swap.1
             if.true
+                movup.5
+                drop
+                movup.5
+                drop
+                movup.5
+                drop
                 push.1
             else
                 push.0
@@ -676,24 +679,24 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
         swap.1
         u32gt
         neq
+        dup.0
         if.true
+            movdn.3
             drop
             drop
             drop
-            push.0
             push.3735929054
         else
             push.0
-            dup.1
-            swap.1
+            dup.2
             u32wrapping_sub
             push.4294967295
-            movup.4
-            dup.3
+            movup.5
+            dup.4
             u32wrapping_add
             u32wrapping_add
             u32and
-            dup.2
+            dup.3
             push.4
             dup.1
             swap.1
@@ -710,8 +713,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             push.0
             neq
             if.true
-                push.0
-                swap.3
+                nop
             else
                 trace.240
                 nop
@@ -723,7 +725,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 exec.::intrinsics::mem::memory_size
                 trace.252
                 nop
-                dup.4
+                dup.5
                 push.4
                 dup.1
                 swap.1
@@ -745,10 +747,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 exec.::intrinsics::mem::store_sw
                 trace.252
                 nop
-                push.0
-                swap.3
             end
-            dup.0
+            dup.3
             push.4
             dup.1
             swap.1
@@ -763,7 +763,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             trace.252
             nop
             push.0
-            dup.3
+            dup.2
             push.268435456
             dup.3
             u32wrapping_sub
@@ -771,13 +771,14 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             u32lt
             neq
             if.true
-                dropw
-                push.1
-                swap.1
+                drop
+                drop
+                movdn.2
+                drop
+                drop
+                push.0
             else
                 movup.4
-                drop
-                swap.1
                 push.4
                 dup.1
                 swap.1
@@ -795,12 +796,15 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 exec.::intrinsics::mem::store_sw
                 trace.252
                 nop
-                push.1
-                swap.1
                 movup.2
                 u32wrapping_add
             end
         end
+        push.1
+        push.0
+        movup.3
+        cdrop
+        swap.1
     end
     push.0
     movup.2
@@ -1489,28 +1493,29 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
         swap.1
         u32lte
         neq
+        dup.0
         if.true
             push.0
-            dup.1
+            dup.2
             swap.1
             neq
             if.true
                 push.0
-                movup.5
+                movup.6
                 swap.1
                 neq
                 if.true
                     push.1
-                    dup.2
-                    dup.6
                     dup.3
+                    dup.7
+                    dup.4
                     swap.2
                     trace.240
                     nop
                     exec.::miden:base/note-script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
                     trace.252
                     nop
-                    dup.1
+                    dup.2
                     push.4
                     dup.1
                     swap.1
@@ -1524,20 +1529,13 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    movup.2
-                    swap.5
-                    swap.4
-                    movdn.2
-                    swap.1
-                    swap.3
-                    swap.1
                 else
                     push.8
-                    dup.2
+                    dup.3
                     swap.1
                     u32wrapping_add
-                    dup.5
-                    dup.2
+                    dup.6
+                    dup.3
                     swap.2
                     trace.240
                     nop
@@ -1545,7 +1543,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     trace.252
                     nop
                     push.8
-                    dup.2
+                    dup.3
                     add
                     u32assert
                     push.4
@@ -1561,13 +1559,6 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    movup.2
-                    swap.5
-                    swap.4
-                    movdn.2
-                    swap.1
-                    swap.3
-                    swap.1
                 end
                 push.0
                 push.0
@@ -1575,13 +1566,14 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 swap.1
                 eq
                 neq
+                dup.0
                 if.true
-                    movup.2
+                    swap.6
                     swap.1
                     drop
                     drop
                     push.8
-                    dup.1
+                    dup.4
                     add
                     u32assert
                     push.4
@@ -1600,7 +1592,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     trace.252
                     nop
                     push.4
-                    dup.1
+                    dup.3
                     add
                     u32assert
                     push.4
@@ -1609,7 +1601,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     u32mod
                     u32assert
                     assertz
-                    movup.2
+                    movup.5
                     swap.1
                     u32divmod.4
                     swap.1
@@ -1618,23 +1610,13 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     exec.::intrinsics::mem::store_sw
                     trace.252
                     nop
-                    push.1
-                    push.1
-                    push.3735929054
-                    dup.0
-                    movup.2
-                    swap.3
-                    swap.5
-                    swap.4
-                    movdn.2
-                    swap.1
                 else
-                    swap.4
+                    swap.7
                     movup.3
                     drop
                     drop
                     push.8
-                    dup.1
+                    dup.4
                     add
                     u32assert
                     push.4
@@ -1643,8 +1625,6 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     u32mod
                     u32assert
                     assertz
-                    movup.3
-                    swap.1
                     u32divmod.4
                     swap.1
                     trace.240
@@ -1653,7 +1633,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     trace.252
                     nop
                     push.4
-                    dup.1
+                    dup.3
                     add
                     u32assert
                     push.4
@@ -1662,7 +1642,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     u32mod
                     u32assert
                     assertz
-                    movup.2
+                    movup.4
                     swap.1
                     u32divmod.4
                     swap.1
@@ -1671,29 +1651,22 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     exec.::intrinsics::mem::store_sw
                     trace.252
                     nop
-                    push.1
-                    push.0
-                    push.3735929054
-                    dup.0
-                    movup.2
-                    swap.3
-                    swap.5
-                    swap.4
-                    movdn.2
-                    swap.1
                 end
+                push.0
+                push.1
+                movup.5
+                cdrop
             else
                 movup.2
-                swap.4
+                swap.5
                 movdn.2
-                swap.1
-                swap.3
+                swap.4
                 swap.1
                 drop
                 drop
                 drop
                 push.8
-                dup.2
+                dup.1
                 add
                 u32assert
                 push.4
@@ -1702,7 +1675,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 u32mod
                 u32assert
                 assertz
-                movup.3
+                movup.4
                 swap.1
                 u32divmod.4
                 swap.1
@@ -1712,7 +1685,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 trace.252
                 nop
                 push.4
-                dup.2
+                dup.1
                 add
                 u32assert
                 push.4
@@ -1730,33 +1703,56 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 exec.::intrinsics::mem::store_sw
                 trace.252
                 nop
-                push.1
                 push.0
-                push.3735929054
-                dup.0
-                movup.2
+                swap.1
                 swap.3
-                swap.5
-                movdn.2
+                swap.2
                 swap.1
             end
         else
-            drop
-            movup.2
-            drop
-            movup.2
-            drop
-            movup.2
-            drop
-            push.0
-            push.3735929054
-            dup.0
-            dup.1
-            swap.4
             swap.1
-            swap.3
-            swap.5
+            drop
+            movup.3
+            drop
+            movup.3
+            drop
+            movup.3
+            drop
+            push.3735929054
         end
+        push.0
+        push.1
+        dup.3
+        cdrop
+        push.3735929054
+        dup.3
+        dup.5
+        swap.1
+        cdrop
+        push.3735929054
+        dup.4
+        dup.7
+        swap.1
+        cdrop
+        push.3735929054
+        dup.5
+        movup.2
+        swap.7
+        movdn.2
+        cdrop
+        push.3735929054
+        movup.2
+        swap.7
+        movdn.2
+        swap.1
+        swap.5
+        cdrop
+        swap.1
+        swap.5
+        swap.4
+        swap.2
+        swap.3
+        swap.1
     end
     movup.5
     eq.0
@@ -1942,7 +1938,6 @@ proc.alloc::alloc::Global::alloc_impl
     if.true
         movup.3
         drop
-        movup.2
         swap.1
     else
         push.0
@@ -1957,7 +1952,6 @@ proc.alloc::alloc::Global::alloc_impl
             exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc_zeroed
             trace.252
             nop
-            movdn.2
         else
             swap.1
             dup.2
@@ -1966,11 +1960,10 @@ proc.alloc::alloc::Global::alloc_impl
             exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc
             trace.252
             nop
-            movdn.2
         end
     end
     push.4
-    dup.1
+    dup.2
     add
     u32assert
     push.4
@@ -1979,7 +1972,7 @@ proc.alloc::alloc::Global::alloc_impl
     u32mod
     u32assert
     assertz
-    movup.2
+    movup.3
     swap.1
     u32divmod.4
     swap.1
@@ -1988,6 +1981,7 @@ proc.alloc::alloc::Global::alloc_impl
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    swap.1
     push.4
     dup.1
     swap.1
@@ -2017,7 +2011,6 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
         drop
         push.0
         push.4
-        movup.2
     else
         dup.1
         push.4
@@ -2039,18 +2032,20 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
         swap.1
         eq
         neq
+        dup.0
         if.true
+            swap.1
             drop
-            movdn.3
+            movup.2
             drop
+            movup.2
             drop
+            movup.2
             drop
             push.0
-            push.4
-            movup.2
         else
             push.4
-            dup.2
+            dup.3
             add
             u32assert
             push.4
@@ -2059,7 +2054,7 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
             u32mod
             u32assert
             assertz
-            movup.4
+            movup.5
             swap.1
             u32divmod.4
             swap.1
@@ -2069,7 +2064,7 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
             trace.252
             nop
             push.4
-            movup.3
+            movup.4
             add
             u32assert
             push.4
@@ -2085,7 +2080,7 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
             exec.::intrinsics::mem::load_sw
             trace.252
             nop
-            dup.2
+            dup.3
             push.4
             dup.1
             swap.1
@@ -2099,16 +2094,21 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
             exec.::intrinsics::mem::store_sw
             trace.252
             nop
-            movup.2
+            swap.1
+            movup.3
             trace.240
             nop
             exec.::intrinsics::i32::wrapping_mul
             trace.252
             nop
-            push.8
-            movup.2
         end
+        push.8
+        push.4
+        movup.3
+        cdrop
     end
+    movup.2
+    swap.1
     u32wrapping_add
     push.4
     dup.1

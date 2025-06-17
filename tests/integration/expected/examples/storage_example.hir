@@ -176,9 +176,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v155 = arith.zext v154 : u32;
             v156 = hir.bitcast v155 : i32;
             v158 = arith.neq v156, v423 : i1;
-            v408 = scf.if v158 : i32 {
+            scf.if v158{
             ^block45:
-                scf.yield v91;
+                scf.yield ;
             } else {
             ^block20:
                 v421 = arith.constant 0 : i32;
@@ -189,9 +189,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
                 v163 = arith.zext v162 : u32;
                 v164 = hir.bitcast v163 : i32;
                 v166 = arith.neq v164, v421 : i1;
-                v410 = scf.if v166 : i32 {
+                scf.if v166{
                 ^block44:
-                    scf.yield v91;
+                    scf.yield ;
                 } else {
                 ^block21:
                     v419 = arith.constant 0 : i32;
@@ -202,9 +202,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
                     v171 = arith.zext v170 : u32;
                     v172 = hir.bitcast v171 : i32;
                     v174 = arith.neq v172, v419 : i1;
-                    v412 = scf.if v174 : i32 {
+                    scf.if v174{
                     ^block43:
-                        scf.yield v91;
+                        scf.yield ;
                     } else {
                     ^block22:
                         v417 = arith.constant 0 : i32;
@@ -215,9 +215,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
                         v179 = arith.zext v178 : u32;
                         v180 = hir.bitcast v179 : i32;
                         v182 = arith.neq v180, v417 : i1;
-                        v413 = scf.if v182 : i32 {
+                        scf.if v182{
                         ^block42:
-                            scf.yield v91;
+                            scf.yield ;
                         } else {
                         ^block23:
                             v183 = arith.constant 96 : i32;
@@ -229,17 +229,17 @@ builtin.component miden:storage-example/foo@1.0.0 {
                             v416 = arith.constant 32 : i32;
                             v186 = arith.add v95, v416 : i32 #[overflow = wrapping];
                             hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden_base_sys::bindings::storage::set_map_item(v186, v415, v95, v189)
-                            scf.yield v91;
+                            scf.yield ;
                         };
-                        scf.yield v413;
+                        scf.yield ;
                     };
-                    scf.yield v412;
+                    scf.yield ;
                 };
-                scf.yield v410;
+                scf.yield ;
             };
             v191 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : ptr<byte, u8>
             v192 = hir.bitcast v191 : ptr<byte, i32>;
-            hir.store v192, v408;
+            hir.store v192, v91;
             builtin.ret ;
         };
 
