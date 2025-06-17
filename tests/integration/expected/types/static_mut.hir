@@ -22,44 +22,38 @@ builtin.component root_ns:root@1.0.0 {
         public builtin.function @__main() -> i32 {
         ^block8:
             hir.exec @root_ns:root@1.0.0/test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4/global_var_update()
-            v48 = ub.poison i32 : i32;
             v17 = arith.constant 0 : i32;
             v19 = arith.constant -9 : i32;
-            v56, v57, v58 = scf.while v19, v17, v48 : i32, i32, i32 {
-            ^block10(v20: i32, v27: i32, v52: i32):
+            v74, v75, v76 = scf.while v19, v17 : i32, i32, i32 {
+            ^block21(v77: i32, v78: i32):
                 v21 = arith.constant 1048585 : i32;
-                v22 = arith.add v20, v21 : i32 #[overflow = wrapping];
+                v22 = arith.add v77, v21 : i32 #[overflow = wrapping];
                 v23 = hir.bitcast v22 : u32;
                 v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
                 v25 = hir.load v24 : u8;
-                v28 = hir.bitcast v27 : u32;
+                v28 = hir.bitcast v78 : u32;
                 v26 = arith.zext v25 : u32;
                 v29 = arith.add v26, v28 : u32 #[overflow = wrapping];
                 v30 = hir.bitcast v29 : i32;
                 v31 = arith.constant 1 : i32;
-                v32 = arith.add v20, v31 : i32 #[overflow = wrapping];
-                v73 = arith.constant 0 : i32;
-                v34 = arith.neq v32, v73 : i1;
-                v66, v67, v68, v69 = scf.if v34 : i32, i32, u32, u32 {
-                ^block13:
-                    v47 = arith.constant 1 : u32;
-                    v42 = arith.constant 0 : u32;
-                    scf.yield v32, v30, v42, v47;
-                } else {
-                ^block20:
-                    v70 = arith.constant 0 : u32;
-                    v71 = arith.constant 1 : u32;
-                    v72 = ub.poison i32 : i32;
-                    scf.yield v72, v72, v71, v70;
-                };
-                v65 = arith.trunc v69 : i1;
-                scf.condition v65, v66, v67, v30;
+                v32 = arith.add v77, v31 : i32 #[overflow = wrapping];
+                v83 = arith.constant 0 : i32;
+                v34 = arith.neq v32, v83 : i1;
+                v82 = ub.poison i32 : i32;
+                v71 = cf.select v34, v30, v82 : i32;
+                v48 = ub.poison i32 : i32;
+                v70 = cf.select v34, v32, v48 : i32;
+                v42 = arith.constant 0 : u32;
+                v47 = arith.constant 1 : u32;
+                v73 = cf.select v34, v47, v42 : u32;
+                v65 = arith.trunc v73 : i1;
+                scf.condition v65, v70, v71, v30;
             } do {
-            ^block19(v62: i32, v63: i32, v64: i32):
-                scf.yield v62, v63, v64;
+            ^block22(v79: i32, v80: i32, v81: i32):
+                scf.yield v79, v80;
             };
             v35 = arith.constant 255 : i32;
-            v36 = arith.band v58, v35 : i32;
+            v36 = arith.band v76, v35 : i32;
             builtin.ret v36;
         };
 

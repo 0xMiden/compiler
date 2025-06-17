@@ -47,6 +47,13 @@ impl Pass for LiftControlFlowToSCF {
         true
     }
 
+    fn initialize(&mut self, context: Rc<midenc_hir::Context>) -> Result<(), Report> {
+        // Ensure that when this pass is initialized, that the SCF dialect is registered
+        context.get_or_register_dialect::<crate::ScfDialect>();
+
+        Ok(())
+    }
+
     fn run_on_operation(
         &mut self,
         op: EntityMut<'_, Self::Target>,

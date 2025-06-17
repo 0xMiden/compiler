@@ -2,39 +2,39 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @fibonacci {
         public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
-            v25 = ub.poison i32 : i32;
             v2 = arith.constant 0 : i32;
             v4 = arith.constant 1 : i32;
-            v35, v36, v37, v38 = scf.while v4, v0, v2, v25 : i32, i32, i32, i32 {
-            ^block7(v5: i32, v6: i32, v15: i32, v30: i32):
-                v56 = arith.constant 0 : i32;
-                v57 = arith.constant 0 : i32;
-                v8 = arith.eq v6, v57 : i1;
+            v58, v59, v60, v61 = scf.while v4, v0, v2 : i32, i32, i32, i32 {
+            ^block18(v62: i32, v63: i32, v64: i32):
+                v70 = arith.constant 0 : i32;
+                v71 = arith.constant 0 : i32;
+                v8 = arith.eq v63, v71 : i1;
                 v9 = arith.zext v8 : u32;
                 v10 = hir.bitcast v9 : i32;
-                v12 = arith.neq v10, v56 : i1;
-                v48, v49, v50, v51, v52 = scf.if v12 : i32, i32, i32, u32, u32 {
+                v12 = arith.neq v10, v70 : i1;
+                v53, v54 = scf.if v12 : i32, i32 {
                 ^block17:
-                    v18 = arith.constant 0 : u32;
-                    v24 = arith.constant 1 : u32;
-                    v55 = ub.poison i32 : i32;
-                    scf.yield v55, v55, v55, v24, v18;
+                    v25 = ub.poison i32 : i32;
+                    scf.yield v25, v25;
                 } else {
                 ^block9:
-                    v53 = arith.constant 1 : u32;
-                    v54 = arith.constant 0 : u32;
                     v13 = arith.constant -1 : i32;
-                    v14 = arith.add v6, v13 : i32 #[overflow = wrapping];
-                    v16 = arith.add v15, v5 : i32 #[overflow = wrapping];
-                    scf.yield v16, v14, v5, v54, v53;
+                    v14 = arith.add v63, v13 : i32 #[overflow = wrapping];
+                    v16 = arith.add v64, v62 : i32 #[overflow = wrapping];
+                    scf.yield v16, v14;
                 };
-                v47 = arith.trunc v52 : i1;
-                scf.condition v47, v48, v49, v50, v15;
+                v69 = ub.poison i32 : i32;
+                v55 = cf.select v12, v69, v62 : i32;
+                v24 = arith.constant 1 : u32;
+                v18 = arith.constant 0 : u32;
+                v57 = cf.select v12, v18, v24 : u32;
+                v47 = arith.trunc v57 : i1;
+                scf.condition v47, v53, v54, v55, v64;
             } do {
-            ^block16(v43: i32, v44: i32, v45: i32, v46: i32):
-                scf.yield v43, v44, v45, v46;
+            ^block19(v65: i32, v66: i32, v67: i32, v68: i32):
+                scf.yield v65, v66, v67;
             };
-            builtin.ret v38;
+            builtin.ret v61;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
