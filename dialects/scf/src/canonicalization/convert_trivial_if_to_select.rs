@@ -50,7 +50,6 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         let Some(if_op) = op.downcast_ref::<If>() else {
             return Ok(false);
         };
-        let if_op_ref = unsafe { UnsafeIntrusiveEntityRef::from_raw(if_op) };
 
         let span = if_op.span();
         let cond = if_op.condition().as_value_ref();
@@ -93,17 +92,13 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         //
         // Then, use either the new `scf.if`, or the original, as the anchor for inserting hoisted
         // `hir.select`s.
-        let anchor = if !non_hoistable.is_empty() {
+        let anchor = {
             // Create a new `scf.if` with the non-hoistable results
             let mut new_if = rewriter.r#if(cond, &non_hoistable, span)?;
             let mut new_if_op = new_if.borrow_mut();
             new_if_op.then_body_mut().take_body(then_region);
             new_if_op.else_body_mut().take_body(else_region);
             new_if
-        } else {
-            // We can hoist everything from the original `scf.if`, so we do not need to create a
-            // new one, we can simply insert all of the selects and then erase the scf.if
-            if_op_ref
         };
 
         // Insert `scf.select` ops for each hoisted result
@@ -139,26 +134,35 @@ impl RewritePattern for ConvertTrivialIfToSelect {
             }
         }
 
-        // If we have non-hoistable values, rewrite the `scf.yield` ops in the new `scf.if`
-        if !non_hoistable.is_empty() {
-            let new_then_yield = anchor_op.then_yield();
-            let new_else_yield = anchor_op.else_yield();
+        // Rewrite the `scf.yield` ops in the new `scf.if`
+        let new_then_yield = anchor_op.then_yield();
+        let new_else_yield = anchor_op.else_yield();
 
-            rewriter
-                .set_insertion_point_to_end(new_then_region.borrow().entry_block_ref().unwrap());
-            let replacement_then_yield = rewriter.r#yield(true_yields, span)?.as_operation_ref();
-            rewriter.replace_op(new_then_yield.as_operation_ref(), replacement_then_yield);
+        rewriter.set_insertion_point_to_end(new_then_region.borrow().entry_block_ref().unwrap());
+        let replacement_then_yield = rewriter.r#yield(true_yields, span)?.as_operation_ref();
+        rewriter.replace_op(new_then_yield.as_operation_ref(), replacement_then_yield);
 
-            rewriter
-                .set_insertion_point_to_end(new_else_region.borrow().entry_block_ref().unwrap());
-            let replacement_else_yield = rewriter.r#yield(false_yields, span)?;
-            rewriter.replace_op(
-                new_else_yield.as_operation_ref(),
-                replacement_else_yield.as_operation_ref(),
-            );
-        }
+        rewriter.set_insertion_point_to_end(new_else_region.borrow().entry_block_ref().unwrap());
+        let replacement_else_yield = rewriter.r#yield(false_yields, span)?;
+        rewriter.replace_op(
+            new_else_yield.as_operation_ref(),
+            replacement_else_yield.as_operation_ref(),
+        );
+
+        // Determine if the new `scf.if` is redundant, i.e. returns no results and does no work
+        let is_noop = non_hoistable.is_empty()
+            && anchor_op.then_body().entry().body().len() == 1
+            && anchor_op.else_body().entry().body().len() == 1;
+
+        // Drop our reference to the new `scf.if`
         drop(anchor_op);
 
+        // If the new `scf.if` is a no-op, remove it
+        if is_noop {
+            rewriter.erase_op(anchor.as_operation_ref());
+        }
+
+        // Replace the original results with the new ones
         rewriter.replace_op_with_values(operation, &results);
 
         Ok(true)

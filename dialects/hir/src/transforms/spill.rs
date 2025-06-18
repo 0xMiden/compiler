@@ -27,6 +27,12 @@ impl Pass for TransformSpills {
         true
     }
 
+    fn initialize(&mut self, context: Rc<midenc_hir::Context>) -> Result<(), Report> {
+        context.get_or_register_dialect::<crate::HirDialect>();
+
+        Ok(())
+    }
+
     fn run_on_operation(
         &mut self,
         op: EntityMut<'_, Self::Target>,

@@ -4,51 +4,50 @@ public builtin.function @test(v0: ptr<byte, u32>, v1: u32, v2: u32) -> u32 {
     v27 = ub.poison u32 : u32;
     v26 = arith.constant 1 : u32;
     v21 = arith.constant 0 : u32;
-    v39, v40, v41, v42 = scf.while v21, v21, v27, v27 : u32, u32, u32, u32 {
-    ^block1(v3: u32, v4: u32, v32: u32, v34: u32):
-        v8 = arith.lt v3, v1 : i1;
+    v143, v144, v145, v146 = scf.while v21, v21 : u32, u32, u32, u32 {
+    ^block27(v147: u32, v148: u32):
+        v8 = arith.lt v147, v1 : i1;
         v111, v112, v113, v114 = scf.if v8 : u32, u32, u32, u32 {
         ^block3:
-            v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
-            v82, v83, v84, v85, v86, v87, v88, v89 = scf.while v21, v4, v27, v27, v27, v27, v27, v27 : u32, u32, u32, u32, u32, u32, u32, u32 {
-            ^block2(v5: u32, v6: u32, v63: u32, v65: u32, v67: u32, v69: u32, v71: u32, v73: u32):
-                v10 = arith.lt v5, v2 : i1;
-                v127, v128, v129, v130, v131, v132, v133, v134 = scf.if v10 : u32, u32, u32, u32, u32, u32, u32, u32 {
+            v9 = arith.mul v147, v2 : u32 #[overflow = unchecked];
+            v183, v184, v185, v186, v187, v188, v189 = scf.while v21, v148 : u32, u32, u32, u32, u32, u32, u32 {
+            ^block31(v190: u32, v191: u32):
+                v10 = arith.lt v190, v2 : i1;
+                v177, v178, v179, v180, v181, v182 = scf.if v10 : u32, u32, u32, u32, u32, u32 {
                 ^block5:
-                    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
+                    v12 = arith.add v9, v190 : u32 #[overflow = unchecked];
                     v13 = builtin.unrealized_conversion_cast v0 : u32;
                     v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
                     v15 = builtin.unrealized_conversion_cast v14 : ptr<byte, u32>;
                     v16 = builtin.unrealized_conversion_cast v15 : u32;
-                    v17 = arith.incr v5 : u32;
-                    v18, v19 = arith.add_overflowing v6, v16 : i1, u32;
-                    v135, v136, v137, v138, v139, v140, v141, v142 = scf.if v18 : u32, u32, u32, u32, u32, u32, u32, u32 {
-                    ^block25:
-                        scf.yield v27, v27, v27, v27, v26, v21, v26, v21;
-                    } else {
-                    ^block26:
-                        scf.yield v17, v19, v27, v27, v27, v27, v21, v26;
-                    };
-                    scf.yield v135, v136, v137, v138, v139, v140, v141, v142;
+                    v17 = arith.incr v190 : u32;
+                    v18, v19 = arith.add_overflowing v191, v16 : i1, u32;
+                    v171 = cf.select v18, v27, v17 : u32;
+                    v172 = cf.select v18, v27, v19 : u32;
+                    v173 = cf.select v18, v26, v27 : u32;
+                    v174 = cf.select v18, v21, v27 : u32;
+                    v175 = cf.select v18, v26, v21 : u32;
+                    v176 = cf.select v18, v21, v26 : u32;
+                    scf.yield v171, v172, v173, v174, v175, v176;
                 } else {
                 ^block24:
-                    scf.yield v27, v27, v27, v27, v27, v27, v28, v21;
+                    scf.yield v27, v27, v27, v27, v28, v21;
                 };
-                v106 = arith.trunc v134 : i1;
-                scf.condition v106, v127, v128, v6, v129, v130, v131, v132, v133;
+                v106 = arith.trunc v182 : i1;
+                scf.condition v106, v177, v178, v191, v27, v179, v180, v181;
             } do {
-            ^block19(v98: u32, v99: u32, v100: u32, v101: u32, v102: u32, v103: u32, v104: u32, v105: u32):
-                scf.yield v98, v99, v100, v101, v102, v103, v104, v105;
+            ^block32(v192: u32, v193: u32, v194: u32, v195: u32, v196: u32, v197: u32, v198: u32):
+                scf.yield v192, v193;
             };
-            v115, v116, v117, v118 = scf.index_switch v89 : u32, u32, u32, u32 
+            v115, v116, v117, v118 = scf.index_switch v189 : u32, u32, u32, u32 
             case 1 {
             ^block22:
-                scf.yield v85, v86, v87, v88;
+                scf.yield v186, v186, v187, v188;
             }
             default {
             ^block6:
-                v11 = arith.incr v3 : u32;
-                scf.yield v11, v84, v21, v26;
+                v11 = arith.incr v147 : u32;
+                scf.yield v11, v185, v21, v26;
             };
             scf.yield v115, v116, v117, v118;
         } else {
@@ -56,15 +55,15 @@ public builtin.function @test(v0: ptr<byte, u32>, v1: u32, v2: u32) -> u32 {
             scf.yield v27, v27, v28, v21;
         };
         v51 = arith.trunc v114 : i1;
-        scf.condition v51, v111, v112, v4, v113;
+        scf.condition v51, v111, v112, v148, v113;
     } do {
-    ^block14(v47: u32, v48: u32, v49: u32, v50: u32):
-        scf.yield v47, v48, v49, v50;
+    ^block28(v149: u32, v150: u32, v151: u32, v152: u32):
+        scf.yield v149, v150;
     };
-    v144 = arith.eq v42, v26 : i1;
-    cf.cond_br v144 ^block7, ^block4;
+    v200 = arith.eq v146, v26 : i1;
+    cf.cond_br v200 ^block7, ^block4;
 ^block4:
-    builtin.ret v41;
+    builtin.ret v145;
 ^block7:
     builtin.ret_imm 4294967295;
 };
