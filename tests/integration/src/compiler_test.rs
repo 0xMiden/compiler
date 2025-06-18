@@ -33,7 +33,6 @@ pub struct CargoTest {
     manifest_path: Option<Cow<'static, str>>,
     target_dir: Option<PathBuf>,
     name: Cow<'static, str>,
-    target: Cow<'static, str>,
     entrypoint: Option<Cow<'static, str>>,
     build_std: bool,
     build_alloc: bool,
@@ -41,17 +40,12 @@ pub struct CargoTest {
 }
 impl CargoTest {
     /// Create a new `cargo` test with the given name, and project directory
-    pub fn new(
-        name: impl Into<Cow<'static, str>>,
-        project_dir: PathBuf,
-        target: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn new(name: impl Into<Cow<'static, str>>, project_dir: PathBuf) -> Self {
         Self {
             project_dir,
             manifest_path: None,
             target_dir: None,
             name: name.into(),
-            target: target.into(),
             entrypoint: None,
             build_std: false,
             build_alloc: false,
@@ -74,13 +68,6 @@ impl CargoTest {
         self
     }
 
-    /// Specify the target triple to pass to Cargo
-    #[inline]
-    pub fn with_target(mut self, target: impl Into<Cow<'static, str>>) -> Self {
-        self.target = target.into();
-        self
-    }
-
     /// Specify the target directory for Cargo
     #[inline]
     pub fn with_target_dir(mut self, target_dir: impl Into<PathBuf>) -> Self {
@@ -100,16 +87,6 @@ impl CargoTest {
     pub fn with_manifest_path(mut self, manifest_path: impl Into<Cow<'static, str>>) -> Self {
         self.manifest_path = Some(manifest_path.into());
         self
-    }
-
-    /// Get a [PathBuf] representing the path to the expected Cargo artifact
-    pub fn wasm_artifact_path(&self) -> PathBuf {
-        self.project_dir
-            .join("target")
-            .join(self.target.as_ref())
-            .join(if self.release { "release" } else { "debug" })
-            .join(self.name.as_ref())
-            .with_extension("wasm")
     }
 }
 
@@ -505,7 +482,7 @@ impl CompilerTestBuilder {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or("".to_string());
         let mut builder = CompilerTestBuilder::new(CompilerTestInputType::CargoMiden(
-            CargoTest::new(name, cargo_project_folder.as_ref().to_path_buf(), "wasm32-wasip2"),
+            CargoTest::new(name, cargo_project_folder.as_ref().to_path_buf()),
         ));
         builder.with_wasm_translation_config(config);
         builder.with_midenc_flags(midenc_flags);
