@@ -745,7 +745,11 @@ impl OpEmitter<'_> {
             }
             Type::U32 => self.unchecked_mod_imm_u32(imm.as_u32().unwrap(), span),
             ty @ (Type::U16 | Type::U8) => {
-                self.unchecked_mod_imm_uint(imm.as_u32().unwrap(), ty.size_in_bits() as u32, span);
+                self.unchecked_mod_imm_uint(
+                    imm.as_u32().unwrap(),
+                    ty.size_in_bits() as u32,
+                    span,
+                );
             }
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: mod expects integer operands, got {ty}")
@@ -854,7 +858,95 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, rhs.ty(), "expected exp operands to be the same type");
         match &ty {
-            Type::U64 => todo!("exponentiation by squaring"),
+            Type::U64 => {
+                // Implement exponentiation by squaring for U64
+                // We'll use the algorithm:
+                // 1. If exponent is 0, return 1
+                // 2. If base is 0, return 0
+                // 3. If exponent is 1, return base
+                // 4. Otherwise, use binary exponentiation algorithm
+                
+                // Store the exponent in a local variable
+                self.emit(masm::Instruction::Dup(0), span); // Duplicate exponent
+                self.emit(masm::Instruction::Eqz, span); // Check if exponent is 0
+                
+                // If exponent is 0, return 1
+                let zero_label = self.label_gen.next();
+                let end_label = self.label_gen.next();
+                self.emit(masm::Instruction::If, span);
+                self.emit(masm::Instruction::Drop, span); // Drop exponent
+                self.emit(masm::Instruction::Drop, span); // Drop base
+                self.emit(masm::Instruction::Push(Felt::ONE), span); // Push 1
+                self.emit(masm::Instruction::Else, span);
+                
+                // Check if base is 0
+                self.emit(masm::Instruction::Swap(1), span); // Swap to get base on top
+                self.emit(masm::Instruction::Dup(0), span); // Duplicate base
+                self.emit(masm::Instruction::Eqz, span); // Check if base is 0
+                self.emit(masm::Instruction::If, span);
+                self.emit(masm::Instruction::Drop, span); // Drop base
+                self.emit(masm::Instruction::Drop, span); // Drop exponent
+                self.emit(masm::Instruction::Push(Felt::ZERO), span); // Push 0
+                self.emit(masm::Instruction::Else, span);
+                
+                // Check if exponent is 1
+                self.emit(masm::Instruction::Swap(1), span); // Swap to get exponent on top
+                self.emit(masm::Instruction::Dup(0), span); // Duplicate exponent
+                self.emit(masm::Instruction::Push(Felt::ONE), span); // Push 1
+                self.emit(masm::Instruction::Eq, span); // Check if exponent is 1
+                self.emit(masm::Instruction::If, span);
+                self.emit(masm::Instruction::Drop, span); // Drop exponent
+                // Base is already on top of the stack
+                self.emit(masm::Instruction::Else, span);
+                
+                // Binary exponentiation algorithm
+                // Initialize result = 1
+                self.emit(masm::Instruction::Push(Felt::ONE), span); // Result = 1
+                self.emit(masm::Instruction::MovUp(2), span); // Move base above result: [exp, base, result]
+                self.emit(masm::Instruction::MovUp(2), span); // Move exponent above base: [base, result, exp]
+                
+                // Start loop
+                self.emit(masm::Instruction::While, span);
+                self.emit(masm::Instruction::Dup(0), span); // Duplicate exponent
+                self.emit(masm::Instruction::Push(Felt::ZERO), span);
+                self.emit(masm::Instruction::Gt, span); // Check if exponent > 0
+                self.emit(masm::Instruction::End, span);
+                
+                // Check if exponent is odd
+                self.emit(masm::Instruction::Dup(0), span); // Duplicate exponent
+                self.emit(masm::Instruction::Push(Felt::ONE), span);
+                self.emit(masm::Instruction::And, span); // exponent & 1
+                self.emit(masm::Instruction::If, span);
+                
+                // If odd, multiply result by base
+                self.emit(masm::Instruction::MovDn(2), span); // Move result to top: [exp, result, base]
+                self.emit(masm::Instruction::MovUp(1), span); // Move base above result: [exp, base, result]
+                self.emit(masm::Instruction::Mul, span); // Multiply result by base
+                self.emit(masm::Instruction::MovUp(1), span); // Move result back: [base, result, exp]
+                
+                self.emit(masm::Instruction::End, span); // End if
+                
+                // Square the base
+                self.emit(masm::Instruction::Dup(2), span); // Duplicate base
+                self.emit(masm::Instruction::Mul, span); // Square base
+                self.emit(masm::Instruction::MovDn(2), span); // Move squared base to position: [result, exp, base]
+                self.emit(masm::Instruction::MovUp(2), span); // Move base back: [base, result, exp]
+                
+                // Divide exponent by 2
+                self.emit(masm::Instruction::Push(Felt::new(2)), span);
+                self.emit(masm::Instruction::Div, span); // exponent = exponent / 2
+                
+                self.emit(masm::Instruction::End, span); // End while
+                
+                // Clean up
+                self.emit(masm::Instruction::Drop, span); // Drop exponent
+                self.emit(masm::Instruction::Drop, span); // Drop base
+                // Result is on top of the stack
+                
+                self.emit(masm::Instruction::End, span); // End else (exponent is 1)
+                self.emit(masm::Instruction::End, span); // End else (base is 0)
+                self.emit(masm::Instruction::End, span); // End else (exponent is 0)
+            }
             Type::Felt => {
                 self.emit(masm::Instruction::Exp, span);
             }
@@ -884,7 +976,73 @@ impl OpEmitter<'_> {
         let exp: u8 =
             imm.as_u64().unwrap().try_into().expect("invalid exponent: must be value < 64");
         match &ty {
-            Type::U64 => todo!("exponentiation by squaring"),
+            Type::U64 => {
+                // For immediate exponentiation, we can optimize based on the exponent value
+                match exp {
+                    0 => {
+                        // Any number raised to 0 is 1
+                        self.emit(masm::Instruction::Drop, span); // Drop base
+                        self.emit(masm::Instruction::Push(Felt::ONE), span); // Push 1
+                    }
+                    1 => {
+                        // Any number raised to 1 is itself
+                        // Base is already on top of the stack
+                    }
+                    2 => {
+                        // Square the base
+                        self.emit(masm::Instruction::Dup(0), span); // Duplicate base
+                        self.emit(masm::Instruction::Mul, span); // Square base
+                    }
+                    _ => {
+                        // Use binary exponentiation for larger exponents
+                        // Convert immediate to binary representation
+                        let mut exponent = exp as u64;
+                        let mut result_instructions = Vec::new();
+                        
+                        // Start with result = 1
+                        result_instructions.push(masm::Instruction::Push(Felt::ONE));
+                        
+                        // Store base in a separate "register"
+                        result_instructions.push(masm::Instruction::Swap(1));
+                        
+                        // Binary exponentiation
+                        let mut current_power = 1;
+                        while exponent > 0 {
+                            if exponent & 1 == 1 {
+                                // If current bit is set, multiply result by current power of base
+                                if current_power == 1 {
+                                    // First iteration, base is already in position
+                                    result_instructions.push(masm::Instruction::Dup(0));
+                                    result_instructions.push(masm::Instruction::MovUp(2));
+                                    result_instructions.push(masm::Instruction::Mul);
+                                    result_instructions.push(masm::Instruction::Swap(1));
+                                } else {
+                                    // Use the current squared base
+                                    result_instructions.push(masm::Instruction::Dup(0));
+                                    result_instructions.push(masm::Instruction::MovUp(2));
+                                    result_instructions.push(masm::Instruction::Mul);
+                                    result_instructions.push(masm::Instruction::Swap(1));
+                                }
+                            }
+                            
+                            // Square the base for next iteration (if we're not at the last bit)
+                            if exponent > 1 {
+                                result_instructions.push(masm::Instruction::Dup(0));
+                                result_instructions.push(masm::Instruction::Mul);
+                            }
+                            
+                            exponent >>= 1;
+                            current_power <<= 1;
+                        }
+                        
+                        // Clean up - drop the base
+                        result_instructions.push(masm::Instruction::Drop);
+                        
+                        // Emit all instructions
+                        self.emit_all(result_instructions, span);
+                    }
+                }
+            }
             Type::Felt => {
                 self.emit(masm::Instruction::ExpImm(Felt::new(exp as u64).into()), span);
             }
