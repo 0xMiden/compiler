@@ -190,3 +190,315 @@ pub fn assert_core_wasm_signature_equivalence(
         assert_eq!(wasm_core_param.ty, flattened_param.ty, "expected the same param type");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use midenc_hir::ArrayType;
+
+    use super::*;
+
+    #[test]
+    fn test_flatten_type_integers() {
+        // Test I1 (bool)
+        let result = flatten_type(&Type::I1).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::Zext);
+
+        // Test I8
+        let result = flatten_type(&Type::I8).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::Sext);
+
+        // Test U8
+        let result = flatten_type(&Type::U8).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::Zext);
+
+        // Test I16
+        let result = flatten_type(&Type::I16).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::Sext);
+
+        // Test U16
+        let result = flatten_type(&Type::U16).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::Zext);
+
+        // Test I32
+        let result = flatten_type(&Type::I32).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::None);
+
+        // Test U32
+        let result = flatten_type(&Type::U32).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension, ArgumentExtension::None);
+
+        // Test I64
+        let result = flatten_type(&Type::I64).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I64);
+        assert_eq!(result[0].extension, ArgumentExtension::None);
+
+        // Test U64
+        let result = flatten_type(&Type::U64).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I64);
+        assert_eq!(result[0].extension, ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_flatten_type_felt() {
+        let result = flatten_type(&Type::Felt).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::Felt);
+        assert_eq!(result[0].extension, ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_flatten_type_struct() {
+        // Empty struct
+        let empty_struct = Type::from(StructType::new(vec![]));
+        let result = flatten_type(&empty_struct).unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Simple struct with two fields
+        let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let result = flatten_type(&struct_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::Felt);
+
+        // Nested struct
+        let inner_struct = Type::from(StructType::new(vec![Type::I8, Type::U16]));
+        let outer_struct = Type::from(StructType::new(vec![Type::I32, inner_struct]));
+        let result = flatten_type(&outer_struct).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I32); // I8 flattened to I32
+        assert_eq!(result[1].extension, ArgumentExtension::Sext);
+        assert_eq!(result[2].ty, Type::I32); // U16 flattened to I32
+        assert_eq!(result[2].extension, ArgumentExtension::Zext);
+    }
+
+    #[test]
+    fn test_flatten_type_array() {
+        // Array of 3 I32s
+        let array_ty = Type::from(ArrayType::new(Type::I32, 3));
+        let result = flatten_type(&array_ty).unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().all(|param| param.ty == Type::I32));
+
+        // Array of 5 Felts
+        let array_ty = Type::from(ArrayType::new(Type::Felt, 5));
+        let result = flatten_type(&array_ty).unwrap();
+        assert_eq!(result.len(), 5);
+        assert!(result.iter().all(|param| param.ty == Type::Felt));
+
+        // Empty array
+        let array_ty = Type::from(ArrayType::new(Type::I32, 0));
+        let result = flatten_type(&array_ty).unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_flatten_type_list() {
+        // List of I32s
+        let list_ty = Type::List(Arc::new(Type::I32));
+        let result = flatten_type(&list_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0].ty, Type::Ptr(_)));
+        assert_eq!(result[0].purpose, ArgumentPurpose::StructReturn);
+        assert_eq!(result[1].ty, Type::I32); // length
+
+        // List of structs
+        let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let list_ty = Type::List(Arc::new(struct_ty));
+        let result = flatten_type(&list_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0].ty, Type::Ptr(_)));
+        assert_eq!(result[0].purpose, ArgumentPurpose::StructReturn);
+        assert_eq!(result[1].ty, Type::I32); // length
+    }
+
+    #[test]
+    fn test_flatten_types() {
+        // Empty types
+        let result = flatten_types(&[]).unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Single type
+        let result = flatten_types(&[Type::I32]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+
+        // Multiple types
+        let result = flatten_types(&[Type::I32, Type::Felt, Type::I8]).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::Felt);
+        assert_eq!(result[2].ty, Type::I32); // I8 flattened to I32
+
+        // Types that expand (struct)
+        let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let result = flatten_types(&[Type::I32, struct_ty]).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I32);
+        assert_eq!(result[2].ty, Type::Felt);
+    }
+
+    #[test]
+    fn test_flatten_function_type_simple() {
+        let mut func_ty =
+            FunctionType::new(CallConv::Fast, vec![Type::I32, Type::Felt], vec![Type::I32]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.params().len(), 2);
+        assert_eq!(sig.params()[0].ty, Type::I32);
+        assert_eq!(sig.params()[1].ty, Type::Felt);
+
+        assert_eq!(sig.results().len(), 1);
+        assert_eq!(sig.results()[0].ty, Type::I32);
+
+        assert_eq!(sig.cc, CallConv::CanonLift);
+    }
+
+    #[test]
+    fn test_flatten_function_type_max_params() {
+        // Exactly 16 params - should not be transformed
+        let params = vec![Type::I32; 16];
+        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.params().len(), 16);
+        assert!(sig.params().iter().all(|p| p.ty == Type::I32));
+
+        // 17 params - should be transformed to pointer
+        let params = vec![Type::I32; 17];
+        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.params().len(), 1);
+        assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
+        assert_eq!(sig.params()[0].purpose, ArgumentPurpose::StructReturn);
+    }
+
+    #[test]
+    fn test_flatten_function_type_max_results_canon_lift() {
+        // Single result - should not be transformed
+        let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![Type::Felt]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.results().len(), 1);
+        assert_eq!(sig.results()[0].ty, Type::Felt);
+
+        // Multiple results with struct - should be transformed for CanonLift
+        let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.params().len(), 1);
+        assert_eq!(sig.params()[0].ty, Type::I32);
+
+        assert_eq!(sig.results().len(), 1);
+        assert!(matches!(sig.results()[0].ty, Type::Ptr(_)));
+        assert_eq!(sig.results()[0].purpose, ArgumentPurpose::StructReturn);
+    }
+
+    #[test]
+    fn test_flatten_function_type_max_results_canon_lower() {
+        // Multiple results with struct - should be transformed differently for CanonLower
+        let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLower).unwrap();
+
+        assert_eq!(sig.params().len(), 2); // original param + return pointer
+        assert_eq!(sig.params()[0].ty, Type::I32);
+        assert!(matches!(sig.params()[1].ty, Type::Ptr(_)));
+        assert_eq!(sig.params()[1].purpose, ArgumentPurpose::StructReturn);
+
+        assert_eq!(sig.results().len(), 0); // no results for CanonLower
+    }
+
+    #[test]
+    fn test_flatten_function_type_edge_cases() {
+        // Empty function
+        let mut func_ty = FunctionType::new(CallConv::Fast, vec![], vec![]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+        assert_eq!(sig.params().len(), 0);
+        assert_eq!(sig.results().len(), 0);
+
+        // Many params that expand (structs)
+        let struct_ty = Type::from(StructType::new(vec![Type::I32; 10]));
+        let params = vec![struct_ty.clone(), struct_ty]; // 20 total params when flattened
+        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![]);
+        func_ty.abi = CallConv::CanonLift;
+        let sig = flatten_function_type(&func_ty, CallConv::CanonLift).unwrap();
+
+        assert_eq!(sig.params().len(), 1); // transformed to pointer
+        assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
+    }
+
+    #[test]
+    fn test_needs_transformation() {
+        // No transformation needed - simple types
+        let sig = Signature {
+            params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::CanonLift,
+            visibility: Visibility::Public,
+        };
+        assert!(!needs_transformation(&sig));
+
+        // Transformation needed - pointer in params
+        let mut sig_with_ptr = sig.clone();
+        sig_with_ptr.params[0].purpose = ArgumentPurpose::StructReturn;
+        assert!(needs_transformation(&sig_with_ptr));
+
+        // Transformation needed - pointer in results
+        let sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)))],
+            cc: CallConv::CanonLift,
+            visibility: Visibility::Public,
+        };
+        assert!(needs_transformation(&sig));
+
+        // Transformation needed - exceeds 16 felts
+        let params = vec![AbiParam::new(Type::Felt); 17];
+        let sig = Signature {
+            params,
+            results: vec![],
+            cc: CallConv::CanonLift,
+            visibility: Visibility::Public,
+        };
+        assert!(needs_transformation(&sig));
+
+        // Edge case - exactly 16 felts
+        let params = vec![AbiParam::new(Type::Felt); 16];
+        let sig = Signature {
+            params,
+            results: vec![],
+            cc: CallConv::CanonLift,
+            visibility: Visibility::Public,
+        };
+        assert!(!needs_transformation(&sig));
+    }
+}
