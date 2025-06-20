@@ -10,7 +10,8 @@ use midenc_hir::{
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
     },
-    ArgumentPurpose, CallConv, FunctionType, Op, Signature, SourceSpan, SymbolPath, ValueRef,
+    ArgumentPurpose, AsValueRange, CallConv, FunctionType, Op, Signature, SourceSpan, SymbolPath,
+    ValueRef,
 };
 
 use super::{
@@ -205,9 +206,7 @@ fn generate_lowering_with_transformation(
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
 
     let borrow = call.borrow();
-    let results_storage = borrow.as_ref().results();
-    let results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    let results = borrow.as_ref().results().as_value_range().into_owned();
 
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
