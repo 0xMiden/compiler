@@ -72,10 +72,8 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
 /// 2. Import functions (the actual canon lower functions)
 /// 3. Have element sections that populate the table
 pub fn is_fixup_module(module: &ParsedModule) -> bool {
-    log::trace!(target: "shim-bypass",
-        "Checking if module is fixup module. Imports: {:?}",
-        module.module.imports.iter().map(|i| (&i.module, &i.field)).collect::<Vec<_>>()
-    );
+    log::trace!(target: "shim-bypass", "Checking if module is fixup module. Imports: {}",
+        DisplayValues::new(module.module.imports.iter()));
 
     // Check for table import named "$imports"
     let has_imports_table = module.module.imports.iter().any(|import| {

@@ -5,6 +5,7 @@ use midenc_hir::{
     self as hir2,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
+    formatter::DisplayValues,
     interner::Symbol,
     smallvec, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
     SymbolPath,
@@ -78,10 +79,10 @@ impl<'a> ComponentTranslator<'a> {
         // First, check all static modules
         for (static_idx, module) in self.nested_modules.iter() {
             log::debug!(target: "component-translator",
-                "Static module {}: exports={:?}, imports={:?}",
+                "Static module {}: exports={}, imports={}",
                 static_idx.as_u32(),
-                module.module.exports.keys().collect::<Vec<_>>(),
-                module.module.imports.iter().map(|i| (&i.module, &i.field)).collect::<Vec<_>>()
+                DisplayValues::new(module.module.exports.keys()),
+                DisplayValues::new(module.module.imports.iter()),
             );
 
             if shim_bypass::is_shim_module(module) {
@@ -522,10 +523,10 @@ impl<'a> ComponentTranslator<'a> {
         let current_module_idx = module_idx.as_u32();
 
         log::debug!(target: "component-translator",
-            "Module instantiation: instance {} -> module {} (args: {:?})",
+            "Module instantiation: instance {} -> module {} (args: {})",
             instance_idx,
             current_module_idx,
-            args.keys().collect::<Vec<_>>()
+            DisplayValues::new(args.keys())
         );
 
         // Check if this module instantiation should be skipped (shim or fixup)
