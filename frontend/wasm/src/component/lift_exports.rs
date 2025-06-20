@@ -117,10 +117,16 @@ fn generate_lifting_with_transformation(
     core_export_func_path: &SymbolPath,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    assert_eq!(cross_ctx_export_sig_flat.results().len(), 1, "expected only one result");
+    assert_eq!(
+        cross_ctx_export_sig_flat.results().len(),
+        1,
+        "The flattened signature for {export_func_ident} component export function is expected to \
+         have only one result",
+    );
     assert!(
         cross_ctx_export_sig_flat.results()[0].purpose == midenc_hir::ArgumentPurpose::StructReturn,
-        "expected pointer in the result"
+        "The flattened signature for {export_func_ident} component export function is expected to \
+         have a pointer in the result",
     );
 
     // Extract flattened result types from the exported component-level function type
@@ -134,8 +140,9 @@ fn generate_lifting_with_transformation(
 
     assert!(
         cross_ctx_export_sig_flat.params().len() <= 16,
-        "only up to 16 felt flattened params supported (advice provider is not yet supported). \
-         Try passing less data as a temporary workaround."
+        "Too many parameters in the flattened signature of {export_func_ident} component export \
+         function. For cross-context calls only up to 16 felt flattened params supported (advice \
+         provider is not yet supported). Try passing less data as a temporary workaround.",
     );
 
     // Create the signature with the flattened result types
@@ -195,8 +202,9 @@ fn generate_lifting_with_transformation(
 
     assert!(
         return_values.len() <= 16,
-        "lift_exports: too many return values to pass on the stack, advice provider is not \
-         supported. Try return less data as a temporary workaround."
+        "Too many return values to pass on the stack for lifted {export_func_ident} component \
+         export function. The advice provider is not supported. Try return less data as a \
+         temporary workaround."
     );
 
     // Return the loaded values
@@ -273,7 +281,11 @@ fn generate_direct_lifting(
 
     let borrow = exec.borrow();
     let results = ValueRange::<2>::from(borrow.results().all());
-    assert!(results.len() <= 1, "expected a single result or none");
+    assert!(
+        results.len() <= 1,
+        "For direct lifting of the component export function {export_func_ident} expected a \
+         single result or none"
+    );
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span).expect("failed br");

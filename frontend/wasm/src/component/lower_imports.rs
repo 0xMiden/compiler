@@ -139,6 +139,18 @@ fn generate_lowering_with_transformation(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
+    assert!(
+        import_func_sig_flat.params().last().unwrap().purpose == ArgumentPurpose::StructReturn,
+        "The flattened component import function {import_func_path} signature should have the \
+         last parameter a pointer"
+    );
+
+    assert!(
+        core_func_sig.results().is_empty(),
+        "The lowered core function {core_func_path} should not have results when using \
+         out-pointer pattern"
+    );
+
     let id = ComponentId::try_from(import_func_path)
         .wrap_err("path does not start with a valid component id")?;
     let component_ref = if let Some(component_ref) = world_builder.find_component(&id) {
@@ -178,12 +190,6 @@ fn generate_lowering_with_transformation(
         .define_function(import_func_path.name().into(), new_import_func_sig.clone())
         .expect("failed to define the import function");
 
-    // Check if we have a pointer in params (result via out-pointer)
-    assert!(
-        import_func_sig_flat.params().last().unwrap().purpose == ArgumentPurpose::StructReturn,
-        "the last param is expected to be a pointer"
-    );
-
     // Import lowering: The lowered function takes a pointer as the last parameter
     // where results should be stored. The import function returns a pointer to the result.
     // We need to:
@@ -216,13 +222,6 @@ fn generate_lowering_with_transformation(
     fb.br(exit_block, [], span)?;
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
-
-    // Return according to the core function signature
-    // NOTE: The core function should not have any results when using out-pointer
-    assert!(
-        core_func_sig.results().is_empty(),
-        "Core function should not have results when using out-pointer pattern"
-    );
     fb.ret([], span)?;
 
     Ok(CallableFunction::Function {
@@ -308,7 +307,11 @@ fn generate_direct_lowering(
     let results_storage = borrow.as_ref().results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    assert!(results.len() <= 1, "expected a single result or none");
+    assert!(
+        results.len() <= 1,
+        "For direct lowering the component import function {import_func_path} expected a single \
+         result or none"
+    );
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span)?;
