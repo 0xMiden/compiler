@@ -1,7 +1,7 @@
 //! Data structures for representing parsed Wasm modules.
 
 use alloc::{borrow::Cow, collections::BTreeMap};
-use core::ops::Range;
+use core::{fmt, ops::Range};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
 use indexmap::IndexMap;
@@ -330,6 +330,12 @@ impl Module {
     /// Sets the name of this module, discarding whatever is in the name section
     pub fn set_name_override(&mut self, name_override: Cow<'static, str>) {
         self.name_override = Some(Ident::from(name_override.as_ref()));
+    }
+}
+
+impl fmt::Display for ModuleImport {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}.{}({:?})", self.module, self.field, self.index)
     }
 }
 

@@ -250,7 +250,7 @@ where
             let rt = builder.enable_all().build()?;
             // dbg!(&packages);
             // dbg!(&spawn_args);
-            dbg!(&target_env);
+            // dbg!(&target_env);
             let wasm_outputs = if matches!(target_env, TargetEnv::Rollup { .. }) {
                 rt.block_on(async {
                     let config = Config::new(terminal, None).await?;

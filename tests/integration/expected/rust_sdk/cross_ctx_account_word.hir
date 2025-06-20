@@ -1,0 +1,483 @@
+builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
+    builtin.module public @cross_ctx_account_word {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @cross_ctx_account_word::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-word(v0: felt, v1: felt, v2: felt, v3: felt) -> i32 {
+        ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
+            v6 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v7 = hir.bitcast v6 : ptr<byte, i32>;
+            v8 = hir.load v7 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v18 = arith.constant 1048600 : i32;
+            v19 = arith.add v8, v18 : i32 #[overflow = wrapping];
+            v24 = arith.constant 12 : u32;
+            v23 = hir.bitcast v19 : u32;
+            v25 = arith.add v23, v24 : u32 #[overflow = checked];
+            v26 = arith.constant 4 : u32;
+            v27 = arith.mod v25, v26 : u32;
+            hir.assertz v27 #[code = 250];
+            v426 = arith.constant 4 : felt;
+            v22 = arith.add v3, v426 : felt #[overflow = unchecked];
+            v28 = hir.int_to_ptr v25 : ptr<byte, felt>;
+            hir.store v28, v22;
+            v30 = arith.constant 8 : u32;
+            v29 = hir.bitcast v19 : u32;
+            v31 = arith.add v29, v30 : u32 #[overflow = checked];
+            v433 = arith.constant 4 : u32;
+            v33 = arith.mod v31, v433 : u32;
+            hir.assertz v33 #[code = 250];
+            v427 = arith.constant 3 : felt;
+            v17 = arith.add v2, v427 : felt #[overflow = unchecked];
+            v34 = hir.int_to_ptr v31 : ptr<byte, felt>;
+            hir.store v34, v17;
+            v432 = arith.constant 4 : u32;
+            v35 = hir.bitcast v19 : u32;
+            v37 = arith.add v35, v432 : u32 #[overflow = checked];
+            v431 = arith.constant 4 : u32;
+            v39 = arith.mod v37, v431 : u32;
+            hir.assertz v39 #[code = 250];
+            v428 = arith.constant 2 : felt;
+            v14 = arith.add v1, v428 : felt #[overflow = unchecked];
+            v40 = hir.int_to_ptr v37 : ptr<byte, felt>;
+            hir.store v40, v14;
+            v41 = hir.bitcast v19 : u32;
+            v430 = arith.constant 4 : u32;
+            v43 = arith.mod v41, v430 : u32;
+            hir.assertz v43 #[code = 250];
+            v429 = arith.constant 1 : felt;
+            v11 = arith.add v0, v429 : felt #[overflow = unchecked];
+            v44 = hir.int_to_ptr v41 : ptr<byte, felt>;
+            hir.store v44, v11;
+            builtin.ret v19;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-another-word(v45: felt, v46: felt, v47: felt, v48: felt) -> i32 {
+        ^block11(v45: felt, v46: felt, v47: felt, v48: felt):
+            v51 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v52 = hir.bitcast v51 : ptr<byte, i32>;
+            v53 = hir.load v52 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v63 = arith.constant 1048600 : i32;
+            v64 = arith.add v53, v63 : i32 #[overflow = wrapping];
+            v69 = arith.constant 12 : u32;
+            v68 = hir.bitcast v64 : u32;
+            v70 = arith.add v68, v69 : u32 #[overflow = checked];
+            v71 = arith.constant 4 : u32;
+            v72 = arith.mod v70, v71 : u32;
+            hir.assertz v72 #[code = 250];
+            v434 = arith.constant 5 : felt;
+            v67 = arith.add v48, v434 : felt #[overflow = unchecked];
+            v73 = hir.int_to_ptr v70 : ptr<byte, felt>;
+            hir.store v73, v67;
+            v75 = arith.constant 8 : u32;
+            v74 = hir.bitcast v64 : u32;
+            v76 = arith.add v74, v75 : u32 #[overflow = checked];
+            v441 = arith.constant 4 : u32;
+            v78 = arith.mod v76, v441 : u32;
+            hir.assertz v78 #[code = 250];
+            v435 = arith.constant 4 : felt;
+            v62 = arith.add v47, v435 : felt #[overflow = unchecked];
+            v79 = hir.int_to_ptr v76 : ptr<byte, felt>;
+            hir.store v79, v62;
+            v440 = arith.constant 4 : u32;
+            v80 = hir.bitcast v64 : u32;
+            v82 = arith.add v80, v440 : u32 #[overflow = checked];
+            v439 = arith.constant 4 : u32;
+            v84 = arith.mod v82, v439 : u32;
+            hir.assertz v84 #[code = 250];
+            v436 = arith.constant 3 : felt;
+            v59 = arith.add v46, v436 : felt #[overflow = unchecked];
+            v85 = hir.int_to_ptr v82 : ptr<byte, felt>;
+            hir.store v85, v59;
+            v86 = hir.bitcast v64 : u32;
+            v438 = arith.constant 4 : u32;
+            v88 = arith.mod v86, v438 : u32;
+            hir.assertz v88 #[code = 250];
+            v437 = arith.constant 2 : felt;
+            v56 = arith.add v45, v437 : felt #[overflow = unchecked];
+            v89 = hir.int_to_ptr v86 : ptr<byte, felt>;
+            hir.store v89, v56;
+            builtin.ret v64;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-felt(v90: felt) -> felt {
+        ^block13(v90: felt):
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v442 = arith.constant 3 : felt;
+            v94 = arith.add v90, v442 : felt #[overflow = unchecked];
+            builtin.ret v94;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-pair(v95: felt, v96: felt) -> i32 {
+        ^block15(v95: felt, v96: felt):
+            v99 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v100 = hir.bitcast v99 : ptr<byte, i32>;
+            v101 = hir.load v100 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v105 = arith.constant 1048600 : i32;
+            v106 = arith.add v101, v105 : i32 #[overflow = wrapping];
+            v111 = arith.constant 4 : u32;
+            v110 = hir.bitcast v106 : u32;
+            v112 = arith.add v110, v111 : u32 #[overflow = checked];
+            v447 = arith.constant 4 : u32;
+            v114 = arith.mod v112, v447 : u32;
+            hir.assertz v114 #[code = 250];
+            v444 = arith.constant 4 : felt;
+            v109 = arith.add v96, v444 : felt #[overflow = unchecked];
+            v115 = hir.int_to_ptr v112 : ptr<byte, felt>;
+            hir.store v115, v109;
+            v116 = hir.bitcast v106 : u32;
+            v446 = arith.constant 4 : u32;
+            v118 = arith.mod v116, v446 : u32;
+            hir.assertz v118 #[code = 250];
+            v445 = arith.constant 4 : felt;
+            v104 = arith.add v95, v445 : felt #[overflow = unchecked];
+            v119 = hir.int_to_ptr v116 : ptr<byte, felt>;
+            hir.store v119, v104;
+            builtin.ret v106;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-triple(v120: felt, v121: felt, v122: felt) -> i32 {
+        ^block17(v120: felt, v121: felt, v122: felt):
+            v125 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v126 = hir.bitcast v125 : ptr<byte, i32>;
+            v127 = hir.load v126 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v134 = arith.constant 1048600 : i32;
+            v135 = arith.add v127, v134 : i32 #[overflow = wrapping];
+            v140 = arith.constant 8 : u32;
+            v139 = hir.bitcast v135 : u32;
+            v141 = arith.add v139, v140 : u32 #[overflow = checked];
+            v142 = arith.constant 4 : u32;
+            v143 = arith.mod v141, v142 : u32;
+            hir.assertz v143 #[code = 250];
+            v450 = arith.constant 5 : felt;
+            v138 = arith.add v122, v450 : felt #[overflow = unchecked];
+            v144 = hir.int_to_ptr v141 : ptr<byte, felt>;
+            hir.store v144, v138;
+            v455 = arith.constant 4 : u32;
+            v145 = hir.bitcast v135 : u32;
+            v147 = arith.add v145, v455 : u32 #[overflow = checked];
+            v454 = arith.constant 4 : u32;
+            v149 = arith.mod v147, v454 : u32;
+            hir.assertz v149 #[code = 250];
+            v453 = arith.constant 5 : felt;
+            v133 = arith.add v121, v453 : felt #[overflow = unchecked];
+            v150 = hir.int_to_ptr v147 : ptr<byte, felt>;
+            hir.store v150, v133;
+            v151 = hir.bitcast v135 : u32;
+            v452 = arith.constant 4 : u32;
+            v153 = arith.mod v151, v452 : u32;
+            hir.assertz v153 #[code = 250];
+            v451 = arith.constant 5 : felt;
+            v130 = arith.add v120, v451 : felt #[overflow = unchecked];
+            v154 = hir.int_to_ptr v151 : ptr<byte, felt>;
+            hir.store v154, v130;
+            builtin.ret v135;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-mixed(v155: i64, v156: felt, v157: i32, v158: felt) -> i32 {
+        ^block19(v155: i64, v156: felt, v157: i32, v158: felt):
+            v161 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v162 = hir.bitcast v161 : ptr<byte, i32>;
+            v163 = hir.load v162 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v167 = arith.constant 1048600 : i32;
+            v168 = arith.add v163, v167 : i32 #[overflow = wrapping];
+            v173 = arith.constant 16 : u32;
+            v172 = hir.bitcast v168 : u32;
+            v174 = arith.add v172, v173 : u32 #[overflow = checked];
+            v175 = arith.constant 4 : u32;
+            v176 = arith.mod v174, v175 : u32;
+            hir.assertz v176 #[code = 250];
+            v456 = arith.constant 7 : felt;
+            v171 = arith.add v158, v456 : felt #[overflow = unchecked];
+            v177 = hir.int_to_ptr v174 : ptr<byte, felt>;
+            hir.store v177, v171;
+            v181 = arith.constant 12 : u32;
+            v180 = hir.bitcast v168 : u32;
+            v182 = arith.add v180, v181 : u32 #[overflow = checked];
+            v460 = arith.constant 4 : u32;
+            v184 = arith.mod v182, v460 : u32;
+            hir.assertz v184 #[code = 250];
+            v178 = arith.constant 10 : i32;
+            v179 = arith.add v157, v178 : i32 #[overflow = wrapping];
+            v185 = hir.int_to_ptr v182 : ptr<byte, i32>;
+            hir.store v185, v179;
+            v187 = arith.constant 8 : u32;
+            v186 = hir.bitcast v168 : u32;
+            v188 = arith.add v186, v187 : u32 #[overflow = checked];
+            v459 = arith.constant 4 : u32;
+            v190 = arith.mod v188, v459 : u32;
+            hir.assertz v190 #[code = 250];
+            v457 = arith.constant 6 : felt;
+            v166 = arith.add v156, v457 : felt #[overflow = unchecked];
+            v191 = hir.int_to_ptr v188 : ptr<byte, felt>;
+            hir.store v191, v166;
+            v194 = hir.bitcast v168 : u32;
+            v458 = arith.constant 8 : u32;
+            v196 = arith.mod v194, v458 : u32;
+            hir.assertz v196 #[code = 250];
+            v192 = arith.constant 1000 : i64;
+            v193 = arith.add v155, v192 : i64 #[overflow = wrapping];
+            v197 = hir.int_to_ptr v194 : ptr<byte, i64>;
+            hir.store v197, v193;
+            builtin.ret v168;
+        };
+
+        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-nested(v198: felt, v199: felt, v200: felt) -> i32 {
+        ^block21(v198: felt, v199: felt, v200: felt):
+            v203 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v204 = hir.bitcast v203 : ptr<byte, i32>;
+            v205 = hir.load v204 : i32;
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            v212 = arith.constant 1048600 : i32;
+            v213 = arith.add v205, v212 : i32 #[overflow = wrapping];
+            v218 = arith.constant 8 : u32;
+            v217 = hir.bitcast v213 : u32;
+            v219 = arith.add v217, v218 : u32 #[overflow = checked];
+            v220 = arith.constant 4 : u32;
+            v221 = arith.mod v219, v220 : u32;
+            hir.assertz v221 #[code = 250];
+            v463 = arith.constant 8 : felt;
+            v216 = arith.add v200, v463 : felt #[overflow = unchecked];
+            v222 = hir.int_to_ptr v219 : ptr<byte, felt>;
+            hir.store v222, v216;
+            v468 = arith.constant 4 : u32;
+            v223 = hir.bitcast v213 : u32;
+            v225 = arith.add v223, v468 : u32 #[overflow = checked];
+            v467 = arith.constant 4 : u32;
+            v227 = arith.mod v225, v467 : u32;
+            hir.assertz v227 #[code = 250];
+            v466 = arith.constant 8 : felt;
+            v211 = arith.add v199, v466 : felt #[overflow = unchecked];
+            v228 = hir.int_to_ptr v225 : ptr<byte, felt>;
+            hir.store v228, v211;
+            v229 = hir.bitcast v213 : u32;
+            v465 = arith.constant 4 : u32;
+            v231 = arith.mod v229, v465 : u32;
+            hir.assertz v231 #[code = 250];
+            v464 = arith.constant 8 : felt;
+            v208 = arith.add v198, v464 : felt #[overflow = unchecked];
+            v232 = hir.int_to_ptr v229 : ptr<byte, felt>;
+            hir.store v232, v208;
+            builtin.ret v213;
+        };
+
+        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        ^block23:
+            v234 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v235 = hir.bitcast v234 : ptr<byte, i32>;
+            v236 = hir.load v235 : i32;
+            v237 = arith.constant 1048624 : i32;
+            v238 = arith.add v236, v237 : i32 #[overflow = wrapping];
+            v239 = hir.bitcast v238 : u32;
+            v240 = hir.int_to_ptr v239 : ptr<byte, u8>;
+            v241 = hir.load v240 : u8;
+            v233 = arith.constant 0 : i32;
+            v242 = arith.zext v241 : u32;
+            v243 = hir.bitcast v242 : i32;
+            v245 = arith.neq v243, v233 : i1;
+            scf.if v245{
+            ^block25:
+                scf.yield ;
+            } else {
+            ^block26:
+                v246 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v247 = hir.bitcast v246 : ptr<byte, i32>;
+                v248 = hir.load v247 : i32;
+                hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/__wasm_call_ctors()
+                v470 = arith.constant 1 : u8;
+                v472 = arith.constant 1048624 : i32;
+                v250 = arith.add v248, v472 : i32 #[overflow = wrapping];
+                v254 = hir.bitcast v250 : u32;
+                v255 = hir.int_to_ptr v254 : ptr<byte, u8>;
+                hir.store v255, v470;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x0000000100000001000000010000000100000001;
+    };
+
+    public builtin.function @process-word(v256: felt, v257: felt, v258: felt, v259: felt) -> felt, felt, felt, felt {
+    ^block27(v256: felt, v257: felt, v258: felt, v259: felt):
+        v260 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-word(v256, v257, v258, v259) : i32
+        v261 = arith.constant 0 : i32;
+        v262 = arith.add v260, v261 : i32 #[overflow = unchecked];
+        v476 = arith.constant 0 : i32;
+        v477 = arith.constant 0 : i32;
+        v264 = arith.add v262, v477 : i32 #[overflow = unchecked];
+        v266 = arith.add v264, v476 : i32 #[overflow = unchecked];
+        v267 = hir.int_to_ptr v266 : ptr<byte, felt>;
+        v268 = hir.load v267 : felt;
+        v475 = arith.constant 0 : i32;
+        v269 = arith.constant 4 : i32;
+        v270 = arith.add v262, v269 : i32 #[overflow = unchecked];
+        v272 = arith.add v270, v475 : i32 #[overflow = unchecked];
+        v273 = hir.int_to_ptr v272 : ptr<byte, felt>;
+        v274 = hir.load v273 : felt;
+        v474 = arith.constant 0 : i32;
+        v275 = arith.constant 8 : i32;
+        v276 = arith.add v262, v275 : i32 #[overflow = unchecked];
+        v278 = arith.add v276, v474 : i32 #[overflow = unchecked];
+        v279 = hir.int_to_ptr v278 : ptr<byte, felt>;
+        v280 = hir.load v279 : felt;
+        v473 = arith.constant 0 : i32;
+        v281 = arith.constant 12 : i32;
+        v282 = arith.add v262, v281 : i32 #[overflow = unchecked];
+        v284 = arith.add v282, v473 : i32 #[overflow = unchecked];
+        v285 = hir.int_to_ptr v284 : ptr<byte, felt>;
+        v286 = hir.load v285 : felt;
+        builtin.ret v268, v274, v280, v286;
+    };
+
+    public builtin.function @process-another-word(v291: felt, v292: felt, v293: felt, v294: felt) -> felt, felt, felt, felt {
+    ^block29(v291: felt, v292: felt, v293: felt, v294: felt):
+        v295 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-another-word(v291, v292, v293, v294) : i32
+        v296 = arith.constant 0 : i32;
+        v297 = arith.add v295, v296 : i32 #[overflow = unchecked];
+        v481 = arith.constant 0 : i32;
+        v482 = arith.constant 0 : i32;
+        v299 = arith.add v297, v482 : i32 #[overflow = unchecked];
+        v301 = arith.add v299, v481 : i32 #[overflow = unchecked];
+        v302 = hir.int_to_ptr v301 : ptr<byte, felt>;
+        v303 = hir.load v302 : felt;
+        v480 = arith.constant 0 : i32;
+        v304 = arith.constant 4 : i32;
+        v305 = arith.add v297, v304 : i32 #[overflow = unchecked];
+        v307 = arith.add v305, v480 : i32 #[overflow = unchecked];
+        v308 = hir.int_to_ptr v307 : ptr<byte, felt>;
+        v309 = hir.load v308 : felt;
+        v479 = arith.constant 0 : i32;
+        v310 = arith.constant 8 : i32;
+        v311 = arith.add v297, v310 : i32 #[overflow = unchecked];
+        v313 = arith.add v311, v479 : i32 #[overflow = unchecked];
+        v314 = hir.int_to_ptr v313 : ptr<byte, felt>;
+        v315 = hir.load v314 : felt;
+        v478 = arith.constant 0 : i32;
+        v316 = arith.constant 12 : i32;
+        v317 = arith.add v297, v316 : i32 #[overflow = unchecked];
+        v319 = arith.add v317, v478 : i32 #[overflow = unchecked];
+        v320 = hir.int_to_ptr v319 : ptr<byte, felt>;
+        v321 = hir.load v320 : felt;
+        builtin.ret v303, v309, v315, v321;
+    };
+
+    public builtin.function @process-felt(v326: felt) -> felt {
+    ^block31(v326: felt):
+        v327 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-felt(v326) : felt
+        builtin.ret v327;
+    };
+
+    public builtin.function @process-pair(v328: felt, v329: felt) -> felt, felt {
+    ^block33(v328: felt, v329: felt):
+        v330 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-pair(v328, v329) : i32
+        v484 = arith.constant 0 : i32;
+        v331 = arith.constant 0 : i32;
+        v332 = arith.add v330, v331 : i32 #[overflow = unchecked];
+        v334 = arith.add v332, v484 : i32 #[overflow = unchecked];
+        v335 = hir.int_to_ptr v334 : ptr<byte, felt>;
+        v336 = hir.load v335 : felt;
+        v483 = arith.constant 0 : i32;
+        v337 = arith.constant 4 : i32;
+        v338 = arith.add v330, v337 : i32 #[overflow = unchecked];
+        v340 = arith.add v338, v483 : i32 #[overflow = unchecked];
+        v341 = hir.int_to_ptr v340 : ptr<byte, felt>;
+        v342 = hir.load v341 : felt;
+        builtin.ret v336, v342;
+    };
+
+    public builtin.function @process-triple(v345: felt, v346: felt, v347: felt) -> felt, felt, felt {
+    ^block35(v345: felt, v346: felt, v347: felt):
+        v348 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-triple(v345, v346, v347) : i32
+        v487 = arith.constant 0 : i32;
+        v349 = arith.constant 0 : i32;
+        v350 = arith.add v348, v349 : i32 #[overflow = unchecked];
+        v352 = arith.add v350, v487 : i32 #[overflow = unchecked];
+        v353 = hir.int_to_ptr v352 : ptr<byte, felt>;
+        v354 = hir.load v353 : felt;
+        v486 = arith.constant 0 : i32;
+        v355 = arith.constant 4 : i32;
+        v356 = arith.add v348, v355 : i32 #[overflow = unchecked];
+        v358 = arith.add v356, v486 : i32 #[overflow = unchecked];
+        v359 = hir.int_to_ptr v358 : ptr<byte, felt>;
+        v360 = hir.load v359 : felt;
+        v485 = arith.constant 0 : i32;
+        v361 = arith.constant 8 : i32;
+        v362 = arith.add v348, v361 : i32 #[overflow = unchecked];
+        v364 = arith.add v362, v485 : i32 #[overflow = unchecked];
+        v365 = hir.int_to_ptr v364 : ptr<byte, felt>;
+        v366 = hir.load v365 : felt;
+        builtin.ret v354, v360, v366;
+    };
+
+    public builtin.function @process-mixed(v370: i64, v371: felt, v372: i32, v373: felt) -> i64, felt, i32, felt {
+    ^block37(v370: i64, v371: felt, v372: i32, v373: felt):
+        v374 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-mixed(v370, v371, v372, v373) : i32
+        v375 = arith.constant 0 : i32;
+        v376 = arith.add v374, v375 : i32 #[overflow = unchecked];
+        v377 = hir.int_to_ptr v376 : ptr<byte, u64>;
+        v378 = hir.load v377 : u64;
+        v489 = arith.constant 0 : i32;
+        v379 = arith.constant 8 : i32;
+        v380 = arith.add v374, v379 : i32 #[overflow = unchecked];
+        v382 = arith.add v380, v489 : i32 #[overflow = unchecked];
+        v383 = hir.int_to_ptr v382 : ptr<byte, felt>;
+        v384 = hir.load v383 : felt;
+        v385 = arith.constant 12 : i32;
+        v386 = arith.add v374, v385 : i32 #[overflow = unchecked];
+        v387 = hir.int_to_ptr v386 : ptr<byte, u32>;
+        v388 = hir.load v387 : u32;
+        v488 = arith.constant 0 : i32;
+        v389 = arith.constant 16 : i32;
+        v390 = arith.add v374, v389 : i32 #[overflow = unchecked];
+        v392 = arith.add v390, v488 : i32 #[overflow = unchecked];
+        v393 = hir.int_to_ptr v392 : ptr<byte, felt>;
+        v394 = hir.load v393 : felt;
+        builtin.ret v378, v384, v388, v394;
+    };
+
+    public builtin.function @process-nested(v399: felt, v400: felt, v401: felt) -> felt, felt, felt {
+    ^block39(v399: felt, v400: felt, v401: felt):
+        v402 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/miden:cross-ctx-account-word/foo@1.0.0#process-nested(v399, v400, v401) : i32
+        v403 = arith.constant 0 : i32;
+        v404 = arith.add v402, v403 : i32 #[overflow = unchecked];
+        v492 = arith.constant 0 : i32;
+        v493 = arith.constant 0 : i32;
+        v406 = arith.add v404, v493 : i32 #[overflow = unchecked];
+        v408 = arith.add v406, v492 : i32 #[overflow = unchecked];
+        v409 = hir.int_to_ptr v408 : ptr<byte, felt>;
+        v410 = hir.load v409 : felt;
+        v491 = arith.constant 0 : i32;
+        v411 = arith.constant 4 : i32;
+        v412 = arith.add v404, v411 : i32 #[overflow = unchecked];
+        v414 = arith.add v412, v491 : i32 #[overflow = unchecked];
+        v415 = hir.int_to_ptr v414 : ptr<byte, felt>;
+        v416 = hir.load v415 : felt;
+        v490 = arith.constant 0 : i32;
+        v417 = arith.constant 8 : i32;
+        v418 = arith.add v402, v417 : i32 #[overflow = unchecked];
+        v420 = arith.add v418, v490 : i32 #[overflow = unchecked];
+        v421 = hir.int_to_ptr v420 : ptr<byte, felt>;
+        v422 = hir.load v421 : felt;
+        builtin.ret v410, v416, v422;
+    };
+};

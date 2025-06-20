@@ -1,9 +1,10 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
-use miden_assembly::LibraryPath;
+use miden_assembly::{ast::InvocationTarget, LibraryPath};
+use miden_mast_package::ProcedureName;
 use midenc_hir::{
-    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, FunctionIdent, Op,
-    SourceSpan, Span, Symbol, ValueRef,
+    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, CallConv, FunctionIdent,
+    Op, SourceSpan, Span, Symbol, ValueRef,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
@@ -528,8 +529,26 @@ impl MasmFunctionBuilder {
             stack,
         };
 
-        let body = emitter.emit(&entry.borrow());
+        let mut body = emitter.emit(&entry.borrow());
 
+        if function.signature().cc == CallConv::CanonLift {
+            // Truncate the stack to 16 elements on exit in the component export function
+            // since it is expected to be `call`ed so it has a requirement to have
+            // no more than 16 elements on the stack when it returns.
+            // See https://0xmiden.github.io/miden-vm/user_docs/assembly/execution_contexts.html
+            // Since the VM's `drop` instruction not letting stack size go beyond the 16 elements
+            // we most likely end up with stack size > 16 elements at the end.
+            // See https://github.com/0xPolygonMiden/miden-vm/blob/c4acf49510fda9ba80f20cee1a9fb1727f410f47/processor/src/stack/mod.rs?plain=1#L226-L253
+            let truncate_stack = InvocationTarget::AbsoluteProcedurePath {
+                name: ProcedureName::new("truncate_stack").unwrap(),
+                path: masm::LibraryPath::new_from_components(
+                    masm::LibraryNamespace::new("std").unwrap(),
+                    [masm::Ident::new("sys").unwrap()],
+                ),
+            };
+            let span = SourceSpan::default();
+            body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(truncate_stack))));
+        }
         let Self {
             span,
             name,
