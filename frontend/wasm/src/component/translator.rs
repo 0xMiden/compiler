@@ -69,7 +69,7 @@ pub struct ComponentTranslator<'a> {
 impl<'a> ComponentTranslator<'a> {
     /// Detect shim and fixup modules in the component
     fn detect_shim_modules(&mut self, root_component: &ParsedComponent) {
-        log::debug!(
+        log::debug!(target: "component-translator",
             "Component has {} initializers and {} static modules",
             root_component.initializers.len(),
             self.nested_modules.len()
@@ -77,7 +77,7 @@ impl<'a> ComponentTranslator<'a> {
 
         // First, check all static modules
         for (static_idx, module) in self.nested_modules.iter() {
-            log::debug!(
+            log::debug!(target: "component-translator",
                 "Static module {}: exports={:?}, imports={:?}",
                 static_idx.as_u32(),
                 module.module.exports.keys().collect::<Vec<_>>(),
@@ -85,19 +85,19 @@ impl<'a> ComponentTranslator<'a> {
             );
 
             if shim_bypass::is_shim_module(module) {
-                log::info!("Detected shim module at static index {}", static_idx.as_u32());
+                log::info!(target: "component-translator", "Detected shim module at static index {}", static_idx.as_u32());
                 self.shim_bypass_info.shim_static_modules.push(static_idx.as_u32());
             } else if shim_bypass::is_fixup_module(module) {
-                log::info!("Detected fixup module at static index {}", static_idx.as_u32());
+                log::info!(target: "component-translator", "Detected fixup module at static index {}", static_idx.as_u32());
                 self.shim_bypass_info.fixup_static_modules.push(static_idx.as_u32());
             }
         }
 
         for (i, init) in root_component.initializers.iter().enumerate() {
-            log::trace!("Initializer {}: {:?}", i, std::mem::discriminant(init));
+            log::trace!(target: "component-translator", "Initializer {}: {:?}", i, std::mem::discriminant(init));
         }
 
-        log::debug!(
+        log::debug!(target: "component-translator",
             "Shim bypass info: shim_static_modules={:?}, fixup_static_modules={:?}",
             self.shim_bypass_info.shim_static_modules,
             self.shim_bypass_info.fixup_static_modules
@@ -176,7 +176,7 @@ impl<'a> ComponentTranslator<'a> {
         types: &mut ComponentTypesBuilder,
         init: &'a LocalInitializer<'a>,
     ) -> WasmResult<()> {
-        log::trace!("init: {init:?}");
+        log::trace!(target: "component-translator", "init: {init:?}");
         match init {
             LocalInitializer::Import(name, ty) => {
                 match frame.args.get(name.0) {
@@ -203,7 +203,7 @@ impl<'a> ComponentTranslator<'a> {
                 };
             }
             LocalInitializer::Lower(lower) => {
-                log::debug!("Adding canon lower function: {:?}", lower);
+                log::debug!(target: "component-translator", "Adding canon lower function: {:?}", lower);
                 frame.funcs.push(CoreDef::Lower(lower.clone()));
             }
             LocalInitializer::Lift(lift) => {
@@ -233,7 +233,7 @@ impl<'a> ComponentTranslator<'a> {
 
                 // Track the mapping from frame module index to static module index for shim/fixup modules
                 if self.shim_bypass_info.shim_static_modules.contains(&static_module_idx.as_u32()) {
-                    log::warn!(
+                    log::warn!(target: "component-translator",
                         "Marking frame module {} as shim module (static {})",
                         module_idx,
                         static_module_idx.as_u32()
@@ -244,7 +244,7 @@ impl<'a> ComponentTranslator<'a> {
                     .fixup_static_modules
                     .contains(&static_module_idx.as_u32())
                 {
-                    log::warn!(
+                    log::warn!(target: "component-translator",
                         "Marking frame module {} as fixup module (static {})",
                         module_idx,
                         static_module_idx.as_u32()
@@ -278,7 +278,7 @@ impl<'a> ComponentTranslator<'a> {
                 frame.module_instances.push(ModuleInstanceDef::Synthetic(entities));
 
                 if is_shim_related {
-                    log::trace!(
+                    log::trace!(target: "component-translator",
                         "Detected shim-related synthetic instance at index {}",
                         instance_idx
                     );
@@ -319,12 +319,12 @@ impl<'a> ComponentTranslator<'a> {
                         .map(|(name, item)| Ok((*name, frame.item(*item, types)?)))
                         .collect::<WasmResult<_>>()?,
                 );
-                log::debug!(
+                log::debug!(target: "component-translator",
                     "Processing {} nested component initializers for instance",
                     translation.initializers.len()
                 );
                 for (i, init) in translation.initializers.iter().enumerate() {
-                    log::trace!("Processing nested initializer {}: {:?}", i, init);
+                    log::trace!(target: "component-translator", "Processing nested initializer {}: {:?}", i, init);
                     self.initializer(&mut new_frame, types, init)?;
                 }
                 let instance_idx = frame
@@ -339,7 +339,7 @@ impl<'a> ComponentTranslator<'a> {
                 )
             }
             LocalInitializer::AliasExportFunc(module_instance_idx, name) => {
-                log::debug!(
+                log::debug!(target: "component-translator",
                     "Pushing alias export to frame.funcs at index {} (module_instance: {}, name: \
                      '{}')",
                     frame.funcs.len(),
@@ -355,7 +355,7 @@ impl<'a> ComponentTranslator<'a> {
                     .shim_instance_indices
                     .contains(&module_instance_idx.as_u32())
                 {
-                    log::trace!(
+                    log::trace!(target: "component-translator",
                         "Skipping table alias from shim instance {} (table: {})",
                         module_instance_idx.as_u32(),
                         name
@@ -521,7 +521,7 @@ impl<'a> ComponentTranslator<'a> {
         let instance_idx = frame.module_instances.len() as u32;
         let current_module_idx = module_idx.as_u32();
 
-        log::debug!(
+        log::debug!(target: "component-translator",
             "Module instantiation: instance {} -> module {} (args: {:?})",
             instance_idx,
             current_module_idx,
@@ -530,7 +530,7 @@ impl<'a> ComponentTranslator<'a> {
 
         // Check if this module instantiation should be skipped (shim or fixup)
         if self.shim_bypass_info.shim_module_indices.contains(&current_module_idx) {
-            log::warn!(
+            log::warn!(target: "component-translator",
                 "SKIPPING translation of shim module instance {} (module {})",
                 instance_idx,
                 current_module_idx
@@ -544,7 +544,7 @@ impl<'a> ComponentTranslator<'a> {
             self.shim_bypass_info.shim_instance_indices.push(instance_idx);
             return Ok(());
         } else if self.shim_bypass_info.fixup_module_indices.contains(&current_module_idx) {
-            log::warn!(
+            log::warn!(target: "component-translator",
                 "SKIPPING translation of fixup module instance {} (module {})",
                 instance_idx,
                 current_module_idx
@@ -557,7 +557,7 @@ impl<'a> ComponentTranslator<'a> {
             return Ok(());
         }
 
-        log::debug!(
+        log::debug!(target: "component-translator",
             "Proceeding with normal translation of module instance {} (module {})",
             instance_idx,
             current_module_idx
@@ -606,7 +606,7 @@ impl<'a> ComponentTranslator<'a> {
                         ModuleInstanceDef::Synthetic(entities) => {
                             // module with CanonLower synthetic functions
                             for (func_name, entity) in entities.iter() {
-                                log::trace!(
+                                log::trace!(target: "component-translator",
                                     "Processing synthetic function '{}' with entity {:?}",
                                     func_name,
                                     entity
@@ -620,7 +620,7 @@ impl<'a> ComponentTranslator<'a> {
                                     entity,
                                     &self.shim_bypass_info,
                                 )?;
-                                log::trace!(
+                                log::trace!(target: "component-translator",
                                     "canon_lower_func returned signature '{}' for function '{}' \
                                      at path '{}'",
                                     signature,
@@ -722,10 +722,10 @@ fn canon_lower_func(
     shim_bypass_info: &ShimBypassInfo,
 ) -> WasmResult<(FunctionType, SymbolPath)> {
     let func_id = entity.unwrap_func();
-    log::debug!("canon_lower_func: function '{}', func_id: {}", func_name, func_id.as_u32());
+    log::debug!(target: "component-translator", "canon_lower_func: function '{}', func_id: {}", func_name, func_id.as_u32());
 
     let func_def = &frame.funcs[func_id];
-    log::debug!("canon_lower_func: func_def at index {}: {:?}", func_id.as_u32(), func_def);
+    log::debug!(target: "component-translator", "canon_lower_func: func_def at index {}: {:?}", func_id.as_u32(), func_def);
 
     // Check if the function at this index is an alias export instead of a canon lower
     match func_def {
@@ -766,7 +766,7 @@ fn canon_lower_from_alias_export(
     export_name: &str,
     shim_bypass_info: &ShimBypassInfo,
 ) -> WasmResult<(FunctionType, SymbolPath)> {
-    log::debug!(
+    log::debug!(target: "component-translator",
         "Function {} is an alias export from module instance {} export '{}'",
         func_name,
         module_instance_idx.as_u32(),
@@ -775,7 +775,7 @@ fn canon_lower_from_alias_export(
 
     // Check if this is an alias export from a bypassed shim module
     if shim_bypass_info.shim_instance_indices.contains(&module_instance_idx.as_u32()) {
-        log::debug!(
+        log::debug!(target: "component-translator",
             "Alias export is from bypassed shim module instance {}",
             module_instance_idx.as_u32()
         );
@@ -793,7 +793,7 @@ fn canon_lower_from_alias_export(
                 // Get the component instance type
                 let inst_ty = &types[import.ty];
 
-                log::debug!(
+                log::debug!(target: "component-translator",
                     "Checking component instance {} (import '{}') for function '{}'",
                     idx.as_u32(),
                     import.name,
@@ -803,7 +803,7 @@ fn canon_lower_from_alias_export(
                 // Check if this instance exports the function we're looking for
                 if let Some(TypeDef::ComponentFunc(ty_idx)) = inst_ty.exports.get(func_name) {
                     func_type_idx = Some(*ty_idx);
-                    log::debug!(
+                    log::debug!(target: "component-translator",
                         "Found function '{}' type in component instance '{}' exports: \
                          TypeFuncIndex({})",
                         func_name,
@@ -824,7 +824,7 @@ fn canon_lower_from_alias_export(
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
 
-            log::debug!("Created signature for '{}' from type information: {}", func_name, func_ty);
+            log::debug!(target: "component-translator", "Created signature for '{}' from type information: {}", func_name, func_ty);
 
             Ok((func_ty, path))
         } else {
@@ -834,7 +834,7 @@ fn canon_lower_from_alias_export(
             )))
         }
     } else {
-        log::error!(
+        log::error!(target: "component-translator",
             "Alias export from non-bypassed module instance {} - this should not happen",
             module_instance_idx.as_u32()
         );

@@ -222,14 +222,14 @@ fn parse_function_body<B: ?Sized + Builder>(
                     let column = loc.column.and_then(|col| col.checked_sub(1)).unwrap_or(0);
                     span = source_file.line_column_to_span(line, column).unwrap_or_default();
                 } else {
-                    log::debug!(
+                    log::debug!(target: "module-parser",
                         "failed to locate span for instruction at offset {offset} in function {}",
                         func_name
                     );
                 }
             }
         } else {
-            log::debug!(
+            log::debug!(target: "module-parser",
                 "failed to locate span for instruction at offset {offset} in function {}",
                 func_name
             );

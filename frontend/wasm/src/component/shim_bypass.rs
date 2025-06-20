@@ -10,14 +10,14 @@ use crate::module::module_env::ParsedModule;
 /// 3. Functions contain only call_indirect instructions
 /// 4. Usually have minimal imports
 pub fn is_shim_module(module: &ParsedModule) -> bool {
-    log::trace!(
+    log::trace!(target: "shim-bypass",
         "Checking if module is shim module. Exports: {:?}",
         module.module.exports.keys().collect::<Vec<_>>()
     );
 
     // Check for table export named "$imports"
     let has_imports_table = module.module.exports.iter().any(|(name, _)| *name == "$imports");
-    log::trace!("Has $imports table: {}", has_imports_table);
+    log::trace!(target: "shim-bypass", "Has $imports table: {}", has_imports_table);
 
     // If it has the $imports table, it's likely a shim module
     if has_imports_table {
@@ -31,7 +31,7 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
         let has_few_imports = module.module.imports.len() <= 2;
 
         let is_shim = has_function_exports && has_few_imports;
-        log::debug!(
+        log::debug!(target: "shim-bypass",
             "Module is shim: {} (has_imports_table: {}, has_function_exports: {}, \
              has_few_imports: {})",
             is_shim,
@@ -55,7 +55,7 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
         module.module.exports.len() <= 3 && module.module.imports.len() <= 2;
 
     let is_shim = has_table_export && has_minimal_structure;
-    log::debug!(
+    log::debug!(target: "shim-bypass",
         "Module is shim (fallback): {} (has_table_export: {}, has_minimal_structure: {})",
         is_shim,
         has_table_export,
@@ -72,7 +72,7 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
 /// 2. Import functions (the actual canon lower functions)
 /// 3. Have element sections that populate the table
 pub fn is_fixup_module(module: &ParsedModule) -> bool {
-    log::trace!(
+    log::trace!(target: "shim-bypass",
         "Checking if module is fixup module. Imports: {:?}",
         module.module.imports.iter().map(|i| (&i.module, &i.field)).collect::<Vec<_>>()
     );
@@ -81,12 +81,12 @@ pub fn is_fixup_module(module: &ParsedModule) -> bool {
     let has_imports_table = module.module.imports.iter().any(|import| {
         let is_imports_table = import.module.is_empty() && import.field == "$imports";
         if is_imports_table {
-            log::trace!("Found $imports table import");
+            log::trace!(target: "shim-bypass", "Found $imports table import");
         }
         is_imports_table
     });
 
-    log::debug!("Module is fixup: {}", has_imports_table);
+    log::debug!(target: "shim-bypass", "Module is fixup: {}", has_imports_table);
     has_imports_table
 }
 
