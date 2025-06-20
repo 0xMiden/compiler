@@ -366,7 +366,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             } => {
                 self.validator.version(num, encoding, &range).into_diagnostic()?;
 
-                // dbg!(&encoding);
                 match encoding {
                     Encoding::Component => {}
                     Encoding::Module => {
@@ -491,7 +490,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             let import = import.into_diagnostic()?;
             let types = self.validator.types(0).unwrap();
             let ty = types.component_entity_type_of_import(import.name.0).unwrap();
-            // dbg!(&import.name, &ty);
             self.result.initializers.push(LocalInitializer::Import(import.name, ty));
         }
         Ok(())
@@ -674,7 +672,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     instantiate_module_from_exports(&exports)
                 }
             };
-            // dbg!(&init);
             self.result.initializers.push(init);
         }
         Ok(())
@@ -701,7 +698,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     self.instantiate_component_from_exports(&exports)?
                 }
             };
-            // dbg!(&init);
             self.result.initializers.push(init);
             index += 1;
         }
@@ -720,7 +716,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         self.validator.component_export_section(&s).into_diagnostic()?;
         for export in s {
             let export = export.into_diagnostic()?;
-            // dbg!(&export);
             let item = self.kind_to_item(export.kind, export.index)?;
             let prev = self.result.exports.insert(export.name.0, item);
             assert!(prev.is_none());
@@ -760,7 +755,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     alias_module_instance_export(kind, instance, name)
                 }
             };
-            // dbg!(&init);
             self.result.initializers.push(init);
         }
         Ok(())
@@ -798,7 +792,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             map.insert(export.name.0, idx);
         }
 
-        // dbg!(&map);
         Ok(LocalInitializer::ComponentSynthetic(map))
     }
 
