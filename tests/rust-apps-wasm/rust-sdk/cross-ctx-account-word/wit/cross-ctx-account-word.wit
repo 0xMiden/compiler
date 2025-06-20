@@ -22,6 +22,11 @@ interface foo {
         a: felt,
         b: u32,
         c: felt,
+	d: u16,
+        // d1: felt,
+        // d1: u32,
+	e: u16,
+	g: u16,
     }
 
     record nested-struct {

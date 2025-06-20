@@ -3,6 +3,7 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
+use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -214,6 +215,10 @@ fn generate_lowering_with_transformation(
     assert_eq!(import_func_ty.results.len(), 1, "expected a single result type");
     let result_type = &import_func_ty.results[0];
     let mut results_iter = results.into_iter();
+
+    // TODO: remove
+    let _value = fb.imm(midenc_hir::Immediate::Felt(miden_core::Felt::new(1)), span);
+    // fb.assertz(value, span)?;
 
     store(fb, *output_ptr, result_type, &mut results_iter, span)?;
 

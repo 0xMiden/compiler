@@ -26,7 +26,7 @@
     (type (;4;) (func (param f32) (result f32)))
     (type (;5;) (func (param f32 f32) (result i32)))
     (type (;6;) (func (param f32 f32 f32) (result i32)))
-    (type (;7;) (func (param i64 f32 i32 f32) (result i32)))
+    (type (;7;) (func (param i64 f32 i32 f32 i32 i32 i32) (result i32)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;1;) (type 1)))
     (table (;0;) 2 2 funcref)
@@ -187,39 +187,56 @@
       f32.store
       local.get 3
     )
-    (func $miden:cross-ctx-account-word/foo@1.0.0#process-mixed (;9;) (type 7) (param i64 f32 i32 f32) (result i32)
+    (func $miden:cross-ctx-account-word/foo@1.0.0#process-mixed (;9;) (type 7) (param i64 f32 i32 f32 i32 i32 i32) (result i32)
       (local i32)
       global.get $GOT.data.internal.__memory_base
-      local.set 4
+      local.set 7
       call $wit_bindgen_rt::run_ctors_once
       local.get 1
       i32.const 6
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_add
       local.set 1
-      local.get 4
-      i32.const 1048600
-      i32.add
-      local.tee 4
       local.get 3
       i32.const 7
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_add
-      f32.store offset=16
+      local.set 3
+      local.get 7
+      i32.const 1048600
+      i32.add
+      local.tee 7
+      local.get 6
+      i32.const 9
+      i32.add
+      i32.store16 offset=24
+      local.get 7
+      local.get 5
+      i32.const 7
+      i32.add
+      i32.store16 offset=22
+      local.get 7
       local.get 4
+      i32.const 11
+      i32.add
+      i32.store16 offset=20
+      local.get 7
+      local.get 3
+      f32.store offset=16
+      local.get 7
       local.get 2
       i32.const 10
       i32.add
       i32.store offset=12
-      local.get 4
+      local.get 7
       local.get 1
       f32.store offset=8
-      local.get 4
+      local.get 7
       local.get 0
       i64.const 1000
       i64.add
       i64.store
-      local.get 4
+      local.get 7
     )
     (func $miden:cross-ctx-account-word/foo@1.0.0#process-nested (;10;) (type 6) (param f32 f32 f32) (result i32)
       (local i32)
@@ -257,7 +274,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048624
+        i32.const 1048632
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -265,7 +282,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048624
+        i32.const 1048632
         i32.add
         i32.const 1
         i32.store8
@@ -304,7 +321,7 @@
   (type (;9;) (func (param "input" 8) (result 8)))
   (alias core export 1 "miden:cross-ctx-account-word/foo@1.0.0#process-triple" (core func (;6;)))
   (func (;6;) (type 9) (canon lift (core func 6) (memory 0)))
-  (type (;10;) (record (field "f" u64) (field "a" 4) (field "b" u32) (field "c" 4)))
+  (type (;10;) (record (field "f" u64) (field "a" 4) (field "b" u32) (field "c" 4) (field "d" u16) (field "e" u16) (field "g" u16)))
   (type (;11;) (func (param "input" 10) (result 10)))
   (alias core export 1 "miden:cross-ctx-account-word/foo@1.0.0#process-mixed" (core func (;7;)))
   (func (;7;) (type 11) (canon lift (core func 7) (memory 0)))
@@ -335,7 +352,7 @@
     (import "import-type-triple" (type (;13;) (eq 12)))
     (type (;14;) (func (param "input" 13) (result 13)))
     (import "import-func-process-triple" (func (;4;) (type 14)))
-    (type (;15;) (record (field "f" u64) (field "a" 7) (field "b" u32) (field "c" 7)))
+    (type (;15;) (record (field "f" u64) (field "a" 7) (field "b" u32) (field "c" 7) (field "d" u16) (field "e" u16) (field "g" u16)))
     (import "import-type-mixed-struct" (type (;16;) (eq 15)))
     (type (;17;) (func (param "input" 16) (result 16)))
     (import "import-func-process-mixed" (func (;5;) (type 17)))
@@ -349,7 +366,7 @@
     (export (;24;) "pair" (type 23))
     (type (;25;) (record (field "x" 22) (field "y" 22) (field "z" 22)))
     (export (;26;) "triple" (type 25))
-    (type (;27;) (record (field "f" u64) (field "a" 22) (field "b" u32) (field "c" 22)))
+    (type (;27;) (record (field "f" u64) (field "a" 22) (field "b" u32) (field "c" 22) (field "d" u16) (field "e" u16) (field "g" u16)))
     (export (;28;) "mixed-struct" (type 27))
     (type (;29;) (record (field "inner" 24) (field "value" 22)))
     (export (;30;) "nested-struct" (type 29))

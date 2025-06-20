@@ -1,6 +1,7 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
+use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -199,6 +200,11 @@ fn generate_lifting_with_transformation(
     let result_type = &export_func_ty.results[0];
 
     load(&mut fb, result_ptr, result_type, &mut return_values, span)?;
+
+    // TODO: remove
+    let _value = fb.imm(midenc_hir::Immediate::Felt(miden_core::Felt::new(1)), span);
+    // fb.assertz(value, span)?;
+    // fb.breakpoint(span)?;
 
     assert!(
         return_values.len() <= 16,
