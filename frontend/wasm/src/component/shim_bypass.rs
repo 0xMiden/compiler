@@ -1,4 +1,4 @@
-use midenc_hir::FxHashMap;
+use midenc_hir::{formatter::DisplayValues, FxHashMap};
 
 use crate::module::module_env::ParsedModule;
 
@@ -11,8 +11,8 @@ use crate::module::module_env::ParsedModule;
 /// 4. Usually have minimal imports
 pub fn is_shim_module(module: &ParsedModule) -> bool {
     log::trace!(target: "shim-bypass",
-        "Checking if module is shim module. Exports: {:?}",
-        module.module.exports.keys().collect::<Vec<_>>()
+        "Checking if module is shim module. Exports: {}",
+        DisplayValues::new(module.module.exports.keys())
     );
 
     // Check for table export named "$imports"
