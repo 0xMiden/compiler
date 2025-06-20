@@ -178,7 +178,7 @@ fn generate_lifting_with_transformation(
 
     // The core function should return a single pointer (as i32)
     assert_eq!(results.len(), 1, "expected single result");
-    let result_ptr = results.into_iter().next().unwrap().borrow().as_value_ref();
+    let result_ptr = results[0].borrow().as_value_ref();
 
     // Load values from the core function's result pointer using recursive loading
     let mut return_values = SmallVec::<[ValueRef; 8]>::new();
