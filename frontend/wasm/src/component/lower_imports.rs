@@ -218,12 +218,12 @@ fn generate_lowering_with_transformation(
     fb.switch_to_block(exit_block);
 
     // Return according to the core function signature
-    if core_func_sig.results().is_empty() {
-        fb.ret([], span)?;
-    } else {
-        // The core function should not have any results when using out-pointer
-        panic!("Core function should not have results when using out-pointer pattern");
-    }
+    // NOTE: The core function should not have any results when using out-pointer
+    assert!(
+        core_func_sig.results().is_empty(),
+        "Core function should not have results when using out-pointer pattern"
+    );
+    fb.ret([], span)?;
 
     Ok(CallableFunction::Function {
         wasm_id: core_func_path,
