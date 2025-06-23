@@ -27,10 +27,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.262160
     push.0
     u32assert
-    mem_store.262145
+    mem_store.262161
 end
 
 # mod miden:base/note-script@1.0.0::counter_note
@@ -89,7 +89,7 @@ export.miden:base/note-script@1.0.0#note-script
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048580
+    push.1048644
     u32divmod.4
     swap.1
     trace.240
@@ -114,7 +114,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1048580
+        push.1048644
         u32divmod.4
         swap.1
         trace.240

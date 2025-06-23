@@ -167,6 +167,11 @@ impl DataSegmentLayout {
         self.segments.is_empty()
     }
 
+    /// Returns the number of segments in the layout
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
     /// Returns the offset in linear memory where the last data segment ends
     pub fn next_available_offset(&self) -> u32 {
         if let Some(last_segment) = self.segments.back() {
