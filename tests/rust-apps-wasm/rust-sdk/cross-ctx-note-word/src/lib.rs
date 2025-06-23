@@ -29,45 +29,45 @@ struct MyNote;
 
 impl Guest for MyNote {
     fn note_script() {
-        // let input = Word {
-        //     inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
-        // };
+        let input = Word {
+            inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
+        };
 
-        // let output = process_word(input.clone());
-        //
-        // assert_eq(output.inner.0, felt!(3));
-        // assert_eq(output.inner.1, felt!(5));
-        // assert_eq(output.inner.2, felt!(7));
-        // assert_eq(output.inner.3, felt!(9));
-        //
-        // let output = process_another_word(input);
-        //
-        // assert_eq(output.inner.0, felt!(4));
-        // assert_eq(output.inner.1, felt!(6));
-        // assert_eq(output.inner.2, felt!(8));
-        // assert_eq(output.inner.3, felt!(10));
-        //
-        // let felt_input = felt!(9);
-        // let felt_output = process_felt(felt_input);
-        // assert_eq(felt_output, felt!(12));
-        //
-        // let pair_input = Pair {
-        //     first: felt!(10),
-        //     second: felt!(20),
-        // };
-        // let pair_output = process_pair(pair_input);
-        // assert_eq(pair_output.first, felt!(14)); // 10 + 4
-        // assert_eq(pair_output.second, felt!(24)); // 20 + 4
-        //
-        // let triple_input = Triple {
-        //     x: felt!(100),
-        //     y: felt!(200),
-        //     z: felt!(300),
-        // };
-        // let triple_output = process_triple(triple_input);
-        // assert_eq(triple_output.x, felt!(105)); // 100 + 5
-        // assert_eq(triple_output.y, felt!(205)); // 200 + 5
-        // assert_eq(triple_output.z, felt!(305)); // 300 + 5
+        let output = process_word(input.clone());
+
+        assert_eq(output.inner.0, felt!(3));
+        assert_eq(output.inner.1, felt!(5));
+        assert_eq(output.inner.2, felt!(7));
+        assert_eq(output.inner.3, felt!(9));
+
+        let output = process_another_word(input);
+
+        assert_eq(output.inner.0, felt!(4));
+        assert_eq(output.inner.1, felt!(6));
+        assert_eq(output.inner.2, felt!(8));
+        assert_eq(output.inner.3, felt!(10));
+
+        let felt_input = felt!(9);
+        let felt_output = process_felt(felt_input);
+        assert_eq(felt_output, felt!(12));
+
+        let pair_input = Pair {
+            first: felt!(10),
+            second: felt!(20),
+        };
+        let pair_output = process_pair(pair_input);
+        assert_eq(pair_output.first, felt!(14)); // 10 + 4
+        assert_eq(pair_output.second, felt!(24)); // 20 + 4
+
+        let triple_input = Triple {
+            x: felt!(100),
+            y: felt!(200),
+            z: felt!(300),
+        };
+        let triple_output = process_triple(triple_input);
+        assert_eq(triple_output.x, felt!(105)); // 100 + 5
+        assert_eq(triple_output.y, felt!(205)); // 200 + 5
+        assert_eq(triple_output.z, felt!(305)); // 300 + 5
 
         let mixed_input = MixedStruct {
             f: u64::MAX - 1000,
@@ -101,16 +101,16 @@ impl Guest for MyNote {
         assert_eq(mixed_output.e.into(), Felt::from_u32(9));
         assert_eq(mixed_output.g.into(), Felt::from_u32(12));
 
-        // let nested_input = NestedStruct {
-        //     inner: Pair {
-        //         first: felt!(30),
-        //         second: felt!(40),
-        //     },
-        //     value: felt!(50),
-        // };
-        // let nested_output = process_nested(nested_input);
-        // assert_eq(nested_output.inner.first, felt!(38)); // 30 + 8
-        // assert_eq(nested_output.inner.second, felt!(48)); // 40 + 8
-        // assert_eq(nested_output.value, felt!(58)); // 50 + 8
+        let nested_input = NestedStruct {
+            inner: Pair {
+                first: felt!(30),
+                second: felt!(40),
+            },
+            value: felt!(50),
+        };
+        let nested_output = process_nested(nested_input);
+        assert_eq(nested_output.inner.first, felt!(38)); // 30 + 8
+        assert_eq(nested_output.inner.second, felt!(48)); // 40 + 8
+        assert_eq(nested_output.value, felt!(58)); // 50 + 8
     }
 }
