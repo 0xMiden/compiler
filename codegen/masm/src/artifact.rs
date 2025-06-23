@@ -330,6 +330,7 @@ impl MasmComponent {
             let mut block = masm::Block::new(span, Vec::with_capacity(64));
             // Invoke component initializer, if present
             if let Some(init) = self.init.as_ref() {
+                dbg!("invoke");
                 block.push(Op::Inst(Span::new(span, Inst::Exec(init.clone()))));
             }
 

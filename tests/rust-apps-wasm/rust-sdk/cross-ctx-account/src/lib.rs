@@ -24,14 +24,17 @@ bindings::export!(MyFoo with_types_in bindings);
 
 mod bindings;
 
-use miden::{felt, Felt};
+use miden::Felt;
+
+// To test the data segment loading
+pub static mut FOO: u32 = 42;
 
 struct MyFoo;
 
 impl foo::Guest for MyFoo {
     fn process_felt(input: Felt) -> Felt {
-        // TODO: load increment from the global variable to test rodata initialization on fresh
-        // context creation
-        input + felt!(3)
+        let res = input + Felt::from_u32(unsafe { FOO });
+        unsafe { FOO = res.as_u64() as u32 };
+        res
     }
 }

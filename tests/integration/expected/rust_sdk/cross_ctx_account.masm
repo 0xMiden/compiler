@@ -14,10 +14,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.14779194288691646574
-    push.1837992232937128472
-    push.9948807752990337359
-    push.15496145806008621750
+    push.17879533578003927589
+    push.9933214875828555579
+    push.837228309720865591
+    push.3130128942079031753
     adv.push_mapval
     push.262144
     push.2
@@ -44,13 +44,56 @@ proc.cross_ctx_account::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:cross-ctx-account/foo@1.0.0#process-felt
+    push.1048580
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1048576
+    u32wrapping_add
     trace.240
     nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
-    push.3
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movup.2
+    swap.1
     add
+    swap.1
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    dup.1
+    u32split
+    drop
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
 end
 
 proc.wit_bindgen_rt::run_ctors_once
@@ -62,7 +105,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048596
+    push.1048600
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -93,7 +136,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048596
+        push.1048600
         movup.2
         swap.1
         u32wrapping_add

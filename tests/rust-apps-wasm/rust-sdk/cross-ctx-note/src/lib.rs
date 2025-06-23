@@ -27,12 +27,16 @@ use bindings::{
 };
 use miden::*;
 
+// To test the data segment loading
+pub static mut BAR: u32 = 11;
+
 struct MyNote;
 
 impl Guest for MyNote {
     fn note_script() {
-        let input = felt!(7);
+        let input = Felt::from_u32(unsafe { BAR });
         let output = process_felt(input);
-        assert_eq(output, felt!(10));
+        assert_eq(output, felt!(53));
+        unsafe { BAR = output.as_u64() as u32 };
     }
 }
