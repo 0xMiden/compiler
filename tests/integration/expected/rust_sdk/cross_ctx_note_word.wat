@@ -21,7 +21,7 @@
       (export (;5;) "pair" (type (eq 4)))
       (type (;6;) (record (field "x" 3) (field "y" 3) (field "z" 3)))
       (export (;7;) "triple" (type (eq 6)))
-      (type (;8;) (record (field "f" u64) (field "a" 3) (field "b" u32) (field "c" 3) (field "d" u16) (field "e" u16) (field "g" u16)))
+      (type (;8;) (record (field "f" u64) (field "a" 3) (field "b" u32) (field "c" 3) (field "d" u8) (field "e" bool) (field "g" u16)))
       (export (;9;) "mixed-struct" (type (eq 8)))
       (type (;10;) (record (field "inner" 5) (field "value" 3)))
       (export (;11;) "nested-struct" (type (eq 10)))
@@ -102,18 +102,20 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       local.tee 4
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7
       local.get 0
-      f32.load offset=12
+      f32.load offset=20
       local.set 5
       local.get 0
-      f32.load offset=8
+      f32.load offset=16
       local.set 6
       local.get 0
-      f32.load offset=4
+      f32.load offset=12
       local.set 7
       local.get 0
-      f32.load
+      f32.load offset=8
       i32.const 3
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -134,18 +136,20 @@
       local.get 3
       local.get 4
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7
       local.get 0
-      f32.load offset=12
+      f32.load offset=20
       local.set 1
       local.get 0
-      f32.load offset=8
+      f32.load offset=16
       local.set 2
       local.get 0
-      f32.load offset=4
+      f32.load offset=12
       local.set 3
       local.get 0
-      f32.load
+      f32.load offset=8
       i32.const 4
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -175,16 +179,18 @@
       local.set 2
       local.get 0
       i64.const 0
-      i64.store
+      i64.store offset=8
       local.get 1
       local.get 2
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4
       local.get 0
-      f32.load offset=4
+      f32.load offset=12
       local.set 1
       local.get 0
-      f32.load
+      f32.load offset=8
       i32.const 14
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -199,15 +205,17 @@
       i32.const 300
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5
       local.get 0
-      f32.load offset=8
+      f32.load offset=16
       local.set 1
       local.get 0
-      f32.load offset=4
+      f32.load offset=12
       local.set 2
       local.get 0
-      f32.load
+      f32.load offset=8
       i32.const 105
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -226,35 +234,37 @@
       i32.const 50
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       i32.const 111
-      i32.const 2
+      i32.const 0
       i32.const 3
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4
       block ;; label = @1
         local.get 0
-        i64.load
+        i64.load offset=8
         i64.const -1
         i64.eq
         br_if 0 (;@1;)
         unreachable
       end
       local.get 0
-      i32.load16_u offset=24
+      i32.load16_u offset=30
       local.set 8
       local.get 0
-      i32.load16_u offset=22
+      i32.load8_u offset=29
       local.set 9
       local.get 0
-      i32.load16_u offset=20
+      i32.load8_u offset=28
       local.set 10
       local.get 0
-      f32.load offset=16
+      f32.load offset=24
       local.set 1
       local.get 0
-      f32.load offset=12
+      f32.load offset=20
       local.set 2
       local.get 0
-      f32.load offset=8
+      f32.load offset=16
       i64.const -4294967296
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u64_unchecked
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -272,8 +282,12 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 9
-      f32.reinterpret_i32
-      i32.const 9
+      i32.const 255
+      i32.and
+      i32.const 0
+      i32.ne
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      i32.const 1
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 8
@@ -288,15 +302,17 @@
       i32.const 50
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       local.get 0
+      i32.const 8
+      i32.add
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6
       local.get 0
-      f32.load offset=8
+      f32.load offset=16
       local.set 1
       local.get 0
-      f32.load offset=4
+      f32.load offset=12
       local.set 2
       local.get 0
-      f32.load
+      f32.load offset=8
       i32.const 38
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq

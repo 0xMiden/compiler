@@ -22,10 +22,8 @@ interface foo {
         a: felt,
         b: u32,
         c: felt,
-	d: u16,
-        // d1: felt,
-        // d1: u32,
-	e: u16,
+	d: u8,
+	e: bool,
 	g: u16,
     }
 

@@ -80,10 +80,7 @@ impl foo::Guest for MyFoo {
             b: input.b + 10,
             c: input.c + felt!(7),
             d: input.d + 11,
-            // d1: input.c + felt!(7),
-            // d1: input.d1 + 7,
-            // e: input.e + felt!(7),
-            e: input.e + 7,
+            e: !input.e,
             g: input.g + 9,
         }
     }

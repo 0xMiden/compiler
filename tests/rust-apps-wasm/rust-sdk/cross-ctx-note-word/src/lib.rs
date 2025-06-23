@@ -75,15 +75,10 @@ impl Guest for MyNote {
             b: u32::MAX - 10,
             c: felt!(50),
             d: 111,
-            // d1: felt!(50),
-            // d1: 50,
-            // e: u16::MAX - 7,
-            // e: felt!(2),
-            e: 2,
+            e: false,
             g: 3,
         };
         let mixed_output = process_mixed(mixed_input);
-        // assert_eq(Felt::from_u32(0), Felt::from_u32(2));
         if mixed_output.f != u64::MAX {
             // fail
             assert_eq!(0, 1);
@@ -91,14 +86,8 @@ impl Guest for MyNote {
         assert_eq(mixed_output.a, Felt::new(Felt::M - 1).unwrap()); // M - 1 - 6 + 6
         assert_eq(mixed_output.b.into(), Felt::from_u32(u32::MAX)); // u32::MAX - 10 + 10
         assert_eq(mixed_output.c, felt!(57)); // 50 + 7
-                                              // assert_eq(mixed_output.d.into(), Felt::from_u32(u8::MAX as u32 - 1));
         assert_eq(mixed_output.d.into(), Felt::from_u32(122));
-        // assert_eq(mixed_output.d1, felt!(57)); // 50 + 7
-        // assert_eq(mixed_output.d1.into(), felt!(57)); // 50 + 7
-        // w create `load_u16` test.
-        // assert_eq(mixed_output.d.into(), Felt::from_u32(28));
-        // assert_eq(mixed_output.e.into(), Felt::from_u32(u16::MAX as u32));
-        assert_eq(mixed_output.e.into(), Felt::from_u32(9));
+        assert_eq(Felt::from_u32(mixed_output.e as u32), felt!(1));
         assert_eq(mixed_output.g.into(), Felt::from_u32(12));
 
         let nested_input = NestedStruct {

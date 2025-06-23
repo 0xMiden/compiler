@@ -293,9 +293,9 @@ export.process-mixed
     u32shr
     swap.1
     drop
-    push.65535
+    push.255
     u32and
-    push.22
+    push.21
     dup.7
     swap.1
     u32wrapping_add
@@ -310,9 +310,9 @@ export.process-mixed
     u32shr
     swap.1
     drop
-    push.65535
+    push.1
     u32and
-    push.24
+    push.22
     movup.8
     swap.1
     u32wrapping_add
@@ -800,7 +800,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     nop
     push.1048600
     u32wrapping_add
-    push.24
+    push.22
     dup.1
     add
     u32assert
@@ -841,23 +841,18 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     drop
     swap.1
     mem_store
-    push.22
-    dup.1
-    add
-    u32assert
-    push.2
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.7
+    push.0
+    push.255
     movup.9
     swap.1
-    u32wrapping_add
-    push.65535
     u32and
-    swap.1
+    eq
+    push.255
+    u32and
+    push.21
+    dup.2
+    add
+    u32assert
     u32divmod.4
     swap.1
     dup.0
@@ -865,7 +860,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     dup.2
     push.8
     u32wrapping_mul
-    push.65535
+    push.255
     swap.1
     u32shl
     u32not
@@ -882,23 +877,16 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     drop
     swap.1
     mem_store
-    push.20
-    dup.1
-    add
-    u32assert
-    push.2
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
     push.11
-    movup.8
+    movup.7
     swap.1
     u32wrapping_add
-    push.65535
+    push.255
     u32and
-    swap.1
+    push.20
+    dup.2
+    add
+    u32assert
     u32divmod.4
     swap.1
     dup.0
@@ -906,7 +894,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     dup.2
     push.8
     u32wrapping_mul
-    push.65535
+    push.255
     swap.1
     u32shl
     u32not
@@ -1107,7 +1095,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048632
+    push.1048624
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -1142,7 +1130,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048632
+        push.1048624
         movup.2
         swap.1
         u32wrapping_add
