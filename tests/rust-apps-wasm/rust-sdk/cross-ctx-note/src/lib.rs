@@ -35,6 +35,7 @@ struct MyNote;
 impl Guest for MyNote {
     fn note_script() {
         let input = Felt::from_u32(unsafe { BAR });
+        assert_eq(input, felt!(11));
         let output = process_felt(input);
         assert_eq(output, felt!(53));
         unsafe { BAR = output.as_u64() as u32 };

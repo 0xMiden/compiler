@@ -29,13 +29,13 @@
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;2;) (type 3)))
   (core module (;0;)
     (type (;0;) (func (param i32) (result f32)))
-    (type (;1;) (func (param f32) (result f32)))
-    (type (;2;) (func (param f32 f32)))
+    (type (;1;) (func (param f32 f32)))
+    (type (;2;) (func (param f32) (result f32)))
     (type (;3;) (func (param f32) (result i64)))
     (type (;4;) (func))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
-    (import "miden:cross-ctx-account/foo@1.0.0" "process-felt" (func $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1 (;1;) (type 1)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;2;) (type 2)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;1;) (type 1)))
+    (import "miden:cross-ctx-account/foo@1.0.0" "process-felt" (func $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1 (;2;) (type 2)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "as-u64" (func $miden_stdlib_sys::intrinsics::felt::extern_as_u64 (;3;) (type 3)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -57,6 +57,11 @@
       local.tee 0
       i32.load
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      local.tee 1
+      i32.const 11
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 1
       call $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
       local.tee 1
       i32.const 53

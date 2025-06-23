@@ -81,6 +81,10 @@ export.miden:base/note-script@1.0.0#note-script
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    push.11
+    dup.1
+    swap.1
+    assert_eq
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::cross_ctx_note::cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
