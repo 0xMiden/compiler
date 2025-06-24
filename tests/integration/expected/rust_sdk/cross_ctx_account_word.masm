@@ -346,7 +346,7 @@ export.process-nested
 end
 
 export.init
-    push.2162688
+    push.1114112
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252

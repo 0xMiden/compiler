@@ -117,10 +117,12 @@ impl ToMasmComponent for builtin::Component {
             None
         };
 
-        // Compute the first page boundary after the end of the globals table to use as the start
-        // of the dynamic heap when the program is executed
-        let heap_base = link_info.reserved_memory_bytes()
-            + link_info.globals_layout().next_page_boundary() as usize;
+        // Compute the first page boundary after the end of the globals table (or reserved memory
+        // if no globals) to use as the start of the dynamic heap when the program is executed
+        let heap_base = core::cmp::max(
+            link_info.reserved_memory_bytes(),
+            link_info.globals_layout().next_page_boundary() as usize,
+        );
         let heap_base = u32::try_from(heap_base)
             .expect("unable to allocate dynamic heap: global table too large");
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
