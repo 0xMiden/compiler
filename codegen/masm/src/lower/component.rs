@@ -521,13 +521,30 @@ impl MasmFunctionBuilder {
                 stack.push(arg as ValueRef);
             }
         }
-        let emitter = BlockEmitter {
+        let mut emitter = BlockEmitter {
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
             stack,
         };
+
+        // For component export functions, invoke the `init` procedure first if needed.
+        // It loads the data segments and global vars into memory.
+        if function.signature().cc == CallConv::CanonLift
+            && (link_info.has_globals() || link_info.has_data_segments())
+        {
+            let component_path = link_info.component().to_library_path();
+            let init = InvocationTarget::AbsoluteProcedurePath {
+                name: ProcedureName::new("init").unwrap(),
+                path: component_path,
+            };
+            let span = SourceSpan::default();
+            // Add init call to the emitter's target before emitting the function body
+            emitter
+                .target
+                .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
+        }
 
         let mut body = emitter.emit(&entry.borrow());
 

@@ -1,6 +1,7 @@
 # mod miden:storage-example/foo@1.0.0
 
 export.set-asset-qty
+    exec.::miden:storage-example/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#set-asset-qty
@@ -10,6 +11,7 @@ export.set-asset-qty
 end
 
 export.get-asset-qty
+    exec.::miden:storage-example/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#get-asset-qty

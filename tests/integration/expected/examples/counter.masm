@@ -1,6 +1,7 @@
 # mod miden:counter-contract/counter@0.1.0
 
 export.get-count
+    exec.::miden:counter-contract/counter@0.1.0::init
     trace.240
     nop
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden:counter-contract/counter@0.1.0#get-count
@@ -10,6 +11,7 @@ export.get-count
 end
 
 export.increment-count
+    exec.::miden:counter-contract/counter@0.1.0::init
     trace.240
     nop
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden:counter-contract/counter@0.1.0#increment-count

@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account/foo@1.0.0
 
 export.process-felt
+    exec.::miden:cross-ctx-account/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden:cross-ctx-account/foo@1.0.0#process-felt

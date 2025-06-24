@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account-word/foo@1.0.0
 
 export.process-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-word
@@ -66,6 +67,7 @@ export.process-word
 end
 
 export.process-another-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-another-word
@@ -131,6 +133,7 @@ export.process-another-word
 end
 
 export.process-felt
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-felt
@@ -140,6 +143,7 @@ export.process-felt
 end
 
 export.process-pair
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-pair
@@ -176,6 +180,7 @@ export.process-pair
 end
 
 export.process-triple
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-triple
@@ -225,6 +230,7 @@ export.process-triple
 end
 
 export.process-mixed
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-mixed
@@ -286,6 +292,7 @@ export.process-mixed
 end
 
 export.process-nested
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-nested

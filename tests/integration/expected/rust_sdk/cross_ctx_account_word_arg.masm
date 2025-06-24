@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account-word-arg/foo@1.0.0
 
 export.process-word
+    exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg::miden:cross-ctx-account-word-arg/foo@1.0.0#process-word

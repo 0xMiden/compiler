@@ -1,6 +1,7 @@
 # mod miden:base/note-script@1.0.0
 
 export.note-script
+    exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::miden:base/note-script@1.0.0#note-script
