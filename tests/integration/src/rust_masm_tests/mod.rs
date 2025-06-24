@@ -13,6 +13,7 @@ mod apps;
 mod examples;
 mod instructions;
 mod intrinsics;
+mod local_node;
 mod misc;
 mod rust_sdk;
 mod testnet;
