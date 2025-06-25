@@ -336,14 +336,11 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
     push.21
@@ -364,14 +361,11 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
     push.22
@@ -392,14 +386,11 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
 end
@@ -1164,14 +1155,11 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         u32and
         movup.3
-        dup.3
+        movup.3
         push.8
         u32wrapping_mul
         u32shl
         u32or
-        swap.1
-        swap.2
-        drop
         swap.1
         mem_store
     end

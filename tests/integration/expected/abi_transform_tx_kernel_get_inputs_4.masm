@@ -340,14 +340,11 @@ proc.__rustc::__rust_alloc_zeroed
                 swap.1
                 u32and
                 movup.3
-                dup.3
+                movup.3
                 push.8
                 u32wrapping_mul
                 u32shl
                 u32or
-                swap.1
-                swap.2
-                drop
                 swap.1
                 mem_store
                 u32wrapping_add.1

@@ -831,14 +831,11 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
     push.0
@@ -867,14 +864,11 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
     push.11
@@ -901,14 +895,11 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     swap.1
     u32and
     movup.3
-    dup.3
+    movup.3
     push.8
     u32wrapping_mul
     u32shl
     u32or
-    swap.1
-    swap.2
-    drop
     swap.1
     mem_store
     push.16
@@ -1148,14 +1139,11 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         u32and
         movup.3
-        dup.3
+        movup.3
         push.8
         u32wrapping_mul
         u32shl
         u32or
-        swap.1
-        swap.2
-        drop
         swap.1
         mem_store
     end

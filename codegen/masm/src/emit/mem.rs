@@ -907,77 +907,43 @@ impl OpEmitter<'_> {
         }
 
         // Stack: [addr, offset, value]
-        // For sub-word stores, we always need to load the full 32-bit aligned value
-        // So we load from the element address (not using the offset)
-        self.emit(masm::Instruction::Dup0, span); // [addr, addr, offset, value]
+        // Load the current aligned value
+        self.emit_all(
+            [
+                masm::Instruction::Dup0,    // [addr, addr, offset, value]
+                masm::Instruction::MemLoad, // [prev, addr, offset, value]
+            ],
+            span,
+        );
 
-        // Load the aligned 32-bit value
-        self.emit(masm::Instruction::MemLoad, span); // [prev, addr, offset, value]
-
-        // Get the byte offset to calculate the correct mask and shift
-        // Stack: [prev, addr, offset, value]
-        // We need to duplicate offset and convert to bit offset
+        // Calculate bit offset and create mask
+        let type_size_mask = (1u32 << type_size) - 1;
         self.emit_all(
             [
                 masm::Instruction::Dup2,           // [offset, prev, addr, offset, value]
                 masm::Instruction::PushU8(8),      // [8, offset, prev, addr, offset, value]
                 masm::Instruction::U32WrappingMul, // [bit_offset, prev, addr, offset, value]
-            ],
-            span,
-        );
-
-        // Create a mask that clears the bits where we'll place the new value
-        // For u16 at offset 0: mask = 0xFFFF0000 (clear lower 16 bits)
-        // For u16 at offset 2: mask = 0x0000FFFF (clear upper 16 bits)
-        let type_size_mask = (1u32 << type_size) - 1; // For u16: 0x0000FFFF
-        self.push_u32(type_size_mask, span); // [type_mask, bit_offset, prev, addr, offset, value]
-
-        // Shift the type mask to the correct position based on offset
-        self.emit_all(
-            [
+                masm::Instruction::PushU32(type_size_mask), // [type_mask, bit_offset, prev, addr, offset, value]
                 masm::Instruction::Swap1, // [bit_offset, type_mask, prev, addr, offset, value]
                 masm::Instruction::U32Shl, // [shifted_mask, prev, addr, offset, value]
                 masm::Instruction::U32Not, // [mask, prev, addr, offset, value]
-            ],
-            span,
-        );
-
-        // Apply mask to the loaded value
-        self.emit_all(
-            [
-                masm::Instruction::Swap1,  // [prev, mask, addr, offset, value]
+                masm::Instruction::Swap1, // [prev, mask, addr, offset, value]
                 masm::Instruction::U32And, // [masked_prev, addr, offset, value]
             ],
             span,
         );
 
-        // Get the value and shift it to the correct position
-        // Stack: [masked_prev, addr, offset, value]
+        // Shift value to correct position and combine
         self.emit_all(
             [
                 masm::Instruction::MovUp3,         // [value, masked_prev, addr, offset]
-                masm::Instruction::Dup3,           // [offset, value, masked_prev, addr, offset]
-                masm::Instruction::PushU8(8),      // [8, offset, value, masked_prev, addr, offset]
-                masm::Instruction::U32WrappingMul, // [bit_offset, value, masked_prev, addr, offset]
-                masm::Instruction::U32Shl,         // [shifted_value, masked_prev, addr, offset]
-            ],
-            span,
-        );
-
-        // Combine the masked previous value with the shifted new value
-        self.bor_u32(span); // [new_value, addr, offset]
-
-        // Store the combined bits:
-        // Stack: [new_value, addr, offset]
-        // We need to drop the offset and do an aligned store since we've already
-        // handled the offset in our masking and shifting
-        self.emit_all(
-            [
-                masm::Instruction::Swap1,    // [addr, new_value, offset]
-                masm::Instruction::Swap2,    // [offset, new_value, addr]
-                masm::Instruction::Drop,     // [new_value, addr]
-                masm::Instruction::Swap1,    // [addr, new_value]
-                masm::Instruction::MemStore, // []
+                masm::Instruction::MovUp3,         // [offset, value, masked_prev, addr]
+                masm::Instruction::PushU8(8),      // [8, offset, value, masked_prev, addr]
+                masm::Instruction::U32WrappingMul, // [bit_offset, value, masked_prev, addr]
+                masm::Instruction::U32Shl,         // [shifted_value, masked_prev, addr]
+                masm::Instruction::U32Or,          // [new_value, addr]
+                masm::Instruction::Swap1,          // [addr, new_value]
+                masm::Instruction::MemStore,       // []
             ],
             span,
         );
