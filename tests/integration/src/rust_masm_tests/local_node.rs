@@ -161,11 +161,16 @@ impl LocalMidenNode {
         let stdout = child.stdout.take().expect("Failed to capture stdout");
         let stderr = child.stderr.take().expect("Failed to capture stderr");
 
+        // Check if node output logging is enabled via environment variable
+        let enable_node_output = std::env::var("MIDEN_NODE_OUTPUT").unwrap_or_default() == "1";
+
         // Spawn threads to read and print output
         thread::spawn(move || {
             let reader = std::io::BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
-                eprintln!("[node stdout] {}", line);
+                if enable_node_output {
+                    eprintln!("[node stdout] {}", line);
+                }
             }
         });
 
