@@ -390,9 +390,7 @@ pub fn test_counter_contract_local() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         // Create an isolated node instance for this test
-        let mut node = local_node::create_isolated_node()
-            .await
-            .expect("Failed to start local node");
+        let node = local_node::create_isolated_node().await.expect("Failed to start local node");
 
         let rpc_url = node.rpc_url().to_string();
 
