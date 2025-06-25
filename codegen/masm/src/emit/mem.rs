@@ -184,7 +184,6 @@ impl OpEmitter<'_> {
     ///
     /// For sub-word loads, we need to load from the element-aligned address
     /// and then extract the correct bits based on the byte offset.
-    #[allow(unused)]
     fn load_small(&mut self, ty: &Type, span: SourceSpan) {
         // Stack: [element_addr, byte_offset]
 
