@@ -1990,7 +1990,7 @@ mod tests {
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
-        let addr = Type::from(PointerType::new(Type::U8));
+        let addr = Type::from(PointerType::new(Type::U32));
 
         emitter.push(addr);
         assert_eq!(emitter.stack_len(), 1);

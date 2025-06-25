@@ -53,17 +53,19 @@ impl OpEmitter<'_> {
             Type::Ptr(ref ptr_ty) => {
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
-                // TODO: check if the ty is the same as in ptr_ty
+                assert_eq!(
+                    ty.size_in_bits(),
+                    ptr_ty.pointee().size_in_bits(),
+                    "The size of the type of the value being loaded {ty} is different from the \
+                     type of the pointee {}",
+                    ptr_ty.pointee()
+                );
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word(None, span),
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
-                        // TODO: test if load_small is really needed
-                        //
-                        // self.load_word(None, span);
-                        // self.trunc_int32(ty.size_in_bits() as u32, span);
                         self.load_small(ty, span);
                     }
                     ty => todo!("support for loading {ty} is not yet implemented"),
@@ -89,8 +91,7 @@ impl OpEmitter<'_> {
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
-                self.load_word(Some(ptr), span);
-                self.trunc_int32(ty.size_in_bits() as u32, span);
+                self.load_small(&ty, span);
             }
             ty => todo!("support for loading {ty} is not yet implemented"),
         }
