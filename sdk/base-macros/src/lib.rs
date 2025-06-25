@@ -342,19 +342,6 @@ pub fn component(
     let mut input_struct = parse_macro_input!(item as syn::ItemStruct);
     let struct_name = &input_struct.ident;
 
-    // Ensure the struct has named fields
-    let fields = match &mut input_struct.fields {
-        syn::Fields::Named(fields) => fields,
-        _ => {
-            return syn::Error::new(
-                input_struct.fields.span(),
-                "The `component` macro only supports structs with named fields.",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
-
     let metadata = match get_package_metadata(call_site_span) {
         Ok(m) => m,
         Err(e) => return e.to_compile_error().into(),
@@ -378,13 +365,35 @@ pub fn component(
         }
     }
 
-    // Process fields: extract storage info, generate Default parts, update builder
-    let field_inits = match process_fields(fields, &mut acc_builder) {
-        Ok(inits) => inits,
-        Err(e) => return e.to_compile_error().into(),
+    // Handle different field types
+    let default_impl = match &mut input_struct.fields {
+        syn::Fields::Named(fields) => {
+            // Process fields: extract storage info, generate Default parts, update builder
+            let field_inits = match process_fields(fields, &mut acc_builder) {
+                Ok(inits) => inits,
+                Err(e) => return e.to_compile_error().into(),
+            };
+            generate_default_impl(struct_name, &field_inits)
+        }
+        syn::Fields::Unit => {
+            // For unit structs, generate simple Default impl
+            quote! {
+                impl Default for #struct_name {
+                    fn default() -> Self {
+                        Self
+                    }
+                }
+            }
+        }
+        _ => {
+            return syn::Error::new(
+                input_struct.fields.span(),
+                "The `component` macro only supports unit structs or structs with named fields.",
+            )
+            .to_compile_error()
+            .into();
+        }
     };
-
-    let default_impl = generate_default_impl(struct_name, &field_inits);
 
     let acc_component_metadata_bytes = acc_builder.build().to_bytes();
 
