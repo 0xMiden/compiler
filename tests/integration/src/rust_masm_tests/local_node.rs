@@ -393,6 +393,7 @@ impl Drop for SharedNodeHandle {
 }
 
 /// Create an isolated node instance for tests that need exclusive access
+#[allow(unused)]
 pub async fn create_isolated_node() -> Result<LocalMidenNode, String> {
     let mut node = LocalMidenNode::new();
     node.ensure_installed()?;

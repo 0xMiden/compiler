@@ -739,4 +739,3 @@ pub fn test_counter_contract_local() {
 
     env::set_current_dir(restore_dir).unwrap();
 }
-
