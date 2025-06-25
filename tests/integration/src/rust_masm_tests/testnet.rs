@@ -389,10 +389,10 @@ pub fn test_counter_contract_local() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        // Create an isolated node instance for this test
-        let node = local_node::create_isolated_node().await.expect("Failed to start local node");
+        // Get a handle to the shared local node
+        let node_handle = local_node::get_shared_node().await.expect("Failed to get shared node");
 
-        let rpc_url = node.rpc_url().to_string();
+        let rpc_url = node_handle.rpc_url().to_string();
 
         // Initialize client & keystore
         let endpoint = Endpoint::try_from(rpc_url.as_str()).expect("Failed to create endpoint");

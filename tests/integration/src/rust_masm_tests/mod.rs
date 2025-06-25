@@ -15,6 +15,7 @@ mod instructions;
 mod intrinsics;
 mod local_node;
 mod misc;
+mod parallel_tests;
 mod rust_sdk;
 mod testnet;
 mod types;

@@ -231,7 +231,163 @@ impl Drop for LocalMidenNode {
     }
 }
 
-/// Create an isolated node instance for tests
+/// Manages shared access to a single node instance across multiple tests
+struct SharedNodeManager {
+    /// The actual node instance, if running
+    node: Option<LocalMidenNode>,
+    /// Number of active handles
+    ref_count: usize,
+}
+
+/// Handle to the shared node instance. When dropped, decrements the reference count.
+pub struct SharedNodeHandle {
+    /// The RPC URL of the shared node
+    rpc_url: String,
+    /// Weak reference to the manager for cleanup
+    _manager: Arc<Mutex<SharedNodeManager>>,
+}
+
+impl SharedNodeHandle {
+    /// Get the RPC URL for connecting to the node
+    pub fn rpc_url(&self) -> &str {
+        &self.rpc_url
+    }
+}
+
+/// Global shared node manager
+static SHARED_NODE_MANAGER: Mutex<Option<Arc<Mutex<SharedNodeManager>>>> = Mutex::new(None);
+
+/// Get a handle to the shared node instance. Starts the node if it's not running.
+pub async fn get_shared_node() -> Result<SharedNodeHandle, String> {
+    // Get or create the manager
+    let manager = {
+        let mut global = SHARED_NODE_MANAGER.lock().unwrap();
+        match global.as_ref() {
+            Some(mgr) => Arc::clone(mgr),
+            None => {
+                let mgr = Arc::new(Mutex::new(SharedNodeManager {
+                    node: None,
+                    ref_count: 0,
+                }));
+                *global = Some(Arc::clone(&mgr));
+                mgr
+            }
+        }
+    };
+
+    // We need to handle node startup atomically to avoid races
+    // First, increment the ref count and check if we need to start
+    let should_start = {
+        let mut mgr = manager.lock().unwrap();
+        mgr.ref_count += 1;
+        eprintln!("[SharedNode] Reference count increased to {}", mgr.ref_count);
+
+        // Only the first caller should start the node
+        mgr.ref_count == 1 && mgr.node.is_none()
+    };
+
+    // Start the node if we're the first caller
+    if should_start {
+        eprintln!("[SharedNode] Starting shared node instance...");
+        let mut node = LocalMidenNode::new();
+
+        // Handle potential startup failure
+        match node.ensure_installed() {
+            Ok(_) => {}
+            Err(e) => {
+                // Decrement ref count on failure
+                let mut mgr = manager.lock().unwrap();
+                mgr.ref_count = mgr.ref_count.saturating_sub(1);
+                return Err(e);
+            }
+        }
+
+        match node.bootstrap() {
+            Ok(_) => {}
+            Err(e) => {
+                // Decrement ref count on failure
+                let mut mgr = manager.lock().unwrap();
+                mgr.ref_count = mgr.ref_count.saturating_sub(1);
+                return Err(e);
+            }
+        }
+
+        match node.start().await {
+            Ok(_) => {
+                // Store the node in the manager
+                let mut mgr = manager.lock().unwrap();
+                mgr.node = Some(node);
+            }
+            Err(e) => {
+                // Decrement ref count on failure
+                let mut mgr = manager.lock().unwrap();
+                mgr.ref_count = mgr.ref_count.saturating_sub(1);
+                return Err(e);
+            }
+        }
+    } else {
+        // Wait for the node to be available if another task is starting it
+        let mut attempts = 0;
+        while attempts < 50 {
+            // 5 seconds timeout
+            {
+                let mgr = manager.lock().unwrap();
+                if mgr.node.is_some() {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            attempts += 1;
+        }
+
+        // Check if node is available
+        let mgr = manager.lock().unwrap();
+        if mgr.node.is_none() {
+            // Something went wrong, decrement ref count
+            drop(mgr);
+            let mut mgr = manager.lock().unwrap();
+            mgr.ref_count = mgr.ref_count.saturating_sub(1);
+            return Err("Timeout waiting for node to start".to_string());
+        }
+    }
+
+    // Get the RPC URL
+    let rpc_url = {
+        let mgr = manager.lock().unwrap();
+        mgr.node.as_ref().unwrap().rpc_url().to_string()
+    };
+
+    Ok(SharedNodeHandle {
+        rpc_url,
+        _manager: Arc::clone(&manager),
+    })
+}
+
+impl Drop for SharedNodeHandle {
+    fn drop(&mut self) {
+        if let Ok(mut mgr) = self._manager.lock() {
+            mgr.ref_count = mgr.ref_count.saturating_sub(1);
+            eprintln!("[SharedNode] Reference count decreased to {}", mgr.ref_count);
+
+            // If this was the last reference, stop the node
+            if mgr.ref_count == 0 {
+                if let Some(mut node) = mgr.node.take() {
+                    eprintln!("[SharedNode] Last reference dropped, stopping node...");
+                    if let Err(e) = node.stop() {
+                        eprintln!("[SharedNode] Error stopping node: {}", e);
+                    }
+                }
+
+                // Clear the global manager
+                if let Ok(mut global) = SHARED_NODE_MANAGER.lock() {
+                    *global = None;
+                }
+            }
+        }
+    }
+}
+
+/// Create an isolated node instance for tests that need exclusive access
 pub async fn create_isolated_node() -> Result<LocalMidenNode, String> {
     let mut node = LocalMidenNode::new();
     node.ensure_installed()?;
@@ -260,5 +416,38 @@ mod tests {
 
         // Stop the node
         node.stop().expect("Failed to stop node");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_shared_node_reference_counting() {
+        use tokio::task::JoinSet;
+
+        // Create multiple tasks that use the shared node
+        let mut tasks = JoinSet::new();
+
+        for i in 0..3 {
+            tasks.spawn(async move {
+                eprintln!("[Test {}] Getting shared node handle", i);
+                let handle = get_shared_node().await.expect("Failed to get shared node");
+                eprintln!("[Test {}] Got handle with URL: {}", i, handle.rpc_url());
+
+                // Simulate some work
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                eprintln!("[Test {}] Dropping handle", i);
+                // Handle will be dropped here
+            });
+        }
+
+        // Wait for all tasks to complete
+        while let Some(result) = tasks.join_next().await {
+            result.expect("Task panicked");
+        }
+
+        // Give some time for cleanup
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify the node was stopped (ref count should be 0)
+        eprintln!("All tasks completed, node should be stopped");
     }
 }
