@@ -12,6 +12,13 @@ use std::{
 use temp_dir::TempDir;
 use tokio::time::sleep;
 
+// Version configuration for miden-node
+// When updating miden-client version in Cargo.toml, update this constant to match
+// the compatible miden-node version. Both should typically use the same major.minor version.
+
+/// The exact miden-node version that is compatible with the miden-client version used in tests
+const MIDEN_NODE_VERSION: &str = "0.9.2";
+
 /// Manages the lifecycle of a local Miden node instance
 pub struct LocalMidenNode {
     /// Temporary directory containing node data
@@ -38,31 +45,58 @@ impl LocalMidenNode {
 
     /// Install miden-node binary if not already installed
     pub fn ensure_installed(&self) -> Result<(), String> {
-        // Check if miden-node is already installed
+        // Check if miden-node is already installed and get version
         let check = Command::new("miden-node").arg("--version").output();
 
         match check {
             Ok(output) if output.status.success() => {
                 let version = String::from_utf8_lossy(&output.stdout);
-                eprintln!("miden-node already installed: {}", version.trim());
-                Ok(())
+                let version_line = version.lines().next().unwrap_or("");
+
+                // Check if it's the exact version we need
+                if version_line.contains(MIDEN_NODE_VERSION) {
+                    eprintln!("miden-node already installed: {}", version_line);
+                    return Ok(());
+                } else {
+                    eprintln!(
+                        "Found incompatible miden-node version: {} (need {})",
+                        version_line, MIDEN_NODE_VERSION
+                    );
+                    eprintln!("Uninstalling current version...");
+
+                    // Uninstall the current version
+                    let uninstall_output = Command::new("cargo")
+                        .args(["uninstall", "miden-node"])
+                        .output()
+                        .map_err(|e| format!("Failed to run cargo uninstall: {}", e))?;
+
+                    if !uninstall_output.status.success() {
+                        let stderr = String::from_utf8_lossy(&uninstall_output.stderr);
+                        eprintln!("Warning: Failed to uninstall miden-node: {}", stderr);
+                    } else {
+                        eprintln!("Successfully uninstalled old version");
+                    }
+                }
             }
             _ => {
-                eprintln!("Installing miden-node from crates.io...");
-                let output = Command::new("cargo")
-                    .args(["install", "miden-node", "--locked"])
-                    .output()
-                    .map_err(|e| format!("Failed to run cargo install: {}", e))?;
-
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("Failed to install miden-node: {}", stderr));
-                }
-
-                eprintln!("miden-node installed successfully");
-                Ok(())
+                eprintln!("miden-node not found");
             }
         }
+
+        // Install specific version compatible with miden-client
+        eprintln!("Installing miden-node version {} from crates.io...", MIDEN_NODE_VERSION);
+        let output = Command::new("cargo")
+            .args(["install", "miden-node", "--version", MIDEN_NODE_VERSION, "--locked"])
+            .output()
+            .map_err(|e| format!("Failed to run cargo install: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to install miden-node: {}", stderr));
+        }
+
+        eprintln!("miden-node {} installed successfully", MIDEN_NODE_VERSION);
+        Ok(())
     }
 
     /// Bootstrap the node with genesis data
