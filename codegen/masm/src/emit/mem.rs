@@ -215,7 +215,7 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::PushU8(imm.offset), span);
             }
         }
-        
+
         // Stack: [element_addr, byte_offset]
 
         // First, load the aligned word containing our value
@@ -942,7 +942,8 @@ impl OpEmitter<'_> {
     /// the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
-            return self.store_small_imm(ty, imm, span);
+            self.store_small_imm(ty, imm, span);
+            return;
         }
 
         let type_size = ty.size_in_bits();
@@ -994,25 +995,20 @@ impl OpEmitter<'_> {
         );
     }
 
-    fn store_small_imm(&mut self, ty: &Type, ptr: NativePtr, span: SourceSpan) {
-        assert!(ptr.alignment() as usize >= ty.min_alignment());
+    /// Store a sub-word value using an immediate pointer
+    fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
+        assert!(imm.alignment() as usize >= ty.min_alignment());
 
-        let type_size = ty.size_in_bits();
-        if type_size == 32 {
-            self.store_word_imm(ptr, span);
-            return;
-        }
-
-        // Load the current 32-bit value at `ptr`
-        self.load_word_imm(ptr, span);
+        // For immediate pointers, we always load from the element-aligned address
+        // The offset determines which byte(s) within that element we're modifying
+        self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
 
         // Calculate bit offset from byte offset
-        let bit_offset = ptr.offset * 8;
+        let bit_offset = imm.offset * 8;
 
         // Create a mask that clears the bits where we'll place the new value
-        // For u16 at offset 0: mask = 0xFFFF0000 (clear lower 16 bits)
-        // For u16 at offset 2: mask = 0x0000FFFF (clear upper 16 bits)
-        let type_size_mask = (1u32 << type_size) - 1; // For u16: 0x0000FFFF
+        let type_size = ty.size_in_bits();
+        let type_size_mask = (1u32 << type_size) - 1;
         let mask = !(type_size_mask << bit_offset);
 
         // Apply mask to the loaded value
@@ -1027,8 +1023,8 @@ impl OpEmitter<'_> {
         // Combine the masked previous value with the shifted new value
         self.bor_u32(span);
 
-        // Store the combined bits
-        self.store_word_imm(ptr, span);
+        // Store the combined bits back to the element-aligned address
+        self.emit(masm::Instruction::MemStoreImm(imm.addr.into()), span);
     }
 
     fn store_array(&mut self, _ty: &ArrayType, _ptr: Option<NativePtr>, _span: SourceSpan) {
