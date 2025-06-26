@@ -571,7 +571,7 @@ pub fn test_counter_contract_local() {
     note_builder.with_release(true);
     let mut note_test = note_builder.build();
     let note_package = note_test.compiled_package();
-    dbg!(note_package.unwrap_program().mast_forest().advice_map());
+    // dbg!(note_package.unwrap_program().mast_forest().advice_map());
 
     let restore_dir = env::current_dir().unwrap();
     // switch cwd to temp_dir to have a fresh client store
