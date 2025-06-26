@@ -56,8 +56,8 @@ impl OpEmitter<'_> {
                 assert_eq!(
                     ty.size_in_bits(),
                     ptr_ty.pointee().size_in_bits(),
-                    "The size of the type of the value being loaded {ty} is different from the \
-                     type of the pointee {}",
+                    "The size of the type of the value being loaded ({ty}) is different from the \
+                     type of the pointee ({})",
                     ptr_ty.pointee()
                 );
                 match &ty {
@@ -184,6 +184,15 @@ impl OpEmitter<'_> {
     ///
     /// For sub-word loads, we need to load from the element-aligned address
     /// and then extract the correct bits based on the byte offset.
+    ///
+    /// This function expects the stack to contain: [element_addr, byte_offset]
+    ///
+    /// The approach:
+    /// 1. Load the 32-bit word containing the target byte(s)
+    /// 2. Shift right by (byte_offset * 8) bits to move the target byte(s) to the low end
+    /// 3. Mask to extract only the bits we need based on the type size
+    ///
+    /// After execution, the stack will contain: [loaded_value]
     fn load_small(&mut self, ty: &Type, span: SourceSpan) {
         // Stack: [element_addr, byte_offset]
 
@@ -508,8 +517,8 @@ impl OpEmitter<'_> {
                 assert_eq!(
                     value_ty.size_in_bits(),
                     ptr_ty.pointee().size_in_bits(),
-                    "The size of the type of the value being stored {value_ty} is different from \
-                     the type of the pointee {}",
+                    "The size of the type of the value being stored ({value_ty}) is different \
+                     from the type of the pointee ({})",
                     ptr_ty.pointee()
                 );
                 match value_ty {
@@ -535,7 +544,6 @@ impl OpEmitter<'_> {
     /// Store a value of type `ty` to `addr`.
     ///
     /// NOTE: The address represented by `addr` is in the IR's byte-addressable address space.
-    #[allow(unused)]
     pub fn store_imm(&mut self, addr: u32, span: SourceSpan) {
         let value = self.stack.pop().expect("operand stack is empty");
         let value_ty = value.ty();
@@ -894,6 +902,22 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::MemStoreImm(ptr.addr.into()), span);
     }
 
+    /// Store a sub-word value (u8, u16, etc.) to memory
+    ///
+    /// For sub-word stores, we need to:
+    /// 1. Load the current 32-bit word at the target address
+    /// 2. Mask out the bits where we'll place the new value
+    /// 3. Shift the new value to the correct bit position
+    /// 4. Combine with OR and store back
+    ///
+    /// This function expects the stack to contain: [addr, offset, value]
+    /// where:
+    /// - addr: The element-aligned address
+    /// - offset: The byte offset within the element (0-3)
+    /// - value: The value to store (already truncated to the correct size)
+    ///
+    /// The approach preserves other bytes in the same word while updating only
+    /// the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_small_imm(ty, imm, span);
