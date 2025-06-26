@@ -66,7 +66,7 @@ impl OpEmitter<'_> {
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
-                        self.load_small(ty, span);
+                        self.load_small(ty, None, span);
                     }
                     ty => todo!("support for loading {ty} is not yet implemented"),
                 }
@@ -91,7 +91,7 @@ impl OpEmitter<'_> {
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
-                self.load_small(&ty, span);
+                self.load_small(&ty, Some(ptr), span);
             }
             ty => todo!("support for loading {ty} is not yet implemented"),
         }
@@ -185,7 +185,8 @@ impl OpEmitter<'_> {
     /// For sub-word loads, we need to load from the element-aligned address
     /// and then extract the correct bits based on the byte offset.
     ///
-    /// This function expects the stack to contain: [element_addr, byte_offset]
+    /// If `ptr` is None, this function expects the stack to contain: [element_addr, byte_offset]
+    /// If `ptr` is Some, it uses the immediate pointer value.
     ///
     /// The approach:
     /// 1. Load the 32-bit word containing the target byte(s)
@@ -193,7 +194,28 @@ impl OpEmitter<'_> {
     /// 3. Mask to extract only the bits we need based on the type size
     ///
     /// After execution, the stack will contain: [loaded_value]
-    fn load_small(&mut self, ty: &Type, span: SourceSpan) {
+    fn load_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
+        // If we have an immediate pointer, handle it based on alignment
+        if let Some(imm) = ptr {
+            if imm.is_element_aligned() {
+                // For aligned loads, we can use MemLoadImm
+                self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+                // The value is already loaded, just need to mask it
+                let mask = match ty.size_in_bits() {
+                    1 => 0x1,
+                    8 => 0xff,
+                    16 => 0xffff,
+                    _ => unreachable!("load_small called with non-small type"),
+                };
+                self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
+                return;
+            } else {
+                // For unaligned loads, push the address components
+                self.emit(masm::Instruction::PushU32(imm.addr), span);
+                self.emit(masm::Instruction::PushU8(imm.offset), span);
+            }
+        }
+        
         // Stack: [element_addr, byte_offset]
 
         // First, load the aligned word containing our value
