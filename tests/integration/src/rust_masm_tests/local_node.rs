@@ -1,14 +1,17 @@
 //! Infrastructure for running a local Miden node for integration tests
 
 use std::{
-    io::BufRead,
+    fs::{self, File, OpenOptions},
+    io::{BufRead, Read, Write},
+    net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use fs2::FileExt;
 use temp_dir::TempDir;
 use tokio::time::sleep;
 
@@ -19,32 +22,33 @@ use tokio::time::sleep;
 /// The exact miden-node version that is compatible with the miden-client version used in tests
 const MIDEN_NODE_VERSION: &str = "0.9.2";
 
+/// Default RPC URL for the node
+const RPC_URL: &str = "http://127.0.0.1:57291";
+
+/// Port number for the node
+const RPC_PORT: u16 = 57291;
+
+/// Coordination directory for cross-process synchronization
+const COORD_DIR: &str = "/tmp/miden-test-node";
+
+/// PID file path
+const PID_FILE: &str = "/tmp/miden-test-node/node.pid";
+
+/// Reference count directory
+const REF_COUNT_DIR: &str = "/tmp/miden-test-node/refs";
+
+/// Lock file for atomic operations
+const LOCK_FILE: &str = "/tmp/miden-test-node/node.lock";
+
+/// Data directory for the shared node
+const DATA_DIR: &str = "/tmp/miden-test-node/data";
+
 /// Manages the lifecycle of a local Miden node instance
-pub struct LocalMidenNode {
-    /// Temporary directory containing node data
-    data_dir: TempDir,
-    /// The node process handle
-    node_process: Option<Child>,
-    /// RPC URL for the node
-    rpc_url: String,
-    /// Whether the node has been bootstrapped
-    bootstrapped: bool,
-}
+struct LocalMidenNode;
 
 impl LocalMidenNode {
-    /// Creates a new LocalMidenNode instance
-    pub fn new() -> Self {
-        let data_dir = TempDir::new().expect("Failed to create temp directory");
-        Self {
-            data_dir,
-            node_process: None,
-            rpc_url: "http://127.0.0.1:57291".to_string(),
-            bootstrapped: false,
-        }
-    }
-
     /// Install miden-node binary if not already installed
-    pub fn ensure_installed(&self) -> Result<(), String> {
+    pub fn ensure_installed() -> Result<(), String> {
         // Check if miden-node is already installed and get version
         let check = Command::new("miden-node").arg("--version").output();
 
@@ -100,11 +104,7 @@ impl LocalMidenNode {
     }
 
     /// Bootstrap the node with genesis data
-    pub fn bootstrap(&mut self) -> Result<(), String> {
-        if self.bootstrapped {
-            return Ok(());
-        }
-
+    fn bootstrap(data_dir: &Path) -> Result<(), String> {
         eprintln!("Bootstrapping miden-node...");
 
         let output = Command::new("miden-node")
@@ -112,9 +112,9 @@ impl LocalMidenNode {
                 "bundled",
                 "bootstrap",
                 "--data-directory",
-                self.data_dir.path().to_str().unwrap(),
+                data_dir.to_str().unwrap(),
                 "--accounts-directory",
-                self.data_dir.path().to_str().unwrap(),
+                data_dir.to_str().unwrap(),
             ])
             .output()
             .map_err(|e| format!("Failed to run bootstrap: {}", e))?;
@@ -124,132 +124,22 @@ impl LocalMidenNode {
             return Err(format!("Failed to bootstrap node: {}", stderr));
         }
 
-        self.bootstrapped = true;
         eprintln!("Node bootstrapped successfully");
         Ok(())
     }
 
-    /// Start the node process
-    pub async fn start(&mut self) -> Result<(), String> {
-        if self.node_process.is_some() {
-            return Err("Node is already running".to_string());
-        }
-
-        if !self.bootstrapped {
-            self.bootstrap()?;
-        }
-
-        eprintln!("Starting miden-node on {}...", self.rpc_url);
-
-        let mut child = Command::new("miden-node")
-            .args([
-                "bundled",
-                "start",
-                "--data-directory",
-                self.data_dir.path().to_str().unwrap(),
-                "--rpc.url",
-                &self.rpc_url,
-                "--block.interval",
-                "1", // 1 second block interval for faster tests
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to start node: {}", e))?;
-
-        // Capture output for debugging
-        let stdout = child.stdout.take().expect("Failed to capture stdout");
-        let stderr = child.stderr.take().expect("Failed to capture stderr");
-
-        // Check if node output logging is enabled via environment variable
-        let enable_node_output = std::env::var("MIDEN_NODE_OUTPUT").unwrap_or_default() == "1";
-
-        // Spawn threads to read and print output
-        thread::spawn(move || {
-            let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines().map_while(Result::ok) {
-                if enable_node_output {
-                    eprintln!("[node stdout] {}", line);
-                }
-            }
-        });
-
-        thread::spawn(move || {
-            let reader = std::io::BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                eprintln!("[node stderr] {}", line);
-            }
-        });
-
-        self.node_process = Some(child);
-
-        // Wait for the node to be ready
-        self.wait_for_ready().await?;
-
-        eprintln!("Node started successfully");
-        Ok(())
+    /// Check if a port is in use
+    fn is_port_in_use(port: u16) -> bool {
+        TcpStream::connect(("127.0.0.1", port)).is_ok()
     }
-
-    /// Wait for the node to be ready to accept connections
-    async fn wait_for_ready(&self) -> Result<(), String> {
-        // The node doesn't have a health endpoint, so we just wait a bit
-        // for it to start up. In practice, checking if we can connect to
-        // the gRPC endpoint would be better, but for now a simple delay works.
-        eprintln!("Waiting for node to be ready...");
-        sleep(Duration::from_secs(3)).await;
-        eprintln!("Node should be ready now");
-        Ok(())
-    }
-
-    /// Stop the node process
-    pub fn stop(&mut self) -> Result<(), String> {
-        if let Some(mut child) = self.node_process.take() {
-            eprintln!("Stopping miden-node...");
-
-            // Kill the process
-            match child.kill() {
-                Ok(_) => eprintln!("Kill signal sent to node process"),
-                Err(e) => eprintln!("Warning: Failed to kill node process: {}", e),
-            }
-
-            // Wait for the process to exit
-            match child.wait() {
-                Ok(status) => eprintln!("Node stopped with status: {:?}", status),
-                Err(e) => eprintln!("Warning: Failed to wait for node exit: {}", e),
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Get the RPC URL for connecting to the node
-    pub fn rpc_url(&self) -> &str {
-        &self.rpc_url
-    }
-}
-
-impl Drop for LocalMidenNode {
-    fn drop(&mut self) {
-        if let Err(e) = self.stop() {
-            eprintln!("Error stopping node during cleanup: {}", e);
-        }
-    }
-}
-
-/// Manages shared access to a single node instance across multiple tests
-struct SharedNodeManager {
-    /// The actual node instance, if running
-    node: Option<LocalMidenNode>,
-    /// Number of active handles
-    ref_count: usize,
 }
 
 /// Handle to the shared node instance. When dropped, decrements the reference count.
 pub struct SharedNodeHandle {
     /// The RPC URL of the shared node
     rpc_url: String,
-    /// Weak reference to the manager for cleanup
-    _manager: Arc<Mutex<SharedNodeManager>>,
+    /// Unique ID for this handle
+    handle_id: String,
 }
 
 impl SharedNodeHandle {
@@ -259,201 +149,364 @@ impl SharedNodeHandle {
     }
 }
 
-/// Global shared node manager
-static SHARED_NODE_MANAGER: Mutex<Option<Arc<Mutex<SharedNodeManager>>>> = Mutex::new(None);
+impl Drop for SharedNodeHandle {
+    fn drop(&mut self) {
+        eprintln!("[SharedNode] Dropping handle {}", self.handle_id);
+
+        // Remove our reference file
+        let ref_file = PathBuf::from(REF_COUNT_DIR).join(&self.handle_id);
+        if let Err(e) = fs::remove_file(&ref_file) {
+            eprintln!("[SharedNode] Warning: Failed to remove ref file: {}", e);
+        }
+
+        // Check if we're the last reference and should stop the node
+        check_and_stop_node_if_needed();
+    }
+}
+
+// Lock guard using fs2 file locking
+struct LockGuard(File);
+
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+/// Acquire a file lock for atomic operations
+fn acquire_lock() -> Result<LockGuard, String> {
+    // Ensure coordination directory exists
+    fs::create_dir_all(COORD_DIR)
+        .map_err(|e| format!("Failed to create coordination directory: {}", e))?;
+
+    // Open or create lock file
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(LOCK_FILE)
+        .map_err(|e| format!("Failed to open lock file: {}", e))?;
+
+    // Try to acquire exclusive lock with retries
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 100; // 10 seconds max wait
+
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(_) => return Ok(LockGuard(file)),
+            Err(e) => {
+                if attempts >= MAX_ATTEMPTS {
+                    return Err(format!("Timeout acquiring lock: {}", e));
+                }
+                attempts += 1;
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+}
+
+/// Read PID from file
+fn read_pid() -> Result<Option<u32>, String> {
+    match fs::read_to_string(PID_FILE) {
+        Ok(contents) => {
+            let pid = contents
+                .trim()
+                .parse::<u32>()
+                .map_err(|e| format!("Failed to parse PID: {}", e))?;
+            Ok(Some(pid))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Failed to read PID file: {}", e)),
+    }
+}
+
+/// Write PID to file
+fn write_pid(pid: u32) -> Result<(), String> {
+    fs::write(PID_FILE, pid.to_string()).map_err(|e| format!("Failed to write PID file: {}", e))
+}
+
+/// Remove PID file
+fn remove_pid() -> Result<(), String> {
+    match fs::remove_file(PID_FILE) {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Failed to remove PID file: {}", e)),
+    }
+}
+
+/// Check if a process is running
+fn is_process_running(pid: u32) -> bool {
+    // Try to read from /proc/{pid}/stat on Linux/macOS
+    #[cfg(target_os = "linux")]
+    {
+        std::path::Path::new(&format!("/proc/{}", pid)).exists()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // On macOS, use ps command
+        Command::new("ps")
+            .args(&["-p", &pid.to_string()])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+}
+
+/// Kill a process by PID
+fn kill_process(pid: u32) -> Result<(), String> {
+    eprintln!("[SharedNode] Killing process {}", pid);
+
+    // Use kill command for cross-platform compatibility
+    // First try SIGTERM
+    let term_result = Command::new("kill")
+        .args(&["-TERM", &pid.to_string()])
+        .output()
+        .map_err(|e| format!("Failed to execute kill command: {}", e))?;
+
+    if !term_result.status.success() {
+        let stderr = String::from_utf8_lossy(&term_result.stderr);
+        // If process doesn't exist, that's fine
+        if stderr.contains("No such process") {
+            return Ok(());
+        }
+        return Err(format!("Failed to send SIGTERM to process {}: {}", pid, stderr));
+    }
+
+    // Wait a bit for graceful shutdown
+    thread::sleep(Duration::from_millis(500));
+
+    // If still running, use SIGKILL
+    if is_process_running(pid) {
+        let kill_result = Command::new("kill")
+            .args(&["-KILL", &pid.to_string()])
+            .output()
+            .map_err(|e| format!("Failed to execute kill command: {}", e))?;
+
+        if !kill_result.status.success() {
+            let stderr = String::from_utf8_lossy(&kill_result.stderr);
+            if !stderr.contains("No such process") {
+                return Err(format!("Failed to send SIGKILL to process {}: {}", pid, stderr));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Get count of active references, cleaning up stale ones
+fn get_ref_count() -> Result<usize, String> {
+    fs::create_dir_all(REF_COUNT_DIR)
+        .map_err(|e| format!("Failed to create ref count directory: {}", e))?;
+
+    let entries = fs::read_dir(REF_COUNT_DIR)
+        .map_err(|e| format!("Failed to read ref count directory: {}", e))?;
+
+    let mut active_count = 0;
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            // Extract PID from handle name (format: handle-{pid}-{uuid})
+            if let Some(pid_str) = file_name_str.split('-').nth(1) {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    if is_process_running(pid) {
+                        active_count += 1;
+                    } else {
+                        // Clean up stale reference from dead process
+                        eprintln!(
+                            "[SharedNode] Cleaning up stale reference from dead process {}",
+                            pid
+                        );
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(active_count)
+}
+
+/// Add a reference
+fn add_reference(handle_id: &str) -> Result<(), String> {
+    fs::create_dir_all(REF_COUNT_DIR)
+        .map_err(|e| format!("Failed to create ref count directory: {}", e))?;
+
+    let ref_file = PathBuf::from(REF_COUNT_DIR).join(handle_id);
+    File::create(&ref_file).map_err(|e| format!("Failed to create reference file: {}", e))?;
+
+    Ok(())
+}
+
+/// Start the shared node process
+async fn start_shared_node() -> Result<u32, String> {
+    eprintln!("[SharedNode] Starting shared node process...");
+
+    // Ensure data directory exists
+    fs::create_dir_all(DATA_DIR).map_err(|e| format!("Failed to create data directory: {}", e))?;
+
+    // Bootstrap if needed
+    let marker_file = PathBuf::from(DATA_DIR).join(".bootstrapped");
+    if !marker_file.exists() {
+        LocalMidenNode::bootstrap(Path::new(DATA_DIR))?;
+        // Create marker file
+        File::create(&marker_file).map_err(|e| format!("Failed to create marker file: {}", e))?;
+    }
+
+    // Start the node process
+    let mut child = Command::new("miden-node")
+        .args([
+            "bundled",
+            "start",
+            "--data-directory",
+            DATA_DIR,
+            "--rpc.url",
+            RPC_URL,
+            "--block.interval",
+            "1",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start node: {}", e))?;
+
+    let pid = child.id();
+
+    // Capture output for debugging
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let stderr = child.stderr.take().expect("Failed to capture stderr");
+
+    // Check if node output logging is enabled
+    let enable_node_output = std::env::var("MIDEN_NODE_OUTPUT").unwrap_or_default() == "1";
+
+    // Spawn threads to read output
+    thread::spawn(move || {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines().map_while(Result::ok) {
+            if enable_node_output {
+                eprintln!("[shared node stdout] {}", line);
+            }
+        }
+    });
+
+    thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            eprintln!("[shared node stderr] {}", line);
+        }
+    });
+
+    // Detach the child process so it continues running after we exit
+    drop(child);
+
+    // Wait for node to be ready
+    eprintln!("[SharedNode] Waiting for node to be ready...");
+    let start = Instant::now();
+    let timeout = Duration::from_secs(10);
+
+    while start.elapsed() < timeout {
+        if LocalMidenNode::is_port_in_use(RPC_PORT) {
+            eprintln!("[SharedNode] Node is ready");
+            return Ok(pid);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // If we get here, node failed to start
+    kill_process(pid)?;
+    Err("Timeout waiting for node to be ready".to_string())
+}
+
+/// Check and stop the node if no more references exist
+fn check_and_stop_node_if_needed() {
+    // Acquire lock for atomic operation
+    let _lock = match acquire_lock() {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("[SharedNode] Failed to acquire lock: {}", e);
+            return;
+        }
+    };
+
+    // Check reference count
+    let ref_count = match get_ref_count() {
+        Ok(count) => count,
+        Err(e) => {
+            eprintln!("[SharedNode] Failed to get reference count: {}", e);
+            return;
+        }
+    };
+
+    eprintln!("[SharedNode] Reference count: {}", ref_count);
+
+    if ref_count == 0 {
+        // No more references, stop the node
+        if let Ok(Some(pid)) = read_pid() {
+            eprintln!("[SharedNode] No more references, stopping node process {}", pid);
+
+            if let Err(e) = kill_process(pid) {
+                eprintln!("[SharedNode] Failed to kill node process: {}", e);
+            }
+
+            if let Err(e) = remove_pid() {
+                eprintln!("[SharedNode] Failed to remove PID file: {}", e);
+            }
+
+            // Clean up coordination directory
+            if let Err(e) = fs::remove_dir_all(COORD_DIR) {
+                eprintln!("[SharedNode] Failed to clean up coordination directory: {}", e);
+            }
+        }
+    }
+}
 
 /// Get a handle to the shared node instance. Starts the node if it's not running.
 pub async fn get_shared_node() -> Result<SharedNodeHandle, String> {
-    // Get or create the manager
-    let manager = {
-        let mut global = SHARED_NODE_MANAGER.lock().unwrap();
-        match global.as_ref() {
-            Some(mgr) => Arc::clone(mgr),
-            None => {
-                let mgr = Arc::new(Mutex::new(SharedNodeManager {
-                    node: None,
-                    ref_count: 0,
-                }));
-                *global = Some(Arc::clone(&mgr));
-                mgr
-            }
-        }
-    };
+    // Ensure miden-node is installed
+    LocalMidenNode::ensure_installed()?;
 
-    // We need to handle node startup atomically to avoid races
-    // First, increment the ref count and check if we need to start
-    let should_start = {
-        let mut mgr = manager.lock().unwrap();
-        mgr.ref_count += 1;
-        eprintln!("[SharedNode] Reference count increased to {}", mgr.ref_count);
+    // Generate unique handle ID
+    let handle_id = format!("handle-{}-{}", std::process::id(), uuid::Uuid::new_v4());
 
-        // Only the first caller should start the node
-        mgr.ref_count == 1 && mgr.node.is_none()
-    };
+    // Acquire lock for atomic operation
+    let _lock = acquire_lock()?;
 
-    // Start the node if we're the first caller
-    if should_start {
-        eprintln!("[SharedNode] Starting shared node instance...");
-        let mut node = LocalMidenNode::new();
+    // Clean up any stale references first
+    let _ = get_ref_count()?;
 
-        // Handle potential startup failure
-        match node.ensure_installed() {
-            Ok(_) => {}
-            Err(e) => {
-                // Decrement ref count on failure
-                let mut mgr = manager.lock().unwrap();
-                mgr.ref_count = mgr.ref_count.saturating_sub(1);
-                return Err(e);
-            }
-        }
+    // Add our reference first
+    add_reference(&handle_id)?;
+    let ref_count = get_ref_count()?;
+    eprintln!("[SharedNode] Added reference {}, total count: {}", handle_id, ref_count);
 
-        match node.bootstrap() {
-            Ok(_) => {}
-            Err(e) => {
-                // Decrement ref count on failure
-                let mut mgr = manager.lock().unwrap();
-                mgr.ref_count = mgr.ref_count.saturating_sub(1);
-                return Err(e);
-            }
-        }
-
-        match node.start().await {
-            Ok(_) => {
-                // Store the node in the manager
-                let mut mgr = manager.lock().unwrap();
-                mgr.node = Some(node);
-            }
-            Err(e) => {
-                // Decrement ref count on failure
-                let mut mgr = manager.lock().unwrap();
-                mgr.ref_count = mgr.ref_count.saturating_sub(1);
-                return Err(e);
-            }
+    // Check if node is already running
+    let need_start = if let Some(pid) = read_pid()? {
+        // Check if the process is still alive
+        if is_process_running(pid) && LocalMidenNode::is_port_in_use(RPC_PORT) {
+            eprintln!("[SharedNode] Node already running with PID {}", pid);
+            false
+        } else {
+            eprintln!("[SharedNode] PID file exists but process {} is not running", pid);
+            remove_pid()?;
+            true
         }
     } else {
-        // Wait for the node to be available if another task is starting it
-        let mut attempts = 0;
-        while attempts < 50 {
-            // 5 seconds timeout
-            {
-                let mgr = manager.lock().unwrap();
-                if mgr.node.is_some() {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            attempts += 1;
-        }
-
-        // Check if node is available
-        let mgr = manager.lock().unwrap();
-        if mgr.node.is_none() {
-            // Something went wrong, decrement ref count
-            drop(mgr);
-            let mut mgr = manager.lock().unwrap();
-            mgr.ref_count = mgr.ref_count.saturating_sub(1);
-            return Err("Timeout waiting for node to start".to_string());
-        }
-    }
-
-    // Get the RPC URL
-    let rpc_url = {
-        let mgr = manager.lock().unwrap();
-        mgr.node.as_ref().unwrap().rpc_url().to_string()
+        eprintln!("[SharedNode] No PID file found, need to start node");
+        true
     };
 
+    // Start node if needed - keep lock held to prevent race conditions
+    if need_start {
+        let pid = start_shared_node().await?;
+        write_pid(pid)?;
+        eprintln!("[SharedNode] Started node with PID {}", pid);
+    }
+
+    // Lock is automatically released when _lock is dropped
+
     Ok(SharedNodeHandle {
-        rpc_url,
-        _manager: Arc::clone(&manager),
+        rpc_url: RPC_URL.to_string(),
+        handle_id,
     })
-}
-
-impl Drop for SharedNodeHandle {
-    fn drop(&mut self) {
-        if let Ok(mut mgr) = self._manager.lock() {
-            mgr.ref_count = mgr.ref_count.saturating_sub(1);
-            eprintln!("[SharedNode] Reference count decreased to {}", mgr.ref_count);
-
-            // If this was the last reference, stop the node
-            if mgr.ref_count == 0 {
-                if let Some(mut node) = mgr.node.take() {
-                    eprintln!("[SharedNode] Last reference dropped, stopping node...");
-                    if let Err(e) = node.stop() {
-                        eprintln!("[SharedNode] Error stopping node: {}", e);
-                    }
-                }
-
-                // Clear the global manager
-                if let Ok(mut global) = SHARED_NODE_MANAGER.lock() {
-                    *global = None;
-                }
-            }
-        }
-    }
-}
-
-/// Create an isolated node instance for tests that need exclusive access
-#[allow(unused)]
-pub async fn create_isolated_node() -> Result<LocalMidenNode, String> {
-    let mut node = LocalMidenNode::new();
-    node.ensure_installed()?;
-    node.bootstrap()?;
-    node.start().await?;
-    Ok(node)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_local_node_lifecycle() {
-        let mut node = LocalMidenNode::new();
-
-        // Ensure node is installed
-        node.ensure_installed().expect("Failed to install node");
-
-        // Bootstrap and start the node
-        node.bootstrap().expect("Failed to bootstrap node");
-        node.start().await.expect("Failed to start node");
-
-        // Verify we can get the RPC URL
-        assert_eq!(node.rpc_url(), "http://127.0.0.1:57291");
-
-        // Stop the node
-        node.stop().expect("Failed to stop node");
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_shared_node_reference_counting() {
-        use tokio::task::JoinSet;
-
-        // Create multiple tasks that use the shared node
-        let mut tasks = JoinSet::new();
-
-        for i in 0..3 {
-            tasks.spawn(async move {
-                eprintln!("[Test {}] Getting shared node handle", i);
-                let handle = get_shared_node().await.expect("Failed to get shared node");
-                eprintln!("[Test {}] Got handle with URL: {}", i, handle.rpc_url());
-
-                // Simulate some work
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                eprintln!("[Test {}] Dropping handle", i);
-                // Handle will be dropped here
-            });
-        }
-
-        // Wait for all tasks to complete
-        while let Some(result) = tasks.join_next().await {
-            result.expect("Task panicked");
-        }
-
-        // Give some time for cleanup
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify the node was stopped (ref count should be 0)
-        eprintln!("All tasks completed, node should be stopped");
-    }
 }

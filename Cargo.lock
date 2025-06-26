@@ -1832,6 +1832,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "fs_at"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3625,6 +3635,7 @@ dependencies = [
  "concat-idents",
  "env_logger",
  "filetime",
+ "fs2",
  "glob",
  "log",
  "miden-assembly",
@@ -3648,6 +3659,7 @@ dependencies = [
  "sha2",
  "temp-dir",
  "tokio",
+ "uuid",
  "walkdir",
  "wasmprinter 0.227.1",
 ]
@@ -7363,6 +7375,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
  "getrandom 0.3.3",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
