@@ -210,7 +210,6 @@ impl OpEmitter<'_> {
                 self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
                 return;
             } else {
-                // For unaligned loads, push the address components
                 self.emit(masm::Instruction::PushU32(imm.addr), span);
                 self.emit(masm::Instruction::PushU8(imm.offset), span);
             }
@@ -996,6 +995,17 @@ impl OpEmitter<'_> {
     }
 
     /// Store a sub-word value using an immediate pointer
+    ///
+    /// This function stores sub-word values (u8, u16, etc.) to memory at a specific immediate address.
+    /// It handles both aligned and unaligned addresses by:
+    /// 1. Loading the current 32-bit word at the element-aligned address
+    /// 2. Masking out the bits where the new value will be placed
+    /// 3. Shifting the new value to the correct bit position based on the byte offset
+    /// 4. Combining with OR and storing back
+    ///
+    /// # Stack Effects
+    /// - Before: [value] (where value is already truncated to the correct size)
+    /// - After: []
     fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
         assert!(imm.alignment() as usize >= ty.min_alignment());
 
@@ -1008,6 +1018,7 @@ impl OpEmitter<'_> {
 
         // Create a mask that clears the bits where we'll place the new value
         let type_size = ty.size_in_bits();
+        debug_assert!(type_size < 32, "type_size must be less than 32 bits");
         let type_size_mask = (1u32 << type_size) - 1;
         let mask = !(type_size_mask << bit_offset);
 
