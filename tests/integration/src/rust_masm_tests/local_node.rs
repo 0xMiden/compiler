@@ -80,23 +80,23 @@ impl LocalMidenNode {
                     } else {
                         eprintln!("Successfully uninstalled old version");
                     }
-                    
+
                     // Clean all node-related data when version changes
                     eprintln!("Cleaning node data due to version change...");
-                    
+
                     // Kill any running node process
                     if let Ok(Some(pid)) = read_pid() {
                         eprintln!("Stopping existing node process {}", pid);
                         let _ = kill_process(pid);
                     }
-                    
+
                     // Clean the entire coordination directory
                     if let Err(e) = fs::remove_dir_all(COORD_DIR) {
                         if e.kind() != std::io::ErrorKind::NotFound {
                             eprintln!("Warning: Failed to clean coordination directory: {}", e);
                         }
                     }
-                    
+
                     true
                 }
             }
@@ -121,7 +121,7 @@ impl LocalMidenNode {
 
             eprintln!("miden-node {} installed successfully", MIDEN_NODE_VERSION);
         }
-        
+
         Ok(())
     }
 
@@ -205,6 +205,7 @@ fn acquire_lock() -> Result<LockGuard, String> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(LOCK_FILE)
         .map_err(|e| format!("Failed to open lock file: {}", e))?;
 
@@ -267,7 +268,7 @@ fn is_process_running(pid: u32) -> bool {
     {
         // On macOS, use ps command
         Command::new("ps")
-            .args(&["-p", &pid.to_string()])
+            .args(["-p", &pid.to_string()])
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
@@ -281,7 +282,7 @@ fn kill_process(pid: u32) -> Result<(), String> {
     // Use kill command for cross-platform compatibility
     // First try SIGTERM
     let term_result = Command::new("kill")
-        .args(&["-TERM", &pid.to_string()])
+        .args(["-TERM", &pid.to_string()])
         .output()
         .map_err(|e| format!("Failed to execute kill command: {}", e))?;
 
@@ -300,7 +301,7 @@ fn kill_process(pid: u32) -> Result<(), String> {
     // If still running, use SIGKILL
     if is_process_running(pid) {
         let kill_result = Command::new("kill")
-            .args(&["-KILL", &pid.to_string()])
+            .args(["-KILL", &pid.to_string()])
             .output()
             .map_err(|e| format!("Failed to execute kill command: {}", e))?;
 
@@ -324,24 +325,19 @@ fn get_ref_count() -> Result<usize, String> {
         .map_err(|e| format!("Failed to read ref count directory: {}", e))?;
 
     let mut active_count = 0;
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let file_name_str = file_name.to_string_lossy();
 
-            // Extract PID from handle name (format: handle-{pid}-{uuid})
-            if let Some(pid_str) = file_name_str.split('-').nth(1) {
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    if is_process_running(pid) {
-                        active_count += 1;
-                    } else {
-                        // Clean up stale reference from dead process
-                        eprintln!(
-                            "[SharedNode] Cleaning up stale reference from dead process {}",
-                            pid
-                        );
-                        let _ = fs::remove_file(entry.path());
-                    }
+        // Extract PID from handle name (format: handle-{pid}-{uuid})
+        if let Some(pid_str) = file_name_str.split('-').nth(1) {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                if is_process_running(pid) {
+                    active_count += 1;
+                } else {
+                    // Clean up stale reference from dead process
+                    eprintln!("[SharedNode] Cleaning up stale reference from dead process {}", pid);
+                    let _ = fs::remove_file(entry.path());
                 }
             }
         }
