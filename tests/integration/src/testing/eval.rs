@@ -115,6 +115,18 @@ where
     Ok(output)
 }
 
+/// Helper function to compile a test module with the given signature and build function
+pub fn compile_test_module(
+    signature: midenc_hir::Signature,
+    build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
+) -> (miden_mast_package::Package, std::rc::Rc<midenc_hir::Context>) {
+    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    let link_output = setup::build_empty_component_for_test(context.clone());
+    setup::build_entrypoint(link_output.component, &signature, build_fn);
+    let package = compile_link_output_to_package(link_output).unwrap();
+    (package, context)
+}
+
 /// Compiles a LinkOutput to a Package, suitable for execution
 pub fn compile_link_output_to_package(
     link_output: LinkOutput,

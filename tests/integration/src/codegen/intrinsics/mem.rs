@@ -20,11 +20,6 @@ use crate::testing::*;
 fn load_sw() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Write address to use
     let write_to = 17 * 2u32.pow(16);
 
@@ -33,7 +28,9 @@ fn load_sw() {
         [AbiParam::new(Type::from(PointerType::new(Type::U32)))],
         [AbiParam::new(Type::U32)],
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         // Get the input pointer, and load the value at that address
         let ptr = block.borrow().arguments()[0] as ValueRef;
@@ -41,9 +38,6 @@ fn load_sw() {
         // Return the value so we can assert that the output of execution matches
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u32>(), move |value| {
@@ -95,11 +89,6 @@ fn load_sw() {
 fn load_dw() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Write address to use
     let write_to = 17 * 2u32.pow(16);
 
@@ -108,7 +97,9 @@ fn load_dw() {
         [AbiParam::new(Type::from(PointerType::new(Type::U64)))],
         [AbiParam::new(Type::U64)],
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         // Get the input pointer, and load the value at that address
         let ptr = block.borrow().arguments()[0] as ValueRef;
@@ -116,9 +107,6 @@ fn load_dw() {
         // Return the value so we can assert that the output of execution matches
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
@@ -176,11 +164,6 @@ fn load_dw() {
 fn load_u8() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Write address to use
     let write_to = 17 * 2u32.pow(16);
 
@@ -189,7 +172,9 @@ fn load_u8() {
         [AbiParam::new(Type::from(PointerType::new(Type::U8)))],
         [AbiParam::new(Type::U8)],
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         // Get the input pointer, and load the value at that address
         let ptr = block.borrow().arguments()[0] as ValueRef;
@@ -197,9 +182,6 @@ fn load_u8() {
         // Return the value so we can assert that the output of execution matches
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u8>(), move |value| {
@@ -251,11 +233,6 @@ fn load_u8() {
 fn load_u16() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Write address to use
     let write_to = 17 * 2u32.pow(16);
 
@@ -264,7 +241,9 @@ fn load_u16() {
         [AbiParam::new(Type::from(PointerType::new(Type::U16)))],
         [AbiParam::new(Type::U16)],
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         // Get the input pointer, and load the value at that address
         let ptr = block.borrow().arguments()[0] as ValueRef;
@@ -272,9 +251,6 @@ fn load_u16() {
         // Return the value so we can assert that the output of execution matches
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
@@ -326,11 +302,6 @@ fn load_u16() {
 fn load_bool() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Write address to use
     let write_to = 17 * 2u32.pow(16);
 
@@ -339,7 +310,9 @@ fn load_bool() {
         [AbiParam::new(Type::from(PointerType::new(Type::I1)))],
         [AbiParam::new(Type::I1)],
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         // Get the input pointer, and load the value at that address
         let ptr = block.borrow().arguments()[0] as ValueRef;
@@ -347,9 +320,6 @@ fn load_bool() {
         // Return the value so we can assert that the output of execution matches
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<bool>(), move |value| {
@@ -407,11 +377,6 @@ fn load_bool() {
 fn store_u16() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack)
     let write_to = 17 * 2u32.pow(16);
 
@@ -420,7 +385,8 @@ fn store_u16() {
         [AbiParam::new(Type::U16), AbiParam::new(Type::U16)],
         [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         let (value1, value2) = {
             let block_ref = block.borrow();
@@ -468,9 +434,6 @@ fn store_u16() {
         let result = builder.u32(1, SourceSpan::default());
         builder.ret(Some(result), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(32);
     let res = TestRunner::new(config).run(
@@ -552,11 +515,6 @@ fn store_u16() {
 fn store_u8() {
     setup::enable_compiler_instrumentation();
 
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
-
-    // Construct the link outputs to be populated
-    let link_output = setup::build_empty_component_for_test(context.clone());
-
     // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack)
     let write_to = 17 * 2u32.pow(16);
 
@@ -570,7 +528,8 @@ fn store_u8() {
         ],
         [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
     );
-    setup::build_entrypoint(link_output.component, &signature, |builder| {
+
+    let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         let (value0, value1, value2, value3) = {
             let block_ref = block.borrow();
@@ -673,9 +632,6 @@ fn store_u8() {
         let result = builder.u32(1, SourceSpan::default());
         builder.ret(Some(result), SourceSpan::default()).unwrap();
     });
-
-    // Compile once outside the test loop
-    let package = compile_link_output_to_package(link_output).unwrap();
 
     let config = proptest::test_runner::Config::with_cases(32);
     let res = TestRunner::new(config).run(
