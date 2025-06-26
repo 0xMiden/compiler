@@ -52,7 +52,7 @@ impl LocalMidenNode {
         // Check if miden-node is already installed and get version
         let check = Command::new("miden-node").arg("--version").output();
 
-        match check {
+        let need_install = match check {
             Ok(output) if output.status.success() => {
                 let version = String::from_utf8_lossy(&output.stdout);
                 let version_line = version.lines().next().unwrap_or("");
@@ -60,7 +60,7 @@ impl LocalMidenNode {
                 // Check if it's the exact version we need
                 if version_line.contains(MIDEN_NODE_VERSION) {
                     eprintln!("miden-node already installed: {}", version_line);
-                    return Ok(());
+                    false
                 } else {
                     eprintln!(
                         "Found incompatible miden-node version: {} (need {})",
@@ -80,26 +80,48 @@ impl LocalMidenNode {
                     } else {
                         eprintln!("Successfully uninstalled old version");
                     }
+                    
+                    // Clean all node-related data when version changes
+                    eprintln!("Cleaning node data due to version change...");
+                    
+                    // Kill any running node process
+                    if let Ok(Some(pid)) = read_pid() {
+                        eprintln!("Stopping existing node process {}", pid);
+                        let _ = kill_process(pid);
+                    }
+                    
+                    // Clean the entire coordination directory
+                    if let Err(e) = fs::remove_dir_all(COORD_DIR) {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            eprintln!("Warning: Failed to clean coordination directory: {}", e);
+                        }
+                    }
+                    
+                    true
                 }
             }
             _ => {
                 eprintln!("miden-node not found");
+                true
             }
+        };
+
+        if need_install {
+            // Install specific version compatible with miden-client
+            eprintln!("Installing miden-node version {} from crates.io...", MIDEN_NODE_VERSION);
+            let output = Command::new("cargo")
+                .args(["install", "miden-node", "--version", MIDEN_NODE_VERSION, "--locked"])
+                .output()
+                .map_err(|e| format!("Failed to run cargo install: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to install miden-node: {}", stderr));
+            }
+
+            eprintln!("miden-node {} installed successfully", MIDEN_NODE_VERSION);
         }
-
-        // Install specific version compatible with miden-client
-        eprintln!("Installing miden-node version {} from crates.io...", MIDEN_NODE_VERSION);
-        let output = Command::new("cargo")
-            .args(["install", "miden-node", "--version", MIDEN_NODE_VERSION, "--locked"])
-            .output()
-            .map_err(|e| format!("Failed to run cargo install: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to install miden-node: {}", stderr));
-        }
-
-        eprintln!("miden-node {} installed successfully", MIDEN_NODE_VERSION);
+        
         Ok(())
     }
 
