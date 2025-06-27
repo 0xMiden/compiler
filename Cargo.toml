@@ -20,6 +20,7 @@ members = [
     "sdk/*",
     "tools/*",
     "tests/integration",
+    "tests/integration-node",
 ]
 exclude = [
     "sdk/.cargo",

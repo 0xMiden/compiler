@@ -3624,6 +3624,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-integration-node-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cargo-miden",
+ "env_logger",
+ "filetime",
+ "fs2",
+ "log",
+ "miden-assembly",
+ "miden-client",
+ "miden-core",
+ "miden-integration-tests",
+ "miden-mast-package",
+ "miden-objects",
+ "midenc-debug",
+ "midenc-expect-test",
+ "midenc-frontend-wasm",
+ "midenc-session",
+ "proptest",
+ "rand 0.9.1",
+ "temp-dir",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "miden-integration-tests"
 version = "0.1.5"
 dependencies = [

@@ -17,7 +17,6 @@ mod local_node;
 mod misc;
 mod parallel_tests;
 mod rust_sdk;
-mod testnet;
 mod types;
 
 pub fn run_masm_vs_rust<T>(

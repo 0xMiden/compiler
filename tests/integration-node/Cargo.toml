@@ -1,0 +1,42 @@
+[package]
+name = "miden-integration-node-tests"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+cargo-miden.workspace = true
+env_logger.workspace = true
+filetime = "0.2.23"
+fs2 = "0.4"
+log.workspace = true
+miden-assembly.workspace = true
+miden-client = { version = "0.9", git = "https://github.com/0xMiden/miden-client", rev = "f98ae87fc3f77e269c3c1e412d1b8ac650aa6fe3", features = [
+    "tonic",
+    "sqlite",
+] }
+miden-core.workspace = true
+miden-mast-package.workspace = true
+miden-objects = { workspace = true, features = ["std"] }
+midenc-debug.workspace = true
+midenc-frontend-wasm.workspace = true
+midenc-session.workspace = true
+proptest.workspace = true
+rand = "0.9"
+temp-dir = "0.1"
+tokio.workspace = true
+uuid = { version = "1.10", features = ["v4"] }
+
+# For accessing the test builder from the main integration tests
+miden-integration-tests = { path = "../integration" }
+
+[dev-dependencies]
+midenc-expect-test.workspace = true

@@ -2,18 +2,15 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::{BufRead, Read, Write},
+    io::BufRead,
     net::TcpStream,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
 use fs2::FileExt;
-use temp_dir::TempDir;
-use tokio::time::sleep;
 
 // Version configuration for miden-node
 // When updating miden-client version in Cargo.toml, update this constant to match

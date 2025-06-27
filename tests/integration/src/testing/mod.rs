@@ -3,7 +3,6 @@
 mod eval;
 mod initializer;
 pub mod setup;
-pub mod testnet;
 
 pub use self::{
     eval::{compile_link_output_to_package, compile_test_module, eval_link_output, eval_package},
