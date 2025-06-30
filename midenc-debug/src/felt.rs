@@ -610,6 +610,27 @@ impl<const N: usize> FromMidenRepr for [u8; N] {
     }
 }
 
+impl FromMidenRepr for [Felt; 4] {
+    #[inline(always)]
+    fn size_in_felts() -> usize {
+        4
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        panic!("field elements have no canonical byte representation")
+    }
+
+    #[inline(always)]
+    fn from_felts(felts: &[RawFelt]) -> Self {
+        [Felt(felts[0]), Felt(felts[1]), Felt(felts[2]), Felt(felts[3])]
+    }
+
+    #[inline(always)]
+    fn from_words(words: &[Word]) -> Self {
+        [Felt(words[0][0]), Felt(words[0][1]), Felt(words[0][2]), Felt(words[0][3])]
+    }
+}
+
 /// Convert a byte array to an equivalent vector of words
 ///
 /// Given a byte slice laid out like so:
