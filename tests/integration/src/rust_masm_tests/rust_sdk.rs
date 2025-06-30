@@ -82,11 +82,12 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_ir(expect_file![format!("../../expected/rust_sdk/cross_ctx_note.hir")]);
     test.expect_masm(expect_file![format!("../../expected/rust_sdk/cross_ctx_note.masm")]);
     let package = test.compiled_package();
+    let program = package.unwrap_program();
     let mut exec = Executor::new(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&program, &test.session);
 }
 
 #[test]

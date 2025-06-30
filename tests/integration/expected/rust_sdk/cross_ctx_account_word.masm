@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account-word/foo@1.0.0
 
 export.process-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-word
@@ -66,6 +67,7 @@ export.process-word
 end
 
 export.process-another-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-another-word
@@ -131,6 +133,7 @@ export.process-another-word
 end
 
 export.process-felt
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-felt
@@ -140,6 +143,7 @@ export.process-felt
 end
 
 export.process-pair
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-pair
@@ -176,6 +180,7 @@ export.process-pair
 end
 
 export.process-triple
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-triple
@@ -225,6 +230,7 @@ export.process-triple
 end
 
 export.process-mixed
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-mixed
@@ -342,6 +348,7 @@ export.process-mixed
 end
 
 export.process-nested
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0#process-nested
@@ -395,7 +402,7 @@ export.process-nested
 end
 
 export.init
-    push.2162688
+    push.1114112
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
@@ -412,10 +419,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.262152
     push.0
     u32assert
-    mem_store.262145
+    mem_store.262153
 end
 
 # mod miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word
@@ -429,7 +436,7 @@ proc.cross_ctx_account_word::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-word
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -532,7 +539,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-word
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -645,7 +652,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-felt
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -704,7 +711,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -785,7 +792,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -997,7 +1004,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-nested
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -1078,7 +1085,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-nested
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -1107,7 +1114,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1048580
+        push.1048612
         u32divmod.4
         swap.1
         trace.240

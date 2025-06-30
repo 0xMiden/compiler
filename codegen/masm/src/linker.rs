@@ -4,6 +4,8 @@ use midenc_hir::{
 };
 
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
+/// Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
+const DEFAULT_RESERVATION: u32 = 16;
 
 pub struct LinkInfo {
     component: builtin::ComponentId,
@@ -72,8 +74,6 @@ pub struct Linker {
 
 impl Default for Linker {
     fn default() -> Self {
-        // Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
-        const DEFAULT_RESERVATION: u32 = 16;
         Self::new(DEFAULT_RESERVATION, DEFAULT_PAGE_SIZE)
     }
 }
@@ -86,8 +86,9 @@ impl Linker {
         } else {
             DEFAULT_PAGE_SIZE
         };
+        let globals_start = reserved_memory_pages * page_size;
         Self {
-            globals_layout: GlobalVariableLayout::new(reserved_memory_pages * page_size, page_size),
+            globals_layout: GlobalVariableLayout::new(globals_start, page_size),
             segment_layout: Default::default(),
             reserved_memory_pages,
             page_size,
@@ -116,6 +117,11 @@ impl Linker {
                 let module_body = module_body.entry();
                 for item in module_body.body() {
                     if let Some(segment) = item.downcast_ref::<builtin::Segment>() {
+                        log::debug!(target: "linker",
+                            "inserting segment at offset {:#x}, size: {} bytes",
+                            segment.offset(),
+                            segment.size_in_bytes()
+                        );
                         self.segment_layout
                             .insert(unsafe { SegmentRef::from_raw(segment) })
                             .map_err(|err| LinkerError::InvalidSegment {
@@ -137,9 +143,19 @@ impl Linker {
 
         // 3. Layout global variables in the next page following the last data segment
         let next_available_offset = self.segment_layout.next_available_offset();
-        self.globals_layout.global_table_offset = core::cmp::max(
-            (self.reserved_memory_pages * self.page_size).next_multiple_of(4),
+        let reserved_offset = (self.reserved_memory_pages * self.page_size).next_multiple_of(4);
+        log::debug!(target: "linker",
+            "next_available_offset from segments: {:#x}, reserved_offset: {:#x}, \
+             segment_count: {}",
             next_available_offset,
+            reserved_offset,
+            self.segment_layout.len()
+        );
+        self.globals_layout
+            .update_global_table_offset(core::cmp::max(reserved_offset, next_available_offset));
+        log::debug!(target: "linker",
+            "global_table_offset set to: {:#x}",
+            self.globals_layout.global_table_offset()
         );
 
         Ok(LinkInfo {
@@ -210,6 +226,46 @@ impl GlobalVariableLayout {
         self.offsets.get(&gv).copied()
     }
 
+    /// Update the global table offset and adjust existing global variable offsets if necessary.
+    ///
+    /// This method should be used instead of directly modifying the `global_table_offset` field.
+    /// If globals have already been inserted, their offsets will be adjusted to maintain
+    /// their relative positions from the new base offset.
+    pub fn update_global_table_offset(&mut self, new_offset: u32) {
+        let old_offset = self.global_table_offset;
+
+        // Update the base offset
+        self.global_table_offset = new_offset;
+
+        // If there are existing globals, we need to adjust their offsets
+        if !self.offsets.is_empty() {
+            // Calculate the difference between old and new offset
+            let offset_diff = new_offset as i32 - old_offset as i32;
+
+            // Update all existing global offsets
+            for offset in self.offsets.values_mut() {
+                *offset = (*offset as i32 + offset_diff) as u32;
+            }
+
+            // Update the stack pointer offset if it exists
+            if let Some(sp_offset) = self.stack_pointer.as_mut() {
+                *sp_offset = (*sp_offset as i32 + offset_diff) as u32;
+            }
+
+            // Update the next offset to maintain the same relative position
+            self.next_offset = (self.next_offset as i32 + offset_diff) as u32;
+        } else {
+            // If no globals have been inserted yet, just update next_offset to match
+            self.next_offset = new_offset;
+        }
+
+        log::debug!(target: "linker",
+            "GlobalVariableLayout: updated global_table_offset from {:#x} to {:#x}",
+            old_offset,
+            new_offset
+        );
+    }
+
     pub fn insert(&mut self, gv: &builtin::GlobalVariable) {
         let key = unsafe { builtin::GlobalVariableRef::from_raw(gv) };
 
@@ -225,6 +281,12 @@ impl GlobalVariableLayout {
         let ty = gv.ty();
         let offset = self.next_offset.align_up(ty.min_alignment() as u32);
         if self.offsets.try_insert(key, offset).is_ok() {
+            log::debug!(target: "linker",
+                "GlobalVariableLayout: allocated global '{}' at offset {:#x} (size: {} bytes)",
+                gv.name(),
+                offset,
+                ty.size_in_bytes()
+            );
             if is_stack_pointer {
                 self.stack_pointer = Some(offset);
             }

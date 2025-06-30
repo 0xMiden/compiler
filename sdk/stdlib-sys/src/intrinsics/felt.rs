@@ -10,7 +10,7 @@ extern "C" {
     #[link_name = "from-u32"]
     fn extern_from_u32(value: u32) -> Felt;
 
-    #[link_name = "as_u64"]
+    #[link_name = "as-u64"]
     fn extern_as_u64(felt: Felt) -> u64;
 
     #[link_name = "add"]

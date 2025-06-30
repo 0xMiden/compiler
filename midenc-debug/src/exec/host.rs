@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, num::NonZeroU32, sync::Arc};
 
 use miden_core::crypto::hash::RpoDigest;
 use miden_processor::{
-    AdviceProvider, ExecutionError, Host, MastForest, MastForestStore, MemAdviceProvider,
-    MemMastForestStore, ProcessState, RowIndex,
+    AdviceInputs, AdviceProvider, ExecutionError, Host, KvMap, MastForest, MastForestStore,
+    MemAdviceProvider, MemMastForestStore, ProcessState, RowIndex,
 };
 
 use super::{TraceEvent, TraceHandler};
@@ -51,6 +51,12 @@ impl DebuggerHost {
 
     /// Load `forest` into the MAST store for this host
     pub fn load_mast_forest(&mut self, forest: Arc<MastForest>) {
+        // Extract and load the advice map from the forest before putting it into the store.
+        let advice_map = forest.advice_map();
+        for (digest, values) in advice_map.iter() {
+            let key = digest.into();
+            self.adv_provider.insert_into_map(key, values.clone());
+        }
         self.store.insert(forest);
     }
 }

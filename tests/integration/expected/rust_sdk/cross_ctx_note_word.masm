@@ -1,6 +1,7 @@
 # mod miden:base/note-script@1.0.0
 
 export.note-script
+    exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::miden:base/note-script@1.0.0#note-script
@@ -10,7 +11,7 @@ export.note-script
 end
 
 export.init
-    push.2162688
+    push.1114112
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
@@ -27,10 +28,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.262152
     push.0
     u32assert
-    mem_store.262145
+    mem_store.262153
 end
 
 # mod miden:base/note-script@1.0.0::cross_ctx_note_word
@@ -457,7 +458,7 @@ proc.cross_ctx_note_word::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:base/note-script@1.0.0#note-script
-    push.1048576
+    push.1048608
     u32divmod.4
     swap.1
     trace.240
@@ -467,7 +468,7 @@ export.miden:base/note-script@1.0.0#note-script
     nop
     push.32
     u32wrapping_sub
-    push.1048576
+    push.1048608
     dup.1
     swap.1
     u32divmod.4
@@ -1078,7 +1079,7 @@ export.miden:base/note-script@1.0.0#note-script
         assert_eq
         push.32
         u32wrapping_add
-        push.1048576
+        push.1048608
         u32divmod.4
         swap.1
         trace.240
@@ -1094,7 +1095,7 @@ export.miden:base/note-script@1.0.0#note-script
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048580
+    push.1048612
     u32divmod.4
     swap.1
     trace.240
@@ -1123,7 +1124,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1048580
+        push.1048612
         u32divmod.4
         swap.1
         trace.240

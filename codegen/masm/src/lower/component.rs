@@ -117,10 +117,12 @@ impl ToMasmComponent for builtin::Component {
             None
         };
 
-        // Compute the first page boundary after the end of the globals table to use as the start
-        // of the dynamic heap when the program is executed
-        let heap_base = link_info.reserved_memory_bytes()
-            + link_info.globals_layout().next_page_boundary() as usize;
+        // Compute the first page boundary after the end of the globals table (or reserved memory
+        // if no globals) to use as the start of the dynamic heap when the program is executed
+        let heap_base = core::cmp::max(
+            link_info.reserved_memory_bytes(),
+            link_info.globals_layout().next_page_boundary() as usize,
+        );
         let heap_base = u32::try_from(heap_base)
             .expect("unable to allocate dynamic heap: global table too large");
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
@@ -521,13 +523,30 @@ impl MasmFunctionBuilder {
                 stack.push(arg as ValueRef);
             }
         }
-        let emitter = BlockEmitter {
+        let mut emitter = BlockEmitter {
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
             stack,
         };
+
+        // For component export functions, invoke the `init` procedure first if needed.
+        // It loads the data segments and global vars into memory.
+        if function.signature().cc == CallConv::CanonLift
+            && (link_info.has_globals() || link_info.has_data_segments())
+        {
+            let component_path = link_info.component().to_library_path();
+            let init = InvocationTarget::AbsoluteProcedurePath {
+                name: ProcedureName::new("init").unwrap(),
+                path: component_path,
+            };
+            let span = SourceSpan::default();
+            // Add init call to the emitter's target before emitting the function body
+            emitter
+                .target
+                .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
+        }
 
         let mut body = emitter.emit(&entry.borrow());
 
