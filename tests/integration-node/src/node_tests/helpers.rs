@@ -16,6 +16,7 @@ use rand::{rngs::StdRng, RngCore};
 use tokio::time::sleep;
 
 /// Helper to create a basic account
+#[allow(dead_code)]
 pub async fn create_basic_account(
     client: &mut Client,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
