@@ -271,7 +271,7 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     trace.252
     nop
     push.0
-    dup.6
+    dup.9
     swap.1
     u32wrapping_add
     u32divmod.4
@@ -283,7 +283,7 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     nop
     push.0
     push.8
-    dup.5
+    dup.8
     swap.1
     u32wrapping_add
     u32wrapping_add
@@ -295,7 +295,7 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     trace.252
     nop
     push.12
-    dup.3
+    dup.6
     swap.1
     u32wrapping_add
     u32divmod.4
@@ -307,7 +307,7 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     nop
     push.0
     push.16
-    movup.3
+    dup.6
     swap.1
     u32wrapping_add
     u32wrapping_add
@@ -318,6 +318,81 @@ proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    push.20
+    dup.4
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.255
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
+    u32or
+    swap.1
+    mem_store
+    push.21
+    dup.3
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.1
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
+    u32or
+    swap.1
+    mem_store
+    push.22
+    movup.2
+    swap.1
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.65535
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
+    u32or
+    swap.1
+    mem_store
 end
 
 proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6
@@ -735,6 +810,9 @@ export.miden:base/note-script@1.0.0#note-script
     dup.1
     swap.1
     u32wrapping_add
+    push.3
+    push.0
+    push.111
     push.50
     push.4294967285
     push.4294967290
@@ -789,8 +867,65 @@ export.miden:base/note-script@1.0.0#note-script
     nop
     neq
     if.true
-        push.24
+        push.30
         dup.1
+        add
+        u32assert
+        push.2
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        swap.1
+        dup.1
+        mem_load
+        swap.1
+        push.8
+        u32wrapping_mul
+        u32shr
+        swap.1
+        drop
+        push.65535
+        u32and
+        push.29
+        dup.2
+        add
+        u32assert
+        u32divmod.4
+        swap.1
+        swap.1
+        dup.1
+        mem_load
+        swap.1
+        push.8
+        u32wrapping_mul
+        u32shr
+        swap.1
+        drop
+        push.255
+        u32and
+        push.28
+        dup.3
+        add
+        u32assert
+        u32divmod.4
+        swap.1
+        swap.1
+        dup.1
+        mem_load
+        swap.1
+        push.8
+        u32wrapping_mul
+        u32shr
+        swap.1
+        drop
+        push.255
+        u32and
+        push.24
+        dup.4
         add
         u32assert
         push.4
@@ -807,7 +942,7 @@ export.miden:base/note-script@1.0.0#note-script
         trace.252
         nop
         push.20
-        dup.2
+        dup.5
         add
         u32assert
         push.4
@@ -824,7 +959,7 @@ export.miden:base/note-script@1.0.0#note-script
         trace.252
         nop
         push.16
-        dup.3
+        dup.6
         add
         u32assert
         push.4
@@ -858,6 +993,19 @@ export.miden:base/note-script@1.0.0#note-script
         push.4294967295
         assert_eq
         push.57
+        assert_eq
+        push.122
+        swap.1
+        assert_eq
+        push.1
+        push.0
+        push.255
+        movup.3
+        u32and
+        neq
+        assert_eq
+        push.12
+        swap.1
         assert_eq
         push.8
         dup.1
@@ -958,11 +1106,15 @@ proc.wit_bindgen_rt::run_ctors_once
     u32wrapping_add
     u32divmod.4
     swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
+    swap.1
+    dup.1
+    mem_load
+    swap.1
+    push.8
+    u32wrapping_mul
+    u32shr
+    swap.1
+    drop
     push.255
     u32and
     push.0
@@ -991,23 +1143,25 @@ proc.wit_bindgen_rt::run_ctors_once
         u32wrapping_add
         u32divmod.4
         swap.1
-        dup.1
-        dup.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        push.4294967040
+        dup.0
+        mem_load
+        dup.2
+        push.8
+        u32wrapping_mul
+        push.255
+        swap.1
+        u32shl
+        u32not
+        swap.1
         u32and
         movup.3
+        movup.3
+        push.8
+        u32wrapping_mul
+        u32shl
         u32or
-        movdn.2
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
+        swap.1
+        mem_store
     end
 end
 

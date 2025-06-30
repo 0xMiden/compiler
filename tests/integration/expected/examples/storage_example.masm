@@ -714,11 +714,15 @@ proc.wit_bindgen_rt::run_ctors_once
     u32wrapping_add
     u32divmod.4
     swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
+    swap.1
+    dup.1
+    mem_load
+    swap.1
+    push.8
+    u32wrapping_mul
+    u32shr
+    swap.1
+    drop
     push.255
     u32and
     push.0
@@ -747,23 +751,25 @@ proc.wit_bindgen_rt::run_ctors_once
         u32wrapping_add
         u32divmod.4
         swap.1
-        dup.1
-        dup.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        push.4294967040
+        dup.0
+        mem_load
+        dup.2
+        push.8
+        u32wrapping_mul
+        push.255
+        swap.1
+        u32shl
+        u32not
+        swap.1
         u32and
         movup.3
+        movup.3
+        push.8
+        u32wrapping_mul
+        u32shl
         u32or
-        movdn.2
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
+        swap.1
+        mem_store
     end
 end
 

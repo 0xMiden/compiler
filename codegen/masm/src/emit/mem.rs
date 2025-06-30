@@ -53,14 +53,20 @@ impl OpEmitter<'_> {
             Type::Ptr(ref ptr_ty) => {
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
+                assert_eq!(
+                    ty.size_in_bits(),
+                    ptr_ty.pointee().size_in_bits(),
+                    "The size of the type of the value being loaded ({ty}) is different from the \
+                     type of the pointee ({})",
+                    ptr_ty.pointee()
+                );
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word(None, span),
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
-                        self.load_word(None, span);
-                        self.trunc_int32(ty.size_in_bits() as u32, span);
+                        self.load_small(ty, None, span);
                     }
                     ty => todo!("support for loading {ty} is not yet implemented"),
                 }
@@ -85,8 +91,7 @@ impl OpEmitter<'_> {
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
-                self.load_word(Some(ptr), span);
-                self.trunc_int32(ty.size_in_bits() as u32, span);
+                self.load_small(&ty, Some(ptr), span);
             }
             ty => todo!("support for loading {ty} is not yet implemented"),
         }
@@ -173,6 +178,78 @@ impl OpEmitter<'_> {
         }
 
         self.raw_exec("intrinsics::mem::load_dw", span);
+    }
+
+    /// Load a sub-word value (u8, u16, etc.) from memory
+    ///
+    /// For sub-word loads, we need to load from the element-aligned address
+    /// and then extract the correct bits based on the byte offset.
+    ///
+    /// If `ptr` is None, this function expects the stack to contain: [element_addr, byte_offset]
+    /// If `ptr` is Some, it uses the immediate pointer value.
+    ///
+    /// The approach:
+    /// 1. Load the 32-bit word containing the target byte(s)
+    /// 2. Shift right by (byte_offset * 8) bits to move the target byte(s) to the low end
+    /// 3. Mask to extract only the bits we need based on the type size
+    ///
+    /// After execution, the stack will contain: [loaded_value]
+    fn load_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
+        // If we have an immediate pointer, handle it based on alignment
+        if let Some(imm) = ptr {
+            if imm.is_element_aligned() {
+                // For aligned loads, we can use MemLoadImm
+                self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+                // The value is already loaded, just need to mask it
+                let mask = match ty.size_in_bits() {
+                    1 => 0x1,
+                    8 => 0xff,
+                    16 => 0xffff,
+                    _ => unreachable!("load_small called with non-small type"),
+                };
+                self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
+                return;
+            } else {
+                self.emit(masm::Instruction::PushU32(imm.addr), span);
+                self.emit(masm::Instruction::PushU8(imm.offset), span);
+            }
+        }
+
+        // Stack: [element_addr, byte_offset]
+
+        // First, load the aligned word containing our value
+        // We need to temporarily move the offset out of the way
+        self.emit(masm::Instruction::Swap1, span); // [byte_offset, element_addr]
+        self.emit(masm::Instruction::Dup1, span); // [element_addr, byte_offset, element_addr]
+        self.emit(masm::Instruction::MemLoad, span); // [loaded_word, byte_offset, element_addr]
+
+        // Now we need to extract the correct byte(s) based on the offset
+        // Stack: [loaded_word, byte_offset, element_addr]
+        self.emit(masm::Instruction::Swap1, span); // [byte_offset, loaded_word, element_addr]
+
+        // Shift right by (offset * 8) bits to get our byte at the low end
+        self.emit_all(
+            [
+                masm::Instruction::PushU8(8), // [8, byte_offset, loaded_word, element_addr]
+                masm::Instruction::U32WrappingMul, // [offset*8, loaded_word, element_addr]
+                masm::Instruction::U32Shr,    // [shifted_word, element_addr]
+            ],
+            span,
+        );
+
+        // Clean up the element address
+        self.emit(masm::Instruction::Swap1, span); // [element_addr, shifted_word]
+        self.emit(masm::Instruction::Drop, span); // [shifted_word]
+
+        // Mask to get only the bits we need
+        let mask = match ty.size_in_bits() {
+            1 => 0x1,
+            8 => 0xff,
+            16 => 0xffff,
+            _ => unreachable!("load_small called with non-small type"),
+        };
+
+        self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -458,6 +535,13 @@ impl OpEmitter<'_> {
             Type::Ptr(ref ptr_ty) => {
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
+                assert_eq!(
+                    value_ty.size_in_bits(),
+                    ptr_ty.pointee().size_in_bits(),
+                    "The size of the type of the value being stored ({value_ty}) is different \
+                     from the type of the pointee ({})",
+                    ptr_ty.pointee()
+                );
                 match value_ty {
                     Type::I128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word(None, span),
@@ -481,7 +565,6 @@ impl OpEmitter<'_> {
     /// Store a value of type `ty` to `addr`.
     ///
     /// NOTE: The address represented by `addr` is in the IR's byte-addressable address space.
-    #[allow(unused)]
     pub fn store_imm(&mut self, addr: u32, span: SourceSpan) {
         let value = self.stack.pop().expect("operand stack is empty");
         let value_ty = value.ty();
@@ -840,9 +923,26 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::MemStoreImm(ptr.addr.into()), span);
     }
 
+    /// Store a sub-word value (u8, u16, etc.) to memory
+    ///
+    /// For sub-word stores, we need to:
+    /// 1. Load the current 32-bit word at the target address
+    /// 2. Mask out the bits where we'll place the new value
+    /// 3. Shift the new value to the correct bit position
+    /// 4. Combine with OR and store back
+    ///
+    /// This function expects the stack to contain: [addr, offset, value]
+    /// where:
+    /// - addr: The element-aligned address
+    /// - offset: The byte offset within the element (0-3)
+    /// - value: The value to store (already truncated to the correct size)
+    ///
+    /// The approach preserves other bytes in the same word while updating only
+    /// the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
-            return self.store_small_imm(ty, imm, span);
+            self.store_small_imm(ty, imm, span);
+            return;
         }
 
         let type_size = ty.size_in_bits();
@@ -851,51 +951,91 @@ impl OpEmitter<'_> {
             return;
         }
 
-        // Duplicate the address: [addr, offset, addr, offset, value]
-        self.emit_all([masm::Instruction::Dup1, masm::Instruction::Dup1], span);
+        // Stack: [addr, offset, value]
+        // Load the current aligned value
+        self.emit_all(
+            [
+                masm::Instruction::Dup0,    // [addr, addr, offset, value]
+                masm::Instruction::MemLoad, // [prev, addr, offset, value]
+            ],
+            span,
+        );
 
-        // Load the current 32-bit value at `ptr`: [prev, addr, offset, value]
-        self.load_word(ptr, span);
+        // Calculate bit offset and create mask
+        let type_size_mask = (1u32 << type_size) - 1;
+        self.emit_all(
+            [
+                masm::Instruction::Dup2,           // [offset, prev, addr, offset, value]
+                masm::Instruction::PushU8(8),      // [8, offset, prev, addr, offset, value]
+                masm::Instruction::U32WrappingMul, // [bit_offset, prev, addr, offset, value]
+                masm::Instruction::PushU32(type_size_mask), // [type_mask, bit_offset, prev, addr, offset, value]
+                masm::Instruction::Swap1, // [bit_offset, type_mask, prev, addr, offset, value]
+                masm::Instruction::U32Shl, // [shifted_mask, prev, addr, offset, value]
+                masm::Instruction::U32Not, // [mask, prev, addr, offset, value]
+                masm::Instruction::Swap1, // [prev, mask, addr, offset, value]
+                masm::Instruction::U32And, // [masked_prev, addr, offset, value]
+            ],
+            span,
+        );
 
-        // Mask out the bits we're going to be writing from the loaded value
-        // => [masked, addr, offset, value]
-        let mask = u32::MAX << type_size;
-        self.const_mask_u32(mask, span);
-
-        // Mix in the bits we want to write:
-        // => [value, masked, addr, offset]
-        self.emit(masm::Instruction::MovUp3, span);
-        // => [new_value, addr, offset]
-        self.bor_u32(span);
-
-        // Store the combined bits:
-        // => [addr, offset, new_value]
-        self.emit(masm::Instruction::MovDn2, span);
-        self.store_word(ptr, span);
+        // Shift value to correct position and combine
+        self.emit_all(
+            [
+                masm::Instruction::MovUp3,         // [value, masked_prev, addr, offset]
+                masm::Instruction::MovUp3,         // [offset, value, masked_prev, addr]
+                masm::Instruction::PushU8(8),      // [8, offset, value, masked_prev, addr]
+                masm::Instruction::U32WrappingMul, // [bit_offset, value, masked_prev, addr]
+                masm::Instruction::U32Shl,         // [shifted_value, masked_prev, addr]
+                masm::Instruction::U32Or,          // [new_value, addr]
+                masm::Instruction::Swap1,          // [addr, new_value]
+                masm::Instruction::MemStore,       // []
+            ],
+            span,
+        );
     }
 
-    fn store_small_imm(&mut self, ty: &Type, ptr: NativePtr, span: SourceSpan) {
-        assert!(ptr.alignment() as usize >= ty.min_alignment());
+    /// Store a sub-word value using an immediate pointer
+    ///
+    /// This function stores sub-word values (u8, u16, etc.) to memory at a specific immediate address.
+    /// It handles both aligned and unaligned addresses by:
+    /// 1. Loading the current 32-bit word at the element-aligned address
+    /// 2. Masking out the bits where the new value will be placed
+    /// 3. Shifting the new value to the correct bit position based on the byte offset
+    /// 4. Combining with OR and storing back
+    ///
+    /// # Stack Effects
+    /// - Before: [value] (where value is already truncated to the correct size)
+    /// - After: []
+    fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
+        assert!(imm.alignment() as usize >= ty.min_alignment());
 
+        // For immediate pointers, we always load from the element-aligned address
+        // The offset determines which byte(s) within that element we're modifying
+        self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+
+        // Calculate bit offset from byte offset
+        let bit_offset = imm.offset * 8;
+
+        // Create a mask that clears the bits where we'll place the new value
         let type_size = ty.size_in_bits();
-        if type_size == 32 {
-            self.store_word_imm(ptr, span);
-            return;
-        }
+        debug_assert!(type_size < 32, "type_size must be less than 32 bits");
+        let type_size_mask = (1u32 << type_size) - 1;
+        let mask = !(type_size_mask << bit_offset);
 
-        // Load the current 32-bit value at `ptr`
-        self.load_word_imm(ptr, span);
-
-        // Mask out the bits we're going to be writing from the loaded value
-        let mask = u32::MAX << type_size;
+        // Apply mask to the loaded value
         self.const_mask_u32(mask, span);
 
-        // Mix in the bits we want to write
-        self.emit(masm::Instruction::MovUp4, span);
+        // Get the value and shift it to the correct position
+        self.emit(masm::Instruction::MovUp4, span); // Move value to top
+        if bit_offset > 0 {
+            self.emit(masm::Instruction::U32ShlImm(bit_offset.into()), span);
+        }
+
+        // Combine the masked previous value with the shifted new value
         self.bor_u32(span);
 
-        // Store the combined bits
-        self.store_word_imm(ptr, span);
+        // Store the combined bits back to the element-aligned address
+        self.emit(masm::Instruction::MemStoreImm(imm.addr.into()), span);
     }
 
     fn store_array(&mut self, _ty: &ArrayType, _ptr: Option<NativePtr>, _span: SourceSpan) {

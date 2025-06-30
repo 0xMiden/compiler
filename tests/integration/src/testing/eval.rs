@@ -115,6 +115,35 @@ where
     Ok(output)
 }
 
+/// Helper function to compile a test module with the given signature and build function
+pub fn compile_test_module(
+    signature: midenc_hir::Signature,
+    build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
+) -> (miden_mast_package::Package, std::rc::Rc<midenc_hir::Context>) {
+    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    let link_output = setup::build_empty_component_for_test(context.clone());
+    setup::build_entrypoint(link_output.component, &signature, build_fn);
+    let package = compile_link_output_to_package(link_output).unwrap();
+    (package, context)
+}
+
+/// Compiles a LinkOutput to a Package, suitable for execution
+pub fn compile_link_output_to_package(
+    link_output: LinkOutput,
+) -> Result<miden_mast_package::Package, TestCaseError> {
+    use midenc_compile::{compile_link_output_to_masm_with_pre_assembly_stage, CodegenOutput};
+
+    // Compile to Package
+    let mut pre_assembly_stage = |output: CodegenOutput, _context| {
+        println!("# Assembled\n{}", &output.component);
+        Ok(output)
+    };
+    let artifact =
+        compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut pre_assembly_stage)
+            .map_err(|err| TestCaseError::fail(format_report(err)))?;
+    Ok(artifact.unwrap_mast())
+}
+
 /// This helper exists to handle the boilerplate of compiling/assembling the output of the link
 /// stage of the compiler to a package, and then evaluating that package with [eval_package].
 ///
@@ -139,17 +168,6 @@ where
     I: IntoIterator<Item = Initializer<'a>>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
-    use midenc_compile::{compile_link_output_to_masm_with_pre_assembly_stage, CodegenOutput};
-
-    // Compile to Package
-    let mut pre_assembly_stage = |output: CodegenOutput, _context| {
-        println!("# Assembled\n{}", &output.component);
-        Ok(output)
-    };
-    let artifact =
-        compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut pre_assembly_stage)
-            .map_err(|err| TestCaseError::fail(format_report(err)))?;
-    let package = artifact.unwrap_mast();
-
+    let package = compile_link_output_to_package(link_output)?;
     eval_package::<T, _, _>(&package, initializers, args, session, verify_trace)
 }

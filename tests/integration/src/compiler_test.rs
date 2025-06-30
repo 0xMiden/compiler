@@ -202,7 +202,6 @@ impl CompilerTestBuilder {
         if let Some(entrypoint) = entrypoint {
             midenc_flags.extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         }
-        dbg!(&entrypoint);
         Self {
             config: Default::default(),
             source,
@@ -887,11 +886,8 @@ impl CompilerTest {
     /// The compiled Wasm component/module
     fn wasm_bytes(&self) -> Vec<u8> {
         match &self.session.inputs[0].file {
-            InputType::Real(file_path) => {
-                dbg!(&file_path);
-                fs::read(file_path)
-                    .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display()))
-            }
+            InputType::Real(file_path) => fs::read(file_path)
+                .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display())),
             InputType::Stdin { name: _, input } => input.clone(),
         }
     }

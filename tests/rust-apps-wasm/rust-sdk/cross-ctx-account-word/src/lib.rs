@@ -79,6 +79,9 @@ impl foo::Guest for MyFoo {
             a: input.a + felt!(6),
             b: input.b + 10,
             c: input.c + felt!(7),
+            d: input.d + 11,
+            e: !input.e,
+            g: input.g + 9,
         }
     }
 

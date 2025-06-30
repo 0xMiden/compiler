@@ -21,7 +21,7 @@
       (export (;5;) "pair" (type (eq 4)))
       (type (;6;) (record (field "x" 3) (field "y" 3) (field "z" 3)))
       (export (;7;) "triple" (type (eq 6)))
-      (type (;8;) (record (field "f" u64) (field "a" 3) (field "b" u32) (field "c" 3)))
+      (type (;8;) (record (field "f" u64) (field "a" 3) (field "b" u32) (field "c" 3) (field "d" u8) (field "e" bool) (field "g" u16)))
       (export (;9;) "mixed-struct" (type (eq 8)))
       (type (;10;) (record (field "inner" 5) (field "value" 3)))
       (export (;11;) "nested-struct" (type (eq 10)))
@@ -60,7 +60,7 @@
     (type (;4;) (func (param f32 f32 i32)))
     (type (;5;) (func (param f32 f32 f32 i32)))
     (type (;6;) (func (param i64) (result f32)))
-    (type (;7;) (func (param i64 f32 i32 f32 i32)))
+    (type (;7;) (func (param i64 f32 i32 f32 i32 i32 i32 i32)))
     (type (;8;) (func))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7 (;1;) (type 1)))
@@ -82,7 +82,7 @@
     (func $__wasm_call_ctors (;10;) (type 8))
     (func $cross_ctx_note_word::bindings::__link_custom_section_describing_imports (;11;) (type 8))
     (func $miden:base/note-script@1.0.0#note-script (;12;) (type 8)
-      (local i32 f32 f32 f32 f32 f32 f32 f32)
+      (local i32 f32 f32 f32 f32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 32
       i32.sub
@@ -233,6 +233,9 @@
       i32.const -11
       i32.const 50
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      i32.const 111
+      i32.const 0
+      i32.const 3
       local.get 0
       i32.const 8
       i32.add
@@ -245,6 +248,15 @@
         br_if 0 (;@1;)
         unreachable
       end
+      local.get 0
+      i32.load16_u offset=30
+      local.set 8
+      local.get 0
+      i32.load8_u offset=29
+      local.set 9
+      local.get 0
+      i32.load8_u offset=28
+      local.set 10
       local.get 0
       f32.load offset=24
       local.set 1
@@ -262,6 +274,25 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 1
       i32.const 57
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 10
+      f32.reinterpret_i32
+      i32.const 122
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 9
+      i32.const 255
+      i32.and
+      i32.const 0
+      i32.ne
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      i32.const 1
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 8
+      f32.reinterpret_i32
+      i32.const 12
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       i32.const 30
@@ -322,7 +353,7 @@
     (type (;0;) (func (param f32 f32 f32 f32 i32)))
     (type (;1;) (func (param f32 f32 i32)))
     (type (;2;) (func (param f32 f32 f32 i32)))
-    (type (;3;) (func (param i64 f32 i32 f32 i32)))
+    (type (;3;) (func (param i64 f32 i32 f32 i32 i32 i32 i32)))
     (table (;0;) 6 6 funcref)
     (export "0" (func $indirect-miden:cross-ctx-account-word/foo@1.0.0-process-word))
     (export "1" (func $indirect-miden:cross-ctx-account-word/foo@1.0.0-process-another-word))
@@ -364,12 +395,15 @@
       i32.const 3
       call_indirect (type 2)
     )
-    (func $indirect-miden:cross-ctx-account-word/foo@1.0.0-process-mixed (;4;) (type 3) (param i64 f32 i32 f32 i32)
+    (func $indirect-miden:cross-ctx-account-word/foo@1.0.0-process-mixed (;4;) (type 3) (param i64 f32 i32 f32 i32 i32 i32 i32)
       local.get 0
       local.get 1
       local.get 2
       local.get 3
       local.get 4
+      local.get 5
+      local.get 6
+      local.get 7
       i32.const 4
       call_indirect (type 3)
     )
@@ -386,7 +420,7 @@
     (type (;0;) (func (param f32 f32 f32 f32 i32)))
     (type (;1;) (func (param f32 f32 i32)))
     (type (;2;) (func (param f32 f32 f32 i32)))
-    (type (;3;) (func (param i64 f32 i32 f32 i32)))
+    (type (;3;) (func (param i64 f32 i32 f32 i32 i32 i32 i32)))
     (import "" "0" (func (;0;) (type 0)))
     (import "" "1" (func (;1;) (type 0)))
     (import "" "2" (func (;2;) (type 1)))

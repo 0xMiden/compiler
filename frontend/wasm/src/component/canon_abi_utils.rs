@@ -85,7 +85,12 @@ pub fn store<B: ?Sized + Builder>(
             let ptr_type =
                 Type::from(PointerType::new_with_address_space(ty.clone(), AddressSpace::Byte));
             let src_ptr = fb.inttoptr(ptr, ptr_type, span)?;
-            let value = values.next().expect("Not enough values to store");
+            let value_to_store = values.next().expect("Not enough values to store");
+            let value = if value_to_store.borrow().ty() != ty {
+                fb.bitcast(value_to_store, ty.clone(), span)?
+            } else {
+                value_to_store
+            };
             fb.store(src_ptr, value, span)?;
         }
 
