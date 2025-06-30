@@ -11,8 +11,8 @@ use cargo_component::{
     load_component_metadata, load_metadata, run_cargo_command,
 };
 use clap::{CommandFactory, Parser};
-use commands::NewCommand;
-pub use commands::WIT_DEPS_PATH;
+pub use commands::example_project::WIT_DEPS_PATH;
+use commands::{ExampleCommand, NewCommand};
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
 use midenc_session::{RollupTarget, TargetEnv};
@@ -39,7 +39,7 @@ fn version() -> &'static str {
 /// The list of commands that are built-in to `cargo-miden`.
 const BUILTIN_COMMANDS: &[&str] = &[
     "miden", // for indirection via `cargo miden`
-    "new",
+    "new", "example",
 ];
 
 /// The list of commands that are explicitly unsupported by `cargo-miden`.
@@ -74,6 +74,7 @@ enum CargoMiden {
 #[derive(Parser)]
 enum Command {
     New(NewCommand),
+    Example(ExampleCommand),
 }
 
 fn detect_subcommand<I, T>(args: I) -> Option<String>
@@ -131,6 +132,10 @@ where
             match CargoMiden::parse_from(args.clone()) {
                 CargoMiden::Miden(cmd) | CargoMiden::Command(cmd) => match cmd {
                     Command::New(cmd) => {
+                        let project_path = cmd.exec()?;
+                        Ok(Some(CommandOutput::NewCommandOutput { project_path }))
+                    }
+                    Command::Example(cmd) => {
                         let project_path = cmd.exec()?;
                         Ok(Some(CommandOutput::NewCommandOutput { project_path }))
                     }

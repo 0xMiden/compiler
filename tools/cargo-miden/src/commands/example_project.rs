@@ -23,7 +23,7 @@ pub struct ProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
     program: bool,
-    /// Miden rollup account
+    /// Miden rollup account (default)
     #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
     account: bool,
     /// Miden rollup note script
@@ -60,7 +60,7 @@ impl ProjectTemplate {
 
 impl Default for ProjectTemplate {
     fn default() -> Self {
-        Self::program()
+        Self::account()
     }
 }
 
@@ -78,10 +78,10 @@ impl fmt::Display for ProjectTemplate {
     }
 }
 
-/// Create a new clean slate Miden project at <path>
+/// Create a new Miden example project at <path>
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
-pub struct NewCommand {
+pub struct ExampleCommand {
     /// The path for the generated package (the directory name is used for project name)
     #[clap()]
     pub path: PathBuf,
@@ -104,7 +104,7 @@ pub struct NewCommand {
 
 use std::{fs, io::Write};
 
-impl NewCommand {
+impl ExampleCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
         let name = self
             .path
@@ -158,7 +158,7 @@ impl NewCommand {
                 TemplatePath {
                     git: Some("https://github.com/0xMiden/rust-templates".into()),
                     tag: Some(TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(format!("new/{}", project_kind_str)),
+                    auto_path: Some(format!("example/{}", project_kind_str)),
                     ..Default::default()
                 }
             }
