@@ -356,9 +356,9 @@ proc.__rustc::__rust_alloc_zeroed
 end
 
 proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
-    push.32
+    push.16
     push.0
-    push.32
+    push.16
     dup.4
     swap.1
     u32gt

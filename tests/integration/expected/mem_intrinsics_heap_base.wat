@@ -50,9 +50,9 @@
     (local i32 i32)
     block ;; label = @1
       local.get 1
-      i32.const 32
+      i32.const 16
       local.get 1
-      i32.const 32
+      i32.const 16
       i32.gt_u
       select
       local.tee 3
