@@ -13,8 +13,8 @@ use core::{
 #[cfg(target_family = "wasm")]
 const PAGE_SIZE: usize = 2usize.pow(16);
 
-/// We require all allocations to be minimally word-aligned, i.e. 32 byte alignment
-const MIN_ALIGN: usize = 32;
+/// We require all allocations to be minimally word-aligned, i.e. 16 byte alignment
+const MIN_ALIGN: usize = 16;
 
 /// The linear memory heap must not spill over into the region reserved for procedure
 /// locals, which begins at 2^30 in Miden's address space.
