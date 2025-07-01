@@ -140,7 +140,7 @@ impl RewritePattern for FoldRedundantYields {
                 let mut new_opands = SmallVec::<[ValueRef; 4]>::default();
 
                 // Make a copy of the old operands, except for the redundant value, except in the
-                // case where they're all redudant where we need no operands.
+                // case where they're all redundant where we need no operands.
                 if !all_results_are_redundant {
                     for old_opand in term_op.borrow().operands().iter() {
                         if !redundant_result_positions.contains(&old_opand.index()) {
