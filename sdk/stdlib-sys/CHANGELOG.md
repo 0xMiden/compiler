@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.1.0...miden-stdlib-sys-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- add missing felt intrinsics in Miden SDK WIT file
+
+### Other
+
+- add globals to cross-ctx-account and note test projects
+- fix doc comments
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.0.7...miden-stdlib-sys-v0.0.8) - 2025-04-24
 
 ### Added

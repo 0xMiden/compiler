@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.1.0...midenc-hir-transform-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- delayed registration of scf dialect causes canonicalizations to be skipped
+- release borrowed op in `spill.rs` (to be `borrow_mut()`-ed later)
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.7...midenc-hir-transform-v0.0.8) - 2025-04-24
 
 ### Fixed

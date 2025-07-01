@@ -6,6 +6,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.1.0...midenc-frontend-wasm-v0.1.5) - 2025-07-01
+
+### Added
+
+- small integers in `struct` support in result in cross-context calls
+- *(frontend)* add the arbitrary shape `struct` support in
+- implement Wasm CM indirect lowering shim+fixup module bypass
+- add Miden SDK `note::get_assets` Rust bindings
+
+### Fixed
+
+- `ret` returns the exit block args
+- `ResolvedDataSegment::padding_needed()` to calculate an adjustment DOWN (not UP)
+- *(frontend)* ensure data segments are word-aligned for Miden VM #551
+- wasm import module names to be in sync with WIT files (Miden SDK)
+- consider function parameters size in felts (>16) when deciding if
+
+### Other
+
+- clean up debugging asserts
+- add type signature conversion tests for Wasm CM type flattening
+- use `DisplayValues` to avoid materiazing the `Vec` in the frontend
+- clean up commented out `dbg!` in the frontend
+- use `DisplayValues` to avoid materializing the `Vec`
+- add `target` in all `log` messages in the frontend
+- use `ValueRange` instead of `Vec<ValueRef>`
+- add more info to the assertions
+- use `assert!` instead of `if`
+- use `[0]` to get the first element
+- remove the `offset` in `load/store` in CanonABI
+- lift/lower `call`
+- use `SmallVec` for ABI transformation results
+- avoid extra allocation
+- use `SmallVec` for data segments
+- remove `expect-test` in favor of `midenc-expect-test`
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.0.7...midenc-frontend-wasm-v0.0.8) - 2025-04-24
 
 ### Added

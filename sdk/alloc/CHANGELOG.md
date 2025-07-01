@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.1.0...miden-sdk-alloc-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- `BumpAlloc` to make all allocations minimally VM word-aligned (16 bytes)
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.0.7...miden-sdk-alloc-v0.0.8) - 2025-04-24
 
 ### Added

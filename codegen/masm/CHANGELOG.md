@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.0...midenc-codegen-masm-v0.1.5) - 2025-07-01
+
+### Added
+
+- small integers in `struct` support in result in cross-context calls
+
+### Fixed
+
+- add immediate pointer to `OpEmitter::load_small`
+- call `truncate_stack` before returning from a `call`-able procedure
+- mask calculation in `trunc_int32` function (128 -> 255 for u8);
+
+### Other
+
+- Merge pull request #572 from 0xMiden/greenhat/i560-init-account-note
+- add `store_small_imm` function doc and assert
+- don't delegate in `store_small_imm` to `store_word_imm`,
+- add comments
+- remove redundant `store` tests
+- reduce stack manipulation in `store_small`
+- assert that type to be loaded and the pointee type have the
+- use `NativePtr::is_word_aligned`
+- remove `expect-test` in favor of `midenc-expect-test`
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.7...midenc-codegen-masm-v0.0.8) - 2025-04-24
 
 ### Added

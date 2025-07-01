@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.0...miden-base-sys-v0.1.5) - 2025-07-01
+
+### Added
+
+- add Miden SDK `note::get_assets` Rust bindings
+
+### Fixed
+
+- `note` Miden SDK bindings for element-addressable memory in Miden VM #550
+- wasm import module names to be in sync with WIT files (Miden SDK)
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.0.7...miden-base-sys-v0.0.8) - 2025-04-24
 
 ### Added
