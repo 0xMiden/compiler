@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.1.0...midenc-debug-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- invoke `init` in the lifting function prologue, load the advice
+
+### Other
+
+- add format for entrypoint option
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.0.7...midenc-debug-v0.0.8) - 2025-04-24
 
 ### Added

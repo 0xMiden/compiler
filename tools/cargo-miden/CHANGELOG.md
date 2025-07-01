@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.1.0...cargo-miden-v0.1.5) - 2025-07-01
+
+### Added
+
+- implement Wasm CM indirect lowering shim+fixup module bypass
+- *(cargo-miden)* switch rollup projects to `wasm32-wasip2` target
+
+### Other
+
+- sketch out generic testnet test infrastructure
+- add `counter_contract_debug_build` test to reproduce #510,
+- remove unused code (componentization) in
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.0.7...cargo-miden-v0.0.8) - 2025-04-24
 
 ### Added
