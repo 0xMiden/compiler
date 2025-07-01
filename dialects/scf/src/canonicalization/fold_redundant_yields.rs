@@ -70,8 +70,7 @@ impl RewritePattern for FoldRedundantYields {
 
             // For now we only support regions with a simple `yield` terminator.  This may change
             // in the future if/when we support other RegionBranchOps (e.g., `while`).
-            let term_op_name = term_op.as_operation().name();
-            if term_op_name.dialect() != "scf" || term_op_name.name() != "yield" {
+            if !term_op.as_operation().is::<Yield>() {
                 return Ok(false);
             }
 
