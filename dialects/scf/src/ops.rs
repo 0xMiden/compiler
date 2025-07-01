@@ -645,7 +645,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// regions must yield the same arity and types.
 #[operation(
     dialect = ScfDialect,
-    traits(Terminator, ReturnLike, Pure),
+    traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
@@ -704,8 +704,6 @@ impl EffectOpInterface<MemoryEffect> for Yield {
         EffectIterator::from_smallvec(::midenc_hir::smallvec![])
     }
 }
-
-impl AlwaysSpeculatable for Yield {}
 
 impl ConditionallySpeculatable for Yield {
     fn speculatability(&self) -> Speculatability {

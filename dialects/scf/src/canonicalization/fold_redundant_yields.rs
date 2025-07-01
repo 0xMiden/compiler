@@ -68,6 +68,13 @@ impl RewritePattern for FoldRedundantYields {
                 "All region block terminators must impl RegionBranchTerminatorOpInterface.",
             );
 
+            // For now we only support regions with a simple `yield` terminator.  This may change
+            // in the future if/when we support other RegionBranchOps (e.g., `while`).
+            let term_op_name = term_op.as_operation().name();
+            if term_op_name.dialect() != "scf" || term_op_name.name() != "yield" {
+                return Ok(false);
+            }
+
             // Save the terminator and each of its opands paired with their indices.
             term_ops.push(term_op_ref);
             region_yields.push(
