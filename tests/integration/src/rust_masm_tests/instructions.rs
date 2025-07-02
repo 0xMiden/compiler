@@ -332,16 +332,16 @@ test_unary_op_total!(bnot, !, bool);
 
 #[test]
 fn test_hmerge() {
-    let main_fn = "(a: [miden_stdlib_sys::Digest; 2]) -> miden_stdlib_sys::Digest {  \
-                   miden_stdlib_sys::crypto::merge(a) }"
+    let main_fn = r#"
+        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Digest {
+            let digest2 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
+            let digest1 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
+            let digests = [digest1, digest2];
+            miden_stdlib_sys::crypto::merge(digests)
+        }"#
         .to_string();
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
-        "hmerge",
-        &main_fn,
-        config,
-        ["--test-harness".into()],
-    );
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys("hmerge", &main_fn, config, []);
 
     test.expect_wasm(expect_file![format!("../../expected/hmerge.wat")]);
     test.expect_ir(expect_file![format!("../../expected/hmerge.hir")]);
@@ -350,8 +350,7 @@ fn test_hmerge() {
     let package = test.compiled_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    // TODO: restore `with_cases` to 10 after the test is green
-    let config = proptest::test_runner::Config::with_cases(1);
+    let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(
         &any::<([midenc_debug::Felt; 4], [midenc_debug::Felt; 4])>(),
         move |(felts_in1, felts_in2)| {
@@ -376,24 +375,29 @@ fn test_hmerge() {
                 midenc_debug::Felt(digest_out[2]),
                 midenc_debug::Felt(digest_out[3]),
             ];
-            dbg!(felts_out);
 
-            // Place the hash output at 20 * PAGE_SIZE, and the hash input at 21 * PAGE_SIZE
-            let in_addr = 21u32 * 65536;
+            // Place the hash output at 20 * PAGE_SIZE
             let out_addr = 20u32 * 65536;
-            let words_in = [Word::from(raw_felts_in1), Word::from(raw_felts_in2)];
-            let initializers = [Initializer::MemoryWords {
-                addr: in_addr,
-                words: (&words_in).into(),
-            }];
+            let initializers = [];
 
-            // Arguments are: [hash_output_ptr, hash_input_ptr]
-            let args = [Felt::new(in_addr as u64), Felt::new(out_addr as u64)];
+            let args = [
+                raw_felts_in1[0],
+                raw_felts_in1[1],
+                raw_felts_in1[2],
+                raw_felts_in1[3],
+                raw_felts_in2[0],
+                raw_felts_in2[1],
+                raw_felts_in2[2],
+                raw_felts_in2[3],
+                Felt::new(out_addr as u64),
+            ];
             eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-                let vm_out: [midenc_debug::Felt; 4] = trace
+                let mut vm_out: [midenc_debug::Felt; 4] = trace
                     .read_from_rust_memory(out_addr)
                     .expect("expected memory to have been written");
-                dbg!(&vm_out);
+                // TODO: why reversed?
+                // vm_out.reverse();
+                dbg!(&felts_out, &vm_out);
                 prop_assert_eq!(&felts_out, &vm_out, "VM output mismatch");
                 Ok(())
             })?;
