@@ -375,6 +375,7 @@ fn test_hmerge() {
                 midenc_debug::Felt(digest_out[2]),
                 midenc_debug::Felt(digest_out[3]),
             ];
+            dbg!(felts_out);
 
             // Place the hash output at 20 * PAGE_SIZE, and the hash input at 21 * PAGE_SIZE
             let in_addr = 21u32 * 65536;

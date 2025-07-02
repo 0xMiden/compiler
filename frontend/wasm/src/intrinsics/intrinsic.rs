@@ -1,10 +1,10 @@
 use midenc_hir::{
     diagnostics::{miette, Diagnostic},
     interner::{symbols, Symbol},
-    FunctionType, SymbolNameComponent, SymbolPath,
+    FunctionType, SymbolNameComponent, SymbolPath, Type,
 };
 
-use super::{debug, felt, mem};
+use super::{crypto, debug, felt, mem};
 
 /// Error raised when an attempt is made to use or load an unrecognized intrinsic
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -24,6 +24,8 @@ pub enum Intrinsic {
     Mem(Symbol),
     /// A field element intrinsic
     Felt(Symbol),
+    /// A cryptographic intrinsic
+    Crypto(Symbol),
 }
 
 /// Attempt to recognize an intrinsic function from the given [SymbolPath].
@@ -61,6 +63,7 @@ impl TryFrom<&SymbolPath> for Intrinsic {
             symbols::Debug => Ok(Self::Debug(function)),
             symbols::Mem => Ok(Self::Mem(function)),
             symbols::Felt => Ok(Self::Felt(function)),
+            symbols::Crypto => Ok(Self::Crypto(function)),
             _ => Err(UnknownIntrinsicError(path.clone())),
         }
     }
@@ -81,6 +84,7 @@ impl Intrinsic {
             Self::Debug(_) => symbols::Debug,
             Self::Mem(_) => symbols::Mem,
             Self::Felt(_) => symbols::Felt,
+            Self::Crypto(_) => symbols::Crypto,
         }
     }
 
@@ -90,13 +94,17 @@ impl Intrinsic {
             Self::Debug(_) => SymbolPath::from_iter(debug::MODULE_PREFIX.iter().copied()),
             Self::Mem(_) => SymbolPath::from_iter(mem::MODULE_PREFIX.iter().copied()),
             Self::Felt(_) => SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()),
+            Self::Crypto(_) => SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()),
         }
     }
 
     /// Get the name of the intrinsic function as a [Symbol]
     pub fn function_name(&self) -> Symbol {
         match self {
-            Self::Debug(function) | Self::Mem(function) | Self::Felt(function) => *function,
+            Self::Debug(function)
+            | Self::Mem(function)
+            | Self::Felt(function)
+            | Self::Crypto(function) => *function,
         }
     }
 
@@ -110,6 +118,31 @@ impl Intrinsic {
             Self::Debug(_) => None,
             // All field element intrinsics are currently implemented as native instructions
             Self::Felt(_) => None,
+            // Crypto intrinsics are converted to function calls
+            Self::Crypto(function) => {
+                match function.as_str() {
+                    "hmerge" => {
+                        // The WASM import signature: takes 8 felts + 1 i32 pointer, returns nothing
+                        let sig = midenc_hir::FunctionType::new(
+                            midenc_hir::CallConv::Wasm,
+                            vec![
+                                Type::Felt,
+                                Type::Felt,
+                                Type::Felt,
+                                Type::Felt, // First digest
+                                Type::Felt,
+                                Type::Felt,
+                                Type::Felt,
+                                Type::Felt, // Second digest
+                                Type::I32,  // Result pointer
+                            ],
+                            vec![], // No returns - writes to memory
+                        );
+                        Some(sig)
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -122,6 +155,11 @@ impl Intrinsic {
                 mem::function_type(*function).map(IntrinsicsConversionResult::FunctionType)
             }
             Self::Debug(_) | Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
+            // Crypto intrinsics are converted to function calls
+            Self::Crypto(_function) => self
+                .function_type()
+                .map(IntrinsicsConversionResult::FunctionType)
+                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
         }
     }
 }

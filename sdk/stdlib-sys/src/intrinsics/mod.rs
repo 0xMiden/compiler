@@ -1,9 +1,11 @@
 use core::ops::{Deref, DerefMut};
 
+pub mod crypto;
 pub mod debug;
 mod felt;
 mod word;
 
+pub use crypto::Digest;
 pub use felt::*;
 pub use word::*;
 

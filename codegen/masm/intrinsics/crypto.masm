@@ -1,0 +1,47 @@
+#! HMERGE: Wrapper for hmerge that takes a result pointer
+#! This is used for the Rust ABI where results are written to memory
+#!
+#! Stack Input:  [d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, ptr, ...]
+#! Stack Output: [...] (all 9 values are consumed)
+#! Side Effect: Results written to memory at ptr
+#!
+#! This function consumes all inputs like a regular function
+export.hmerge
+    # Stack: [d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, ptr, ...]
+
+    # Move ptr before hmerge to preserve it
+    movup.8
+    # Stack: [ptr, d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, ...]
+
+    # Check alignment first
+    dup.0
+    push.4
+    u32mod
+    assertz
+    # Stack: [ptr, d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, ...]
+
+    # Convert to word address
+    push.4
+    u32div
+    # Stack: [word_addr, d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, ...]
+
+    # Move word address out of the way
+    movdn.8
+    # Stack: [d1_0, d1_1, d1_2, d1_3, d2_0, d2_1, d2_2, d2_3, word_addr, ...]
+
+    # Perform the hash
+    hmerge
+    # Stack: [r0, r1, r2, r3, word_addr, ...]
+
+    # Move word_addr to top for mem_storew
+    movup.4
+    # Stack: [word_addr, r0, r1, r2, r3, ...]
+
+    # Store using mem_storew
+    mem_storew
+    # Stack: [r0, r1, r2, r3, ...]
+
+    # Clean up
+    dropw
+    # Stack: [...]
+end
