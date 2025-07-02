@@ -198,7 +198,7 @@ impl NewCommand {
 }
 
 /// Deploy WIT files to the project's wit directory
-fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
+pub fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     // Create wit directory
     let wit_dir = project_path.join(WIT_DEPS_PATH);
     fs::create_dir_all(&wit_dir)?;
@@ -223,7 +223,7 @@ fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
 }
 
 /// Helper function to write a WIT file
-fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
+pub fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
     let mut file = fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())

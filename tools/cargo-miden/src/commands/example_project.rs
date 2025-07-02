@@ -1,182 +1,65 @@
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
+use toml_edit::{DocumentMut, Item};
 
-/// The tag used in checkout of the new project template.
-///
-/// Before changing it make sure the new tag exists in the rust-templates repo and points to the
-/// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.11.1";
+use crate::commands::new_project::deploy_wit_files;
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
 
-// This should have been an enum but I could not bend `clap` to expose variants as flags
-/// Project template
-#[derive(Clone, Debug, Args)]
-pub struct ProjectTemplate {
-    /// Rust program
-    #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
-    program: bool,
-    /// Miden rollup account (default)
-    #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
-    account: bool,
-    /// Miden rollup note script
-    #[clap(long, group = "template", conflicts_with_all(["program", "account"]))]
-    note: bool,
-}
 
-#[allow(unused)]
-impl ProjectTemplate {
-    pub fn program() -> Self {
-        Self {
-            program: true,
-            account: false,
-            note: false,
-        }
-    }
-
-    pub fn account() -> Self {
-        Self {
-            program: false,
-            account: true,
-            note: false,
-        }
-    }
-
-    pub fn note() -> Self {
-        Self {
-            program: false,
-            account: false,
-            note: true,
-        }
-    }
-}
-
-impl Default for ProjectTemplate {
-    fn default() -> Self {
-        Self::account()
-    }
-}
-
-impl fmt::Display for ProjectTemplate {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.program {
-            write!(f, "program")
-        } else if self.account {
-            write!(f, "account")
-        } else if self.note {
-            write!(f, "note")
-        } else {
-            panic!("Invalid project template, at least one variant must be set")
-        }
-    }
-}
-
-/// Create a new Miden example project at <path>
+/// Create a new Miden example project
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
 pub struct ExampleCommand {
-    /// The path for the generated package (the directory name is used for project name)
+    /// The example name to use from the compiler repository (will also be used as project name)
     #[clap()]
-    pub path: PathBuf,
-    /// The template name to use to generate the package
-    #[clap(flatten)]
-    pub template: Option<ProjectTemplate>,
-    /// The path to the template to use to generate the package
-    #[clap(long, conflicts_with("template"))]
-    pub template_path: Option<PathBuf>,
-    /// Use a locally cloned compiler in the generated package
-    #[clap(long, hide(true), conflicts_with_all(["compiler_rev", "compiler_branch"]))]
-    pub compiler_path: Option<PathBuf>,
-    /// Use a specific revision of the compiler in the generated package
-    #[clap(long, hide(true), conflicts_with("compiler_branch"))]
-    pub compiler_rev: Option<String>,
-    /// Use a specific branch of the compiler in the generated package
-    #[clap(long, hide(true))]
-    pub compiler_branch: Option<String>,
+    pub example_name: String,
 }
 
-use std::{fs, io::Write};
+use std::fs;
 
 impl ExampleCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
-        let name = self
-            .path
-            .file_name()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Failed to get the last segment of the provided path for the project name"
-                )
-            })?
-            .to_str()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "The last segment of the provided path must be valid UTF8 to generate a valid \
-                     project name"
-                )
-            })?
-            .to_string();
+        // Use example name as project name
+        let project_name = self.example_name.clone();
+        let project_path = PathBuf::from(&project_name);
+        
+        // Check if directory already exists
+        if project_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Directory '{}' already exists. Please remove it or choose a different location.",
+                project_name
+            ));
+        }
 
         let mut define = vec![];
-        if let Some(compiler_path) = self.compiler_path.as_deref() {
-            define.push(format!("compiler_path={}", compiler_path.display()));
-        }
-        if let Some(compiler_rev) = self.compiler_rev.as_deref() {
-            define.push(format!("compiler_rev={compiler_rev}"));
-        }
-        if let Some(compiler_branch) = self.compiler_branch.as_deref() {
-            define.push(format!("compiler_branch={compiler_branch}"));
-        }
-
-        // If we're running the test suite, and no specific options have been provided for what
-        // compiler to use - specify the path to current compiler directory
+        // If we're running the test suite, specify the path to current compiler directory
         if cfg!(test) || std::env::var("TEST").is_ok() {
-            let use_local_compiler = self.compiler_path.is_none()
-                && self.compiler_rev.is_none()
-                && self.compiler_branch.is_none();
-            if use_local_compiler {
-                set_default_test_compiler(&mut define);
-            }
+            set_default_test_compiler(&mut define);
         }
 
-        let template_path = match self.template_path.as_ref() {
-            Some(template_path) => TemplatePath {
-                path: Some(template_path.display().to_string()),
-                ..Default::default()
-            },
-            None => {
-                let project_kind_str = match self.template.as_ref() {
-                    Some(kind) => kind.to_string(),
-                    None => ProjectTemplate::default().to_string(),
-                };
-                TemplatePath {
-                    git: Some("https://github.com/0xMiden/rust-templates".into()),
-                    tag: Some(TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(format!("example/{}", project_kind_str)),
-                    ..Default::default()
-                }
-            }
+        let template_path = TemplatePath {
+            git: Some("https://github.com/0xMiden/compiler".into()),
+            auto_path: Some(format!("examples/{}", self.example_name)),
+            ..Default::default()
         };
 
-        let destination = self
-            .path
-            .parent()
-            .map(|p| {
-                use path_absolutize::Absolutize;
-                p.absolutize().map(|p| p.to_path_buf())
-            })
-            .transpose()
-            .context("Failed to convert destination path to an absolute path")?;
+        // Generate in current directory
+        let destination = {
+            use path_absolutize::Absolutize;
+            std::env::current_dir()?
+                .absolutize()
+                .map(|p| p.to_path_buf())?
+        };
+        
         let generate_args = GenerateArgs {
             template_path,
-            destination,
-            name: Some(name),
+            destination: Some(destination),
+            name: Some(project_name.clone()),
             // Force the `name` to not be kebab-cased
             force: true,
             force_git_init: true,
@@ -187,50 +70,98 @@ impl ExampleCommand {
         cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
-        // Deploy WIT files if creating an account or note script project
-        let project_template = self.template.unwrap_or_default();
-        if project_template.account || project_template.note {
-            deploy_wit_files(&self.path).context("Failed to deploy WIT files to the project")?;
+        // Check if the project has WIT files
+        let wit_dir = project_path.join("wit");
+        if wit_dir.exists() && wit_dir.is_dir() {
+            // Deploy core WIT files to the project
+            deploy_wit_files(&project_path)
+                .context("Failed to deploy WIT files")?;
         }
 
-        Ok(self.path)
+        // Process the Cargo.toml to update dependencies and WIT paths
+        process_cargo_toml(&project_path)
+            .context("Failed to process Cargo.toml")?;
+
+        Ok(project_path)
     }
 }
 
-/// Deploy WIT files to the project's wit directory
-fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
-    // Create wit directory
-    let wit_dir = project_path.join(WIT_DEPS_PATH);
-    fs::create_dir_all(&wit_dir)?;
-
-    // Write WIT files from stdlib-sys
-    write_wit_file(
-        &wit_dir.join("miden-core-stdlib.wit"),
-        miden_stdlib_sys::stdlib_wit::STDLIB_WIT,
-    )?;
-    write_wit_file(
-        &wit_dir.join("miden-core-intrinsics.wit"),
-        miden_stdlib_sys::stdlib_wit::INTRINSICS_WIT,
-    )?;
-
-    // Write WIT file from base-sys
-    write_wit_file(&wit_dir.join("miden-core-base.wit"), miden_base_sys::base_sys_wit::BASE_WIT)?;
-
-    // Write WIT file from base
-    write_wit_file(&wit_dir.join("miden.wit"), miden_base::base_wit::MIDEN_WIT)?;
-
-    Ok(())
-}
-
-/// Helper function to write a WIT file
-fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
-    let mut file = fs::File::create(path)?;
-    file.write_all(content.as_bytes())?;
-    Ok(())
-}
 
 fn set_default_test_compiler(define: &mut Vec<String>) {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let compiler_path = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
     define.push(format!("compiler_path={}", compiler_path.display()));
 }
+
+
+/// Process the generated Cargo.toml to update dependencies and WIT paths
+fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
+    let cargo_toml_path = project_path.join("Cargo.toml");
+    let content = fs::read_to_string(&cargo_toml_path)?;
+    let mut doc = content.parse::<DocumentMut>()?;
+
+    // Update miden dependency to use git repository
+    if let Some(deps) = doc.get_mut("dependencies").and_then(|d| d.as_table_mut()) {
+        if let Some(miden_dep) = deps.get_mut("miden") {
+            *miden_dep = Item::Value(toml_edit::Value::InlineTable({
+                let mut table = toml_edit::InlineTable::new();
+                table.insert("git", "https://github.com/0xMiden/compiler".into());
+                table
+            }));
+        }
+    }
+
+    // Update WIT file paths to use the deployed files
+    if let Some(metadata) = doc.get_mut("package")
+        .and_then(|p| p.as_table_mut())
+        .and_then(|t| t.get_mut("metadata"))
+        .and_then(|m| m.as_table_mut())
+        .and_then(|t| t.get_mut("component"))
+        .and_then(|c| c.as_table_mut())
+        .and_then(|t| t.get_mut("target"))
+        .and_then(|t| t.as_table_mut())
+        .and_then(|t| t.get_mut("dependencies"))
+        .and_then(|d| d.as_table_mut())
+    {
+        // Update each WIT dependency to use the deployed files
+        for (key, value) in metadata.iter_mut() {
+            if let Some(table) = value.as_inline_table_mut() {
+                if let Some(path_value) = table.get_mut("path") {
+                    match key.as_ref() {
+                        "miden:base" => {
+                            *path_value = toml_edit::Value::from(format!("{}/miden.wit", WIT_DEPS_PATH));
+                        }
+                        "miden:core-intrinsics" => {
+                            *path_value = toml_edit::Value::from(format!("{}/miden-core-intrinsics.wit", WIT_DEPS_PATH));
+                        }
+                        "miden:core-stdlib" => {
+                            *path_value = toml_edit::Value::from(format!("{}/miden-core-stdlib.wit", WIT_DEPS_PATH));
+                        }
+                        "miden:core-base" => {
+                            *path_value = toml_edit::Value::from(format!("{}/miden-core-base.wit", WIT_DEPS_PATH));
+                        }
+                        _ => {
+                            // For project-specific WIT files, check if they exist in wit/
+                            if let Some(path_str) = path_value.as_str() {
+                                let path = Path::new(path_str);
+                                if let Some(file_name) = path.file_name() {
+                                    let wit_file = project_path.join("wit").join(file_name);
+                                    if wit_file.exists() {
+                                        // Update to use the wit/ directory path
+                                        *path_value = toml_edit::Value::from(format!("wit/{}", file_name.to_string_lossy()));
+                                    }
+                                    // Don't remove anything, just leave other paths as they are
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write the updated Cargo.toml
+    fs::write(&cargo_toml_path, doc.to_string())?;
+    Ok(())
+}
+

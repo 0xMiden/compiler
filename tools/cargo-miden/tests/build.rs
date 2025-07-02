@@ -6,13 +6,13 @@ use cargo_miden::{run, OutputType, WIT_DEPS_PATH};
 use miden_mast_package::Package;
 use midenc_session::miden_assembly::utils::Deserializable;
 
-fn example_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let args: Vec<String> = ["cargo", "miden", "example", project_name, template]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-    args
+fn example_project_args(example_name: &str) -> Vec<String> {
+    vec![
+        "cargo".to_string(),
+        "miden".to_string(),
+        "example".to_string(),
+        example_name.to_string(),
+    ]
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
@@ -39,33 +39,37 @@ fn test_example_templates() {
     // to use an out-of-band signal like this instead
     env::set_var("TEST", "1");
 
-    // empty template means no template option is passing, thus using the default project template
-    let r#default = build_example_project_from_template("");
-    assert!(r#default.is_library());
+    // Test basic-wallet example
+    let wallet = build_example_project_from_template("basic-wallet");
+    assert!(wallet.is_library());
 
-    let note = build_example_project_from_template("--note");
-    assert!(note.is_program());
+    // Test counter-contract example
+    let counter = build_example_project_from_template("counter-contract");
+    assert!(counter.is_library());
 
-    let program = build_example_project_from_template("--program");
+    // Test fibonacci example
+    let program = build_example_project_from_template("fibonacci");
     assert!(program.is_program());
 
     // Verify program projects don't have WIT files
-    verify_no_wit_files_for_example_template("--program");
+    verify_no_wit_files_for_example_template("fibonacci");
 }
 
 /// Verify that WIT files are not present for program template
-fn verify_no_wit_files_for_example_template(template: &str) {
+fn verify_no_wit_files_for_example_template(example_name: &str) {
     let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir();
+    let temp_dir = env::temp_dir().join(format!(
+        "test_no_wit_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
     env::set_current_dir(&temp_dir).unwrap();
-    let project_name = format!("test_no_wit_files_{}", template.replace("--", ""));
-    let expected_new_project_dir = &temp_dir.join(&project_name);
-    if expected_new_project_dir.exists() {
-        fs::remove_dir_all(expected_new_project_dir).unwrap();
-    }
 
-    // Create the project
-    let args = example_project_args(&project_name, template);
+    // Create the project - it will be named after the example
+    let args = example_project_args(example_name);
     let output = run(args.into_iter(), OutputType::Masm)
         .expect("Failed to create new project")
         .expect("Expected build output");
@@ -81,40 +85,28 @@ fn verify_no_wit_files_for_example_template(template: &str) {
     let wit_dir = new_project_path.join(WIT_DEPS_PATH);
     assert!(
         !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
-        "WIT directory should not exist or be empty for {} template",
-        template
+        "WIT directory should not exist or be empty for {} example",
+        example_name
     );
 
     env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(new_project_path).unwrap();
+    fs::remove_dir_all(temp_dir).unwrap();
 }
 
-fn build_example_project_from_template(template: &str) -> Package {
+fn build_example_project_from_template(example_name: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir();
+    let temp_dir = env::temp_dir().join(format!(
+        "test_example_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
     env::set_current_dir(&temp_dir).unwrap();
 
-    if template == "--note" {
-        // create the counter contract cargo project since the note depends on it
-        let project_name = "counter-contract";
-        let expected_new_project_dir = &temp_dir.join(project_name);
-        dbg!(&expected_new_project_dir);
-        if expected_new_project_dir.exists() {
-            fs::remove_dir_all(expected_new_project_dir).unwrap();
-        }
-        let output = run(example_project_args(project_name, "").into_iter(), OutputType::Masm)
-            .expect("Failed to create new counter-contract dependency project")
-            .expect("'cargo miden example' should return Some(CommandOutput)");
-    }
-
-    let project_name = "test_proj_underscore";
-    let expected_new_project_dir = &temp_dir.join(project_name);
-    dbg!(&expected_new_project_dir);
-    if expected_new_project_dir.exists() {
-        fs::remove_dir_all(expected_new_project_dir).unwrap();
-    }
-
-    let args = example_project_args(project_name, template);
+    // Create the project - it will be named after the example
+    let args = example_project_args(example_name);
 
     let output = run(args.into_iter(), OutputType::Masm)
         .expect("Failed to create new project")
@@ -127,7 +119,6 @@ fn build_example_project_from_template(template: &str) -> Package {
     };
     dbg!(&new_project_path);
     assert!(new_project_path.exists());
-    assert_eq!(new_project_path, expected_new_project_dir.canonicalize().unwrap());
     env::set_current_dir(&new_project_path).unwrap();
 
     // build with the dev profile
@@ -169,7 +160,7 @@ fn build_example_project_from_template(template: &str) -> Package {
     let package = Package::read_from_bytes(&package_bytes).unwrap();
 
     env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(new_project_path).unwrap();
+    fs::remove_dir_all(temp_dir).unwrap();
     package
 }
 
@@ -199,7 +190,7 @@ fn test_new_clean_templates() {
     verify_no_wit_files_for_new_template("--program");
 }
 
-/// Verify that WIT files are not present for program template  
+/// Verify that WIT files are not present for program template
 fn verify_no_wit_files_for_new_template(template: &str) {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir();
