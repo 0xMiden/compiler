@@ -36,26 +36,26 @@ extern "C" {
 ///
 /// This directly maps to the `hmerge` VM instruction.
 #[inline]
-pub fn merge(digests: &[Word; 2]) -> Word {
+pub fn merge(digests: [Word; 2]) -> Word {
     unsafe {
-        let mut result = [Felt::from_u32(0); 4];
-        let ptr = result.as_mut_ptr();
-
-        let d1: [Felt; 4] = digests[0].clone().into();
-        let d2: [Felt; 4] = digests[1].clone().into();
-
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let ptr = ret_area.as_mut_ptr() as *mut Felt;
+        // VM hmerge intstruction expects [B, A] order
+        // see
+        // https://0xmiden.github.io/miden-docs/imported/miden-vm/src/user_docs/assembly/cryptographic_operations.html
         extern_hmerge(
-            d1[0].inner,
-            d1[1].inner,
-            d1[2].inner,
-            d1[3].inner,
-            d2[0].inner,
-            d2[1].inner,
-            d2[2].inner,
-            d2[3].inner,
+            digests[1][0].inner,
+            digests[1][1].inner,
+            digests[1][2].inner,
+            digests[1][3].inner,
+            digests[0][0].inner,
+            digests[0][1].inner,
+            digests[0][2].inner,
+            digests[0][3].inner,
             ptr,
         );
 
-        Word::from(result)
+        // Word::from(result)
+        ret_area.assume_init()
     }
 }
