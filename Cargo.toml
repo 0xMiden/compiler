@@ -144,8 +144,8 @@ midenc-driver = { version = "0.1.5", path = "midenc-driver" }
 midenc-debug = { version = "0.1.5", path = "midenc-debug" }
 midenc-session = { version = "0.1.5", path = "midenc-session" }
 cargo-miden = { version = "0.1.5", path = "tools/cargo-miden" }
-miden-integration-tests = { version = "0.0.0", path = "tests/integration" }
-midenc-expect-test = { version = "0.1.5", path = "tools/expect-test" }
+miden-integration-tests = { path = "tests/integration" }
+midenc-expect-test = { path = "tools/expect-test" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
