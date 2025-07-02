@@ -1,70 +1,8 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @hmerge {
-        public builtin.function @entrypoint(v0: i32, v1: i32) {
-        ^block6(v0: i32, v1: i32):
-            v3 = arith.constant 32 : u32;
-            v2 = hir.bitcast v1 : u32;
-            v4 = arith.add v2, v3 : u32 #[overflow = checked];
-            v5 = arith.constant 4 : u32;
-            v6 = arith.mod v4, v5 : u32;
-            hir.assertz v6 #[code = 250];
-            v7 = hir.int_to_ptr v4 : ptr<byte, felt>;
-            v8 = hir.load v7 : felt;
-            v10 = arith.constant 36 : u32;
-            v9 = hir.bitcast v1 : u32;
-            v11 = arith.add v9, v10 : u32 #[overflow = checked];
-            v63 = arith.constant 4 : u32;
-            v13 = arith.mod v11, v63 : u32;
-            hir.assertz v13 #[code = 250];
-            v14 = hir.int_to_ptr v11 : ptr<byte, felt>;
-            v15 = hir.load v14 : felt;
-            v17 = arith.constant 40 : u32;
-            v16 = hir.bitcast v1 : u32;
-            v18 = arith.add v16, v17 : u32 #[overflow = checked];
-            v62 = arith.constant 4 : u32;
-            v20 = arith.mod v18, v62 : u32;
-            hir.assertz v20 #[code = 250];
-            v21 = hir.int_to_ptr v18 : ptr<byte, felt>;
-            v22 = hir.load v21 : felt;
-            v24 = arith.constant 44 : u32;
-            v23 = hir.bitcast v1 : u32;
-            v25 = arith.add v23, v24 : u32 #[overflow = checked];
-            v61 = arith.constant 4 : u32;
-            v27 = arith.mod v25, v61 : u32;
-            hir.assertz v27 #[code = 250];
-            v28 = hir.int_to_ptr v25 : ptr<byte, felt>;
-            v29 = hir.load v28 : felt;
-            v30 = hir.bitcast v1 : u32;
-            v60 = arith.constant 4 : u32;
-            v32 = arith.mod v30, v60 : u32;
-            hir.assertz v32 #[code = 250];
-            v33 = hir.int_to_ptr v30 : ptr<byte, felt>;
-            v34 = hir.load v33 : felt;
-            v59 = arith.constant 4 : u32;
-            v35 = hir.bitcast v1 : u32;
-            v37 = arith.add v35, v59 : u32 #[overflow = checked];
-            v58 = arith.constant 4 : u32;
-            v39 = arith.mod v37, v58 : u32;
-            hir.assertz v39 #[code = 250];
-            v40 = hir.int_to_ptr v37 : ptr<byte, felt>;
-            v41 = hir.load v40 : felt;
-            v43 = arith.constant 8 : u32;
-            v42 = hir.bitcast v1 : u32;
-            v44 = arith.add v42, v43 : u32 #[overflow = checked];
-            v57 = arith.constant 4 : u32;
-            v46 = arith.mod v44, v57 : u32;
-            hir.assertz v46 #[code = 250];
-            v47 = hir.int_to_ptr v44 : ptr<byte, felt>;
-            v48 = hir.load v47 : felt;
-            v50 = arith.constant 12 : u32;
-            v49 = hir.bitcast v1 : u32;
-            v51 = arith.add v49, v50 : u32 #[overflow = checked];
-            v56 = arith.constant 4 : u32;
-            v53 = arith.mod v51, v56 : u32;
-            hir.assertz v53 #[code = 250];
-            v54 = hir.int_to_ptr v51 : ptr<byte, felt>;
-            v55 = hir.load v54 : felt;
-            hir.exec @intrinsics/crypto/hmerge(v8, v15, v22, v29, v34, v41, v48, v55, v0)
+        public builtin.function @entrypoint(v0: i32, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt) {
+        ^block6(v0: i32, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt):
+            hir.exec @intrinsics/crypto/hmerge(v1, v2, v3, v4, v5, v6, v7, v8, v0)
             builtin.ret ;
         };
 

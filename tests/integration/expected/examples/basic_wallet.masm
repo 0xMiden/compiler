@@ -25,10 +25,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.16396713302800945524
-    push.6800813561386285567
-    push.2255373176580334789
-    push.1117619020853491563
+    push.10393006917776393985
+    push.11082306316302361448
+    push.8154980225314320902
+    push.11512975618068632545
     adv.push_mapval
     push.262144
     push.3
@@ -527,7 +527,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048612
+    push.1048616
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -562,7 +562,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048612
+        push.1048616
         movup.2
         swap.1
         u32wrapping_add

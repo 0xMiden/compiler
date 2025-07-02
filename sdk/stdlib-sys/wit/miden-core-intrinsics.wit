@@ -50,9 +50,9 @@ interface intrinsics-debug {
 interface intrinsics-crypto {
 
     // See sdk/stdlib-sys/src/intrinsics/crypto.rs for `extern` function signatures
-    
+
     // Hash merge operation
-    hmerge: func(d1-0: f32, d1-1: f32, d1-2: f32, d1-3: f32, d2-0: f32, d2-1: f32, d2-2: f32, d2-3: f32, result-ptr: s32);
+    hmerge: func(d10: f32, d11: f32, d12: f32, d13: f32, d20: f32, d21: f32, d22: f32, d23: f32, result-ptr: s32);
 }
 
 world intrinsics {
