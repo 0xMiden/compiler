@@ -1,0 +1,32 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @hmerge_felt {
+        public builtin.function @entrypoint(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt) -> felt {
+        ^block6(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt):
+            v10 = builtin.global_symbol @root_ns:root@1.0.0/hmerge_felt/__stack_pointer : ptr<byte, u8>
+            v11 = hir.bitcast v10 : ptr<byte, i32>;
+            v12 = hir.load v11 : i32;
+            v15 = arith.constant -32 : i32;
+            v13 = arith.constant 32 : i32;
+            v14 = arith.sub v12, v13 : i32 #[overflow = wrapping];
+            v16 = arith.band v14, v15 : i32;
+            v17 = builtin.global_symbol @root_ns:root@1.0.0/hmerge_felt/__stack_pointer : ptr<byte, u8>
+            v18 = hir.bitcast v17 : ptr<byte, i32>;
+            hir.store v18, v16;
+            hir.exec @intrinsics/crypto/hmerge(v0, v1, v2, v3, v4, v5, v6, v7, v16)
+            v19 = hir.bitcast v16 : u32;
+            v20 = arith.constant 4 : u32;
+            v21 = arith.mod v19, v20 : u32;
+            hir.assertz v21 #[code = 250];
+            v22 = hir.int_to_ptr v19 : ptr<byte, felt>;
+            v23 = hir.load v22 : felt;
+            v24 = builtin.global_symbol @root_ns:root@1.0.0/hmerge_felt/__stack_pointer : ptr<byte, u8>
+            v25 = hir.bitcast v24 : ptr<byte, i32>;
+            hir.store v25, v12;
+            builtin.ret v23;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};
