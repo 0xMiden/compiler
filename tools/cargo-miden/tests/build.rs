@@ -40,20 +40,56 @@ fn test_all_templates() {
     env::set_var("TEST", "1");
 
     // Test example templates
-    // Test basic-wallet example
-    let wallet = build_example_project_from_template("basic-wallet");
-    assert!(wallet.is_library());
+    // Test basic-wallet example (which also creates p2id-note)
+    let (basic_wallet, p2id_note) = build_paired_example_projects(
+        "basic-wallet",
+        "basic-wallet",
+        "p2id-note",
+        "basic_wallet",
+        "p2id",
+    );
+    assert!(basic_wallet.is_library());
+    assert_eq!(basic_wallet.name, "basic_wallet");
+    assert!(p2id_note.is_program());
+    assert_eq!(p2id_note.name, "p2id");
 
-    // Test counter-contract example
-    let counter = build_example_project_from_template("counter-contract");
-    assert!(counter.is_library());
+    // Test counter-contract example (which also creates counter-note)
+    let (counter_contract, counter_note) = build_paired_example_projects(
+        "counter-contract",
+        "counter-contract",
+        "counter-note",
+        "counter_contract",
+        "counter_note",
+    );
+    assert!(counter_contract.is_library());
+    assert_eq!(counter_contract.name, "counter_contract");
+    assert!(counter_note.is_program());
+    assert_eq!(counter_note.name, "counter_note");
 
     // Test fibonacci example
-    let program = build_example_project_from_template("fibonacci");
-    assert!(program.is_program());
+    let fibonacci = build_example_project_from_template("fibonacci");
+    assert!(fibonacci.is_program());
+    assert_eq!(fibonacci.name, "fibonacci");
+
+    // Test collatz example
+    let collatz = build_example_project_from_template("collatz");
+    assert!(collatz.is_program());
+    assert_eq!(collatz.name, "collatz");
+
+    // Test is-prime example
+    let is_prime = build_example_project_from_template("is-prime");
+    assert!(is_prime.is_program());
+    assert_eq!(is_prime.name, "is_prime");
+
+    // Test storage-example
+    let storage = build_example_project_from_template("storage-example");
+    assert!(storage.is_library());
+    assert_eq!(storage.name, "storage_example");
 
     // Verify program projects don't have WIT files
     verify_no_wit_files_for_example_template("fibonacci");
+    verify_no_wit_files_for_example_template("collatz");
+    verify_no_wit_files_for_example_template("is-prime");
 
     // Test new project templates
     // empty template means no template option is passing, thus using the default project template (program)
@@ -113,7 +149,13 @@ fn verify_no_wit_files_for_example_template(example_name: &str) {
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
-fn build_example_project_from_template(example_name: &str) -> Package {
+fn build_paired_example_projects(
+    example_name: &str,
+    first_dir: &str,
+    second_dir: &str,
+    first_expected_name: &str,
+    second_expected_name: &str,
+) -> (Package, Package) {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir().join(format!(
         "test_example_{}",
@@ -125,22 +167,42 @@ fn build_example_project_from_template(example_name: &str) -> Package {
     fs::create_dir_all(&temp_dir).unwrap();
     env::set_current_dir(&temp_dir).unwrap();
 
-    // Create the project - it will be named after the example
+    // Create the project - it will create both projects
     let args = example_project_args(example_name);
 
     let output = run(args.into_iter(), OutputType::Masm)
         .expect("Failed to create new project")
         .expect("'cargo miden example' should return Some(CommandOutput)");
-    let new_project_path = match output {
+    let main_project_path = match output {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
         other => panic!("Expected NewCommandOutput, got {:?}", other),
     };
-    dbg!(&new_project_path);
-    assert!(new_project_path.exists());
-    env::set_current_dir(&new_project_path).unwrap();
+    dbg!(&main_project_path);
+    assert!(main_project_path.exists());
 
+    // Build first project
+    let first_path = main_project_path.join(first_dir);
+    assert!(first_path.exists());
+    env::set_current_dir(&first_path).unwrap();
+
+    let first_package = build_project_in_current_dir(first_expected_name);
+
+    // Build second project
+    let second_path = main_project_path.join(second_dir);
+    assert!(second_path.exists());
+    env::set_current_dir(&second_path).unwrap();
+
+    let second_package = build_project_in_current_dir(second_expected_name);
+
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(temp_dir).unwrap();
+
+    (first_package, second_package)
+}
+
+fn build_project_in_current_dir(expected_name: &str) -> Package {
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
     let output = run(args, OutputType::Masm)
@@ -175,9 +237,44 @@ fn build_example_project_from_template(example_name: &str) -> Package {
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.to_str().unwrap().contains("/release/"));
+    dbg!(&expected_name);
+    assert!(expected_masm_path.to_str().unwrap().contains(expected_name));
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
     let package_bytes = fs::read(expected_masm_path).unwrap();
-    let package = Package::read_from_bytes(&package_bytes).unwrap();
+    Package::read_from_bytes(&package_bytes).unwrap()
+}
+
+fn build_example_project_from_template(example_name: &str) -> Package {
+    let restore_dir = env::current_dir().unwrap();
+    let temp_dir = env::temp_dir().join(format!(
+        "test_example_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
+    env::set_current_dir(&temp_dir).unwrap();
+
+    // Create the project - it will be named after the example
+    let args = example_project_args(example_name);
+
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create new project")
+        .expect("'cargo miden example' should return Some(CommandOutput)");
+    let new_project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
+            project_path.canonicalize().unwrap()
+        }
+        other => panic!("Expected NewCommandOutput, got {:?}", other),
+    };
+    dbg!(&new_project_path);
+    assert!(new_project_path.exists());
+    env::set_current_dir(&new_project_path).unwrap();
+
+    // Convert hyphens to underscores for the expected package name
+    let expected_name = example_name.replace("-", "_");
+    let package = build_project_in_current_dir(&expected_name);
 
     env::set_current_dir(restore_dir).unwrap();
     fs::remove_dir_all(temp_dir).unwrap();
