@@ -624,11 +624,6 @@ impl FromMidenRepr for [Felt; 4] {
     fn from_felts(felts: &[RawFelt]) -> Self {
         [Felt(felts[0]), Felt(felts[1]), Felt(felts[2]), Felt(felts[3])]
     }
-
-    #[inline(always)]
-    fn from_words(words: &[Word]) -> Self {
-        [Felt(words[0][0]), Felt(words[0][1]), Felt(words[0][2]), Felt(words[0][3])]
-    }
 }
 
 /// Convert a byte array to an equivalent vector of words
