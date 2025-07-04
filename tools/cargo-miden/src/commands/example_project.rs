@@ -14,8 +14,16 @@ pub const WIT_DEPS_PATH: &str = "wit-deps";
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
 pub struct ExampleCommand {
-    /// The example name to use from the compiler repository (will also be used as project name)
-    #[clap()]
+    #[clap(help = r#"The example name to use from the compiler repository
+Available examples:
+basic-wallet      : Basic wallet account
+p2id-note         : Pay-to-ID note
+counter-contract  : Counter contract
+counter-note      : Counter note
+fibonacci         : Fibonacci sequence calculator
+collatz           : Collatz conjecture calculator
+is-prime          : Prime number checker
+storage-example   : Storage operations example"#)]
     pub example_name: String,
 }
 
