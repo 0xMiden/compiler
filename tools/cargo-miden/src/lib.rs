@@ -216,7 +216,6 @@ where
                     "hash-one-to-one",
                     "hash-two-to-one",
                     "add-asset",
-                    "add",
                     "unchecked-from-u64",
                 ]
                 .into_iter()
