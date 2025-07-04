@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.11.1";
+const TEMPLATES_REPO_TAG: &str = "v0.11.5";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -184,13 +184,14 @@ impl NewCommand {
             define,
             ..Default::default()
         };
-        cargo_generate::generate(generate_args)
+        let project_path = cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
-        // Deploy WIT files if creating an account or note script project
-        let project_template = self.template.unwrap_or_default();
-        if project_template.account || project_template.note {
-            deploy_wit_files(&self.path).context("Failed to deploy WIT files to the project")?;
+        // Check if the project has WIT files
+        let wit_dir = project_path.join("wit");
+        if wit_dir.exists() && wit_dir.is_dir() {
+            // Deploy core WIT files to the project
+            deploy_wit_files(&project_path).context("Failed to deploy WIT files")?;
         }
 
         Ok(self.path)
