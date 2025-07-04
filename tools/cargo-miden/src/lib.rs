@@ -56,7 +56,7 @@ const AFTER_HELP: &str = "Unrecognized subcommands will be passed to cargo verba
 /// Cargo integration for Miden
 #[derive(Parser)]
 #[clap(
-    bin_name = "cargo",
+    bin_name = "cargo miden",
     version,
     propagate_version = true,
     arg_required_else_help = true,
