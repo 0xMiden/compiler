@@ -80,7 +80,7 @@ impl Rodata {
     /// Attempt to convert this rodata object to its equivalent representation in felts
     ///
     /// See [Self::bytes_to_elements] for more details.
-    pub fn to_elements(&self) -> Result<Vec<miden_processor::Felt>, String> {
+    pub fn to_elements(&self) -> Vec<miden_processor::Felt> {
         Self::bytes_to_elements(self.data.as_slice())
     }
 
@@ -89,7 +89,7 @@ impl Rodata {
     /// The resulting felts will be in padded out to the nearest number of words, i.e. if the data
     /// only takes up 3 felts worth of bytes, then the resulting `Vec` will contain 4 felts, so that
     /// the total size is a valid number of words.
-    pub fn bytes_to_elements(bytes: &[u8]) -> Result<Vec<miden_processor::Felt>, String> {
+    pub fn bytes_to_elements(bytes: &[u8]) -> Vec<miden_processor::Felt> {
         use miden_core::FieldElement;
         use miden_processor::Felt;
 
@@ -111,7 +111,7 @@ impl Rodata {
         let padding = (size_in_words * 4).abs_diff(felts.len());
         felts.resize(felts.len() + padding, Felt::ZERO);
         debug_assert_eq!(felts.len() % 4, 0, "expected to be a valid number of words");
-        Ok(felts)
+        felts
     }
 }
 
@@ -238,13 +238,8 @@ impl MasmComponent {
         let main = self.generate_main(entrypoint, emit_test_harness)?;
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
-        let advice_map: miden_core::AdviceMap = self
-            .rodata
-            .iter()
-            .map(|rodata| {
-                rodata.to_elements().map_err(Report::msg).map(|felts| (rodata.digest, felts))
-            })
-            .try_collect()?;
+        let advice_map: miden_core::AdviceMap =
+            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
         Ok(Arc::new(program.with_advice_map(advice_map)))
     }
 
@@ -293,13 +288,9 @@ impl MasmComponent {
             modules.push(module);
         }
         let lib = assembler.assemble_library(modules)?;
-        let advice_map: miden_core::AdviceMap = self
-            .rodata
-            .iter()
-            .map(|rodata| {
-                rodata.to_elements().map_err(Report::msg).map(|felts| (rodata.digest, felts))
-            })
-            .try_collect()?;
+
+        let advice_map: miden_core::AdviceMap =
+            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
 
         let converted_exports = recover_wasm_cm_interfaces(&lib);
 
@@ -463,7 +454,7 @@ mod tests {
     use super::*;
 
     fn validate_bytes_to_elements(bytes: &[u8]) {
-        let result = Rodata::bytes_to_elements(bytes).unwrap();
+        let result = Rodata::bytes_to_elements(bytes);
 
         // Each felt represents 4 bytes
         let expected_felts = bytes.len().div_ceil(4);
