@@ -126,17 +126,20 @@ impl Intrinsic {
                         let sig = midenc_hir::FunctionType::new(
                             midenc_hir::CallConv::Wasm,
                             vec![
+                                // First digest: 4 field elements
                                 Type::Felt,
                                 Type::Felt,
                                 Type::Felt,
-                                Type::Felt, // First digest
+                                Type::Felt,
+                                // Second digest: 4 field elements
                                 Type::Felt,
                                 Type::Felt,
                                 Type::Felt,
-                                Type::Felt, // Second digest
-                                Type::I32,  // Result pointer
+                                Type::Felt,
+                                // Result pointer
+                                Type::I32,
                             ],
-                            vec![], // No returns - writes to memory
+                            vec![], // No returns - writes to the result pointer
                         );
                         Some(sig)
                     }

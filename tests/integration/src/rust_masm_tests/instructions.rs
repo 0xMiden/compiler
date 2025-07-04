@@ -370,7 +370,6 @@ fn test_hmerge() {
             ];
             let digests_in = [Digest::from(raw_felts_in1), Digest::from(raw_felts_in2)];
             let digest_out = miden_core::crypto::hash::Rpo256::merge(&digests_in);
-            dbg!(&digest_out);
             let felts_out: [midenc_debug::Felt; 4] = [
                 midenc_debug::Felt(digest_out[0]),
                 midenc_debug::Felt(digest_out[1]),
@@ -380,7 +379,6 @@ fn test_hmerge() {
 
             // Place the hash output at 20 * PAGE_SIZE
             let out_addr = 20u32 * 65536;
-            let initializers = [];
 
             let args = [
                 raw_felts_in1[0],
@@ -393,11 +391,10 @@ fn test_hmerge() {
                 raw_felts_in2[3],
                 Felt::new(out_addr as u64),
             ];
-            eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+            eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
                 let vm_out: [midenc_debug::Felt; 4] = trace
                     .read_from_rust_memory(out_addr)
                     .expect("expected memory to have been written");
-                dbg!(&felts_out, &vm_out);
                 prop_assert_eq!(&felts_out, &vm_out, "VM output mismatch");
                 Ok(())
             })?;

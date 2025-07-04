@@ -1,3 +1,8 @@
+//! Cryptographic intrinsics conversion module for WebAssembly to Miden IR.
+//!
+//! This module handles the conversion of cryptographic operations from Wasm imports
+//! to their corresponding Miden VM instructions.
+
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::FunctionRef,
@@ -31,7 +36,8 @@ pub(crate) fn convert_crypto_intrinsics<B: ?Sized + Builder>(
             assert_eq!(
                 args.len(),
                 9,
-                "{function} takes exactly nine arguments (8 digest values + result pointer)"
+                "{function} takes exactly nine arguments (8 field elements from 2 digests + \
+                 result pointer)"
             );
 
             let func = function_ref.borrow();

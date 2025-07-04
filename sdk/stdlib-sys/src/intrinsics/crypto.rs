@@ -1,4 +1,6 @@
-//! Cryptographic intrinsics for the Miden VM
+//! Cryptographic intrinsics for the Miden VM.
+//!
+//! This module provides Rust bindings for cryptographic operations available in the Miden VM.
 
 use crate::{Felt, Word};
 
@@ -86,27 +88,32 @@ extern "C" {
 /// permutation in 2-to-1 mode.
 ///
 /// This directly maps to the `hmerge` VM instruction.
+///
+/// # Arguments
+/// * `digests` - An array of two digests to be merged. The function internally
+///   reorders them as required by the VM instruction (from [A, B] to [B, A] on the stack).
 #[inline]
 pub fn merge(digests: [Digest; 2]) -> Digest {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         let ptr = ret_area.as_mut_ptr() as *mut Felt;
-        // VM hmerge intstruction expects [B, A] order
-        // see
-        // https://0xmiden.github.io/miden-docs/imported/miden-vm/src/user_docs/assembly/cryptographic_operations.html
+        // The VM hmerge instruction expects the second digest first, then the first digest
+        // (i.e., [B, A] order when merging digests A and B).
+        // See: https://0xmiden.github.io/miden-docs/imported/miden-vm/src/user_docs/assembly/cryptographic_operations.html
+        let first_digest = &digests[0];
+        let second_digest = &digests[1];
         extern_hmerge(
-            digests[1].inner[0].inner,
-            digests[1].inner[1].inner,
-            digests[1].inner[2].inner,
-            digests[1].inner[3].inner,
-            digests[0].inner[0].inner,
-            digests[0].inner[1].inner,
-            digests[0].inner[2].inner,
-            digests[0].inner[3].inner,
+            second_digest.inner[0].inner,
+            second_digest.inner[1].inner,
+            second_digest.inner[2].inner,
+            second_digest.inner[3].inner,
+            first_digest.inner[0].inner,
+            first_digest.inner[1].inner,
+            first_digest.inner[2].inner,
+            first_digest.inner[3].inner,
             ptr,
         );
 
-        // Word::from(result)
         Digest::from_word(ret_area.assume_init())
     }
 }
