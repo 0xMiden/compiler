@@ -84,3 +84,74 @@ fn test_blake3_hash() {
         _ => panic!("Unexpected test result: {:?}", res),
     }
 }
+
+#[test]
+fn test_hash_elements() {
+    // TODO: when this test is green add another test for arbitrary input lenght
+    let main_fn = r#"
+    (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Digest {
+        let input = [f0, f1, f2, f3, f4, f5, f6, f7];
+        miden_stdlib_sys::crypto::hash_elements(&input)
+    }"#
+    .to_string();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "hash_elements",
+        &main_fn,
+        config,
+        ["--test-harness".into()],
+    );
+    // Test expected compilation artifacts
+    test.expect_wasm(expect_file![format!("../../../expected/hash_elements.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/hash_elements.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/hash_elements.masm")]);
+
+    let package = test.compiled_package();
+
+    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
+    let config = proptest::test_runner::Config::with_cases(10);
+    let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
+        let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
+        // Compute expected hash using miden-core's Rpo256::hash_elements
+        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
+        let expected_felts: [TestFelt; 4] = [
+            TestFelt(expected_digest[0]),
+            TestFelt(expected_digest[1]),
+            TestFelt(expected_digest[2]),
+            TestFelt(expected_digest[3]),
+        ];
+
+        // Place the hash output at 20 * PAGE_SIZE, and the hash input at 21 * PAGE_SIZE
+        let out_addr = 20u32 * 65536;
+
+        let args = [
+            raw_felts[0],
+            raw_felts[1],
+            raw_felts[2],
+            raw_felts[3],
+            raw_felts[4],
+            raw_felts[5],
+            raw_felts[6],
+            raw_felts[7],
+            Felt::new(out_addr as u64),
+        ];
+
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            let vm_out: [midenc_debug::Felt; 4] = trace
+                .read_from_rust_memory(out_addr)
+                .expect("expected memory to have been written");
+            prop_assert_eq!(&expected_felts, &vm_out, "VM output mismatch");
+            Ok(())
+        })?;
+
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
