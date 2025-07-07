@@ -345,7 +345,7 @@ fn build_new_project_from_template(template: &str) -> Package {
     let args = new_project_args(project_name, template);
 
     let output = run(args.into_iter(), OutputType::Masm)
-        .expect("Failed to create new project")
+        .expect("Failed to create new project from {template} template")
         .expect("'cargo miden new' should return Some(CommandOutput)");
     let new_project_path = match output {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
