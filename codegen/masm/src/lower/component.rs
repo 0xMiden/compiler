@@ -99,8 +99,7 @@ impl ToMasmComponent for builtin::Component {
             .map(|segment_ref| {
                 let segment = segment_ref.borrow();
                 let data = segment.initializer();
-                let felts = crate::Rodata::bytes_to_elements(data.as_slice())
-                    .expect("invalid data segment initializer");
+                let felts = crate::Rodata::bytes_to_elements(data.as_slice());
                 let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
                 crate::Rodata {
                     component: link_info.component().clone(),

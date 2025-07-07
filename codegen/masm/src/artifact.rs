@@ -80,7 +80,7 @@ impl Rodata {
     /// Attempt to convert this rodata object to its equivalent representation in felts
     ///
     /// See [Self::bytes_to_elements] for more details.
-    pub fn to_elements(&self) -> Result<Vec<miden_processor::Felt>, String> {
+    pub fn to_elements(&self) -> Vec<miden_processor::Felt> {
         Self::bytes_to_elements(self.data.as_slice())
     }
 
@@ -89,7 +89,7 @@ impl Rodata {
     /// The resulting felts will be in padded out to the nearest number of words, i.e. if the data
     /// only takes up 3 felts worth of bytes, then the resulting `Vec` will contain 4 felts, so that
     /// the total size is a valid number of words.
-    pub fn bytes_to_elements(bytes: &[u8]) -> Result<Vec<miden_processor::Felt>, String> {
+    pub fn bytes_to_elements(bytes: &[u8]) -> Vec<miden_processor::Felt> {
         use miden_core::FieldElement;
         use miden_processor::Felt;
 
@@ -97,19 +97,21 @@ impl Rodata {
         let mut iter = bytes.iter().copied().array_chunks::<4>();
         felts.extend(iter.by_ref().map(|chunk| Felt::new(u32::from_le_bytes(chunk) as u64)));
         if let Some(remainder) = iter.into_remainder() {
-            let mut chunk = [0u8; 4];
-            for (i, byte) in remainder.into_iter().enumerate() {
-                chunk[i] = byte;
+            if remainder.len() > 0 {
+                let mut chunk = [0u8; 4];
+                for (i, byte) in remainder.into_iter().enumerate() {
+                    chunk[i] = byte;
+                }
+                felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
             }
-            felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
         }
 
         let size_in_felts = bytes.len().next_multiple_of(4) / 4;
         let size_in_words = size_in_felts.next_multiple_of(4) / 4;
         let padding = (size_in_words * 4).abs_diff(felts.len());
         felts.resize(felts.len() + padding, Felt::ZERO);
-
-        Ok(felts)
+        debug_assert_eq!(felts.len() % 4, 0, "expected to be a valid number of words");
+        felts
     }
 }
 
@@ -236,13 +238,8 @@ impl MasmComponent {
         let main = self.generate_main(entrypoint, emit_test_harness)?;
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
-        let advice_map: miden_core::AdviceMap = self
-            .rodata
-            .iter()
-            .map(|rodata| {
-                rodata.to_elements().map_err(Report::msg).map(|felts| (rodata.digest, felts))
-            })
-            .try_collect()?;
+        let advice_map: miden_core::AdviceMap =
+            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
         Ok(Arc::new(program.with_advice_map(advice_map)))
     }
 
@@ -291,13 +288,9 @@ impl MasmComponent {
             modules.push(module);
         }
         let lib = assembler.assemble_library(modules)?;
-        let advice_map: miden_core::AdviceMap = self
-            .rodata
-            .iter()
-            .map(|rodata| {
-                rodata.to_elements().map_err(Report::msg).map(|felts| (rodata.digest, felts))
-            })
-            .try_collect()?;
+
+        let advice_map: miden_core::AdviceMap =
+            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
 
         let converted_exports = recover_wasm_cm_interfaces(&lib);
 
@@ -451,4 +444,70 @@ fn recover_wasm_cm_interfaces(
         }
     }
     exports
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_core::FieldElement;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn validate_bytes_to_elements(bytes: &[u8]) {
+        let result = Rodata::bytes_to_elements(bytes);
+
+        // Each felt represents 4 bytes
+        let expected_felts = bytes.len().div_ceil(4);
+        // Felts should be padded to a multiple of 4 (1 word = 4 felts)
+        let expected_total_felts = expected_felts.div_ceil(4) * 4;
+
+        assert_eq!(
+            result.len(),
+            expected_total_felts,
+            "For {} bytes, expected {} felts (padded from {} felts), but got {}",
+            bytes.len(),
+            expected_total_felts,
+            expected_felts,
+            result.len()
+        );
+
+        // Verify padding is zeros
+        for (i, felt) in result.iter().enumerate().skip(expected_felts) {
+            assert_eq!(*felt, miden_processor::Felt::ZERO, "Padding at index {} should be zero", i);
+        }
+    }
+
+    #[test]
+    fn test_bytes_to_elements_edge_cases() {
+        validate_bytes_to_elements(&[]);
+        validate_bytes_to_elements(&[1]);
+        validate_bytes_to_elements(&[0u8; 4]);
+        validate_bytes_to_elements(&[0u8; 15]);
+        validate_bytes_to_elements(&[0u8; 16]);
+        validate_bytes_to_elements(&[0u8; 17]);
+        validate_bytes_to_elements(&[0u8; 31]);
+        validate_bytes_to_elements(&[0u8; 32]);
+        validate_bytes_to_elements(&[0u8; 33]);
+        validate_bytes_to_elements(&[0u8; 64]);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1000))]
+        #[test]
+        fn proptest_bytes_to_elements(bytes in prop::collection::vec(any::<u8>(), 0..=1000)) {
+            validate_bytes_to_elements(&bytes);
+        }
+
+        #[test]
+        fn proptest_bytes_to_elements_word_boundaries(size_factor in 0u32..=100) {
+            // Test specifically around word boundaries
+            // Test sizes around multiples of 16 (since 1 word = 4 felts = 16 bytes)
+            let base_size = size_factor * 16;
+            for offset in -2i32..=2 {
+                let size = (base_size as i32 + offset).max(0) as usize;
+                let bytes = vec![0u8; size];
+                validate_bytes_to_elements(&bytes);
+            }
+        }
+    }
 }
