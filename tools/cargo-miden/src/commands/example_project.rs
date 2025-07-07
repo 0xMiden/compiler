@@ -103,6 +103,7 @@ impl ExampleCommand {
         Ok(project_path)
     }
 
+    /// Create a pari (account and note script) projects in a sub-folder
     fn exec_paired_projects(
         &self,
         first_project: &str,
@@ -198,6 +199,9 @@ fn set_default_test_compiler(define: &mut Vec<String>) {
 }
 
 /// Process the generated Cargo.toml to update dependencies and WIT paths
+/// The projects in `example` folder set Miden SDK dependencies as local paths.
+/// After copying we need to change them to be git dependency (Miden SDK crate) and local WIT files
+/// (deployed from the Miden SDK crates by `deploy_wit_files()`)
 fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
     let cargo_toml_path = project_path.join("Cargo.toml");
     let content = fs::read_to_string(&cargo_toml_path)?;
@@ -283,6 +287,8 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
 }
 
 /// Update note project's dependencies to use local contract
+/// The note script projects in the `example` folder of the compiler repo use a local path to
+/// specify the account Miden package and WIT file dependency.
 fn update_note_dependencies(
     main_dir: &Path,
     note_dir: &str,
