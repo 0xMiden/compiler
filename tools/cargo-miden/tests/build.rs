@@ -16,6 +16,11 @@ fn example_project_args(example_name: &str) -> Vec<String> {
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
+    let template = if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
+        &format!("--template-path={templates_path}/{}", template.strip_prefix("--").unwrap())
+    } else {
+        template
+    };
     let args: Vec<String> = ["cargo", "miden", "new", project_name, template]
         .into_iter()
         .filter(|s| !s.is_empty())
@@ -92,17 +97,12 @@ fn test_all_templates() {
     verify_no_wit_files_for_example_template("is-prime");
 
     // Test new project templates
-    // empty template means no template option is passing, thus using the default project template (program)
+    // empty template means no template option is passing, thus using the default project template (account)
     let r#default = build_new_project_from_template("");
-    assert!(r#default.is_program());
+    assert!(r#default.is_library());
 
-    // Skip note and account templates for now as they create WIT files but have no worlds defined
-    // TODO: Fix templates to define proper worlds or update test to handle WIT files differently
-    // let note = build_new_project_from_template("--note");
-    // assert!(note.is_program());
-
-    // let account = build_new_project_from_template("--account");
-    // assert!(account.is_library());
+    let note = build_new_project_from_template("--note");
+    assert!(note.is_program());
 
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
@@ -319,24 +319,30 @@ fn verify_no_wit_files_for_new_template(template: &str) {
 
 fn build_new_project_from_template(template: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir().join(format!(
-        "test_new_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ));
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp_dir = env::temp_dir();
     env::set_current_dir(&temp_dir).unwrap();
 
-    let project_name = format!("test_new_proj_{}", template.replace("--", "").replace("-", "_"));
-    let expected_new_project_dir = &temp_dir.join(&project_name);
+    if template == "--note" {
+        // create the counter contract cargo project since the note depends on it
+        let project_name = "add-contract";
+        let expected_new_project_dir = &temp_dir.join(project_name);
+        dbg!(&expected_new_project_dir);
+        if expected_new_project_dir.exists() {
+            fs::remove_dir_all(expected_new_project_dir).unwrap();
+        }
+        let output = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+            .expect("Failed to create new add-contract dependency project")
+            .expect("'cargo miden new' should return Some(CommandOutput)");
+    }
+
+    let project_name = "test_proj_underscore";
+    let expected_new_project_dir = &temp_dir.join(project_name);
     dbg!(&expected_new_project_dir);
     if expected_new_project_dir.exists() {
         fs::remove_dir_all(expected_new_project_dir).unwrap();
     }
 
-    let args = new_project_args(&project_name, template);
+    let args = new_project_args(project_name, template);
 
     let output = run(args.into_iter(), OutputType::Masm)
         .expect("Failed to create new project")
@@ -391,6 +397,6 @@ fn build_new_project_from_template(template: &str) -> Package {
     let package = Package::read_from_bytes(&package_bytes).unwrap();
 
     env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(temp_dir).unwrap();
+    fs::remove_dir_all(new_project_path).unwrap();
     package
 }

@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.11.5";
+const TEMPLATES_REPO_TAG: &str = "v0.11.6";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -60,7 +60,7 @@ impl ProjectTemplate {
 
 impl Default for ProjectTemplate {
     fn default() -> Self {
-        Self::program()
+        Self::account()
     }
 }
 
@@ -158,7 +158,7 @@ impl NewCommand {
                 TemplatePath {
                     git: Some("https://github.com/0xMiden/rust-templates".into()),
                     tag: Some(TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(format!("new/{}", project_kind_str)),
+                    auto_path: Some(project_kind_str),
                     ..Default::default()
                 }
             }
