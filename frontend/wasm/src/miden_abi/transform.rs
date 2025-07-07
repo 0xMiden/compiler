@@ -1,8 +1,9 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, PointerType,
-    SymbolNameComponent, SymbolPath, Type, ValueRef,
+    dialects::builtin::FunctionRef,
+    interner::{symbols, Symbol},
+    Builder, Immediate, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
 };
 
 use super::{stdlib, tx_kernel};
@@ -37,6 +38,14 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                             stdlib::crypto::hashes::blake3::HASH_1TO1
                             | stdlib::crypto::hashes::blake3::HASH_2TO1 => {
+                                Some(TransformStrategy::ReturnViaPointer)
+                            }
+                            _ => None,
+                        }
+                    }
+                    name if name == Symbol::intern("rpo") => {
+                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                            stdlib::crypto::hashes::rpo::HASH_MEMORY => {
                                 Some(TransformStrategy::ReturnViaPointer)
                             }
                             _ => None,

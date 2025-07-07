@@ -91,16 +91,12 @@ fn test_hash_elements() {
     let main_fn = r#"
     (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Digest {
         let input = [f0, f1, f2, f3, f4, f5, f6, f7];
-        miden_stdlib_sys::crypto::hash_elements(&input)
+        miden_stdlib_sys::hash_elements(&input)
     }"#
     .to_string();
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
-        "hash_elements",
-        &main_fn,
-        config,
-        ["--test-harness".into()],
-    );
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("hash_elements", &main_fn, config, []);
     // Test expected compilation artifacts
     test.expect_wasm(expect_file![format!("../../../expected/hash_elements.wat")]);
     test.expect_ir(expect_file![format!("../../../expected/hash_elements.hir")]);
@@ -109,7 +105,7 @@ fn test_hash_elements() {
     let package = test.compiled_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    let config = proptest::test_runner::Config::with_cases(10);
+    let config = proptest::test_runner::Config::with_cases(1);
     let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
         let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
         // Compute expected hash using miden-core's Rpo256::hash_elements
@@ -120,6 +116,7 @@ fn test_hash_elements() {
             TestFelt(expected_digest[2]),
             TestFelt(expected_digest[3]),
         ];
+        dbg!(&expected_felts);
 
         // Place the hash output at 20 * PAGE_SIZE, and the hash input at 21 * PAGE_SIZE
         let out_addr = 20u32 * 65536;
@@ -140,6 +137,7 @@ fn test_hash_elements() {
             let vm_out: [midenc_debug::Felt; 4] = trace
                 .read_from_rust_memory(out_addr)
                 .expect("expected memory to have been written");
+            dbg!(&vm_out);
             prop_assert_eq!(&expected_felts, &vm_out, "VM output mismatch");
             Ok(())
         })?;

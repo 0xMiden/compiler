@@ -1,0 +1,110 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @hash_elements {
+        private builtin.function @miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory(v0: i32, v1: i32, v2: i32) {
+        ^block3(v0: i32, v1: i32, v2: i32):
+            v3, v4, v5, v6 = hir.exec @std/crypto/hashes/rpo/hash_memory(v0, v1) : felt, felt, felt, felt
+            v7 = hir.bitcast v2 : u32;
+            v8 = hir.int_to_ptr v7 : ptr<byte, felt>;
+            hir.store v8, v3;
+            v9 = arith.constant 4 : u32;
+            v10 = arith.add v7, v9 : u32 #[overflow = checked];
+            v11 = hir.int_to_ptr v10 : ptr<byte, felt>;
+            hir.store v11, v4;
+            v12 = arith.constant 8 : u32;
+            v13 = arith.add v7, v12 : u32 #[overflow = checked];
+            v14 = hir.int_to_ptr v13 : ptr<byte, felt>;
+            hir.store v14, v5;
+            v15 = arith.constant 12 : u32;
+            v16 = arith.add v7, v15 : u32 #[overflow = checked];
+            v17 = hir.int_to_ptr v16 : ptr<byte, felt>;
+            hir.store v17, v6;
+            builtin.ret ;
+        };
+
+        public builtin.function @entrypoint(v18: i32, v19: felt, v20: felt, v21: felt, v22: felt, v23: felt, v24: felt, v25: felt, v26: felt) {
+        ^block10(v18: i32, v19: felt, v20: felt, v21: felt, v22: felt, v23: felt, v24: felt, v25: felt, v26: felt):
+            v28 = builtin.global_symbol @root_ns:root@1.0.0/hash_elements/__stack_pointer : ptr<byte, u8>
+            v29 = hir.bitcast v28 : ptr<byte, i32>;
+            v30 = hir.load v29 : i32;
+            v31 = arith.constant 32 : i32;
+            v32 = arith.sub v30, v31 : i32 #[overflow = wrapping];
+            v33 = builtin.global_symbol @root_ns:root@1.0.0/hash_elements/__stack_pointer : ptr<byte, u8>
+            v34 = hir.bitcast v33 : ptr<byte, i32>;
+            hir.store v34, v32;
+            v36 = arith.constant 28 : u32;
+            v35 = hir.bitcast v32 : u32;
+            v37 = arith.add v35, v36 : u32 #[overflow = checked];
+            v38 = arith.constant 4 : u32;
+            v39 = arith.mod v37, v38 : u32;
+            hir.assertz v39 #[code = 250];
+            v40 = hir.int_to_ptr v37 : ptr<byte, felt>;
+            hir.store v40, v26;
+            v42 = arith.constant 24 : u32;
+            v41 = hir.bitcast v32 : u32;
+            v43 = arith.add v41, v42 : u32 #[overflow = checked];
+            v94 = arith.constant 4 : u32;
+            v45 = arith.mod v43, v94 : u32;
+            hir.assertz v45 #[code = 250];
+            v46 = hir.int_to_ptr v43 : ptr<byte, felt>;
+            hir.store v46, v25;
+            v48 = arith.constant 20 : u32;
+            v47 = hir.bitcast v32 : u32;
+            v49 = arith.add v47, v48 : u32 #[overflow = checked];
+            v93 = arith.constant 4 : u32;
+            v51 = arith.mod v49, v93 : u32;
+            hir.assertz v51 #[code = 250];
+            v52 = hir.int_to_ptr v49 : ptr<byte, felt>;
+            hir.store v52, v24;
+            v54 = arith.constant 16 : u32;
+            v53 = hir.bitcast v32 : u32;
+            v55 = arith.add v53, v54 : u32 #[overflow = checked];
+            v92 = arith.constant 4 : u32;
+            v57 = arith.mod v55, v92 : u32;
+            hir.assertz v57 #[code = 250];
+            v58 = hir.int_to_ptr v55 : ptr<byte, felt>;
+            hir.store v58, v23;
+            v60 = arith.constant 12 : u32;
+            v59 = hir.bitcast v32 : u32;
+            v61 = arith.add v59, v60 : u32 #[overflow = checked];
+            v91 = arith.constant 4 : u32;
+            v63 = arith.mod v61, v91 : u32;
+            hir.assertz v63 #[code = 250];
+            v64 = hir.int_to_ptr v61 : ptr<byte, felt>;
+            hir.store v64, v22;
+            v66 = arith.constant 8 : u32;
+            v65 = hir.bitcast v32 : u32;
+            v67 = arith.add v65, v66 : u32 #[overflow = checked];
+            v90 = arith.constant 4 : u32;
+            v69 = arith.mod v67, v90 : u32;
+            hir.assertz v69 #[code = 250];
+            v70 = hir.int_to_ptr v67 : ptr<byte, felt>;
+            hir.store v70, v21;
+            v89 = arith.constant 4 : u32;
+            v71 = hir.bitcast v32 : u32;
+            v73 = arith.add v71, v89 : u32 #[overflow = checked];
+            v88 = arith.constant 4 : u32;
+            v75 = arith.mod v73, v88 : u32;
+            hir.assertz v75 #[code = 250];
+            v76 = hir.int_to_ptr v73 : ptr<byte, felt>;
+            hir.store v76, v20;
+            v77 = hir.bitcast v32 : u32;
+            v87 = arith.constant 4 : u32;
+            v79 = arith.mod v77, v87 : u32;
+            hir.assertz v79 #[code = 250];
+            v80 = hir.int_to_ptr v77 : ptr<byte, felt>;
+            hir.store v80, v19;
+            v81 = arith.constant 8 : i32;
+            hir.exec @root_ns:root@1.0.0/hash_elements/miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory(v32, v81, v18)
+            v86 = arith.constant 32 : i32;
+            v83 = arith.add v32, v86 : i32 #[overflow = wrapping];
+            v84 = builtin.global_symbol @root_ns:root@1.0.0/hash_elements/__stack_pointer : ptr<byte, u8>
+            v85 = hir.bitcast v84 : ptr<byte, i32>;
+            hir.store v85, v83;
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

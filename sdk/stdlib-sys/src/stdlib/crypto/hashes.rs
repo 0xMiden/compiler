@@ -2,6 +2,8 @@
 //! functions. The input and output elements are assumed to contain one 32-bit
 //! value per element.
 
+use crate::{Digest, Felt, Word};
+
 #[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0")]
 extern "C" {
     /// Computes BLAKE3 1-to-1 hash.
@@ -96,6 +98,20 @@ extern "C" {
     );
 }
 
+#[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-rpo@1.0.0")]
+extern "C" {
+    /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
+    /// hash function.
+    ///
+    /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
+    ///
+    /// Input: A pointer to the memory location and the number of elements to hash
+    /// Output: One digest (4 field elements)
+    /// The output is passed back to the caller via a pointer.
+    #[link_name = "hash-memory"]
+    fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
+}
+
 /// Hashes a 32-byte input to a 32-byte output using the given hash function.
 #[inline(always)]
 fn hash_1to1(
@@ -173,4 +189,23 @@ pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
 #[inline]
 pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
     hash_2to1(input, extern_sha256_hash_2to1)
+}
+
+/// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
+/// hash function.
+///
+/// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
+///
+/// # Arguments
+/// * `elements` - A slice of field elements to be hashed
+#[inline]
+pub fn hash_elements(elements: &[Felt]) -> Digest {
+    unsafe {
+        let ptr = elements.as_ptr() as u32;
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
+        extern_hash_memory(ptr, elements.len() as u32, result_ptr);
+
+        Digest::from_word(ret_area.assume_init())
+    }
 }
