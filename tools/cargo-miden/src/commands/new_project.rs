@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.10.0";
+const TEMPLATES_REPO_TAG: &str = "v0.11.0";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -23,7 +23,7 @@ pub struct ProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
     program: bool,
-    /// Miden rollup account (default)
+    /// Miden rollup account
     #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
     account: bool,
     /// Miden rollup note script
@@ -78,7 +78,7 @@ impl fmt::Display for ProjectTemplate {
     }
 }
 
-/// Create a new Miden project at <path>
+/// Create a new clean slate Miden project at <path>
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
 pub struct NewCommand {
@@ -184,13 +184,14 @@ impl NewCommand {
             define,
             ..Default::default()
         };
-        cargo_generate::generate(generate_args)
+        let project_path = cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
-        // Deploy WIT files if creating an account or note script project
-        let project_template = self.template.unwrap_or_default();
-        if project_template.account || project_template.note {
-            deploy_wit_files(&self.path).context("Failed to deploy WIT files to the project")?;
+        // Check if the project has WIT files
+        let wit_dir = project_path.join("wit");
+        if wit_dir.exists() && wit_dir.is_dir() {
+            // Deploy core WIT files to the project
+            deploy_wit_files(&project_path).context("Failed to deploy WIT files")?;
         }
 
         Ok(self.path)
@@ -198,7 +199,7 @@ impl NewCommand {
 }
 
 /// Deploy WIT files to the project's wit directory
-fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
+pub fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     // Create wit directory
     let wit_dir = project_path.join(WIT_DEPS_PATH);
     fs::create_dir_all(&wit_dir)?;
@@ -223,7 +224,7 @@ fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
 }
 
 /// Helper function to write a WIT file
-fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
+pub fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
     let mut file = fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
