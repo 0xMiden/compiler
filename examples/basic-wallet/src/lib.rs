@@ -23,8 +23,9 @@ use bindings::exports::miden::basic_wallet::*;
 
 bindings::export!(MyAccount with_types_in bindings);
 
-use miden::{Asset, NoteType, Recipient, Tag};
+use miden::{component, Asset, NoteType, Recipient, Tag};
 
+#[component]
 struct MyAccount;
 
 impl basic_wallet::Guest for MyAccount {

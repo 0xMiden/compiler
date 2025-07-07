@@ -201,6 +201,7 @@
       call $miden_base_sys::bindings::tx::extern_tx_create_note
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01")
   )
   (alias export 0 "add-asset" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
