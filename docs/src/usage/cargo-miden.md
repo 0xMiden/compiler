@@ -34,6 +34,32 @@ This will take a minute to compile, but once complete, you can run `cargo help m
 
 To get help for a specific command, use `cargo miden help <command>` or `cargo miden <command> --help`.
 
+## Creating an example project
+
+If you're new to Miden and want to explore some example projects, you can use the `cargo miden example` command to create a project from one of our templates:
+
+```bash
+cargo miden example <example-name>
+```
+
+To see the list of available examples, run:
+
+```bash
+cargo miden example --help
+```
+
+Available examples include:
+- **basic-wallet** - A basic wallet account implementation (creates both the wallet and a paired p2id-note)
+- **p2id-note** - A pay-to-ID note script (creates both the note and a paired basic-wallet)
+- **counter-contract** - A simple counter contract (creates both the contract and a paired counter-note)
+- **counter-note** - A note script for interacting with the counter contract (creates both the note and paired counter-contract)
+- **fibonacci** - A Fibonacci sequence calculator demonstrating basic computations
+- **collatz** - An implementation of the Collatz conjecture
+- **is-prime** - A prime number checker
+- **storage-example** - Demonstrates storage operations in Miden
+
+Note that some examples create paired projects. For instance, running `cargo miden example basic-wallet` will create a directory containing both the `basic-wallet` account and the `p2id-note` script that interacts with it.
+
 ## Creating a new project
 
 Your first step will be to create a new Rust project set up for compiling to Miden:
