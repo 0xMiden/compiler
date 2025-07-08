@@ -15,7 +15,7 @@ impl Word {
         }
     }
 
-    pub(crate) fn revert(&self) -> Word {
+    pub(crate) fn reverse(&self) -> Word {
         Self {
             inner: (self.inner.3, self.inner.2, self.inner.1, self.inner.0),
         }
