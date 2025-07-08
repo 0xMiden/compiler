@@ -79,7 +79,8 @@ impl If {
 impl Canonicalizable for If {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
         rewrites.push(crate::canonicalization::ConvertTrivialIfToSelect::new(context.clone()));
-        rewrites.push(crate::canonicalization::IfRemoveUnusedResults::new(context));
+        rewrites.push(crate::canonicalization::IfRemoveUnusedResults::new(context.clone()));
+        rewrites.push(crate::canonicalization::FoldRedundantYields::new(context));
     }
 }
 
@@ -547,7 +548,8 @@ impl RegionBranchOpInterface for IndexSwitch {
 
 impl Canonicalizable for IndexSwitch {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
-        rewrites.push(crate::canonicalization::FoldConstantIndexSwitch::new(context));
+        rewrites.push(crate::canonicalization::FoldConstantIndexSwitch::new(context.clone()));
+        rewrites.push(crate::canonicalization::FoldRedundantYields::new(context));
     }
 }
 
@@ -643,8 +645,12 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// regions must yield the same arity and types.
 #[operation(
     dialect = ScfDialect,
-    traits(Terminator, ReturnLike),
-    implements(RegionBranchTerminatorOpInterface)
+    traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),
+    implements(
+        RegionBranchTerminatorOpInterface,
+        MemoryEffectOpInterface,
+        ConditionallySpeculatable
+    )
 )]
 pub struct Yield {
     #[operands]
@@ -686,5 +692,21 @@ impl RegionBranchTerminatorOpInterface for Yield {
         } else {
             panic!("unsupported parent operation for '{}': '{}'", self.name(), parent_op.name())
         }
+    }
+}
+
+impl EffectOpInterface<MemoryEffect> for Yield {
+    fn has_no_effect(&self) -> bool {
+        true
+    }
+
+    fn effects(&self) -> EffectIterator<::midenc_hir::effects::MemoryEffect> {
+        EffectIterator::from_smallvec(::midenc_hir::smallvec![])
+    }
+}
+
+impl ConditionallySpeculatable for Yield {
+    fn speculatability(&self) -> Speculatability {
+        Speculatability::Speculatable
     }
 }

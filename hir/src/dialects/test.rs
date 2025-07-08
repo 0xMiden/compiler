@@ -119,5 +119,8 @@ impl DialectRegistration for TestDialect {
         info.register_operation::<ops::Shl>();
         info.register_operation::<ops::Ret>();
         info.register_operation::<ops::Constant>();
+        info.register_operation::<ops::Eq>();
+        info.register_operation::<ops::Neq>();
+        info.register_operation::<ops::Store>();
     }
 }

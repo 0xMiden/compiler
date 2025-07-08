@@ -10,6 +10,18 @@ pub trait TestOpBuilder<'f, B: ?Sized + Builder> {
         Ok(constant.borrow().result().as_value_ref())
     }
 
+    fn eq(&mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<Eq, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn neq(&mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<Neq, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Two's complement addition which traps on overflow
     fn add(&mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<Add, _>(span);
