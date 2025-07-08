@@ -10,6 +10,18 @@ use crate::commands::new_project::deploy_wit_files;
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
 
+/// Paired project mappings for examples that create multiple related projects
+const PAIRED_PROJECTS: &[(&str, &str)] =
+    &[("basic-wallet", "p2id-note"), ("counter-contract", "counter-note")];
+
+/// Core WIT dependency mappings (package name, file name)
+const CORE_WIT_DEPS: &[(&str, &str)] = &[
+    ("miden:base", "miden.wit"),
+    ("miden:core-intrinsics", "miden-core-intrinsics.wit"),
+    ("miden:core-stdlib", "miden-core-stdlib.wit"),
+    ("miden:core-base", "miden-core-base.wit"),
+];
+
 /// Create a new Miden example project
 #[derive(Args)]
 #[clap(disable_version_flag = true)]
@@ -32,13 +44,10 @@ use std::fs;
 impl ExampleCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
         // Check if this is a paired project
-        let paired_projects = match self.example_name.as_str() {
-            "basic-wallet" | "p2id-note" => Some(("basic-wallet", "p2id-note")),
-            "counter-contract" | "counter-note" => Some(("counter-contract", "counter-note")),
-            _ => None,
-        };
-
-        if let Some((first, second)) = paired_projects {
+        if let Some((first, second)) = PAIRED_PROJECTS
+            .iter()
+            .find(|(first, second)| *first == self.example_name || *second == self.example_name)
+        {
             self.exec_paired_projects(first, second)
         } else {
             self.exec_single_project()
@@ -103,7 +112,7 @@ impl ExampleCommand {
         Ok(project_path)
     }
 
-    /// Create a pari (account and note script) projects in a sub-folder
+    /// Create a pair (account and note script) projects in a sub-folder
     fn exec_paired_projects(
         &self,
         first_project: &str,
@@ -128,11 +137,11 @@ impl ExampleCommand {
         }
 
         // Generate both projects
-        let examples = [first_project, second_project];
-        for example in &examples {
+        let project_names = [first_project, second_project];
+        for project_name in &project_names {
             let template_path = TemplatePath {
                 git: Some("https://github.com/0xMiden/compiler".into()),
-                auto_path: Some(format!("examples/{}", example)),
+                auto_path: Some(format!("examples/{}", project_name)),
                 ..Default::default()
             };
 
@@ -144,7 +153,7 @@ impl ExampleCommand {
             let generate_args = GenerateArgs {
                 template_path,
                 destination: Some(destination),
-                name: Some(example.to_string()),
+                name: Some(project_name.to_string()),
                 force: true,
                 force_git_init: false, // Don't init git for subdirectories
                 verbose: true,
@@ -153,20 +162,20 @@ impl ExampleCommand {
             };
 
             cargo_generate::generate(generate_args)
-                .context(format!("Failed to scaffold {} project", example))?;
+                .context(format!("Failed to scaffold {} project", project_name))?;
 
-            let project_path = main_dir.join(example);
+            let project_path = main_dir.join(project_name);
 
             // Check if the project has WIT files
             let wit_dir = project_path.join("wit");
             if wit_dir.exists() && wit_dir.is_dir() {
                 deploy_wit_files(&project_path)
-                    .context(format!("Failed to deploy WIT files for {}", example))?;
+                    .context(format!("Failed to deploy WIT files for {}", project_name))?;
             }
 
             // Process the Cargo.toml
             process_cargo_toml(&project_path)
-                .context(format!("Failed to process Cargo.toml for {}", example))?;
+                .context(format!("Failed to process Cargo.toml for {}", project_name))?;
         }
 
         // Update dependencies for paired projects
@@ -235,47 +244,12 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
         for (key, value) in metadata.iter_mut() {
             if let Some(table) = value.as_inline_table_mut() {
                 if let Some(path_value) = table.get_mut("path") {
-                    match key.as_ref() {
-                        "miden:base" => {
-                            *path_value =
-                                toml_edit::Value::from(format!("{}/miden.wit", WIT_DEPS_PATH));
-                        }
-                        "miden:core-intrinsics" => {
-                            *path_value = toml_edit::Value::from(format!(
-                                "{}/miden-core-intrinsics.wit",
-                                WIT_DEPS_PATH
-                            ));
-                        }
-                        "miden:core-stdlib" => {
-                            *path_value = toml_edit::Value::from(format!(
-                                "{}/miden-core-stdlib.wit",
-                                WIT_DEPS_PATH
-                            ));
-                        }
-                        "miden:core-base" => {
-                            *path_value = toml_edit::Value::from(format!(
-                                "{}/miden-core-base.wit",
-                                WIT_DEPS_PATH
-                            ));
-                        }
-                        _ => {
-                            // For project-specific WIT files, check if they exist in wit/
-                            if let Some(path_str) = path_value.as_str() {
-                                let path = Path::new(path_str);
-                                if let Some(file_name) = path.file_name() {
-                                    let wit_file = project_path.join("wit").join(file_name);
-                                    if wit_file.exists() {
-                                        // Update to use the wit/ directory path
-                                        *path_value = toml_edit::Value::from(format!(
-                                            "wit/{}",
-                                            file_name.to_string_lossy()
-                                        ));
-                                    }
-                                    // Don't remove anything, just leave other paths as they are
-                                }
-                            }
-                        }
-                    }
+                    if let Some((_, wit_file)) =
+                        CORE_WIT_DEPS.iter().find(|(dep, _)| *dep == key.get())
+                    {
+                        *path_value =
+                            toml_edit::Value::from(format!("{}/{}", WIT_DEPS_PATH, wit_file));
+                    };
                 }
             }
         }
