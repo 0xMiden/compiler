@@ -25,6 +25,5 @@ midenc-hir-transform.workspace = true
 bitvec.workspace = true
 
 [dev-dependencies]
-midenc-dialect-hir.workspace = true
 midenc-expect-test.workspace = true
 env_logger.workspace = true

@@ -1,7 +1,7 @@
 public builtin.function @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v3 = arith.constant 11 : u32;
-    v4 = arith.constant 22 : u32;
-    v7 = arith.add v3, v4 : u32 #[overflow = checked];
+    v3 = test.constant 11 : u32;
+    v4 = test.constant 22 : u32;
+    v7 = test.add v3, v4 : u32 #[overflow = checked];
     builtin.ret v7;
 };

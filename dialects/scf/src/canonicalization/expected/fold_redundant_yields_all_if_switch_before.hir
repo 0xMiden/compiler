@@ -1,7 +1,7 @@
 public builtin.function @test(v0: u32) -> u32 {
 ^block0(v0: u32):
-    v3 = arith.constant 11 : u32;
-    v4 = arith.constant 22 : u32;
+    v3 = test.constant 11 : u32;
+    v4 = test.constant 22 : u32;
     v12, v13 = scf.index_switch v0 : u32, u32 
     case 1 {
     ^block1:
@@ -9,8 +9,8 @@ public builtin.function @test(v0: u32) -> u32 {
     }
     case 2 {
     ^block4:
-        v5 = arith.constant 0 : u32;
-        v6 = arith.eq v0, v5 : i1;
+        v5 = test.constant 0 : u32;
+        v6 = test.eq v0, v5 : i1;
         v14, v15 = scf.if v6 : u32, u32 {
         ^block2:
             scf.yield v3, v4;
@@ -24,6 +24,6 @@ public builtin.function @test(v0: u32) -> u32 {
     ^block5:
         scf.yield v3, v4;
     };
-    v7 = arith.add v12, v13 : u32 #[overflow = checked];
+    v7 = test.add v12, v13 : u32 #[overflow = checked];
     builtin.ret v7;
 };

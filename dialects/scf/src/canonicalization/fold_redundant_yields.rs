@@ -170,14 +170,13 @@ impl RewritePattern for FoldRedundantYields {
 mod tests {
     use alloc::{boxed::Box, format, rc::Rc, sync::Arc, vec::Vec};
 
-    use builtin::{BuiltinOpBuilder, FunctionBuilder};
-    use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
-    use midenc_dialect_hir::HirOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        dialects::builtin,
-        pass,
+        dialects::{
+            builtin::{self, BuiltinOpBuilder, FunctionBuilder},
+            test::TestOpBuilder,
+        },
         pass::{Pass, PassExecutionState},
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RewritePattern, RewritePatternSet,
@@ -316,14 +315,14 @@ mod tests {
         let if_sum_rhs = builder.append_block_param(if_final, Type::U32, span);
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
-        let redundant_val = builder.u32(11, span);
+        let redundant_val = builder.u32(11, span)?;
 
-        let zero = builder.u32(0, span);
+        let zero = builder.u32(0, span)?;
         let is_zero = builder.eq(input, zero, span)?;
         builder.cond_br(is_zero, if_then, [], if_else, [], span)?;
 
         builder.switch_to_block(if_then);
-        let then_non_redundant_val = builder.u32(22, span);
+        let then_non_redundant_val = builder.u32(22, span)?;
         builder.br(if_final, [redundant_val, then_non_redundant_val], span)?;
 
         let switch_on_one_case = SwitchCase {
@@ -348,15 +347,15 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_one_block);
-        let switch_on_one_non_redundant_val = builder.u32(33, span);
+        let switch_on_one_non_redundant_val = builder.u32(33, span)?;
         builder.br(if_final, [redundant_val, switch_on_one_non_redundant_val], span)?;
 
         builder.switch_to_block(switch_on_two_block);
-        let switch_on_two_non_redundant_val = builder.u32(44, span);
+        let switch_on_two_non_redundant_val = builder.u32(44, span)?;
         builder.br(if_final, [redundant_val, switch_on_two_non_redundant_val], span)?;
 
         builder.switch_to_block(switch_default_block);
-        let switch_default_non_redundant_val = builder.u32(55, span);
+        let switch_default_non_redundant_val = builder.u32(55, span)?;
         builder.br(if_final, [redundant_val, switch_default_non_redundant_val], span)?;
 
         // Add all the results together along with the redundant value to give them all users.
@@ -399,8 +398,8 @@ mod tests {
         let sum_rhs = builder.append_block_param(switch_final_block, Type::U32, span);
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
-        let redundant_val0 = builder.u32(11, span);
-        let redundant_val1 = builder.u32(22, span);
+        let redundant_val0 = builder.u32(11, span)?;
+        let redundant_val1 = builder.u32(22, span)?;
 
         let switch_on_one_case = SwitchCase {
             value: 1,
@@ -426,7 +425,7 @@ mod tests {
         builder.br(switch_final_block, [redundant_val0, redundant_val1], span)?;
 
         builder.switch_to_block(switch_on_two_block);
-        let zero = builder.u32(0, span);
+        let zero = builder.u32(0, span)?;
         let is_zero = builder.eq(input, zero, span)?;
         builder.cond_br(is_zero, if_then_block, [], if_else_block, [], span)?;
 
@@ -478,10 +477,10 @@ mod tests {
         let sum_rhs = builder.append_block_param(if_final_block, Type::U32, span);
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
-        let redundant_val0 = builder.u32(11, span);
-        let redundant_val1 = builder.u32(22, span);
+        let redundant_val0 = builder.u32(11, span)?;
+        let redundant_val1 = builder.u32(22, span)?;
 
-        let zero = builder.u32(0, span);
+        let zero = builder.u32(0, span)?;
         let is_not_zero = builder.neq(input, zero, span)?;
         builder.cond_br(is_not_zero, if_then_block, [], if_else_block, [], span)?;
 
@@ -562,9 +561,9 @@ mod tests {
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
 
-        let redundant_val11 = builder.u32(11, span);
-        let redundant_val22 = builder.u32(22, span);
-        let redundant_val33 = builder.u32(33, span);
+        let redundant_val11 = builder.u32(11, span)?;
+        let redundant_val22 = builder.u32(22, span)?;
+        let redundant_val33 = builder.u32(33, span)?;
 
         let switch_on_one_case = SwitchCase {
             value: 1,
@@ -593,8 +592,8 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_one_block);
-        let switch_on_one_non_redundant_val0 = builder.u32(100, span);
-        let switch_on_one_non_redundant_val1 = builder.u32(101, span);
+        let switch_on_one_non_redundant_val0 = builder.u32(100, span)?;
+        let switch_on_one_non_redundant_val1 = builder.u32(101, span)?;
         builder.br(
             switch_final_block,
             [
@@ -608,8 +607,8 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_two_block);
-        let switch_on_two_non_redundant_val0 = builder.u32(200, span);
-        let switch_on_two_non_redundant_val1 = builder.u32(201, span);
+        let switch_on_two_non_redundant_val0 = builder.u32(200, span)?;
+        let switch_on_two_non_redundant_val1 = builder.u32(201, span)?;
         builder.br(
             switch_final_block,
             [
@@ -623,8 +622,8 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_three_block);
-        let switch_on_three_non_redundant_val0 = builder.u32(300, span);
-        let switch_on_three_non_redundant_val1 = builder.u32(301, span);
+        let switch_on_three_non_redundant_val0 = builder.u32(300, span)?;
+        let switch_on_three_non_redundant_val1 = builder.u32(301, span)?;
         builder.br(
             switch_final_block,
             [
@@ -638,8 +637,8 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_default_block);
-        let switch_on_default_non_redundant_val0 = builder.u32(400, span);
-        let switch_on_default_non_redundant_val1 = builder.u32(401, span);
+        let switch_on_default_non_redundant_val0 = builder.u32(400, span)?;
+        let switch_on_default_non_redundant_val1 = builder.u32(401, span)?;
         builder.br(
             switch_final_block,
             [
@@ -696,8 +695,8 @@ mod tests {
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
 
-        let redundant_val11 = builder.u32(11, span);
-        let redundant_val22 = builder.u32(22, span);
+        let redundant_val11 = builder.u32(11, span)?;
+        let redundant_val22 = builder.u32(22, span)?;
 
         let switch_on_one_case = SwitchCase {
             value: 1,
@@ -772,9 +771,9 @@ mod tests {
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
 
-        let redundant_val11 = builder.u32(11, span);
-        let redundant_val22 = builder.u32(22, span);
-        let redundant_val33 = builder.u32(33, span);
+        let redundant_val11 = builder.u32(11, span)?;
+        let redundant_val22 = builder.u32(22, span)?;
+        let redundant_val33 = builder.u32(33, span)?;
 
         let switch_on_one_case = SwitchCase {
             value: 1,
@@ -824,7 +823,7 @@ mod tests {
         )?;
 
         builder.switch_to_block(switch_on_default_block);
-        let non_redundant_val44 = builder.u32(44, span);
+        let non_redundant_val44 = builder.u32(44, span)?;
         builder.br(
             switch_final_block,
             [redundant_val11, non_redundant_val44, redundant_val33],
@@ -877,9 +876,9 @@ mod tests {
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
         let input_ptr = builder.current_block().borrow().arguments()[1].upcast();
-        let redundant_val = builder.u32(11, span);
+        let redundant_val = builder.u32(11, span)?;
 
-        let zero = builder.u32(0, span);
+        let zero = builder.u32(0, span)?;
         let is_zero = builder.eq(input, zero, span)?;
         builder.cond_br(is_zero, if_then, [], if_else, [], span)?;
 
@@ -920,10 +919,10 @@ mod tests {
         let mut builder = FunctionBuilder::new(function, &mut builder);
 
         let input = builder.current_block().borrow().arguments()[0].upcast();
-        let redundant_val = builder.u32(11, span);
+        let redundant_val = builder.u32(11, span)?;
 
         // Create a while op, pass zero.
-        let zero = builder.u32(0, span);
+        let zero = builder.u32(0, span)?;
         let while_op = builder.r#while([zero], &[Type::U32], span)?;
         let while_before_block = while_op.borrow().before().entry().as_block_ref();
         let while_after_block = while_op.borrow().after().entry().as_block_ref();
