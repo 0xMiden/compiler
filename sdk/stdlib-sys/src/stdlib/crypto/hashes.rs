@@ -2,6 +2,9 @@
 //! functions. The input and output elements are assumed to contain one 32-bit
 //! value per element.
 
+// use alloc::vec::Vec;
+// use core::mem;
+
 use crate::{Digest, Felt, Word};
 
 #[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0")]
@@ -201,11 +204,24 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 #[inline]
 pub fn hash_elements(elements: &[Felt]) -> Digest {
     unsafe {
-        let ptr = elements.as_ptr() as u32;
+        let rust_ptr = elements.as_ptr() as u32;
+        let miden_ptr = rust_ptr / 4;
+        // // Check that pointer is word aligned as required by the Miden stdlib hash_elements
+        // // See https://github.com/0xPolygonMiden/miden-vm/blob/dd82766268fc8161396b51be32335c58242ee0c2/stdlib/asm/crypto/hashes/rpo.masm?plain=1#L304-L332
+        // let ptr = if miden_ptr % 4 != 0 {
+        //     let mut new_vec: Vec<u64> = Vec::with_capacity(elements.len());
+        //     let el_as_u64: &[u64] = mem::transmute::<&[Felt], &[u64]>(elements);
+        //     new_vec.extend_from_slice(el_as_u64);
+        //     new_vec.as_ptr() as u32
+        // } else {
+        //     miden_ptr
+        // };
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
-        extern_hash_memory(ptr, elements.len() as u32, result_ptr);
+        extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
 
-        Digest::from_word(ret_area.assume_init())
+        // FIX: look into the return-via-pointer. Is it stores in the wrong order?
+        // Revert the word since in VM the memory its stored
+        Digest::from_word(ret_area.assume_init().revert())
     }
 }
