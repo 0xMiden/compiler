@@ -70,6 +70,20 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
 end
 
 export.entrypoint
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
     push.1048576
     u32divmod.4
     swap.1
@@ -78,8 +92,12 @@ export.entrypoint
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.4294967264
+    push.64
+    dup.2
+    swap.1
     u32wrapping_sub
+    u32and
     push.1048576
     dup.1
     swap.1
@@ -90,168 +108,123 @@ export.entrypoint
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.28
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.10
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.9
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.8
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.7
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.6
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.5
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.4
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
+    push.0
     movup.2
     swap.3
     movdn.2
+    push.1
+    while.true
+        push.0
+        push.32
+        dup.2
+        swap.1
+        eq
+        neq
+        dup.0
+        if.true
+            swap.1
+            drop
+            push.3735929054
+        else
+            dup.2
+            dup.2
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            dup.4
+            swap.1
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_felt
+            trace.252
+            nop
+            push.4
+            movup.2
+            swap.1
+            u32wrapping_add
+        end
+        push.3735929054
+        dup.2
+        dup.6
+        swap.2
+        swap.1
+        cdrop
+        push.3735929054
+        dup.3
+        movup.2
+        swap.6
+        movdn.2
+        cdrop
+        push.3735929054
+        dup.3
+        dup.5
+        swap.2
+        swap.1
+        cdrop
+        push.1
+        push.0
+        movup.5
+        cdrop
+        push.1
+        u32and
+        movup.4
+        swap.5
+        movdn.4
+        swap.1
+        swap.2
+        swap.3
+        swap.1
+        if.true
+            movup.4
+            drop
+            movup.4
+            drop
+            push.1
+        else
+            push.0
+        end
+    end
+    drop
+    drop
+    drop
+    drop
+    push.32
+    dup.1
+    swap.1
+    u32wrapping_add
+    push.8
+    dup.2
     trace.240
     nop
     exec.::root_ns:root@1.0.0::hash_elements::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
     trace.252
     nop
     push.32
-    u32wrapping_add
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.1048576
+    movup.2
+    swap.1
     u32divmod.4
     swap.1
     trace.240
