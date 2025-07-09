@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["wasmparser/std", "gimli/std", "midenc-hir-symbol/std"]
+std = ["wasmparser/std", "gimli/std", "miden-utils-sync/std"]
 
 [dependencies]
 anyhow.workspace = true
@@ -23,6 +23,7 @@ gimli = { version = "0.31", default-features = false, features = ['read'] }
 indexmap = "2.7"
 log.workspace = true
 miden-core.workspace = true
+miden-utils-sync.workspace = true
 midenc-hir.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-cf.workspace = true

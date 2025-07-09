@@ -48,7 +48,7 @@ pub trait ToMidenRepr {
         let mut chunks = felts.into_iter().array_chunks::<4>();
         for mut word in chunks.by_ref() {
             word.reverse();
-            words.push(word);
+            words.push(Word::new(word));
         }
         if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
             let mut word = [RawFelt::ZERO; 4];
@@ -56,7 +56,7 @@ pub trait ToMidenRepr {
                 word[i] = felt;
             }
             word.reverse();
-            words.push(word);
+            words.push(Word::new(word));
         }
         words
     }
@@ -527,7 +527,7 @@ impl ToMidenRepr for RawFelt {
     }
 
     fn to_words(&self) -> SmallVec<[Word; 1]> {
-        let mut word = [RawFelt::ZERO; 4];
+        let mut word = Word::new([RawFelt::ZERO; 4]);
         word[0] = *self;
         smallvec![word]
     }
@@ -564,7 +564,7 @@ impl ToMidenRepr for Felt {
     }
 
     fn to_words(&self) -> SmallVec<[Word; 1]> {
-        let mut word = [RawFelt::ZERO; 4];
+        let mut word = Word::new([RawFelt::ZERO; 4]);
         word[0] = self.0;
         smallvec![word]
     }
@@ -622,7 +622,7 @@ impl<const N: usize> FromMidenRepr for [u8; N] {
 ///
 /// In short, it produces words that when placed on the stack and written to memory word-by-word,
 /// the original bytes will be laid out in Miden's memory in the correct order.
-pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
+pub fn bytes_to_words(bytes: &[u8]) -> Vec<Word> {
     // 1. Chunk bytes up into felts
     let mut iter = bytes.iter().array_chunks::<4>();
     let padded_bytes = bytes.len().next_multiple_of(16);
@@ -648,7 +648,7 @@ pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
     let mut iter = buf.into_iter().map(|elem| RawFelt::new(elem as u64)).array_chunks::<4>();
     for mut word in iter.by_ref() {
         word.reverse();
-        words.push(word);
+        words.push(Word::new(word));
     }
     if let Some(extra) = iter.into_remainder().filter(|r| r.len() > 0) {
         let mut word = [RawFelt::ZERO; 4];
@@ -656,7 +656,7 @@ pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
             word[i] = felt;
         }
         word.reverse();
-        words.push(word);
+        words.push(Word::new(word));
     }
     words
 }

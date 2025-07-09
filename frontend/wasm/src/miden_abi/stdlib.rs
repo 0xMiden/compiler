@@ -1,6 +1,6 @@
 //! Function types and lowered signatures for the Miden stdlib API functions
 
-use midenc_hir_symbol::sync::LazyLock;
+use miden_utils_sync::LazyLock;
 
 use super::ModuleFunctionTypeMap;
 

@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use miden_core::{
-    crypto::hash::RpoDigest,
     utils::{Deserializable, Serializable},
-    Felt, FieldElement,
+    Felt, FieldElement, Word,
 };
 use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
@@ -213,8 +212,8 @@ fn rust_sdk_counter_testnet_example() {
     let account_package =
         Arc::new(Package::read_from_bytes(&std::fs::read(masp_path).unwrap()).unwrap());
 
-    let key = [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0)];
-    let expected = [Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)];
+    let key = Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0)]);
+    let expected = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
     scenario
         .create_account("example", account_package)
         .then()

@@ -70,21 +70,22 @@ Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
 log = "0.4"
-miden-assembly = { version = "0.14.0", default-features = false }
-miden-core = { version = "0.14.0", default-features = false, features = [
-    "diagnostics",
-] }
+miden-assembly = { version = "0.16.0", default-features = false }
+miden-assembly-syntax = { version = "0.16.0", default-features = false }
+miden-core = { version = "0.16.0", default-features = false }
+miden-debug-types = { version = "0.16.0", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
 miden-lib = { version = "0.9.0", default-features = false, features = [
     "with-debug-info",
 ] }
+miden-mast-package = { version = "0.16.0", default-features = false }
 miden-objects = { version = "0.9", default-features = false }
-miden-processor = { version = "0.14.0", default-features = false }
-miden-stdlib = { version = "0.14.0", default-features = false, features = [
+miden-processor = { version = "0.16.0", default-features = false }
+miden-stdlib = { version = "0.16.0", default-features = false, features = [
     "with-debug-info",
 ] }
-miden-mast-package = { version = "0.14.0", default-features = false }
-miette = { package = "miden-miette", version = "7.1.1" }
+miden-utils-diagnostics = { version = "0.16.0", default-features = false }
+miden-utils-sync = { version = "0.16.0", default-features = false }
 paste = "1.0"
 parking_lot = "0.12"
 parking_lot_core = "0.9"
@@ -113,9 +114,12 @@ syn = { version = "2.0", features = [
     "extra-traits",
     "printing",
 ] }
-thiserror = { package = "miden-thiserror", version = "1.0" }
-toml = { version = "0.8", features = ["preserve_order"] }
-tokio = { version = "1.39.2", features = ["rt", "time", "macros"] }
+thiserror = { version = "2.0", default-features = false }
+toml = { version = "0.9", default-features = false, features = [
+    "serde",
+    "preserve_order",
+] }
+tokio = { version = "1.46", features = ["rt", "time", "macros"] }
 wat = "1.0.69"
 wasmparser = { version = "0.227", default-features = false, features = [
     "features",

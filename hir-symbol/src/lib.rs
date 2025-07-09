@@ -5,8 +5,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod sync;
-
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -16,6 +14,7 @@ use alloc::{
 use core::{fmt, mem, ops::Deref, str};
 
 use miden_formatting::prettier::PrettyPrint;
+pub(crate) use miden_utils_sync as sync;
 
 pub mod symbols {
     include!(env!("SYMBOLS_RS"));

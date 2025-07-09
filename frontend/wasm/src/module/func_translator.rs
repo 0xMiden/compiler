@@ -10,6 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
+    diagnostics::{ColumnNumber, LineNumber},
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
     BlockRef, Builder, Context, Op,
 };
@@ -218,8 +219,8 @@ fn parse_function_body<B: ?Sized + Builder>(
                 let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
                 if path.exists() {
                     let source_file = session.source_manager.load_file(&path).into_diagnostic()?;
-                    let line = loc.line.and_then(|line| line.checked_sub(1)).unwrap_or(0);
-                    let column = loc.column.and_then(|col| col.checked_sub(1)).unwrap_or(0);
+                    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
+                    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
                     span = source_file.line_column_to_span(line, column).unwrap_or_default();
                 } else {
                     log::debug!(target: "module-parser",

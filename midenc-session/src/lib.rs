@@ -92,7 +92,7 @@ pub struct Session {
     /// Configuration for the current compiler session
     pub options: Options,
     /// The current source manager
-    pub source_manager: Arc<dyn SourceManager>,
+    pub source_manager: Arc<dyn SourceManager + Send + Sync>,
     /// The current diagnostics handler
     pub diagnostics: Arc<DiagnosticsHandler>,
     /// The inputs being compiled
@@ -124,7 +124,7 @@ impl Session {
         target_dir: PathBuf,
         options: Options,
         emitter: Option<Arc<dyn Emitter>>,
-        source_manager: Arc<dyn SourceManager>,
+        source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self
     where
         I: IntoIterator<Item = InputFile>,
@@ -141,7 +141,7 @@ impl Session {
         target_dir: PathBuf,
         options: Options,
         emitter: Option<Arc<dyn Emitter>>,
-        source_manager: Arc<dyn SourceManager>,
+        source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self {
         log::debug!(target: "driver", "creating session for {} inputs:", inputs.len());
         if log::log_enabled!(target: "driver", log::Level::Debug) {

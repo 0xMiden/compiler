@@ -5,9 +5,8 @@ use alloc::{
 use core::fmt;
 
 use miden_assembly::{ast::InvocationTarget, Library};
-use miden_core::{utils::DisplayHex, Program};
+use miden_core::{Program, Word};
 use miden_mast_package::{MastArtifact, Package, ProcedureName};
-use miden_processor::Digest;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     diagnostics::{Report, SourceSpan, Span},
@@ -45,7 +44,7 @@ pub struct Rodata {
     /// The component to which this read-only data segment belongs
     pub component: builtin::ComponentId,
     /// The content digest computed for `data`
-    pub digest: Digest,
+    pub digest: Word,
     /// The address at which the data for this segment begins
     pub start: NativePtr,
     /// The raw binary data for this segment
@@ -54,7 +53,7 @@ pub struct Rodata {
 impl fmt::Debug for Rodata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rodata")
-            .field("digest", &format_args!("{}", DisplayHex::new(&self.digest.as_bytes())))
+            .field("digest", &format_args!("{}", &self.digest))
             .field("start", &self.start)
             .field_with("data", |f| {
                 f.debug_struct("ConstantData")
@@ -179,7 +178,7 @@ impl MasmComponent {
         _link_packages: &BTreeMap<Symbol, Arc<Package>>,
         session: &Session,
     ) -> Result<Arc<Program>, Report> {
-        use miden_assembly::{Assembler, CompileOptions};
+        use miden_assembly::Assembler;
 
         let debug_mode = session.options.emit_debug_decorators();
 
@@ -199,7 +198,7 @@ impl MasmComponent {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.insert(module.path().clone());
             }
-            assembler.add_library(library)?;
+            assembler.link_dynamic_library(library)?;
         }
 
         // Assemble library
@@ -223,15 +222,7 @@ impl MasmComponent {
                 continue;
             }
             log::debug!(target: "assembly", "adding '{}' to assembler", module.path());
-            let kind = module.kind();
-            assembler.add_module_with_options(
-                module,
-                CompileOptions {
-                    kind,
-                    warnings_as_errors: false,
-                    path: None,
-                },
-            )?;
+            assembler.compile_and_statically_link(module)?;
         }
 
         let emit_test_harness = session.get_flag("test_harness");
@@ -269,7 +260,7 @@ impl MasmComponent {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.push(module.path().clone());
             }
-            assembler.add_library(library)?;
+            assembler.link_dynamic_library(library)?;
         }
 
         // Assemble library

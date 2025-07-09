@@ -16,12 +16,11 @@ anyhow.workspace = true
 cargo_metadata = "0.19"
 cargo-util = "0.2"
 env_logger.workspace = true
-midenc-expect-test.workspace = true
 filetime = "0.2.23"
 glob = "0.3.1"
 log.workspace = true
 miden-assembly.workspace = true
-miden-core.workspace = true
+miden-core = { workspace = true, features = ["std"] }
 miden-client = { version = "0.9", git = "https://github.com/0xMiden/miden-client", rev = "f98ae87fc3f77e269c3c1e412d1b8ac650aa6fe3", features = [
     "tonic",
     "sqlite",
@@ -29,6 +28,7 @@ miden-client = { version = "0.9", git = "https://github.com/0xMiden/miden-client
 miden-mast-package.workspace = true
 miden-objects = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
+midenc-expect-test.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-frontend-wasm.workspace = true

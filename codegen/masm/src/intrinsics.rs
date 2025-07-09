@@ -2,7 +2,7 @@ use miden_assembly::{
     ast::{Module, ModuleKind},
     LibraryPath,
 };
-use midenc_session::diagnostics::{PrintDiagnostic, SourceManager};
+use midenc_session::diagnostics::{PrintDiagnostic, SourceLanguage, SourceManager, Uri};
 
 pub const I32_INTRINSICS_MODULE_NAME: &str = "intrinsics::i32";
 pub const I64_INTRINSICS_MODULE_NAME: &str = "intrinsics::i64";
@@ -46,7 +46,8 @@ const INTRINSICS: [(&str, &str, &str); 3] = [
 pub fn load<N: AsRef<str>>(name: N, source_manager: &dyn SourceManager) -> Option<Box<Module>> {
     let name = name.as_ref();
     let (name, source, filename) = INTRINSICS.iter().copied().find(|(n, ..)| *n == name)?;
-    let source_file = source_manager.load(filename, source.to_string());
+    let filename = Uri::new(filename);
+    let source_file = source_manager.load(SourceLanguage::Masm, filename, source.to_string());
     let path = LibraryPath::new(name).expect("invalid module name");
     match Module::parse(path, ModuleKind::Library, source_file.clone()) {
         Ok(module) => Some(module),

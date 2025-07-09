@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, collections::BTreeMap, format, sync::Arc};
 use core::any::TypeId;
 
-use midenc_hir_symbol::sync::{LazyLock, RwLock};
+use miden_utils_sync::{LazyLock, RwLock};
 use midenc_session::diagnostics::DiagnosticsHandler;
 
 use super::*;

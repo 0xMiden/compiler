@@ -6,12 +6,12 @@ pub mod debug;
 pub mod felt;
 pub mod mem;
 
+use miden_utils_sync::LazyLock;
 use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder},
     Builder, FxHashSet, Signature, SmallVec, SourceSpan, SymbolPath, ValueRef,
 };
-use midenc_hir_symbol::sync::LazyLock;
 
 use crate::{
     callable::CallableFunction, error::WasmResult, module::function_builder_ext::FunctionBuilderExt,

@@ -17,6 +17,66 @@ use toml::{value::Table, Value};
 
 type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 
+#[derive(Default)]
+struct SymbolMap {
+    sections: Vec<Section>,
+}
+
+impl SymbolMap {
+    pub fn sections(&self) -> impl Iterator<Item = &Section> {
+        self.sections.iter()
+    }
+}
+
+impl core::str::FromStr for SymbolMap {
+    type Err = toml::de::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use serde::de::Error as _;
+        use toml::de::Error;
+
+        let mut this = Self::default();
+        let map = toml::from_str::<toml::Table>(s)?;
+
+        for (k, symbols) in map.into_iter() {
+            let symbols = symbols.as_table().ok_or_else(|| {
+                Error::custom(format!("invalid symbol section '{k}': expected table"))
+            })?;
+            let section = Section::from_table(k, symbols);
+            this.sections.push(section);
+        }
+
+        Ok(this)
+    }
+}
+
+struct Section {
+    name: String,
+    keys: BTreeSet<Symbol>,
+}
+impl Section {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            keys: BTreeSet::new(),
+        }
+    }
+
+    fn from_table(name: String, table: &Table) -> Self {
+        let mut section = Section::new(name);
+        for (name, value) in table.iter() {
+            let mut sym = Symbol::from_value(name, value);
+            sym.is_keyword = section.name == "keywords";
+            assert!(section.keys.insert(sym), "duplicate symbol {}", name);
+        }
+        section
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Symbol> {
+        self.keys.iter()
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 struct Symbol {
     key: String,
@@ -76,33 +136,6 @@ impl Symbol {
     }
 }
 
-struct Section {
-    name: String,
-    keys: BTreeSet<Symbol>,
-}
-impl Section {
-    fn new(name: String) -> Self {
-        Self {
-            name,
-            keys: BTreeSet::new(),
-        }
-    }
-
-    fn from_table(name: String, table: &Table) -> Self {
-        let mut section = Section::new(name);
-        for (name, value) in table.iter() {
-            let mut sym = Symbol::from_value(name, value);
-            sym.is_keyword = section.name == "keywords";
-            assert!(section.keys.insert(sym), "duplicate symbol {}", name);
-        }
-        section
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &Symbol> {
-        self.keys.iter()
-    }
-}
-
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let out_file = out_dir.join("symbols.rs");
@@ -112,15 +145,10 @@ fn main() {
     println!("cargo:rustc-env=SYMBOLS_RS={}", out_file.display());
 
     let contents = fs::read_to_string("src/symbols.toml").unwrap();
-    let root = contents.parse::<Value>().unwrap();
-    let root = root.as_table().unwrap();
-    let mut sections = vec![];
-    for (name, value) in root.iter() {
-        sections.push(Section::from_table(name.to_string(), value.as_table().unwrap()));
-    }
+    let mut symbol_map = contents.parse::<SymbolMap>().unwrap();
 
     let mut reserved = FxHashSet::default();
-    for section in sections.iter() {
+    for section in symbol_map.sections() {
         for symbol in section.iter() {
             if let Some(id) = symbol.id {
                 assert!(
@@ -134,7 +162,7 @@ fn main() {
     }
 
     let mut symbols = vec![];
-    sections.drain(..).fold(0, |next_id, section| {
+    symbol_map.sections.drain(..).fold(0, |next_id, section| {
         section.keys.iter().fold(next_id, |mut next_id, symbol| {
             let mut symbol = symbol.clone();
             while reserved.contains(&next_id) {

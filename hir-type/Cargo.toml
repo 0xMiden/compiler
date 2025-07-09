@@ -20,4 +20,4 @@ miden-formatting.workspace = true
 smallvec.workspace = true
 serde = { workspace = true, optional = true }
 serde_repr = { version = "0.1", optional = true }
-thiserror = { version = "2.0", default-features = false }
+thiserror.workspace = true

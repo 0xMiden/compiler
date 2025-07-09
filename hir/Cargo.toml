@@ -13,7 +13,14 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["rustc-demangle/std", "compact_str/std", "semver/std"]
+std = [
+    "rustc-demangle/std",
+    "compact_str/std",
+    "miden-utils-sync/std",
+    "midenc-session/std",
+    "semver/std",
+    "thiserror/std",
+]
 debug_refcell = []
 
 [dependencies]
@@ -28,6 +35,7 @@ intrusive-collections.workspace = true
 inventory.workspace = true
 log.workspace = true
 miden-core.workspace = true
+miden-utils-sync.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-hir-type.workspace = true
 midenc-hir-macros.workspace = true

@@ -110,11 +110,14 @@ impl ToMasmComponent for builtin::Component {
             })
             .collect();
 
-        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
-            Some(miden_lib::transaction::TransactionKernel::kernel())
-        } else {
-            None
-        };
+        let kernel: Option<masm::KernelLibrary> =
+            if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+                // TODO: waiting for miden-lib release
+                //Some(miden_lib::transaction::TransactionKernel::kernel())
+                todo!()
+            } else {
+                None
+            };
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
         // if no globals) to use as the start of the dynamic heap when the program is executed
@@ -299,7 +302,7 @@ impl MasmComponentBuilder<'_> {
     /// populate the global heap with the data segments of this component, verifying that the
     /// commitments match.
     fn emit_data_segment_initialization(&mut self) {
-        use masm::{Instruction as Inst, InvocationTarget, Op};
+        use masm::{Instruction as Inst, InvocationTarget, Op, WordValue};
 
         // Emit data segment initialization code
         //
@@ -313,7 +316,7 @@ impl MasmComponentBuilder<'_> {
         for rodata in self.component.rodata.iter() {
             // Push the commitment hash (`COM`) for this data onto the operand stack
             self.init_body
-                .push(Op::Inst(Span::new(span, Inst::PushWord(rodata.digest.into()))));
+                .push(Op::Inst(Span::new(span, Inst::PushWord(WordValue(*rodata.digest)))));
             // Move rodata from the advice map, using the commitment as key, to the advice stack
             self.init_body
                 .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));

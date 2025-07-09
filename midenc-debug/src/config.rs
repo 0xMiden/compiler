@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use miden_core::Word;
 use miden_processor::{AdviceInputs, ExecutionOptions, Felt as RawFelt, StackInputs};
 use serde::Deserialize;
 
@@ -54,7 +55,10 @@ impl DebuggerConfig {
         let advice_inputs = AdviceInputs::default()
             .with_stack(file.inputs.advice.stack.into_iter().rev().map(|felt| felt.0))
             .with_map(file.inputs.advice.map.into_iter().map(|entry| {
-                (entry.digest.0, entry.values.into_iter().map(|felt| felt.0).collect::<Vec<_>>())
+                (
+                    Word::new(*entry.digest),
+                    entry.values.into_iter().map(|felt| felt.0).collect::<Vec<_>>(),
+                )
             }));
 
         Ok(Self {
@@ -93,7 +97,7 @@ struct Advice {
 
 #[derive(Debug, Clone, Deserialize)]
 struct AdviceMapEntry {
-    digest: Digest,
+    digest: Word,
     /// Values that will be pushed to the advice stack when this entry is requested
     #[serde(default)]
     values: Vec<crate::Felt>,
@@ -139,20 +143,6 @@ impl clap::builder::TypedValueParser for DebuggerConfigParser {
         DebuggerConfig::from_inputs_file(inputs_file, Some(inputs_path.to_path_buf())).map_err(
             |err| Error::raw(ErrorKind::ValueValidation, format!("invalid inputs file: {err}")),
         )
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Digest(miden_processor::Digest);
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let digest = String::deserialize(deserializer)?;
-        miden_processor::Digest::try_from(&digest)
-            .map_err(|err| serde::de::Error::custom(format!("invalid digest: {err}")))
-            .map(Self)
     }
 }
 
@@ -274,7 +264,7 @@ mod tests {
             max_cycles = 1000
         })
         .unwrap();
-        let digest = miden_processor::Digest::try_from(
+        let digest = miden_core::Word::try_from(
             "0x3cff5b58a573dc9d25fd3c57130cc57e5b1b381dc58b5ae3594b390c59835e63",
         )
         .unwrap();

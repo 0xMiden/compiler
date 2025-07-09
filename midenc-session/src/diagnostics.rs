@@ -9,14 +9,14 @@ use alloc::{
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-pub use miden_assembly::diagnostics::{
-    miette,
+pub use miden_debug_types::*;
+pub use miden_utils_diagnostics::{
+    diagnostic, miette,
     miette::MietteDiagnostic as AdHocDiagnostic,
-    reporting,
+    report, reporting,
     reporting::{PrintDiagnostic, ReportHandlerOpts},
     Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr,
 };
-pub use miden_core::debuginfo::*;
 pub use midenc_hir_macros::Spanned;
 
 #[cfg(feature = "std")]

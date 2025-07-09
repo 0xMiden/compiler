@@ -87,39 +87,31 @@ impl Pane for StackTracePane {
             parts.push(name);
             if let Some(resolved) = frame.last_resolved(&state.session) {
                 parts.push(Span::styled(" in ", Color::DarkGray));
-                let path = resolved.source_file.path();
-                let path = path
-                    .strip_prefix(state.session.options.current_dir.as_path())
-                    .ok()
-                    .unwrap_or(path);
-                let path_str = path.to_string_lossy();
+                let current_dir = state.session.options.current_dir.to_string_lossy();
+                let path = resolved.source_file.uri().path();
+                let path = path.strip_prefix(&*current_dir).unwrap_or(path);
                 let max_width = (area.as_size().width as usize).saturating_sub(4);
-                let path_width = path_str.chars().count();
+                let path_width = path.chars().count();
                 if path_width >= max_width {
                     let trim_min = path_width - max_width;
                     let mut taken = 0;
-                    let mut components = path.components();
+                    let mut path = path;
                     while taken < trim_min {
-                        match components.next() {
-                            Some(std::path::Component::CurDir) => break,
-                            Some(
-                                std::path::Component::ParentDir
-                                | std::path::Component::Prefix(_)
-                                | std::path::Component::RootDir,
-                            ) => continue,
-                            Some(std::path::Component::Normal(c)) => {
-                                let c = c.to_string_lossy();
-                                taken += c.chars().count();
+                        match path.split_once('/') {
+                            Some((prefix, rest)) => {
+                                taken += prefix.chars().count() + 1;
+                                path = rest;
                             }
-                            None => break,
+                            None => {
+                                let (_, rest) = path.split_at(trim_min - taken);
+                                path = rest;
+                                break;
+                            }
                         }
                     }
-                    parts.push(Span::styled(
-                        format!("{}", components.as_path().display()),
-                        Color::Cyan,
-                    ));
+                    parts.push(Span::styled(path.to_string(), Color::Cyan));
                 } else {
-                    parts.push(Span::styled(path_str, Color::Cyan));
+                    parts.push(Span::styled(path.to_string(), Color::Cyan));
                 }
                 parts.push(Span::styled(
                     format!(" {}:{}", resolved.line, resolved.col),

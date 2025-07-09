@@ -6,13 +6,14 @@ use std::{
 };
 
 use miden_assembly::Library as CompiledLibrary;
-use miden_core::{debuginfo::SourceManagerExt, Program, StackInputs, Word};
+use miden_core::{Program, StackInputs, Word};
+use miden_debug_types::SourceManagerExt;
 use miden_mast_package::{
     Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
     MemDependencyResolverByDigest, ResolvedDependency,
 };
 use miden_processor::{
-    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
+    AdviceInputs, AdviceProvider, ContextId, ExecutionError, Felt, MastForest, Process,
     ProcessState, RowIndex, StackOutputs, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::{NativePtr, Rodata};
@@ -42,8 +43,9 @@ impl Executor {
     pub fn new(args: Vec<Felt>) -> Self {
         let mut resolver = MemDependencyResolverByDigest::default();
         resolver.add(*STDLIB.digest(), STDLIB.clone().into());
-        let base_lib = miden_lib::MidenLib::default().as_ref().clone();
-        resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
+        // TODO: waiting for miden-lib release
+        //let base_lib = miden_lib::MidenLib::default().as_ref().clone();
+        //resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
         Self {
             stack: StackInputs::new(args).expect("invalid stack inputs"),
             advice: AdviceInputs::default(),
@@ -131,9 +133,9 @@ impl Executor {
     pub fn into_debug(mut self, program: &Program, session: &Session) -> DebugExecutor {
         log::debug!("creating debug executor");
 
-        let advice_provider = MemAdviceProvider::from(self.advice);
-        let mut host = DebuggerHost::new(advice_provider);
+        let mut host = DebuggerHost::new();
         for lib in core::mem::take(&mut self.libraries) {
+            self.advice.extend_map(lib.advice_map().clone());
             host.load_mast_forest(lib);
         }
 
@@ -151,9 +153,8 @@ impl Executor {
             assertion_events.borrow_mut().insert(clk, event);
         });
 
-        let mut process = Process::new_debug(program.kernel().clone(), self.stack);
-        let process_state: ProcessState = (&process).into();
-        let root_context = process_state.ctx();
+        let mut process = Process::new_debug(program.kernel().clone(), self.stack, self.advice);
+        let root_context = process.system.ctx();
         let result = process.execute(program, &mut host);
         let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
         let mut iter = VmStateIterator::new(process, result);
@@ -198,7 +199,7 @@ impl Executor {
                     if let Some(asmop) = step.asmop.as_ref() {
                         dbg!(&step.stack);
                         let source_loc = asmop.as_ref().location().map(|loc| {
-                            let path = loc.path();
+                            let path = loc.uri();
                             let file = session
                                 .diagnostics
                                 .source_manager_ref()
@@ -208,7 +209,7 @@ impl Executor {
                         });
                         if let Some((source_file, line_start)) = source_loc {
                             let line_number = source_file.content().line_index(line_start).number();
-                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.name(), &line_number);
+                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.uri(), &line_number);
                         } else {
                             log::trace!(target: "executor", "in {} (no source location available)", asmop.context_name());
                         }

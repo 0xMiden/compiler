@@ -13,12 +13,13 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["midenc-hir/std", "midenc-dialect-hir/std"]
+std = ["midenc-hir/std", "midenc-dialect-hir/std", "midenc-session/std"]
 
 [dependencies]
 inventory.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true

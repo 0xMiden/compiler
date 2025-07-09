@@ -14,9 +14,9 @@ use miden_client::{
     rpc::{Endpoint, NodeRpcClient, TonicRpcClient},
     sync::SyncSummary,
     transaction::{TransactionId, TransactionRequestBuilder},
-    Client, Felt,
+    Client,
 };
-use miden_core::{utils::Deserializable, FieldElement, Word};
+use miden_core::{utils::Deserializable, Felt, FieldElement, Word};
 use miden_objects::{
     account::{
         AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
