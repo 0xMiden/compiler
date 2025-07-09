@@ -26,8 +26,8 @@ derive! {
     verify {
         fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
             let mut operands = op.operands().iter();
-            let first_operand = operands.next().unwrap_or_else(|| panic!("Operation: {} was marked as having SameTypeOperands, however it has no operands.",
-                                                                         op.name()));
+            // If there are no operands, then it is trivially true that operands agree on type
+            let Some(first_operand) = operands.next() else { return Ok(()); };
             let (expected_ty, set_by) = {
                 let operand = first_operand.borrow();
                 let value = operand.value();
@@ -69,26 +69,29 @@ derive! {
 
 derive! {
     /// Op expects all operands and results to be of the same type.
-    /// NOTE: Operations that implement this trait must also explicitly implement
-    /// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
-    /// macro.
-    /// Like so:
     ///
+    /// **NOTE:** Operations that implement this trait must also explicitly implement
+    /// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
+    /// macro, as shown below:
+    ///
+    /// ```rust,ignore
     /// #[operation (
-    ///         dialect = ArithDialect,
-    ///         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-    ///         implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    ///     dialect = ArithDialect,
+    ///     traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
+    ///     implements(InferTypeOpInterface, MemoryEffectOpInterface)
     /// )]
     /// pub struct SomeOp {
-    ///       (...)
+    ///     # ...
     /// }
+    /// ```
     pub trait SameOperandsAndResultType: SameTypeOperands {}
 
     verify {
         fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
             let mut operands = op.operands().iter();
-            let first_operand = operands.next().unwrap_or_else(|| panic!("Operation: {} was marked as having SameOperandsAndResultType, however it has no operands.",
-                                                                         op.name()));
+            // If there are no operands, then it is trivially true that operands and results agree
+            // on type
+            let Some(first_operand) = operands.next() else { return Ok(()); };
             let (expected_ty, set_by) = {
                 let operand = first_operand.borrow();
                 let value = operand.value();
