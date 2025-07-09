@@ -27,11 +27,13 @@ pub trait ToMidenRepr {
             felts.push(RawFelt::new(u32::from_ne_bytes(chunk) as u64));
         }
         if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
-            let mut chunk = [0u8; 4];
-            for (i, byte) in remainder.enumerate() {
-                chunk[i] = byte;
+            if remainder.len() > 0 {
+                let mut chunk = [0u8; 4];
+                for (i, byte) in remainder.enumerate() {
+                    chunk[i] = byte;
+                }
+                felts.push(RawFelt::new(u32::from_ne_bytes(chunk) as u64));
             }
-            felts.push(RawFelt::new(u32::from_ne_bytes(chunk) as u64));
         }
         felts
     }
@@ -51,12 +53,14 @@ pub trait ToMidenRepr {
             words.push(word);
         }
         if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
-            let mut word = [RawFelt::ZERO; 4];
-            for (i, felt) in remainder.enumerate() {
-                word[i] = felt;
+            if remainder.len() > 0 {
+                let mut word = [RawFelt::ZERO; 4];
+                for (i, felt) in remainder.enumerate() {
+                    word[i] = felt;
+                }
+                word.reverse();
+                words.push(word);
             }
-            word.reverse();
-            words.push(word);
         }
         words
     }
@@ -650,11 +654,13 @@ pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
     }
     // Zero-pad the buffer to nearest whole element
     if let Some(rest) = iter.into_remainder().filter(|r| r.len() > 0) {
-        let mut n_buf = [0u8; 4];
-        for (i, byte) in rest.into_iter().enumerate() {
-            n_buf[i] = *byte;
+        if rest.len() > 0 {
+            let mut n_buf = [0u8; 4];
+            for (i, byte) in rest.into_iter().enumerate() {
+                n_buf[i] = *byte;
+            }
+            buf.push(u32::from_ne_bytes(n_buf));
         }
-        buf.push(u32::from_ne_bytes(n_buf));
     }
     // Zero-pad the buffer to nearest whole word
     buf.resize(num_felts, 0);
@@ -667,12 +673,14 @@ pub fn bytes_to_words(bytes: &[u8]) -> Vec<[RawFelt; 4]> {
         words.push(word);
     }
     if let Some(extra) = iter.into_remainder().filter(|r| r.len() > 0) {
-        let mut word = [RawFelt::ZERO; 4];
-        for (i, felt) in extra.enumerate() {
-            word[i] = felt;
+        if extra.len() > 0 {
+            let mut word = [RawFelt::ZERO; 4];
+            for (i, felt) in extra.enumerate() {
+                word[i] = felt;
+            }
+            word.reverse();
+            words.push(word);
         }
-        word.reverse();
-        words.push(word);
     }
     words
 }
