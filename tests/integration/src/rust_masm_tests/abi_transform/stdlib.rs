@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use miden_core::utils::group_slice_elements;
+use miden_core::{utils::group_slice_elements, FieldElement};
 use miden_processor::AdviceInputs;
 use midenc_debug::{Executor, TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
@@ -150,8 +150,7 @@ fn test_hash_elements_smoke() {
 }
 
 #[test]
-fn test_hash_elements() {
-    // TODO: when this test is green add another test for arbitrary input length
+fn test_hash_elements_aligned() {
     let main_fn = r#"
     (input: &[miden_stdlib_sys::Felt]) -> miden_stdlib_sys::Felt {
         let res = miden_stdlib_sys::hash_elements(input);
@@ -159,8 +158,12 @@ fn test_hash_elements() {
     }"#
     .to_string();
     let config = WasmTranslationConfig::default();
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys("hash_elements", &main_fn, config, []);
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "hash_elements",
+        &main_fn,
+        config,
+        ["--test-harness".into()],
+    );
     // Test expected compilation artifacts
     test.expect_wasm(expect_file![format!("../../../expected/hash_elements.wat")]);
     test.expect_ir(expect_file![format!("../../../expected/hash_elements.hir")]);
@@ -169,10 +172,9 @@ fn test_hash_elements() {
     let package = test.compiled_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    let config = proptest::test_runner::Config::with_cases(1);
-    let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res = TestRunner::new(config).run(&any::<Vec<midenc_debug::Felt>>(), move |test_felts| {
         let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
-        dbg!(&raw_felts);
         let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
         let expected_felts: [TestFelt; 4] = [
             TestFelt(expected_digest[0]),
@@ -180,16 +182,27 @@ fn test_hash_elements() {
             TestFelt(expected_digest[2]),
             TestFelt(expected_digest[3]),
         ];
-        dbg!(&expected_felts);
+        let wide_ptr_addr = 30u32 * 65536;
+        let mut wide_ptr = vec![
+            Felt::from(wide_ptr_addr + 16),
+            Felt::from(raw_felts.len() as u32),
+            Felt::ZERO,
+            Felt::ZERO,
+        ];
+        wide_ptr.extend_from_slice(&raw_felts);
+        let initializers = [
+            Initializer::MemoryFelts {
+                addr: wide_ptr_addr / 4,
+                felts: (&wide_ptr).into(),
+            },
+            // TODO: multiple initializers do not work
+            // Initializer::MemoryFelts {
+            //     addr: in_addr / 4,
+            //     felts: raw_felts.into(),
+            // },
+        ];
 
-        let in_addr = 30u32 * 65536;
-
-        let initializers = [Initializer::MemoryFelts {
-            addr: in_addr / 4,
-            felts: raw_felts.into(),
-        }];
-
-        let args = [Felt::new(in_addr as u64)];
+        let args = [Felt::new(wide_ptr_addr as u64)];
 
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();

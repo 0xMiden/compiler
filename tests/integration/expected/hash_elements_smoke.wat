@@ -520,5 +520,5 @@
     i32.gt_u
     select
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.1.5/src/stdlib/crypto/hashes.rs\00\00\00\00\10\002\00\00\00\d7\00\00\00*\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.1.5/src/stdlib/crypto/hashes.rs\00\00\00\00\10\002\00\00\00\db\00\00\00*\00\00\00")
 )

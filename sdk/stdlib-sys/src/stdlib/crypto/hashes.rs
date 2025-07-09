@@ -202,26 +202,31 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 /// * `elements` - A slice of field elements to be hashed
 #[inline]
 pub fn hash_elements(elements: &[Felt]) -> Digest {
+    // TODO: why non-inlined version fails on rotl?
     unsafe {
         let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
         let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
         let rust_ptr = elements.as_ptr() as u32;
         let miden_ptr = rust_ptr / 4;
+
         // Check that pointer is word aligned as required by the Miden stdlib hash_elements
         // See https://github.com/0xPolygonMiden/miden-vm/blob/dd82766268fc8161396b51be32335c58242ee0c2/stdlib/asm/crypto/hashes/rpo.masm?plain=1#L304-L332
         if miden_ptr % 4 != 0 {
+            // TODO: test this branch
+            //
             // If it't not word aligned, alloc a new Vec and copy it. Since our BumpAlloc produces
             // word-aligned allocations the pointer should be word-aligned
             let mut new_vec: Vec<Felt> = Vec::with_capacity(elements.len());
             new_vec.extend_from_slice(elements);
             let ptr = new_vec.as_slice().as_ptr() as u32 / 4;
             assert_eq(Felt::from_u32(ptr % 4), felt!(0));
-            extern_hash_memory(ptr, elements.len() as u32, result_ptr);
+            extern_hash_memory(ptr, new_vec.len() as u32, result_ptr);
         } else {
             extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
         }
 
-        // FIX: Why neet to reverse? Look into the return-via-pointer. Is it stores in the wrong order?
+        // FIX: Why need to reverse? Look into the return-via-pointer. Does it store in the wrong
+        // order?
         Digest::from_word(ret_area.assume_init().reverse())
     }
 }
