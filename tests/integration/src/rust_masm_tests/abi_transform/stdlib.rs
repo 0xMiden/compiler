@@ -86,12 +86,75 @@ fn test_blake3_hash() {
 }
 
 #[test]
-fn test_hash_elements() {
-    // TODO: when this test is green add another test for arbitrary input length
+fn test_hash_elements_smoke() {
     let main_fn = r#"
     (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
         let input = [f0, f1, f2, f3, f4, f5, f6, f7];
         let res = miden_stdlib_sys::hash_elements(&input);
+        res.inner.inner.0
+    }"#
+    .to_string();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("hash_elements_smoke", &main_fn, config, []);
+    // Test expected compilation artifacts
+    test.expect_wasm(expect_file![format!("../../../expected/hash_elements_smoke.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/hash_elements_smoke.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/hash_elements_smoke.masm")]);
+
+    let package = test.compiled_package();
+
+    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
+    let config = proptest::test_runner::Config::with_cases(1);
+    let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
+        let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
+        dbg!(&raw_felts);
+        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
+        let expected_felts: [TestFelt; 4] = [
+            TestFelt(expected_digest[0]),
+            TestFelt(expected_digest[1]),
+            TestFelt(expected_digest[2]),
+            TestFelt(expected_digest[3]),
+        ];
+        dbg!(&expected_felts);
+
+        let args = [
+            raw_felts[7],
+            raw_felts[6],
+            raw_felts[5],
+            raw_felts[4],
+            raw_felts[3],
+            raw_felts[2],
+            raw_felts[1],
+            raw_felts[0],
+        ];
+
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            let res: Felt = trace.parse_result().unwrap();
+            dbg!(res);
+            dbg!(expected_digest[0]);
+            prop_assert_eq!(res, expected_digest[0]);
+            Ok(())
+        })?;
+
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
+#[test]
+fn test_hash_elements() {
+    // TODO: when this test is green add another test for arbitrary input length
+    let main_fn = r#"
+    (input: &[miden_stdlib_sys::Felt]) -> miden_stdlib_sys::Felt {
+        let res = miden_stdlib_sys::hash_elements(input);
         res.inner.inner.0
     }"#
     .to_string();
@@ -119,21 +182,16 @@ fn test_hash_elements() {
         ];
         dbg!(&expected_felts);
 
-        // Place the hash output at 20 * PAGE_SIZE
-        let out_addr = 30u32 * 65536;
+        let in_addr = 30u32 * 65536;
 
-        let args = [
-            raw_felts[7],
-            raw_felts[6],
-            raw_felts[5],
-            raw_felts[4],
-            raw_felts[3],
-            raw_felts[2],
-            raw_felts[1],
-            raw_felts[0],
-        ];
+        let initializers = [Initializer::MemoryFelts {
+            addr: in_addr / 4,
+            felts: raw_felts.into(),
+        }];
 
-        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let args = [Felt::new(in_addr as u64)];
+
+        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();
             dbg!(res);
             dbg!(expected_digest[0]);

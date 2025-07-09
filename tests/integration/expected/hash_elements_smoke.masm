@@ -21,7 +21,7 @@ export.init
     mem_store.262168
 end
 
-# mod root_ns:root@1.0.0::hash_elements
+# mod root_ns:root@1.0.0::hash_elements_smoke
 
 proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
     trace.240
@@ -90,7 +90,7 @@ export.entrypoint
     trace.252
     nop
     push.4294967264
-    push.64
+    push.96
     dup.2
     swap.1
     u32wrapping_sub
@@ -105,8 +105,8 @@ export.entrypoint
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.4
-    dup.3
+    push.28
+    dup.1
     add
     u32assert
     push.4
@@ -115,25 +115,143 @@ export.entrypoint
     u32mod
     u32assert
     assertz
+    movup.10
+    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_sw
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    movup.3
+    push.24
+    dup.1
+    add
+    u32assert
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    movup.9
+    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_sw
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.20
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.8
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.16
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.7
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.6
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.5
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.4
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.3
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
     push.0
@@ -145,19 +263,23 @@ export.entrypoint
     if.true
         push.4
         push.0
+        push.8
+        push.32
         dup.4
-        dup.4
+        swap.1
+        u32wrapping_add
         dup.3
         swap.4
         swap.3
         swap.2
+        swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+        exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::raw_vec::RawVecInner<A>::try_allocate_in
         trace.252
         nop
-        push.4
-        dup.3
+        push.36
+        dup.1
         add
         u32assert
         push.4
@@ -173,7 +295,10 @@ export.entrypoint
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        dup.3
+        push.32
+        dup.2
+        add
+        u32assert
         push.4
         dup.1
         swap.1
@@ -195,11 +320,7 @@ export.entrypoint
         neq
         dup.0
         if.true
-            swap.3
-            movup.2
-            drop
-            drop
-            push.8
+            push.40
             dup.3
             add
             u32assert
@@ -217,15 +338,16 @@ export.entrypoint
             trace.252
             nop
             push.1048628
-            swap.2
+            swap.1
+            movup.3
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::handle_error
+            exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::raw_vec::handle_error
             trace.252
             nop
         else
-            push.8
-            dup.5
+            push.40
+            dup.3
             add
             u32assert
             push.4
@@ -241,8 +363,8 @@ export.entrypoint
             exec.::intrinsics::mem::load_sw
             trace.252
             nop
-            push.56
-            dup.6
+            push.88
+            dup.4
             add
             u32assert
             push.4
@@ -260,8 +382,8 @@ export.entrypoint
             exec.::intrinsics::mem::store_sw
             trace.252
             nop
-            push.52
-            dup.6
+            push.84
+            dup.4
             add
             u32assert
             push.4
@@ -279,83 +401,138 @@ export.entrypoint
             exec.::intrinsics::mem::store_sw
             trace.252
             nop
-            push.2
-            dup.4
-            swap.1
-            u32shl
-            push.0
-            push.0
             dup.2
+            push.4
+            dup.1
             swap.1
-            eq
-            neq
-            if.true
-                movup.3
-                swap.1
-                drop
-                drop
-            else
-                dup.1
-                movup.4
-                push.0
-                dup.3
-                push.0
-                gte
-                while.true
-                    dup.2
-                    dup.1
-                    push.1
-                    u32overflowing_madd
-                    assertz
-                    dup.2
-                    dup.2
-                    push.1
-                    u32overflowing_madd
-                    assertz
-                    u32divmod.4
-                    swap.1
-                    swap.1
-                    dup.1
-                    mem_load
-                    swap.1
-                    push.8
-                    u32wrapping_mul
-                    u32shr
-                    swap.1
-                    drop
-                    push.255
-                    u32and
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    dup.0
-                    mem_load
-                    dup.2
-                    push.8
-                    u32wrapping_mul
-                    push.255
-                    swap.1
-                    u32shl
-                    u32not
-                    swap.1
-                    u32and
-                    movup.3
-                    movup.3
-                    push.8
-                    u32wrapping_mul
-                    u32shl
-                    u32or
-                    swap.1
-                    mem_store
-                    u32wrapping_add.1
-                    dup.0
-                    dup.4
-                    u32gte
-                end
-                dropw
-            end
-            push.60
-            dup.4
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_dw
+            trace.252
+            nop
+            dup.2
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_dw
+            trace.252
+            nop
+            push.8
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_dw
+            trace.252
+            nop
+            push.8
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_dw
+            trace.252
+            nop
+            push.16
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_dw
+            trace.252
+            nop
+            push.16
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_dw
+            trace.252
+            nop
+            push.24
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_dw
+            trace.252
+            nop
+            push.24
+            dup.3
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_dw
+            trace.252
+            nop
+            push.92
+            dup.3
             add
             u32assert
             push.4
@@ -364,7 +541,7 @@ export.entrypoint
             u32mod
             u32assert
             assertz
-            dup.3
+            push.8
             swap.1
             u32divmod.4
             swap.1
@@ -383,17 +560,19 @@ export.entrypoint
             swap.1
             u32and
             assert_eq
+            push.32
             dup.3
-            swap.2
-            swap.3
             swap.1
+            u32wrapping_add
+            push.8
+            movup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::hash_elements::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
+            exec.::root_ns:root@1.0.0::hash_elements_smoke::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
             trace.252
             nop
             push.4
-            push.52
+            push.84
             dup.3
             swap.1
             u32wrapping_add
@@ -402,7 +581,7 @@ export.entrypoint
             swap.1
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::RawVecInner<A>::deallocate
+            exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::raw_vec::RawVecInner<A>::deallocate
             trace.252
             nop
         end
@@ -421,16 +600,18 @@ export.entrypoint
         movdn.3
         cdrop
     else
-        push.2
+        push.32
+        dup.1
         swap.1
+        u32wrapping_add
+        push.8
+        push.2
+        dup.3
         swap.1
         u32shr
-        dup.2
-        swap.2
-        swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
+        exec.::root_ns:root@1.0.0::hash_elements_smoke::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
         trace.252
         nop
         push.0
@@ -441,7 +622,7 @@ export.entrypoint
     swap.1
     eq
     if.true
-        push.12
+        push.44
         swap.1
         add
         u32assert
@@ -482,7 +663,7 @@ proc.__rustc::__rust_alloc
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::hash_elements_smoke::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -501,7 +682,7 @@ proc.__rustc::__rust_alloc_zeroed
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::hash_elements_smoke::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -598,7 +779,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::core::ptr::alignment::Alignment::max
+        exec.::root_ns:root@1.0.0::hash_elements_smoke::core::ptr::alignment::Alignment::max
         trace.252
         nop
         push.0
@@ -781,7 +962,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::raw_vec::RawVecInner<A>::current_memory
     trace.252
     nop
     push.8
@@ -847,7 +1028,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::root_ns:root@1.0.0::hash_elements_smoke::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -970,7 +1151,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::hash_elements::alloc::alloc::Global::alloc_impl
+                    exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::alloc::Global::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -997,7 +1178,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::hash_elements::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::root_ns:root@1.0.0::hash_elements_smoke::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -1306,7 +1487,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::alloc::alloc::Global::alloc_impl
+    exec.::root_ns:root@1.0.0::hash_elements_smoke::alloc::alloc::Global::alloc_impl
     trace.252
     nop
     push.12
@@ -1407,7 +1588,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::hash_elements::__rustc::__rust_alloc_zeroed
+            exec.::root_ns:root@1.0.0::hash_elements_smoke::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -1415,7 +1596,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::hash_elements::__rustc::__rust_alloc
+            exec.::root_ns:root@1.0.0::hash_elements_smoke::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1599,7 +1780,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::__rustc::__rust_dealloc
+        exec.::root_ns:root@1.0.0::hash_elements_smoke::__rustc::__rust_dealloc
         trace.252
         nop
     end
