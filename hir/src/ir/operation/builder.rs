@@ -256,12 +256,6 @@ where
             unsafe { UnsafeIntrusiveEntityRef::from_raw(op.container().cast()) }
         };
 
-        // Run op-specific verification
-        {
-            let op: super::EntityRef<T> = op.borrow();
-            op.verify(self.builder.context())?;
-        }
-
         // Insert op at current insertion point, if set
         if self.builder.insertion_point().is_valid() {
             self.builder.insert(self.op);

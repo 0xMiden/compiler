@@ -528,7 +528,8 @@ mod tests {
 
         builder.switch_to_block(block34);
         let v345 = builder.eq(v343, v330, span)?;
-        let v349 = builder.neq(v345, v330, span)?;
+        let v346 = builder.zext(v345, Type::U32, span)?;
+        let v349 = builder.neq(v346, v330, span)?;
         builder.cond_br(v349, block39, [], block40, [], span)?;
 
         builder.switch_to_block(block35);

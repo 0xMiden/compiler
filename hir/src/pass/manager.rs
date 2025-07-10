@@ -845,6 +845,12 @@ impl OpToOpPassAdaptor {
         instrumentor: Option<Rc<PassInstrumentor>>,
         parent_info: Option<&PipelineParentInfo>,
     ) -> Result<(), Report> {
+        if verify {
+            // We run an initial recursive verification, since this is the first verification done
+            // to the operations
+            Self::verify(&op, true)?;
+        }
+
         assert!(
             instrumentor.is_none() || parent_info.is_some(),
             "expected parent info if instrumentor is provided"
