@@ -229,3 +229,52 @@ impl Foldable for Sext {
         FoldResult::Failed
     }
 }
+
+/// Join two 64bit integers into one 128 bit integer.
+#[operation(
+    dialect = ArithDialect,
+    traits(BinaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct Join {
+    #[operand]
+    lhs: Int64,
+    #[operand]
+    rhs: Int64,
+    #[result]
+    result: SizedInt<128>,
+}
+
+has_no_effects!(Join);
+
+impl InferTypeOpInterface for Join {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I128);
+        Ok(())
+    }
+}
+
+/// Split a 128bit integer into two 64 bit integers.
+#[operation(
+    dialect = ArithDialect,
+    traits(UnaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct Split {
+    #[operand]
+    operand: SizedInt<128>,
+    #[result]
+    result_high: Int64,
+    #[result]
+    result_low: Int64,
+}
+
+has_no_effects!(Split);
+
+impl InferTypeOpInterface for Split {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_low_mut().set_type(Type::I64);
+        self.result_high_mut().set_type(Type::I64);
+        Ok(())
+    }
+}

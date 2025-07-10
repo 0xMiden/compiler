@@ -174,5 +174,7 @@ impl DialectRegistration for ArithDialect {
         info.register_operation::<ops::Ctz>();
         info.register_operation::<ops::Clo>();
         info.register_operation::<ops::Cto>();
+        info.register_operation::<ops::Join>();
+        info.register_operation::<ops::Split>();
     }
 }

@@ -465,7 +465,10 @@ impl ToMidenRepr for u128 {
             RawFelt::new(u32::from_be_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as u64);
         let lo_l =
             RawFelt::new(u32::from_be_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as u64);
-        smallvec![hi_h, hi_l, lo_h, lo_l]
+
+        // The 64-bit limbs are little endian, (lo, hi), but the 32-bit limbs of those 64-bit
+        // values are big endian, (lo_h, lo_l) and (hi_h, hi_l).
+        smallvec![lo_h, lo_l, hi_h, hi_l]
     }
 }
 

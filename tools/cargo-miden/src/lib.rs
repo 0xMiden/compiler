@@ -343,7 +343,7 @@ where
                 .map(|s| s.to_string()),
             );
 
-            std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory");
+            std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory,+wide-arithmetic");
             let terminal = Terminal::new(
                 if cargo_args.quiet {
                     Verbosity::Quiet

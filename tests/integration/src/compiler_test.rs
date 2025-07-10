@@ -192,7 +192,7 @@ impl CompilerTestBuilder {
         rustflags.extend([
             // Enable bulk-memory features (e.g. native memcpy/memset instructions)
             "-C".into(),
-            "target-feature=+bulk-memory".into(),
+            "target-feature=+bulk-memory,+wide-arithmetic".into(),
             // Remap the compiler workspace to `.` so that build outputs do not embed user-
             // specific paths, which would cause expect tests to break
             "--remap-path-prefix".into(),
@@ -424,6 +424,7 @@ impl CompilerTestBuilder {
 
                 let output = command
                     .args(["-C", "opt-level=z"]) // optimize for size
+                    .args(["-C", "target-feature=+wide-arithmetic"])
                     .arg("--target")
                     .arg(config.target.as_ref())
                     .arg("-o")

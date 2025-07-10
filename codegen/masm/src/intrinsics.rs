@@ -6,13 +6,15 @@ use midenc_session::diagnostics::{PrintDiagnostic, SourceManager};
 
 pub const I32_INTRINSICS_MODULE_NAME: &str = "intrinsics::i32";
 pub const I64_INTRINSICS_MODULE_NAME: &str = "intrinsics::i64";
+pub const I128_INTRINSICS_MODULE_NAME: &str = "intrinsics::i128";
 pub const MEM_INTRINSICS_MODULE_NAME: &str = "intrinsics::mem";
 pub const CRYPTO_INTRINSICS_MODULE_NAME: &str = "intrinsics::crypto";
 pub const ADVICE_INTRINSICS_MODULE_NAME: &str = "intrinsics::advice";
 
-pub const INTRINSICS_MODULE_NAMES: [&str; 5] = [
+pub const INTRINSICS_MODULE_NAMES: [&str; 6] = [
     I32_INTRINSICS_MODULE_NAME,
     I64_INTRINSICS_MODULE_NAME,
+    I128_INTRINSICS_MODULE_NAME,
     MEM_INTRINSICS_MODULE_NAME,
     CRYPTO_INTRINSICS_MODULE_NAME,
     ADVICE_INTRINSICS_MODULE_NAME,
@@ -22,6 +24,8 @@ const I32_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"));
 const I64_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"));
+const I128_INTRINSICS: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i128.masm"));
 const MEM_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"));
 const CRYPTO_INTRINSICS: &str =
@@ -30,7 +34,7 @@ const ADVICE_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/advice.masm"));
 
 /// This is a mapping of intrinsics module name to the raw MASM source for that module
-const INTRINSICS: [(&str, &str, &str); 5] = [
+const INTRINSICS: [(&str, &str, &str); 6] = [
     (
         I32_INTRINSICS_MODULE_NAME,
         I32_INTRINSICS,
@@ -40,6 +44,11 @@ const INTRINSICS: [(&str, &str, &str); 5] = [
         I64_INTRINSICS_MODULE_NAME,
         I64_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"),
+    ),
+    (
+        I128_INTRINSICS_MODULE_NAME,
+        I128_INTRINSICS,
+        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i128.masm"),
     ),
     (
         MEM_INTRINSICS_MODULE_NAME,

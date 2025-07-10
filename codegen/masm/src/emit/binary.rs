@@ -363,6 +363,9 @@ impl OpEmitter<'_> {
             Type::Felt => {
                 self.emit(masm::Instruction::Add, span);
             }
+            Type::I128 => {
+                self.add_i128(overflow, span);
+            }
             Type::U64 => {
                 self.add_u64(overflow, span);
             }
@@ -429,6 +432,9 @@ impl OpEmitter<'_> {
             Type::Felt => {
                 self.emit(masm::Instruction::Sub, span);
             }
+            Type::I128 => {
+                self.sub_i128(overflow, span);
+            }
             Type::U64 => {
                 self.sub_u64(overflow, span);
             }
@@ -491,22 +497,6 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, rhs.ty(), "expected mul operands to be the same type");
         match &ty {
-            Type::I128 | Type::U128 => {
-                // We can use the Karatsuba algorithm for multiplication here:
-                //
-                // x = x_hi * 2^63 + x_lo
-                // y = y_hi * 2^63 + x_lo
-                //
-                // z2 = x_hi * y_hi
-                // z0 = x_lo * y_lo
-                // z1 = (x_hi + x_lo) * (y_hi + y_lo) - z2 - z0
-                //
-                // z = z2 * (2^63)^2 + z1 * 2^63 + z0
-                //
-                // We assume the stack holds two words representing x and y, with y on top of the
-                // stack
-                todo!()
-            }
             Type::Felt => {
                 assert_matches!(
                     overflow,
@@ -515,6 +505,7 @@ impl OpEmitter<'_> {
                 );
                 self.emit(masm::Instruction::Mul, span);
             }
+            Type::I128 | Type::U128 => self.mul_i128(span),
             Type::U64 => self.mul_u64(overflow, span),
             Type::I64 => self.mul_i64(overflow, span),
             Type::U32 => self.mul_u32(overflow, span),

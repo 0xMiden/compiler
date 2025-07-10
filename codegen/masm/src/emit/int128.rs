@@ -1,4 +1,4 @@
-use midenc_hir::SourceSpan;
+use midenc_hir::{Overflow, SourceSpan};
 
 use super::{masm, OpEmitter};
 
@@ -222,5 +222,35 @@ impl OpEmitter<'_> {
     pub fn neq_i128(&mut self, span: SourceSpan) {
         self.eq_i128(span);
         self.emit(masm::Instruction::Not, span);
+    }
+
+    /// Pop two i128 values off the stack, `b` and `a`, and place the result of  `a + b` on the
+    /// stack.
+    ///
+    /// For now we're only supporting wrapping add for signed values.
+    #[inline]
+    pub fn add_i128(&mut self, overflow: Overflow, span: SourceSpan) {
+        assert!(
+            matches!(overflow, Overflow::Wrapping),
+            "Only 128bit *wrapping* adds implemented as yet."
+        );
+
+        self.raw_exec("intrinsics::i128::add", span);
+    }
+
+    /// Pops two i128 values off the stack, `b` and `a`, and performs `a - b`.
+    pub fn sub_i128(&mut self, overflow: Overflow, span: SourceSpan) {
+        assert!(
+            matches!(overflow, Overflow::Wrapping),
+            "Only 128bit *wrapping* subs implemented as yet."
+        );
+
+        self.raw_exec("intrinsics::i128::sub", span);
+    }
+
+    /// Pops two i128 values off the stack, `b` and `a`, and performs `a * b`.
+    #[inline]
+    pub fn mul_i128(&mut self, span: SourceSpan) {
+        self.raw_exec("intrinsics::i128::mul", span);
     }
 }

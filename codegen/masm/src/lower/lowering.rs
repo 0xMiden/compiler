@@ -1393,6 +1393,26 @@ impl HirLowering for arith::Cto {
     }
 }
 
+impl HirLowering for arith::Join {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.push(self.result().as_value_ref());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Split {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.push(self.result_low().as_value_ref());
+        inst_emitter.push(self.result_high().as_value_ref());
+        Ok(())
+    }
+}
+
 impl HirLowering for builtin::GlobalSymbol {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let context = self.as_operation().context();
