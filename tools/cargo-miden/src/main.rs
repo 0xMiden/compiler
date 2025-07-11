@@ -10,7 +10,7 @@ fn main() -> anyhow::Result<()> {
 
     if let Err(e) = run(std::env::args(), OutputType::Masm) {
         let terminal = Terminal::new(Verbosity::Normal, Color::Auto);
-        terminal.error(format!("{e}"))?;
+        terminal.error(format!("{e:?}"))?;
         std::process::exit(1);
     }
     Ok(())

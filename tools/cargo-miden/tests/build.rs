@@ -149,6 +149,8 @@ fn verify_no_wit_files_for_example_template(example_name: &str) {
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
+/// Build paired example projects (e.g., account and note script) and return their packages
+/// Creates both projects in a subdirectory and builds them separately
 fn build_paired_example_projects(
     example_name: &str,
     first_dir: &str,
@@ -179,7 +181,6 @@ fn build_paired_example_projects(
         }
         other => panic!("Expected NewCommandOutput, got {:?}", other),
     };
-    dbg!(&main_project_path);
     assert!(main_project_path.exists());
 
     // Build first project
@@ -202,6 +203,8 @@ fn build_paired_example_projects(
     (first_package, second_package)
 }
 
+/// Build a project in the current directory and verify it compiles correctly
+/// Tests both debug and release builds, returning the package from the release build
 fn build_project_in_current_dir(expected_name: &str) -> Package {
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
@@ -215,7 +218,6 @@ fn build_project_in_current_dir(expected_name: &str) -> Package {
         },
         other => panic!("Expected BuildCommandOutput, got {:?}", other),
     };
-    dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
@@ -233,17 +235,17 @@ fn build_project_in_current_dir(expected_name: &str) -> Package {
         },
         other => panic!("Expected BuildCommandOutput, got {:?}", other),
     };
-    dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.to_str().unwrap().contains("/release/"));
-    dbg!(&expected_name);
     assert!(expected_masm_path.to_str().unwrap().contains(expected_name));
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
     let package_bytes = fs::read(expected_masm_path).unwrap();
     Package::read_from_bytes(&package_bytes).unwrap()
 }
 
+/// Build an example project from the specified template and return its package
+/// Creates the project in a temporary directory and builds it
 fn build_example_project_from_template(example_name: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir().join(format!(
@@ -268,7 +270,6 @@ fn build_example_project_from_template(example_name: &str) -> Package {
         }
         other => panic!("Expected NewCommandOutput, got {:?}", other),
     };
-    dbg!(&new_project_path);
     assert!(new_project_path.exists());
     env::set_current_dir(&new_project_path).unwrap();
 
@@ -317,6 +318,8 @@ fn verify_no_wit_files_for_new_template(template: &str) {
     fs::remove_dir_all(new_project_path).unwrap();
 }
 
+/// Build a new project from the specified template and return its package
+/// Handles special cases like note templates that require a contract dependency
 fn build_new_project_from_template(template: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir();
@@ -326,7 +329,6 @@ fn build_new_project_from_template(template: &str) -> Package {
         // create the counter contract cargo project since the note depends on it
         let project_name = "add-contract";
         let expected_new_project_dir = &temp_dir.join(project_name);
-        dbg!(&expected_new_project_dir);
         if expected_new_project_dir.exists() {
             fs::remove_dir_all(expected_new_project_dir).unwrap();
         }
@@ -337,7 +339,6 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     let project_name = "test_proj_underscore";
     let expected_new_project_dir = &temp_dir.join(project_name);
-    dbg!(&expected_new_project_dir);
     if expected_new_project_dir.exists() {
         fs::remove_dir_all(expected_new_project_dir).unwrap();
     }
@@ -353,7 +354,6 @@ fn build_new_project_from_template(template: &str) -> Package {
         }
         other => panic!("Expected NewCommandOutput, got {:?}", other),
     };
-    dbg!(&new_project_path);
     assert!(new_project_path.exists());
     assert_eq!(new_project_path, expected_new_project_dir.canonicalize().unwrap());
     env::set_current_dir(&new_project_path).unwrap();
@@ -370,7 +370,6 @@ fn build_new_project_from_template(template: &str) -> Package {
         },
         other => panic!("Expected BuildCommandOutput, got {:?}", other),
     };
-    dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
@@ -388,7 +387,6 @@ fn build_new_project_from_template(template: &str) -> Package {
         },
         other => panic!("Expected BuildCommandOutput, got {:?}", other),
     };
-    dbg!(&expected_masm_path);
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.to_str().unwrap().contains("/release/"));
