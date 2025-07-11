@@ -270,29 +270,29 @@ impl Operation {
 
 /// Insertion
 impl OperationRef {
-    pub fn insert_at_start(&self, mut block: BlockRef) {
+    pub fn insert_at_start(self, mut block: BlockRef) {
         assert!(
             self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
         {
             let mut block = block.borrow_mut();
-            block.body_mut().push_front(*self);
+            block.body_mut().push_front(self);
         }
     }
 
-    pub fn insert_at_end(&self, mut block: BlockRef) {
+    pub fn insert_at_end(self, mut block: BlockRef) {
         assert!(
             self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
         );
         {
             let mut block = block.borrow_mut();
-            block.body_mut().push_back(*self);
+            block.body_mut().push_back(self);
         }
     }
 
-    pub fn insert_before(&mut self, before: OperationRef) {
+    pub fn insert_before(self, before: OperationRef) {
         assert!(
             self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
@@ -302,11 +302,11 @@ impl OperationRef {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
-            cursor.insert_before(*self);
+            cursor.insert_before(self);
         }
     }
 
-    pub fn insert_after(&mut self, after: OperationRef) {
+    pub fn insert_after(self, after: OperationRef) {
         assert!(
             self.parent().is_none(),
             "cannot insert operation that is already attached to another block"
@@ -316,7 +316,7 @@ impl OperationRef {
             let mut block = block.borrow_mut();
             let block_body = block.body_mut();
             let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
-            cursor.insert_after(*self);
+            cursor.insert_after(self);
         }
     }
 }

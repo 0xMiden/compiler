@@ -124,7 +124,7 @@ pub trait Builder: Listener {
     /// current op.
     ///
     /// This function will panic if no insertion point is set.
-    fn insert(&mut self, mut op: OperationRef) {
+    fn insert(&mut self, op: OperationRef) {
         let ip = self.insertion_point();
 
         match *ip {
