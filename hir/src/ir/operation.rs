@@ -344,7 +344,7 @@ impl OperationRef {
 
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
-        self.parent().and_then(|block| block.parent())
+        self.grandparent()
     }
 
     /// Returns the nearest [SymbolTable] from this operation.
