@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{assert_eq, felt, Digest, Felt, Word, WordAligned};
+use crate::{assert_eq, felt, Digest, Felt, Word};
 
 #[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0")]
 extern "C" {
@@ -202,12 +202,10 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 /// * `elements` - A slice of field elements to be hashed
 #[inline]
 pub fn hash_elements(elements: Vec<Felt>) -> Digest {
-    // TODO: why non-inlined version fail_s on rotl?
-
     let rust_ptr = elements.as_ptr().addr() as u32;
 
     unsafe {
-        let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
+        let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
         let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
         let miden_ptr = rust_ptr / 4;
         // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
