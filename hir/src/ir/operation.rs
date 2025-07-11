@@ -196,7 +196,14 @@ impl EntityListItem for Operation {
                 let symbol_ref = this.borrow().as_symbol_ref().unwrap();
 
                 let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
-                assert!(is_new, "{} already exists in {}", this.name(), parent.name());
+                assert!(
+                    is_new,
+                    "Unable to insert {} in symbol table of {}: symbol {} is already registered \
+                     to another operation",
+                    this.name(),
+                    parent.name(),
+                    symbol_ref.borrow().name(),
+                );
             };
         }
 
