@@ -195,7 +195,9 @@ impl InputFile {
 
     pub fn filestem(&self) -> &str {
         match &self.file {
-            InputType::Real(ref path) => path.file_stem().unwrap().to_str().unwrap(),
+            InputType::Real(ref path) => path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("noname"),
             InputType::Stdin { .. } => "noname",
         }
     }
