@@ -199,10 +199,11 @@ impl EntityListItem for Operation {
                 assert!(
                     is_new,
                     "Unable to insert {} in symbol table of {}: symbol {} is already registered \
-                     to another operation",
+                     to another operation {}.",
                     this.name(),
                     parent.name(),
                     symbol_ref.borrow().name(),
+                    sym_manager.lookup(symbol_ref.borrow().name()).unwrap().borrow().name()
                 );
             };
         }
