@@ -1150,25 +1150,6 @@ impl Operation {
     }
 }
 
-/// Insertion
-impl Operation {
-    pub fn insert_at_start(&mut self, block: BlockRef) {
-        self.as_operation_ref().insert_at_start(block);
-    }
-
-    pub fn insert_at_end(&mut self, block: BlockRef) {
-        self.as_operation_ref().insert_at_end(block);
-    }
-
-    pub fn insert_before(&mut self, before: OperationRef) {
-        self.as_operation_ref().insert_before(before);
-    }
-
-    pub fn insert_after(&mut self, after: OperationRef) {
-        self.as_operation_ref().insert_after(after);
-    }
-}
-
 /// Movement
 impl Operation {
     /// Remove this operation (and its descendants) from its containing block, and delete them
