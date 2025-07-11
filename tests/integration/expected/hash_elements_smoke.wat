@@ -153,6 +153,16 @@
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
     call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
     local.get 8
+    f32.load offset=4
+    i32.const 8
+    call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+    call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+    local.get 8
+    f32.load offset=12
+    i32.const 8
+    call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+    call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+    local.get 8
     f32.load offset=16
     i32.const 4
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
@@ -194,7 +204,7 @@
     i32.add
     call $miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
     local.get 10
-    f32.load offset=44
+    f32.load offset=32
     local.set 0
     local.get 10
     i32.const 20

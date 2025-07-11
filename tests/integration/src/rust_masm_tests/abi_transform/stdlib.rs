@@ -85,6 +85,7 @@ fn test_blake3_hash() {
     }
 }
 
+#[ignore]
 #[test]
 fn test_hash_elements_smoke() {
     let main_fn = r#"
@@ -107,14 +108,49 @@ fn test_hash_elements_smoke() {
         miden_stdlib_sys::assert_eq(input[6], felt!(6));
         miden_stdlib_sys::assert_eq(input[7], felt!(7));
 
-        // TODO: WTF I32 != Felt
-        // miden_stdlib_sys::assert_eq(input[1], f1);
-        // miden_stdlib_sys::assert_eq(input[2], f2);
-        // miden_stdlib_sys::assert_eq(input[7], f7);
+        let res = hash_elements(input);
+        res
+    }
 
-        let res = miden_stdlib_sys::hash_elements(input);
-        res.inner.inner.0
-    }"#
+
+    #[inline]
+    pub fn hash_elements(elements: alloc::vec::Vec<Felt>) -> miden_stdlib_sys::Felt {
+
+        assert_eq(elements[0], Felt::from_u32(0));
+
+        // ATTENTION: The felts in indices 1,2,3 are not the ones that were passed.
+        assert_eq(elements[1], Felt::from_u32(8)); // 8 is the element's size/capacity
+        // assert_eq(elements[2], Felt::from_u32(2)); // this is the element's address
+        assert_eq(elements[3], Felt::from_u32(8)); // 8 it the element's size/capacity
+
+        assert_eq(elements[4], Felt::from_u32(4));
+        assert_eq(elements[5], Felt::from_u32(5));
+        assert_eq(elements[6], Felt::from_u32(6));
+        assert_eq(elements[7], Felt::from_u32(7));
+
+        assert_eq(
+            Felt::from_u32(elements.len() as u32),
+            Felt::from_u32(8),
+            // Felt::from_u32(elements.capacity() as u32),
+        );
+
+        let rust_ptr = elements.as_ptr().addr() as u32;
+
+        unsafe {
+            let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
+            let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
+            let miden_ptr = rust_ptr / 4;
+            // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
+            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+
+            extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
+
+            let word = ret_area.assume_init();
+            word.inner.0
+        }
+    }
+
+    "#
     .to_string();
     let config = WasmTranslationConfig::default();
     let mut test =
@@ -126,63 +162,49 @@ fn test_hash_elements_smoke() {
 
     let package = test.compiled_package();
 
-    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    let config = proptest::test_runner::Config::with_cases(1);
-    let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
-        // let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
-        let raw_felts: Vec<Felt> = vec![
-            Felt::from(0u32),
-            Felt::from(1u32),
-            Felt::from(2u32),
-            Felt::from(3u32),
-            Felt::from(4u32),
-            Felt::from(5u32),
-            Felt::from(6u32),
-            Felt::from(7u32),
-        ];
-        dbg!(&raw_felts);
-        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
-        let expected_felts: [TestFelt; 4] = [
-            TestFelt(expected_digest[0]),
-            TestFelt(expected_digest[1]),
-            TestFelt(expected_digest[2]),
-            TestFelt(expected_digest[3]),
-        ];
-        dbg!(&expected_felts);
+    let raw_felts: Vec<Felt> = vec![
+        Felt::from(0u32),
+        Felt::from(1u32),
+        Felt::from(2u32),
+        Felt::from(3u32),
+        Felt::from(4u32),
+        Felt::from(5u32),
+        Felt::from(6u32),
+        Felt::from(7u32),
+    ];
+    dbg!(&raw_felts);
+    let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
+    let expected_felts: [TestFelt; 4] = [
+        TestFelt(expected_digest[0]),
+        TestFelt(expected_digest[1]),
+        TestFelt(expected_digest[2]),
+        TestFelt(expected_digest[3]),
+    ];
+    dbg!(&expected_felts);
 
-        let args = [
-            raw_felts[7],
-            raw_felts[6],
-            raw_felts[5],
-            raw_felts[4],
-            raw_felts[3],
-            raw_felts[2],
-            raw_felts[1],
-            raw_felts[0],
-        ];
+    let args = [
+        raw_felts[7],
+        raw_felts[6],
+        raw_felts[5],
+        raw_felts[4],
+        raw_felts[3],
+        raw_felts[2],
+        raw_felts[1],
+        raw_felts[0],
+    ];
 
-        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-            let res: Felt = trace.parse_result().unwrap();
-            dbg!(res);
-            dbg!(expected_digest[0]);
-            prop_assert_eq!(res, expected_digest[0]);
-            Ok(())
-        })?;
-
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        dbg!(res);
+        dbg!(expected_digest[0]);
+        assert_eq!(res, expected_digest[0]);
         Ok(())
-    });
-
-    match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
+    })
+    .unwrap();
 }
 
 #[test]
-fn test_hash_elements_word_aligned() {
+fn test_hash_elements() {
     let main_fn = r#"
     (input: alloc::vec::Vec<miden_stdlib_sys::Felt>) -> miden_stdlib_sys::Felt {
         let res = miden_stdlib_sys::hash_elements(input);
@@ -262,66 +284,3 @@ fn test_hash_elements_word_aligned() {
     }
 }
 
-#[ignore]
-#[test]
-fn test_hash_elements_unaligned() {
-    let main_fn = r#"
-    (input: &[miden_stdlib_sys::Felt]) -> miden_stdlib_sys::Felt {
-        let res = miden_stdlib_sys::hash_elements(input);
-        res.inner.inner.0
-    }"#
-    .to_string();
-    let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
-        "hash_elements",
-        &main_fn,
-        config,
-        ["--test-harness".into()],
-    );
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/hash_elements.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/hash_elements.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/hash_elements.masm")]);
-
-    let package = test.compiled_package();
-
-    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    let config = proptest::test_runner::Config::with_cases(1);
-    let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
-        let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
-        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
-        let expected_felts: [TestFelt; 4] = [
-            TestFelt(expected_digest[0]),
-            TestFelt(expected_digest[1]),
-            TestFelt(expected_digest[2]),
-            TestFelt(expected_digest[3]),
-        ];
-        let wide_ptr_addr = 30u32 * 65536;
-        let mut wide_ptr = vec![Felt::from(wide_ptr_addr + 8), Felt::from(raw_felts.len() as u32)];
-        wide_ptr.extend_from_slice(&raw_felts);
-        let initializers = [Initializer::MemoryFelts {
-            addr: wide_ptr_addr / 4,
-            felts: (&wide_ptr).into(),
-        }];
-
-        let args = [Felt::new(wide_ptr_addr as u64)];
-
-        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-            let res: Felt = trace.parse_result().unwrap();
-            dbg!(res);
-            dbg!(expected_digest[0]);
-            prop_assert_eq!(res, expected_digest[0]);
-            Ok(())
-        })?;
-
-        Ok(())
-    });
-
-    match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
-}

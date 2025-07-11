@@ -497,6 +497,44 @@ export.entrypoint
         nop
         push.0
         assert_eq
+        push.4
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_felt
+        trace.252
+        nop
+        push.8
+        assert_eq
+        push.12
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_felt
+        trace.252
+        nop
+        push.8
+        assert_eq
         push.16
         dup.1
         add
@@ -597,7 +635,7 @@ export.entrypoint
         exec.::root_ns:root@1.0.0::hash_elements_smoke::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
         trace.252
         nop
-        push.44
+        push.32
         dup.1
         add
         u32assert

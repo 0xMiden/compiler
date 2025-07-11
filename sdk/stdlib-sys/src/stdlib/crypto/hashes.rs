@@ -111,7 +111,7 @@ extern "C" {
     /// Output: One digest (4 field elements)
     /// The output is passed back to the caller via a pointer.
     #[link_name = "hash-memory"]
-    fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
+    pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 }
 
 /// Hashes a 32-byte input to a 32-byte output using the given hash function.
@@ -204,22 +204,6 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 pub fn hash_elements(elements: Vec<Felt>) -> Digest {
     // TODO: why non-inlined version fail_s on rotl?
 
-    assert_eq(elements[0], Felt::from_u32(0));
-    // FIX: WTF?
-    // assert_eq(elements[1], Felt::from_u32(1));
-    // assert_eq(elements[2], Felt::from_u32(2));
-    // assert_eq(elements[3], Felt::from_u32(3));
-    assert_eq(elements[4], Felt::from_u32(4));
-    assert_eq(elements[5], Felt::from_u32(5));
-    assert_eq(elements[6], Felt::from_u32(6));
-    assert_eq(elements[7], Felt::from_u32(7));
-
-    assert_eq(
-        Felt::from_u32(elements.len() as u32),
-        Felt::from_u32(8),
-        // Felt::from_u32(elements.capacity() as u32),
-    );
-
     let rust_ptr = elements.as_ptr().addr() as u32;
 
     unsafe {
@@ -231,8 +215,6 @@ pub fn hash_elements(elements: Vec<Felt>) -> Digest {
 
         extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
 
-        // TODO: Why need to reverse? Look into the return-via-pointer. Does it store in the wrong
-        // order?
         Digest::from_word(ret_area.assume_init().reverse())
     }
 }
