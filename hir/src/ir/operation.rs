@@ -187,17 +187,13 @@ impl EntityListItem for Operation {
             if this.name().implements::<dyn Symbol>()
                 && parent.name().implements::<dyn SymbolTable>()
             {
+                // NOTE: We call `unwrap()` here because we are confident that these function calls
+                // are valid thanks to the `implements` check above.
                 let mut symbol_table = parent.borrow_mut();
-                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().expect(
-                    "Could not cast parent operation {parent.name()} as SymbolTable, even though \
-                     it implements said trait",
-                );
+                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
                 let mut sym_manager = sym_manager.symbol_manager_mut();
 
-                let symbol_ref = this.borrow().as_symbol_ref().expect(
-                    "Could not cast operation {this.name()} as Symbol, even though it implements \
-                     said trait",
-                );
+                let symbol_ref = this.borrow().as_symbol_ref().unwrap();
 
                 let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
                 assert!(is_new, "{} already exists in {}", this.name(), parent.name());
