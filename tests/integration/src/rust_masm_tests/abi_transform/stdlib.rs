@@ -85,124 +85,6 @@ fn test_blake3_hash() {
     }
 }
 
-#[ignore]
-#[test]
-fn test_hash_elements_smoke() {
-    let main_fn = r#"
-    (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-        miden_stdlib_sys::assert_eq(f0, felt!(0));
-        miden_stdlib_sys::assert_eq(f1, felt!(1));
-        miden_stdlib_sys::assert_eq(f2, felt!(2));
-        miden_stdlib_sys::assert_eq(f3, felt!(3));
-        miden_stdlib_sys::assert_eq(f4, felt!(4));
-        miden_stdlib_sys::assert_eq(f5, felt!(5));
-        miden_stdlib_sys::assert_eq(f6, felt!(6));
-        miden_stdlib_sys::assert_eq(f7, felt!(7));
-        let input: alloc::vec::Vec<Felt> = alloc::vec![f0, f1, f2, f3, f4, f5, f6, f7];
-        miden_stdlib_sys::assert_eq(input[0], felt!(0));
-        miden_stdlib_sys::assert_eq(input[1], felt!(1));
-        miden_stdlib_sys::assert_eq(input[2], felt!(2));
-        miden_stdlib_sys::assert_eq(input[3], felt!(3));
-        miden_stdlib_sys::assert_eq(input[4], felt!(4));
-        miden_stdlib_sys::assert_eq(input[5], felt!(5));
-        miden_stdlib_sys::assert_eq(input[6], felt!(6));
-        miden_stdlib_sys::assert_eq(input[7], felt!(7));
-
-        let res = hash_elements(input);
-        res
-    }
-
-
-    #[inline]
-    pub fn hash_elements(elements: alloc::vec::Vec<Felt>) -> miden_stdlib_sys::Felt {
-
-        assert_eq(elements[0], Felt::from_u32(0));
-
-        // ATTENTION: The felts in indices 1,2,3 are not the ones that were passed.
-        assert_eq(elements[1], Felt::from_u32(8)); // 8 is the element's size/capacity
-        // assert_eq(elements[2], Felt::from_u32(2)); // this is the element's address
-        assert_eq(elements[3], Felt::from_u32(8)); // 8 it the element's size/capacity
-
-        assert_eq(elements[4], Felt::from_u32(4));
-        assert_eq(elements[5], Felt::from_u32(5));
-        assert_eq(elements[6], Felt::from_u32(6));
-        assert_eq(elements[7], Felt::from_u32(7));
-
-        assert_eq(
-            Felt::from_u32(elements.len() as u32),
-            Felt::from_u32(8),
-            // Felt::from_u32(elements.capacity() as u32),
-        );
-
-        let rust_ptr = elements.as_ptr().addr() as u32;
-
-        unsafe {
-            let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
-            let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
-            let miden_ptr = rust_ptr / 4;
-            // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
-            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
-
-            extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
-
-            let word = ret_area.assume_init();
-            word.inner.0
-        }
-    }
-
-    "#
-    .to_string();
-    let config = WasmTranslationConfig::default();
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys("hash_elements_smoke", &main_fn, config, []);
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/hash_elements_smoke.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/hash_elements_smoke.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/hash_elements_smoke.masm")]);
-
-    let package = test.compiled_package();
-
-    let raw_felts: Vec<Felt> = vec![
-        Felt::from(0u32),
-        Felt::from(1u32),
-        Felt::from(2u32),
-        Felt::from(3u32),
-        Felt::from(4u32),
-        Felt::from(5u32),
-        Felt::from(6u32),
-        Felt::from(7u32),
-    ];
-    dbg!(&raw_felts);
-    let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
-    let expected_felts: [TestFelt; 4] = [
-        TestFelt(expected_digest[0]),
-        TestFelt(expected_digest[1]),
-        TestFelt(expected_digest[2]),
-        TestFelt(expected_digest[3]),
-    ];
-    dbg!(&expected_felts);
-
-    let args = [
-        raw_felts[7],
-        raw_felts[6],
-        raw_felts[5],
-        raw_felts[4],
-        raw_felts[3],
-        raw_felts[2],
-        raw_felts[1],
-        raw_felts[0],
-    ];
-
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let res: Felt = trace.parse_result().unwrap();
-        dbg!(res);
-        dbg!(expected_digest[0]);
-        assert_eq!(res, expected_digest[0]);
-        Ok(())
-    })
-    .unwrap();
-}
-
 #[test]
 fn test_hash_elements() {
     let main_fn = r#"
@@ -282,4 +164,82 @@ fn test_hash_elements() {
         Ok(_) => (),
         _ => panic!("Unexpected test result: {:?}", res),
     }
+}
+
+#[test]
+fn test_vec_alloc_new() {
+    let main_fn = r#"
+    // (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+    (a: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+        let mut input: alloc::vec::Vec<Felt> = alloc::vec::Vec::with_capacity(1);
+        let input_ptr = input.as_ptr().addr() as u32;
+
+        // ATTENTION: the address 1114128 is correct
+        miden_stdlib_sys::assert_eq(Felt::from_u32(input_ptr), felt!(1114128));
+
+        felt!(0)
+    }
+
+    "#
+    .to_string();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("vec_alloc_new", &main_fn, config, []);
+    // Test expected compilation artifacts
+    test.expect_wasm(expect_file![format!("../../../expected/vec_alloc_new.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/vec_alloc_new.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/vec_alloc_new.masm")]);
+
+    let package = test.compiled_package();
+
+    let args = [Felt::ZERO];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_vec_alloc_vec() {
+    let main_fn = r#"
+    // (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+    (a: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+
+        // NOTE: below throws error: invalid operand stack index (1): only 1 operands are available
+        // let input: alloc::vec::Vec<Felt> = alloc::vec![a];
+
+        let input: alloc::vec::Vec<Felt> = alloc::vec![a, a];
+        let input_ptr = input.as_ptr().addr() as u32;
+
+        // ATTENTION: the address is expected to be 1114128 like in test_vec_alloc_new test
+        // The value below (1048576) is the __stack_pointer (see wat file)
+        // `input_ptr` corresponds to `local.tee 2` in wat file and `v19` in hir file
+        miden_stdlib_sys::assert_eq(Felt::from_u32(input_ptr), felt!(1048576));
+
+        felt!(0)
+    }
+
+    "#
+    .to_string();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("vec_alloc_vec", &main_fn, config, []);
+    // Test expected compilation artifacts
+    test.expect_wasm(expect_file![format!("../../../expected/vec_alloc_vec.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/vec_alloc_vec.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/vec_alloc_vec.masm")]);
+
+    let package = test.compiled_package();
+
+    let args = [Felt::ZERO];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
 }
