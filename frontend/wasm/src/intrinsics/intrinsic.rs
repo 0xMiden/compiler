@@ -122,20 +122,12 @@ impl Intrinsic {
             Self::Crypto(function) => {
                 match function.as_str() {
                     "hmerge" => {
-                        // The WASM import signature: takes 8 felts + 1 i32 pointer, returns nothing
+                        // The WASM import signature: takes 2 i32 pointers (digests array pointer + result pointer)
                         let sig = midenc_hir::FunctionType::new(
                             midenc_hir::CallConv::Wasm,
                             vec![
-                                // First digest: 4 field elements
-                                Type::Felt,
-                                Type::Felt,
-                                Type::Felt,
-                                Type::Felt,
-                                // Second digest: 4 field elements
-                                Type::Felt,
-                                Type::Felt,
-                                Type::Felt,
-                                Type::Felt,
+                                // Pointer to array of two digests
+                                Type::I32,
                                 // Result pointer
                                 Type::I32,
                             ],

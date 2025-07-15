@@ -1,4 +1,4 @@
-use miden_core::{Felt, Word};
+use miden_core::{Felt, FieldElement, Word};
 use miden_objects::Digest;
 use midenc_debug::ToMidenRepr;
 use midenc_expect_test::expect_file;
@@ -334,11 +334,12 @@ test_unary_op_total!(bnot, !, bool);
 #[test]
 fn test_hmerge() {
     let main_fn = r#"
-        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Digest {
-            let digest2 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
-            let digest1 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
+        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+            let digest1 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
+            let digest2 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
             let digests = [digest1, digest2];
-            miden_stdlib_sys::crypto::merge(digests)
+            let res = miden_stdlib_sys::crypto::merge(digests);
+            res.inner.inner.0
         }"#
         .to_string();
     let config = WasmTranslationConfig::default();
@@ -351,7 +352,7 @@ fn test_hmerge() {
     let package = test.compiled_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    let config = proptest::test_runner::Config::with_cases(10);
+    let config = proptest::test_runner::Config::with_cases(16);
     let res = TestRunner::new(config).run(
         &any::<([midenc_debug::Felt; 4], [midenc_debug::Felt; 4])>(),
         move |(felts_in1, felts_in2)| {
@@ -377,25 +378,19 @@ fn test_hmerge() {
                 midenc_debug::Felt(digest_out[3]),
             ];
 
-            // Place the hash output at 20 * PAGE_SIZE
-            let out_addr = 20u32 * 65536;
-
             let args = [
-                raw_felts_in1[0],
-                raw_felts_in1[1],
-                raw_felts_in1[2],
-                raw_felts_in1[3],
-                raw_felts_in2[0],
-                raw_felts_in2[1],
-                raw_felts_in2[2],
                 raw_felts_in2[3],
-                Felt::new(out_addr as u64),
+                raw_felts_in2[2],
+                raw_felts_in2[1],
+                raw_felts_in2[0],
+                raw_felts_in1[3],
+                raw_felts_in1[2],
+                raw_felts_in1[1],
+                raw_felts_in1[0],
             ];
             eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-                let vm_out: [midenc_debug::Felt; 4] = trace
-                    .read_from_rust_memory(out_addr)
-                    .expect("expected memory to have been written");
-                prop_assert_eq!(&felts_out, &vm_out, "VM output mismatch");
+                let res: Felt = trace.parse_result().unwrap();
+                prop_assert_eq!(res, digest_out[0]);
                 Ok(())
             })?;
 

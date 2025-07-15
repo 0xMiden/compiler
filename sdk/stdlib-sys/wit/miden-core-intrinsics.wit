@@ -51,10 +51,8 @@ interface intrinsics-crypto {
 
     // See sdk/stdlib-sys/src/intrinsics/crypto.rs for `extern` function signatures
 
-    // Hash merge operation
-    hmerge: func(digest1-elem0: f32, digest1-elem1: f32, digest1-elem2: f32, digest1-elem3: f32, 
-                 digest2-elem0: f32, digest2-elem1: f32, digest2-elem2: f32, digest2-elem3: f32, 
-                 result-ptr: s32);
+    // Hash merge operation - takes pointer to array of two digests and writes result to output pointer
+    hmerge: func(digests-ptr: s32, result-ptr: s32);
 }
 
 world intrinsics {

@@ -1,8 +1,9 @@
 //! Cryptographic intrinsics for the Miden VM.
 //!
 //! This module provides Rust bindings for cryptographic operations available in the Miden VM.
+#![allow(warnings)]
 
-use crate::{Felt, Word};
+use crate::{assert_eq, Felt, Word};
 
 /// A cryptographic digest representing a 256-bit hash value.
 ///
@@ -64,23 +65,14 @@ extern "C" {
     ///
     /// This is the `hmerge` instruction in the Miden VM.
     ///
-    /// Input: Two digests (4 field elements each)
-    /// Output: One digest (4 field elements)
-    /// The output is passed back to the caller via a pointer.
+    /// Input: Pointer to an array of two digests (8 field elements total)
+    /// Output: One digest (4 field elements) written to the result pointer
     #[link_name = "hmerge"]
     fn extern_hmerge(
-        // First digest (4 felts)
-        d1_0: f32,
-        d1_1: f32,
-        d1_2: f32,
-        d1_3: f32,
-        // Second digest (4 felts)
-        d2_0: f32,
-        d2_1: f32,
-        d2_2: f32,
-        d2_3: f32,
+        // Pointer to array of two digests
+        digests_ptr: *const Felt,
         // Result pointer
-        ptr: *mut Felt,
+        result_ptr: *mut Felt,
     );
 }
 
@@ -96,23 +88,24 @@ extern "C" {
 pub fn merge(digests: [Digest; 2]) -> Digest {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let ptr = ret_area.as_mut_ptr() as *mut Felt;
-        // The VM hmerge instruction expects the second digest first, then the first digest
-        // (i.e., [B, A] order when merging digests A and B).
-        // See: https://0xmiden.github.io/miden-docs/imported/miden-vm/src/user_docs/assembly/cryptographic_operations.html
-        let first_digest = &digests[0];
-        let second_digest = &digests[1];
-        extern_hmerge(
-            second_digest.inner[0].inner,
-            second_digest.inner[1].inner,
-            second_digest.inner[2].inner,
-            second_digest.inner[3].inner,
-            first_digest.inner[0].inner,
-            first_digest.inner[1].inner,
-            first_digest.inner[2].inner,
-            first_digest.inner[3].inner,
-            ptr,
-        );
+        let result_ptr = ret_area.as_mut_ptr().addr() as u32;
+
+        // TODO: Pass the pointer to the digests array directly after the issue is fixed
+        //
+        // let digests_ptr = digests.as_ptr().addr() as u32;
+        let arr = [
+            digests[0].inner.inner.0,
+            digests[0].inner.inner.1,
+            digests[0].inner.inner.2,
+            digests[0].inner.inner.3,
+            digests[1].inner.inner.0,
+            digests[1].inner.inner.1,
+            digests[1].inner.inner.2,
+            digests[1].inner.inner.3,
+        ];
+
+        let digests_ptr = arr.as_ptr().addr() as u32;
+        extern_hmerge(digests_ptr as *const Felt, result_ptr as *mut Felt);
 
         Digest::from_word(ret_area.assume_init())
     }

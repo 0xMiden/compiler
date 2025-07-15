@@ -32,20 +32,19 @@ pub(crate) fn convert_crypto_intrinsics<B: ?Sized + Builder>(
 
     match function.as_str() {
         "hmerge" => {
-            // The WASM import has 9 parameters (8 felts + result pointer)
+            // The WASM import has 2 parameters (digests pointer + result pointer)
             assert_eq!(
                 args.len(),
-                9,
-                "{function} takes exactly nine arguments (8 field elements from 2 digests + \
-                 result pointer)"
+                2,
+                "{function} takes exactly two arguments (digests pointer + result pointer)"
             );
 
             let func = function_ref.borrow();
             let signature = func.signature().clone();
             drop(func);
 
-            // Call the function with all 9 arguments
-            // The intrinsics::crypto::hmerge function will be mapped to the MASM hmerge_ptr
+            // Call the function with both arguments
+            // The intrinsics::crypto::hmerge function will be mapped to the MASM hmerge
             let _exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
 
             // Since the WASM signature has the result pointer as the last parameter,
