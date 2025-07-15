@@ -90,7 +90,8 @@ pub fn merge(digests: [Digest; 2]) -> Digest {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         let result_ptr = ret_area.as_mut_ptr().addr() as u32;
 
-        // TODO: Pass the pointer to the digests array directly after the issue is fixed
+        // TODO: Pass the pointer to the digests array directly after the
+        // https://github.com/0xMiden/compiler/pull/576i issue is fixed
         //
         // let digests_ptr = digests.as_ptr().addr() as u32;
         let arr = [

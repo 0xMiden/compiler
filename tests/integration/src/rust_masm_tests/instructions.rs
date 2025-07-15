@@ -410,7 +410,7 @@ fn test_hmerge() {
 #[test]
 fn test_arg_order() {
     // This test reproduces the "swapped and frozen" function arguments issue
-    // discovered while working on hmerge VM op
+    // https://github.com/0xMiden/compiler/pull/576 discovered while working on hmerge VM op
     // The issue manifests in "intrinsic" function parameters being in the wrong order
     // (see assert_eq before the call and inside the function)
     // on the stack AND the their order is not changing when the parameters are
