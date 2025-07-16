@@ -2,6 +2,7 @@ mod intrinsic;
 
 pub use self::intrinsic::*;
 
+pub mod crypto;
 pub mod debug;
 pub mod felt;
 pub mod mem;
@@ -23,6 +24,7 @@ fn modules() -> &'static FxHashSet<SymbolPath> {
         s.insert(SymbolPath::from_iter(mem::MODULE_PREFIX.iter().copied()));
         s.insert(SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()));
         s.insert(SymbolPath::from_iter(debug::MODULE_PREFIX.iter().copied()));
+        s.insert(SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()));
         s
     });
     &MODULES
@@ -45,6 +47,9 @@ pub fn convert_intrinsics_call<B: ?Sized + Builder>(
         }
         Intrinsic::Felt(function) => {
             felt::convert_felt_intrinsics(function, function_ref, args, builder, span)
+        }
+        Intrinsic::Crypto(function) => {
+            crypto::convert_crypto_intrinsics(function, function_ref, args, builder, span)
         }
     }
 }

@@ -1,0 +1,48 @@
+#! HMERGE: Wrapper for hmerge that takes pointers to digests array and result
+#!
+#! Stack Input:  [digests_ptr, result_ptr, ...]
+#! Stack Output: [...] (both values are consumed)
+#! Side Effect: Results written to memory at result_ptr
+#!
+#! The digests_ptr points to an array of 2 digests [A, B] (8 field elements total)
+#! Memory layout: [a0, a1, a2, a3, b0, b1, b2, b3]
+export.hmerge
+    # Stack: [digests_ptr, result_ptr, ...]
+
+    # Load first digest (A) from digests_ptr
+    dup.0
+    push.4
+    div
+    padw
+    movup.4
+    mem_loadw
+    # Stack: [a0, a1, a2, a3, digests_ptr, result_ptr, ...]
+
+    # Load second digest (B) from digests_ptr + 16 (4 felts * 4 bytes)
+    movup.4
+    push.16
+    add
+    push.4
+    div
+    padw
+    movup.4
+    mem_loadw
+    # Stack: [b0, b1, b2, b3, a0, a1, a2, a3, result_ptr, ...]
+
+    # The hmerge instruction expects [B, A] on the stack, which we already have
+
+    # Perform the hash
+    hmerge
+    # Stack: [r0, r1, r2, r3, result_ptr, ...]
+
+    # Store result at result_ptr
+    movup.4
+    push.4
+    div
+    # Stack: [result_ptr/4, r0, r1, r2, r3, ...]
+    mem_storew
+    # Stack: [r0, r1, r2, r3, ...]
+
+    # Clean up
+    dropw
+end

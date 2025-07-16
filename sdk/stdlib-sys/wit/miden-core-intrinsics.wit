@@ -47,8 +47,17 @@ interface intrinsics-debug {
 
 }
 
+interface intrinsics-crypto {
+
+    // See sdk/stdlib-sys/src/intrinsics/crypto.rs for `extern` function signatures
+
+    // Hash merge operation - takes pointer to array of two digests and writes result to output pointer
+    hmerge: func(digests-ptr: s32, result-ptr: s32);
+}
+
 world intrinsics {
     import intrinsics-mem;
     import intrinsics-felt;
     import intrinsics-debug;
+    import intrinsics-crypto;
 }

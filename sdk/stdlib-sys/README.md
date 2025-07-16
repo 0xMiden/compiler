@@ -26,7 +26,6 @@ Missing in IR:
 Missing in IR:
 - `hash`;
 - `hperm`;
-- `hmerge`;
 - `mtree*`;
 
 ### Events, Tracing

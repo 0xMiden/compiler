@@ -19,6 +19,12 @@ interface core-types {
         inner: tuple<felt, felt, felt, felt>
     }
 
+    /// A cryptographic digest representing a 256-bit hash value.
+    /// This is a wrapper around `word` which contains 4 field elements.
+    record digest {
+        inner: word
+    }
+
     /// Unique identifier of an account.
     ///
     /// Account ID consists of 1 field element (~64 bits). This field element uniquely identifies a

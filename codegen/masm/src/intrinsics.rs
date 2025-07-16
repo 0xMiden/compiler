@@ -7,11 +7,13 @@ use midenc_session::diagnostics::{PrintDiagnostic, SourceManager};
 pub const I32_INTRINSICS_MODULE_NAME: &str = "intrinsics::i32";
 pub const I64_INTRINSICS_MODULE_NAME: &str = "intrinsics::i64";
 pub const MEM_INTRINSICS_MODULE_NAME: &str = "intrinsics::mem";
+pub const CRYPTO_INTRINSICS_MODULE_NAME: &str = "intrinsics::crypto";
 
-pub const INTRINSICS_MODULE_NAMES: [&str; 3] = [
+pub const INTRINSICS_MODULE_NAMES: [&str; 4] = [
     I32_INTRINSICS_MODULE_NAME,
     I64_INTRINSICS_MODULE_NAME,
     MEM_INTRINSICS_MODULE_NAME,
+    CRYPTO_INTRINSICS_MODULE_NAME,
 ];
 
 const I32_INTRINSICS: &str =
@@ -20,9 +22,11 @@ const I64_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"));
 const MEM_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"));
+const CRYPTO_INTRINSICS: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/crypto.masm"));
 
 /// This is a mapping of intrinsics module name to the raw MASM source for that module
-const INTRINSICS: [(&str, &str, &str); 3] = [
+const INTRINSICS: [(&str, &str, &str); 4] = [
     (
         I32_INTRINSICS_MODULE_NAME,
         I32_INTRINSICS,
@@ -37,6 +41,11 @@ const INTRINSICS: [(&str, &str, &str); 3] = [
         MEM_INTRINSICS_MODULE_NAME,
         MEM_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"),
+    ),
+    (
+        CRYPTO_INTRINSICS_MODULE_NAME,
+        CRYPTO_INTRINSICS,
+        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/crypto.masm"),
     ),
 ];
 

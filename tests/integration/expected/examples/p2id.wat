@@ -73,7 +73,7 @@
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
-    (global $GOT.data.internal.__rust_no_alloc_shim_is_unstable (;2;) i32 i32.const 1048696)
+    (global $GOT.data.internal.__rust_no_alloc_shim_is_unstable (;2;) i32 i32.const 1048700)
     (export "memory" (memory 0))
     (export "miden:base/note-script@1.0.0#note-script" (func $miden:base/note-script@1.0.0#note-script))
     (elem (;0;) (i32.const 1) func $p2id::bindings::__link_custom_section_describing_imports)
@@ -81,7 +81,7 @@
     (func $p2id::bindings::__link_custom_section_describing_imports (;7;) (type 5))
     (func $__rustc::__rust_alloc (;8;) (type 6) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048692
+      i32.const 1048696
       i32.add
       local.get 1
       local.get 0
@@ -91,7 +91,7 @@
     (func $__rustc::__rust_alloc_zeroed (;10;) (type 6) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048692
+        i32.const 1048696
         i32.add
         local.get 1
         local.get 0
@@ -200,7 +200,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048697
+        i32.const 1048701
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -208,7 +208,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048697
+        i32.const 1048701
         i32.add
         i32.const 1
         i32.store8
@@ -345,7 +345,7 @@
       i32.const 4
       i32.const 4
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048660
+      i32.const 1048664
       i32.add
       call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
       local.get 1
@@ -383,7 +383,7 @@
       i32.const 32
       i32.const 32
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048676
+      i32.const 1048680
       i32.add
       call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
       local.get 1
@@ -668,7 +668,7 @@
       select
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.5/src/bindings/note.rs")
-    (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\001\00\00\00\22\00\00\00")
+    (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\001\00\00\00\22\00\00\00")
   )
   (alias export 3 "assert-eq" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
