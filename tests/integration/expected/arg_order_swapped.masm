@@ -199,7 +199,6 @@ export.entrypoint
     dup.1
     swap.1
     u32wrapping_add
-    swap.1
     trace.240
     nop
     exec.::root_ns:root@1.0.0::arg_order::intrinsic

@@ -73,7 +73,7 @@ pub trait HirLowering: Op {
         // If we're emitting a binary op, we can produce an optimal schedule for the operands by
         // handling the various edge cases manually, such as commutativity, or interactions where
         // only a single move/copy is needed to get both operands into place.
-        let is_binary = args.len() == 2;
+        let is_binary = args.len() == 2 && op.implements::<dyn BinaryOp>();
         if is_binary {
             let span = self.as_operation().span();
             log::trace!(target: "codegen", "scheduling operands for binary op: {}", self.as_operation());

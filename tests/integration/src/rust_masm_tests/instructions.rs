@@ -409,13 +409,12 @@ fn test_hmerge() {
 
 #[test]
 fn test_arg_order() {
-    // This test reproduces the "swapped and frozen" function arguments issue
-    // https://github.com/0xMiden/compiler/pull/576 discovered while working on hmerge VM op
-    // The issue manifests in "intrinsic" function parameters being in the wrong order
-    // (see assert_eq before the call and inside the function)
-    // on the stack AND the their order is not changing when the parameters are
-    // swapped at the call site (see expect_masm with the same file name, i.e. the MASM
-    // do not change when she parameters are swapped).
+    // This test verifies that function arguments are passed in the correct order.
+    // It was originally created to reproduce the "swapped and frozen" function arguments issue
+    // https://github.com/0xMiden/compiler/issues/600 discovered while working on hmerge VM op.
+    // The issue was that operations with exactly 2 arguments were being treated as binary
+    // operations for stack scheduling purposes, even when they weren't actually binary ops,
+    // causing their arguments to be arranged incorrectly on the stack.
     fn main_fn_template(digest_ptr_name: &str, result_ptr_name: &str) -> String {
         format!(
             r#"
@@ -441,20 +440,30 @@ fn test_arg_order() {
             // see wat/hir
             assert_eq(Felt::from_u32(result_ptr as u32), Felt::from_u32(1048544));
 
-            intrinsic({} as *const Felt, {} as *mut Felt);
-
-            Digest::from_word(ret_area.assume_init())
+            let order_check = intrinsic({} as *const Felt, {} as *mut Felt);
+            
+            // Return the order check result as the first element of the digest
+            // This allows us to verify that arguments were passed in the expected order
+            let mut result = ret_area.assume_init();
+            result[0] = order_check;
+            Digest::from_word(result)
         }}
     }}
 
     #[no_mangle]
-    fn intrinsic(digests_ptr: *const Felt, result_ptr: *mut Felt) {{
-        // ATTENTION: the digests_ptr is expected to be 1048480 (__stack_pointer - 96)
-        // see assert_eq above, before the call
-        assert_eq(Felt::from_u32(digests_ptr as u32), Felt::from_u32(1048544));
-        // ATTENTION: the result_ptr is expected to be 1048544 (__stack_pointer - 96 + 64)
-        // see assert_eq above, before the call
-        assert_eq(Felt::from_u32(result_ptr as u32), Felt::from_u32(1048480));
+    fn intrinsic(first_param: *const Felt, second_param: *mut Felt) -> miden_stdlib_sys::Felt {{
+        // Return the difference between the parameters to verify they were passed in the correct order
+        // In the correct order: first_param should be 1048480, second_param should be 1048544
+        // In the swapped order: first_param should be 1048544, second_param should be 1048480
+        let first = first_param as u32;
+        let second = second_param as u32;
+        if first < second {{
+            // Correct order: 1048480 < 1048544, return 1
+            Felt::from_u32(1)
+        }} else {{
+            // Swapped order: 1048544 > 1048480, return 0
+            Felt::from_u32(0)
+        }}
     }}
         "#,
             digest_ptr_name, result_ptr_name
@@ -484,8 +493,13 @@ fn test_arg_order() {
         Felt::ZERO,
         Felt::ZERO,
     ];
-    eval_package::<Felt, _, _>(&test.compiled_package(), [], &args, &test.session, |trace| Ok(()))
-        .unwrap();
+    eval_package::<Felt, _, _>(&test.compiled_package(), [], &args, &test.session, |trace| {
+        let result: Felt = trace.parse_result().unwrap();
+        // In the correct order, intrinsic should return 1
+        assert_eq!(result.as_int(), 1, "Expected correct argument order");
+        Ok(())
+    })
+    .unwrap();
 
     // Lets swap the "digests_ptr" and "result_ptr" and test it
     let main_fn_swapped = main_fn_template("result_ptr", "digests_ptr");
@@ -495,16 +509,20 @@ fn test_arg_order() {
     test_swapped.expect_wasm(expect_file![format!("../../expected/arg_order_swapped.wat")]);
     test_swapped.expect_ir(expect_file![format!("../../expected/arg_order_swapped.hir")]);
 
-    // NOTE: the MASM did not change (see the same file name in the expect_masm call above)
-    // compared to the "digests_ptr, result_ptr" in the previous expect_masm call
-    test_swapped.expect_masm(expect_file![format!("../../expected/arg_order.masm")]);
+    // The MASM should now be different when arguments are swapped
+    test_swapped.expect_masm(expect_file![format!("../../expected/arg_order_swapped.masm")]);
 
     eval_package::<Felt, _, _>(
         &test_swapped.compiled_package(),
         [],
         &args,
         &test_swapped.session,
-        |trace| Ok(()),
+        |trace| {
+            let result: Felt = trace.parse_result().unwrap();
+            // In the swapped order, intrinsic should return 0
+            assert_eq!(result.as_int(), 0, "Expected swapped argument order");
+            Ok(())
+        },
     )
     .unwrap();
 }

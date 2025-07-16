@@ -2,7 +2,7 @@
   (type (;0;) (func (param i32) (result f32)))
   (type (;1;) (func (param f32 f32)))
   (type (;2;) (func (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
-  (type (;3;) (func (param i32 i32)))
+  (type (;3;) (func (param i32 i32) (result f32)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;1;) (type 1)))
   (table (;0;) 1 1 funcref)
@@ -62,23 +62,15 @@
     i32.add
     local.get 9
     call $intrinsic
-    local.get 9
-    f32.load offset=64
     local.set 7
     local.get 8
     global.set $__stack_pointer
     local.get 7
   )
-  (func $intrinsic (;3;) (type 3) (param i32 i32)
+  (func $intrinsic (;3;) (type 3) (param i32 i32) (result f32)
     local.get 0
-    call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    i32.const 1048544
-    call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
     local.get 1
+    i32.lt_u
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    i32.const 1048480
-    call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
   )
 )
