@@ -60,15 +60,10 @@
     (func $__wasm_call_ctors (;5;) (type 5))
     (func $storage_example::bindings::__link_custom_section_describing_imports (;6;) (type 5))
     (func $miden:storage-example/foo@1.0.0#set-asset-qty (;7;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32 f32)
-      (local i32 i32)
+      (local i32)
       global.get $__stack_pointer
-      local.tee 9
-      local.set 10
-      local.get 9
-      i32.const 128
+      i32.const 64
       i32.sub
-      i32.const -32
-      i32.and
       local.tee 9
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
@@ -85,23 +80,23 @@
       local.get 4
       f32.store
       local.get 9
-      i32.const 32
+      i32.const 16
       i32.add
       i32.const 0
       call $miden_base_sys::bindings::storage::get_item
       local.get 9
-      f32.load offset=44
+      f32.load offset=28
       local.set 5
       local.get 9
-      f32.load offset=40
+      f32.load offset=24
       local.set 6
       local.get 9
-      f32.load offset=36
+      f32.load offset=20
       local.set 7
       block ;; label = @1
         local.get 0
         local.get 9
-        f32.load offset=32
+        f32.load offset=16
         call $miden_stdlib_sys::intrinsics::felt::extern_eq
         i32.const 1
         i32.ne
@@ -125,56 +120,57 @@
         i32.ne
         br_if 0 (;@1;)
         local.get 9
-        i32.const 96
+        i32.const 48
         i32.add
         local.get 8
         call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
         local.get 9
-        i32.const 32
+        i32.const 16
         i32.add
         i32.const 1
         local.get 9
         local.get 9
-        i32.const 96
+        i32.const 48
         i32.add
         call $miden_base_sys::bindings::storage::set_map_item
       end
-      local.get 10
+      local.get 9
+      i32.const 64
+      i32.add
       global.set $__stack_pointer
     )
     (func $miden:storage-example/foo@1.0.0#get-asset-qty (;8;) (type 7) (param f32 f32 f32 f32) (result f32)
-      (local i32 i32)
+      (local i32)
       global.get $__stack_pointer
-      local.tee 4
-      i32.const 64
+      i32.const 32
       i32.sub
-      i32.const -32
-      i32.and
-      local.tee 5
+      local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
-      local.get 5
+      local.get 4
       local.get 3
       f32.store offset=12
-      local.get 5
+      local.get 4
       local.get 2
       f32.store offset=8
-      local.get 5
+      local.get 4
       local.get 1
       f32.store offset=4
-      local.get 5
+      local.get 4
       local.get 0
       f32.store
-      local.get 5
-      i32.const 32
+      local.get 4
+      i32.const 16
       i32.add
       i32.const 1
-      local.get 5
+      local.get 4
       call $miden_base_sys::bindings::storage::get_map_item
-      local.get 5
-      f32.load offset=44
+      local.get 4
+      f32.load offset=28
       local.set 3
       local.get 4
+      i32.const 32
+      i32.add
       global.set $__stack_pointer
       local.get 3
     )

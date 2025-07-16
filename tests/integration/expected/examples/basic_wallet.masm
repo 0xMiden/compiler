@@ -185,12 +185,8 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.64
-    dup.2
-    swap.1
+    push.32
     u32wrapping_sub
-    u32and
     push.1048640
     dup.1
     swap.1
@@ -216,7 +212,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     u32mod
     u32assert
     assertz
-    movup.6
+    movup.5
     swap.1
     u32divmod.4
     swap.1
@@ -235,7 +231,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     u32mod
     u32assert
     assertz
-    movup.5
+    movup.4
     swap.1
     u32divmod.4
     swap.1
@@ -254,7 +250,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     u32mod
     u32assert
     assertz
-    movup.4
+    movup.3
     swap.1
     u32divmod.4
     swap.1
@@ -270,7 +266,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     u32mod
     u32assert
     assertz
-    movup.3
+    movup.2
     swap.1
     u32divmod.4
     swap.1
@@ -279,15 +275,19 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.32
+    push.16
     dup.1
     swap.1
     u32wrapping_add
+    dup.1
+    swap.1
     trace.240
     nop
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::add_asset
     trace.252
     nop
+    push.32
+    u32wrapping_add
     push.1048640
     u32divmod.4
     swap.1
@@ -307,12 +307,8 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.96
-    dup.2
-    swap.1
+    push.48
     u32wrapping_sub
-    u32and
     push.1048640
     dup.1
     swap.1
@@ -338,7 +334,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     u32mod
     u32assert
     assertz
-    movup.6
+    movup.5
     swap.1
     u32divmod.4
     swap.1
@@ -357,7 +353,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     u32mod
     u32assert
     assertz
-    movup.5
+    movup.4
     swap.1
     u32divmod.4
     swap.1
@@ -370,22 +366,6 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     dup.1
     add
     u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.4
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -401,17 +381,14 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.44
-    dup.1
-    add
-    u32assert
+    dup.0
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movup.8
+    movup.2
     swap.1
     u32divmod.4
     swap.1
@@ -420,7 +397,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.40
+    push.28
     dup.1
     add
     u32assert
@@ -439,7 +416,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.36
+    push.24
     dup.1
     add
     u32assert
@@ -458,7 +435,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.32
+    push.20
     dup.1
     add
     u32assert
@@ -477,7 +454,26 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.64
+    push.16
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.4
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.32
     dup.1
     swap.1
     u32wrapping_add
@@ -488,12 +484,12 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::remove_asset
     trace.252
     nop
-    push.32
+    push.16
     dup.1
     swap.1
     u32wrapping_add
-    push.64
-    movup.2
+    push.32
+    dup.2
     swap.1
     u32wrapping_add
     movup.2
@@ -508,6 +504,8 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     trace.252
     nop
     drop
+    push.48
+    u32wrapping_add
     push.1048640
     u32divmod.4
     swap.1

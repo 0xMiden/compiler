@@ -4,7 +4,7 @@ use super::felt::Felt;
 use crate::felt;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[repr(C, align(32))]
+#[repr(C, align(16))]
 pub struct Word {
     pub inner: (Felt, Felt, Felt, Felt),
 }

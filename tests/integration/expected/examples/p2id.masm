@@ -351,7 +351,7 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.5
+        push.4
         movup.3
         swap.1
         u32shl
@@ -449,11 +449,11 @@ export.miden:base/note-script@1.0.0#note-script
                 exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
                 trace.252
                 nop
-                push.32
+                push.16
                 movup.3
                 swap.1
                 u32wrapping_add
-                push.4294967264
+                push.4294967280
                 movup.3
                 swap.1
                 u32wrapping_add
@@ -543,7 +543,7 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        push.32
+        push.16
         push.24
         dup.2
         swap.1
@@ -1186,7 +1186,7 @@ proc.miden_base_sys::bindings::note::get_assets
     nop
     push.1048680
     u32wrapping_add
-    push.32
+    push.16
     push.8
     dup.3
     swap.1

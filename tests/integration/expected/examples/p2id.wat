@@ -137,7 +137,7 @@
         call $miden_base_sys::bindings::note::get_assets
         local.get 0
         i32.load offset=20
-        i32.const 5
+        i32.const 4
         i32.shl
         local.set 2
         local.get 0
@@ -162,11 +162,11 @@
             f32.load offset=12
             call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
             local.get 2
-            i32.const -32
+            i32.const -16
             i32.add
             local.set 2
             local.get 5
-            i32.const 32
+            i32.const 16
             i32.add
             local.set 5
             br 0 (;@3;)
@@ -181,8 +181,8 @@
         local.get 0
         i32.const 24
         i32.add
-        i32.const 32
-        i32.const 32
+        i32.const 16
+        i32.const 16
         call $alloc::raw_vec::RawVecInner<A>::deallocate
         local.get 0
         i32.const 4
@@ -380,8 +380,8 @@
       local.get 1
       i32.const 8
       i32.add
-      i32.const 32
-      i32.const 32
+      i32.const 16
+      i32.const 16
       global.get $GOT.data.internal.__memory_base
       i32.const 1048680
       i32.add
