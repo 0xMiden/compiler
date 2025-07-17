@@ -5,6 +5,7 @@ use midenc_hir::{
 
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 /// Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
+/// (see __stack_pointer global variable value in Wasm).
 const DEFAULT_RESERVATION: u32 = 16;
 
 pub struct LinkInfo {
@@ -74,7 +75,10 @@ pub struct Linker {
 
 impl Default for Linker {
     fn default() -> Self {
-        Self::new(DEFAULT_RESERVATION, DEFAULT_PAGE_SIZE)
+        // We start our reserved memory from the next page after the rustc reserved for the
+        // Rust stack to avoid overlapping.
+        let reserved_memory_pages = DEFAULT_RESERVATION + 1;
+        Self::new(reserved_memory_pages, DEFAULT_PAGE_SIZE)
     }
 }
 

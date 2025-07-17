@@ -21,7 +21,7 @@ export.send-asset
 end
 
 export.init
-    push.1114112
+    push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
@@ -38,10 +38,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.262160
+    mem_store.278528
     push.0
     u32assert
-    mem_store.262161
+    mem_store.278529
 end
 
 # mod miden:basic-wallet/basic-wallet@1.0.0::basic_wallet
@@ -177,7 +177,7 @@ proc.basic_wallet::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
-    push.1048640
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -187,7 +187,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
     push.32
     u32wrapping_sub
-    push.1048640
+    push.1114112
     dup.1
     swap.1
     u32divmod.4
@@ -288,7 +288,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
     push.32
     u32wrapping_add
-    push.1048640
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -299,7 +299,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
 end
 
 export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
-    push.1048640
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -309,7 +309,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     nop
     push.48
     u32wrapping_sub
-    push.1048640
+    push.1114112
     dup.1
     swap.1
     u32divmod.4
@@ -506,7 +506,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     drop
     push.48
     u32wrapping_add
-    push.1048640
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -517,7 +517,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048644
+    push.1114116
     u32divmod.4
     swap.1
     trace.240
@@ -546,7 +546,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1048644
+        push.1114116
         u32divmod.4
         swap.1
         trace.240
