@@ -41,7 +41,10 @@ end
 #
 # This must be called before any other heap intrinsics are called. This is checked by each intrinsic
 export.heap_init # [heap_base]
-    dup.0 push.0 swap.1 push.MAGIC # [MAGIC, heap_base, heap_size, heap_top]
+    dup.0 # [heap_base, heap_base]
+    push.0 # [0, heap_base, heap_base]
+    swap.1 # [heap_base, 0, heap_base]
+    push.MAGIC # [MAGIC, heap_base, heap_size(0), heap_top(heap_base)]
     mem_storew.HEAP_INFO_ADDR
     dropw
 end
