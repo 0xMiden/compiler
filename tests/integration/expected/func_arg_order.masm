@@ -10,7 +10,7 @@ export.init
     mem_store.262144
 end
 
-# mod root_ns:root@1.0.0::arg_order
+# mod root_ns:root@1.0.0::func_arg_order
 
 export.entrypoint
     push.1048576
@@ -202,7 +202,7 @@ export.entrypoint
     dup.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::arg_order::intrinsic
+    exec.::root_ns:root@1.0.0::func_arg_order::intrinsic
     trace.252
     nop
     push.64

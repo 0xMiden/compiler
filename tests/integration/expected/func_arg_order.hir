@@ -1,15 +1,15 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @arg_order {
+    builtin.module public @func_arg_order {
         public builtin.function @entrypoint(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt) -> felt {
         ^block4(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt):
-            v10 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v10 = builtin.global_symbol @root_ns:root@1.0.0/func_arg_order/__stack_pointer : ptr<byte, u8>
             v11 = hir.bitcast v10 : ptr<byte, i32>;
             v12 = hir.load v11 : i32;
             v15 = arith.constant -32 : i32;
             v13 = arith.constant 96 : i32;
             v14 = arith.sub v12, v13 : i32 #[overflow = wrapping];
             v16 = arith.band v14, v15 : i32;
-            v17 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v17 = builtin.global_symbol @root_ns:root@1.0.0/func_arg_order/__stack_pointer : ptr<byte, u8>
             v18 = hir.bitcast v17 : ptr<byte, i32>;
             hir.store v18, v16;
             v20 = arith.constant 44 : u32;
@@ -84,7 +84,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.assert_eq v70, v92;
             v95 = arith.constant 64 : i32;
             v74 = arith.add v16, v95 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/arg_order/intrinsic(v16, v74)
+            hir.exec @root_ns:root@1.0.0/func_arg_order/intrinsic(v16, v74)
             v76 = arith.constant 64 : u32;
             v75 = hir.bitcast v16 : u32;
             v77 = arith.add v75, v76 : u32 #[overflow = checked];
@@ -93,7 +93,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.assertz v79 #[code = 250];
             v80 = hir.int_to_ptr v77 : ptr<byte, felt>;
             v81 = hir.load v80 : felt;
-            v82 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v82 = builtin.global_symbol @root_ns:root@1.0.0/func_arg_order/__stack_pointer : ptr<byte, u8>
             v83 = hir.bitcast v82 : ptr<byte, i32>;
             hir.store v83, v12;
             builtin.ret v81;
@@ -101,10 +101,10 @@ builtin.component root_ns:root@1.0.0 {
 
         public builtin.function @intrinsic(v84: i32, v85: i32) {
         ^block6(v84: i32, v85: i32):
-            v105 = arith.constant 1048544 : felt;
+            v105 = arith.constant 1048480 : felt;
             v86 = hir.bitcast v84 : felt;
             hir.assert_eq v86, v105;
-            v104 = arith.constant 1048480 : felt;
+            v104 = arith.constant 1048544 : felt;
             v89 = hir.bitcast v85 : felt;
             hir.assert_eq v89, v104;
             builtin.ret ;

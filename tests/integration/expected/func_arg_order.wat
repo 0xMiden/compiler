@@ -1,4 +1,4 @@
-(module $arg_order.wasm
+(module $func_arg_order.wasm
   (type (;0;) (func (param i32) (result f32)))
   (type (;1;) (func (param f32 f32)))
   (type (;2;) (func (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
@@ -72,12 +72,12 @@
   (func $intrinsic (;3;) (type 3) (param i32 i32)
     local.get 0
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    i32.const 1048544
+    i32.const 1048480
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
     call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
     local.get 1
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-    i32.const 1048480
+    i32.const 1048544
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
     call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
   )

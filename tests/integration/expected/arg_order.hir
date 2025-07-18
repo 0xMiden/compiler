@@ -84,7 +84,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.assert_eq v70, v92;
             v95 = arith.constant 64 : i32;
             v74 = arith.add v16, v95 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/arg_order/intrinsic(v74, v16)
+            hir.exec @root_ns:root@1.0.0/arg_order/intrinsic(v16, v74)
             v76 = arith.constant 64 : u32;
             v75 = hir.bitcast v16 : u32;
             v77 = arith.add v75, v76 : u32 #[overflow = checked];
@@ -101,10 +101,10 @@ builtin.component root_ns:root@1.0.0 {
 
         public builtin.function @intrinsic(v84: i32, v85: i32) {
         ^block6(v84: i32, v85: i32):
-            v105 = arith.constant 1048544 : felt;
+            v105 = arith.constant 1048480 : felt;
             v86 = hir.bitcast v84 : felt;
             hir.assert_eq v86, v105;
-            v104 = arith.constant 1048480 : felt;
+            v104 = arith.constant 1048544 : felt;
             v89 = hir.bitcast v85 : felt;
             hir.assert_eq v89, v104;
             builtin.ret ;
