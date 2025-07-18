@@ -271,7 +271,6 @@ pub trait HirLowering: Op {
                 }
             }
 
-            dbg!("exit");
             log::trace!(target: "codegen", "stack after manual scheduling: {:#?}", &emitter.stack);
             return Ok(());
         }
