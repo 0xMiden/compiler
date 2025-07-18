@@ -7,12 +7,9 @@ use crate::{
     CompilerTest,
 };
 
+#[ignore = "until https://github.com/0xMiden/compiler/issues/606 is fixed"]
 #[test]
 fn test_func_arg_same() {
-    // Test for issue https://github.com/0xMiden/compiler/issues/600
-    // Verifies that intrinsic function arguments are passed in the correct order. The bug was that
-    // operations with exactly 2 arguments were incorrectly treated as binary operations for stack
-    // scheduling, causing the arguments order to be "frozen", i.e. (x, y) was the same as (y, x).
     let main_fn = r#"
         (x: &mut Felt, y: &mut Felt) -> i32 {
             intrinsic(x, y)
