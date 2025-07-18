@@ -12,41 +12,40 @@
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;3;) (type 0) (param i32) (result f32)
-    (local i32 i32 i32 f32)
+    (local i32 i32 f32)
     global.get $__stack_pointer
-    local.tee 1
-    i32.const 32
+    i32.const 16
     i32.sub
-    i32.const -32
-    i32.and
-    local.tee 2
+    local.tee 1
     global.set $__stack_pointer
     local.get 0
     i32.load offset=4
     i32.const 2
     i32.shr_u
-    local.tee 3
+    local.tee 2
     i32.const 3
     i32.and
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
     i32.const 0
     call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
     call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
-    local.get 3
+    local.get 2
     local.get 0
     i32.load offset=8
-    local.get 2
+    local.get 1
     call $miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
-    local.get 2
+    local.get 1
     f32.load offset=12
-    local.set 4
+    local.set 3
     local.get 0
     i32.const 4
     i32.const 4
     call $alloc::raw_vec::RawVecInner<A>::deallocate
     local.get 1
+    i32.const 16
+    i32.add
     global.set $__stack_pointer
-    local.get 4
+    local.get 3
   )
   (func $__rustc::__rust_dealloc (;4;) (type 2) (param i32 i32 i32))
   (func $alloc::raw_vec::RawVecInner<A>::deallocate (;5;) (type 2) (param i32 i32 i32)
