@@ -7,9 +7,9 @@ use crate::{
     CompilerTest,
 };
 
-#[ignore = "until https://github.com/0xMiden/compiler/issues/606 is fixed"]
 #[test]
 fn test_func_arg_same() {
+    // This test reproduces the https://github.com/0xMiden/compiler/issues/606
     let main_fn = r#"
         (x: &mut Felt, y: &mut Felt) -> i32 {
             intrinsic(x, y)
