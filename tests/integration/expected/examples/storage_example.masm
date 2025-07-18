@@ -290,12 +290,8 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.128
-    dup.2
-    swap.1
+    push.64
     u32wrapping_sub
-    u32and
     push.1048640
     dup.1
     swap.1
@@ -321,7 +317,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     u32mod
     u32assert
     assertz
-    movup.10
+    movup.9
     swap.1
     u32divmod.4
     swap.1
@@ -340,7 +336,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     u32mod
     u32assert
     assertz
-    movup.9
+    movup.8
     swap.1
     u32divmod.4
     swap.1
@@ -353,22 +349,6 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     dup.1
     add
     u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.8
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -384,8 +364,24 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.6
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.0
-    push.32
+    push.16
     dup.2
     swap.1
     u32wrapping_add
@@ -394,7 +390,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_item
     trace.252
     nop
-    push.44
+    push.28
     dup.1
     add
     u32assert
@@ -411,7 +407,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.40
+    push.24
     dup.2
     add
     u32assert
@@ -428,7 +424,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.36
+    push.20
     dup.3
     add
     u32assert
@@ -445,7 +441,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.32
+    push.16
     dup.4
     add
     u32assert
@@ -464,25 +460,26 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     nop
     push.0
     push.1
-    movup.8
+    movup.7
     movup.3
     eq
     neq
     neq
     if.true
-        dropw
+        drop
+        drop
+        drop
         movdn.4
         dropw
     else
         push.0
         push.1
-        movup.7
+        movup.6
         movup.3
         eq
         neq
         neq
         if.true
-            drop
             drop
             drop
             movdn.3
@@ -492,13 +489,12 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
         else
             push.0
             push.1
-            movup.6
+            movup.5
             movup.3
             eq
             neq
             neq
             if.true
-                drop
                 drop
                 movdn.2
                 drop
@@ -506,39 +502,38 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
             else
                 push.0
                 push.1
-                movup.5
+                movup.4
                 movup.3
                 eq
                 neq
                 neq
                 if.true
-                    drop
                     swap.1
                     drop
                 else
-                    push.96
+                    push.48
                     dup.1
                     swap.1
                     u32wrapping_add
-                    movup.3
+                    movup.2
                     swap.1
                     trace.240
                     nop
                     exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
                     trace.252
                     nop
-                    push.96
+                    push.48
                     dup.1
                     swap.1
                     u32wrapping_add
                     push.1
-                    push.32
+                    push.16
                     dup.3
                     swap.1
                     u32wrapping_add
-                    movup.2
-                    swap.3
-                    movdn.2
+                    dup.3
+                    swap.2
+                    swap.1
                     trace.240
                     nop
                     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::set_map_item
@@ -548,6 +543,8 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
             end
         end
     end
+    push.64
+    u32wrapping_add
     push.1048640
     u32divmod.4
     swap.1
@@ -567,12 +564,8 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.64
-    dup.2
-    swap.1
+    push.32
     u32wrapping_sub
-    u32and
     push.1048640
     dup.1
     swap.1
@@ -598,7 +591,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     u32mod
     u32assert
     assertz
-    movup.6
+    movup.5
     swap.1
     u32divmod.4
     swap.1
@@ -617,7 +610,7 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     u32mod
     u32assert
     assertz
-    movup.5
+    movup.4
     swap.1
     u32divmod.4
     swap.1
@@ -630,22 +623,6 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     dup.1
     add
     u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.4
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -661,8 +638,24 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1
-    push.32
+    push.16
     dup.2
     swap.1
     u32wrapping_add
@@ -674,8 +667,8 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::get_map_item
     trace.252
     nop
-    push.44
-    swap.1
+    push.28
+    dup.1
     add
     u32assert
     push.4
@@ -691,9 +684,11 @@ export.miden:storage-example/foo@1.0.0#get-asset-qty
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.1048640
+    push.32
     movup.2
     swap.1
+    u32wrapping_add
+    push.1048640
     u32divmod.4
     swap.1
     trace.240

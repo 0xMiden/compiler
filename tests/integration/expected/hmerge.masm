@@ -21,12 +21,8 @@ export.entrypoint
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.64
-    dup.2
-    swap.1
+    push.48
     u32wrapping_sub
-    u32and
     push.1048576
     dup.1
     swap.1
@@ -37,26 +33,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.60
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.10
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.56
+    push.28
     dup.1
     add
     u32assert
@@ -75,7 +52,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.52
+    push.24
     dup.1
     add
     u32assert
@@ -94,7 +71,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.48
+    push.20
     dup.1
     add
     u32assert
@@ -113,7 +90,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.44
+    push.16
     dup.1
     add
     u32assert
@@ -132,7 +109,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.40
+    push.12
     dup.1
     add
     u32assert
@@ -151,7 +128,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.36
+    push.8
     dup.1
     add
     u32assert
@@ -170,7 +147,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.32
+    push.4
     dup.1
     add
     u32assert
@@ -189,17 +166,36 @@ export.entrypoint
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.32
     dup.1
     swap.1
     u32wrapping_add
     dup.1
-    swap.1
     trace.240
     nop
     exec.::intrinsics::crypto::hmerge
     trace.252
     nop
+    push.32
+    dup.1
+    add
+    u32assert
     push.4
     dup.1
     swap.1
@@ -213,9 +209,11 @@ export.entrypoint
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.1048576
+    push.48
     movup.2
     swap.1
+    u32wrapping_add
+    push.1048576
     u32divmod.4
     swap.1
     trace.240
