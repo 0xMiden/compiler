@@ -1498,20 +1498,16 @@ proc.alloc::alloc::Global::alloc_impl
         swap.1
         neq
         if.true
+            swap.1
             dup.2
-            swap.1
-            swap.2
-            swap.1
             trace.240
             nop
             exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
+            swap.1
             dup.2
-            swap.1
-            swap.2
-            swap.1
             trace.240
             nop
             exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc

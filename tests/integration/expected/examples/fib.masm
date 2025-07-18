@@ -31,7 +31,6 @@ export.entrypoint
             drop
             push.3735929054
             dup.0
-            swap.1
         else
             push.4294967295
             movup.3
