@@ -387,6 +387,24 @@ impl OperandStack {
         self.stack.len()
     }
 
+    /// Returns the Some(operand) at the given index, without consuming it.
+    /// If the index is out of bounds, returns None.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&Operand> {
+        let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
+        assert!(
+            effective_len <= 16,
+            "invalid operand stack index ({}): requires access to more than 16 elements, which is \
+             not supported in Miden",
+            index
+        );
+        let len = self.stack.len();
+        if index >= len {
+            return None;
+        }
+        self.stack.get(len - index - 1)
+    }
+
     /// Returns the operand on top of the stack, without consuming it
     #[inline]
     pub fn peek(&self) -> Option<&Operand> {

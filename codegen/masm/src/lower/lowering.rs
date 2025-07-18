@@ -87,7 +87,8 @@ pub trait HirLowering: Op {
             log::trace!(target: "codegen", "  b = {rhs} = {rhs_constraint:?}");
             log::trace!(target: "codegen", "  a = {lhs} = {lhs_constraint:?}");
             let current_rhs = emitter.stack[0].as_value();
-            let current_lhs = emitter.stack[1].as_value();
+            // Handle the case with only one value on the stack (think `b = a + a`)
+            let current_lhs = emitter.stack.get(1).and_then(|o| o.as_value());
             log::trace!(target: "codegen", "  stack[0]  = {current_rhs:?}");
             log::trace!(target: "codegen", "  stack[1]  = {current_lhs:?}");
             if current_rhs == Some(rhs) && current_lhs == Some(lhs) {
