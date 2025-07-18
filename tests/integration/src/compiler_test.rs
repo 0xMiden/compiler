@@ -597,6 +597,8 @@ impl CompilerTestBuilder {
                 extern crate miden_stdlib_sys;
                 use miden_stdlib_sys::*;
 
+                extern crate alloc;
+
                 #[no_mangle]
                 #[allow(improper_ctypes_definitions)]
                 pub extern "C" fn entrypoint{}

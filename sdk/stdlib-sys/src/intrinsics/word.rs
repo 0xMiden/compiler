@@ -14,6 +14,12 @@ impl Word {
             inner: (word[0], word[1], word[2], word[3]),
         }
     }
+
+    pub(crate) fn reverse(&self) -> Word {
+        Self {
+            inner: (self.inner.3, self.inner.2, self.inner.1, self.inner.0),
+        }
+    }
 }
 impl From<[Felt; 4]> for Word {
     fn from(word: [Felt; 4]) -> Self {

@@ -131,6 +131,8 @@ pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, 
         Ok(SymbolPath::from_masm_module_id(stdlib::crypto::dsa::rpo_falcon::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-blake3") {
         Ok(SymbolPath::from_masm_module_id(stdlib::crypto::hashes::blake3::MODULE_ID))
+    } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-rpo") {
+        Ok(SymbolPath::from_masm_module_id(stdlib::crypto::hashes::rpo::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import") {
         panic!("unrecovered intrinsics or Miden SDK import module ID: {wasm_module_id}")
     } else {

@@ -1,6 +1,8 @@
 #![no_std]
 #![deny(warnings)]
 
+extern crate alloc;
+
 mod intrinsics;
 mod stdlib;
 #[cfg(feature = "wit")]
