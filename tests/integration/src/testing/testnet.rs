@@ -14,15 +14,12 @@ use miden_client::{
     rpc::{Endpoint, NodeRpcClient, TonicRpcClient},
     sync::SyncSummary,
     transaction::{TransactionId, TransactionRequestBuilder},
-    Client, Felt,
+    Client, Felt, Word,
 };
-use miden_core::{utils::Deserializable, FieldElement, Word};
-use miden_objects::{
-    account::{
-        AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
-        InitStorageData,
-    },
-    //transaction::TransactionScript,
+use miden_core::FieldElement;
+use miden_objects::account::{
+    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+    InitStorageData,
 };
 use rand::RngCore;
 
@@ -166,8 +163,8 @@ impl Scenario {
     async fn get_client(&self) -> Client {
         let keystore_dir = self.dir.child("keystore");
         ClientBuilder::new()
-            .with_rpc(self.rpc_client.clone())
-            .with_filesystem_keystore(keystore_dir.as_path().to_str().unwrap())
+            .rpc(self.rpc_client.clone())
+            .filesystem_keystore(keystore_dir.as_path().to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
@@ -267,14 +264,13 @@ pub struct ScenarioNoteBuilder<'a> {
 impl<'a> ScenarioNoteBuilder<'a> {
     fn new(
         scenario: &'a mut Scenario,
-        note: Arc<miden_mast_package::Package>,
+        _note: Arc<miden_mast_package::Package>,
         sender: &'static str,
         recipient: &'static str,
     ) -> Self {
         Self {
             scenario,
             params: CreateNoteParams {
-                note,
                 note_ty: NoteType::Public,
                 inputs: Default::default(),
                 assets: Default::default(),
@@ -323,7 +319,6 @@ struct CreateAccountParams {
 }
 
 struct CreateNoteParams {
-    note: Arc<miden_mast_package::Package>,
     note_ty: NoteType,
     inputs: Vec<Felt>,
     assets: Vec<Asset>,
@@ -392,11 +387,10 @@ async fn create_account(
     let account_component = match account_package.account_component_metadata_bytes.as_deref() {
         None => todo!("unsupported account package: no account component metadata present"),
         Some(bytes) => {
+            use miden_client::utils::Deserializable;
             let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let template = AccountComponentTemplate::new(
-                metadata,
-                account_package.unwrap_library().as_ref().clone(),
-            );
+            let library = account_package.unwrap_library().as_ref().clone();
+            let template = AccountComponentTemplate::new(metadata, library);
             AccountComponent::from_template(&template, init_storage_data)
                 .unwrap()
                 .with_supported_type(AccountType::RegularAccountImmutableCode)
@@ -407,13 +401,9 @@ async fn create_account(
     let mut init_seed = [0_u8; 32];
     client.rng().fill_bytes(&mut init_seed);
 
-    // Anchor block of the account
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
-
     // Build the new `Account` with the component
     let key_pair = miden_client::crypto::SecretKey::with_rng(client.rng());
     let (account, seed) = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component.clone())
@@ -432,20 +422,13 @@ async fn create_account(
 
 /// Build a note
 async fn create_note(client: &mut Client, scenario: &Scenario, params: &CreateNoteParams) -> Note {
-    let note_program = params.note.unwrap_program();
-    let note_script = miden_client::note::NoteScript::from_parts(
-        note_program.mast_forest().clone(),
-        note_program.entrypoint(),
-    );
+    use miden_client::note::WellKnownNote;
+    let note_script = WellKnownNote::P2ID.script();
 
     let sender = scenario.accounts[params.sender];
     let recipient = scenario.accounts[params.recipient];
 
-    let tag = miden_client::note::NoteTag::from_account_id(
-        recipient,
-        miden_client::note::NoteExecutionMode::Local,
-    )
-    .unwrap();
+    let tag = miden_client::note::NoteTag::from_account_id(recipient);
     let inputs = miden_client::note::NoteInputs::new(params.inputs.clone()).unwrap();
     let serial_num = client.rng().draw_word();
     let vault = miden_client::note::NoteAssets::new(params.assets.clone()).unwrap();
@@ -470,10 +453,8 @@ async fn submit_transaction(
         .into_iter()
         .map(miden_client::transaction::OutputNote::Full);
     // Build a transaction request
-    let tx_request = TransactionRequestBuilder::new()
-        .with_own_output_notes(output_notes)
-        .build()
-        .unwrap();
+    let tx_request =
+        TransactionRequestBuilder::new().own_output_notes(output_notes).build().unwrap();
 
     // Execute the transaction locally
     let target_account = scenario.accounts[account];
