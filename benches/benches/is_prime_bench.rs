@@ -31,7 +31,7 @@ fn bench_is_prime_execution(c: &mut Criterion) {
 
     // Test with different input values
     for input in [7, 29, 97, 997, 9973].iter() {
-        group.bench_with_input(format!("is_prime({})", input), input, |b, &input| {
+        group.bench_with_input(format!("is_prime({input})"), input, |b, &input| {
             b.iter(|| {
                 runner
                     .execute_masm(black_box(&masm_path), black_box(&[input as u64]))
@@ -51,13 +51,13 @@ fn bench_is_prime_full_pipeline(c: &mut Criterion) {
 
     // Test full compilation + execution pipeline
     for input in [29, 97, 997].iter() {
-        group.bench_with_input(format!("full_pipeline_is_prime({})", input), input, |b, &input| {
+        group.bench_with_input(format!("full_pipeline_is_prime({input})"), input, |b, &input| {
             b.iter(|| {
                 runner
                     .run_benchmark(
                         black_box(&source_path),
                         black_box(&[input as u64]),
-                        &format!("is_prime({})", input),
+                        &format!("is_prime({input})"),
                     )
                     .expect("Benchmark failed")
             })

@@ -54,9 +54,9 @@ fn main() -> Result<()> {
 
     println!("Is Prime Benchmark");
     println!("==================");
-    println!("Input number: {}", input_number);
+    println!("Input number: {input_number}");
     println!("Source file: {}", source_path.display());
-    println!("Iterations: {}", iterations);
+    println!("Iterations: {iterations}");
     println!();
 
     let runner = BenchmarkRunner::new()?;
@@ -67,13 +67,13 @@ fn main() -> Result<()> {
 
     for i in 1..=iterations {
         if iterations > 1 {
-            println!("--- Iteration {} ---", i);
+            println!("--- Iteration {i} ---");
         }
 
         let stats = runner.run_benchmark(
             &source_path,
             &[input_number],
-            &format!("is_prime({})", input_number),
+            &format!("is_prime({input_number})"),
         )?;
 
         total_cycles += stats.vm_cycles;
@@ -87,13 +87,13 @@ fn main() -> Result<()> {
 
     if iterations > 1 {
         println!("===============================================================================");
-        println!("Average results over {} iterations:", iterations);
+        println!("Average results over {iterations} iterations:");
         println!("-------------------------------------------------------------------------------");
         println!("Average VM cycles: {}", total_cycles / iterations);
         println!("Average compilation time: {} ms", total_compile_time / iterations as u128);
         println!("Average execution time: {} ms", total_execution_time / iterations as u128);
-        println!("Total compilation time: {} ms", total_compile_time);
-        println!("Total execution time: {} ms", total_execution_time);
+        println!("Total compilation time: {total_compile_time} ms");
+        println!("Total execution time: {total_execution_time} ms");
         println!("===============================================================================");
     }
 

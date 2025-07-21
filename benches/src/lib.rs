@@ -44,9 +44,9 @@ impl ExecutionStats {
             if line.contains("VM cycles:") {
                 // Look for pattern like "VM cycles: 805 extended to 1024 steps"
                 if let Some(cycles_part) = line.split("VM cycles:").nth(1) {
-                    if let Some(cycles_str) = cycles_part.trim().split_whitespace().next() {
+                    if let Some(cycles_str) = cycles_part.split_whitespace().next() {
                         return cycles_str.parse().with_context(|| {
-                            format!("Failed to parse VM cycles from: {}", cycles_str)
+                            format!("Failed to parse VM cycles from: {cycles_str}")
                         });
                     }
                 }
@@ -58,7 +58,7 @@ impl ExecutionStats {
     /// Print formatted execution statistics
     pub fn print(&self, program_name: &str) {
         println!("===============================================================================");
-        println!("Benchmark results for: {}", program_name);
+        println!("Benchmark results for: {program_name}");
         println!("-------------------------------------------------------------------------------");
         println!(
             "VM cycles: {} extended to {} steps",
@@ -124,7 +124,7 @@ impl BenchmarkRunner {
 
         // Convert hyphens to underscores for the MASP filename
         let masp_filename = project_name.replace('-', "_");
-        let masp_path = target_dir.join(format!("{}.masp", masp_filename));
+        let masp_path = target_dir.join(format!("{masp_filename}.masp"));
 
         if !masp_path.exists() {
             return Err(anyhow::anyhow!("Expected MASP file not found: {}", masp_path.display()));
@@ -163,7 +163,7 @@ stack = [{}]"#,
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         println!("Program executed successfully");
-        println!("{}", stdout);
+        println!("{stdout}");
 
         // Clean up inputs file
         let _ = std::fs::remove_file(&inputs_file);
@@ -178,7 +178,7 @@ stack = [{}]"#,
         inputs: &[u64],
         program_name: &str,
     ) -> Result<ExecutionStats> {
-        println!("Running benchmark for: {}", program_name);
+        println!("Running benchmark for: {program_name}");
 
         let compile_start = Instant::now();
         let masm_path = self.compile_rust_to_masm(source_path)?;
