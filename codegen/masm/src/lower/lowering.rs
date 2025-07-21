@@ -953,8 +953,9 @@ impl HirLowering for arith::Max {
 impl HirLowering for hir::PtrToInt {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result_ty = self.result().ty().clone();
-        emitter.stack.pop().expect("operand stack is empty");
-        emitter.stack.push(result_ty);
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.push(result_ty);
         Ok(())
     }
 }
