@@ -28,10 +28,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.278528
+    mem_store.278536
     push.0
     u32assert
-    mem_store.278529
+    mem_store.278537
 end
 
 # mod miden:base/note-script@1.0.0::cross_ctx_note_word
@@ -458,7 +458,7 @@ proc.cross_ctx_note_word::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:base/note-script@1.0.0#note-script
-    push.1114112
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -468,7 +468,7 @@ export.miden:base/note-script@1.0.0#note-script
     nop
     push.32
     u32wrapping_sub
-    push.1114112
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1092,7 +1092,7 @@ export.miden:base/note-script@1.0.0#note-script
         assert_eq
         push.32
         u32wrapping_add
-        push.1114112
+        push.1114144
         u32divmod.4
         swap.1
         trace.240
@@ -1108,7 +1108,7 @@ export.miden:base/note-script@1.0.0#note-script
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -1137,7 +1137,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1114116
+        push.1114148
         u32divmod.4
         swap.1
         trace.240

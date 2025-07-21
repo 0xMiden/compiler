@@ -18,13 +18,13 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.278528
+    mem_store.278536
     push.1048585
     u32assert
-    mem_store.278529
+    mem_store.278537
     push.1048592
     u32assert
-    mem_store.278530
+    mem_store.278538
 end
 
 # mod root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4

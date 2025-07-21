@@ -419,10 +419,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.278528
+    mem_store.278536
     push.0
     u32assert
-    mem_store.278529
+    mem_store.278537
 end
 
 # mod miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word
@@ -436,7 +436,7 @@ proc.cross_ctx_account_word::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-word
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -539,7 +539,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-word
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -652,7 +652,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-felt
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -711,7 +711,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -792,7 +792,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -1004,7 +1004,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
 end
 
 export.miden:cross-ctx-account-word/foo@1.0.0#process-nested
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -1085,7 +1085,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-nested
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1114116
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -1114,7 +1114,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1114116
+        push.1114148
         u32divmod.4
         swap.1
         trace.240
