@@ -326,7 +326,7 @@ pub(super) fn visit_block<A>(
                     let arg = arg.borrow().as_value_ref();
                     let input = get_lattice_element_for::<A>(current_point, arg, solver);
                     let change_result = arg_lattice.join(input.lattice());
-                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {:#?}: {change_result}", arg_lattice);
+                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {arg_lattice:#?}: {change_result}");
                 }
             }
 

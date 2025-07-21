@@ -394,9 +394,8 @@ impl OperandStack {
         let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
         assert!(
             effective_len <= 16,
-            "invalid operand stack index ({}): requires access to more than 16 elements, which is \
-             not supported in Miden",
-            index
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
         );
         let len = self.stack.len();
         if index >= len {
@@ -436,7 +435,7 @@ impl OperandStack {
     #[track_caller]
     pub fn dropn(&mut self, n: usize) {
         let len = self.stack.len();
-        assert!(n <= len, "unable to drop {} operands, operand stack only has {}", n, len);
+        assert!(n <= len, "unable to drop {n} operands, operand stack only has {len}");
         self.stack.truncate(len - n);
     }
 
@@ -458,12 +457,7 @@ impl OperandStack {
     pub fn swap(&mut self, n: usize) {
         assert_ne!(n, 0, "invalid swap, index must be in the range 1..=15");
         let len = self.stack.len();
-        assert!(
-            n < len,
-            "invalid operand stack index ({}), only {} operands are available",
-            n,
-            len
-        );
+        assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
         let a = len - 1;
         let b = a - n;
         self.stack.swap(a, b);
@@ -477,12 +471,7 @@ impl OperandStack {
     pub fn movup(&mut self, n: usize) {
         assert_ne!(n, 0, "invalid move, index must be in the range 1..=15");
         let len = self.stack.len();
-        assert!(
-            n < len,
-            "invalid operand stack index ({}), only {} operands are available",
-            n,
-            len
-        );
+        assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
         // Pick the midpoint by counting backwards from the end
         let mid = len - (n + 1);
         // Split the stack, and rotate the half that
@@ -499,12 +488,7 @@ impl OperandStack {
     pub fn movdn(&mut self, n: usize) {
         assert_ne!(n, 0, "invalid move, index must be in the range 1..=15");
         let len = self.stack.len();
-        assert!(
-            n < len,
-            "invalid operand stack index ({}), only {} operands are available",
-            n,
-            len
-        );
+        assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
         // Split the stack so that the desired position is in the top half
         let mid = len - (n + 1);
         let (_, r) = self.stack.split_at_mut(mid);
@@ -527,16 +511,13 @@ impl Index<usize> for OperandStack {
         let len = self.stack.len();
         assert!(
             index < len,
-            "invalid operand stack index ({}): only {} operands are available",
-            index,
-            len
+            "invalid operand stack index ({index}): only {len} operands are available"
         );
         let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
         assert!(
             effective_len <= 16,
-            "invalid operand stack index ({}): requires access to more than 16 elements, which is \
-             not supported in Miden",
-            index
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
         );
         &self.stack[len - index - 1]
     }
@@ -547,16 +528,13 @@ impl IndexMut<usize> for OperandStack {
         let len = self.stack.len();
         assert!(
             index < len,
-            "invalid operand stack index ({}): only {} elements are available",
-            index,
-            len
+            "invalid operand stack index ({index}): only {len} elements are available"
         );
         let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
         assert!(
             effective_len <= 16,
-            "invalid operand stack index ({}): requires access to more than 16 elements, which is \
-             not supported in Miden",
-            index
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
         );
         &mut self.stack[len - index - 1]
     }

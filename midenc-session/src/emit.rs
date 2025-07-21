@@ -221,7 +221,7 @@ impl Emit for miden_assembly::ast::Module {
         _session: &Session,
     ) -> anyhow::Result<()> {
         assert_eq!(mode, OutputMode::Text, "masm syntax trees do not support binary mode");
-        writer.write_fmt(format_args!("{}\n", self))
+        writer.write_fmt(format_args!("{self}\n"))
     }
 }
 

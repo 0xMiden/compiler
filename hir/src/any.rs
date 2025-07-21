@@ -101,6 +101,7 @@ where
     From: ?Sized + Is<Obj>,
     Obj: ?Sized,
 {
+    #[allow(dead_code)]
     fn downcast_from(from: Box<From>) -> Result<Box<Self>, Box<Obj>>;
 }
 impl<From, To, Obj> DowncastFrom<From, Obj> for To
@@ -119,8 +120,11 @@ where
 }
 
 pub trait Upcast<To: ?Sized>: TryUpcastRef<To> {
+    #[allow(dead_code)]
     fn upcast_ref(&self) -> &To;
+    #[allow(dead_code)]
     fn upcast_mut(&mut self) -> &mut To;
+    #[allow(dead_code)]
     fn upcast(self: Box<Self>) -> Box<To>;
 }
 impl<From, To> Upcast<To> for From
@@ -150,7 +154,9 @@ where
 {
     #[allow(unused)]
     fn is_of(&self) -> bool;
+    #[allow(dead_code)]
     fn try_upcast_ref(&self) -> Option<&To>;
+    #[allow(dead_code)]
     fn try_upcast_mut(&mut self) -> Option<&mut To>;
 }
 impl<From, To> TryUpcastRef<To> for From
@@ -179,6 +185,7 @@ where
     To: ?Sized,
     Obj: ?Sized,
 {
+    #[allow(dead_code)]
     #[inline(always)]
     fn try_upcast(self: Box<Self>) -> Result<Box<To>, Box<Obj>> {
         Err(self)

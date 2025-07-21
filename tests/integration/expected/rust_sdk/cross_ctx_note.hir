@@ -22,7 +22,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v5 = hir.bitcast v4 : ptr<byte, i32>;
             v6 = hir.load v5 : i32;
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/wit_bindgen_rt::run_ctors_once()
-            v7 = arith.constant 1048576 : i32;
+            v7 = arith.constant 1048604 : i32;
             v8 = arith.add v6, v7 : i32 #[overflow = wrapping];
             v9 = hir.bitcast v8 : u32;
             v10 = arith.constant 4 : u32;
@@ -90,7 +90,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x000000010000000100000001000000010000000100000001000000010000000b;
+        builtin.segment @1048576 = 0x0000000b00000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @note-script() {

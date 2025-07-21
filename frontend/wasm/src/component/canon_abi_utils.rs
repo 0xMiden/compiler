@@ -50,8 +50,7 @@ pub fn load<B: ?Sized + Builder>(
 
         _ => {
             return Err(WasmError::Unsupported(format!(
-                "Unsupported type in canonical ABI loading: {:?}",
-                ty
+                "Unsupported type in canonical ABI loading: {ty:?}"
             ))
             .into());
         }
@@ -111,8 +110,7 @@ pub fn store<B: ?Sized + Builder>(
 
         _ => {
             return Err(WasmError::Unsupported(format!(
-                "Unsupported type in canonical ABI storing: {:?}",
-                ty
+                "Unsupported type in canonical ABI storing: {ty:?}"
             ))
             .into());
         }

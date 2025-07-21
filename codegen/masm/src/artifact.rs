@@ -149,7 +149,7 @@ impl fmt::Display for MasmComponent {
                 continue;
             } else {
                 writeln!(f, "# mod {}\n", &module_name)?;
-                writeln!(f, "{}", module)?;
+                writeln!(f, "{module}")?;
             }
         }
         Ok(())
@@ -185,9 +185,7 @@ impl MasmComponent {
 
         log::debug!(
             target: "assembly",
-            "assembling executable with entrypoint '{}' (debug_mode={})",
-            entrypoint,
-            debug_mode
+            "assembling executable with entrypoint '{entrypoint}' (debug_mode={debug_mode})"
         );
         let mut assembler =
             Assembler::new(session.source_manager.clone()).with_debug_mode(debug_mode);
@@ -473,7 +471,7 @@ mod tests {
 
         // Verify padding is zeros
         for (i, felt) in result.iter().enumerate().skip(expected_felts) {
-            assert_eq!(*felt, miden_processor::Felt::ZERO, "Padding at index {} should be zero", i);
+            assert_eq!(*felt, miden_processor::Felt::ZERO, "Padding at index {i} should be zero");
         }
     }
 

@@ -38,7 +38,7 @@
     (func $miden:cross-ctx-account/foo@1.0.0#process-felt (;5;) (type 4) (param f32) (result f32)
       (local i32)
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048576
+      i32.const 1048600
       i32.add
       local.set 1
       call $wit_bindgen_rt::run_ctors_once
@@ -71,8 +71,9 @@
         i32.store8
       end
     )
-    (data $.data (;0;) (i32.const 1048576) "*\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00*\00\00\00")
   )
+  (alias export 1 "felt" (type (;2;)))
   (alias export 0 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
   (alias export 0 "add" (func (;1;)))
@@ -89,7 +90,6 @@
     )
   )
   (alias core export 1 "memory" (core memory (;0;)))
-  (alias export 1 "felt" (type (;2;)))
   (type (;3;) (func (param "input" 2) (result 2)))
   (alias core export 1 "miden:cross-ctx-account/foo@1.0.0#process-felt" (core func (;3;)))
   (func (;3;) (type 3) (canon lift (core func 3)))

@@ -521,9 +521,8 @@ impl CompilerTestBuilder {
             }}
 
             #[no_mangle]
-            pub extern "C" fn entrypoint{}
-            "#,
-            rust_source
+            pub extern "C" fn entrypoint{rust_source}
+            "#
         );
         let name = name.into();
         let module_name = Ident::with_empty_span(Symbol::intern(&name));
@@ -601,9 +600,8 @@ impl CompilerTestBuilder {
 
                 #[no_mangle]
                 #[allow(improper_ctypes_definitions)]
-                pub extern "C" fn entrypoint{}
-            "#,
-                    source
+                pub extern "C" fn entrypoint{source}
+            "#
                 )
                 .as_str(),
             )
@@ -675,9 +673,8 @@ use miden::*;
 extern crate alloc;
 use alloc::vec::Vec;
 
-{}
-"#,
-                    source
+{source}
+"#
                 )
                 .as_str(),
             )
@@ -1026,5 +1023,5 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
 
 fn hash_string(inputs: &str) -> String {
     let hash = <sha2::Sha256 as sha2::Digest>::digest(inputs.as_bytes());
-    format!("{:x}", hash)
+    format!("{hash:x}")
 }

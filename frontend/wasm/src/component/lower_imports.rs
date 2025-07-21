@@ -171,12 +171,12 @@ fn generate_lowering_with_transformation(
     // not the lowered signature with pointer parameter
     let import_func_sig = flatten_function_type(import_func_ty, CallConv::CanonLower)
         .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{}'", import_func_path)
+            format!("failed to flatten import function signature for '{import_func_path}'")
         })?;
 
     // Extract the actual result types from the import function type
     let flattened_results = flatten_types(&import_func_ty.results).wrap_err_with(|| {
-        format!("failed to flatten result types for import function '{}'", import_func_path)
+        format!("failed to flatten result types for import function '{import_func_path}'")
     })?;
 
     // Remove the pointer parameter that was added for the flattened signature
@@ -292,7 +292,7 @@ fn generate_direct_lowering(
 
     let import_func_sig = flatten_function_type(import_func_ty, CallConv::CanonLift)
         .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{}'", import_func_path)
+            format!("failed to flatten import function signature for '{import_func_path}'")
         })?;
     let import_func_ref = component_builder
         .define_function(import_func_path.name().into(), import_func_sig.clone())

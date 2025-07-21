@@ -52,7 +52,7 @@
       local.set 0
       call $wit_bindgen_rt::run_ctors_once
       local.get 0
-      i32.const 1048576
+      i32.const 1048604
       i32.add
       local.tee 0
       i32.load
@@ -90,7 +90,7 @@
         i32.store8
       end
     )
-    (data $.data (;0;) (i32.const 1048576) "\0b\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")
   )
   (alias export 2 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))

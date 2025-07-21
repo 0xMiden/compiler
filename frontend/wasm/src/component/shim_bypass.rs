@@ -17,7 +17,7 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
 
     // Check for table export named "$imports"
     let has_imports_table = module.module.exports.iter().any(|(name, _)| *name == "$imports");
-    log::trace!(target: "shim-bypass", "Has $imports table: {}", has_imports_table);
+    log::trace!(target: "shim-bypass", "Has $imports table: {has_imports_table}");
 
     // If it has the $imports table, it's likely a shim module
     if has_imports_table {
@@ -32,12 +32,8 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
 
         let is_shim = has_function_exports && has_few_imports;
         log::debug!(target: "shim-bypass",
-            "Module is shim: {} (has_imports_table: {}, has_function_exports: {}, \
-             has_few_imports: {})",
-            is_shim,
-            has_imports_table,
-            has_function_exports,
-            has_few_imports
+            "Module is shim: {is_shim} (has_imports_table: {has_imports_table}, has_function_exports: {has_function_exports}, \
+             has_few_imports: {has_few_imports})"
         );
 
         return is_shim;
@@ -56,10 +52,7 @@ pub fn is_shim_module(module: &ParsedModule) -> bool {
 
     let is_shim = has_table_export && has_minimal_structure;
     log::debug!(target: "shim-bypass",
-        "Module is shim (fallback): {} (has_table_export: {}, has_minimal_structure: {})",
-        is_shim,
-        has_table_export,
-        has_minimal_structure
+        "Module is shim (fallback): {is_shim} (has_table_export: {has_table_export}, has_minimal_structure: {has_minimal_structure})"
     );
 
     is_shim
@@ -84,7 +77,7 @@ pub fn is_fixup_module(module: &ParsedModule) -> bool {
         is_imports_table
     });
 
-    log::debug!(target: "shim-bypass", "Module is fixup: {}", has_imports_table);
+    log::debug!(target: "shim-bypass", "Module is fixup: {has_imports_table}");
     has_imports_table
 }
 

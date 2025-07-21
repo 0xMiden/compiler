@@ -360,8 +360,7 @@ impl SSABuilder {
     pub fn seal_block(&mut self, block: BlockRef) -> SideEffects {
         debug_assert!(
             !self.is_sealed(block),
-            "Attempting to seal {} which is already sealed.",
-            block
+            "Attempting to seal {block} which is already sealed."
         );
         self.seal_one_block(block);
         mem::take(&mut self.side_effects)

@@ -32,9 +32,9 @@ where
         let iter = self.0.take().unwrap();
         for (i, item) in iter.enumerate() {
             if i == 0 {
-                write!(f, "{}", item)?;
+                write!(f, "{item}")?;
             } else {
-                write!(f, ", {}", item)?;
+                write!(f, ", {item}")?;
             }
         }
         Ok(())

@@ -33,12 +33,12 @@ pub fn panic_error(what: &str, err: impl Into<anyhow::Error>) -> ! {
     pe(what, err);
     #[track_caller]
     fn pe(what: &str, err: anyhow::Error) -> ! {
-        let mut result = format!("{}\nerror: {}", what, err);
+        let mut result = format!("{what}\nerror: {err}");
         for cause in err.chain().skip(1) {
             let _ = writeln!(result, "\nCaused by:");
-            let _ = write!(result, "{}", cause);
+            let _ = write!(result, "{cause}");
         }
-        panic!("\n{}", result);
+        panic!("\n{result}");
     }
 }
 
@@ -361,7 +361,7 @@ impl Project {
         let dst = self.root().join(dst.as_ref());
         {
             if let Err(e) = os::unix::fs::symlink(&src, &dst) {
-                panic!("failed to symlink {:?} to {:?}: {:?}", src, dst, e);
+                panic!("failed to symlink {src:?} to {dst:?}: {e:?}");
             }
         }
     }
@@ -393,12 +393,11 @@ pub fn basic_manifest(name: &str, version: &str) -> String {
     format!(
         r#"
         [package]
-        name = "{}"
-        version = "{}"
+        name = "{name}"
+        version = "{version}"
         authors = []
         edition = "2021"
-    "#,
-        name, version
+    "#
     )
 }
 
@@ -407,16 +406,15 @@ pub fn basic_bin_manifest(name: &str) -> String {
         r#"
         [package]
 
-        name = "{}"
+        name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
         edition = "2021"
 
         [[bin]]
 
-        name = "{}"
-    "#,
-        name, name
+        name = "{name}"
+    "#
     )
 }
 
@@ -425,16 +423,15 @@ pub fn basic_lib_manifest(name: &str) -> String {
         r#"
         [package]
 
-        name = "{}"
+        name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
         edition = "2021"
 
         [lib]
 
-        name = "{}"
-    "#,
-        name, name
+        name = "{name}"
+    "#
     )
 }
 

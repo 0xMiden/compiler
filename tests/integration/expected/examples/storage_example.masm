@@ -771,10 +771,12 @@ proc.wit_bindgen_rt::run_ctors_once
 end
 
 proc.miden_base_sys::bindings::storage::get_item
-    push.255
-    movup.2
     swap.1
-    u32and
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    trace.252
+    nop
     trace.240
     nop
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::extern_get_storage_item
@@ -783,6 +785,12 @@ proc.miden_base_sys::bindings::storage::get_item
 end
 
 proc.miden_base_sys::bindings::storage::get_map_item
+    swap.1
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    trace.252
+    nop
     dup.2
     push.4
     dup.1
@@ -848,16 +856,10 @@ proc.miden_base_sys::bindings::storage::get_map_item
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.255
-    movup.6
     swap.1
-    u32and
-    movup.2
     swap.3
-    movdn.2
     swap.1
     swap.4
-    swap.1
     trace.240
     nop
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::extern_get_storage_map_item
@@ -866,6 +868,12 @@ proc.miden_base_sys::bindings::storage::get_map_item
 end
 
 proc.miden_base_sys::bindings::storage::set_map_item
+    swap.1
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    trace.252
+    nop
     dup.2
     push.4
     dup.1
@@ -996,27 +1004,26 @@ proc.miden_base_sys::bindings::storage::set_map_item
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.255
-    movup.10
-    swap.1
-    u32and
-    movup.4
-    swap.5
-    movdn.4
     movup.3
-    swap.6
+    swap.5
     movdn.3
     movup.2
-    swap.7
+    swap.6
     movdn.2
     swap.1
-    swap.8
+    swap.7
     swap.1
+    swap.8
     trace.240
     nop
     exec.::miden:storage-example/foo@1.0.0::storage_example::miden_base_sys::bindings::storage::extern_set_storage_map_item
     trace.252
     nop
+end
+
+proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    push.255
+    u32and
 end
 
 proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from

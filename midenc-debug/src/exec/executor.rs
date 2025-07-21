@@ -80,8 +80,8 @@ impl Executor {
         for dep in dependencies {
             match self.dependency_resolver.resolve(dep) {
                 Some(resolution) => {
-                    log::debug!("dependency {:?} resolved to {:?}", dep, resolution);
-                    log::debug!("loading library from package dependency: {:?}", dep);
+                    log::debug!("dependency {dep:?} resolved to {resolution:?}");
+                    log::debug!("loading library from package dependency: {dep:?}");
                     match resolution {
                         ResolvedDependency::Local(LocalResolvedDependency::Library(lib)) => {
                             let library = lib.as_ref();
@@ -99,7 +99,7 @@ impl Executor {
                         }
                     }
                 }
-                None => panic!("{:?} not found in resolver", dep),
+                None => panic!("{dep:?} not found in resolver"),
             }
         }
 

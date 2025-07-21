@@ -82,7 +82,7 @@
     (func $__wasm_call_ctors (;10;) (type 8))
     (func $cross_ctx_note_word::bindings::__link_custom_section_describing_imports (;11;) (type 8))
     (func $miden:base/note-script@1.0.0#note-script (;12;) (type 8)
-      (local i32 f32 f32 f32 f32 f32 f32 f32 i32 i32 i32)
+      (local i32 f32 f32 f32 f32 f32 f32 f32 i32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 32
       i32.sub
@@ -261,14 +261,15 @@
       f32.load offset=24
       local.set 1
       local.get 0
-      f32.load offset=20
-      local.set 2
+      i32.load offset=20
+      local.set 11
       local.get 0
       f32.load offset=16
       i64.const -4294967296
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u64_unchecked
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
-      local.get 2
+      local.get 11
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
       i32.const -1
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -277,7 +278,7 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 10
-      f32.reinterpret_i32
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       i32.const 122
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -291,7 +292,7 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 8
-      f32.reinterpret_i32
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
       i32.const 12
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
@@ -346,6 +347,22 @@
         i32.const 1
         i32.store8
       end
+    )
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from (;14;) (type 0) (param i32) (result f32)
+      local.get 0
+      f32.reinterpret_i32
+    )
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from (;15;) (type 0) (param i32) (result f32)
+      local.get 0
+      i32.const 65535
+      i32.and
+      f32.reinterpret_i32
+    )
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;16;) (type 0) (param i32) (result f32)
+      local.get 0
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
   )

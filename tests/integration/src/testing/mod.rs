@@ -20,7 +20,7 @@ pub fn format_report(report: miden_assembly::diagnostics::Report) -> String {
     if let Some(labels) = report.labels() {
         for label in labels {
             if let Some(label) = label.label() {
-                writeln!(&mut labels_str, "{}", label).unwrap();
+                writeln!(&mut labels_str, "{label}").unwrap();
             }
         }
     }

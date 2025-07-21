@@ -15,10 +15,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.6263995017651497749
-    push.11921283892248278650
-    push.11782117993429842412
-    push.17523967198310708269
+    push.6109401526798533960
+    push.16091769878819089079
+    push.3965789517764165313
+    push.314075107823823187
     adv.push_mapval
     push.262144
     push.9
@@ -32,9 +32,6 @@ export.init
     push.0
     u32assert
     mem_store.262185
-    push.1048700
-    u32assert
-    mem_store.262186
 end
 
 # mod miden:base/note-script@1.0.0::p2id
@@ -578,6 +575,10 @@ export.miden:base/note-script@1.0.0#note-script
     end
 end
 
+proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+    nop
+end
+
 proc.wit_bindgen_rt::run_ctors_once
     push.1048740
     u32divmod.4
@@ -587,7 +588,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048701
+    push.1048700
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -622,7 +623,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048701
+        push.1048700
         movup.2
         swap.1
         u32wrapping_add
@@ -1950,6 +1951,11 @@ proc.alloc::alloc::Global::alloc_impl
         drop
         swap.1
     else
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        trace.252
+        nop
         push.0
         movup.4
         swap.1

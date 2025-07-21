@@ -454,7 +454,7 @@ impl Type {
     /// Returns the minimum number of bytes required to store a value of this type
     pub fn size_in_bytes(&self) -> usize {
         let bits = self.size_in_bits();
-        (bits / 8) + (bits % 8 > 0) as usize
+        (bits / 8) + (!bits.is_multiple_of(8)) as usize
     }
 
     /// Same as `size_in_bytes`, but with sufficient padding to guarantee alignment of the value.

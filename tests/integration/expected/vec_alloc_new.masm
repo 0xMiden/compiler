@@ -328,6 +328,10 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
+proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+    nop
+end
+
 proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     push.16
     push.0
@@ -1156,6 +1160,11 @@ proc.alloc::alloc::Global::alloc_impl
         drop
         swap.1
     else
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::vec_alloc_new::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        trace.252
+        nop
         push.0
         movup.4
         swap.1

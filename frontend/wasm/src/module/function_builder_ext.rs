@@ -265,13 +265,11 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                 if !self.is_pristine(&block) {
                     assert!(
                         self.func_ctx.borrow().ssa.is_sealed(block),
-                        "FunctionBuilderExt finalized, but block {} is not sealed",
-                        block,
+                        "FunctionBuilderExt finalized, but block {block} is not sealed",
                     );
                     assert!(
                         self.is_filled(&block),
-                        "FunctionBuilderExt finalized, but block {} is not filled",
-                        block,
+                        "FunctionBuilderExt finalized, but block {block} is not filled",
                     );
                 }
             }
@@ -302,7 +300,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     /// to first declare its type with this method.
     pub fn declare_var(&mut self, var: Variable, ty: Type) {
         self.try_declare_var(var, ty)
-            .unwrap_or_else(|_| panic!("the variable {:?} has been declared multiple times", var))
+            .unwrap_or_else(|_| panic!("the variable {var:?} has been declared multiple times"))
     }
 
     /// Returns the Miden IR necessary to use a previously defined user
@@ -325,8 +323,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             debug_assert_ne!(
                 ty,
                 Type::Unknown,
-                "variable {:?} is used but its type has not been declared",
-                var
+                "variable {var:?} is used but its type has not been declared"
             );
             let current_block = self.inner.current_block();
             self.func_ctx.borrow_mut().ssa.use_var(var, ty, current_block)
@@ -339,7 +336,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     /// position of a previously defined user variable.
     pub fn use_var(&mut self, var: Variable) -> ValueRef {
         self.try_use_var(var).unwrap_or_else(|_| {
-            panic!("variable {:?} is used but its type has not been declared", var)
+            panic!("variable {var:?} is used but its type has not been declared")
         })
     }
 
@@ -364,13 +361,11 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                 assert_eq!(
                     &self.func_ctx.borrow().types[var],
                     val.borrow().ty(),
-                    "declared type of variable {:?} doesn't match type of value {}",
-                    var,
-                    val
+                    "declared type of variable {var:?} doesn't match type of value {val}"
                 );
             }
             DefVariableError::DefinedBeforeDeclared(var) => {
-                panic!("variable {:?} is used but its type has not been declared", var);
+                panic!("variable {var:?} is used but its type has not been declared");
             }
         })
     }

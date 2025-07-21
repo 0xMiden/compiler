@@ -5,9 +5,10 @@
   (type (;3;) (func (param f32) (result f32)))
   (type (;4;) (func (param i32 i32) (result i32)))
   (type (;5;) (func (param i32 i32 i32)))
-  (type (;6;) (func (param i32 i32 i32) (result i32)))
-  (type (;7;) (func (param i32 i32)))
+  (type (;6;) (func))
+  (type (;7;) (func (param i32 i32 i32) (result i32)))
   (type (;8;) (func (param i32 i32 i32 i32)))
+  (type (;9;) (func (param i32 i32)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;1;) (type 1)))
   (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
@@ -23,9 +24,7 @@
     i32.sub
     local.tee 1
     global.set $__stack_pointer
-    i32.const 0
-    i32.load8_u offset=1048580
-    drop
+    call $__rustc::__rust_no_alloc_shim_is_unstable_v2
     block ;; label = @1
       i32.const 8
       i32.const 4
@@ -79,7 +78,10 @@
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
   (func $__rustc::__rust_dealloc (;5;) (type 5) (param i32 i32 i32))
-  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;6;) (type 6) (param i32 i32 i32) (result i32)
+  (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;6;) (type 6)
+    return
+  )
+  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;7;) (type 7) (param i32 i32 i32) (result i32)
     (local i32 i32)
     block ;; label = @1
       local.get 1
@@ -149,9 +151,6 @@
       local.get 3
       return
     end
-    unreachable
-  )
-  (func $alloc::alloc::handle_alloc_error (;7;) (type 7) (param i32 i32)
     unreachable
   )
   (func $alloc::raw_vec::RawVecInner<A>::deallocate (;8;) (type 5) (param i32 i32 i32)
@@ -232,7 +231,10 @@
       call $__rustc::__rust_dealloc
     end
   )
-  (func $core::ptr::alignment::Alignment::max (;11;) (type 4) (param i32 i32) (result i32)
+  (func $alloc::alloc::handle_alloc_error (;11;) (type 9) (param i32 i32)
+    unreachable
+  )
+  (func $core::ptr::alignment::Alignment::max (;12;) (type 4) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0

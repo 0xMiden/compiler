@@ -30,7 +30,7 @@ impl fmt::Debug for RegionBranchPoint {
         match self {
             Self::Parent => f.write_str("Parent"),
             Self::Child(ref region) => {
-                f.debug_tuple("Child").field(&format_args!("{:p}", region)).finish()
+                f.debug_tuple("Child").field(&format_args!("{region:p}")).finish()
             }
         }
     }

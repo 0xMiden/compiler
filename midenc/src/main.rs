@@ -23,8 +23,7 @@ pub fn main() -> Result<(), Report> {
             other => {
                 return Err(Report::msg(format!(
                     "invalid MIDENC_TRACE_TIMING precision, expected one of [s, ms, us, ns], got \
-                     '{}'",
-                    other
+                     '{other}'"
                 )));
             }
         };

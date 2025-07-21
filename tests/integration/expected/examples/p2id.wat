@@ -73,7 +73,6 @@
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
-    (global $GOT.data.internal.__rust_no_alloc_shim_is_unstable (;2;) i32 i32.const 1048700)
     (export "memory" (memory 0))
     (export "miden:base/note-script@1.0.0#note-script" (func $miden:base/note-script@1.0.0#note-script))
     (elem (;0;) (i32.const 1) func $p2id::bindings::__link_custom_section_describing_imports)
@@ -196,11 +195,14 @@
       end
       unreachable
     )
-    (func $wit_bindgen_rt::run_ctors_once (;12;) (type 5)
+    (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;12;) (type 5)
+      return
+    )
+    (func $wit_bindgen_rt::run_ctors_once (;13;) (type 5)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048701
+        i32.const 1048700
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -208,13 +210,13 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048701
+        i32.const 1048700
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;13;) (type 8) (param i32 i32 i32) (result i32)
+    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;14;) (type 8) (param i32 i32 i32) (result i32)
       (local i32 i32)
       block ;; label = @1
         local.get 1
@@ -286,7 +288,7 @@
       end
       unreachable
     )
-    (func $alloc::raw_vec::RawVecInner<A>::with_capacity_in (;14;) (type 9) (param i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::with_capacity_in (;15;) (type 9) (param i32 i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -329,10 +331,10 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::account::get_id (;15;) (type 3) (result f32)
+    (func $miden_base_sys::bindings::account::get_id (;16;) (type 3) (result f32)
       call $miden_base_sys::bindings::account::extern_account_get_id
     )
-    (func $miden_base_sys::bindings::note::get_inputs (;16;) (type 10) (param i32)
+    (func $miden_base_sys::bindings::note::get_inputs (;17;) (type 10) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -370,7 +372,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_assets (;17;) (type 10) (param i32)
+    (func $miden_base_sys::bindings::note::get_assets (;18;) (type 10) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -408,7 +410,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;18;) (type 7) (param i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;19;) (type 7) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -440,7 +442,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;19;) (type 11) (param i32 i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;20;) (type 11) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
@@ -552,7 +554,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;20;) (type 7) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;21;) (type 7) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -581,14 +583,12 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::alloc::Global::alloc_impl (;21;) (type 9) (param i32 i32 i32 i32)
+    (func $alloc::alloc::Global::alloc_impl (;22;) (type 9) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
         br_if 0 (;@1;)
-        global.get $GOT.data.internal.__rust_no_alloc_shim_is_unstable
-        i32.load8_u
-        drop
+        call $__rustc::__rust_no_alloc_shim_is_unstable_v2
         block ;; label = @2
           local.get 3
           br_if 0 (;@2;)
@@ -610,7 +610,7 @@
       local.get 1
       i32.store
     )
-    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;22;) (type 9) (param i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;23;) (type 9) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -645,7 +645,7 @@
       local.get 4
       i32.store
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;23;) (type 7) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;24;) (type 7) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -656,10 +656,10 @@
         call $__rustc::__rust_dealloc
       end
     )
-    (func $alloc::raw_vec::handle_error (;24;) (type 7) (param i32 i32 i32)
+    (func $alloc::raw_vec::handle_error (;25;) (type 7) (param i32 i32 i32)
       unreachable
     )
-    (func $core::ptr::alignment::Alignment::max (;25;) (type 6) (param i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;26;) (type 6) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -667,7 +667,7 @@
       i32.gt_u
       select
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.5/src/bindings/note.rs")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.5/src/bindings/note.rs\00")
     (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\001\00\00\00\22\00\00\00")
   )
   (alias export 3 "assert-eq" (func (;0;)))

@@ -98,7 +98,7 @@ fn spawn_cargo(
     cargo_args: &CargoArguments,
     process_messages: bool,
 ) -> Result<Vec<Artifact>> {
-    log::debug!("spawning command {:?}", cmd);
+    log::debug!("spawning command {cmd:?}");
 
     let mut child = cmd
         .spawn()

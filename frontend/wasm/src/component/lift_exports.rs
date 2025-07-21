@@ -32,9 +32,8 @@ pub fn generate_export_lifting_function(
     let cross_ctx_export_sig_flat = flatten_function_type(&export_func_ty, CallConv::CanonLift)
         .map_err(|e| {
             let message = format!(
-                "Component export lifting generation. Signature for exported function {} requires \
-                 flattening. Error: {}",
-                core_export_func_path, e
+                "Component export lifting generation. Signature for exported function \
+                 {core_export_func_path} requires flattening. Error: {e}"
             );
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
@@ -132,8 +131,7 @@ fn generate_lifting_with_transformation(
     // Extract flattened result types from the exported component-level function type
     let flattened_results = flatten_types(&export_func_ty.results).map_err(|e| {
         let message = format!(
-            "Failed to flatten result types for exported function {}: {}",
-            core_export_func_path, e
+            "Failed to flatten result types for exported function {core_export_func_path}: {e}"
         );
         diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
     })?;

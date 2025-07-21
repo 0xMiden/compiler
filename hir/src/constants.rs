@@ -96,8 +96,7 @@ impl ConstantData {
     pub fn zext(mut self, expected_size: usize) -> Self {
         assert!(
             self.len() <= expected_size,
-            "the constant is already larger than {} bytes",
-            expected_size
+            "the constant is already larger than {expected_size} bytes"
         );
         self.0.resize(expected_size, 0);
         self
@@ -178,7 +177,7 @@ impl ConstantData {
 
         let s = s.strip_prefix("0x").unwrap_or(s);
         let len = s.len();
-        if len % 2 != 0 {
+        if !len.is_multiple_of(2) {
             return Err(NOT_EVEN);
         }
         // Parse big-endian

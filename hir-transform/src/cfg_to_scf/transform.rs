@@ -597,7 +597,7 @@ impl<'a> TransformationContext<'a> {
             for block_ref in branch_region.iter() {
                 let block = block_ref.borrow();
                 if is_region_exit_block(&block) {
-                    log::trace!(target: "cfg-to-scf", " {} is a region exit", block);
+                    log::trace!(target: "cfg-to-scf", " {block} is a region exit");
                     // If a return-like op is part of the branch region then the continuation no
                     // longer post-dominates the branch region. Add all its incoming edges to edge
                     // list to create the single-exit block for all branch regions.

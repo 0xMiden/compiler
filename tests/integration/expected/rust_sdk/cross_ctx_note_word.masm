@@ -956,7 +956,7 @@ export.miden:base/note-script@1.0.0#note-script
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.16
@@ -991,12 +991,21 @@ export.miden:base/note-script@1.0.0#note-script
         mul.4294967296
         add
         assert_eq
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+        trace.252
+        nop
         push.4294967295
         assert_eq
         push.57
         assert_eq
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+        trace.252
+        nop
         push.122
-        swap.1
         assert_eq
         push.1
         push.0
@@ -1005,8 +1014,12 @@ export.miden:base/note-script@1.0.0#note-script
         u32and
         neq
         assert_eq
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
+        trace.252
+        nop
         push.12
-        swap.1
         assert_eq
         push.8
         dup.1
@@ -1164,5 +1177,19 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         mem_store
     end
+end
+
+proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+    nop
+end
+
+proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
+    push.65535
+    u32and
+end
+
+proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    push.255
+    u32and
 end
 

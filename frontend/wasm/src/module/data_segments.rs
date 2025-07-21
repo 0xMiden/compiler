@@ -22,7 +22,7 @@ pub struct ResolvedDataSegment {
 impl ResolvedDataSegment {
     /// Check if this segment is word-aligned (16-byte aligned)
     pub fn is_word_aligned(&self) -> bool {
-        self.offset % 16 == 0
+        self.offset.is_multiple_of(16)
     }
 
     /// Calculate padding needed to align this segment to word boundary

@@ -181,8 +181,7 @@ fn build_globals(
                     .diagnostic(Severity::Error)
                     .with_message(
                         (format!(
-                            "Failed to declare global variable '{global_name}' with error: {:?}",
-                            e
+                            "Failed to declare global variable '{global_name}' with error: {e:?}"
                         ))
                         .clone(),
                     )

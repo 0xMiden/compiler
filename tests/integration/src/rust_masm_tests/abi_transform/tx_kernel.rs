@@ -56,7 +56,7 @@ end
         expect3 = expected_inputs[2],
         expect4 = expected_inputs[3],
     );
-    let artifact_name = format!("abi_transform_tx_kernel_get_inputs_{}", test_name);
+    let artifact_name = format!("abi_transform_tx_kernel_get_inputs_{test_name}");
     let config = WasmTranslationConfig::default();
     let mut test_builder =
         CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name.clone(), &main_fn, config, []);

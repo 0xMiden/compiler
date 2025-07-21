@@ -210,7 +210,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 );
                 let result = self.name_section(NameSectionReader::new(reader));
                 if let Err(e) = result {
-                    log::warn!(target: "module-parser", "failed to parse name section {:?}", e);
+                    log::warn!(target: "module-parser", "failed to parse name section {e:?}");
                 }
             }
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
@@ -770,7 +770,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             ".debug_aranges" | ".debug_pubnames" | ".debug_pubtypes" => return,
 
             other => {
-                log::warn!(target: "module-parser", "unknown debug section `{}`", other);
+                log::warn!(target: "module-parser", "unknown debug section `{other}`");
                 return;
             }
         }

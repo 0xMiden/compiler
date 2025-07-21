@@ -35,7 +35,7 @@ impl<V> PartialEq for PassStatistic<V> {
 }
 impl<V> PartialOrd for PassStatistic<V> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.name.cmp(&other.name))
+        Some(self.cmp(other))
     }
 }
 impl<V> Ord for PassStatistic<V> {

@@ -5,9 +5,10 @@
   (type (;3;) (func (param f32) (result f32)))
   (type (;4;) (func (param i32 i32) (result i32)))
   (type (;5;) (func (param i32 i32 i32)))
-  (type (;6;) (func (param i32 i32 i32) (result i32)))
-  (type (;7;) (func (param i32 i32 i32 i32 i32)))
-  (type (;8;) (func (param i32 i32 i32 i32)))
+  (type (;6;) (func))
+  (type (;7;) (func (param i32 i32 i32) (result i32)))
+  (type (;8;) (func (param i32 i32 i32 i32 i32)))
+  (type (;9;) (func (param i32 i32 i32 i32)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;1;) (type 1)))
   (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
@@ -104,7 +105,10 @@
     end
     local.get 1
   )
-  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;7;) (type 6) (param i32 i32 i32) (result i32)
+  (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;7;) (type 6)
+    return
+  )
+  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;8;) (type 7) (param i32 i32 i32) (result i32)
     (local i32 i32)
     block ;; label = @1
       local.get 1
@@ -176,7 +180,7 @@
     end
     unreachable
   )
-  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;8;) (type 5) (param i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;9;) (type 5) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -208,7 +212,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;9;) (type 7) (param i32 i32 i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;10;) (type 8) (param i32 i32 i32 i32 i32)
     (local i32 i64)
     global.get $__stack_pointer
     i32.const 16
@@ -320,7 +324,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;10;) (type 5) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;11;) (type 5) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -349,14 +353,12 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::alloc::Global::alloc_impl (;11;) (type 8) (param i32 i32 i32 i32)
+  (func $alloc::alloc::Global::alloc_impl (;12;) (type 9) (param i32 i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
       br_if 0 (;@1;)
-      i32.const 0
-      i32.load8_u offset=1048608
-      drop
+      call $__rustc::__rust_no_alloc_shim_is_unstable_v2
       block ;; label = @2
         local.get 3
         br_if 0 (;@2;)
@@ -378,7 +380,7 @@
     local.get 1
     i32.store
   )
-  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;12;) (type 8) (param i32 i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;13;) (type 9) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
@@ -413,7 +415,7 @@
     local.get 4
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;13;) (type 5) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;14;) (type 5) (param i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -424,10 +426,10 @@
       call $__rustc::__rust_dealloc
     end
   )
-  (func $alloc::raw_vec::handle_error (;14;) (type 5) (param i32 i32 i32)
+  (func $alloc::raw_vec::handle_error (;15;) (type 5) (param i32 i32 i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;15;) (type 4) (param i32 i32) (result i32)
+  (func $core::ptr::alignment::Alignment::max (;16;) (type 4) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0

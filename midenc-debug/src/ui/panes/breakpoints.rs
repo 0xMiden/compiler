@@ -232,8 +232,7 @@ impl Pane for BreakpointsPane {
             pane.title_bottom(
                 Line::styled(
                     format!(
-                        " {} of {} hit this cycle",
-                        user_breakpoints_hit, user_created_breakpoints,
+                        " {user_breakpoints_hit} of {user_created_breakpoints} hit this cycle",
                     ),
                     Style::default().add_modifier(Modifier::ITALIC),
                 )

@@ -141,7 +141,7 @@ impl ExampleCommand {
         for project_name in &project_names {
             let template_path = TemplatePath {
                 git: Some("https://github.com/0xMiden/compiler".into()),
-                auto_path: Some(format!("examples/{}", project_name)),
+                auto_path: Some(format!("examples/{project_name}")),
                 ..Default::default()
             };
 
@@ -162,7 +162,7 @@ impl ExampleCommand {
             };
 
             cargo_generate::generate(generate_args)
-                .context(format!("Failed to scaffold {} project", project_name))?;
+                .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);
 
@@ -170,12 +170,12 @@ impl ExampleCommand {
             let wit_dir = project_path.join("wit");
             if wit_dir.exists() && wit_dir.is_dir() {
                 deploy_wit_files(&project_path)
-                    .context(format!("Failed to deploy WIT files for {}", project_name))?;
+                    .context(format!("Failed to deploy WIT files for {project_name}"))?;
             }
 
             // Process the Cargo.toml
             process_cargo_toml(&project_path)
-                .context(format!("Failed to process Cargo.toml for {}", project_name))?;
+                .context(format!("Failed to process Cargo.toml for {project_name}"))?;
         }
 
         // Update dependencies for paired projects
@@ -202,9 +202,14 @@ impl ExampleCommand {
 }
 
 fn set_default_test_compiler(define: &mut Vec<String>) {
+    let compiler_path = compiler_path();
+    define.push(format!("compiler_path={}", compiler_path.display()));
+}
+
+fn compiler_path() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let compiler_path = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
-    define.push(format!("compiler_path={}", compiler_path.display()));
+    compiler_path.to_path_buf()
 }
 
 /// Process the generated Cargo.toml to update dependencies and WIT paths
@@ -221,7 +226,12 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
         if let Some(miden_dep) = deps.get_mut("miden") {
             *miden_dep = Item::Value(toml_edit::Value::InlineTable({
                 let mut table = toml_edit::InlineTable::new();
-                table.insert("git", "https://github.com/0xMiden/compiler".into());
+                if cfg!(test) || std::env::var("TEST").is_ok() {
+                    table.insert("path", compiler_path().join("sdk/sdk").to_str().unwrap().into());
+                } else {
+                    table.insert("git", "https://github.com/0xMiden/compiler".into());
+                }
+
                 table
             }));
         }
@@ -247,8 +257,7 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
                     if let Some((_, wit_file)) =
                         CORE_WIT_DEPS.iter().find(|(dep, _)| *dep == key.get())
                     {
-                        *path_value =
-                            toml_edit::Value::from(format!("{}/{}", WIT_DEPS_PATH, wit_file));
+                        *path_value = toml_edit::Value::from(format!("{WIT_DEPS_PATH}/{wit_file}"));
                     };
                 }
             }
@@ -288,7 +297,7 @@ fn update_note_dependencies(
         if let Some(dep) = miden_deps.get_mut(dependency_name) {
             *dep = Item::Value(toml_edit::Value::InlineTable({
                 let mut table = toml_edit::InlineTable::new();
-                table.insert("path", format!("../{}", contract_dir).into());
+                table.insert("path", format!("../{contract_dir}").into());
                 table
             }));
         }
@@ -310,10 +319,8 @@ fn update_note_dependencies(
         if let Some(wit_dep) = wit_deps.get_mut(dependency_name) {
             if let Some(table) = wit_dep.as_inline_table_mut() {
                 if let Some(path_value) = table.get_mut("path") {
-                    *path_value = toml_edit::Value::from(format!(
-                        "../{}/wit/{}",
-                        contract_dir, wit_file_name
-                    ));
+                    *path_value =
+                        toml_edit::Value::from(format!("../{contract_dir}/wit/{wit_file_name}"));
                 }
             }
         }

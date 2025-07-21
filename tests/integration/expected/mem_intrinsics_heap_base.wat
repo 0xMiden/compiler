@@ -2,7 +2,8 @@
   (type (;0;) (func (result i32)))
   (type (;1;) (func (param i32 i32)))
   (type (;2;) (func (param i32 i32) (result i32)))
-  (type (;3;) (func (param i32 i32 i32) (result i32)))
+  (type (;3;) (func))
+  (type (;4;) (func (param i32 i32 i32) (result i32)))
   (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;0;) (type 0)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
@@ -11,9 +12,7 @@
   (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;1;) (type 1) (param i32 i32)
     (local i32)
-    i32.const 0
-    i32.load8_u offset=1048580
-    drop
+    call $__rustc::__rust_no_alloc_shim_is_unstable_v2
     block ;; label = @1
       i32.const 4
       i32.const 4
@@ -46,7 +45,10 @@
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
-  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;3;) (type 3) (param i32 i32 i32) (result i32)
+  (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;3;) (type 3)
+    return
+  )
+  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;4;) (type 4) (param i32 i32 i32) (result i32)
     (local i32 i32)
     block ;; label = @1
       local.get 1
@@ -118,10 +120,10 @@
     end
     unreachable
   )
-  (func $alloc::alloc::handle_alloc_error (;4;) (type 1) (param i32 i32)
+  (func $alloc::alloc::handle_alloc_error (;5;) (type 1) (param i32 i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;5;) (type 2) (param i32 i32) (result i32)
+  (func $core::ptr::alignment::Alignment::max (;6;) (type 2) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0

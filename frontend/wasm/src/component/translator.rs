@@ -204,7 +204,7 @@ impl<'a> ComponentTranslator<'a> {
                 };
             }
             LocalInitializer::Lower(lower) => {
-                log::debug!(target: "component-translator", "Adding canon lower function: {:?}", lower);
+                log::debug!(target: "component-translator", "Adding canon lower function: {lower:?}");
                 frame.funcs.push(CoreDef::Lower(lower.clone()));
             }
             LocalInitializer::Lift(lift) => {
@@ -280,8 +280,7 @@ impl<'a> ComponentTranslator<'a> {
 
                 if is_shim_related {
                     log::trace!(target: "component-translator",
-                        "Detected shim-related synthetic instance at index {}",
-                        instance_idx
+                        "Detected shim-related synthetic instance at index {instance_idx}"
                     );
                     // This synthetic instance contains shim exports, mark it for bypass
                     self.shim_bypass_info.shim_instance_indices.push(instance_idx);
@@ -325,7 +324,7 @@ impl<'a> ComponentTranslator<'a> {
                     translation.initializers.len()
                 );
                 for (i, init) in translation.initializers.iter().enumerate() {
-                    log::trace!(target: "component-translator", "Processing nested initializer {}: {:?}", i, init);
+                    log::trace!(target: "component-translator", "Processing nested initializer {i}: {init:?}");
                     self.initializer(&mut new_frame, types, init)?;
                 }
                 let instance_idx = frame
@@ -507,7 +506,7 @@ impl<'a> ComponentTranslator<'a> {
                 }
             }
             CoreDef::Lower(canon_lower) => {
-                panic!("expected export, got {:?}", canon_lower)
+                panic!("expected export, got {canon_lower:?}")
             }
         }
     }
@@ -532,9 +531,7 @@ impl<'a> ComponentTranslator<'a> {
         // Check if this module instantiation should be skipped (shim or fixup)
         if self.shim_bypass_info.shim_module_indices.contains(&current_module_idx) {
             log::warn!(target: "component-translator",
-                "SKIPPING translation of shim module instance {} (module {})",
-                instance_idx,
-                current_module_idx
+                "SKIPPING translation of shim module instance {instance_idx} (module {current_module_idx})"
             );
             // Push a placeholder instance but don't do any translation
             frame.module_instances.push(ModuleInstanceDef::Instantiated {
@@ -546,9 +543,7 @@ impl<'a> ComponentTranslator<'a> {
             return Ok(());
         } else if self.shim_bypass_info.fixup_module_indices.contains(&current_module_idx) {
             log::warn!(target: "component-translator",
-                "SKIPPING translation of fixup module instance {} (module {})",
-                instance_idx,
-                current_module_idx
+                "SKIPPING translation of fixup module instance {instance_idx} (module {current_module_idx})"
             );
             // Push a placeholder instance but don't do any translation
             frame.module_instances.push(ModuleInstanceDef::Instantiated {
@@ -559,9 +554,7 @@ impl<'a> ComponentTranslator<'a> {
         }
 
         log::debug!(target: "component-translator",
-            "Proceeding with normal translation of module instance {} (module {})",
-            instance_idx,
-            current_module_idx
+            "Proceeding with normal translation of module instance {instance_idx} (module {current_module_idx})"
         );
         frame.module_instances.push(ModuleInstanceDef::Instantiated {
             module_idx: *module_idx,
@@ -607,9 +600,7 @@ impl<'a> ComponentTranslator<'a> {
                             // module with CanonLower synthetic functions
                             for (func_name, entity) in entities.iter() {
                                 log::trace!(target: "component-translator",
-                                    "Processing synthetic function '{}' with entity {:?}",
-                                    func_name,
-                                    entity
+                                    "Processing synthetic function '{func_name}' with entity {entity:?}"
                                 );
 
                                 let (signature, path) = canon_lower_func(
@@ -621,11 +612,8 @@ impl<'a> ComponentTranslator<'a> {
                                     &self.shim_bypass_info,
                                 )?;
                                 log::trace!(target: "component-translator",
-                                    "canon_lower_func returned signature '{}' for function '{}' \
-                                     at path '{}'",
-                                    signature,
-                                    func_name,
-                                    path
+                                    "canon_lower_func returned signature '{signature}' for function '{func_name}' \
+                                     at path '{path}'"
                                 );
                                 import_canon_lower_args
                                     .insert(path, ModuleArgument::ComponentImport(signature));
@@ -824,13 +812,12 @@ fn canon_lower_from_alias_export(
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
 
-            log::debug!(target: "component-translator", "Created signature for '{}' from type information: {}", func_name, func_ty);
+            log::debug!(target: "component-translator", "Created signature for '{func_name}' from type information: {func_ty}");
 
             Ok((func_ty, path))
         } else {
             Err(Report::msg(format!(
-                "Could not find type information for function '{}' in component exports",
-                func_name
+                "Could not find type information for function '{func_name}' in component exports"
             )))
         }
     } else {
@@ -856,7 +843,7 @@ impl ComponentInstanceDef<'_> {
         }
     }
 
-    fn unwrap_instantiated(&self) -> &ComponentInstantiation {
+    fn unwrap_instantiated(&self) -> &ComponentInstantiation<'_> {
         match self {
             ComponentInstanceDef::Instantiated(i) => i,
             _ => panic!("expected instantiated"),
@@ -882,7 +869,7 @@ impl ComponentFuncDef<'_> {
     fn unwrap_canon_lift(&self) -> &CanonLift {
         match self {
             ComponentFuncDef::Lifted(lift) => lift,
-            _ => panic!("expected lift, got {:?}", self),
+            _ => panic!("expected lift, got {self:?}"),
         }
     }
 }

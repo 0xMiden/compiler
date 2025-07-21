@@ -445,7 +445,7 @@ impl fmt::Display for TargetEnv {
         match self {
             Self::Emu => f.write_str("emu"),
             Self::Base => f.write_str("base"),
-            Self::Rollup { target } => f.write_str(&format!("rollup:{}", target)),
+            Self::Rollup { target } => f.write_str(&format!("rollup:{target}")),
         }
     }
 }

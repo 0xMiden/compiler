@@ -133,7 +133,7 @@ fn verify_no_wit_files_for_example_template(example_name: &str) {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
-        other => panic!("Expected NewCommandOutput, got {:?}", other),
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
     env::set_current_dir(&new_project_path).unwrap();
 
@@ -141,8 +141,7 @@ fn verify_no_wit_files_for_example_template(example_name: &str) {
     let wit_dir = new_project_path.join(WIT_DEPS_PATH);
     assert!(
         !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
-        "WIT directory should not exist or be empty for {} example",
-        example_name
+        "WIT directory should not exist or be empty for {example_name} example"
     );
 
     env::set_current_dir(restore_dir).unwrap();
@@ -179,7 +178,7 @@ fn build_paired_example_projects(
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
-        other => panic!("Expected NewCommandOutput, got {:?}", other),
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
     assert!(main_project_path.exists());
 
@@ -214,9 +213,9 @@ fn build_project_in_current_dir(expected_name: &str) -> Package {
     let expected_masm_path = match output {
         cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
             cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {:?}", other),
+            other => panic!("Expected Masm output, got {other:?}"),
         },
-        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+        other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
     assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
@@ -231,9 +230,9 @@ fn build_project_in_current_dir(expected_name: &str) -> Package {
     let expected_masm_path = match output {
         cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
             cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {:?}", other),
+            other => panic!("Expected Masm output, got {other:?}"),
         },
-        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+        other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
@@ -268,7 +267,7 @@ fn build_example_project_from_template(example_name: &str) -> Package {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
-        other => panic!("Expected NewCommandOutput, got {:?}", other),
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
     assert!(new_project_path.exists());
     env::set_current_dir(&new_project_path).unwrap();
@@ -302,7 +301,7 @@ fn verify_no_wit_files_for_new_template(template: &str) {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
-        other => panic!("Expected NewCommandOutput, got {:?}", other),
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
     env::set_current_dir(&new_project_path).unwrap();
 
@@ -310,8 +309,7 @@ fn verify_no_wit_files_for_new_template(template: &str) {
     let wit_dir = new_project_path.join(WIT_DEPS_PATH);
     assert!(
         !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
-        "WIT directory should not exist or be empty for {} template",
-        template
+        "WIT directory should not exist or be empty for {template} template"
     );
 
     env::set_current_dir(restore_dir).unwrap();
@@ -352,7 +350,7 @@ fn build_new_project_from_template(template: &str) -> Package {
         cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
             project_path.canonicalize().unwrap()
         }
-        other => panic!("Expected NewCommandOutput, got {:?}", other),
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
     assert!(new_project_path.exists());
     assert_eq!(new_project_path, expected_new_project_dir.canonicalize().unwrap());
@@ -366,9 +364,9 @@ fn build_new_project_from_template(template: &str) -> Package {
     let expected_masm_path = match output {
         cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
             cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {:?}", other),
+            other => panic!("Expected Masm output, got {other:?}"),
         },
-        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+        other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
     assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
@@ -383,9 +381,9 @@ fn build_new_project_from_template(template: &str) -> Package {
     let expected_masm_path = match output {
         cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
             cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {:?}", other),
+            other => panic!("Expected Masm output, got {other:?}"),
         },
-        other => panic!("Expected BuildCommandOutput, got {:?}", other),
+        other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
