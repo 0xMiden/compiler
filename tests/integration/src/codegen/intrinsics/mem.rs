@@ -77,10 +77,10 @@ fn load_sw() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -152,10 +152,10 @@ fn load_dw() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -221,10 +221,10 @@ fn load_u8() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -290,10 +290,10 @@ fn load_u16() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -365,10 +365,10 @@ fn load_bool() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -503,10 +503,10 @@ fn store_u16() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }
 
@@ -725,9 +725,9 @@ fn store_u8() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }

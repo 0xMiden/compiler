@@ -265,7 +265,7 @@ impl DependencyResolution {
     }
 
     /// Decodes the resolved dependency.
-    pub async fn decode(&self) -> Result<DecodedDependency> {
+    pub async fn decode(&self) -> Result<DecodedDependency<'_>> {
         // If the dependency path is a directory, assume it contains wit to parse as a package.
         let bytes = match self {
             DependencyResolution::Local(LocalResolution { path, .. })

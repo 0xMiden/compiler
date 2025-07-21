@@ -43,9 +43,9 @@ pub fn process_miden_dependencies(
 
     // Get the manifest directory from the package
     let manifest_path = &package.manifest_path;
-    let manifest_dir = manifest_path.parent().with_context(|| {
-        format!("Failed to get parent directory for manifest: {}", manifest_path)
-    })?;
+    let manifest_dir = manifest_path
+        .parent()
+        .with_context(|| format!("Failed to get parent directory for manifest: {manifest_path}"))?;
 
     // Extract Miden metadata using serde_json
     let miden_metadata: MidenMetadata = package
@@ -60,7 +60,7 @@ pub fn process_miden_dependencies(
     let dependencies = miden_metadata.dependencies;
 
     if !dependencies.is_empty() {
-        log::debug!("  Found dependencies defined in {}", manifest_path);
+        log::debug!("  Found dependencies defined in {manifest_path}");
 
         for (dep_name, dep_info) in &dependencies {
             let relative_path = &dep_info.path;
@@ -81,7 +81,7 @@ pub fn process_miden_dependencies(
 
             let absolute_dep_path =
                 fs::canonicalize(dep_path.as_std_path()).with_context(|| {
-                    format!("resolving dependency path for '{}' ({})", dep_name, dep_path)
+                    format!("resolving dependency path for '{dep_name}' ({dep_path})")
                 })?;
 
             // Skip if we've already processed this exact path

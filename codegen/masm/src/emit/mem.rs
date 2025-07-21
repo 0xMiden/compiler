@@ -711,7 +711,7 @@ impl OpEmitter<'_> {
             // Values which can be broken up into word-sized chunks can piggy-back on the
             // intrinsic for word-sized values, but we have to compute a new `count` by
             // multiplying `count` by the number of words in each value
-            size if size > 16 && size % 16 == 0 => {
+            size if size > 16 && size.is_multiple_of(16) => {
                 let factor = size / 16;
                 self.emit_all(
                     [

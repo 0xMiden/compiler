@@ -272,7 +272,7 @@ impl Expect {
 
     /// Checks if this expect is equal to `format!("{:#?}", actual)`.
     pub fn assert_debug_eq(&self, actual: &impl fmt::Debug) {
-        let actual = format!("{:#?}\n", actual);
+        let actual = format!("{actual:#?}\n");
         self.assert_eq(&actual)
     }
 
@@ -434,7 +434,7 @@ impl ExpectFile {
 
     /// Checks if file contents is equal to `format!("{:#?}", actual)`.
     pub fn assert_debug_eq(&self, actual: &impl fmt::Debug) {
-        let actual = format!("{:#?}\n", actual);
+        let actual = format!("{actual:#?}\n");
         self.assert_eq(&actual)
     }
 
@@ -497,24 +497,23 @@ impl Runtime {
         println!(
             "\n
 \x1b[1m\x1b[91merror\x1b[97m: expect test failed\x1b[0m
-   \x1b[1m\x1b[34m-->\x1b[0m {}
-{}
+   \x1b[1m\x1b[34m-->\x1b[0m {position}
+{help}
 \x1b[1mExpect\x1b[0m:
 ----
-{}
+{expected}
 ----
 
 \x1b[1mActual\x1b[0m:
 ----
-{}
+{actual}
 ----
 
 \x1b[1mDiff\x1b[0m:
 ----
-{}
+{diff}
 ----
-",
-            position, help, expected, actual, diff
+"
         );
         // Use resume_unwind instead of panic!() to prevent a backtrace, which is unnecessary noise.
         panic::resume_unwind(Box::new(()));
@@ -702,7 +701,7 @@ fn trim_indent(mut text: &str) -> String {
         .collect()
 }
 
-fn lines_with_ends(text: &str) -> LinesWithEnds {
+fn lines_with_ends(text: &str) -> LinesWithEnds<'_> {
     LinesWithEnds { text }
 }
 

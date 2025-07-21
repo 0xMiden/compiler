@@ -400,9 +400,9 @@ fn test_hmerge() {
 
     match res {
         Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+            panic!("Found minimal(shrinked) failing case: {value:?}");
         }
         Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
+        _ => panic!("Unexpected test result: {res:?}"),
     }
 }

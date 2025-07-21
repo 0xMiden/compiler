@@ -348,7 +348,7 @@ impl<'multiplexer, 'context: 'multiplexer> EdgeMultiplexer<'multiplexer, 'contex
             log::trace!(target: "cfg-to-scf", "arg is undef on this edge");
             // Otherwise undef values for any unused block arguments used by other entry blocks.
             let undef_value = self.transform_ctx.get_undef_value(arg.ty());
-            log::trace!(target: "cfg-to-scf", "new successor operand is {}", undef_value);
+            log::trace!(target: "cfg-to-scf", "new successor operand is {undef_value}");
             new_succ_operands.push(undef_value);
         }
 

@@ -341,9 +341,8 @@ mod fallback {
                 } else {
                     log::debug!(
                         target: "driver",
-                        "`{:?}` is not an id of an argument or a group.\nMake sure you're using \
-                         the name of the argument itself and not the name of short or long flags.",
-                        _arg
+                        "`{_arg:?}` is not an id of an argument or a group.\nMake sure you're using \
+                         the name of the argument itself and not the name of short or long flags."
                     );
                     return Err(MatchesError::UnknownArgument {});
                 }

@@ -341,8 +341,7 @@ impl HirLowering for scf::If {
         assert_eq!(
             emitter.stack.pop().unwrap().as_value(),
             Some(cond),
-            "expected {} on top of the stack",
-            cond
+            "expected {cond} on top of the stack"
         );
 
         let then_body = self.then_body();

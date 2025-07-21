@@ -69,7 +69,7 @@ impl PartialEq<TypeId> for TraitInfo {
 }
 impl PartialOrd for TraitInfo {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.type_id.cmp(&other.type_id))
+        Some(self.cmp(other))
     }
 }
 impl PartialOrd<TypeId> for TraitInfo {

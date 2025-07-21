@@ -1549,7 +1549,7 @@ impl Eval for arith::Trunc {
         }
 
         let result = match expected_ty {
-            Type::I1 => lhs_value.bitcast_u128().map(|x| Immediate::I1(x % 2 != 0)),
+            Type::I1 => lhs_value.bitcast_u128().map(|x| Immediate::I1(!x.is_multiple_of(2))),
             Type::I8 => lhs_value.bitcast_u128().map(|x| Immediate::I8(x as i8)),
             Type::U8 => lhs_value.bitcast_u128().map(|x| Immediate::U8(x as u8)),
             Type::I16 => lhs_value.bitcast_u128().map(|x| Immediate::I16(x as i16)),
@@ -1864,16 +1864,16 @@ impl Eval for arith::IsOdd {
 
         let result = match lhs_value {
             Immediate::I8(x) => x % 2 != 0,
-            Immediate::U8(x) => x % 2 != 0,
+            Immediate::U8(x) => !x.is_multiple_of(2),
             Immediate::I16(x) => x % 2 != 0,
-            Immediate::U16(x) => x % 2 != 0,
+            Immediate::U16(x) => !x.is_multiple_of(2),
             Immediate::I32(x) => x % 2 != 0,
-            Immediate::U32(x) => x % 2 != 0,
+            Immediate::U32(x) => !x.is_multiple_of(2),
             Immediate::I64(x) => x % 2 != 0,
-            Immediate::U64(x) => x % 2 != 0,
+            Immediate::U64(x) => !x.is_multiple_of(2),
             Immediate::I128(x) => x % 2 != 0,
-            Immediate::U128(x) => x % 2 != 0,
-            Immediate::Felt(x) => x.as_int() % 2 != 0,
+            Immediate::U128(x) => !x.is_multiple_of(2),
+            Immediate::Felt(x) => !x.as_int().is_multiple_of(2),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",

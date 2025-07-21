@@ -33,6 +33,11 @@ export.entrypoint
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::vec_alloc_vec::__rustc::__rust_no_alloc_shim_is_unstable_v2
+    trace.252
+    nop
     push.4
     push.8
     trace.240
@@ -195,6 +200,10 @@ proc.__rustc::__rust_dealloc
     drop
     drop
     drop
+end
+
+proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+    nop
 end
 
 proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -374,13 +383,6 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     else
         nop
     end
-end
-
-proc.alloc::alloc::handle_alloc_error
-    drop
-    drop
-    push.0
-    assert
 end
 
 proc.alloc::raw_vec::RawVecInner<A>::deallocate
@@ -645,6 +647,13 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
+end
+
+proc.alloc::alloc::handle_alloc_error
+    drop
+    drop
+    push.0
+    assert
 end
 
 proc.core::ptr::alignment::Alignment::max

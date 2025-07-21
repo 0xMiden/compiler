@@ -52,7 +52,7 @@ impl AccountComponentMetadataBuilder {
         let type_path = if let syn::Type::Path(type_path) = field_type {
             type_path
         } else {
-            panic!("failed to get type path {:?}", field_type)
+            panic!("failed to get type path {field_type:?}")
         };
 
         if let Some(segment) = type_path.path.segments.last() {
@@ -85,10 +85,10 @@ impl AccountComponentMetadataBuilder {
                         },
                     ));
                 }
-                _ => panic!("unexpected field type: {}", type_name),
+                _ => panic!("unexpected field type: {type_name}"),
             }
         } else {
-            panic!("failed to get last segment of the type path {:?}", type_path)
+            panic!("failed to get last segment of the type path {type_path:?}")
         }
     }
 

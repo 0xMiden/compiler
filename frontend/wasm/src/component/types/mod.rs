@@ -257,7 +257,7 @@ impl ComponentItem {
     pub(crate) fn unwrap_instance(&self) -> ComponentInstanceIndex {
         match self {
             ComponentItem::ComponentInstance(i) => *i,
-            _ => panic!("expected a component instance, got {:?}", self),
+            _ => panic!("expected a component instance, got {self:?}"),
         }
     }
 }

@@ -439,9 +439,8 @@ impl DataSegmentOffset {
                         return Err(diagnostics
                             .diagnostic(Severity::Error)
                             .with_message(format!(
-                                "Failed to get data segment offset from global init {:?} with \
-                                 global index {global_idx:?}",
-                                global_init,
+                                "Failed to get data segment offset from global init \
+                                 {global_init:?} with global index {global_idx:?}",
                             ))
                             .into_report());
                     }

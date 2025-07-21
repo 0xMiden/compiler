@@ -86,7 +86,7 @@ fn test_func_arg_order() {
             let result_ptr = ret_area.as_mut_ptr().addr() as u32;
             assert_eq(Felt::from_u32(result_ptr as u32), Felt::from_u32(1048560));
 
-            intrinsic({} as *const Felt, {} as *mut Felt);
+            intrinsic({digest_ptr_name} as *const Felt, {result_ptr_name} as *mut Felt);
 
             Digest::from_word(ret_area.assume_init())
         }}
@@ -99,8 +99,7 @@ fn test_func_arg_order() {
         // see assert_eq above, before the call
         assert_eq(Felt::from_u32(result_ptr as u32), Felt::from_u32(1048560));
     }}
-        "#,
-            digest_ptr_name, result_ptr_name
+        "#
         )
     }
 

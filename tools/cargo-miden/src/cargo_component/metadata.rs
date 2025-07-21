@@ -176,7 +176,7 @@ pub enum Target {
 
 impl Target {
     /// Gets the dependencies of the target.
-    pub fn dependencies(&self) -> Cow<HashMap<PackageRef, Dependency>> {
+    pub fn dependencies(&self) -> Cow<'_, HashMap<PackageRef, Dependency>> {
         match self {
             Self::Package { name, package, .. } => Cow::Owned(HashMap::from_iter([(
                 name.clone(),
@@ -455,7 +455,7 @@ impl ComponentMetadata {
     ///
     /// Returns `None` if the target is a registry package or
     /// if a path is not specified and the default path does not exist.
-    pub fn target_path(&self) -> Option<Cow<Path>> {
+    pub fn target_path(&self) -> Option<Cow<'_, Path>> {
         match &self.section.target {
             Target::Local {
                 path: Some(path), ..

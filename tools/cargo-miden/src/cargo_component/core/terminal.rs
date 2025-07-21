@@ -298,7 +298,7 @@ impl Output {
                 }
 
                 match message {
-                    Some(message) => writeln!(stderr, " {}", message)?,
+                    Some(message) => writeln!(stderr, " {message}")?,
                     None => write!(stderr, " ")?,
                 }
             }
@@ -309,7 +309,7 @@ impl Output {
                     write!(w, "{status}:")?;
                 }
                 match message {
-                    Some(message) => writeln!(w, " {}", message)?,
+                    Some(message) => writeln!(w, " {message}")?,
                     None => write!(w, " ")?,
                 }
             }

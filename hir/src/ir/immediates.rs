@@ -90,16 +90,16 @@ impl Immediate {
     pub fn is_odd(&self) -> Option<bool> {
         match self {
             Self::I1(b) => Some(*b),
-            Self::U8(i) => Some(*i % 2 == 0),
+            Self::U8(i) => Some((*i).is_multiple_of(2)),
             Self::I8(i) => Some(*i % 2 == 0),
-            Self::U16(i) => Some(*i % 2 == 0),
+            Self::U16(i) => Some((*i).is_multiple_of(2)),
             Self::I16(i) => Some(*i % 2 == 0),
-            Self::U32(i) => Some(*i % 2 == 0),
+            Self::U32(i) => Some((*i).is_multiple_of(2)),
             Self::I32(i) => Some(*i % 2 == 0),
-            Self::U64(i) => Some(*i % 2 == 0),
+            Self::U64(i) => Some((*i).is_multiple_of(2)),
             Self::I64(i) => Some(*i % 2 == 0),
-            Self::Felt(i) => Some(i.as_int() % 2 == 0),
-            Self::U128(i) => Some(*i % 2 == 0),
+            Self::Felt(i) => Some(i.as_int().is_multiple_of(2)),
+            Self::U128(i) => Some((*i).is_multiple_of(2)),
             Self::I128(i) => Some(*i % 2 == 0),
             Self::F64(_) => None,
         }
@@ -515,19 +515,19 @@ impl Immediate {
 impl fmt::Display for Immediate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::I1(i) => write!(f, "{}", i),
-            Self::U8(i) => write!(f, "{}", i),
-            Self::I8(i) => write!(f, "{}", i),
-            Self::U16(i) => write!(f, "{}", i),
-            Self::I16(i) => write!(f, "{}", i),
-            Self::U32(i) => write!(f, "{}", i),
-            Self::I32(i) => write!(f, "{}", i),
-            Self::U64(i) => write!(f, "{}", i),
-            Self::I64(i) => write!(f, "{}", i),
-            Self::U128(i) => write!(f, "{}", i),
-            Self::I128(i) => write!(f, "{}", i),
-            Self::F64(n) => write!(f, "{}", n),
-            Self::Felt(i) => write!(f, "{}", i),
+            Self::I1(i) => write!(f, "{i}"),
+            Self::U8(i) => write!(f, "{i}"),
+            Self::I8(i) => write!(f, "{i}"),
+            Self::U16(i) => write!(f, "{i}"),
+            Self::I16(i) => write!(f, "{i}"),
+            Self::U32(i) => write!(f, "{i}"),
+            Self::I32(i) => write!(f, "{i}"),
+            Self::U64(i) => write!(f, "{i}"),
+            Self::I64(i) => write!(f, "{i}"),
+            Self::U128(i) => write!(f, "{i}"),
+            Self::I128(i) => write!(f, "{i}"),
+            Self::F64(n) => write!(f, "{n}"),
+            Self::Felt(i) => write!(f, "{i}"),
         }
     }
 }
@@ -922,7 +922,7 @@ impl FloatToInt<i64> for f64 {
     }
 
     fn lower_bound() -> Self {
-        (63.0f64.exp2() * -1.0) - 1.0
+        -63.0f64.exp2() - 1.0
     }
 
     fn to_int(self) -> Result<i64, ()> {
@@ -998,7 +998,7 @@ impl FloatToInt<i128> for f64 {
     }
 
     fn lower_bound() -> Self {
-        (f64::from(i128::BITS - 1) * -1.0).exp2() - 1.0
+        (-f64::from(i128::BITS - 1)).exp2() - 1.0
     }
 
     fn to_int(self) -> Result<i128, ()> {

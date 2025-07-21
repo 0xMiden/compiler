@@ -593,7 +593,7 @@ impl OpPassManager {
         writeln!(out, "=={:-<73}==", "")?;
         // Figure out how many spaces for the description name.
         let padding = 80usize.saturating_sub(PASS_STATS_DESCRIPTION.len());
-        writeln!(out, "{: <1$}", PASS_STATS_DESCRIPTION, padding)?;
+        writeln!(out, "{PASS_STATS_DESCRIPTION: <padding$}")?;
         writeln!(out, "=={:-<73}==", "")?;
 
         // Defer to a specialized printer for each display mode.
@@ -667,7 +667,7 @@ impl OpPassManager {
     ) -> core::fmt::Result {
         use core::fmt::Write;
 
-        writeln!(out, "{: <1$}", pass, indent)?;
+        writeln!(out, "{pass: <indent$}")?;
         if stats.is_empty() {
             return Ok(());
         }

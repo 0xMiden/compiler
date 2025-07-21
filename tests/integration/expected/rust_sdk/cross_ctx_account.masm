@@ -15,10 +15,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.12688010519064574192
-    push.12192121904543683960
-    push.9209753571748900909
-    push.490654871247455262
+    push.4832509869486602328
+    push.1601943042316592615
+    push.9346833404071393867
+    push.18033844405625027779
     adv.push_mapval
     push.262144
     push.2
@@ -53,7 +53,7 @@ export.miden:cross-ctx-account/foo@1.0.0#process-felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048576
+    push.1048600
     u32wrapping_add
     trace.240
     nop

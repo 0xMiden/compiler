@@ -15,10 +15,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.14892926791041472544
-    push.3123340345793301551
-    push.12631150777561900137
-    push.17128208703755797298
+    push.5707856685415131940
+    push.8667909880382146532
+    push.4769294759028845126
+    push.7805034137375412681
     adv.push_mapval
     push.262144
     push.2
@@ -66,7 +66,7 @@ export.miden:base/note-script@1.0.0#note-script
     exec.::miden:base/note-script@1.0.0::cross_ctx_note::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
-    push.1048576
+    push.1048604
     u32wrapping_add
     dup.0
     push.4

@@ -1,5 +1,3 @@
-#![feature(proc_macro_span)]
-
 use std::{fs, str::FromStr};
 
 use account_component_metadata::AccountComponentMetadataBuilder;
@@ -31,36 +29,24 @@ struct StorageAttributeArgs {
 
 /// Finds and parses Cargo.toml to extract package metadata.
 fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::Error> {
-    let source_file_path = call_site_span.source_file().path();
-    let Some(mut current_dir) = source_file_path.parent() else {
-        // call_site is empty under rust-analyzer
-        // return some CargoMetadata to make rust-analyzer happy
+    // Use CARGO_MANIFEST_DIR to find the Cargo.toml
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
+        // Fallback for rust-analyzer or other tools
+        ".".to_string()
+    });
+
+    let current_dir = std::path::Path::new(&manifest_dir);
+
+    let cargo_toml_path = current_dir.join("Cargo.toml");
+    if !cargo_toml_path.is_file() {
+        // Return default metadata for rust-analyzer or when Cargo.toml is not found
         return Ok(CargoMetadata {
             name: String::new(),
             version: Version::new(0, 0, 1),
             description: String::new(),
             supported_types: vec![],
         });
-    };
-
-    let cargo_toml_path = loop {
-        let potential_path = current_dir.join("Cargo.toml");
-        if potential_path.is_file() {
-            break potential_path;
-        }
-        match current_dir.parent() {
-            Some(parent) => current_dir = parent,
-            None => {
-                return Err(syn::Error::new(
-                    call_site_span.into(),
-                    format!(
-                        "Could not find Cargo.toml searching upwards from {}",
-                        source_file_path.display()
-                    ),
-                ))
-            }
-        }
-    };
+    }
 
     let cargo_toml_content = fs::read_to_string(&cargo_toml_path).map_err(|e| {
         syn::Error::new(
@@ -314,7 +300,7 @@ fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
 /// static byte array `__MIDEN_ACCOUNT_COMPONENT_METADATA_BYTES` containing serialized metadata
 /// placed in a specific link section.
 ///
-/// ```
+/// ```ignore
 /// #[component]
 /// struct TestComponent {
 ///    #[storage(
@@ -357,7 +343,7 @@ pub fn component(
             Err(err) => {
                 return syn::Error::new(
                     call_site_span.into(),
-                    format!("Invalid account type '{}' in supported-types: {}", st, err),
+                    format!("Invalid account type '{st}' in supported-types: {err}"),
                 )
                 .to_compile_error()
                 .into()

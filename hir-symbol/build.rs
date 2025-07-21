@@ -93,7 +93,7 @@ impl Section {
         for (name, value) in table.iter() {
             let mut sym = Symbol::from_value(name, value);
             sym.is_keyword = section.name == "keywords";
-            assert!(section.keys.insert(sym), "duplicate symbol {}", name);
+            assert!(section.keys.insert(sym), "duplicate symbol {name}");
         }
         section
     }

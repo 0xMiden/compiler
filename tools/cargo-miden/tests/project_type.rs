@@ -44,7 +44,7 @@ fn test_project_type_detection() {
             .join("Cargo.toml")
             .canonicalize() // Resolve path for clearer error messages
             .unwrap_or_else(|e| {
-                panic!("Failed to find manifest path for {}: {}", example_name, e)
+                panic!("Failed to find manifest path for {example_name}: {e}")
             });
 
         println!("Testing project type detection for: {}", example_manifest_path.display());
@@ -90,8 +90,8 @@ fn test_project_type_detection() {
         let derived_type = cargo_miden::target_environment_to_project_type(detected_env);
         assert_eq!(
             derived_type, detected_type,
-            "Derived project type mismatch for example '{}': expected {:?}, derived {:?}",
-            example_name, detected_type, derived_type
+            "Derived project type mismatch for example '{example_name}': expected \
+             {detected_type:?}, derived {derived_type:?}"
         );
     }
 }

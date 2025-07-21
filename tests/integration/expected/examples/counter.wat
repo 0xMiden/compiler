@@ -217,9 +217,7 @@
     )
     (func $miden_base_sys::bindings::storage::get_map_item (;11;) (type 7) (param i32 i32 i32)
       local.get 1
-      i32.const 255
-      i32.and
-      f32.reinterpret_i32
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 2
       f32.load
       local.get 2
@@ -233,9 +231,7 @@
     )
     (func $miden_base_sys::bindings::storage::set_map_item (;12;) (type 8) (param i32 i32 i32 i32)
       local.get 1
-      i32.const 255
-      i32.and
-      f32.reinterpret_i32
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 2
       f32.load
       local.get 2
@@ -255,7 +251,13 @@
       local.get 0
       call $miden_base_sys::bindings::storage::extern_set_storage_map_item
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;13;) (type 9) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;13;) (type 0) (param i32) (result f32)
+      local.get 0
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
+    )
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;14;) (type 9) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
@@ -282,6 +284,7 @@
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\03\01\00\01\13count_map\019counter contract storage map")
   )
+  (alias export 2 "felt" (type (;3;)))
   (alias export 0 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
   (alias export 0 "add" (func (;1;)))
@@ -307,7 +310,6 @@
     )
   )
   (alias core export 2 "memory" (core memory (;0;)))
-  (alias export 2 "felt" (type (;3;)))
   (type (;4;) (func (result 3)))
   (alias core export 2 "miden:counter-contract/counter@0.1.0#get-count" (core func (;5;)))
   (func (;5;) (type 4) (canon lift (core func 5)))

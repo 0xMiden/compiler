@@ -260,9 +260,7 @@ impl GlobalVariableLayout {
         }
 
         log::debug!(target: "linker",
-            "GlobalVariableLayout: updated global_table_offset from {:#x} to {:#x}",
-            old_offset,
-            new_offset
+            "GlobalVariableLayout: updated global_table_offset from {old_offset:#x} to {new_offset:#x}"
         );
     }
 

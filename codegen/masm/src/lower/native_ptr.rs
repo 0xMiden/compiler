@@ -52,7 +52,7 @@ impl NativePtr {
 
     /// Returns true if this pointer is aligned to a word boundary
     pub const fn is_word_aligned(&self) -> bool {
-        self.offset == 0 && self.addr % 4 == 0
+        self.offset == 0 && self.addr.is_multiple_of(4)
     }
 
     /// Returns true if this pointer is aligned to a field element boundary

@@ -116,7 +116,7 @@ impl midenc_session::Emit for Module {
     ) -> anyhow::Result<()> {
         let flags = crate::OpPrintingFlags::default();
         let document = <Module as OpPrinter>::print(self, &flags, self.op.context());
-        writer.write_fmt(format_args!("{}", document))
+        writer.write_fmt(format_args!("{document}"))
     }
 }
 

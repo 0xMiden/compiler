@@ -1,5 +1,3 @@
-#![allow(clippy::transmute_int_to_float)]
-
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 #[link(wasm_import_module = "miden:core-intrinsics/intrinsics-felt@1.0.0")]
@@ -156,7 +154,7 @@ impl From<Felt> for u64 {
 impl From<u32> for Felt {
     fn from(value: u32) -> Self {
         Self {
-            inner: unsafe { core::mem::transmute::<u32, f32>(value) },
+            inner: f32::from_bits(value),
         }
     }
 }
@@ -164,7 +162,7 @@ impl From<u32> for Felt {
 impl From<u16> for Felt {
     fn from(value: u16) -> Self {
         Self {
-            inner: unsafe { core::mem::transmute::<u32, f32>(value as u32) },
+            inner: f32::from_bits(value as u32),
         }
     }
 }
@@ -172,7 +170,7 @@ impl From<u16> for Felt {
 impl From<u8> for Felt {
     fn from(value: u8) -> Self {
         Self {
-            inner: unsafe { core::mem::transmute::<u32, f32>(value as u32) },
+            inner: f32::from_bits(value as u32),
         }
     }
 }
@@ -181,7 +179,7 @@ impl From<u8> for Felt {
 impl From<usize> for Felt {
     fn from(value: usize) -> Self {
         Self {
-            inner: unsafe { core::mem::transmute(value as u32) },
+            inner: f32::from_bits(value as u32),
         }
     }
 }

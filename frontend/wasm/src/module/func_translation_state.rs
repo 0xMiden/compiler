@@ -282,7 +282,7 @@ impl FuncTranslationState {
         if val.borrow().ty() != &ty {
             builder
                 .bitcast(val, ty.clone(), span)
-                .unwrap_or_else(|_| panic!("failed to bitcast {:?} to {:?}", val, ty))
+                .unwrap_or_else(|_| panic!("failed to bitcast {val:?} to {ty:?}"))
         } else {
             val
         }

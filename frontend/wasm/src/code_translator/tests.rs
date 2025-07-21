@@ -42,7 +42,7 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
         .as_operation()
         .prewalk(|op: &Operation| {
             if let Some(_function) = op.downcast_ref::<builtin::Function>() {
-                match writeln!(&mut w, "{}", op) {
+                match writeln!(&mut w, "{op}") {
                     Ok(_) => WalkResult::Skip,
                     Err(err) => WalkResult::Break(err),
                 }
