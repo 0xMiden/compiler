@@ -147,15 +147,20 @@ impl Linker {
         // 3. Layout global variables in the next page following the last data segment
         let next_available_offset = self.segment_layout.next_available_offset();
         let reserved_offset = (self.reserved_memory_pages * self.page_size).next_multiple_of(4);
+        // We add a page after the data segments to avoid overlapping with Rust `static` vars which
+        // are placed after data segments (if present).
+        let next_available_offset_after_rust_statics = next_available_offset + DEFAULT_PAGE_SIZE;
         log::debug!(target: "linker",
-            "next_available_offset from segments: {:#x}, reserved_offset: {:#x}, \
+            "next_available_offset (after Rust statics) from segments: {:#x}, reserved_offset: {:#x}, \
              segment_count: {}",
-            next_available_offset,
+            next_available_offset_after_rust_statics,
             reserved_offset,
             self.segment_layout.len()
         );
-        self.globals_layout
-            .update_global_table_offset(core::cmp::max(reserved_offset, next_available_offset));
+        self.globals_layout.update_global_table_offset(core::cmp::max(
+            reserved_offset,
+            next_available_offset_after_rust_statics,
+        ));
         log::debug!(target: "linker",
             "global_table_offset set to: {:#x}",
             self.globals_layout.global_table_offset()
