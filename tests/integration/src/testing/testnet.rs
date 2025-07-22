@@ -14,12 +14,15 @@ use miden_client::{
     rpc::{Endpoint, NodeRpcClient, TonicRpcClient},
     sync::SyncSummary,
     transaction::{TransactionId, TransactionRequestBuilder},
-    Client, Felt, Word,
+    Client, Felt,
 };
-use miden_core::FieldElement;
-use miden_objects::account::{
-    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
-    InitStorageData,
+use miden_core::{utils::Deserializable, FieldElement, Word};
+use miden_objects::{
+    account::{
+        AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+        InitStorageData,
+    },
+    //transaction::TransactionScript,
 };
 use rand::RngCore;
 
@@ -264,13 +267,14 @@ pub struct ScenarioNoteBuilder<'a> {
 impl<'a> ScenarioNoteBuilder<'a> {
     fn new(
         scenario: &'a mut Scenario,
-        _note: Arc<miden_mast_package::Package>,
+        note: Arc<miden_mast_package::Package>,
         sender: &'static str,
         recipient: &'static str,
     ) -> Self {
         Self {
             scenario,
             params: CreateNoteParams {
+                note,
                 note_ty: NoteType::Public,
                 inputs: Default::default(),
                 assets: Default::default(),
@@ -319,6 +323,7 @@ struct CreateAccountParams {
 }
 
 struct CreateNoteParams {
+    note: Arc<miden_mast_package::Package>,
     note_ty: NoteType,
     inputs: Vec<Felt>,
     assets: Vec<Asset>,
@@ -387,10 +392,11 @@ async fn create_account(
     let account_component = match account_package.account_component_metadata_bytes.as_deref() {
         None => todo!("unsupported account package: no account component metadata present"),
         Some(bytes) => {
-            use miden_client::utils::Deserializable;
             let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let library = account_package.unwrap_library().as_ref().clone();
-            let template = AccountComponentTemplate::new(metadata, library);
+            let template = AccountComponentTemplate::new(
+                metadata,
+                account_package.unwrap_library().as_ref().clone(),
+            );
             AccountComponent::from_template(&template, init_storage_data)
                 .unwrap()
                 .with_supported_type(AccountType::RegularAccountImmutableCode)
@@ -422,8 +428,11 @@ async fn create_account(
 
 /// Build a note
 async fn create_note(client: &mut Client, scenario: &Scenario, params: &CreateNoteParams) -> Note {
-    use miden_client::note::WellKnownNote;
-    let note_script = WellKnownNote::P2ID.script();
+    let note_program = params.note.unwrap_program();
+    let note_script = miden_client::note::NoteScript::from_parts(
+        note_program.mast_forest().clone(),
+        note_program.entrypoint(),
+    );
 
     let sender = scenario.accounts[params.sender];
     let recipient = scenario.accounts[params.recipient];
