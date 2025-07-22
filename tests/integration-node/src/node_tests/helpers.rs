@@ -5,13 +5,14 @@ use std::{sync::Arc, time::Duration};
 use miden_client::{
     account::{
         component::{BasicWallet, RpoFalcon512},
-        Account, AccountBuilder, AccountStorageMode, AccountType,
+        Account, AccountStorageMode, AccountType,
     },
     auth::AuthSecretKey,
     crypto::SecretKey,
     keystore::FilesystemKeyStore,
     Client, ClientError,
 };
+use miden_objects::account::AccountBuilder;
 use rand::{rngs::StdRng, RngCore};
 use tokio::time::sleep;
 
@@ -25,12 +26,12 @@ pub async fn create_basic_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
     let builder = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicWallet);
     let (account, seed) = builder.build().unwrap();
     client.add_account(&account, Some(seed), false).await?;

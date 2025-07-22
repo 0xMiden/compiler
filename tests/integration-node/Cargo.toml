@@ -19,7 +19,7 @@ filetime = "0.2.23"
 fs2 = "0.4"
 log.workspace = true
 miden-assembly.workspace = true
-miden-client = { version = "0.9", git = "https://github.com/0xMiden/miden-client", rev = "f98ae87fc3f77e269c3c1e412d1b8ac650aa6fe3", features = [
+miden-client = { version = "0.10", features = [
     "tonic",
     "sqlite",
 ] }

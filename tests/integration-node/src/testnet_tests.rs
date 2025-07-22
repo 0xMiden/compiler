@@ -6,8 +6,7 @@ use std::{env, sync::Arc, time::Duration};
 use miden_client::{
     account::{
         component::{BasicWallet, RpoFalcon512},
-        Account, AccountBuilder, AccountStorage, AccountStorageMode, AccountType, StorageMap,
-        StorageSlot,
+        Account, AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageSlot,
     },
     auth::AuthSecretKey,
     builder::ClientBuilder,
@@ -27,7 +26,7 @@ use miden_core::{
 };
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{
-    AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
@@ -43,12 +42,12 @@ async fn create_basic_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
     let builder = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicWallet);
     let (account, seed) = builder.build().unwrap();
     client.add_account(&account, Some(seed), false).await?;
@@ -88,12 +87,12 @@ async fn create_counter_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
     let builder = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicWallet)
         .with_component(account_component);
     let (account, seed) = builder.build().unwrap();
@@ -193,8 +192,8 @@ pub fn test_counter_contract_testnet() {
         let keystore = Arc::new(FilesystemKeyStore::new(keystore_path.clone()).unwrap());
 
         let mut client = ClientBuilder::new()
-            .with_rpc(rpc_api)
-            .with_filesystem_keystore(keystore_path.to_str().unwrap())
+            .rpc(rpc_api)
+            .filesystem_keystore(keystore_path.to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
@@ -249,7 +248,7 @@ pub fn test_counter_contract_testnet() {
 
         // Submit transaction to create the note
         let note_request = TransactionRequestBuilder::new()
-            .with_own_output_notes(vec![OutputNote::Full(counter_note.clone())])
+            .own_output_notes(vec![OutputNote::Full(counter_note.clone())])
             .build()
             .unwrap();
 
@@ -278,7 +277,7 @@ pub fn test_counter_contract_testnet() {
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
             // .with_authenticated_input_notes([(counter_note.id(), None)])
-            .with_unauthenticated_input_notes([(counter_note, None)])
+            .unauthenticated_input_notes([(counter_note, None)])
             .build()
             .unwrap();
 

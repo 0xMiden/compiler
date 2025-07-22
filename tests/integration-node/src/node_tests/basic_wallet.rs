@@ -5,7 +5,7 @@ use std::{env, sync::Arc};
 use miden_client::{
     account::{
         component::{BasicFungibleFaucet, RpoFalcon512},
-        Account, AccountBuilder, AccountStorageMode, AccountType,
+        Account, AccountStorageMode, AccountType,
     },
     asset::{FungibleAsset, TokenSymbol},
     auth::AuthSecretKey,
@@ -23,7 +23,7 @@ use miden_core::{
 };
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{
-    AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
@@ -42,12 +42,12 @@ async fn create_fungible_faucet_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
     let builder = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, decimals, max_supply).unwrap());
 
     let (account, seed) = builder.build().unwrap();
@@ -82,12 +82,12 @@ async fn create_basic_wallet_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
     let builder = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(account_component);
     let (account, seed) = builder.build().unwrap();
     client.add_account(&account, Some(seed), false).await?;
@@ -149,8 +149,8 @@ pub fn test_basic_wallet_p2id_local() {
         env::set_current_dir(temp_dir.path()).unwrap();
 
         let mut client = ClientBuilder::new()
-            .with_rpc(rpc_api)
-            .with_filesystem_keystore(keystore_path.to_str().unwrap())
+            .rpc(rpc_api)
+            .filesystem_keystore(keystore_path.to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
@@ -291,7 +291,7 @@ pub fn test_basic_wallet_p2id_local() {
         eprintln!("Created P2ID note. Note ID: {:?}", p2id_note.id().to_hex());
 
         let alice_tx_request = TransactionRequestBuilder::new()
-            .with_own_output_notes(vec![OutputNote::Full(p2id_note.clone())])
+            .own_output_notes(vec![OutputNote::Full(p2id_note.clone())])
             .build()
             .unwrap();
 
@@ -342,7 +342,7 @@ pub fn test_basic_wallet_p2id_local() {
 
         if !bob_notes.is_empty() {
             let consume_request = TransactionRequestBuilder::new()
-                .with_unauthenticated_input_notes([(p2id_note.clone(), None)])
+                .unauthenticated_input_notes([(p2id_note.clone(), None)])
                 .build()
                 .unwrap();
 

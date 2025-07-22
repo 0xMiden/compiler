@@ -22,10 +22,6 @@ glob = "0.3.1"
 log.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
-miden-client = { version = "0.10", features = [
-    "tonic",
-    "sqlite",
-] }
 miden-mast-package.workspace = true
 miden-objects = { workspace = true, features = ["std"] }
 miden-processor.workspace = true

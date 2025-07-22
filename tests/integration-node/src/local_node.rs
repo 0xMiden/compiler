@@ -17,7 +17,7 @@ use fs2::FileExt;
 // the compatible miden-node version. Both should typically use the same major.minor version.
 
 /// The exact miden-node version that is compatible with the miden-client version used in tests
-const MIDEN_NODE_VERSION: &str = "0.9.2";
+const MIDEN_NODE_VERSION: &str = "0.10.0";
 
 /// Default RPC URL for the node
 const RPC_URL: &str = "http://127.0.0.1:57291";
@@ -379,7 +379,7 @@ async fn start_shared_node() -> Result<u32, String> {
             "--rpc.url",
             RPC_URL,
             "--block.interval",
-            "1",
+            "1sec",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
