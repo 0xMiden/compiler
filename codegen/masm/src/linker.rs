@@ -5,7 +5,10 @@ use midenc_hir::{
 
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 /// Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
-const DEFAULT_RESERVATION: u32 = 16;
+/// (see __stack_pointer global variable value in Wasm).
+// We start our reserved memory from the next page after the rustc reserved for the
+// Rust stack to avoid overlapping with Rust `static` vars.
+const DEFAULT_RESERVATION: u32 = 17;
 
 pub struct LinkInfo {
     component: builtin::ComponentId,
@@ -144,15 +147,20 @@ impl Linker {
         // 3. Layout global variables in the next page following the last data segment
         let next_available_offset = self.segment_layout.next_available_offset();
         let reserved_offset = (self.reserved_memory_pages * self.page_size).next_multiple_of(4);
+        // We add a page after the data segments to avoid overlapping with Rust `static` vars which
+        // are placed after data segments (if present).
+        let next_available_offset_after_rust_statics = next_available_offset + DEFAULT_PAGE_SIZE;
         log::debug!(target: "linker",
-            "next_available_offset from segments: {:#x}, reserved_offset: {:#x}, \
+            "next_available_offset (after Rust statics) from segments: {:#x}, reserved_offset: {:#x}, \
              segment_count: {}",
-            next_available_offset,
+            next_available_offset_after_rust_statics,
             reserved_offset,
             self.segment_layout.len()
         );
-        self.globals_layout
-            .update_global_table_offset(core::cmp::max(reserved_offset, next_available_offset));
+        self.globals_layout.update_global_table_offset(core::cmp::max(
+            reserved_offset,
+            next_available_offset_after_rust_statics,
+        ));
         log::debug!(target: "linker",
             "global_table_offset set to: {:#x}",
             self.globals_layout.global_table_offset()

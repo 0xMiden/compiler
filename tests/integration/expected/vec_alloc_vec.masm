@@ -1,19 +1,19 @@
 # mod root_ns:root@1.0.0
 
 export.init
-    push.1114112
+    push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.278528
 end
 
 # mod root_ns:root@1.0.0::vec_alloc_vec
 
 export.entrypoint
-    push.1048576
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -23,7 +23,7 @@ export.entrypoint
     nop
     push.16
     u32wrapping_sub
-    push.1048576
+    push.1114112
     dup.1
     swap.1
     u32divmod.4
@@ -39,17 +39,51 @@ export.entrypoint
     trace.252
     nop
     push.4
-    push.8
+    push.12
     trace.240
     nop
     exec.::root_ns:root@1.0.0::vec_alloc_vec::__rustc::__rust_alloc
     trace.252
     nop
     push.0
-    dup.1
+    push.0
+    dup.2
     swap.1
+    eq
     neq
     if.true
+        drop
+        drop
+        drop
+        push.12
+        push.4
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::alloc::handle_alloc_error
+        trace.252
+        nop
+        push.0
+        push.3735929054
+    else
+        push.8
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        push.3
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
         push.4
         dup.1
         add
@@ -60,7 +94,7 @@ export.entrypoint
         u32mod
         u32assert
         assertz
-        dup.3
+        push.2
         swap.1
         u32divmod.4
         swap.1
@@ -76,7 +110,7 @@ export.entrypoint
         u32mod
         u32assert
         assertz
-        movup.3
+        push.1
         swap.1
         u32divmod.4
         swap.1
@@ -95,7 +129,7 @@ export.entrypoint
         u32mod
         u32assert
         assertz
-        push.2
+        push.3
         swap.1
         u32divmod.4
         swap.1
@@ -133,34 +167,8 @@ export.entrypoint
         u32mod
         u32assert
         assertz
-        push.2
+        push.3
         swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
-        push.1048576
-        swap.1
-        assert_eq
-        push.4
-        push.4
-        dup.2
-        swap.1
-        u32wrapping_add
-        dup.1
-        swap.2
-        swap.1
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::raw_vec::RawVecInner<A>::deallocate
-        trace.252
-        nop
-        push.16
-        u32wrapping_add
-        push.1048576
         u32divmod.4
         swap.1
         trace.240
@@ -169,19 +177,81 @@ export.entrypoint
         trace.252
         nop
         push.0
-    else
+        push.3
+        dup.4
+        swap.1
+        u32gte
+        neq
+        dup.0
+        if.true
+            movdn.3
+            drop
+            drop
+            drop
+            push.3735929054
+        else
+            push.2
+            movup.4
+            swap.1
+            u32shl
+            movup.2
+            swap.1
+            u32wrapping_add
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_felt
+            trace.252
+            nop
+            push.4
+            push.4
+            dup.4
+            swap.1
+            u32wrapping_add
+            dup.1
+            swap.2
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::raw_vec::RawVecInner<A>::deallocate
+            trace.252
+            nop
+            push.16
+            movup.3
+            swap.1
+            u32wrapping_add
+            push.1114112
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
+        end
+        push.1
+        push.0
+        movup.3
+        cdrop
+        swap.1
+    end
+    push.0
+    movup.2
+    swap.1
+    eq
+    if.true
         drop
-        drop
-        drop
-        push.8
-        push.4
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::alloc::handle_alloc_error
-        trace.252
-        nop
         push.0
         assert
+    else
+        nop
     end
 end
 
@@ -386,7 +456,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
 end
 
 proc.alloc::raw_vec::RawVecInner<A>::deallocate
-    push.1048576
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -396,7 +466,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     nop
     push.16
     u32wrapping_sub
-    push.1048576
+    push.1114112
     dup.1
     swap.1
     u32divmod.4
@@ -489,7 +559,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     end
     push.16
     u32wrapping_add
-    push.1048576
+    push.1114112
     u32divmod.4
     swap.1
     trace.240

@@ -1,13 +1,13 @@
 # mod root_ns:root@1.0.0
 
 export.init
-    push.1114112
+    push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.278528
 end
 
 # mod root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
@@ -126,7 +126,7 @@ proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1
 end
 
 export.entrypoint
-    push.1048576
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -140,7 +140,7 @@ export.entrypoint
     swap.1
     u32wrapping_sub
     u32and
-    push.1048576
+    push.1114112
     dup.1
     swap.1
     u32divmod.4
@@ -356,7 +356,7 @@ export.entrypoint
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.1048576
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
