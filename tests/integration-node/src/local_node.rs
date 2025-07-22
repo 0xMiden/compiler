@@ -17,7 +17,7 @@ use fs2::FileExt;
 // the compatible miden-node version. Both should typically use the same major.minor version.
 
 /// The exact miden-node version that is compatible with the miden-client version used in tests
-const MIDEN_NODE_VERSION: &str = "0.10.0";
+const MIDEN_NODE_VERSION: &str = "0.10.1";
 
 /// Default RPC URL for the node
 const RPC_URL: &str = "http://127.0.0.1:57291";
@@ -60,7 +60,8 @@ impl LocalMidenNode {
                     false
                 } else {
                     eprintln!(
-                        "Found incompatible miden-node version: {version_line} (need {MIDEN_NODE_VERSION})"
+                        "Found incompatible miden-node version: {version_line} (need \
+                         {MIDEN_NODE_VERSION})"
                     );
                     eprintln!("Uninstalling current version...");
 
