@@ -166,8 +166,8 @@ impl Scenario {
     async fn get_client(&self) -> Client {
         let keystore_dir = self.dir.child("keystore");
         ClientBuilder::new()
-            .with_rpc(self.rpc_client.clone())
-            .with_filesystem_keystore(keystore_dir.as_path().to_str().unwrap())
+            .rpc(self.rpc_client.clone())
+            .filesystem_keystore(keystore_dir.as_path().to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
@@ -407,13 +407,9 @@ async fn create_account(
     let mut init_seed = [0_u8; 32];
     client.rng().fill_bytes(&mut init_seed);
 
-    // Anchor block of the account
-    let anchor_block = client.get_latest_epoch_block().await.unwrap();
-
     // Build the new `Account` with the component
     let key_pair = miden_client::crypto::SecretKey::with_rng(client.rng());
     let (account, seed) = AccountBuilder::new(init_seed)
-        .anchor((&anchor_block).try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component.clone())
@@ -441,11 +437,7 @@ async fn create_note(client: &mut Client, scenario: &Scenario, params: &CreateNo
     let sender = scenario.accounts[params.sender];
     let recipient = scenario.accounts[params.recipient];
 
-    let tag = miden_client::note::NoteTag::from_account_id(
-        recipient,
-        miden_client::note::NoteExecutionMode::Local,
-    )
-    .unwrap();
+    let tag = miden_client::note::NoteTag::from_account_id(recipient);
     let inputs = miden_client::note::NoteInputs::new(params.inputs.clone()).unwrap();
     let serial_num = client.rng().draw_word();
     let vault = miden_client::note::NoteAssets::new(params.assets.clone()).unwrap();
@@ -470,10 +462,8 @@ async fn submit_transaction(
         .into_iter()
         .map(miden_client::transaction::OutputNote::Full);
     // Build a transaction request
-    let tx_request = TransactionRequestBuilder::new()
-        .with_own_output_notes(output_notes)
-        .build()
-        .unwrap();
+    let tx_request =
+        TransactionRequestBuilder::new().own_output_notes(output_notes).build().unwrap();
 
     // Execute the transaction locally
     let target_account = scenario.accounts[account];
