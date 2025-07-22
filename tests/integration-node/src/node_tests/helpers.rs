@@ -44,7 +44,7 @@ pub async fn create_basic_account(
 #[allow(dead_code)]
 pub async fn wait_for_notes(
     client: &mut Client,
-    account_id: &miden_client::account::Account,
+    account_id: &miden_client::account::AccountId,
     expected: usize,
 ) -> Result<(), ClientError> {
     let mut try_num = 0;
@@ -52,12 +52,13 @@ pub async fn wait_for_notes(
         client.sync_state().await?;
         let notes = client.get_consumable_notes(None).await?;
         if notes.len() >= expected {
+            eprintln!("Found {} consumable notes for account {}", notes.len(), account_id.to_hex());
             break;
         }
         eprintln!(
             "{} consumable notes found for account {}. Waiting...",
             notes.len(),
-            account_id.id().to_hex()
+            account_id.to_hex()
         );
         if try_num > 10 {
             panic!("waiting for too long");

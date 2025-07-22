@@ -30,7 +30,7 @@ use miden_objects::account::{
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
 
-use crate::local_node;
+use crate::{local_node, node_tests::helpers::wait_for_notes};
 
 fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
@@ -219,15 +219,13 @@ pub fn test_counter_contract_local() {
         let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
         assert_eq!(executed_tx_output_note.id(), counter_note.id());
         let create_note_tx_id = executed_transaction.id();
-        // client
-        //     .submit_transaction(tx_result)
-        //     .await
-        //     .expect("failed to submit the tx creating the note");
+        client
+            .submit_transaction(tx_result)
+            .await
+            .expect("failed to submit the tx creating the note");
         eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
-        client.sync_state().await.unwrap();
-
-        // wait_for_notes(&mut client, &counter_account, 1).await.unwrap();
+        wait_for_notes(&mut client, &counter_account.id(), 1).await.unwrap();
 
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
@@ -235,58 +233,31 @@ pub fn test_counter_contract_local() {
             .build()
             .unwrap();
 
-        let tx_result = client.new_transaction(counter_account.id(), consume_request).await;
+        let tx_result =
+            client.new_transaction(counter_account.id(), consume_request).await.unwrap();
 
-        // Assert that tx_result contains the expected error until the
-        // https://github.com/0xMiden/miden-base/issues/1452 is not propagated into the client
-        assert!(tx_result.is_err());
-        let err = tx_result.unwrap_err();
-
-        // Check if the error matches the expected pattern
-        let err_str = err.to_string();
-
-        // The error should indicate a failure to execute transaction kernel program
-        assert!(
-            err_str.contains("failed to execute transaction kernel program"),
-            "Expected transaction kernel program execution failure, got: {err_str}"
+        eprintln!(
+            "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
+            tx_result.executed_transaction().id()
         );
 
-        // Check that it mentions value not present in advice map
-        assert!(
-            err_str.contains("not present in the advice map"),
-            "Expected advice map key not found error, got: {err_str}"
-        );
+        client
+            .submit_transaction(tx_result)
+            .await
+            .expect("failed to submit the tx consuming the note");
 
-        // Check for the specific key in hex format
-        // The key [10393006917776393985, 11082306316302361448, 8154980225314320902, 11512975618068632545]
-        // corresponds to hex: 4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686
-        assert!(
-            err_str.contains("4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686"),
-            "Expected specific key in error, got: {err_str}"
-        );
-
-        // eprintln!(
-        //     "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
-        //     tx_result.executed_transaction().id()
-        // );
-
-        // client
-        //     .submit_transaction(tx_result)
-        //     .await
-        //     .expect("failed to submit the tx consuming the note");
-
-        // client.sync_state().await.unwrap();
+        client.sync_state().await.unwrap();
 
         // The counter contract storage value should be 1 (incremented) after the note is consumed
-        // assert_counter_storage(
-        //     client
-        //         .get_account(counter_account.id())
-        //         .await
-        //         .unwrap()
-        //         .unwrap()
-        //         .account()
-        //         .storage(),
-        //     1,
-        // );
+        assert_counter_storage(
+            client
+                .get_account(counter_account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .account()
+                .storage(),
+            1,
+        );
     });
 }

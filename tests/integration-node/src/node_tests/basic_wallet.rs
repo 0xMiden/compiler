@@ -1,6 +1,6 @@
 //! Basic wallet test module
 
-use std::{env, sync::Arc};
+use std::{env, sync::Arc, time::Duration};
 
 use miden_client::{
     account::{
@@ -10,16 +10,19 @@ use miden_client::{
     asset::{FungibleAsset, TokenSymbol},
     auth::AuthSecretKey,
     builder::ClientBuilder,
-    crypto::SecretKey,
+    crypto::{FeltRng, SecretKey},
     keystore::FilesystemKeyStore,
-    note::{create_p2id_note, NoteType},
+    note::{
+        Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
+        NoteType,
+    },
     rpc::{Endpoint, TonicRpcClient},
     transaction::{OutputNote, TransactionRequestBuilder},
-    Client, ClientError, Felt,
+    Client, ClientError,
 };
 use miden_core::{
     utils::{Deserializable, Serializable},
-    FieldElement,
+    Felt, FieldElement,
 };
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{
@@ -28,7 +31,7 @@ use miden_objects::account::{
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
 
-use crate::local_node;
+use crate::{local_node, node_tests::helpers::wait_for_notes};
 
 /// Helper to create a fungible faucet account
 async fn create_fungible_faucet_account(
@@ -89,6 +92,7 @@ async fn create_basic_wallet_account(
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
         .with_component(account_component);
+    // .with_component(BasicWallet);
     let (account, seed) = builder.build().unwrap();
     client.add_account(&account, Some(seed), false).await?;
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
@@ -116,18 +120,30 @@ pub fn test_basic_wallet_p2id_local() {
         .to_bytes();
     assert!(bytes.len() < 32767, "expected to fit in 32 KB account update size limit");
 
+    // Use temp_dir for a fresh client store
+    let temp_dir = temp_dir::TempDir::with_prefix("test_basic_wallet_p2id_local_").unwrap();
+
+    // write bytes to disc at temp_dir with basic_wallet.masp file name
+    let wallet_package_path = temp_dir.path().join("basic_wallet.masp");
+    std::fs::write(&wallet_package_path, wallet_package.to_bytes())
+        .expect("Failed to write wallet");
+
+    dbg!(&wallet_package.manifest.exports);
+
     // Compile the p2id note
     let mut note_builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../../examples/p2id-note",
         config,
-        ["--debug=none".into()], // don't include any debug info in the compiled MAST
+        [
+            "--debug=none".into(),
+            // "--link-library".into(),
+            // wallet_package_path.to_string_lossy().into(),
+        ],
     );
+    dbg!(&wallet_package_path);
     note_builder.with_release(true);
     let mut note_test = note_builder.build();
-    let _note_package = note_test.compiled_package();
-
-    // Use temp_dir for a fresh client store
-    let temp_dir = temp_dir::TempDir::with_prefix("test_basic_wallet_p2id_local_").unwrap();
+    let note_package = note_test.compiled_package();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -176,6 +192,11 @@ pub fn test_basic_wallet_p2id_local() {
         )
         .await
         .unwrap();
+
+        // Resync to show newly deployed faucet
+        client.sync_state().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
         eprintln!("Faucet account ID: {:?}", faucet_account.id().to_hex());
 
         // Create Alice's account with basic-wallet component
@@ -190,13 +211,37 @@ pub fn test_basic_wallet_p2id_local() {
         let mint_amount = 100_000u64; // 100,000 tokens
         let fungible_asset = FungibleAsset::new(faucet_account.id(), mint_amount).unwrap();
 
+        // Create the p2id note from Alice to Bob
+        let note_program = note_package.unwrap_program();
+        let note_script =
+            NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
+
+        let serial_num = client.rng().draw_word();
+        let note_inputs = NoteInputs::new(vec![
+            alice_account.id().suffix(),
+            alice_account.id().prefix().as_felt(),
+        ])
+        .unwrap();
+        let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+
+        let tag = NoteTag::for_public_use_case(0, 0, miden_client::note::NoteExecutionMode::Local)
+            .unwrap();
+        let metadata = NoteMetadata::new(
+            faucet_account.id(), // The sender is who creates the note
+            NoteType::Public,
+            tag,
+            NoteExecutionHint::always(),
+            Felt::ZERO,
+        )
+        .unwrap();
+
+        let vault = miden_client::note::NoteAssets::new(vec![fungible_asset.into()]).unwrap();
+        let p2id_note_mint = Note::new(vault, metadata, recipient);
+        eprintln!("P2ID mint note hash: {:?}", p2id_note_mint.id().to_hex());
+
         let mint_request = TransactionRequestBuilder::new()
-            .build_mint_fungible_asset(
-                fungible_asset,
-                alice_account.id(),
-                NoteType::Public,
-                client.rng(),
-            )
+            .own_output_notes(vec![OutputNote::Full(p2id_note_mint.clone())])
+            .build()
             .unwrap();
 
         let mint_tx_result =
@@ -205,63 +250,24 @@ pub fn test_basic_wallet_p2id_local() {
         eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
 
         // Try to submit the mint transaction
-        match client.submit_transaction(mint_tx_result).await {
-            Ok(_) => {
-                eprintln!("Successfully submitted mint transaction");
-            }
-            Err(err) => {
-                eprintln!("Failed to submit mint transaction: {err}");
-                // Assert on expected error patterns
-                let err_str = err.to_string();
-                assert!(
-                    err_str.contains("RpcError")
-                        || err_str.contains("protocol error")
-                        || err_str.contains("rpc api error"),
-                    "Unexpected error type: {err_str}"
-                );
-            }
-        }
+        client.submit_transaction(mint_tx_result).await.unwrap();
 
         // Step 2: Wait and try to consume the mint note
         eprintln!("\n=== Step 2: Alice attempts to consume mint note ===");
-        client.sync_state().await.unwrap();
+        wait_for_notes(&mut client, &alice_account.id(), 1).await.unwrap();
 
         // Check for consumable notes
         let alice_notes = client.get_consumable_notes(Some(alice_account.id())).await.unwrap();
+        assert!(!alice_notes.is_empty());
         eprintln!("Alice has {} consumable notes", alice_notes.len());
 
-        if !alice_notes.is_empty() {
-            let note_ids: Vec<_> = alice_notes.iter().map(|(note, _)| note.id()).collect();
-            let consume_request =
-                TransactionRequestBuilder::new().build_consume_notes(note_ids).unwrap();
+        let note_ids: Vec<_> = alice_notes.iter().map(|(note, _)| note.id()).collect();
+        let consume_request =
+            TransactionRequestBuilder::new().build_consume_notes(note_ids).unwrap();
 
-            match client.new_transaction(alice_account.id(), consume_request).await {
-                Ok(consume_tx) => {
-                    let consume_tx_id = consume_tx.executed_transaction().id();
-                    eprintln!("Created consume transaction. Tx ID: {consume_tx_id:?}");
+        let consume_tx = client.new_transaction(alice_account.id(), consume_request).await.unwrap();
 
-                    // Try to submit
-                    match client.submit_transaction(consume_tx).await {
-                        Ok(_) => eprintln!("Alice successfully consumed mint note"),
-                        Err(err) => {
-                            eprintln!("Failed to submit consume transaction: {err}");
-                            let err_str = err.to_string();
-                            assert!(
-                                err_str.contains("RpcError")
-                                    || err_str.contains("protocol error")
-                                    || err_str.contains("rpc api error"),
-                                "Unexpected error: {err_str}"
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("Failed to create consume transaction: {err}");
-                }
-            }
-        } else {
-            eprintln!("No mint notes available for Alice (likely due to submission error)");
-        }
+        client.submit_transaction(consume_tx).await.unwrap();
 
         // Step 3: Create Bob's account
         eprintln!("\n=== Step 3: Creating Bob's account ===");
@@ -276,106 +282,61 @@ pub fn test_basic_wallet_p2id_local() {
         let transfer_amount = 10_000u64; // 10,000 tokens
         let transfer_asset = FungibleAsset::new(faucet_account.id(), transfer_amount).unwrap();
 
-        let p2id_note = create_p2id_note(
-            alice_account.id(),
-            bob_account.id(),
-            vec![transfer_asset.into()],
+        // Create the p2id note from Alice to Bob
+        let note_program = note_package.unwrap_program();
+        let note_script =
+            NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
+
+        let serial_num = client.rng().draw_word();
+        let note_inputs =
+            NoteInputs::new(vec![bob_account.id().suffix(), bob_account.id().prefix().as_felt()])
+                .unwrap();
+        let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+
+        let tag = NoteTag::for_public_use_case(0, 0, miden_client::note::NoteExecutionMode::Local)
+            .unwrap();
+        let metadata = NoteMetadata::new(
+            alice_account.id(), // The sender is who creates the note
             NoteType::Public,
+            tag,
+            NoteExecutionHint::always(),
             Felt::ZERO,
-            client.rng(),
         )
         .unwrap();
 
-        eprintln!("Created P2ID note. Note ID: {:?}", p2id_note.id().to_hex());
+        let vault = miden_client::note::NoteAssets::new(vec![transfer_asset.into()]).unwrap();
+        let p2id_note = Note::new(vault, metadata, recipient);
+        eprintln!("P2ID note hash: {:?}", p2id_note.id().to_hex());
 
         let alice_tx_request = TransactionRequestBuilder::new()
             .own_output_notes(vec![OutputNote::Full(p2id_note.clone())])
             .build()
             .unwrap();
 
-        match client.new_transaction(alice_account.id(), alice_tx_request).await {
-            Ok(alice_tx) => {
-                let alice_tx_id = alice_tx.executed_transaction().id();
-                eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
+        let alice_tx = client.new_transaction(alice_account.id(), alice_tx_request).await.unwrap();
+        let alice_tx_id = alice_tx.executed_transaction().id();
+        eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
 
-                // Try to submit
-                match client.submit_transaction(alice_tx).await {
-                    Ok(_) => eprintln!("Successfully submitted p2id transaction"),
-                    Err(err) => {
-                        eprintln!("Failed to submit p2id transaction: {err}");
-                        let err_str = err.to_string();
-                        // This might fail if Alice doesn't have enough balance
-                        assert!(
-                            err_str.contains("RpcError")
-                                || err_str.contains("protocol error")
-                                || err_str.contains("insufficient")
-                                || err_str.contains("AssetError")
-                                || err_str.contains("rpc api error"),
-                            "Unexpected error: {err_str}"
-                        );
-                    }
-                }
-            }
-            Err(err) => {
-                eprintln!("Failed to create p2id transaction: {err}");
-                let err_str = err.to_string();
-                // Expected if Alice doesn't have assets
-                assert!(
-                    err_str.contains("AssetError")
-                        || err_str.contains("FungibleAssetAmountNotSufficient")
-                        || err_str.contains("asset error"),
-                    "Unexpected error: {err_str}"
-                );
-            }
-        }
+        // Try to submit
+        client.submit_transaction(alice_tx).await.unwrap();
 
         // Step 5: Bob attempts to consume the p2id note
         eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
-        client.sync_state().await.unwrap();
+        wait_for_notes(&mut client, &bob_account.id(), 1).await.unwrap();
 
         let bob_notes = client.get_consumable_notes(Some(bob_account.id())).await.unwrap();
         eprintln!("Bob has {} consumable notes", bob_notes.len());
+        assert!(!bob_notes.is_empty());
 
-        if !bob_notes.is_empty() {
-            let consume_request = TransactionRequestBuilder::new()
-                .unauthenticated_input_notes([(p2id_note.clone(), None)])
-                .build()
-                .unwrap();
+        let consume_request = TransactionRequestBuilder::new()
+            .unauthenticated_input_notes([(p2id_note.clone(), None)])
+            .build()
+            .unwrap();
 
-            match client.new_transaction(bob_account.id(), consume_request).await {
-                Ok(consume_tx) => {
-                    let consume_tx_id = consume_tx.executed_transaction().id();
-                    eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
+        let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
+        let consume_tx_id = consume_tx.executed_transaction().id();
+        eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
 
-                    match client.submit_transaction(consume_tx).await {
-                        Ok(_) => eprintln!("Bob successfully consumed p2id note!"),
-                        Err(err) => {
-                            eprintln!("Failed to submit Bob's consume transaction: {err}");
-                            let err_str = err.to_string();
-                            assert!(
-                                err_str.contains("RpcError")
-                                    || err_str.contains("protocol error")
-                                    || err_str.contains("rpc api error"),
-                                "Unexpected error: {err_str}"
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("Bob failed to create consume transaction: {err}");
-                    let err_str = err.to_string();
-                    // Expected error due to p2id validation
-                    assert!(
-                        err_str.contains("failed to execute transaction kernel program")
-                            || err_str.contains("advice map"),
-                        "Unexpected error: {err_str}"
-                    );
-                }
-            }
-        } else {
-            eprintln!("No p2id notes available for Bob (likely due to earlier errors)");
-        }
-
-        eprintln!("\n=== Test completed with expected error handling ===");
+        client.submit_transaction(consume_tx).await.unwrap();
     });
 }

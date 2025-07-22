@@ -1,7 +1,7 @@
 //! This module provides accommodation for the integration tests that execute against the Miden
 //! testnet
 
-use std::{env, sync::Arc, time::Duration};
+use std::{env, sync::Arc};
 
 use miden_client::{
     account::{
@@ -30,7 +30,8 @@ use miden_objects::account::{
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
-use tokio::time::sleep;
+
+use crate::node_tests::helpers::wait_for_notes;
 
 /// Helper to create a basic account
 #[allow(dead_code)]
@@ -100,35 +101,6 @@ async fn create_counter_account(
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
 
     Ok(account)
-}
-
-// Helper to wait until an account has the expected number of consumable notes
-#[allow(dead_code)]
-async fn wait_for_notes(
-    client: &mut Client,
-    account_id: &miden_client::account::Account,
-    expected: usize,
-) -> Result<(), ClientError> {
-    let mut try_num = 0;
-    loop {
-        client.sync_state().await?;
-        let notes = client.get_consumable_notes(None).await?;
-        if notes.len() >= expected {
-            break;
-        }
-        eprintln!(
-            "{} consumable notes found for account {}. Waiting...",
-            notes.len(),
-            account_id.id().to_hex()
-        );
-        if try_num > 10 {
-            panic!("waiting for too long");
-        } else {
-            try_num += 1;
-        }
-        sleep(Duration::from_secs(3)).await;
-    }
-    Ok(())
 }
 
 fn assert_counter_storage(counter_account_storage: &AccountStorage, expected: u64) {
@@ -232,7 +204,9 @@ pub fn test_counter_contract_testnet() {
         let note_inputs = NoteInputs::new(vec![]).unwrap();
         let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
 
-        let tag = NoteTag::for_local_use_case(0, 0).unwrap();
+        let tag =
+            NoteTag::for_public_use_case(0, 0, miden_client::note::NoteExecutionMode::Network)
+                .unwrap();
         let metadata = NoteMetadata::new(
             counter_account.id(), // The sender is who creates the note
             NoteType::Public,
@@ -261,78 +235,48 @@ pub fn test_counter_contract_testnet() {
         let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
         assert_eq!(executed_tx_output_note.id(), counter_note.id());
         let create_note_tx_id = executed_transaction.id();
-        // client
-        //     .submit_transaction(tx_result)
-        //     .await
-        //     .expect("failed to submit the tx creating the note");
+        client
+            .submit_transaction(tx_result)
+            .await
+            .expect("failed to submit the tx creating the note");
         eprintln!(
             "Created counter note tx: https://testnet.midenscan.com/tx/{create_note_tx_id:?}"
         );
 
-        client.sync_state().await.unwrap();
-
-        // wait_for_notes(&mut client, &counter_account, 1).await.unwrap();
+        wait_for_notes(&mut client, &counter_account.id(), 1).await.unwrap();
 
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
-            // .with_authenticated_input_notes([(counter_note.id(), None)])
             .unauthenticated_input_notes([(counter_note, None)])
             .build()
             .unwrap();
 
-        let tx_result = client.new_transaction(counter_account.id(), consume_request).await;
+        let tx_result =
+            client.new_transaction(counter_account.id(), consume_request).await.unwrap();
 
-        // Assert that tx_result contains the expected error until the
-        // https://github.com/0xMiden/miden-base/issues/1452 is not propagated into the client
-        assert!(tx_result.is_err());
-        let err = tx_result.unwrap_err();
-
-        // Check if the error matches the expected pattern
-        let err_str = err.to_string();
-
-        // The error should indicate a failure to execute transaction kernel program
-        assert!(
-            err_str.contains("failed to execute transaction kernel program"),
-            "Expected transaction kernel program execution failure, got: {err_str}"
+        eprintln!(
+            "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
+            tx_result.executed_transaction().id()
         );
 
-        // Check that it mentions value not present in advice map
-        assert!(
-            err_str.contains("not present in the advice map"),
-            "Expected advice map key not found error, got: {err_str}"
-        );
+        client
+            .submit_transaction(tx_result)
+            .await
+            .expect("failed to submit the tx consuming the note");
 
-        // Check for the specific key in hex format
-        // The key [10393006917776393985, 11082306316302361448, 8154980225314320902, 11512975618068632545]
-        // corresponds to hex: 4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686
-        assert!(
-            err_str.contains("4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686"),
-            "Expected specific key in error, got: {err_str}"
-        );
-
-        // eprintln!(
-        //     "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
-        //     tx_result.executed_transaction().id()
-        // );
-
-        // client
-        //     .submit_transaction(tx_result)
-        //     .await
-        //     .expect("failed to submit the tx consuming the note");
-
-        // client.sync_state().await.unwrap();
+        client.sync_state().await.unwrap();
 
         // The counter contract storage value should be 1 (incremented) after the note is consumed
-        // assert_counter_storage(
-        //     client
-        //         .get_account(counter_account.id())
-        //         .await
-        //         .unwrap()
-        //         .unwrap()
-        //         .account()
-        //         .storage(),
-        //     1,
-        // );
+        assert_counter_storage(
+            client
+                .get_account(counter_account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .account()
+                .storage(),
+            1,
+        );
     });
 
     env::set_current_dir(restore_dir).unwrap();
