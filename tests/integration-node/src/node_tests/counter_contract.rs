@@ -223,7 +223,7 @@ pub fn test_counter_contract_local() {
         //     .submit_transaction(tx_result)
         //     .await
         //     .expect("failed to submit the tx creating the note");
-        eprintln!("Created counter note tx: {:?}", create_note_tx_id);
+        eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
         client.sync_state().await.unwrap();
 
@@ -248,15 +248,13 @@ pub fn test_counter_contract_local() {
         // The error should indicate a failure to execute transaction kernel program
         assert!(
             err_str.contains("failed to execute transaction kernel program"),
-            "Expected transaction kernel program execution failure, got: {}",
-            err_str
+            "Expected transaction kernel program execution failure, got: {err_str}"
         );
 
         // Check that it mentions value not present in advice map
         assert!(
             err_str.contains("not present in the advice map"),
-            "Expected advice map key not found error, got: {}",
-            err_str
+            "Expected advice map key not found error, got: {err_str}"
         );
 
         // Check for the specific key in hex format
@@ -264,8 +262,7 @@ pub fn test_counter_contract_local() {
         // corresponds to hex: 4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686
         assert!(
             err_str.contains("4558874500473d2ab899ee9a662345cbacbea1b604f231d8ccdd82d9dfd3b686"),
-            "Expected specific key in error, got: {}",
-            err_str
+            "Expected specific key in error, got: {err_str}"
         );
 
         // eprintln!(

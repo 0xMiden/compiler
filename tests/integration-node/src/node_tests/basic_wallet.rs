@@ -202,7 +202,7 @@ pub fn test_basic_wallet_p2id_local() {
         let mint_tx_result =
             client.new_transaction(faucet_account.id(), mint_request).await.unwrap();
         let mint_tx_id = mint_tx_result.executed_transaction().id();
-        eprintln!("Created mint transaction. Tx ID: {:?}", mint_tx_id);
+        eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
 
         // Try to submit the mint transaction
         match client.submit_transaction(mint_tx_result).await {
@@ -210,15 +210,14 @@ pub fn test_basic_wallet_p2id_local() {
                 eprintln!("Successfully submitted mint transaction");
             }
             Err(err) => {
-                eprintln!("Failed to submit mint transaction: {}", err);
+                eprintln!("Failed to submit mint transaction: {err}");
                 // Assert on expected error patterns
                 let err_str = err.to_string();
                 assert!(
                     err_str.contains("RpcError")
                         || err_str.contains("protocol error")
                         || err_str.contains("rpc api error"),
-                    "Unexpected error type: {}",
-                    err_str
+                    "Unexpected error type: {err_str}"
                 );
             }
         }
@@ -239,26 +238,25 @@ pub fn test_basic_wallet_p2id_local() {
             match client.new_transaction(alice_account.id(), consume_request).await {
                 Ok(consume_tx) => {
                     let consume_tx_id = consume_tx.executed_transaction().id();
-                    eprintln!("Created consume transaction. Tx ID: {:?}", consume_tx_id);
+                    eprintln!("Created consume transaction. Tx ID: {consume_tx_id:?}");
 
                     // Try to submit
                     match client.submit_transaction(consume_tx).await {
                         Ok(_) => eprintln!("Alice successfully consumed mint note"),
                         Err(err) => {
-                            eprintln!("Failed to submit consume transaction: {}", err);
+                            eprintln!("Failed to submit consume transaction: {err}");
                             let err_str = err.to_string();
                             assert!(
                                 err_str.contains("RpcError")
                                     || err_str.contains("protocol error")
                                     || err_str.contains("rpc api error"),
-                                "Unexpected error: {}",
-                                err_str
+                                "Unexpected error: {err_str}"
                             );
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("Failed to create consume transaction: {}", err);
+                    eprintln!("Failed to create consume transaction: {err}");
                 }
             }
         } else {
@@ -298,13 +296,13 @@ pub fn test_basic_wallet_p2id_local() {
         match client.new_transaction(alice_account.id(), alice_tx_request).await {
             Ok(alice_tx) => {
                 let alice_tx_id = alice_tx.executed_transaction().id();
-                eprintln!("Alice created p2id transaction. Tx ID: {:?}", alice_tx_id);
+                eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
 
                 // Try to submit
                 match client.submit_transaction(alice_tx).await {
                     Ok(_) => eprintln!("Successfully submitted p2id transaction"),
                     Err(err) => {
-                        eprintln!("Failed to submit p2id transaction: {}", err);
+                        eprintln!("Failed to submit p2id transaction: {err}");
                         let err_str = err.to_string();
                         // This might fail if Alice doesn't have enough balance
                         assert!(
@@ -313,22 +311,20 @@ pub fn test_basic_wallet_p2id_local() {
                                 || err_str.contains("insufficient")
                                 || err_str.contains("AssetError")
                                 || err_str.contains("rpc api error"),
-                            "Unexpected error: {}",
-                            err_str
+                            "Unexpected error: {err_str}"
                         );
                     }
                 }
             }
             Err(err) => {
-                eprintln!("Failed to create p2id transaction: {}", err);
+                eprintln!("Failed to create p2id transaction: {err}");
                 let err_str = err.to_string();
                 // Expected if Alice doesn't have assets
                 assert!(
                     err_str.contains("AssetError")
                         || err_str.contains("FungibleAssetAmountNotSufficient")
                         || err_str.contains("asset error"),
-                    "Unexpected error: {}",
-                    err_str
+                    "Unexpected error: {err_str}"
                 );
             }
         }
@@ -349,32 +345,30 @@ pub fn test_basic_wallet_p2id_local() {
             match client.new_transaction(bob_account.id(), consume_request).await {
                 Ok(consume_tx) => {
                     let consume_tx_id = consume_tx.executed_transaction().id();
-                    eprintln!("Bob created consume transaction. Tx ID: {:?}", consume_tx_id);
+                    eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
 
                     match client.submit_transaction(consume_tx).await {
                         Ok(_) => eprintln!("Bob successfully consumed p2id note!"),
                         Err(err) => {
-                            eprintln!("Failed to submit Bob's consume transaction: {}", err);
+                            eprintln!("Failed to submit Bob's consume transaction: {err}");
                             let err_str = err.to_string();
                             assert!(
                                 err_str.contains("RpcError")
                                     || err_str.contains("protocol error")
                                     || err_str.contains("rpc api error"),
-                                "Unexpected error: {}",
-                                err_str
+                                "Unexpected error: {err_str}"
                             );
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("Bob failed to create consume transaction: {}", err);
+                    eprintln!("Bob failed to create consume transaction: {err}");
                     let err_str = err.to_string();
                     // Expected error due to p2id validation
                     assert!(
                         err_str.contains("failed to execute transaction kernel program")
                             || err_str.contains("advice map"),
-                        "Unexpected error: {}",
-                        err_str
+                        "Unexpected error: {err_str}"
                     );
                 }
             }

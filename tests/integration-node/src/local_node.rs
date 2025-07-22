@@ -56,12 +56,11 @@ impl LocalMidenNode {
 
                 // Check if it's the exact version we need
                 if version_line.contains(MIDEN_NODE_VERSION) {
-                    eprintln!("miden-node already installed: {}", version_line);
+                    eprintln!("miden-node already installed: {version_line}");
                     false
                 } else {
                     eprintln!(
-                        "Found incompatible miden-node version: {} (need {})",
-                        version_line, MIDEN_NODE_VERSION
+                        "Found incompatible miden-node version: {version_line} (need {MIDEN_NODE_VERSION})"
                     );
                     eprintln!("Uninstalling current version...");
 
@@ -69,11 +68,11 @@ impl LocalMidenNode {
                     let uninstall_output = Command::new("cargo")
                         .args(["uninstall", "miden-node"])
                         .output()
-                        .map_err(|e| format!("Failed to run cargo uninstall: {}", e))?;
+                        .map_err(|e| format!("Failed to run cargo uninstall: {e}"))?;
 
                     if !uninstall_output.status.success() {
                         let stderr = String::from_utf8_lossy(&uninstall_output.stderr);
-                        eprintln!("Warning: Failed to uninstall miden-node: {}", stderr);
+                        eprintln!("Warning: Failed to uninstall miden-node: {stderr}");
                     } else {
                         eprintln!("Successfully uninstalled old version");
                     }
@@ -83,14 +82,14 @@ impl LocalMidenNode {
 
                     // Kill any running node process
                     if let Ok(Some(pid)) = read_pid() {
-                        eprintln!("Stopping existing node process {}", pid);
+                        eprintln!("Stopping existing node process {pid}");
                         let _ = kill_process(pid);
                     }
 
                     // Clean the entire coordination directory
                     if let Err(e) = fs::remove_dir_all(COORD_DIR) {
                         if e.kind() != std::io::ErrorKind::NotFound {
-                            eprintln!("Warning: Failed to clean coordination directory: {}", e);
+                            eprintln!("Warning: Failed to clean coordination directory: {e}");
                         }
                     }
 
@@ -105,18 +104,18 @@ impl LocalMidenNode {
 
         if need_install {
             // Install specific version compatible with miden-client
-            eprintln!("Installing miden-node version {} from crates.io...", MIDEN_NODE_VERSION);
+            eprintln!("Installing miden-node version {MIDEN_NODE_VERSION} from crates.io...");
             let output = Command::new("cargo")
                 .args(["install", "miden-node", "--version", MIDEN_NODE_VERSION, "--locked"])
                 .output()
-                .map_err(|e| format!("Failed to run cargo install: {}", e))?;
+                .map_err(|e| format!("Failed to run cargo install: {e}"))?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to install miden-node: {}", stderr));
+                return Err(format!("Failed to install miden-node: {stderr}"));
             }
 
-            eprintln!("miden-node {} installed successfully", MIDEN_NODE_VERSION);
+            eprintln!("miden-node {MIDEN_NODE_VERSION} installed successfully");
         }
 
         Ok(())
@@ -136,11 +135,11 @@ impl LocalMidenNode {
                 data_dir.to_str().unwrap(),
             ])
             .output()
-            .map_err(|e| format!("Failed to run bootstrap: {}", e))?;
+            .map_err(|e| format!("Failed to run bootstrap: {e}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to bootstrap node: {}", stderr));
+            return Err(format!("Failed to bootstrap node: {stderr}"));
         }
 
         eprintln!("Node bootstrapped successfully");
@@ -175,7 +174,7 @@ impl Drop for SharedNodeHandle {
         // Remove our reference file
         let ref_file = PathBuf::from(REF_COUNT_DIR).join(&self.handle_id);
         if let Err(e) = fs::remove_file(&ref_file) {
-            eprintln!("[SharedNode] Warning: Failed to remove ref file: {}", e);
+            eprintln!("[SharedNode] Warning: Failed to remove ref file: {e}");
         }
 
         // Check if we're the last reference and should stop the node
@@ -196,7 +195,7 @@ impl Drop for LockGuard {
 fn acquire_lock() -> Result<LockGuard, String> {
     // Ensure coordination directory exists
     fs::create_dir_all(COORD_DIR)
-        .map_err(|e| format!("Failed to create coordination directory: {}", e))?;
+        .map_err(|e| format!("Failed to create coordination directory: {e}"))?;
 
     // Open or create lock file
     let file = OpenOptions::new()
@@ -204,7 +203,7 @@ fn acquire_lock() -> Result<LockGuard, String> {
         .create(true)
         .truncate(true)
         .open(LOCK_FILE)
-        .map_err(|e| format!("Failed to open lock file: {}", e))?;
+        .map_err(|e| format!("Failed to open lock file: {e}"))?;
 
     // Try to acquire exclusive lock with retries
     let mut attempts = 0;
@@ -215,7 +214,7 @@ fn acquire_lock() -> Result<LockGuard, String> {
             Ok(_) => return Ok(LockGuard(file)),
             Err(e) => {
                 if attempts >= MAX_ATTEMPTS {
-                    return Err(format!("Timeout acquiring lock: {}", e));
+                    return Err(format!("Timeout acquiring lock: {e}"));
                 }
                 attempts += 1;
                 thread::sleep(Duration::from_millis(100));
@@ -231,17 +230,17 @@ fn read_pid() -> Result<Option<u32>, String> {
             let pid = contents
                 .trim()
                 .parse::<u32>()
-                .map_err(|e| format!("Failed to parse PID: {}", e))?;
+                .map_err(|e| format!("Failed to parse PID: {e}"))?;
             Ok(Some(pid))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("Failed to read PID file: {}", e)),
+        Err(e) => Err(format!("Failed to read PID file: {e}")),
     }
 }
 
 /// Write PID to file
 fn write_pid(pid: u32) -> Result<(), String> {
-    fs::write(PID_FILE, pid.to_string()).map_err(|e| format!("Failed to write PID file: {}", e))
+    fs::write(PID_FILE, pid.to_string()).map_err(|e| format!("Failed to write PID file: {e}"))
 }
 
 /// Remove PID file
@@ -249,7 +248,7 @@ fn remove_pid() -> Result<(), String> {
     match fs::remove_file(PID_FILE) {
         Ok(_) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Failed to remove PID file: {}", e)),
+        Err(e) => Err(format!("Failed to remove PID file: {e}")),
     }
 }
 
@@ -274,14 +273,14 @@ fn is_process_running(pid: u32) -> bool {
 
 /// Kill a process by PID
 fn kill_process(pid: u32) -> Result<(), String> {
-    eprintln!("[SharedNode] Killing process {}", pid);
+    eprintln!("[SharedNode] Killing process {pid}");
 
     // Use kill command for cross-platform compatibility
     // First try SIGTERM
     let term_result = Command::new("kill")
         .args(["-TERM", &pid.to_string()])
         .output()
-        .map_err(|e| format!("Failed to execute kill command: {}", e))?;
+        .map_err(|e| format!("Failed to execute kill command: {e}"))?;
 
     if !term_result.status.success() {
         let stderr = String::from_utf8_lossy(&term_result.stderr);
@@ -289,7 +288,7 @@ fn kill_process(pid: u32) -> Result<(), String> {
         if stderr.contains("No such process") {
             return Ok(());
         }
-        return Err(format!("Failed to send SIGTERM to process {}: {}", pid, stderr));
+        return Err(format!("Failed to send SIGTERM to process {pid}: {stderr}"));
     }
 
     // Wait a bit for graceful shutdown
@@ -300,12 +299,12 @@ fn kill_process(pid: u32) -> Result<(), String> {
         let kill_result = Command::new("kill")
             .args(["-KILL", &pid.to_string()])
             .output()
-            .map_err(|e| format!("Failed to execute kill command: {}", e))?;
+            .map_err(|e| format!("Failed to execute kill command: {e}"))?;
 
         if !kill_result.status.success() {
             let stderr = String::from_utf8_lossy(&kill_result.stderr);
             if !stderr.contains("No such process") {
-                return Err(format!("Failed to send SIGKILL to process {}: {}", pid, stderr));
+                return Err(format!("Failed to send SIGKILL to process {pid}: {stderr}"));
             }
         }
     }
@@ -316,10 +315,10 @@ fn kill_process(pid: u32) -> Result<(), String> {
 /// Get count of active references, cleaning up stale ones
 fn get_ref_count() -> Result<usize, String> {
     fs::create_dir_all(REF_COUNT_DIR)
-        .map_err(|e| format!("Failed to create ref count directory: {}", e))?;
+        .map_err(|e| format!("Failed to create ref count directory: {e}"))?;
 
     let entries = fs::read_dir(REF_COUNT_DIR)
-        .map_err(|e| format!("Failed to read ref count directory: {}", e))?;
+        .map_err(|e| format!("Failed to read ref count directory: {e}"))?;
 
     let mut active_count = 0;
     for entry in entries.flatten() {
@@ -333,7 +332,7 @@ fn get_ref_count() -> Result<usize, String> {
                     active_count += 1;
                 } else {
                     // Clean up stale reference from dead process
-                    eprintln!("[SharedNode] Cleaning up stale reference from dead process {}", pid);
+                    eprintln!("[SharedNode] Cleaning up stale reference from dead process {pid}");
                     let _ = fs::remove_file(entry.path());
                 }
             }
@@ -346,10 +345,10 @@ fn get_ref_count() -> Result<usize, String> {
 /// Add a reference
 fn add_reference(handle_id: &str) -> Result<(), String> {
     fs::create_dir_all(REF_COUNT_DIR)
-        .map_err(|e| format!("Failed to create ref count directory: {}", e))?;
+        .map_err(|e| format!("Failed to create ref count directory: {e}"))?;
 
     let ref_file = PathBuf::from(REF_COUNT_DIR).join(handle_id);
-    File::create(&ref_file).map_err(|e| format!("Failed to create reference file: {}", e))?;
+    File::create(&ref_file).map_err(|e| format!("Failed to create reference file: {e}"))?;
 
     Ok(())
 }
@@ -359,14 +358,14 @@ async fn start_shared_node() -> Result<u32, String> {
     eprintln!("[SharedNode] Starting shared node process...");
 
     // Ensure data directory exists
-    fs::create_dir_all(DATA_DIR).map_err(|e| format!("Failed to create data directory: {}", e))?;
+    fs::create_dir_all(DATA_DIR).map_err(|e| format!("Failed to create data directory: {e}"))?;
 
     // Bootstrap if needed
     let marker_file = PathBuf::from(DATA_DIR).join(".bootstrapped");
     if !marker_file.exists() {
         LocalMidenNode::bootstrap(Path::new(DATA_DIR))?;
         // Create marker file
-        File::create(&marker_file).map_err(|e| format!("Failed to create marker file: {}", e))?;
+        File::create(&marker_file).map_err(|e| format!("Failed to create marker file: {e}"))?;
     }
 
     // Start the node process
@@ -384,7 +383,7 @@ async fn start_shared_node() -> Result<u32, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start node: {}", e))?;
+        .map_err(|e| format!("Failed to start node: {e}"))?;
 
     let pid = child.id();
 
@@ -400,7 +399,7 @@ async fn start_shared_node() -> Result<u32, String> {
         let reader = std::io::BufReader::new(stdout);
         for line in reader.lines().map_while(Result::ok) {
             if enable_node_output {
-                eprintln!("[shared node stdout] {}", line);
+                eprintln!("[shared node stdout] {line}");
             }
         }
     });
@@ -408,7 +407,7 @@ async fn start_shared_node() -> Result<u32, String> {
     thread::spawn(move || {
         let reader = std::io::BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
-            eprintln!("[shared node stderr] {}", line);
+            eprintln!("[shared node stderr] {line}");
         }
     });
 
@@ -439,7 +438,7 @@ fn check_and_stop_node_if_needed() {
     let _lock = match acquire_lock() {
         Ok(lock) => lock,
         Err(e) => {
-            eprintln!("[SharedNode] Failed to acquire lock: {}", e);
+            eprintln!("[SharedNode] Failed to acquire lock: {e}");
             return;
         }
     };
@@ -448,29 +447,29 @@ fn check_and_stop_node_if_needed() {
     let ref_count = match get_ref_count() {
         Ok(count) => count,
         Err(e) => {
-            eprintln!("[SharedNode] Failed to get reference count: {}", e);
+            eprintln!("[SharedNode] Failed to get reference count: {e}");
             return;
         }
     };
 
-    eprintln!("[SharedNode] Reference count: {}", ref_count);
+    eprintln!("[SharedNode] Reference count: {ref_count}");
 
     if ref_count == 0 {
         // No more references, stop the node
         if let Ok(Some(pid)) = read_pid() {
-            eprintln!("[SharedNode] No more references, stopping node process {}", pid);
+            eprintln!("[SharedNode] No more references, stopping node process {pid}");
 
             if let Err(e) = kill_process(pid) {
-                eprintln!("[SharedNode] Failed to kill node process: {}", e);
+                eprintln!("[SharedNode] Failed to kill node process: {e}");
             }
 
             if let Err(e) = remove_pid() {
-                eprintln!("[SharedNode] Failed to remove PID file: {}", e);
+                eprintln!("[SharedNode] Failed to remove PID file: {e}");
             }
 
             // Clean up coordination directory
             if let Err(e) = fs::remove_dir_all(COORD_DIR) {
-                eprintln!("[SharedNode] Failed to clean up coordination directory: {}", e);
+                eprintln!("[SharedNode] Failed to clean up coordination directory: {e}");
             }
         }
     }
@@ -493,16 +492,16 @@ pub async fn get_shared_node() -> Result<SharedNodeHandle, String> {
     // Add our reference first
     add_reference(&handle_id)?;
     let ref_count = get_ref_count()?;
-    eprintln!("[SharedNode] Added reference {}, total count: {}", handle_id, ref_count);
+    eprintln!("[SharedNode] Added reference {handle_id}, total count: {ref_count}");
 
     // Check if node is already running
     let need_start = if let Some(pid) = read_pid()? {
         // Check if the process is still alive
         if is_process_running(pid) && LocalMidenNode::is_port_in_use(RPC_PORT) {
-            eprintln!("[SharedNode] Node already running with PID {}", pid);
+            eprintln!("[SharedNode] Node already running with PID {pid}");
             false
         } else {
-            eprintln!("[SharedNode] PID file exists but process {} is not running", pid);
+            eprintln!("[SharedNode] PID file exists but process {pid} is not running");
             remove_pid()?;
             true
         }
@@ -515,7 +514,7 @@ pub async fn get_shared_node() -> Result<SharedNodeHandle, String> {
     if need_start {
         let pid = start_shared_node().await?;
         write_pid(pid)?;
-        eprintln!("[SharedNode] Started node with PID {}", pid);
+        eprintln!("[SharedNode] Started node with PID {pid}");
     }
 
     // Lock is automatically released when _lock is dropped
