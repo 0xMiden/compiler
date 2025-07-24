@@ -1,6 +1,6 @@
 //! Basic wallet test module
 
-use std::{env, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use miden_client::{
     account::{
@@ -21,8 +21,9 @@ use miden_client::{
     Client, ClientError,
 };
 use miden_core::{
+    crypto::hash::Rpo256,
     utils::{Deserializable, Serializable},
-    Felt, FieldElement,
+    AdviceMap, Felt, FieldElement,
 };
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{
@@ -31,7 +32,7 @@ use miden_objects::account::{
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
 
-use crate::{local_node, node_tests::helpers::wait_for_notes};
+use crate::local_node;
 
 /// Helper to create a fungible faucet account
 async fn create_fungible_faucet_account(
@@ -128,7 +129,7 @@ pub fn test_basic_wallet_p2id_local() {
     std::fs::write(&wallet_package_path, wallet_package.to_bytes())
         .expect("Failed to write wallet");
 
-    dbg!(&wallet_package.manifest.exports);
+    // dbg!(&wallet_package.manifest.exports);
 
     // Compile the p2id note
     let mut note_builder = CompilerTestBuilder::rust_source_cargo_miden(
@@ -160,20 +161,15 @@ pub fn test_basic_wallet_p2id_local() {
         let keystore_path = temp_dir.path().join("keystore");
         let keystore = Arc::new(FilesystemKeyStore::<StdRng>::new(keystore_path.clone()).unwrap());
 
-        // Change to temp dir for client store isolation
-        let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(temp_dir.path()).unwrap();
-
+        let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
         let mut client = ClientBuilder::new()
             .rpc(rpc_api)
+            .sqlite_store(&store_path)
             .filesystem_keystore(keystore_path.to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
             .unwrap();
-
-        // Restore original directory after client creation
-        env::set_current_dir(original_dir).unwrap();
 
         let sync_summary = client.sync_state().await.unwrap();
         eprintln!("Latest block: {}", sync_summary.block_num);
@@ -254,16 +250,23 @@ pub fn test_basic_wallet_p2id_local() {
 
         // Step 2: Wait and try to consume the mint note
         eprintln!("\n=== Step 2: Alice attempts to consume mint note ===");
-        wait_for_notes(&mut client, &alice_account.id(), 1).await.unwrap();
+        // wait_for_notes(&mut client, &alice_account.id(), 1).await.unwrap();
 
-        // Check for consumable notes
-        let alice_notes = client.get_consumable_notes(Some(alice_account.id())).await.unwrap();
-        assert!(!alice_notes.is_empty());
-        eprintln!("Alice has {} consumable notes", alice_notes.len());
+        // TODO: There should be a better way than pad manually
+        let mut padded_inputs = Vec::with_capacity(8);
+        let note_inputs: [Felt; 2] =
+            [alice_account.id().suffix(), alice_account.id().prefix().into()];
+        padded_inputs.extend(note_inputs.iter());
+        padded_inputs.resize(8, Felt::ZERO);
+        let note_args_commitment = Rpo256::hash_elements(&padded_inputs);
 
-        let note_ids: Vec<_> = alice_notes.iter().map(|(note, _)| note.id()).collect();
-        let consume_request =
-            TransactionRequestBuilder::new().build_consume_notes(note_ids).unwrap();
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(note_args_commitment, padded_inputs);
+        let consume_request = TransactionRequestBuilder::new()
+            .unauthenticated_input_notes([(p2id_note_mint, Some(note_args_commitment.into()))])
+            .extend_advice_map(advice_map.clone())
+            .build()
+            .unwrap();
 
         let consume_tx = client.new_transaction(alice_account.id(), consume_request).await.unwrap();
 
@@ -322,11 +325,6 @@ pub fn test_basic_wallet_p2id_local() {
 
         // Step 5: Bob attempts to consume the p2id note
         eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
-        wait_for_notes(&mut client, &bob_account.id(), 1).await.unwrap();
-
-        let bob_notes = client.get_consumable_notes(Some(bob_account.id())).await.unwrap();
-        eprintln!("Bob has {} consumable notes", bob_notes.len());
-        assert!(!bob_notes.is_empty());
 
         let consume_request = TransactionRequestBuilder::new()
             .unauthenticated_input_notes([(p2id_note.clone(), None)])

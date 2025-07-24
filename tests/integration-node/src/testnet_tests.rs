@@ -31,8 +31,6 @@ use miden_objects::account::{
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
 
-use crate::node_tests::helpers::wait_for_notes;
-
 /// Helper to create a basic account
 #[allow(dead_code)]
 async fn create_basic_account(
@@ -148,10 +146,7 @@ pub fn test_counter_contract_testnet() {
     let note_package = note_test.compiled_package();
     dbg!(note_package.unwrap_program().mast_forest().advice_map());
 
-    let restore_dir = env::current_dir().unwrap();
-    // switch cwd to temp_dir to have a fresh client store
     let temp_dir = temp_dir::TempDir::new().unwrap();
-    env::set_current_dir(temp_dir.path()).unwrap();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -163,8 +158,10 @@ pub fn test_counter_contract_testnet() {
         let keystore_path = temp_dir.path().join("keystore");
         let keystore = Arc::new(FilesystemKeyStore::new(keystore_path.clone()).unwrap());
 
+        let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
         let mut client = ClientBuilder::new()
             .rpc(rpc_api)
+            .sqlite_store(&store_path)
             .filesystem_keystore(keystore_path.to_str().unwrap())
             .in_debug_mode(true)
             .build()
@@ -243,8 +240,6 @@ pub fn test_counter_contract_testnet() {
             "Created counter note tx: https://testnet.midenscan.com/tx/{create_note_tx_id:?}"
         );
 
-        wait_for_notes(&mut client, &counter_account.id(), 1).await.unwrap();
-
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
             .unauthenticated_input_notes([(counter_note, None)])
@@ -278,6 +273,4 @@ pub fn test_counter_contract_testnet() {
             1,
         );
     });
-
-    env::set_current_dir(restore_dir).unwrap();
 }

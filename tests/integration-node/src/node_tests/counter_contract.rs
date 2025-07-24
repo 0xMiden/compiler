@@ -1,6 +1,6 @@
 //! Counter contract test module
 
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use miden_client::{
     account::{
@@ -30,7 +30,7 @@ use miden_objects::account::{
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
 
-use crate::{local_node, node_tests::helpers::wait_for_notes};
+use crate::local_node;
 
 fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
@@ -132,6 +132,8 @@ pub fn test_counter_contract_local() {
         // Get a handle to the shared local node
         let node_handle = local_node::get_shared_node().await.expect("Failed to get shared node");
 
+        // thread::sleep(Duration::from_secs(10));
+
         let rpc_url = node_handle.rpc_url().to_string();
 
         // Initialize client & keystore
@@ -142,20 +144,15 @@ pub fn test_counter_contract_local() {
         let keystore_path = temp_dir.path().join("keystore");
         let keystore = Arc::new(FilesystemKeyStore::<StdRng>::new(keystore_path.clone()).unwrap());
 
-        // Change to temp dir for client store isolation
-        let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(temp_dir.path()).unwrap();
-
+        let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
         let mut client = ClientBuilder::new()
             .rpc(rpc_api)
+            .sqlite_store(&store_path)
             .filesystem_keystore(keystore_path.to_str().unwrap())
             .in_debug_mode(true)
             .build()
             .await
             .unwrap();
-
-        // Restore original directory after client creation
-        env::set_current_dir(original_dir).unwrap();
 
         let sync_summary = client.sync_state().await.unwrap();
         eprintln!("Latest block: {}", sync_summary.block_num);
@@ -166,8 +163,6 @@ pub fn test_counter_contract_local() {
                 .await
                 .unwrap();
         eprintln!("Counter account ID: {:?}", counter_account.id().to_hex());
-
-        // client.sync_state().await.unwrap();
 
         // The counter contract storage value should be zero after the account creation
         assert_counter_storage(
@@ -225,11 +220,10 @@ pub fn test_counter_contract_local() {
             .expect("failed to submit the tx creating the note");
         eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
-        wait_for_notes(&mut client, &counter_account.id(), 1).await.unwrap();
-
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
             .unauthenticated_input_notes([(counter_note, None)])
+            // .authenticated_input_notes([(counter_note.id(), None)])
             .build()
             .unwrap();
 
