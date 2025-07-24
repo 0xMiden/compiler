@@ -27,19 +27,16 @@ interface core-types {
 
     /// Unique identifier of an account.
     ///
-    /// Account ID consists of 1 field element (~64 bits). This field element uniquely identifies a
-    /// single account and also specifies the type of the underlying account. Specifically:
-    /// - The two most significant bits of the ID specify the type of the account:
-    ///  - 00 - regular account with updatable code.
-    ///  - 01 - regular account with immutable code.
-    ///  - 10 - fungible asset faucet with immutable code.
-    ///  - 11 - non-fungible asset faucet with immutable code.
-    ///  - The third most significant bit of the ID specifies whether the account data is stored on-chain:
-    ///  - 0 - full account data is stored on-chain.
-    ///  - 1 - only the account hash is stored on-chain which serves as a commitment to the account state.
-    /// As such the three most significant bits fully describes the type of the account.
+    /// # Layout
+    ///
+    /// An `AccountId` consists of two field elements, where the first is called the prefix and the
+    /// second is called the suffix. It is laid out as follows:
+    ///
+    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
+    /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
     record account-id {
-        inner: felt
+        prefix: felt,
+	suffix: felt
     }
 
     /// Creates a new account ID from a field element.

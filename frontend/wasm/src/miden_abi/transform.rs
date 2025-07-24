@@ -71,10 +71,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
         symbols::Miden => match components.next()?.as_symbol_name() {
             symbols::Account => {
                 match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::account::GET_ID | tx_kernel::account::INCR_NONCE => {
-                        Some(TransformStrategy::NoTransform)
-                    }
+                    tx_kernel::account::INCR_NONCE => Some(TransformStrategy::NoTransform),
                     tx_kernel::account::ADD_ASSET
+                    | tx_kernel::account::GET_ID
                     | tx_kernel::account::REMOVE_ASSET
                     | tx_kernel::account::GET_STORAGE_ITEM
                     | tx_kernel::account::SET_STORAGE_ITEM

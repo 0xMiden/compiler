@@ -37,7 +37,7 @@
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;3;) (type 4)))
   (type (;5;)
     (instance
-      (type (;0;) (func (result f32)))
+      (type (;0;) (func (param "result-ptr" s32)))
       (export (;0;) "get-id" (func (type 0)))
     )
   )
@@ -54,15 +54,14 @@
     (type (;0;) (func (param f32 f32)))
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (result i32)))
-    (type (;3;) (func (result f32)))
+    (type (;3;) (func (param i32)))
     (type (;4;) (func (param i32) (result i32)))
     (type (;5;) (func))
     (type (;6;) (func (param i32 i32) (result i32)))
     (type (;7;) (func (param i32 i32 i32)))
     (type (;8;) (func (param i32 i32 i32) (result i32)))
     (type (;9;) (func (param i32 i32 i32 i32)))
-    (type (;10;) (func (param i32)))
-    (type (;11;) (func (param i32 i32 i32 i32 i32)))
+    (type (;10;) (func (param i32 i32 i32 i32 i32)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;0;) (type 0)))
     (import "miden:basic-wallet/basic-wallet@1.0.0" "receive-asset" (func $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7 (;1;) (type 1)))
     (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;2;) (type 2)))
@@ -109,91 +108,110 @@
       local.get 1
     )
     (func $miden:base/note-script@1.0.0#note-script (;11;) (type 5)
-      (local i32 f32 i32 i32 i32 i32)
+      (local i32 i32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 48
       i32.sub
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
       local.get 0
+      i32.const 16
+      i32.add
       call $miden_base_sys::bindings::note::get_inputs
       block ;; label = @1
-        local.get 0
-        i32.load offset=8
-        i32.eqz
-        br_if 0 (;@1;)
-        local.get 0
-        i32.load offset=4
-        f32.load
-        local.set 1
-        call $miden_base_sys::bindings::account::get_id
-        local.get 1
-        call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
-        local.get 0
-        i32.const 12
-        i32.add
-        call $miden_base_sys::bindings::note::get_assets
-        local.get 0
-        i32.load offset=20
-        i32.const 4
-        i32.shl
-        local.set 2
-        local.get 0
-        i32.load offset=12
-        local.set 3
-        local.get 0
-        i32.load offset=16
-        local.tee 4
-        local.set 5
         block ;; label = @2
-          loop ;; label = @3
-            local.get 2
-            i32.eqz
-            br_if 1 (;@2;)
-            local.get 5
-            f32.load
-            local.get 5
-            f32.load offset=4
-            local.get 5
-            f32.load offset=8
-            local.get 5
-            f32.load offset=12
-            call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
-            local.get 2
-            i32.const -16
-            i32.add
-            local.set 2
-            local.get 5
-            i32.const 16
-            i32.add
-            local.set 5
-            br 0 (;@3;)
-          end
+          local.get 0
+          i32.load offset=24
+          br_table 0 (;@2;) 0 (;@2;) 1 (;@1;)
         end
-        local.get 0
-        local.get 4
-        i32.store offset=28
-        local.get 0
-        local.get 3
-        i32.store offset=24
-        local.get 0
-        i32.const 24
-        i32.add
-        i32.const 16
-        i32.const 16
-        call $alloc::raw_vec::RawVecInner<A>::deallocate
-        local.get 0
-        i32.const 4
-        i32.const 4
-        call $alloc::raw_vec::RawVecInner<A>::deallocate
-        local.get 0
-        i32.const 32
-        i32.add
-        global.set $__stack_pointer
-        return
+        unreachable
       end
-      unreachable
+      local.get 0
+      i32.load offset=20
+      local.tee 1
+      f32.load offset=4
+      local.set 2
+      local.get 1
+      f32.load
+      local.set 3
+      local.get 0
+      i32.const 8
+      i32.add
+      call $miden_base_sys::bindings::account::get_id
+      local.get 0
+      f32.load offset=12
+      local.set 4
+      local.get 0
+      f32.load offset=8
+      local.get 3
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 4
+      local.get 2
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 0
+      i32.const 28
+      i32.add
+      call $miden_base_sys::bindings::note::get_assets
+      local.get 0
+      i32.load offset=36
+      i32.const 4
+      i32.shl
+      local.set 5
+      local.get 0
+      i32.load offset=28
+      local.set 6
+      local.get 0
+      i32.load offset=32
+      local.tee 7
+      local.set 1
+      block ;; label = @1
+        loop ;; label = @2
+          local.get 5
+          i32.eqz
+          br_if 1 (;@1;)
+          local.get 1
+          f32.load
+          local.get 1
+          f32.load offset=4
+          local.get 1
+          f32.load offset=8
+          local.get 1
+          f32.load offset=12
+          call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+          local.get 5
+          i32.const -16
+          i32.add
+          local.set 5
+          local.get 1
+          i32.const 16
+          i32.add
+          local.set 1
+          br 0 (;@2;)
+        end
+      end
+      local.get 0
+      local.get 7
+      i32.store offset=44
+      local.get 0
+      local.get 6
+      i32.store offset=40
+      local.get 0
+      i32.const 40
+      i32.add
+      i32.const 16
+      i32.const 16
+      call $alloc::raw_vec::RawVecInner<A>::deallocate
+      local.get 0
+      i32.const 16
+      i32.add
+      i32.const 4
+      i32.const 4
+      call $alloc::raw_vec::RawVecInner<A>::deallocate
+      local.get 0
+      i32.const 48
+      i32.add
+      global.set $__stack_pointer
     )
     (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;12;) (type 5)
       return
@@ -331,10 +349,27 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::account::get_id (;16;) (type 3) (result f32)
+    (func $miden_base_sys::bindings::account::get_id (;16;) (type 3) (param i32)
+      (local i32)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 1
+      global.set $__stack_pointer
+      local.get 1
+      i32.const 8
+      i32.add
       call $miden_base_sys::bindings::account::extern_account_get_id
+      local.get 0
+      local.get 1
+      i64.load offset=8 align=4
+      i64.store
+      local.get 1
+      i32.const 16
+      i32.add
+      global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_inputs (;17;) (type 10) (param i32)
+    (func $miden_base_sys::bindings::note::get_inputs (;17;) (type 3) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -372,7 +407,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_assets (;18;) (type 10) (param i32)
+    (func $miden_base_sys::bindings::note::get_assets (;18;) (type 3) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -442,7 +477,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;20;) (type 11) (param i32 i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;20;) (type 10) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
