@@ -31,10 +31,12 @@ struct MyAccount;
 impl basic_wallet::Guest for MyAccount {
     fn receive_asset(asset: Asset) {
         miden::account::add_asset(asset);
+        miden::account::incr_nonce(1);
     }
 
     fn send_asset(asset: Asset, tag: Tag, note_type: NoteType, recipient: Recipient) {
         let asset = miden::account::remove_asset(asset);
         miden::tx::create_note(asset, tag, note_type, recipient);
+        miden::account::incr_nonce(1);
     }
 }
