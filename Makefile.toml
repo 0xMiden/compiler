@@ -257,11 +257,6 @@ args = ["audit"]
 
 [tasks.test]
 category = "Test"
-description = "Runs all tests (excluding integration node tests)"
-dependencies = ["test-rust-exclude-integration-node"]
-
-[tasks.test-full]
-category = "Test"
 description = "Runs all tests including integration node tests"
 dependencies = ["test-rust"]
 
@@ -303,34 +298,6 @@ command = "cargo"
 args = [
     "nextest",
     "run",
-    "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
-    "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
-    "${@}",
-]
-
-[tasks.test-rust-exclude-integration-node]
-category = "Test"
-description = "Runs tests written in Rust excluding integration node tests"
-command = "cargo"
-args = [
-    "nextest",
-    "run",
-    "-E",
-    "not package(miden-integration-node-tests)",
-    "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
-    "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
-    "${@}",
-]
-
-[tasks.test-node]
-category = "Test"
-description = "Runs only integration node tests"
-command = "cargo"
-args = [
-    "nextest",
-    "run",
-    "-E",
-    "package(miden-integration-node-tests)",
     "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
     "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
     "${@}",
