@@ -1,7 +1,7 @@
 //! This module provides accommodation for the integration tests that execute against the Miden
 //! testnet
 
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use miden_client::{
     account::{

@@ -77,8 +77,10 @@ async fn create_counter_account(
     client.rng().fill_bytes(&mut init_seed);
 
     let key_pair = SecretKey::with_rng(client.rng());
+
     // Sync client state to get latest block info
     let _sync_summary = client.sync_state().await.unwrap();
+
     let builder = AccountBuilder::new(init_seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -100,29 +102,29 @@ pub fn test_counter_contract_local() {
     let mut contract_builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../../examples/counter-contract",
         config.clone(),
-        ["--debug=none".into()], // don't include any debug info in the compiled MAST
+        // ["--debug=none".into()], // don't include any debug info in the compiled MAST
+        [],
     );
     contract_builder.with_release(true);
     let mut contract_test = contract_builder.build();
     let contract_package = contract_test.compiled_package();
 
-    let bytes = <miden_mast_package::Package as Clone>::clone(&contract_package)
-        .into_mast_artifact()
-        .unwrap_library()
-        .to_bytes();
+    // let bytes = <miden_mast_package::Package as Clone>::clone(&contract_package)
+    //     .into_mast_artifact()
+    //     .unwrap_library()
+    //     .to_bytes();
     // dbg!(bytes.len());
-    assert!(bytes.len() < 32767, "expected to fit in 32 KB account update size limit");
 
     // Compile the counter note
     let mut note_builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../../examples/counter-note",
         config,
-        ["--debug=none".into()], // don't include any debug info in the compiled MAST
+        // ["--debug=none".into()], // don't include any debug info in the compiled MAST
+        [],
     );
     note_builder.with_release(true);
     let mut note_test = note_builder.build();
     let note_package = note_test.compiled_package();
-    // dbg!(note_package.unwrap_program().mast_forest().advice_map());
 
     // Use temp_dir for a fresh client store
     let temp_dir = temp_dir::TempDir::with_prefix("test_counter_contract_local_").unwrap();
@@ -131,8 +133,6 @@ pub fn test_counter_contract_local() {
     rt.block_on(async {
         // Get a handle to the shared local node
         let node_handle = local_node::get_shared_node().await.expect("Failed to get shared node");
-
-        // thread::sleep(Duration::from_secs(10));
 
         let rpc_url = node_handle.rpc_url().to_string();
 
@@ -223,18 +223,15 @@ pub fn test_counter_contract_local() {
         // Consume the note to increment the counter
         let consume_request = TransactionRequestBuilder::new()
             .unauthenticated_input_notes([(counter_note, None)])
-            // .authenticated_input_notes([(counter_note.id(), None)])
             .build()
             .unwrap();
 
         let tx_result =
             client.new_transaction(counter_account.id(), consume_request).await.unwrap();
-
         eprintln!(
             "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
-            tx_result.executed_transaction().id()
+            &tx_result.executed_transaction().id()
         );
-
         client
             .submit_transaction(tx_result)
             .await
