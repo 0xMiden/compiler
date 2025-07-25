@@ -104,6 +104,8 @@ pub struct NewCommand {
 
 use std::{fs, io::Write};
 
+use crate::utils::set_default_test_compiler;
+
 impl NewCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
         let name = self
@@ -228,10 +230,4 @@ pub fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
     let mut file = fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
-}
-
-fn set_default_test_compiler(define: &mut Vec<String>) {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let compiler_path = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
-    define.push(format!("compiler_path={}", compiler_path.display()));
 }
