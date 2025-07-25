@@ -160,6 +160,14 @@ proc.miden_base_sys::bindings::account::extern_account_remove_asset
     nop
 end
 
+proc.miden_base_sys::bindings::account::extern_account_incr_nonce
+    trace.240
+    nop
+    exec.::miden::account::incr_nonce
+    trace.252
+    nop
+end
+
 proc.miden_base_sys::bindings::tx::extern_tx_create_note
     trace.240
     nop
@@ -284,6 +292,12 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     trace.240
     nop
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::add_asset
+    trace.252
+    nop
+    push.1
+    trace.240
+    nop
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::incr_nonce
     trace.252
     nop
     push.32
@@ -504,6 +518,12 @@ export.miden:basic-wallet/basic-wallet@1.0.0#send-asset
     trace.252
     nop
     drop
+    push.1
+    trace.240
+    nop
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::incr_nonce
+    trace.252
+    nop
     push.48
     u32wrapping_add
     push.1114176
@@ -734,6 +754,14 @@ proc.miden_base_sys::bindings::account::remove_asset
     trace.240
     nop
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::extern_account_remove_asset
+    trace.252
+    nop
+end
+
+proc.miden_base_sys::bindings::account::incr_nonce
+    trace.240
+    nop
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::extern_account_incr_nonce
     trace.252
     nop
 end
