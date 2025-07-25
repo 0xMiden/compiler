@@ -32,7 +32,6 @@ struct MyNote;
 impl Guest for MyNote {
     fn note_script() {
         let inputs = miden::note::get_inputs();
-        // TODO: is this the right order of the prefix and suffix in the note inputs?
         let target_account_id_prefix = inputs[0];
         let target_account_id_suffix = inputs[1];
         let account_id = miden::account::get_id();
