@@ -155,6 +155,18 @@ description = "Run cargo-bloat"
 command = "cargo"
 args = ["bloat", "${@}"]
 
+[tasks.bench]
+category = "Benchmarks"
+description = "Runs benchmarks written in Rust"
+command = "cargo"
+args = [
+    "run",
+    "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
+    "-p",
+    "midenc-benchmark-runner",
+    "${@}",
+]
+
 [tasks.midenc]
 category = "Build"
 description = "Builds midenc and installs it to the bin folder"

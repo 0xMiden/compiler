@@ -3666,17 +3666,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-compiler-benches"
-version = "0.1.5"
-dependencies = [
- "anyhow",
- "clap",
- "criterion",
- "serde",
- "toml",
-]
-
-[[package]]
 name = "miden-core"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3984,6 +3973,17 @@ dependencies = [
  "env_logger",
  "human-panic",
  "midenc-driver",
+]
+
+[[package]]
+name = "midenc-benchmark-runner"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "clap",
+ "criterion",
+ "serde",
+ "toml",
 ]
 
 [[package]]

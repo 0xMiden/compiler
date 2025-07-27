@@ -1,5 +1,5 @@
 [package]
-name = "miden-compiler-benches"
+name = "midenc-benchmark-runner"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

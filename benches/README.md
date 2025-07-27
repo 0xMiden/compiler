@@ -4,15 +4,33 @@ Benchmarks for measuring VM cycles and performance of Miden programs.
 
 ## Usage
 
+### From project root (recommended)
+
 ```bash
 # Run is_prime benchmark
-cargo run --bin is_prime
+cargo make bench --bin is_prime
 
 # Custom input
-cargo run --bin is_prime -- --input 97
+cargo make bench --bin is_prime -- --input 97
 
 # Multiple iterations
-cargo run --bin is_prime -- --input 29 --iterations 5
+cargo make bench --bin is_prime -- --input 97 --iterations 5
+
+# Custom source file
+cargo make bench --bin is_prime -- --source examples/is-prime/src/lib.rs --input 29
+```
+
+### Direct cargo commands
+
+```bash
+# Run is_prime benchmark
+cargo run -p midenc-benchmark-runner --bin is_prime
+
+# Custom input
+cargo run -p midenc-benchmark-runner --bin is_prime -- --input 97
+
+# Multiple iterations
+cargo run -p midenc-benchmark-runner --bin is_prime -- --input 29 --iterations 5
 
 # Criterion benchmarks
 cargo bench

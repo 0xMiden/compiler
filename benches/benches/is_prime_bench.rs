@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use miden_compiler_benches::BenchmarkRunner;
+use midenc_benchmark_runner::BenchmarkRunner;
 
 fn bench_is_prime_compilation(c: &mut Criterion) {
     let runner = BenchmarkRunner::new().expect("Failed to create benchmark runner");
