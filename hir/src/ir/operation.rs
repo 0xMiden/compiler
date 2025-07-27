@@ -180,7 +180,33 @@ impl EntityWithParent for Operation {
     type Parent = Block;
 }
 impl EntityListItem for Operation {
-    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, _cursor: &mut EntityCursorMut<'_, Self>) {
+    fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
+        // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
+        if this.name().implements::<dyn Symbol>() {
+            let parent = this.nearest_symbol_table();
+            if let Some(mut parent) = parent {
+                if parent.name().implements::<dyn SymbolTable>() {
+                    // NOTE: We call `unwrap()` here because we are confident that these function calls
+                    // are valid thanks to the `implements` check above.
+                    let mut symbol_table = parent.borrow_mut();
+                    let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
+                    let mut sym_manager = sym_manager.symbol_manager_mut();
+
+                    let symbol_ref = this.borrow().as_symbol_ref().unwrap();
+
+                    let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
+                    assert!(
+                        is_new,
+                        "Unable to insert {} in symbol table of {}: symbol {} is already \
+                         registered to another operation {}.",
+                        this.name(),
+                        parent.name(),
+                        symbol_ref.borrow().name(),
+                        sym_manager.lookup(symbol_ref.borrow().name()).unwrap().borrow().name()
+                    );
+                }
+            }
+        }
         let order_offset = core::mem::offset_of!(Operation, order);
         unsafe {
             let ptr = UnsafeIntrusiveEntityRef::as_ptr(&this);
@@ -189,14 +215,29 @@ impl EntityListItem for Operation {
         }
     }
 
-    fn on_transfer(
-        _this: UnsafeIntrusiveEntityRef<Self>,
-        _from: &mut EntityList<Self>,
-        to: &mut EntityList<Self>,
-    ) {
+    fn on_transfer(_this: OperationRef, _from: &mut EntityList<Self>, to: &mut EntityList<Self>) {
         // Invalidate the ordering of the new parent block
         let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();
+    }
+
+    fn on_removed(this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {
+        // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
+        if this.name().implements::<dyn Symbol>() {
+            let parent = this.nearest_symbol_table();
+            if let Some(mut parent) = parent {
+                // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
+                if parent.name().implements::<dyn SymbolTable>() {
+                    let mut symbol_table = parent.borrow_mut();
+                    let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
+                    let mut sym_manager = sym_manager.symbol_manager_mut();
+
+                    let symbol_ref = this.borrow().as_symbol_ref().unwrap();
+
+                    sym_manager.remove(symbol_ref);
+                };
+            }
+        }
     }
 }
 
@@ -227,6 +268,59 @@ impl Operation {
     }
 }
 
+/// Insertion
+impl OperationRef {
+    pub fn insert_at_start(self, mut block: BlockRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        {
+            let mut block = block.borrow_mut();
+            block.body_mut().push_front(self);
+        }
+    }
+
+    pub fn insert_at_end(self, mut block: BlockRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        {
+            let mut block = block.borrow_mut();
+            block.body_mut().push_back(self);
+        }
+    }
+
+    pub fn insert_before(self, before: OperationRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        let mut block = before.parent().expect("'before' block is not attached to a block");
+        {
+            let mut block = block.borrow_mut();
+            let block_body = block.body_mut();
+            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
+            cursor.insert_before(self);
+        }
+    }
+
+    pub fn insert_after(self, after: OperationRef) {
+        assert!(
+            self.parent().is_none(),
+            "cannot insert operation that is already attached to another block"
+        );
+        let mut block = after.parent().expect("'after' block is not attached to a block");
+        {
+            let mut block = block.borrow_mut();
+            let block_body = block.body_mut();
+            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
+            cursor.insert_after(self);
+        }
+    }
+}
+
 /// Read-only Metadata
 impl OperationRef {
     pub fn name(&self) -> OperationName {
@@ -240,6 +334,31 @@ impl OperationRef {
             let name_ptr = core::ptr::addr_of!((*ptr).name);
             OperationName::clone(&*name_ptr)
         }
+    }
+
+    /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
+    /// to one
+    pub fn parent_op(&self) -> Option<OperationRef> {
+        self.parent_region().and_then(|region| region.parent())
+    }
+
+    /// Returns a handle to the containing [Region] of this operation, if it is attached to one
+    pub fn parent_region(&self) -> Option<RegionRef> {
+        self.grandparent()
+    }
+
+    /// Returns the nearest [SymbolTable] from this operation.
+    ///
+    /// Returns `None` if no parent of this operation is a valid symbol table.
+    pub fn nearest_symbol_table(&self) -> Option<OperationRef> {
+        let mut parent = self.parent_op();
+        while let Some(parent_op) = parent.take() {
+            if parent_op.name().implements::<dyn SymbolTable>() {
+                return Some(parent_op);
+            }
+            parent = parent_op.parent_op();
+        }
+        None
     }
 }
 
@@ -512,13 +631,13 @@ impl Operation {
 
     /// Returns a handle to the containing [Region] of this operation, if it is attached to one
     pub fn parent_region(&self) -> Option<RegionRef> {
-        self.parent().and_then(|block| block.parent())
+        self.as_operation_ref().parent_region()
     }
 
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {
-        self.parent_region().and_then(|region| region.parent())
+        self.as_operation_ref().parent_op()
     }
 
     /// Returns a handle to the nearest containing [Operation] of type `T` for this operation, if it
@@ -1028,59 +1147,6 @@ impl Operation {
         }
 
         true
-    }
-}
-
-/// Insertion
-impl Operation {
-    pub fn insert_at_start(&mut self, mut block: BlockRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        {
-            let mut block = block.borrow_mut();
-            block.body_mut().push_front(self.as_operation_ref());
-        }
-    }
-
-    pub fn insert_at_end(&mut self, mut block: BlockRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        {
-            let mut block = block.borrow_mut();
-            block.body_mut().push_back(self.as_operation_ref());
-        }
-    }
-
-    pub fn insert_before(&mut self, before: OperationRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        let mut block = before.parent().expect("'before' block is not attached to a block");
-        {
-            let mut block = block.borrow_mut();
-            let block_body = block.body_mut();
-            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(before) };
-            cursor.insert_before(self.as_operation_ref());
-        }
-    }
-
-    pub fn insert_after(&mut self, after: OperationRef) {
-        assert!(
-            self.parent().is_none(),
-            "cannot insert operation that is already attached to another block"
-        );
-        let mut block = after.parent().expect("'after' block is not attached to a block");
-        {
-            let mut block = block.borrow_mut();
-            let block_body = block.body_mut();
-            let mut cursor = unsafe { block_body.cursor_mut_from_ptr(after) };
-            cursor.insert_after(self.as_operation_ref());
-        }
     }
 }
 

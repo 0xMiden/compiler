@@ -32,16 +32,6 @@ impl ComponentBuilder {
 
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
         let module_ref = self.builder.create_module(name)?;
-        let is_new = self
-            .component
-            .borrow_mut()
-            .symbol_manager_mut()
-            .insert_new(module_ref, crate::ProgramPoint::Invalid);
-        assert!(
-            is_new,
-            "module with the name {name} already exists in component {}",
-            self.component.borrow().name()
-        );
         Ok(module_ref)
     }
 
@@ -67,12 +57,6 @@ impl ComponentBuilder {
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
         let function_ref = self.builder.create_function(name, signature)?;
-        let is_new = self
-            .component
-            .borrow_mut()
-            .symbol_manager_mut()
-            .insert_new(function_ref, crate::ProgramPoint::Invalid);
-        assert!(is_new, "function with the name {name} already exists");
         Ok(function_ref)
     }
 }

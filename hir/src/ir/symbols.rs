@@ -151,16 +151,7 @@ impl Operation {
     ///
     /// Returns `None` if no parent of this operation is a valid symbol table.
     pub fn nearest_symbol_table(&self) -> Option<OperationRef> {
-        let mut parent = self.parent_op();
-        while let Some(parent_op) = parent.take() {
-            let op = parent_op.borrow();
-            if op.implements::<dyn SymbolTable>() {
-                drop(op);
-                return Some(parent_op);
-            }
-            parent = op.parent_op();
-        }
-        None
+        self.as_operation_ref().nearest_symbol_table()
     }
 
     /// Returns the operation registered with the given symbol name within the closest symbol table

@@ -124,7 +124,7 @@ pub trait Builder: Listener {
     /// current op.
     ///
     /// This function will panic if no insertion point is set.
-    fn insert(&mut self, mut op: OperationRef) {
+    fn insert(&mut self, op: OperationRef) {
         let ip = self.insertion_point();
 
         match *ip {
@@ -132,17 +132,17 @@ pub trait Builder: Listener {
                 block,
                 position: point,
             } => match point {
-                crate::Position::Before => op.borrow_mut().insert_at_start(block),
-                crate::Position::After => op.borrow_mut().insert_at_end(block),
+                crate::Position::Before => op.insert_at_start(block),
+                crate::Position::After => op.insert_at_end(block),
             },
             ProgramPoint::Op {
                 op: other_op,
                 position: point,
                 ..
             } => match point {
-                crate::Position::Before => op.borrow_mut().insert_before(other_op),
+                crate::Position::Before => op.insert_before(other_op),
                 crate::Position::After => {
-                    op.borrow_mut().insert_after(other_op);
+                    op.insert_after(other_op);
                     self.set_insertion_point(ProgramPoint::after(op));
                 }
             },

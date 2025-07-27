@@ -344,21 +344,21 @@ pub trait Rewriter: Builder + RewriterListener {
     /// Insert an unlinked operation right before `ip`
     fn insert_op_before(&mut self, mut op: OperationRef, ip: OperationRef) {
         let prev = ProgramPoint::before(op);
-        op.borrow_mut().insert_before(ip);
+        op.borrow_mut().as_operation_ref().insert_before(ip);
         self.notify_operation_inserted(op, prev);
     }
 
     /// Insert an unlinked operation right after `ip`
     fn insert_op_after(&mut self, mut op: OperationRef, ip: OperationRef) {
         let prev = ProgramPoint::before(op);
-        op.borrow_mut().insert_after(ip);
+        op.borrow_mut().as_operation_ref().insert_after(ip);
         self.notify_operation_inserted(op, prev);
     }
 
     /// Insert an unlinked operation at the end of `ip`
-    fn insert_op_at_end(&mut self, mut op: OperationRef, ip: BlockRef) {
+    fn insert_op_at_end(&mut self, op: OperationRef, ip: BlockRef) {
         let prev = ProgramPoint::before(op);
-        op.borrow_mut().insert_at_end(ip);
+        op.insert_at_end(ip);
         self.notify_operation_inserted(op, prev);
     }
 
