@@ -21,7 +21,7 @@ export.increment-count
 end
 
 export.init
-    push.1114112
+    push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
@@ -38,10 +38,10 @@ export.init
     drop
     push.1048576
     u32assert
-    mem_store.262160
+    mem_store.278544
     push.0
     u32assert
-    mem_store.262161
+    mem_store.278545
 end
 
 # mod miden:counter-contract/counter@0.1.0::counter_contract
@@ -233,7 +233,7 @@ proc.counter_contract::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:counter-contract/counter@0.1.0#get-count
-    push.1048640
+    push.1114176
     u32divmod.4
     swap.1
     trace.240
@@ -243,7 +243,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
     nop
     push.32
     u32wrapping_sub
-    push.1048640
+    push.1114176
     dup.1
     swap.1
     u32divmod.4
@@ -432,7 +432,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
     movup.2
     swap.1
     u32wrapping_add
-    push.1048640
+    push.1114176
     u32divmod.4
     swap.1
     trace.240
@@ -443,7 +443,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
 end
 
 export.miden:counter-contract/counter@0.1.0#increment-count
-    push.1048640
+    push.1114176
     u32divmod.4
     swap.1
     trace.240
@@ -453,7 +453,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     nop
     push.80
     u32wrapping_sub
-    push.1048640
+    push.1114176
     dup.1
     swap.1
     u32divmod.4
@@ -744,7 +744,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     movup.2
     swap.1
     u32wrapping_add
-    push.1048640
+    push.1114176
     u32divmod.4
     swap.1
     trace.240
@@ -755,7 +755,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1048644
+    push.1114180
     u32divmod.4
     swap.1
     trace.240
@@ -784,7 +784,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1048644
+        push.1114180
         u32divmod.4
         swap.1
         trace.240

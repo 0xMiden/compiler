@@ -1,19 +1,19 @@
 # mod root_ns:root@1.0.0
 
 export.init
-    push.1114112
+    push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
     push.1048576
     u32assert
-    mem_store.262144
+    mem_store.278528
     push.1048576
     u32assert
-    mem_store.262145
+    mem_store.278529
     push.1048576
     u32assert
-    mem_store.262146
+    mem_store.278530
 end
 
 # mod root_ns:root@1.0.0::test_rust_ad225f3904404156f79b92bcde2daa108dc69c4c2e00a61030a898c2fcb6f87c

@@ -167,61 +167,17 @@ fn test_hash_elements() {
 }
 
 #[test]
-fn test_vec_alloc_new() {
-    let main_fn = r#"
-    // (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-    (a: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-        let mut input: alloc::vec::Vec<Felt> = alloc::vec::Vec::with_capacity(1);
-        let input_ptr = input.as_ptr().addr() as u32;
-
-        // ATTENTION: the address 1114128 is correct
-        miden_stdlib_sys::assert_eq(Felt::from_u32(input_ptr), felt!(1114128));
-
-        felt!(0)
-    }
-
-    "#
-    .to_string();
-    let config = WasmTranslationConfig::default();
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys("vec_alloc_new", &main_fn, config, []);
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/vec_alloc_new.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/vec_alloc_new.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/vec_alloc_new.masm")]);
-
-    let package = test.compiled_package();
-
-    let args = [Felt::ZERO];
-
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let res: Felt = trace.parse_result().unwrap();
-        assert_eq!(res, Felt::ZERO);
-        Ok(())
-    })
-    .unwrap();
-}
-
-#[test]
 fn test_vec_alloc_vec() {
+    // regression test for https://github.com/0xMiden/compiler/issues/595
     let main_fn = r#"
-    // (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-    (a: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-
-        // NOTE: below throws error: invalid operand stack index (1): only 1 operands are available
-        // let input: alloc::vec::Vec<Felt> = alloc::vec![a];
-
-        let input: alloc::vec::Vec<Felt> = alloc::vec![a, a];
-        let input_ptr = input.as_ptr().addr() as u32;
-
-        // ATTENTION: the address is expected to be 1114128 like in test_vec_alloc_new test
-        // The value below (1048576) is the __stack_pointer (see wat file)
-        // `input_ptr` corresponds to `local.tee 2` in wat file and `v19` in hir file
-        miden_stdlib_sys::assert_eq(Felt::from_u32(input_ptr), felt!(1048576));
-
-        felt!(0)
+    (a: u32) -> Felt {
+        let input: alloc::vec::Vec<Felt> = alloc::vec![
+            felt!(1),
+            felt!(2),
+            felt!(3),
+        ];
+        input[a as usize]
     }
-
     "#
     .to_string();
     let config = WasmTranslationConfig::default();
@@ -234,11 +190,11 @@ fn test_vec_alloc_vec() {
 
     let package = test.compiled_package();
 
-    let args = [Felt::ZERO];
+    let args = [Felt::from(2u32)];
 
     eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let res: Felt = trace.parse_result().unwrap();
-        assert_eq!(res, Felt::ZERO);
+        let res: u32 = trace.parse_result().unwrap();
+        assert_eq!(res, 3, "unexpected result (regression test for https://github.com/0xMiden/compiler/issues/595)");
         Ok(())
     })
     .unwrap();
