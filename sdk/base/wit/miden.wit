@@ -35,7 +35,7 @@ interface core-types {
     /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
     /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
     record account-id {
-        prefix: felt,
+    	prefix: felt,
 	suffix: felt
     }
 
