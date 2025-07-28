@@ -285,7 +285,7 @@ pub fn test_basic_wallet_p2id_local() {
 
         let serial_num = client.rng().draw_word();
         let note_inputs =
-            NoteInputs::new(vec![bob_account.id().suffix(), bob_account.id().prefix().as_felt()])
+            NoteInputs::new(vec![bob_account.id().prefix().as_felt(), bob_account.id().suffix()])
                 .unwrap();
         let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
 
