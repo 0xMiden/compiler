@@ -21,9 +21,8 @@ use miden_client::{
     Client, ClientError,
 };
 use miden_core::{
-    crypto::hash::Rpo256,
     utils::{Deserializable, Serializable},
-    AdviceMap, Felt, FieldElement,
+    Felt, FieldElement,
 };
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{

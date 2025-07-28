@@ -46,14 +46,6 @@ end
 
 # mod miden:counter-contract/counter@0.1.0::counter_contract
 
-proc.miden_base_sys::bindings::account::extern_account_incr_nonce
-    trace.240
-    nop
-    exec.::miden::account::incr_nonce
-    trace.252
-    nop
-end
-
 proc.miden_base_sys::bindings::storage::extern_get_storage_map_item
     trace.240
     nop
@@ -734,12 +726,6 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::storage::set_map_item
     trace.252
     nop
-    push.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::account::incr_nonce
-    trace.252
-    nop
     push.80
     movup.2
     swap.1
@@ -824,14 +810,6 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         mem_store
     end
-end
-
-proc.miden_base_sys::bindings::account::incr_nonce
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter@0.1.0::counter_contract::miden_base_sys::bindings::account::extern_account_incr_nonce
-    trace.252
-    nop
 end
 
 proc.miden_base_sys::bindings::storage::get_map_item

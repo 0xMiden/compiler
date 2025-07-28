@@ -9,6 +9,7 @@ pub struct AccountId {
 
 impl AccountId {}
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Asset {
     pub inner: Word,
