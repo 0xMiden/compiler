@@ -33,7 +33,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(REMOVE_ASSET),
         FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
-    account.insert(Symbol::from(GET_ID), FunctionType::new(CallConv::Wasm, [], [Felt]));
+    account.insert(Symbol::from(GET_ID), FunctionType::new(CallConv::Wasm, [], [Felt, Felt]));
     account.insert(
         Symbol::from(GET_STORAGE_ITEM),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),

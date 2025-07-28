@@ -1,21 +1,13 @@
 use miden_stdlib_sys::{Felt, Word};
 
-#[repr(transparent)]
+#[allow(unused)]
 #[derive(Copy, Clone)]
-pub struct AccountId(Felt);
-
-impl AccountId {
-    #[inline(always)]
-    pub const fn as_felt(&self) -> Felt {
-        self.0
-    }
+pub struct AccountId {
+    pub prefix: Felt,
+    pub suffix: Felt,
 }
 
-impl From<AccountId> for Felt {
-    fn from(account_id: AccountId) -> Felt {
-        account_id.0
-    }
-}
+impl AccountId {}
 
 #[repr(transparent)]
 pub struct Asset {

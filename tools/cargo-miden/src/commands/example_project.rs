@@ -5,7 +5,7 @@ use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
-use crate::commands::new_project::deploy_wit_files;
+use crate::{commands::new_project::deploy_wit_files, utils::compiler_path};
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -67,17 +67,7 @@ impl ExampleCommand {
             ));
         }
 
-        let mut define = vec![];
-        // If we're running the test suite, specify the path to current compiler directory
-        if cfg!(test) || std::env::var("TEST").is_ok() {
-            set_default_test_compiler(&mut define);
-        }
-
-        let template_path = TemplatePath {
-            git: Some("https://github.com/0xMiden/compiler".into()),
-            auto_path: Some(format!("examples/{}", self.example_name)),
-            ..Default::default()
-        };
+        let template_path = template_path(&project_name);
 
         // Generate in current directory
         let destination = {
@@ -93,7 +83,6 @@ impl ExampleCommand {
             force: true,
             force_git_init: true,
             verbose: true,
-            define,
             ..Default::default()
         };
         cargo_generate::generate(generate_args)
@@ -131,19 +120,10 @@ impl ExampleCommand {
         // Create the main directory
         fs::create_dir_all(&main_dir)?;
 
-        let mut define = vec![];
-        if cfg!(test) || std::env::var("TEST").is_ok() {
-            set_default_test_compiler(&mut define);
-        }
-
         // Generate both projects
         let project_names = [first_project, second_project];
         for project_name in &project_names {
-            let template_path = TemplatePath {
-                git: Some("https://github.com/0xMiden/compiler".into()),
-                auto_path: Some(format!("examples/{project_name}")),
-                ..Default::default()
-            };
+            let template_path = template_path(project_name);
 
             let destination = {
                 use path_absolutize::Absolutize;
@@ -157,7 +137,6 @@ impl ExampleCommand {
                 force: true,
                 force_git_init: false, // Don't init git for subdirectories
                 verbose: true,
-                define: define.clone(),
                 ..Default::default()
             };
 
@@ -199,17 +178,6 @@ impl ExampleCommand {
 
         Ok(main_dir)
     }
-}
-
-fn set_default_test_compiler(define: &mut Vec<String>) {
-    let compiler_path = compiler_path();
-    define.push(format!("compiler_path={}", compiler_path.display()));
-}
-
-fn compiler_path() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let compiler_path = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
-    compiler_path.to_path_buf()
 }
 
 /// Process the generated Cargo.toml to update dependencies and WIT paths
@@ -328,4 +296,25 @@ fn update_note_dependencies(
 
     fs::write(&note_cargo_toml, doc.to_string())?;
     Ok(())
+}
+fn template_path(project_name: &str) -> TemplatePath {
+    if cfg!(test) || std::env::var("TEST").is_ok() {
+        TemplatePath {
+            path: Some(
+                compiler_path()
+                    .join("examples")
+                    .join(project_name)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            ),
+            ..Default::default()
+        }
+    } else {
+        TemplatePath {
+            git: Some("https://github.com/0xMiden/compiler".into()),
+            auto_path: Some(format!("examples/{project_name}")),
+            ..Default::default()
+        }
+    }
 }

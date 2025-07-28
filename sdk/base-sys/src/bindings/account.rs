@@ -6,7 +6,7 @@ use super::types::{AccountId, Asset};
 #[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
     #[link_name = "get-id"]
-    pub fn extern_account_get_id() -> AccountId;
+    pub fn extern_account_get_id(ptr: *mut AccountId);
     #[link_name = "add-asset"]
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "remove-asset"]
@@ -17,7 +17,11 @@ extern "C" {
 
 /// Get the account ID of the currently executing note account.
 pub fn get_id() -> AccountId {
-    unsafe { extern_account_get_id() }
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<AccountId>::uninit();
+        extern_account_get_id(ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
 }
 
 /// Add the specified asset to the vault.

@@ -28,6 +28,7 @@ mod dependencies;
 mod non_component;
 mod outputs;
 mod target;
+mod utils;
 
 pub use cargo_component::core::terminal::{Color, Terminal, Verbosity};
 pub use outputs::{BuildOutput, CommandOutput};

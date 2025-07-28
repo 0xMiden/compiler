@@ -75,7 +75,7 @@ end
 
 #[test]
 fn test_get_id() {
-    let main_fn = "() -> Felt { miden::account::get_id().into() }";
+    let main_fn = "() -> AccountId { miden::account::get_id() }";
     let artifact_name = "abi_transform_tx_kernel_get_id";
     let config = WasmTranslationConfig::default();
     let test_builder =

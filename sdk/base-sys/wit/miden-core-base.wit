@@ -14,7 +14,7 @@ interface account {
     /// Remove the specified asset from the vault
     remove-asset: func(asset0: f32, asset1: f32, asset2: f32, asset3: f32, result-ptr: s32);
     /// Get the id of the currently executing account
-    get-id: func() -> f32;
+    get-id: func(result-ptr: s32);
 
     /// Gets an item from the account storage
     get-item: func(index: f32, result-ptr: s32);
