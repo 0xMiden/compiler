@@ -17,7 +17,7 @@ hands dirty.
 > make sure you have it installed first:
 >
 > ```bash
-> rustup toolchain install nightly-2025-03-20
+> rustup toolchain install nightly-2025-07-20
 > ```
 >
 > NOTE: You can also use the latest nightly, but the specific nightly shown here is known to

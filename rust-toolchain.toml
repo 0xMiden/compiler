@@ -1,4 +1,7 @@
 [toolchain]
+# REMINDER: After updating the channel, update:
+# - docs/src/usage/cargo-miden.md
+# - docs/src/usage/midenc.md
 channel = "nightly-2025-07-20"
 components = ["rustfmt", "rust-src", "clippy"]
 targets = ["wasm32-unknown-unknown", "wasm32-wasip1", "wasm32-wasip2"]
