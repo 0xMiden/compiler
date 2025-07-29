@@ -35,18 +35,14 @@ fn assert_counter_storage(
     expected: u64,
 ) {
     // according to `examples/counter-contract` for inner (slot, key) values
-    let counter_contract_storage_key = Word::from([Felt::ZERO; 4]);
+    let counter_contract_storage_key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
 
     // The counter contract is in slot 1 when deployed, auth_component takes slot 0
     let word = counter_account_storage
         .get_map_item(1, counter_contract_storage_key)
         .expect("Failed to get counter value from storage slot 1");
 
-    // TODO: why the first? it should be the last (see Felt -> Word).
-    // TODO: check get/set_map_item bindings. may be the value is passed backwords. test a non-zero key.
-
-    // Counter value is stored in the first element of the Word
-    let val = word.first().unwrap();
+    let val = word.last().unwrap();
     assert_eq!(
         val.as_int(),
         expected,
@@ -71,12 +67,11 @@ async fn create_counter_account(
                 account_package.unwrap_library().as_ref().clone(),
             );
 
-            let word_zero = Word::from([Felt::ZERO; 4]);
+            let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+            let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
             AccountComponent::new(
                 template.library().clone(),
-                vec![StorageSlot::Map(
-                    StorageMap::with_entries([(word_zero.into(), word_zero)]).unwrap(),
-                )],
+                vec![StorageSlot::Map(StorageMap::with_entries([(key.into(), value)]).unwrap())],
             )
             .unwrap()
             .with_supported_types([AccountType::RegularAccountUpdatableCode].into())
@@ -176,7 +171,7 @@ pub fn test_counter_contract_local() {
 
         // The counter contract storage value should be zero after the account creation
         let initial_account = client.get_account(counter_account.id()).await.unwrap().unwrap();
-        assert_counter_storage(initial_account.account().storage(), 0);
+        assert_counter_storage(initial_account.account().storage(), 1);
 
         // Create the counter note from sender to counter
         let note_program = note_package.unwrap_program();
@@ -255,7 +250,7 @@ pub fn test_counter_contract_local() {
                 .unwrap()
                 .account()
                 .storage(),
-            1,
+            2,
         );
     });
 }

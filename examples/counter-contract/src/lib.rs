@@ -39,7 +39,7 @@ impl Guest for CounterContract {
         // Get the instance of the contract
         let contract = CounterContract::default();
         // Define a fixed key for the counter value within the map
-        let key = Word::from([felt!(0); 4]);
+        let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
         // Read the value associated with the key from the storage map
         contract.count_map.get(&key)
     }
@@ -49,7 +49,7 @@ impl Guest for CounterContract {
         // Get the instance of the contract
         let contract = CounterContract::default();
         // Define the same fixed key
-        let key = Word::from([felt!(0); 4]);
+        let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
         // Read the current value
         let current_value: Felt = contract.count_map.get(&key);
         // Increment the value by one

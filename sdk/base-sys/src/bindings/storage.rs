@@ -58,7 +58,8 @@ pub fn get_item(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_get_storage_item(index.into(), ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        let word = ret_area.assume_init();
+        word.reverse()
     }
 }
 
@@ -80,13 +81,14 @@ pub fn set_item(index: u8, value: Word) -> (StorageCommitmentRoot, Word) {
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
         extern_set_storage_item(
             index.into(),
-            value[0],
-            value[1],
-            value[2],
             value[3],
+            value[2],
+            value[1],
+            value[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        let (comm, value) = ret_area.assume_init();
+        (comm.reverse(), value.reverse())
     }
 }
 
@@ -108,13 +110,14 @@ pub fn get_map_item(index: u8, key: &Word) -> Word {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_get_storage_map_item(
             index.into(),
-            key[0],
-            key[1],
-            key[2],
             key[3],
+            key[2],
+            key[1],
+            key[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        let word = ret_area.assume_init();
+        word.reverse()
     }
 }
 
@@ -138,16 +141,17 @@ pub fn set_map_item(index: u8, key: Word, value: Word) -> (StorageCommitmentRoot
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
         extern_set_storage_map_item(
             index.into(),
-            key[0],
-            key[1],
-            key[2],
             key[3],
-            value[0],
-            value[1],
-            value[2],
+            key[2],
+            key[1],
+            key[0],
             value[3],
+            value[2],
+            value[1],
+            value[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        let (comm, value) = ret_area.assume_init();
+        (comm.reverse(), value.reverse())
     }
 }

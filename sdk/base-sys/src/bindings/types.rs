@@ -63,3 +63,9 @@ pub struct NoteType {
 
 #[repr(transparent)]
 pub struct StorageCommitmentRoot(Word);
+
+impl StorageCommitmentRoot {
+    pub(crate) fn reverse(&self) -> StorageCommitmentRoot {
+        Self(self.0.reverse())
+    }
+}

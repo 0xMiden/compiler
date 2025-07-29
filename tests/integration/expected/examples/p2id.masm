@@ -222,7 +222,7 @@ export.miden:base/note-script@1.0.0#note-script
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.48
     u32wrapping_sub
     push.1114272
     dup.1
@@ -239,7 +239,7 @@ export.miden:base/note-script@1.0.0#note-script
     exec.::miden:base/note-script@1.0.0::p2id::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
-    push.8
+    push.16
     dup.1
     swap.1
     u32wrapping_add
@@ -248,7 +248,7 @@ export.miden:base/note-script@1.0.0#note-script
     exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::get_inputs
     trace.252
     nop
-    push.16
+    push.24
     dup.1
     add
     u32assert
@@ -276,14 +276,14 @@ export.miden:base/note-script@1.0.0#note-script
         eq.0
         if.true
             drop
-            push.0
+            push.1
         else
             drop
-            push.0
+            push.1
         end
     else
         drop
-        push.12
+        push.20
         dup.1
         add
         u32assert
@@ -331,13 +331,16 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        dup.2
+        push.8
+        dup.3
+        swap.1
+        u32wrapping_add
         trace.240
         nop
         exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::account::get_id
         trace.252
         nop
-        push.4
+        push.12
         dup.3
         add
         u32assert
@@ -354,7 +357,10 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        dup.3
+        push.8
+        dup.4
+        add
+        u32assert
         push.4
         dup.1
         swap.1
@@ -371,7 +377,7 @@ export.miden:base/note-script@1.0.0#note-script
         movup.2
         assert_eq
         assert_eq
-        push.20
+        push.28
         dup.1
         swap.1
         u32wrapping_add
@@ -380,7 +386,7 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::get_assets
         trace.252
         nop
-        push.28
+        push.36
         dup.1
         add
         u32assert
@@ -397,162 +403,276 @@ export.miden:base/note-script@1.0.0#note-script
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.0
-        neq
-        dup.0
-        if.true
-            push.24
-            dup.2
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            push.12
-            dup.1
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.8
-            dup.2
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            dup.2
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.4
-            movup.4
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
+        push.28
+        dup.2
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.32
+        dup.3
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.4
+        movup.3
+        swap.1
+        u32shl
+        dup.1
+        swap.3
+        swap.4
+        swap.2
+        swap.1
+        push.1
+        while.true
             push.0
-            dup.1
-            swap.1
-            assert_eq
             push.0
-            dup.1
+            dup.2
             swap.1
-            assert_eq
+            eq
+            neq
+            dup.0
+            if.true
+                movdn.2
+                drop
+                drop
+                push.3735929054
+                dup.0
+            else
+                dup.2
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_felt
+                trace.252
+                nop
+                push.4
+                dup.4
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_felt
+                trace.252
+                nop
+                push.8
+                dup.5
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_felt
+                trace.252
+                nop
+                push.12
+                dup.6
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_felt
+                trace.252
+                nop
+                movdn.3
+                swap.2
+                trace.240
+                nop
+                exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+                trace.252
+                nop
+                push.16
+                movup.3
+                swap.1
+                u32wrapping_add
+                push.4294967280
+                movup.3
+                swap.1
+                u32wrapping_add
+            end
+            push.3735929054
+            dup.3
+            dup.7
             swap.2
+            swap.1
+            cdrop
+            push.3735929054
+            dup.4
+            dup.7
+            swap.2
+            swap.1
+            cdrop
+            push.3735929054
+            dup.5
+            dup.7
+            swap.2
+            swap.1
+            cdrop
+            push.1
+            push.0
+            movup.7
+            cdrop
+            push.1
+            u32and
             swap.1
             swap.3
-            trace.240
-            nop
-            exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
-            trace.252
-            nop
-            push.16
-            push.20
-            dup.3
-            swap.1
-            u32wrapping_add
-            dup.1
+            swap.5
             swap.2
+            swap.4
             swap.1
-            trace.240
-            nop
-            exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
-            trace.252
-            nop
-            push.4
-            push.8
-            dup.3
-            swap.1
-            u32wrapping_add
-            dup.1
-            swap.2
-            swap.1
-            trace.240
-            nop
-            exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
-            trace.252
-            nop
-            push.32
-            movup.2
-            swap.1
-            u32wrapping_add
-            push.1114272
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-        else
-            swap.1
-            drop
+            if.true
+                movup.5
+                drop
+                movup.5
+                drop
+                movup.5
+                drop
+                push.1
+            else
+                push.0
+            end
         end
-        push.0
-        push.1
+        drop
+        drop
+        drop
+        drop
+        drop
+        push.44
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
         movup.2
-        cdrop
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.40
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        movup.2
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.16
+        push.40
+        dup.2
+        swap.1
+        u32wrapping_add
+        dup.1
+        swap.2
+        swap.1
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+        trace.252
+        nop
+        push.4
+        push.16
+        dup.2
+        swap.1
+        u32wrapping_add
+        dup.1
+        swap.2
+        swap.1
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+        trace.252
+        nop
+        push.48
+        u32wrapping_add
+        push.1114272
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.0
     end
     push.0
     eq
     if.true
+        nop
+    else
         push.0
         assert
-    else
-        nop
     end
 end
 
