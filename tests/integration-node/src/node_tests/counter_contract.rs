@@ -18,9 +18,9 @@ use miden_client::{
     rpc::{Endpoint, TonicRpcClient},
     transaction::{OutputNote, TransactionRequestBuilder},
     utils::Deserializable,
-    Client, ClientError, Felt, Word,
+    Client, ClientError, Word,
 };
-use miden_core::FieldElement;
+use miden_core::{Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_objects::account::{
     AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
@@ -202,7 +202,13 @@ pub fn test_counter_contract_local() {
             .build()
             .unwrap();
 
-        let tx_result = client.new_transaction(counter_account.id(), note_request).await.unwrap();
+        let tx_result = client
+            .new_transaction(counter_account.id(), note_request)
+            .await
+            .map_err(|e| {
+                eprintln!("{e}");
+            })
+            .unwrap();
         let executed_transaction = tx_result.executed_transaction();
         // dbg!(executed_transaction.output_notes());
 
@@ -223,8 +229,13 @@ pub fn test_counter_contract_local() {
             .build()
             .unwrap();
 
-        let tx_result =
-            client.new_transaction(counter_account.id(), consume_request).await.unwrap();
+        let tx_result = client
+            .new_transaction(counter_account.id(), consume_request)
+            .await
+            .map_err(|e| {
+                eprintln!("{e}");
+            })
+            .unwrap();
         eprintln!(
             "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
             &tx_result.executed_transaction().id()

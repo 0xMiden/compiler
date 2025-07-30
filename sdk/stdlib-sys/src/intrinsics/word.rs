@@ -16,9 +16,11 @@ impl Word {
     }
 
     pub fn reverse(&self) -> Word {
-        Self {
-            inner: (self.inner.3, self.inner.2, self.inner.1, self.inner.0),
-        }
+        // This is workaround for the https://github.com/0xMiden/compiler/issues/596 to avoid
+        // i64.rotl op in the compiled Wasm
+        let mut arr: [Felt; 4] = self.into();
+        arr.reverse();
+        arr.into()
     }
 }
 impl From<[Felt; 4]> for Word {
@@ -31,6 +33,12 @@ impl From<[Felt; 4]> for Word {
 impl From<Word> for [Felt; 4] {
     #[inline(always)]
     fn from(word: Word) -> Self {
+        [word.inner.0, word.inner.1, word.inner.2, word.inner.3]
+    }
+}
+impl From<&Word> for [Felt; 4] {
+    #[inline(always)]
+    fn from(word: &Word) -> Self {
         [word.inner.0, word.inner.1, word.inner.2, word.inner.3]
     }
 }

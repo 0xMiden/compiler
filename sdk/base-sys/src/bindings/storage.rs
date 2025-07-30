@@ -54,6 +54,7 @@ extern "C" {
 ///
 /// Panics if:
 /// - the index of the requested item is out of bounds.
+#[inline]
 pub fn get_item(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
@@ -76,6 +77,7 @@ pub fn get_item(index: u8) -> Word {
 ///
 /// Panics if:
 /// - the index of the item is out of bounds.
+#[inline]
 pub fn set_item(index: u8, value: Word) -> (StorageCommitmentRoot, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
@@ -105,6 +107,7 @@ pub fn set_item(index: u8, value: Word) -> (StorageCommitmentRoot, Word) {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
+#[inline]
 pub fn get_map_item(index: u8, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
@@ -116,8 +119,7 @@ pub fn get_map_item(index: u8, key: &Word) -> Word {
             key[0],
             ret_area.as_mut_ptr(),
         );
-        let word = ret_area.assume_init();
-        word.reverse()
+        ret_area.assume_init().reverse()
     }
 }
 
@@ -136,6 +138,7 @@ pub fn get_map_item(index: u8, key: &Word) -> Word {
 /// Panics if:
 /// - the index for the map is out of bounds, meaning > 255.
 /// - the slot item at index is not a map.
+#[inline]
 pub fn set_map_item(index: u8, key: Word, value: Word) -> (StorageCommitmentRoot, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();

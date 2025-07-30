@@ -32,22 +32,20 @@
   )
   (import "miden:base/core-types@1.0.0" (instance (;2;) (type 2)))
   (core module (;0;)
-    (type (;0;) (func (param f32 f32) (result i32)))
-    (type (;1;) (func (param f32 i32)))
-    (type (;2;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;3;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;0;) (func (param f32 i32)))
+    (type (;1;) (func (param f32 f32) (result i32)))
+    (type (;2;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;3;) (func (param f32 f32 f32 f32 f32 i32)))
     (type (;4;) (func (param i32) (result f32)))
     (type (;5;) (func))
     (type (;6;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32)))
     (type (;7;) (func (param f32 f32 f32 f32) (result f32)))
     (type (;8;) (func (param i32 i32)))
-    (type (;9;) (func (param i32 i32 i32)))
-    (type (;10;) (func (param i32 i32 i32 i32)))
-    (type (;11;) (func (param i32 f32)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "eq" (func $miden_stdlib_sys::intrinsics::felt::extern_eq (;0;) (type 0)))
-    (import "miden:core-base/account@1.0.0" "get-item" (func $miden_base_sys::bindings::storage::extern_get_storage_item (;1;) (type 1)))
-    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;2;) (type 2)))
-    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;3;) (type 3)))
+    (type (;9;) (func (param i32 f32)))
+    (import "miden:core-base/account@1.0.0" "get-item" (func $miden_base_sys::bindings::storage::extern_get_storage_item (;0;) (type 0)))
+    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "eq" (func $miden_stdlib_sys::intrinsics::felt::extern_eq (;1;) (type 1)))
+    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;2;) (type 2)))
+    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;3;) (type 3)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;4;) (type 4)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -60,119 +58,165 @@
     (func $__wasm_call_ctors (;5;) (type 5))
     (func $storage_example::bindings::__link_custom_section_describing_imports (;6;) (type 5))
     (func $miden:storage-example/foo@1.0.0#set-asset-qty (;7;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32 f32)
-      (local i32)
+      (local i32 f32 f32 f32)
       global.get $__stack_pointer
-      i32.const 64
+      i32.const 112
       i32.sub
       local.tee 9
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
-      local.get 9
-      local.get 7
-      f32.store offset=12
-      local.get 9
-      local.get 6
-      f32.store offset=8
-      local.get 9
-      local.get 5
-      f32.store offset=4
-      local.get 9
-      local.get 4
-      f32.store
-      local.get 9
-      i32.const 16
-      i32.add
       i32.const 0
-      call $miden_base_sys::bindings::storage::get_item
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 9
-      f32.load offset=28
-      local.set 5
+      call $miden_base_sys::bindings::storage::extern_get_storage_item
       local.get 9
-      f32.load offset=24
-      local.set 6
       local.get 9
-      f32.load offset=20
-      local.set 7
+      i64.load offset=8
+      i64.store offset=56
+      local.get 9
+      local.get 9
+      i64.load
+      i64.store offset=48
+      local.get 9
+      i32.const 96
+      i32.add
+      local.get 9
+      i32.const 48
+      i32.add
+      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      local.get 9
+      f32.load offset=100
+      local.set 10
+      local.get 9
+      f32.load offset=104
+      local.set 11
+      local.get 9
+      f32.load offset=108
+      local.set 12
       block ;; label = @1
         local.get 0
         local.get 9
-        f32.load offset=16
+        f32.load offset=96
         call $miden_stdlib_sys::intrinsics::felt::extern_eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 1
-        local.get 7
+        local.get 10
         call $miden_stdlib_sys::intrinsics::felt::extern_eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 2
-        local.get 6
+        local.get 11
         call $miden_stdlib_sys::intrinsics::felt::extern_eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 3
-        local.get 5
+        local.get 12
         call $miden_stdlib_sys::intrinsics::felt::extern_eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 9
-        i32.const 48
+        i32.const 32
         i32.add
         local.get 8
         call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
-        local.get 9
-        i32.const 16
-        i32.add
         i32.const 1
+        call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+        local.get 7
+        local.get 6
+        local.get 5
+        local.get 4
         local.get 9
+        f32.load offset=44
+        local.get 9
+        f32.load offset=40
+        local.get 9
+        f32.load offset=36
+        local.get 9
+        f32.load offset=32
         local.get 9
         i32.const 48
         i32.add
-        call $miden_base_sys::bindings::storage::set_map_item
+        call $miden_base_sys::bindings::storage::extern_set_storage_map_item
+        local.get 9
+        local.get 9
+        i64.load offset=56
+        i64.store offset=88
+        local.get 9
+        local.get 9
+        i64.load offset=48
+        i64.store offset=80
+        local.get 9
+        local.get 9
+        i32.const 72
+        i32.add
+        i64.load
+        i64.store offset=104
+        local.get 9
+        local.get 9
+        i64.load offset=64
+        i64.store offset=96
+        local.get 9
+        local.get 9
+        i32.const 80
+        i32.add
+        call $miden_stdlib_sys::intrinsics::word::Word::reverse
+        local.get 9
+        i32.const 16
+        i32.add
+        local.get 9
+        i32.const 96
+        i32.add
+        call $miden_stdlib_sys::intrinsics::word::Word::reverse
       end
       local.get 9
-      i32.const 64
+      i32.const 112
       i32.add
       global.set $__stack_pointer
     )
     (func $miden:storage-example/foo@1.0.0#get-asset-qty (;8;) (type 7) (param f32 f32 f32 f32) (result f32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 48
       i32.sub
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
-      local.get 4
+      i32.const 1
+      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 3
-      f32.store offset=12
-      local.get 4
       local.get 2
-      f32.store offset=8
-      local.get 4
       local.get 1
-      f32.store offset=4
-      local.get 4
       local.get 0
-      f32.store
       local.get 4
       i32.const 16
       i32.add
-      i32.const 1
+      call $miden_base_sys::bindings::storage::extern_get_storage_map_item
       local.get 4
-      call $miden_base_sys::bindings::storage::get_map_item
       local.get 4
-      f32.load offset=28
-      local.set 3
+      i64.load offset=24
+      i64.store offset=40
+      local.get 4
+      local.get 4
+      i64.load offset=16
+      i64.store offset=32
+      local.get 4
       local.get 4
       i32.const 32
       i32.add
+      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      local.get 4
+      f32.load offset=12
+      local.set 0
+      local.get 4
+      i32.const 48
+      i32.add
       global.set $__stack_pointer
-      local.get 3
+      local.get 0
     )
     (func $wit_bindgen_rt::run_ctors_once (;9;) (type 5)
       (local i32)
@@ -192,133 +236,71 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::storage::get_item (;10;) (type 8) (param i32 i32)
-      (local i32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 2
-      global.set $__stack_pointer
-      local.get 1
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
-      local.get 2
-      call $miden_base_sys::bindings::storage::extern_get_storage_item
-      local.get 0
-      local.get 2
-      i64.load
-      i64.const 32
-      i64.rotl
-      i64.store offset=8
-      local.get 0
-      local.get 2
-      i64.load offset=8
-      i64.const 32
-      i64.rotl
-      i64.store
-      local.get 2
-      i32.const 16
-      i32.add
-      global.set $__stack_pointer
-    )
-    (func $miden_base_sys::bindings::storage::get_map_item (;11;) (type 9) (param i32 i32 i32)
-      (local i32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 3
-      global.set $__stack_pointer
-      local.get 1
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
-      local.get 2
-      f32.load offset=12
-      local.get 2
-      f32.load offset=8
-      local.get 2
-      f32.load offset=4
-      local.get 2
-      f32.load
-      local.get 3
-      call $miden_base_sys::bindings::storage::extern_get_storage_map_item
-      local.get 0
-      local.get 3
-      i64.load
-      i64.const 32
-      i64.rotl
-      i64.store offset=8
-      local.get 0
-      local.get 3
-      i64.load offset=8
-      i64.const 32
-      i64.rotl
-      i64.store
-      local.get 3
-      i32.const 16
-      i32.add
-      global.set $__stack_pointer
-    )
-    (func $miden_base_sys::bindings::storage::set_map_item (;12;) (type 10) (param i32 i32 i32 i32)
-      (local i32)
-      global.get $__stack_pointer
-      i32.const 32
-      i32.sub
-      local.tee 4
-      global.set $__stack_pointer
-      local.get 1
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
-      local.get 2
-      f32.load offset=12
-      local.get 2
-      f32.load offset=8
-      local.get 2
-      f32.load offset=4
-      local.get 2
-      f32.load
-      local.get 3
-      f32.load offset=12
-      local.get 3
-      f32.load offset=8
-      local.get 3
-      f32.load offset=4
-      local.get 3
-      f32.load
-      local.get 4
-      call $miden_base_sys::bindings::storage::extern_set_storage_map_item
-      local.get 0
-      local.get 4
-      i64.load offset=16
-      i64.const 32
-      i64.rotl
-      i64.store offset=24
-      local.get 0
-      local.get 4
-      i64.load offset=24
-      i64.const 32
-      i64.rotl
-      i64.store offset=16
-      local.get 0
-      local.get 4
-      i64.load
-      i64.const 32
-      i64.rotl
-      i64.store offset=8
-      local.get 0
-      local.get 4
-      i64.load offset=8
-      i64.const 32
-      i64.rotl
-      i64.store
-      local.get 4
-      i32.const 32
-      i32.add
-      global.set $__stack_pointer
-    )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;13;) (type 4) (param i32) (result f32)
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;10;) (type 4) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;14;) (type 11) (param i32 f32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;11;) (type 8) (param i32 i32)
+      (local i32 i32 i32 f32)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 2
+      local.get 1
+      i64.load offset=8
+      i64.store offset=8 align=4
+      local.get 2
+      local.get 1
+      i64.load
+      i64.store align=4
+      local.get 2
+      i32.const 12
+      i32.add
+      local.set 3
+      i32.const 0
+      local.set 1
+      block ;; label = @1
+        loop ;; label = @2
+          local.get 1
+          i32.const 8
+          i32.eq
+          br_if 1 (;@1;)
+          local.get 2
+          local.get 1
+          i32.add
+          local.tee 4
+          f32.load
+          local.set 5
+          local.get 4
+          local.get 3
+          i32.load
+          i32.store
+          local.get 3
+          local.get 5
+          f32.store
+          local.get 1
+          i32.const 4
+          i32.add
+          local.set 1
+          local.get 3
+          i32.const -4
+          i32.add
+          local.set 3
+          br 0 (;@2;)
+        end
+      end
+      local.get 0
+      local.get 2
+      i64.load offset=8 align=4
+      i64.store offset=8
+      local.get 0
+      local.get 2
+      i64.load align=4
+      i64.store
+    )
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;12;) (type 9) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
@@ -348,28 +330,28 @@
   (alias export 2 "felt" (type (;3;)))
   (alias export 2 "word" (type (;4;)))
   (alias export 2 "asset" (type (;5;)))
-  (alias export 0 "eq" (func (;0;)))
+  (alias export 1 "get-item" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
-  (alias export 0 "from-u32" (func (;1;)))
+  (alias export 1 "set-map-item" (func (;1;)))
   (core func (;1;) (canon lower (func 1)))
-  (core instance (;0;)
-    (export "eq" (func 0))
-    (export "from-u32" (func 1))
-  )
-  (alias export 1 "get-item" (func (;2;)))
+  (alias export 1 "get-map-item" (func (;2;)))
   (core func (;2;) (canon lower (func 2)))
-  (alias export 1 "get-map-item" (func (;3;)))
+  (core instance (;0;)
+    (export "get-item" (func 0))
+    (export "set-map-item" (func 1))
+    (export "get-map-item" (func 2))
+  )
+  (alias export 0 "eq" (func (;3;)))
   (core func (;3;) (canon lower (func 3)))
-  (alias export 1 "set-map-item" (func (;4;)))
+  (alias export 0 "from-u32" (func (;4;)))
   (core func (;4;) (canon lower (func 4)))
   (core instance (;1;)
-    (export "get-item" (func 2))
-    (export "get-map-item" (func 3))
-    (export "set-map-item" (func 4))
+    (export "eq" (func 3))
+    (export "from-u32" (func 4))
   )
   (core instance (;2;) (instantiate 0
-      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 0))
-      (with "miden:core-base/account@1.0.0" (instance 1))
+      (with "miden:core-base/account@1.0.0" (instance 0))
+      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 1))
     )
   )
   (alias core export 2 "memory" (core memory (;0;)))
