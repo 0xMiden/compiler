@@ -1,34 +1,13 @@
 //! Counter contract test module
 
-use std::sync::Arc;
-
 use miden_client::{
-    account::{
-        component::{BasicWallet, RpoFalcon512},
-        Account, AccountStorageMode, AccountType, StorageMap, StorageSlot,
-    },
-    auth::AuthSecretKey,
-    builder::ClientBuilder,
-    crypto::{FeltRng, SecretKey},
-    keystore::FilesystemKeyStore,
-    note::{
-        Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
-        NoteType,
-    },
-    rpc::{Endpoint, TonicRpcClient},
+    account::StorageMap,
     transaction::{OutputNote, TransactionRequestBuilder},
-    utils::Deserializable,
-    Client, ClientError, Word,
+    Word,
 };
 use miden_core::{Felt, FieldElement};
-use miden_integration_tests::CompilerTestBuilder;
-use miden_objects::account::{
-    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
-};
-use midenc_frontend_wasm::WasmTranslationConfig;
-use rand::{rngs::StdRng, RngCore};
 
-use crate::local_node;
+use super::helpers::*;
 
 fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
@@ -52,148 +31,67 @@ fn assert_counter_storage(
     );
 }
 
-/// Helper to create a basic account with the counter contract
-async fn create_counter_account(
-    client: &mut Client,
-    keystore: Arc<FilesystemKeyStore<StdRng>>,
-    account_package: Arc<miden_mast_package::Package>,
-) -> Result<Account, ClientError> {
-    let account_component = match account_package.account_component_metadata_bytes.as_deref() {
-        None => panic!("no account component metadata present"),
-        Some(bytes) => {
-            let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let template = AccountComponentTemplate::new(
-                metadata,
-                account_package.unwrap_library().as_ref().clone(),
-            );
-
-            let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-            let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-            AccountComponent::new(
-                template.library().clone(),
-                vec![StorageSlot::Map(StorageMap::with_entries([(key.into(), value)]).unwrap())],
-            )
-            .unwrap()
-            .with_supported_types([AccountType::RegularAccountUpdatableCode].into())
-        }
-    };
-
-    let mut init_seed = [0_u8; 32];
-    client.rng().fill_bytes(&mut init_seed);
-
-    let key_pair = SecretKey::with_rng(client.rng());
-
-    // Sync client state to get latest block info
-    let _sync_summary = client.sync_state().await.unwrap();
-
-    let builder = AccountBuilder::new(init_seed)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
-        .with_component(BasicWallet)
-        .with_component(account_component);
-    let (account, seed) = builder.build().unwrap();
-    client.add_account(&account, Some(seed), false).await?;
-    keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
-
-    Ok(account)
-}
-
 /// Tests the counter contract deployment and note consumption workflow on a local node.
 #[test]
 pub fn test_counter_contract_local() {
     // Compile the contracts first (before creating any runtime)
-    let config = WasmTranslationConfig::default();
-    let mut contract_builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../../examples/counter-contract",
-        config.clone(),
-        // ["--debug=none".into()], // don't include any debug info in the compiled MAST
-        [],
-    );
-    contract_builder.with_release(true);
-    let mut contract_test = contract_builder.build();
-    let contract_package = contract_test.compiled_package();
-
-    // let bytes = <miden_mast_package::Package as Clone>::clone(&contract_package)
-    //     .into_mast_artifact()
-    //     .unwrap_library()
-    //     .to_bytes();
-    // dbg!(bytes.len());
-
-    // Compile the counter note
-    let mut note_builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../../examples/counter-note",
-        config,
-        // ["--debug=none".into()], // don't include any debug info in the compiled MAST
-        [],
-    );
-    note_builder.with_release(true);
-    let mut note_test = note_builder.build();
-    let note_package = note_test.compiled_package();
-
-    // Use temp_dir for a fresh client store
-    let temp_dir = temp_dir::TempDir::with_prefix("test_counter_contract_local_").unwrap();
+    let contract_package = compile_rust_package("../../examples/counter-contract", true);
+    let note_package = compile_rust_package("../../examples/counter-note", true);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        // Get a handle to the shared local node
-        let node_handle = local_node::get_shared_node().await.expect("Failed to get shared node");
+        // Create temp directory and get node handle
+        let temp_dir = temp_dir::TempDir::with_prefix("test_counter_contract_local_")
+            .expect("Failed to create temp directory");
+        let node_handle =
+            crate::local_node::get_shared_node().await.expect("Failed to get shared node");
 
-        let rpc_url = node_handle.rpc_url().to_string();
-
-        // Initialize client & keystore
-        let endpoint = Endpoint::try_from(rpc_url.as_str()).expect("Failed to create endpoint");
-        let timeout_ms = 10_000;
-        let rpc_api = Arc::new(TonicRpcClient::new(&endpoint, timeout_ms));
-
-        let keystore_path = temp_dir.path().join("keystore");
-        let keystore = Arc::new(FilesystemKeyStore::<StdRng>::new(keystore_path.clone()).unwrap());
-
-        let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
-        let mut client = ClientBuilder::new()
-            .rpc(rpc_api)
-            .sqlite_store(&store_path)
-            .filesystem_keystore(keystore_path.to_str().unwrap())
-            .in_debug_mode(true)
-            .build()
+        // Initialize test infrastructure
+        let TestSetup {
+            mut client,
+            keystore,
+        } = setup_test_infrastructure(&temp_dir, &node_handle)
             .await
-            .unwrap();
+            .expect("Failed to setup test infrastructure");
 
         let sync_summary = client.sync_state().await.unwrap();
         eprintln!("Latest block: {}", sync_summary.block_num);
 
-        // Create the counter account
+        // Create the counter account with initial storage
+        let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+        let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+        let config = AccountCreationConfig {
+            storage_slots: vec![miden_client::account::StorageSlot::Map(
+                StorageMap::with_entries([(key.into(), value)]).unwrap(),
+            )],
+            ..Default::default()
+        };
+
         let counter_account =
-            create_counter_account(&mut client, keystore.clone(), contract_package)
+            create_account_with_component(&mut client, keystore.clone(), contract_package, config)
                 .await
                 .unwrap();
         eprintln!("Counter account ID: {:?}", counter_account.id().to_hex());
 
         // The counter contract storage value should be zero after the account creation
-        let initial_account = client.get_account(counter_account.id()).await.unwrap().unwrap();
-        assert_counter_storage(initial_account.account().storage(), 1);
+        assert_counter_storage(
+            client
+                .get_account(counter_account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .account()
+                .storage(),
+            1,
+        );
 
         // Create the counter note from sender to counter
-        let note_program = note_package.unwrap_program();
-        let note_script =
-            NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
-
-        let serial_num = client.rng().draw_word();
-        let note_inputs = NoteInputs::new(vec![]).unwrap();
-        let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
-
-        let tag = NoteTag::for_local_use_case(0, 0).unwrap();
-        let metadata = NoteMetadata::new(
-            counter_account.id(), // The sender is who creates the note
-            NoteType::Public,
-            tag,
-            NoteExecutionHint::always(),
-            Felt::ZERO,
-        )
-        .unwrap();
-
-        let vault = miden_client::note::NoteAssets::new(vec![]).unwrap();
-        let counter_note = Note::new(vault, metadata, recipient);
+        let counter_note = create_note_from_package(
+            &mut client,
+            note_package,
+            counter_account.id(),
+            NoteCreationConfig::default(),
+        );
         eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
 
         // Submit transaction to create the note
@@ -206,7 +104,8 @@ pub fn test_counter_contract_local() {
             .new_transaction(counter_account.id(), note_request)
             .await
             .map_err(|e| {
-                eprintln!("{e}");
+                eprintln!("Transaction creation error: {e}");
+                e
             })
             .unwrap();
         let executed_transaction = tx_result.executed_transaction();
@@ -217,10 +116,7 @@ pub fn test_counter_contract_local() {
         let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
         assert_eq!(executed_tx_output_note.id(), counter_note.id());
         let create_note_tx_id = executed_transaction.id();
-        client
-            .submit_transaction(tx_result)
-            .await
-            .expect("failed to submit the tx creating the note");
+        client.submit_transaction(tx_result).await.unwrap();
         eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
         // Consume the note to increment the counter
@@ -233,7 +129,8 @@ pub fn test_counter_contract_local() {
             .new_transaction(counter_account.id(), consume_request)
             .await
             .map_err(|e| {
-                eprintln!("{e}");
+                eprintln!("Note consumption transaction error: {e}");
+                e
             })
             .unwrap();
         eprintln!(
@@ -241,13 +138,7 @@ pub fn test_counter_contract_local() {
             &tx_result.executed_transaction().id()
         );
 
-        client
-            .submit_transaction(tx_result)
-            .await
-            .expect("failed to submit the tx consuming the note");
-
-        // // Wait a bit for the transaction to be processed
-        // tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        client.submit_transaction(tx_result).await.unwrap();
 
         let sync_result = client.sync_state().await.unwrap();
         eprintln!("Synced to block: {}", sync_result.block_num);
