@@ -309,25 +309,29 @@ pub fn test_basic_wallet_p2id_local() {
             .build()
             .unwrap();
 
-        let alice_tx = client.new_transaction(alice_account.id(), alice_tx_request).await.unwrap();
-        let alice_tx_id = alice_tx.executed_transaction().id();
-        eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
-
-        // Try to submit
-        client.submit_transaction(alice_tx).await.unwrap();
-
-        // Step 5: Bob attempts to consume the p2id note
-        eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
-
-        let consume_request = TransactionRequestBuilder::new()
-            .unauthenticated_input_notes([(p2id_note.clone(), None)])
-            .build()
-            .unwrap();
-
-        let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
-        let consume_tx_id = consume_tx.executed_transaction().id();
-        eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
-
-        client.submit_transaction(consume_tx).await.unwrap();
+        let alice_tx_res = client.new_transaction(alice_account.id(), alice_tx_request).await;
+        // We can create our custom P2ID note only from the tx script.
+        // Until tx script compilation is implemented https://github.com/0xMiden/compiler/issues/622
+        assert!(alice_tx_res.is_err());
+        // // let alice_tx = client.new_transaction(alice_account.id(), alice_tx_request).await.unwrap();
+        // let alice_tx_id = alice_tx.executed_transaction().id();
+        // eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
+        //
+        // // Try to submit
+        // client.submit_transaction(alice_tx).await.unwrap();
+        //
+        // // Step 5: Bob attempts to consume the p2id note
+        // eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
+        //
+        // let consume_request = TransactionRequestBuilder::new()
+        //     .unauthenticated_input_notes([(p2id_note.clone(), None)])
+        //     .build()
+        //     .unwrap();
+        //
+        // let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
+        // let consume_tx_id = consume_tx.executed_transaction().id();
+        // eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
+        //
+        // client.submit_transaction(consume_tx).await.unwrap();
     });
 }
