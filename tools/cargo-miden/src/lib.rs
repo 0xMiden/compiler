@@ -357,11 +357,10 @@ fn midenc_flags_from_target(
                     midenc_args.push("rollup:account".into());
                     midenc_args.push("--lib".into());
                 }
-                RollupTarget::NoteScript => {
-                    midenc_args.push("rollup:note_script".into());
+                RollupTarget::Script => {
+                    midenc_args.push("rollup:script".into());
                     midenc_args.push("--exe".into());
-                    midenc_args
-                        .push("--entrypoint=miden:base/note-script@1.0.0::note-script".to_string())
+                    midenc_args.push("--entrypoint=miden:base/script@1.0.0::script".to_string())
                 }
             }
         }

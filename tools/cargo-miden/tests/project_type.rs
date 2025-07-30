@@ -21,7 +21,7 @@ fn test_project_type_detection() {
             "counter-note",
             ProjectType::Program,
             TargetEnv::Rollup {
-                target: RollupTarget::NoteScript,
+                target: RollupTarget::Script,
             },
         ),
         ("fibonacci", ProjectType::Program, TargetEnv::Base),

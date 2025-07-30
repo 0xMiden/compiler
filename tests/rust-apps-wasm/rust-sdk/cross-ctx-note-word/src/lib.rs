@@ -22,13 +22,13 @@ bindings::export!(MyNote with_types_in bindings);
 
 mod bindings;
 
-use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account_word::foo::*};
+use bindings::{exports::miden::base::script::Guest, miden::cross_ctx_account_word::foo::*};
 use miden::*;
 
 struct MyNote;
 
 impl Guest for MyNote {
-    fn note_script() {
+    fn script() {
         let input = Word {
             inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
         };

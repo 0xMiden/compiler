@@ -1,10 +1,10 @@
-# mod miden:base/note-script@1.0.0
+# mod miden:base/script@1.0.0
 
-export.note-script
-    exec.::miden:base/note-script@1.0.0::init
+export.script
+    exec.::miden:base/script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::miden:base/note-script@1.0.0#note-script
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::miden:base/script@1.0.0#script
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -34,7 +34,7 @@ export.init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::cross_ctx_note_word
+# mod miden:base/script@1.0.0::cross_ctx_note_word
 
 proc.cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7
     trace.240
@@ -457,7 +457,7 @@ proc.cross_ctx_note_word::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/note-script@1.0.0#note-script
+export.miden:base/script@1.0.0#script
     push.1114144
     u32divmod.4
     swap.1
@@ -480,7 +480,7 @@ export.miden:base/note-script@1.0.0#note-script
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
     push.8
@@ -493,7 +493,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.2
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7
     trace.252
     nop
     push.20
@@ -582,7 +582,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.2
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7
     trace.252
     nop
     push.20
@@ -664,7 +664,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.9
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1
     trace.252
     nop
     push.12
@@ -697,7 +697,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.10
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4
     trace.252
     nop
     push.12
@@ -747,7 +747,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.100
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5
     trace.252
     nop
     push.16
@@ -834,7 +834,7 @@ export.miden:base/note-script@1.0.0#note-script
     push.4294967295
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4
+    exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4
     trace.252
     nop
     push.8
@@ -993,7 +993,7 @@ export.miden:base/note-script@1.0.0#note-script
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+        exec.::miden:base/script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
         trace.252
         nop
         push.4294967295
@@ -1002,7 +1002,7 @@ export.miden:base/note-script@1.0.0#note-script
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+        exec.::miden:base/script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
         trace.252
         nop
         push.122
@@ -1016,7 +1016,7 @@ export.miden:base/note-script@1.0.0#note-script
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
+        exec.::miden:base/script@1.0.0::cross_ctx_note_word::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
         trace.252
         nop
         push.12
@@ -1030,7 +1030,7 @@ export.miden:base/note-script@1.0.0#note-script
         push.30
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6
+        exec.::miden:base/script@1.0.0::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6
         trace.252
         nop
         push.16
@@ -1147,7 +1147,7 @@ proc.wit_bindgen_rt::run_ctors_once
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::__wasm_call_ctors
+        exec.::miden:base/script@1.0.0::cross_ctx_note_word::__wasm_call_ctors
         trace.252
         nop
         push.1

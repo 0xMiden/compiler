@@ -73,7 +73,7 @@
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
     (export "memory" (memory 0))
-    (export "miden:base/note-script@1.0.0#note-script" (func $miden:base/note-script@1.0.0#note-script))
+    (export "miden:base/script@1.0.0#script" (func $miden:base/script@1.0.0#script))
     (elem (;0;) (i32.const 1) func $p2id::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;6;) (type 5))
     (func $p2id::bindings::__link_custom_section_describing_imports (;7;) (type 5))
@@ -107,7 +107,7 @@
       end
       local.get 1
     )
-    (func $miden:base/note-script@1.0.0#note-script (;11;) (type 5)
+    (func $miden:base/script@1.0.0#script (;11;) (type 5)
       (local i32 i32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 48
@@ -743,17 +743,17 @@
   )
   (alias core export 5 "memory" (core memory (;0;)))
   (type (;7;) (func))
-  (alias core export 5 "miden:base/note-script@1.0.0#note-script" (core func (;6;)))
+  (alias core export 5 "miden:base/script@1.0.0#script" (core func (;6;)))
   (func (;6;) (type 7) (canon lift (core func 6)))
   (component (;0;)
     (type (;0;) (func))
-    (import "import-func-note-script" (func (;0;) (type 0)))
+    (import "import-func-script" (func (;0;) (type 0)))
     (type (;1;) (func))
-    (export (;1;) "note-script" (func 0) (func (type 1)))
+    (export (;1;) "script" (func 0) (func (type 1)))
   )
   (instance (;6;) (instantiate 0
-      (with "import-func-note-script" (func 6))
+      (with "import-func-script" (func 6))
     )
   )
-  (export (;7;) "miden:base/note-script@1.0.0" (instance 6))
+  (export (;7;) "miden:base/script@1.0.0" (instance 6))
 )

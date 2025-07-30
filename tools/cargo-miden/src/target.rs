@@ -36,7 +36,7 @@ pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetE
         }
     } else {
         TargetEnv::Rollup {
-            target: RollupTarget::NoteScript,
+            target: RollupTarget::Script,
         }
     }
 }
@@ -47,7 +47,7 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
         TargetEnv::Base => ProjectType::Program,
         TargetEnv::Rollup { target } => match target {
             RollupTarget::Account => ProjectType::Library,
-            RollupTarget::NoteScript => ProjectType::Program,
+            RollupTarget::Script => ProjectType::Program,
         },
         TargetEnv::Emu => {
             panic!("Emulator target environment is not supported for project type detection",)

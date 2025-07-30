@@ -463,8 +463,8 @@ impl FromStr for TargetEnv {
             "rollup:account" => Ok(Self::Rollup {
                 target: RollupTarget::Account,
             }),
-            "rollup:note_script" => Ok(Self::Rollup {
-                target: RollupTarget::NoteScript,
+            "rollup:script" => Ok(Self::Rollup {
+                target: RollupTarget::Script,
             }),
             _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
         }
@@ -476,14 +476,14 @@ impl FromStr for TargetEnv {
 pub enum RollupTarget {
     #[default]
     Account,
-    NoteScript,
+    Script,
 }
 
 impl fmt::Display for RollupTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Account => f.write_str("account"),
-            Self::NoteScript => f.write_str("note_script"),
+            Self::Script => f.write_str("script"),
         }
     }
 }
