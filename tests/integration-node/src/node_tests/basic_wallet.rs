@@ -10,6 +10,7 @@ use miden_client::{
 use miden_core::{utils::Serializable, Felt};
 
 use super::helpers::*;
+use crate::local_node::ensure_shared_node;
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a local node.
 #[test]
@@ -23,8 +24,7 @@ pub fn test_basic_wallet_p2id_local() {
         // Create temp directory and get node handle
         let temp_dir = temp_dir::TempDir::with_prefix("test_basic_wallet_p2id_local_")
             .expect("Failed to create temp directory");
-        let node_handle =
-            crate::local_node::get_shared_node().await.expect("Failed to get shared node");
+        let node_handle = ensure_shared_node().await.expect("Failed to get shared node");
 
         // Initialize test infrastructure
         let TestSetup {

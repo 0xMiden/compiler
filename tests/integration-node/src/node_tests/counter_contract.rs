@@ -8,6 +8,7 @@ use miden_client::{
 use miden_core::{Felt, FieldElement};
 
 use super::helpers::*;
+use crate::local_node::ensure_shared_node;
 
 fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
@@ -43,8 +44,7 @@ pub fn test_counter_contract_local() {
         // Create temp directory and get node handle
         let temp_dir = temp_dir::TempDir::with_prefix("test_counter_contract_local_")
             .expect("Failed to create temp directory");
-        let node_handle =
-            crate::local_node::get_shared_node().await.expect("Failed to get shared node");
+        let node_handle = ensure_shared_node().await.expect("Failed to get shared node");
 
         // Initialize test infrastructure
         let TestSetup {
