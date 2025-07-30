@@ -7,5 +7,3 @@ pub mod scenario;
 mod node_tests;
 #[cfg(test)]
 mod scenario_testnet_tests;
-#[cfg(test)]
-mod testnet_tests;
