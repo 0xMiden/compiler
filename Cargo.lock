@@ -3629,11 +3629,7 @@ version = "0.1.5"
 dependencies = [
  "anyhow",
  "cargo-miden",
- "env_logger",
- "filetime",
  "fs2",
- "log",
- "miden-assembly",
  "miden-client",
  "miden-core",
  "miden-integration-tests",
@@ -3662,7 +3658,6 @@ dependencies = [
  "concat-idents",
  "env_logger",
  "filetime",
- "fs2",
  "glob",
  "log",
  "miden-assembly",
@@ -3685,7 +3680,6 @@ dependencies = [
  "sha2",
  "temp-dir",
  "tokio",
- "uuid",
  "walkdir",
  "wasmprinter 0.227.1",
 ]

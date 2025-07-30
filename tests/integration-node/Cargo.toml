@@ -14,11 +14,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 cargo-miden.workspace = true
-env_logger.workspace = true
-filetime = "0.2.23"
 fs2 = "0.4"
-log.workspace = true
-miden-assembly.workspace = true
 miden-client = { version = "0.10", features = [
     "tonic",
     "sqlite",
