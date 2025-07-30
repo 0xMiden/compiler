@@ -258,7 +258,7 @@ fn is_process_running(pid: u32) -> bool {
     // Try to read from /proc/{pid}/stat on Linux/macOS
     #[cfg(target_os = "linux")]
     {
-        std::path::Path::new(&format!("/proc/{}", pid)).exists()
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
     }
 
     #[cfg(not(target_os = "linux"))]
