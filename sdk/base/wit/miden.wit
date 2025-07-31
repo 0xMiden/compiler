@@ -144,7 +144,9 @@ interface core-types {
 
 /// The script interface that is expected to be implemented by the script (note script, tx script).
 interface script {
-    script: func();
+    use core-types.{word};
+
+    script: func(arg: word);
 }
 
 world base-world {

@@ -53,6 +53,10 @@ proc.cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:base/script@1.0.0#script
+    drop
+    drop
+    drop
+    drop
     trace.240
     nop
     exec.::miden:base/script@1.0.0::cross_ctx_note_word_arg::wit_bindgen_rt::run_ctors_once

@@ -3,6 +3,9 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
+      (type (;2;) (tuple 1 1 1 1))
+      (type (;3;) (record (field "inner" 2)))
+      (export (;4;) "word" (type (eq 3)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
@@ -34,6 +37,7 @@
     (type (;2;) (func (param f32 f32) (result f32)))
     (type (;3;) (func (param f32 f32)))
     (type (;4;) (func))
+    (type (;5;) (func (param f32 f32 f32 f32)))
     (import "miden:counter-contract/counter@0.1.0" "get-count" (func $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0 (;0;) (type 0)))
     (import "miden:counter-contract/counter@0.1.0" "increment-count" (func $counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0 (;1;) (type 0)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;2;) (type 1)))
@@ -48,20 +52,20 @@
     (elem (;0;) (i32.const 1) func $counter_note::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;5;) (type 4))
     (func $counter_note::bindings::__link_custom_section_describing_imports (;6;) (type 4))
-    (func $miden:base/script@1.0.0#script (;7;) (type 4)
+    (func $miden:base/script@1.0.0#script (;7;) (type 5) (param f32 f32 f32 f32)
       (local f32)
       call $wit_bindgen_rt::run_ctors_once
       call $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
-      local.set 0
+      local.set 4
       call $counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0
       drop
-      local.get 0
+      local.get 4
       i32.const 1
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_add
-      local.set 0
+      local.set 4
       call $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
-      local.get 0
+      local.get 4
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
     )
     (func $wit_bindgen_rt::run_ctors_once (;8;) (type 4)
@@ -84,6 +88,7 @@
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
   )
+  (alias export 0 "word" (type (;4;)))
   (alias export 1 "get-count" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
   (alias export 1 "increment-count" (func (;1;)))
@@ -109,17 +114,29 @@
     )
   )
   (alias core export 2 "memory" (core memory (;0;)))
-  (type (;4;) (func))
+  (type (;5;) (func (param "arg" 4)))
   (alias core export 2 "miden:base/script@1.0.0#script" (core func (;5;)))
-  (func (;5;) (type 4) (canon lift (core func 5)))
+  (func (;5;) (type 5) (canon lift (core func 5)))
+  (alias export 0 "felt" (type (;6;)))
+  (alias export 0 "word" (type (;7;)))
   (component (;0;)
-    (type (;0;) (func))
-    (import "import-func-script" (func (;0;) (type 0)))
-    (type (;1;) (func))
-    (export (;1;) "script" (func 0) (func (type 1)))
+    (type (;0;) (record (field "inner" f32)))
+    (import "import-type-felt" (type (;1;) (eq 0)))
+    (type (;2;) (tuple 1 1 1 1))
+    (type (;3;) (record (field "inner" 2)))
+    (import "import-type-word" (type (;4;) (eq 3)))
+    (import "import-type-word0" (type (;5;) (eq 4)))
+    (type (;6;) (func (param "arg" 5)))
+    (import "import-func-script" (func (;0;) (type 6)))
+    (export (;7;) "word" (type 4))
+    (type (;8;) (func (param "arg" 7)))
+    (export (;1;) "script" (func 0) (func (type 8)))
   )
   (instance (;3;) (instantiate 0
       (with "import-func-script" (func 5))
+      (with "import-type-felt" (type 6))
+      (with "import-type-word" (type 7))
+      (with "import-type-word0" (type 4))
     )
   )
   (export (;4;) "miden:base/script@1.0.0" (instance 3))

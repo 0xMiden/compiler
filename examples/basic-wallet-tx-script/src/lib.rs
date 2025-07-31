@@ -22,24 +22,11 @@ bindings::export!(BasicWalletTxScript with_types_in bindings);
 
 mod bindings;
 
-use bindings::{
-    exports::miden::base::script::Guest, miden::basic_wallet::basic_wallet::receive_asset,
-};
+use bindings::exports::miden::base::script::Guest;
 use miden::*;
 
 struct BasicWalletTxScript;
 
 impl Guest for BasicWalletTxScript {
-    fn script() {
-        let inputs = miden::note::get_inputs();
-        let target_account_id_prefix = inputs[0];
-        let target_account_id_suffix = inputs[1];
-        let account_id = miden::account::get_id();
-        assert_eq(account_id.prefix, target_account_id_prefix);
-        assert_eq(account_id.suffix, target_account_id_suffix);
-        let assets = miden::note::get_assets();
-        for asset in assets {
-            receive_asset(asset);
-        }
-    }
+    fn script(_arg: Word) {}
 }

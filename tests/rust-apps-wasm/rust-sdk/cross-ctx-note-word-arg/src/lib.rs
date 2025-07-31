@@ -30,7 +30,7 @@ use miden::*;
 struct MyNote;
 
 impl Guest for MyNote {
-    fn script() {
+    fn script(_arg: Word) {
         let input1 = Word {
             inner: (felt!(1), felt!(2), felt!(3), felt!(4)),
         };

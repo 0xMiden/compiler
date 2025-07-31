@@ -31,7 +31,7 @@ pub static mut BAR: u32 = 11;
 struct MyNote;
 
 impl Guest for MyNote {
-    fn script() {
+    fn script(_arg: Word) {
         let input = Felt::from_u32(unsafe { BAR });
         assert_eq(input, felt!(11));
         let output = process_felt(input);

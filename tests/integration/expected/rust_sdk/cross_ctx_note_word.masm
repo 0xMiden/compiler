@@ -458,6 +458,10 @@ proc.cross_ctx_note_word::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:base/script@1.0.0#script
+    drop
+    drop
+    drop
+    drop
     push.1114144
     u32divmod.4
     swap.1

@@ -30,7 +30,7 @@ use miden::*;
 struct MyNote;
 
 impl Guest for MyNote {
-    fn script() {
+    fn script(_arg: Word) {
         let inputs = miden::note::get_inputs();
         let target_account_id_prefix = inputs[0];
         let target_account_id_suffix = inputs[1];

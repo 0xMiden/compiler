@@ -107,108 +107,108 @@
       end
       local.get 1
     )
-    (func $miden:base/script@1.0.0#script (;11;) (type 5)
+    (func $miden:base/script@1.0.0#script (;11;) (type 1) (param f32 f32 f32 f32)
       (local i32 i32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 48
       i32.sub
-      local.tee 0
+      local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
-      local.get 0
+      local.get 4
       i32.const 16
       i32.add
       call $miden_base_sys::bindings::note::get_inputs
       block ;; label = @1
         block ;; label = @2
-          local.get 0
+          local.get 4
           i32.load offset=24
           br_table 0 (;@2;) 0 (;@2;) 1 (;@1;)
         end
         unreachable
       end
-      local.get 0
+      local.get 4
       i32.load offset=20
-      local.tee 1
+      local.tee 5
       f32.load offset=4
-      local.set 2
-      local.get 1
+      local.set 6
+      local.get 5
       f32.load
-      local.set 3
-      local.get 0
+      local.set 7
+      local.get 4
       i32.const 8
       i32.add
       call $miden_base_sys::bindings::account::get_id
-      local.get 0
+      local.get 4
       f32.load offset=12
-      local.set 4
-      local.get 0
+      local.set 8
+      local.get 4
       f32.load offset=8
-      local.get 3
+      local.get 7
+      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      local.get 8
+      local.get 6
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
       local.get 4
-      local.get 2
-      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
-      local.get 0
       i32.const 28
       i32.add
       call $miden_base_sys::bindings::note::get_assets
-      local.get 0
+      local.get 4
       i32.load offset=36
       i32.const 4
       i32.shl
-      local.set 5
-      local.get 0
+      local.set 9
+      local.get 4
       i32.load offset=28
-      local.set 6
-      local.get 0
+      local.set 10
+      local.get 4
       i32.load offset=32
-      local.tee 7
-      local.set 1
+      local.tee 11
+      local.set 5
       block ;; label = @1
         loop ;; label = @2
-          local.get 5
+          local.get 9
           i32.eqz
           br_if 1 (;@1;)
-          local.get 1
+          local.get 5
           f32.load
-          local.get 1
+          local.get 5
           f32.load offset=4
-          local.get 1
+          local.get 5
           f32.load offset=8
-          local.get 1
+          local.get 5
           f32.load offset=12
           call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
-          local.get 5
+          local.get 9
           i32.const -16
           i32.add
-          local.set 5
-          local.get 1
+          local.set 9
+          local.get 5
           i32.const 16
           i32.add
-          local.set 1
+          local.set 5
           br 0 (;@2;)
         end
       end
-      local.get 0
-      local.get 7
+      local.get 4
+      local.get 11
       i32.store offset=44
-      local.get 0
-      local.get 6
+      local.get 4
+      local.get 10
       i32.store offset=40
-      local.get 0
+      local.get 4
       i32.const 40
       i32.add
       i32.const 16
       i32.const 16
       call $alloc::raw_vec::RawVecInner<A>::deallocate
-      local.get 0
+      local.get 4
       i32.const 16
       i32.add
       i32.const 4
       i32.const 4
       call $alloc::raw_vec::RawVecInner<A>::deallocate
-      local.get 0
+      local.get 4
       i32.const 48
       i32.add
       global.set $__stack_pointer
@@ -705,6 +705,7 @@
     (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.5/src/bindings/note.rs\00")
     (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00\00\00\10\00)\00\00\001\00\00\00\22\00\00\00")
   )
+  (alias export 0 "word" (type (;7;)))
   (alias export 3 "assert-eq" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
   (core instance (;0;)
@@ -742,17 +743,29 @@
     )
   )
   (alias core export 5 "memory" (core memory (;0;)))
-  (type (;7;) (func))
+  (type (;8;) (func (param "arg" 7)))
   (alias core export 5 "miden:base/script@1.0.0#script" (core func (;6;)))
-  (func (;6;) (type 7) (canon lift (core func 6)))
+  (func (;6;) (type 8) (canon lift (core func 6)))
+  (alias export 0 "felt" (type (;9;)))
+  (alias export 0 "word" (type (;10;)))
   (component (;0;)
-    (type (;0;) (func))
-    (import "import-func-script" (func (;0;) (type 0)))
-    (type (;1;) (func))
-    (export (;1;) "script" (func 0) (func (type 1)))
+    (type (;0;) (record (field "inner" f32)))
+    (import "import-type-felt" (type (;1;) (eq 0)))
+    (type (;2;) (tuple 1 1 1 1))
+    (type (;3;) (record (field "inner" 2)))
+    (import "import-type-word" (type (;4;) (eq 3)))
+    (import "import-type-word0" (type (;5;) (eq 4)))
+    (type (;6;) (func (param "arg" 5)))
+    (import "import-func-script" (func (;0;) (type 6)))
+    (export (;7;) "word" (type 4))
+    (type (;8;) (func (param "arg" 7)))
+    (export (;1;) "script" (func 0) (func (type 8)))
   )
   (instance (;6;) (instantiate 0
       (with "import-func-script" (func 6))
+      (with "import-type-felt" (type 9))
+      (with "import-type-word" (type 10))
+      (with "import-type-word0" (type 7))
     )
   )
   (export (;7;) "miden:base/script@1.0.0" (instance 6))

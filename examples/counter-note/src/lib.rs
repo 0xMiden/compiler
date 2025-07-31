@@ -28,7 +28,7 @@ use miden::*;
 struct IncrementCounterNote;
 
 impl Guest for IncrementCounterNote {
-    fn script() {
+    fn script(_arg: Word) {
         let initial_value = counter::get_count();
         counter::increment_count();
         let expected_value = initial_value + Felt::from_u32(1);
