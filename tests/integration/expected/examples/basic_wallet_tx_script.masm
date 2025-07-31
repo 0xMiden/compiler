@@ -54,6 +54,8 @@ export.miden:base/script@1.0.0#script
     exec.::miden:base/script@1.0.0::basic_wallet_tx_script::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
+    push.0
+    assert
 end
 
 proc.wit_bindgen_rt::run_ctors_once

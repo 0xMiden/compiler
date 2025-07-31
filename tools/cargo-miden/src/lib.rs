@@ -201,6 +201,7 @@ where
                     ("miden:base/core-types@1.0.0/tag", "miden::Tag"),
                     ("miden:base/core-types@1.0.0/note-type", "miden::NoteType"),
                     ("miden:base/core-types@1.0.0/recipient", "miden::Recipient"),
+                    ("miden:base/core-types@1.0.0/note-idx", "miden::NoteIdx"),
                 ]
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))

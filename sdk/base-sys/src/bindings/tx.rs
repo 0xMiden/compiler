@@ -1,40 +1,73 @@
 use miden_stdlib_sys::Felt;
 
-use super::types::{Asset, NoteId, NoteType, Recipient, Tag};
+use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
+#[allow(improper_ctypes)]
 #[link(wasm_import_module = "miden:core-base/tx@1.0.0")]
 extern "C" {
     #[link_name = "create-note"]
     pub fn extern_tx_create_note(
-        asset_f0: Felt,
-        asset_f1: Felt,
-        asset_f2: Felt,
-        asset_f3: Felt,
         tag: Tag,
+        aux: Felt,
         note_type: NoteType,
+        execution_hint: Felt,
         recipient_f0: Felt,
         recipient_f1: Felt,
         recipient_f2: Felt,
         recipient_f3: Felt,
-    ) -> NoteId;
+    ) -> NoteIdx;
+
+    #[link_name = "add-asset-to-note"]
+    pub fn extern_tx_add_asset_to_note(
+        asset_f0: Felt,
+        asset_f1: Felt,
+        asset_f2: Felt,
+        asset_f3: Felt,
+        note_idx: NoteIdx,
+        result: *mut (Asset, NoteIdx),
+    );
 }
 
 /// Creates a new note.  asset is the asset to be included in the note.  tag is
 /// the tag to be included in the note.  recipient is the recipient of the note.
 /// Returns the id of the created note.
-pub fn create_note(asset: Asset, tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteId {
+pub fn create_note(
+    tag: Tag,
+    aux: Felt,
+    note_type: NoteType,
+    execution_hint: Felt,
+    recipient: Recipient,
+) -> NoteIdx {
     unsafe {
         extern_tx_create_note(
-            asset.inner[0],
-            asset.inner[1],
-            asset.inner[2],
-            asset.inner[3],
             tag,
+            aux,
             note_type,
-            recipient.inner[0],
-            recipient.inner[1],
-            recipient.inner[2],
+            execution_hint,
             recipient.inner[3],
+            recipient.inner[2],
+            recipient.inner[1],
+            recipient.inner[0],
         )
+    }
+}
+
+/// Adds the asset to the note specified by the index.
+pub fn add_asset_to_note(asset: Asset, note_idx: NoteIdx) -> (Asset, NoteIdx) {
+    // TODO: why kernel function returns the asset and idx? If it's just
+    // to avoid duplicating them raise the question (adds overhead in Rust).
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<(Asset, NoteIdx)>::uninit();
+        extern_tx_add_asset_to_note(
+            asset.inner[3],
+            asset.inner[2],
+            asset.inner[1],
+            asset.inner[0],
+            note_idx,
+            ret_area.as_mut_ptr(),
+        );
+
+        let (asset, note_idx) = ret_area.assume_init();
+        (asset.reverse(), note_idx)
     }
 }

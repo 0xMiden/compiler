@@ -130,12 +130,16 @@ interface core-types {
         inner: word
     }
 
-    /// An id of the created note
-    record note-id {
+    /// An index of the created note
+    record note-idx {
         inner: felt
     }
 
     record note-type {
+        inner: felt
+    }
+
+    record note-execution-hint {
         inner: felt
     }
 

@@ -14,6 +14,7 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 ];
 
 pub const CREATE_NOTE: &str = "create_note";
+pub const ADD_ASSET_TO_NOTE: &str = "add_asset_to_note";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -22,8 +23,27 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(CREATE_NOTE),
         FunctionType::new(
             CallConv::Wasm,
-            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [
+                Felt, // tag
+                Felt, // aux
+                Felt, // note_type
+                Felt, // execution-hint
+                // recipient (4 felts)
+                Felt, Felt, Felt, Felt,
+            ],
             [Felt],
+        ),
+    );
+    note.insert(
+        Symbol::from(ADD_ASSET_TO_NOTE),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, Felt, Felt, Felt, // asset (4 felts)
+                Felt, // note_idx
+                I32,  // result ptr
+            ],
+            [],
         ),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);

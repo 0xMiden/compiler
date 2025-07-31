@@ -23,6 +23,7 @@
     (func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:base/script@1.0.0#script (;2;) (type 1) (param f32 f32 f32 f32)
       call $wit_bindgen_rt::run_ctors_once
+      unreachable
     )
     (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
       (local i32)

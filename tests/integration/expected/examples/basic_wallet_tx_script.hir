@@ -13,7 +13,7 @@ builtin.component miden:base/script@1.0.0 {
         public builtin.function @miden:base/script@1.0.0#script(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             hir.exec @miden:base/script@1.0.0/basic_wallet_tx_script/wit_bindgen_rt::run_ctors_once()
-            builtin.ret ;
+            ub.unreachable ;
         };
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {

@@ -20,10 +20,11 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 mod bindings;
 
 use bindings::exports::miden::basic_wallet::*;
+use miden::NoteIdx;
 
 bindings::export!(MyAccount with_types_in bindings);
 
-use miden::{component, Asset, NoteType, Recipient, Tag};
+use miden::{component, Asset};
 
 #[component]
 struct MyAccount;
@@ -33,8 +34,8 @@ impl basic_wallet::Guest for MyAccount {
         miden::account::add_asset(asset);
     }
 
-    fn send_asset(asset: Asset, tag: Tag, note_type: NoteType, recipient: Recipient) {
+    fn move_asset_to_note(asset: Asset, note_idx: NoteIdx) {
         let asset = miden::account::remove_asset(asset);
-        miden::tx::create_note(asset, tag, note_type, recipient);
+        miden::tx::add_asset_to_note(asset, note_idx);
     }
 }

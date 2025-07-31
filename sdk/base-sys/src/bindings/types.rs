@@ -23,11 +23,24 @@ impl Asset {
     pub fn as_word(&self) -> &Word {
         &self.inner
     }
+
+    #[inline]
+    pub(crate) fn reverse(&self) -> Self {
+        Self {
+            inner: self.inner.reverse(),
+        }
+    }
 }
 
 impl From<Word> for Asset {
     fn from(value: Word) -> Self {
         Self::new(value)
+    }
+}
+
+impl From<[Felt; 4]> for Asset {
+    fn from(value: [Felt; 4]) -> Self {
+        Asset::new(Word::from(value))
     }
 }
 
@@ -48,17 +61,39 @@ pub struct Recipient {
     pub inner: Word,
 }
 
+impl From<[Felt; 4]> for Recipient {
+    fn from(value: [Felt; 4]) -> Self {
+        Recipient {
+            inner: Word::from(value),
+        }
+    }
+}
+
 #[repr(transparent)]
 pub struct Tag {
     pub inner: Felt,
 }
 
+impl From<Felt> for Tag {
+    fn from(value: Felt) -> Self {
+        Tag { inner: value }
+    }
+}
+
 #[repr(transparent)]
-pub struct NoteId(pub(crate) Felt);
+pub struct NoteIdx {
+    pub inner: Felt,
+}
 
 #[repr(transparent)]
 pub struct NoteType {
     pub inner: Felt,
+}
+
+impl From<Felt> for NoteType {
+    fn from(value: Felt) -> Self {
+        NoteType { inner: value }
+    }
 }
 
 #[repr(transparent)]
