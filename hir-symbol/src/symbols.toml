@@ -108,6 +108,7 @@ debug = {}
 dsa = {}
 hashes = {}
 intrinsics = {}
+io = {}
 miden = {}
 mem = {}
 note = {}

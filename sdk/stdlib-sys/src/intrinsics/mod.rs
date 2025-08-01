@@ -1,12 +1,15 @@
 use core::ops::{Deref, DerefMut};
 
-pub mod crypto;
-pub mod debug;
+mod crypto;
+mod debug;
 mod felt;
+mod io;
 mod word;
 
-pub use crypto::Digest;
+pub use crypto::*;
+pub use debug::*;
 pub use felt::*;
+pub use io::*;
 pub use word::*;
 
 #[repr(C, align(32))]

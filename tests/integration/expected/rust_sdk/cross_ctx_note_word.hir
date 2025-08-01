@@ -520,7 +520,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v465 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v466 = hir.bitcast v465 : ptr<byte, i32>;
             v467 = hir.load v466 : i32;
-            v468 = arith.constant 1048604 : i32;
+            v468 = arith.constant 1048608 : i32;
             v469 = arith.add v467, v468 : i32 #[overflow = wrapping];
             v470 = hir.bitcast v469 : u32;
             v471 = hir.int_to_ptr v470 : ptr<byte, u8>;
@@ -539,7 +539,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v479 = hir.load v478 : i32;
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/__wasm_call_ctors()
                 v613 = arith.constant 1 : u8;
-                v615 = arith.constant 1048604 : i32;
+                v615 = arith.constant 1048608 : i32;
                 v481 = arith.add v479, v615 : i32 #[overflow = wrapping];
                 v485 = hir.bitcast v481 : u32;
                 v486 = hir.int_to_ptr v485 : ptr<byte, u8>;
@@ -579,7 +579,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x00000001000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x0000000100000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @note-script() {

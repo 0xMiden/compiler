@@ -15,10 +15,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.4832509869486602328
-    push.1601943042316592615
-    push.9346833404071393867
-    push.18033844405625027779
+    push.10525333576698012761
+    push.3716738888022955810
+    push.14081891270999459647
+    push.16527651546987830017
     adv.push_mapval
     push.262144
     push.2
@@ -53,7 +53,7 @@ export.miden:cross-ctx-account/foo@1.0.0#process-felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048600
+    push.1048604
     u32wrapping_add
     trace.240
     nop
@@ -106,7 +106,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048604
+    push.1048608
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -141,7 +141,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048604
+        push.1048608
         movup.2
         swap.1
         u32wrapping_add

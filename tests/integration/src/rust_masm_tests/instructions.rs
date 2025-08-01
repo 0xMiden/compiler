@@ -338,7 +338,7 @@ fn test_hmerge() {
             let digest1 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
             let digest2 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
             let digests = [digest1, digest2];
-            let res = miden_stdlib_sys::crypto::merge(digests);
+            let res = miden_stdlib_sys::merge(digests);
             res.inner.inner.0
         }"#
         .to_string();
