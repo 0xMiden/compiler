@@ -9,7 +9,7 @@ use crate::{
     intrinsics::{assert_eq, Digest, Felt, Word},
 };
 
-#[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0")]
+#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-blake3@1.0.0")]
 extern "C" {
     /// Computes BLAKE3 1-to-1 hash.
     ///
@@ -56,7 +56,7 @@ extern "C" {
     );
 }
 
-#[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-sha256@1.0.0")]
+#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-sha256@1.0.0")]
 extern "C" {
     /// Computes SHA256 1-to-1 hash.
     ///
@@ -103,7 +103,7 @@ extern "C" {
     );
 }
 
-#[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-rpo@1.0.0")]
+#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-rpo@1.0.0")]
 extern "C" {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.

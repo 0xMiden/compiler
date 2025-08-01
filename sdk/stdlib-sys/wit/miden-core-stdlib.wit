@@ -8,6 +8,12 @@ interface stdlib-crypto-hashes-blake3 {
     hash-one-to-one: func(a0: s32, a1: s32, a2: s32, a3: s32, a4: s32, a5: s32, a6: s32, a7: s32, result-ptr: s32);
 }
 
+interface stdlib-mem {
+
+    pipe-preimage-to-memory: func(num-words: f32, result-ptr: s32, c0: f32, c1: f32, c2: f32, c3: f32) -> s32;
+}
+
 world stdlib {
     import stdlib-crypto-hashes-blake3;
+    import stdlib-mem;
 }

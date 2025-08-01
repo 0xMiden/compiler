@@ -80,6 +80,7 @@ impl From<Felt> for Tag {
     }
 }
 
+#[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct NoteIdx {
     pub inner: Felt,

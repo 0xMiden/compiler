@@ -18,7 +18,7 @@
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;2;) (type 2)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;3;) (type 3)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u64-unchecked" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u64_unchecked (;4;) (type 4)))
-  (import "miden:core-import/stdlib-mem@1.0.0" "pipe-preimage-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory (;5;) (type 5)))
+  (import "miden:core-stdlib/stdlib-mem@1.0.0" "pipe-preimage-to-memory" (func $miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory (;5;) (type 5)))
   (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;6;) (type 6)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)

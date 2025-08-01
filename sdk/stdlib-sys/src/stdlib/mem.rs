@@ -8,7 +8,7 @@ use crate::{
     intrinsics::{Felt, Word},
 };
 
-#[link(wasm_import_module = "miden:core-import/stdlib-mem@1.0.0")]
+#[link(wasm_import_module = "miden:core-stdlib/stdlib-mem@1.0.0")]
 extern "C" {
 
     /// Moves an arbitrary number of words from the advice stack to memory.
