@@ -198,7 +198,7 @@ impl CompilerTestBuilder {
             "--remap-path-prefix".into(),
             format!("{workspace_dir}=../../").into(),
         ]);
-        let mut midenc_flags = vec!["--debug".into(), "--verbose".into()];
+        let mut midenc_flags = vec!["--verbose".into()];
         if let Some(entrypoint) = entrypoint {
             midenc_flags.extend(["--entrypoint".into(), format!("{}", entrypoint.display())]);
         }
@@ -248,11 +248,8 @@ impl CompilerTestBuilder {
     }
 
     /// Append additional `midenc` compiler flags
-    pub fn with_midenc_flags(
-        &mut self,
-        flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> &mut Self {
-        self.midenc_flags.extend(flags.into_iter().map(|s| s.to_string()));
+    pub fn with_midenc_flags(&mut self, flags: impl IntoIterator<Item = String>) -> &mut Self {
+        self.midenc_flags.extend(flags);
         self
     }
 
@@ -473,7 +470,7 @@ impl CompilerTestBuilder {
     pub fn rust_source_cargo_miden(
         cargo_project_folder: impl AsRef<Path>,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         let name = cargo_project_folder
             .as_ref()
@@ -496,10 +493,7 @@ impl CompilerTestBuilder {
     }
 
     /// Set the Rust source code to compile and add a binary operation test
-    pub fn rust_fn_body(
-        rust_source: &str,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
+    pub fn rust_fn_body(rust_source: &str, midenc_flags: impl IntoIterator<Item = String>) -> Self {
         let name = format!("test_rust_{}", hash_string(rust_source));
         Self::rust_fn_body_with_artifact_name(name, rust_source, midenc_flags)
     }
@@ -508,7 +502,7 @@ impl CompilerTestBuilder {
     pub fn rust_fn_body_with_artifact_name(
         name: impl Into<Cow<'static, str>>,
         rust_source: &str,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         let rust_source = format!(
             r#"
@@ -539,7 +533,7 @@ impl CompilerTestBuilder {
         name: impl Into<Cow<'static, str>>,
         source: &str,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         let name = name.into();
         let stdlib_sys_path = stdlib_sys_crate_path();
@@ -615,7 +609,7 @@ impl CompilerTestBuilder {
         name: impl Into<Cow<'static, str>>,
         source: &str,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         let name = name.into();
         let sdk_path = sdk_crate_path();
@@ -689,7 +683,7 @@ use alloc::vec::Vec;
         name: impl Into<Cow<'static, str>>,
         source: &str,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         let source = format!("#[no_mangle]\npub extern \"C\" fn entrypoint{source}");
         Self::rust_source_with_sdk(name, &source, config, midenc_flags)
@@ -769,7 +763,7 @@ impl CompilerTest {
     pub fn rust_source_cargo_miden(
         cargo_project_folder: impl AsRef<Path>,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         CompilerTestBuilder::rust_source_cargo_miden(cargo_project_folder, config, midenc_flags)
             .build()
@@ -781,10 +775,7 @@ impl CompilerTest {
     }
 
     /// Set the Rust source code to compile and add a binary operation test
-    pub fn rust_fn_body(
-        source: &str,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> Self {
+    pub fn rust_fn_body(source: &str, midenc_flags: impl IntoIterator<Item = String>) -> Self {
         CompilerTestBuilder::rust_fn_body(source, midenc_flags).build()
     }
 
@@ -793,7 +784,7 @@ impl CompilerTest {
         name: impl Into<Cow<'static, str>>,
         source: &str,
         config: WasmTranslationConfig,
-        midenc_flags: impl IntoIterator<Item = Cow<'static, str>>,
+        midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
         CompilerTestBuilder::rust_fn_body_with_stdlib_sys(name, source, config, midenc_flags)
             .build()

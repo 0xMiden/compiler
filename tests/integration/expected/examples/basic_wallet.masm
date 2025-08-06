@@ -589,22 +589,8 @@ proc.wit_bindgen_rt::run_ctors_once
 end
 
 proc.miden_base_sys::bindings::account::add_asset
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.4
-    dup.3
+    push.12
+    dup.2
     add
     u32assert
     push.4
@@ -621,6 +607,23 @@ proc.miden_base_sys::bindings::account::add_asset
     trace.252
     nop
     push.8
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
     dup.4
     add
     u32assert
@@ -637,10 +640,7 @@ proc.miden_base_sys::bindings::account::add_asset
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
-    movup.5
-    add
-    u32assert
+    movup.4
     push.4
     dup.1
     swap.1

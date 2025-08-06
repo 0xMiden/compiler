@@ -16,7 +16,7 @@ export.hmerge
     padw
     movup.4
     mem_loadw
-    # Stack: [a0, a1, a2, a3, digests_ptr, result_ptr, ...]
+    # Stack: [a3, a2, a1, a0, digests_ptr, result_ptr, ...]
 
     # Load second digest (B) from digests_ptr + 16 (4 felts * 4 bytes)
     movup.4
@@ -27,13 +27,13 @@ export.hmerge
     padw
     movup.4
     mem_loadw
-    # Stack: [b0, b1, b2, b3, a0, a1, a2, a3, result_ptr, ...]
+    # Stack: [b3, b2, b1, b0, a3, a2, a1, a0, result_ptr, ...]
 
     # The hmerge instruction expects [B, A] on the stack, which we already have
 
     # Perform the hash
     hmerge
-    # Stack: [r0, r1, r2, r3, result_ptr, ...]
+    # Stack: [r3, r2, r1, r0, result_ptr, ...]
 
     # Store result at result_ptr
     movup.4

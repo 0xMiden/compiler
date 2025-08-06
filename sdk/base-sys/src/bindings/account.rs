@@ -19,6 +19,10 @@ extern "C" {
 pub fn get_id() -> AccountId {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<AccountId>::uninit();
+
+        // The MASM procedure returns the account ID on the stack.
+        // Inputs:  []
+        // Outputs: [acct_id_prefix, acct_id_suffix]
         extern_account_get_id(ret_area.as_mut_ptr());
         ret_area.assume_init()
     }
@@ -38,10 +42,10 @@ pub fn add_asset(asset: Asset) -> Asset {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_account_add_asset(
-            asset.inner[0],
-            asset.inner[1],
-            asset.inner[2],
             asset.inner[3],
+            asset.inner[2],
+            asset.inner[1],
+            asset.inner[0],
             ret_area.as_mut_ptr(),
         );
         ret_area.assume_init()

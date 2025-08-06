@@ -9,6 +9,7 @@ pub struct AccountId {
 
 impl AccountId {}
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Asset {
     pub inner: Word,
@@ -62,3 +63,10 @@ pub struct NoteType {
 
 #[repr(transparent)]
 pub struct StorageCommitmentRoot(Word);
+
+impl StorageCommitmentRoot {
+    #[inline]
+    pub(crate) fn reverse(&self) -> StorageCommitmentRoot {
+        Self(self.0.reverse())
+    }
+}

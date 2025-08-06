@@ -155,13 +155,13 @@
     )
     (func $miden_base_sys::bindings::account::add_asset (;8;) (type 5) (param i32 i32)
       local.get 1
-      f32.load
-      local.get 1
-      f32.load offset=4
+      f32.load offset=12
       local.get 1
       f32.load offset=8
       local.get 1
-      f32.load offset=12
+      f32.load offset=4
+      local.get 1
+      f32.load
       local.get 0
       call $miden_base_sys::bindings::account::extern_account_add_asset
     )
