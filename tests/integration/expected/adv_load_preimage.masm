@@ -58,7 +58,7 @@ export.entrypoint
     dup.8
     trace.240
     nop
-    exec.::intrinsics::io::adv_push_mapvaln
+    exec.::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
     u32split

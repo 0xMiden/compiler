@@ -1,4 +1,4 @@
-use crate::intrinsics::*;
+use crate::intrinsics::{Felt, Word};
 
 #[link(wasm_import_module = "miden:core-import/stdlib-crypto-dsa-rpo-falcon@1.0.0")]
 extern "C" {

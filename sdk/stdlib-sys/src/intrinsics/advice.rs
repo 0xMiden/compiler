@@ -1,8 +1,8 @@
-//! Contains intrinsics for I/O operations with the advice provider.
+//! Contains intrinsics for advice operations with the advice provider.
 
 use crate::{Felt, Word};
 
-#[link(wasm_import_module = "miden:core-intrinsics/intrinsics-io@1.0.0")]
+#[link(wasm_import_module = "miden:core-intrinsics/intrinsics-advice@1.0.0")]
 extern "C" {
     /// Pushes a list of field elements onto the advice stack.
     /// The list is looked up in the advice map using `key` as the key.

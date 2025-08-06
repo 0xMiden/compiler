@@ -2,10 +2,10 @@ mod intrinsic;
 
 pub use self::intrinsic::*;
 
+pub mod advice;
 pub mod crypto;
 pub mod debug;
 pub mod felt;
-pub mod io;
 pub mod mem;
 
 use midenc_hir::{
@@ -26,7 +26,7 @@ fn modules() -> &'static FxHashSet<SymbolPath> {
         s.insert(SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()));
         s.insert(SymbolPath::from_iter(debug::MODULE_PREFIX.iter().copied()));
         s.insert(SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()));
-        s.insert(SymbolPath::from_iter(io::MODULE_PREFIX.iter().copied()));
+        s.insert(SymbolPath::from_iter(advice::MODULE_PREFIX.iter().copied()));
         s
     });
     &MODULES
@@ -53,8 +53,8 @@ pub fn convert_intrinsics_call<B: ?Sized + Builder>(
         Intrinsic::Crypto(function) => {
             crypto::convert_crypto_intrinsics(function, function_ref, args, builder, span)
         }
-        Intrinsic::Io(function) => {
-            io::convert_io_intrinsics(function, function_ref, args, builder, span)
+        Intrinsic::Advice(function) => {
+            advice::convert_advice_intrinsics(function, function_ref, args, builder, span)
         }
     }
 }

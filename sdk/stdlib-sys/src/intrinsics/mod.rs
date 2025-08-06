@@ -1,16 +1,16 @@
 use core::ops::{Deref, DerefMut};
 
-mod crypto;
-mod debug;
-mod felt;
-mod io;
-mod word;
+pub use self::{
+    crypto::Digest,
+    felt::{assert_eq, Felt},
+    word::Word,
+};
 
-pub use crypto::*;
-pub use debug::*;
-pub use felt::*;
-pub use io::*;
-pub use word::*;
+pub mod advice;
+pub mod crypto;
+pub mod debug;
+pub mod felt;
+pub mod word;
 
 #[repr(C, align(32))]
 pub struct WordAligned<T>(T);

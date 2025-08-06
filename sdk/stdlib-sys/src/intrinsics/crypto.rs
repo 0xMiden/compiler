@@ -3,7 +3,7 @@
 //! This module provides Rust bindings for cryptographic operations available in the Miden VM.
 #![allow(warnings)]
 
-use crate::{assert_eq, Felt, Word};
+use crate::intrinsics::{Felt, Word};
 
 /// A cryptographic digest representing a 256-bit hash value.
 ///

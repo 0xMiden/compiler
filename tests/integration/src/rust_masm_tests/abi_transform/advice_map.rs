@@ -26,7 +26,7 @@ fn test_adv_load_preimage() {
     (k0: Felt, k1: Felt, k2: Felt, k3: Felt) -> alloc::vec::Vec<Felt> {
         let key = Word::from([k0, k1, k2, k3]);
 
-        let num_felts = adv_push_mapvaln(key.clone());
+        let num_felts = intrinsics::advice::adv_push_mapvaln(key.clone());
 
         let num_felts_u64 = num_felts.as_u64();
         assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));

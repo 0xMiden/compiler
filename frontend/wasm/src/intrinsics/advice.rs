@@ -7,15 +7,15 @@ use midenc_hir::{
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
-pub(crate) const MODULE_ID: &str = "intrinsics::io";
-/// The module path prefix for IO intrinsics, not including the function name
+pub(crate) const MODULE_ID: &str = "intrinsics::advice";
+/// The module path prefix for advice intrinsics, not including the function name
 pub const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Intrinsics),
-    SymbolNameComponent::Component(symbols::Io),
+    SymbolNameComponent::Component(symbols::Advice),
 ];
 
-/// Get the [FunctionType] of an IO intrinsic, if it is implemented as a function.
+/// Get the [FunctionType] of an advice intrinsic, if it is implemented as a function.
 ///
 /// Returns `None` for intrinsics which are unknown, or correspond to native instructions.
 pub fn function_type(function: Symbol) -> Option<FunctionType> {
@@ -38,8 +38,8 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
     }
 }
 
-/// Convert a call to an IO intrinsic function into instruction(s)
-pub fn convert_io_intrinsics<B: ?Sized + Builder>(
+/// Convert a call to an advice intrinsic function into instruction(s)
+pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
     function: Symbol,
     function_ref: Option<FunctionRef>,
     args: &[ValueRef],

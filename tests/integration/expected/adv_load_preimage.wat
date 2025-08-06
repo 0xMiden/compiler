@@ -13,7 +13,7 @@
   (type (;11;) (func (param i32 i32 i32 i32 i32)))
   (type (;12;) (func (param i32 i32 i32)))
   (type (;13;) (func (param i32 i32 i32 i32)))
-  (import "miden:core-intrinsics/intrinsics-io@1.0.0" "adv-push-mapvaln" (func $miden_stdlib_sys::intrinsics::io::extern_adv_push_mapvaln (;0;) (type 0)))
+  (import "miden:core-intrinsics/intrinsics-advice@1.0.0" "adv-push-mapvaln" (func $miden_stdlib_sys::intrinsics::advice::extern_adv_push_mapvaln (;0;) (type 0)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "as-u64" (func $miden_stdlib_sys::intrinsics::felt::extern_as_u64 (;1;) (type 1)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;2;) (type 2)))
   (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;3;) (type 3)))
@@ -36,7 +36,7 @@
     local.get 3
     local.get 2
     local.get 1
-    call $miden_stdlib_sys::intrinsics::io::extern_adv_push_mapvaln
+    call $miden_stdlib_sys::intrinsics::advice::extern_adv_push_mapvaln
     call $miden_stdlib_sys::intrinsics::felt::extern_as_u64
     local.tee 6
     i32.wrap_i64

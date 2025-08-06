@@ -12,7 +12,7 @@ pub(crate) const MODULE_ID: &str = "intrinsics::felt";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Intrinsics),
-    SymbolNameComponent::Component(symbols::Felt),
+    SymbolNameComponent::Component(symbols::FeltModule),
 ];
 
 /// Convert a call to a felt op intrinsic function into instruction(s)

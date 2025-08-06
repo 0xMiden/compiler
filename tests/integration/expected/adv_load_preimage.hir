@@ -16,7 +16,7 @@ builtin.component root_ns:root@1.0.0 {
             v22 = builtin.global_symbol @root_ns:root@1.0.0/adv_load_preimage/__stack_pointer : ptr<byte, u8>
             v23 = hir.bitcast v22 : ptr<byte, i32>;
             hir.store v23, v21;
-            v24 = hir.exec @intrinsics/io/adv_push_mapvaln(v12, v11, v10, v9) : felt
+            v24 = hir.exec @intrinsics/advice/adv_push_mapvaln(v12, v11, v10, v9) : felt
             v25 = hir.cast v24 : i64;
             v439 = arith.constant 0 : felt;
             v27 = arith.constant 3 : i32;

@@ -106,9 +106,10 @@ blake3 = {}
 crypto = {}
 debug = {}
 dsa = {}
+felt_module = { value = "felt" }
 hashes = {}
 intrinsics = {}
-io = {}
+advice = {}
 miden = {}
 mem = {}
 note = {}
