@@ -92,7 +92,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
             },
             symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                 tx_kernel::tx::CREATE_NOTE => Some(TransformStrategy::NoTransform),
-                tx_kernel::tx::ADD_ASSET_TO_NOTE => Some(TransformStrategy::NoTransform),
+                tx_kernel::tx::ADD_ASSET_TO_NOTE => Some(TransformStrategy::ReturnViaPointer),
                 _ => None,
             },
             _ => None,

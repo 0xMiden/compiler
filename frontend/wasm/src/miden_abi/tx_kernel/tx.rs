@@ -41,9 +41,11 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [
                 Felt, Felt, Felt, Felt, // asset (4 felts)
                 Felt, // note_idx
-                I32,  // result ptr
             ],
-            [],
+            [
+                Felt, Felt, Felt, Felt, // asset (4 felts)
+                Felt, // note_idx
+            ],
         ),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
