@@ -55,9 +55,7 @@ interface intrinsics-crypto {
     hmerge: func(digests-ptr: s32, result-ptr: s32);
 }
 
-interface intrinsics-io {
-
-    // See sdk/stdlib-sys/src/intrinsics/io.rs for `extern` function signatures
+interface intrinsics-advice {
 
     // Pushes a list of field elements onto the advice stack. The list is looked up in the advice map using `key` as the key.
     // Returns the number of elements pushed on the advice stack.
@@ -70,5 +68,5 @@ world intrinsics {
     import intrinsics-felt;
     import intrinsics-debug;
     import intrinsics-crypto;
-    import intrinsics-io;
+    import intrinsics-advice;
 }
