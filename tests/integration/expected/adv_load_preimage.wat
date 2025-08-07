@@ -67,43 +67,77 @@
     i32.load offset=8
     local.set 9
     block ;; label = @1
-      local.get 5
-      i32.load offset=4
-      i32.const 1
-      i32.ne
-      br_if 0 (;@1;)
+      block ;; label = @2
+        local.get 5
+        i32.load offset=4
+        i32.const 1
+        i32.eq
+        br_if 0 (;@2;)
+        local.get 7
+        local.get 5
+        i32.load offset=12
+        local.tee 10
+        i32.const 2
+        i32.shr_u
+        local.get 4
+        local.get 3
+        local.get 2
+        local.get 1
+        call $miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
+        drop
+        local.get 0
+        local.get 8
+        i32.store offset=8
+        local.get 0
+        local.get 10
+        i32.store offset=4
+        local.get 0
+        local.get 9
+        i32.store
+        local.get 8
+        i32.eqz
+        br_if 1 (;@1;)
+        local.get 10
+        f32.load
+        i32.const 1
+        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+        local.get 10
+        f32.load offset=4
+        i32.const 2
+        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+        local.get 8
+        i32.const 5
+        i32.le_u
+        br_if 1 (;@1;)
+        local.get 10
+        f32.load offset=20
+        i32.const 6
+        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+        local.get 8
+        i32.const 14
+        i32.le_u
+        br_if 1 (;@1;)
+        local.get 10
+        f32.load offset=56
+        i32.const 15
+        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+        local.get 5
+        i32.const 16
+        i32.add
+        global.set $__stack_pointer
+        return
+      end
       local.get 9
       local.get 5
       i32.load offset=12
       i32.const 1048620
       call $alloc::raw_vec::handle_error
-      unreachable
     end
-    local.get 7
-    local.get 5
-    i32.load offset=12
-    local.tee 10
-    i32.const 2
-    i32.shr_u
-    local.get 4
-    local.get 3
-    local.get 2
-    local.get 1
-    call $miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
-    drop
-    local.get 0
-    local.get 8
-    i32.store offset=8
-    local.get 0
-    local.get 10
-    i32.store offset=4
-    local.get 0
-    local.get 9
-    i32.store
-    local.get 5
-    i32.const 16
-    i32.add
-    global.set $__stack_pointer
+    unreachable
   )
   (func $__rustc::__rust_alloc (;8;) (type 8) (param i32 i32) (result i32)
     i32.const 1048636
