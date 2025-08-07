@@ -3,6 +3,9 @@
 //! Miden VM requires data to be word-aligned (16-byte aligned) for hash/unhash instructions.
 //! This module merges all data segments into a single segment and pads to 16-byte alignment.
 
+use std::fmt::Debug;
+
+use miden_core::utils::ToHex;
 use midenc_hir::SmallVec;
 use midenc_session::diagnostics::Report;
 
@@ -12,7 +15,7 @@ use crate::error::{WasmError, WasmResult};
 const WORD_SIZE_BYTES: usize = 16;
 
 /// Represents a data segment with resolved offset
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResolvedDataSegment {
     /// The absolute offset in linear memory where this segment starts
     pub offset: u32,
@@ -37,6 +40,18 @@ impl ResolvedDataSegment {
             let padding_size = WORD_SIZE_BYTES - remainder;
             self.data.resize(self.data.len() + padding_size, 0);
         }
+    }
+}
+
+impl Debug for ResolvedDataSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedDataSegment")
+            .field("offset", &self.offset)
+            .field("size", &self.data.len())
+            .field("name", &self.name)
+            .field("readonly", &self.readonly)
+            .field("data", &self.data.to_hex())
+            .finish()
     }
 }
 
