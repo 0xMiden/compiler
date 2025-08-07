@@ -422,7 +422,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v341 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/GOT.data.internal.__memory_base : ptr<byte, u8>
             v342 = hir.bitcast v341 : ptr<byte, i32>;
             v343 = hir.load v342 : i32;
-            v344 = arith.constant 1048620 : i32;
+            v344 = arith.constant 1048624 : i32;
             v345 = arith.add v343, v344 : i32 #[overflow = wrapping];
             v346 = hir.bitcast v345 : u32;
             v347 = hir.int_to_ptr v346 : ptr<byte, u8>;
@@ -441,7 +441,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                 v355 = hir.load v354 : i32;
                 hir.exec @miden:storage-example/foo@1.0.0/storage_example/__wasm_call_ctors()
                 v549 = arith.constant 1 : u8;
-                v551 = arith.constant 1048620 : i32;
+                v551 = arith.constant 1048624 : i32;
                 v357 = arith.add v355, v551 : i32 #[overflow = wrapping];
                 v361 = hir.bitcast v357 : u32;
                 v362 = hir.int_to_ptr v361 : ptr<byte, u8>;
@@ -632,7 +632,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @set-asset-qty(v488: felt, v489: felt, v490: felt, v491: felt, v492: felt, v493: felt, v494: felt, v495: felt, v496: felt) {
