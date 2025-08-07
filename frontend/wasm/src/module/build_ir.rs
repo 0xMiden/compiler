@@ -14,7 +14,7 @@ use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, 
 use wasmparser::Validator;
 
 use super::{
-    data_segments::{align_data_segments, ResolvedDataSegment},
+    data_segments::{merge_data_segments, ResolvedDataSegment},
     module_translation_state::ModuleTranslationState,
     types::ModuleTypesBuilder,
     MemoryIndex,
@@ -223,21 +223,18 @@ fn build_data_segments(
     }
 
     // Apply alignment and merging
-    let aligned_segments = align_data_segments(resolved_segments);
-
-    // Now create the data segments in the module builder
-    for segment in aligned_segments {
-        let init = ConstantData::from(segment.data);
+    if let Some(merged_segment) = merge_data_segments(resolved_segments)? {
+        let init = ConstantData::from(merged_segment.data);
         let size = init.len() as u32;
         if let Err(e) = module_builder.define_data_segment(
-            segment.offset,
+            merged_segment.offset,
             init,
-            segment.readonly,
+            merged_segment.readonly,
             SourceSpan::default(),
         ) {
             let message = format!(
                 "Failed to declare data segment '{}' with size '{}' at '{:#x}'",
-                segment.name, size, segment.offset
+                merged_segment.name, size, merged_segment.offset
             );
             return Err(e.wrap_err(message));
         }

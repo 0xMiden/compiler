@@ -1,10 +1,15 @@
-//! Module for handling data segment alignment and merging for Miden VM
+//! Module for handling data segment merging for Miden VM
 //!
-//! Miden VM requires all data segments to be word-aligned (16-byte aligned) because the
-//! hash/unhash instructions operate on words when loaded from the advice provider. This module provides
-//! functionality to ensure all data segments meet this requirement.
+//! Miden VM requires data to be word-aligned (16-byte aligned) for hash/unhash instructions.
+//! This module merges all data segments into a single segment and pads to 16-byte alignment.
 
 use midenc_hir::SmallVec;
+use midenc_session::diagnostics::Report;
+
+use crate::error::{WasmError, WasmResult};
+
+/// Word size in bytes for Miden VM alignment requirements
+const WORD_SIZE_BYTES: usize = 16;
 
 /// Represents a data segment with resolved offset
 #[derive(Debug, Clone)]
@@ -13,105 +18,123 @@ pub struct ResolvedDataSegment {
     pub offset: u32,
     /// The initialization data
     pub data: Vec<u8>,
-    /// The original name/index for debugging purposes
+    /// The name/index for debugging purposes
     pub name: String,
     /// Whether this is readonly data
     pub readonly: bool,
 }
 
 impl ResolvedDataSegment {
-    /// Check if this segment is word-aligned (16-byte aligned)
-    pub fn is_word_aligned(&self) -> bool {
-        self.offset.is_multiple_of(16)
+    /// Returns the end offset of this segment
+    fn end_offset(&self) -> u32 {
+        self.offset + self.data.len() as u32
     }
 
-    /// Calculate padding needed to align this segment to word boundary
-    /// This returns how many bytes we need to prepend when moving offset down to word boundary
-    pub fn padding_needed(&self) -> u32 {
-        self.offset % 16
-    }
-
-    /// Align this segment to word boundary by adjusting offset and prepending zeros
-    pub fn align_to_word_boundary(&mut self) {
-        let padding = self.padding_needed();
-        if padding > 0 {
-            // Adjust offset down to nearest word boundary
-            self.offset -= padding;
-            // Prepend zeros to maintain data at correct offset
-            let mut new_data = Vec::with_capacity(padding as usize + self.data.len());
-            new_data.resize(padding as usize, 0);
-            new_data.extend_from_slice(&self.data);
-            self.data = new_data;
+    /// Pads the segment data to be aligned to WORD_SIZE_BYTES (16 bytes)
+    pub fn pad_to_word_alignment(&mut self) {
+        let remainder = self.data.len() % WORD_SIZE_BYTES;
+        if remainder != 0 {
+            let padding_size = WORD_SIZE_BYTES - remainder;
+            self.data.resize(self.data.len() + padding_size, 0);
         }
-    }
-
-    /// Check if this segment overlaps with another segment
-    pub fn overlaps_with(&self, other: &ResolvedDataSegment) -> bool {
-        let self_end = self.offset + self.data.len() as u32;
-        let other_end = other.offset + other.data.len() as u32;
-
-        (self.offset < other_end) && (other.offset < self_end)
-    }
-
-    /// Merge this segment with another segment, filling gap with zeros
-    pub fn merge_with(&mut self, other: ResolvedDataSegment) {
-        // Ensure this segment comes before the other
-        assert!(self.offset <= other.offset, "Segments must be sorted by offset");
-
-        let self_end = self.offset + self.data.len() as u32;
-        let gap = other.offset.saturating_sub(self_end);
-
-        // Extend data to include gap (filled with zeros) and other segment's data
-        self.data.reserve((gap + other.data.len() as u32) as usize);
-        self.data.extend(vec![0u8; gap as usize]);
-        self.data.extend(other.data);
-
-        // Update name to indicate merge
-        self.name = format!("{}_merged_{}", self.name, other.name);
-        // Merged segment is readonly only if both segments were readonly
-        self.readonly = self.readonly && other.readonly;
     }
 }
 
-/// Process data segments to ensure word alignment
-///
-/// This function takes a collection of data segments and ensures they are all
-/// word-aligned, merging segments if necessary to avoid overlaps.
-pub fn align_data_segments(
-    segments: SmallVec<[ResolvedDataSegment; 2]>,
-) -> SmallVec<[ResolvedDataSegment; 2]> {
-    if segments.is_empty() {
-        return segments;
-    }
-
-    // Sort segments by offset
-    let mut sorted_segments = segments;
-    sorted_segments.sort_by_key(|s| s.offset);
-
-    let mut result = SmallVec::<[ResolvedDataSegment; 2]>::new();
-    let mut current_segment = sorted_segments[0].clone();
-
-    for next_segment in sorted_segments.into_iter().skip(1) {
-        let mut aligned_next = next_segment.clone();
-        aligned_next.align_to_word_boundary();
-
-        // Check if aligned segment would overlap with current segment
-        if current_segment.overlaps_with(&aligned_next) {
-            // Merge segments
-            current_segment.merge_with(aligned_next);
-        } else {
-            // No overlap, align current segment and add to result
-            current_segment.align_to_word_boundary();
-            result.push(current_segment);
-            current_segment = aligned_next;
+/// Returns an error if any two segments overlap
+fn validate_no_overlaps(segments: &[ResolvedDataSegment]) -> WasmResult<()> {
+    assert!(segments.is_sorted_by_key(|s| s.offset), "Segments must be sorted by offset");
+    for window in segments.windows(2) {
+        let current = &window[0];
+        let next = &window[1];
+        if current.end_offset() > next.offset {
+            let error_msg = format!(
+                "Data segments overlap: segment '{}' at offset {:#x} (size {}) overlaps with \
+                 segment '{}' at offset {:#x}",
+                current.name,
+                current.offset,
+                current.data.len(),
+                next.name,
+                next.offset
+            );
+            return Err(Report::msg(WasmError::Unsupported(error_msg)));
         }
     }
+    Ok(())
+}
 
-    // Don't forget the last segment
-    current_segment.align_to_word_boundary();
-    result.push(current_segment);
+/// Merges segment metadata (names and readonly status)
+/// Returns a tuple with the merged name and whether all segments are readonly
+fn merge_metadata(segments: &[ResolvedDataSegment]) -> (String, bool) {
+    let mut merged_name = String::new();
+    let mut all_readonly = true;
 
-    result
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            merged_name.push('_');
+        }
+        merged_name.push_str(&segment.name);
+        all_readonly = all_readonly && segment.readonly;
+    }
+
+    (merged_name, all_readonly)
+}
+
+/// Copies all segment data into the merged buffer at their respective offsets
+fn copy_segments_to_buffer(segments: &[ResolvedDataSegment], buffer: &mut [u8], base_offset: u32) {
+    for segment in segments {
+        let relative_offset = (segment.offset - base_offset) as usize;
+        let end = relative_offset + segment.data.len();
+        buffer[relative_offset..end].copy_from_slice(&segment.data);
+    }
+}
+
+/// Merge all data segments into a single segment and pad to 16-byte alignment
+///
+/// Requirements:
+/// - Segments cannot have their offsets moved
+/// - Segments must not overlap (returns error if they do)
+/// - All segments are merged into one
+/// - The resulting data is padded with zeros to be divisible by 16
+///
+/// Returns `None` if the input segments are empty, otherwise returns the merged segment.
+pub fn merge_data_segments(
+    mut segments: SmallVec<[ResolvedDataSegment; 2]>,
+) -> WasmResult<Option<ResolvedDataSegment>> {
+    if segments.is_empty() {
+        return Ok(None);
+    }
+
+    // Early return for single segment - just pad it
+    if segments.len() == 1 {
+        let mut segment = segments.pop().unwrap();
+        segment.pad_to_word_alignment();
+        return Ok(Some(segment));
+    }
+
+    segments.sort_by_key(|s| s.offset);
+
+    validate_no_overlaps(&segments)?;
+
+    let base_offset = segments[0].offset;
+    let last_segment = segments.last().unwrap();
+    let initial_size = (last_segment.end_offset() - base_offset) as usize;
+
+    let mut merged_data = vec![0u8; initial_size];
+
+    copy_segments_to_buffer(&segments, &mut merged_data, base_offset);
+
+    let (merged_name, all_readonly) = merge_metadata(&segments);
+
+    let mut merged_segment = ResolvedDataSegment {
+        offset: base_offset,
+        data: merged_data,
+        name: merged_name,
+        readonly: all_readonly,
+    };
+
+    merged_segment.pad_to_word_alignment();
+
+    Ok(Some(merged_segment))
 }
 
 #[cfg(test)]
@@ -119,154 +142,224 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_word_aligned() {
-        let segment = ResolvedDataSegment {
-            offset: 0,
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        assert!(segment.is_word_aligned());
-
-        let segment = ResolvedDataSegment {
-            offset: 16,
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        assert!(segment.is_word_aligned());
-
-        let segment = ResolvedDataSegment {
-            offset: 12,
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        assert!(!segment.is_word_aligned());
+    fn test_empty_segments() {
+        let segments = SmallVec::new();
+        let merged = merge_data_segments(segments).unwrap();
+        assert!(merged.is_none());
     }
 
     #[test]
-    fn test_padding_needed() {
-        let segment = ResolvedDataSegment {
-            offset: 0,
-            data: vec![1, 2, 3, 4],
+    fn test_single_segment_with_padding() {
+        let mut segments = SmallVec::new();
+        segments.push(ResolvedDataSegment {
+            offset: 10,
+            data: vec![1, 2, 3],
             name: "test".to_string(),
             readonly: true,
-        };
-        assert_eq!(segment.padding_needed(), 0);
+        });
 
-        let segment = ResolvedDataSegment {
-            offset: 12,
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        assert_eq!(segment.padding_needed(), 12);
+        let merged = merge_data_segments(segments).unwrap().unwrap();
 
-        let segment = ResolvedDataSegment {
-            offset: 1048620, // The problematic offset from p2id example
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        assert_eq!(segment.padding_needed(), 12);
+        assert_eq!(merged.offset, 10);
+        // 3 bytes padded to 16
+        assert_eq!(merged.data.len(), 16);
+        assert_eq!(&merged.data[0..3], &[1, 2, 3]);
+        assert_eq!(&merged.data[3..], &[0; 13]);
     }
 
     #[test]
-    fn test_align_to_word_boundary() {
-        let mut segment = ResolvedDataSegment {
-            offset: 12,
-            data: vec![1, 2, 3, 4],
-            name: "test".to_string(),
-            readonly: true,
-        };
-        segment.align_to_word_boundary();
+    fn test_padding_bytes_are_zeros() {
+        // Test various data sizes to verify padding is always zeros
+        let test_cases = vec![
+            (vec![0x42], 1usize, 15),  // 1 byte data, 15 bytes padding
+            (vec![0xaa, 0xbb], 2, 14), // 2 bytes data, 14 bytes padding
+            (vec![0x11; 5], 5, 11),    // 5 bytes data, 11 bytes padding
+            (vec![0xff; 13], 13, 3),   // 13 bytes data, 3 bytes padding
+            (vec![0x77; 15], 15, 1),   // 15 bytes data, 1 byte padding
+            (vec![0x88; 16], 16, 0),   // 16 bytes data, no padding
+            (vec![0x99; 17], 17, 15),  // 17 bytes data, 15 bytes padding
+            (vec![0xcc; 31], 31, 1),   // 31 bytes data, 1 byte padding
+        ];
 
-        assert_eq!(segment.offset, 0);
-        // Should prepend 12 zeros since we moved offset from 12 to 0
-        assert_eq!(segment.data, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]);
+        for (data, data_len, expected_padding) in test_cases {
+            let mut segments = SmallVec::new();
+            segments.push(ResolvedDataSegment {
+                offset: 1000,
+                data: data.clone(),
+                name: format!("test_{data_len}_bytes"),
+                readonly: false,
+            });
+
+            let merged = merge_data_segments(segments).unwrap().unwrap();
+
+            let result_data = &merged.data;
+            let expected_total_len = data_len.next_multiple_of(16); // Round up to nearest 16
+            assert_eq!(result_data.len(), expected_total_len);
+
+            // Verify original data is preserved
+            assert_eq!(&result_data[0..data_len], &data[..]);
+
+            // Verify all padding bytes are zeros
+            if expected_padding > 0 {
+                let padding_slice = &result_data[data_len..];
+                assert_eq!(padding_slice.len(), expected_padding);
+                assert!(
+                    padding_slice.iter().all(|&b| b == 0),
+                    "Padding bytes should all be zero for {data_len} bytes of data"
+                );
+            }
+        }
     }
 
     #[test]
-    fn test_overlaps_with() {
-        let segment1 = ResolvedDataSegment {
+    fn test_data_accessible_at_original_offsets() {
+        // Test that after merging, data can be accessed at original offsets
+        let mut segments = SmallVec::new();
+
+        // Segment 1 at offset 100
+        segments.push(ResolvedDataSegment {
+            offset: 100,
+            data: vec![0xaa, 0xbb, 0xcc, 0xdd],
+            name: "data1".to_string(),
+            readonly: false,
+        });
+
+        // Segment 2 at offset 110 (gap of 6 bytes)
+        segments.push(ResolvedDataSegment {
+            offset: 110,
+            data: vec![0x11, 0x22],
+            name: "data2".to_string(),
+            readonly: false,
+        });
+
+        // Segment 3 at offset 120
+        segments.push(ResolvedDataSegment {
+            offset: 120,
+            data: vec![0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa],
+            name: "data3".to_string(),
+            readonly: false,
+        });
+
+        let merged = merge_data_segments(segments).unwrap().unwrap();
+
+        assert_eq!(merged.offset, 100);
+
+        // Verify each segment's data is at the correct position
+        let data = &merged.data;
+
+        // Data from segment 1 (offset 100-103)
+        assert_eq!(&data[0..4], &[0xaa, 0xbb, 0xcc, 0xdd]);
+
+        // Gap (offset 104-109) should be zeros
+        assert_eq!(&data[4..10], &[0, 0, 0, 0, 0, 0]);
+
+        // Data from segment 2 (offset 110-111)
+        assert_eq!(&data[10..12], &[0x11, 0x22]);
+
+        // Gap (offset 112-119) should be zeros
+        assert_eq!(&data[12..20], &[0, 0, 0, 0, 0, 0, 0, 0]);
+
+        // Data from segment 3 (offset 120-125)
+        assert_eq!(&data[20..26], &[0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa]);
+
+        // Total size should be padded to multiple of 16
+        // Range is 100-126 (26 bytes), padded to 32
+        assert_eq!(data.len(), 32);
+
+        // Padding should be zeros
+        assert_eq!(&data[26..], &[0; 6]);
+    }
+
+    #[test]
+    fn test_merge_segments_with_gap() {
+        let mut segments = SmallVec::new();
+        segments.push(ResolvedDataSegment {
             offset: 0,
-            data: vec![0; 20],
+            data: vec![1, 2, 3, 4],
             name: "seg1".to_string(),
             readonly: true,
-        };
-
-        let segment2 = ResolvedDataSegment {
-            offset: 16,
-            data: vec![0; 20],
-            name: "seg2".to_string(),
-            readonly: true,
-        };
-
-        assert!(segment1.overlaps_with(&segment2));
-
-        let segment3 = ResolvedDataSegment {
-            offset: 20,
-            data: vec![0; 10],
-            name: "seg3".to_string(),
-            readonly: true,
-        };
-
-        assert!(!segment1.overlaps_with(&segment3));
-    }
-
-    #[test]
-    fn test_merge_segments() {
-        let mut segment1 = ResolvedDataSegment {
-            offset: 0,
-            data: vec![1, 2, 3, 4],
-            name: "seg1".to_string(),
-            readonly: true,
-        };
-
-        let segment2 = ResolvedDataSegment {
+        });
+        segments.push(ResolvedDataSegment {
             offset: 8,
             data: vec![5, 6, 7, 8],
             name: "seg2".to_string(),
             readonly: true,
-        };
+        });
 
-        segment1.merge_with(segment2);
+        let merged = merge_data_segments(segments).unwrap().unwrap();
 
-        assert_eq!(segment1.offset, 0);
-        assert_eq!(segment1.data, vec![1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8]);
-        assert_eq!(segment1.name, "seg1_merged_seg2");
+        assert_eq!(merged.offset, 0);
+        // 4 bytes + 4 gap + 4 bytes = 12, padded to 16
+        assert_eq!(merged.data.len(), 16);
+        assert_eq!(merged.data, vec![1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0]);
+        assert_eq!(merged.name, "seg1_seg2");
     }
 
     #[test]
-    fn test_align_data_segments_p2id_case() {
-        // Simulate the p2id case
-        let segments = [
-            ResolvedDataSegment {
-                offset: 1048576,   // 0x100000 - already aligned
-                data: vec![0; 44], // Size of the .rodata string
-                name: ".rodata".to_string(),
-                readonly: true,
-            },
-            ResolvedDataSegment {
-                offset: 1048620,   // 0x10002C - not aligned
-                data: vec![0; 76], // Size of the .data segment
-                name: ".data".to_string(),
-                readonly: false,
-            },
-        ];
+    fn test_overlapping_segments_error() {
+        let mut segments = SmallVec::new();
+        segments.push(ResolvedDataSegment {
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5, 6],
+            name: "seg1".to_string(),
+            readonly: true,
+        });
+        segments.push(ResolvedDataSegment {
+            offset: 4,
+            data: vec![7, 8],
+            name: "seg2".to_string(),
+            readonly: false,
+        });
 
-        let aligned = align_data_segments(segments.into());
+        // This should return an error because segments overlap
+        let result = merge_data_segments(segments);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{err}");
+        assert!(err_msg.contains("Data segments overlap"));
+        assert!(err_msg.contains("seg1"));
+        assert!(err_msg.contains("seg2"));
+    }
 
-        // Should merge into one segment since alignment causes overlap
-        assert_eq!(aligned.len(), 1);
-        assert!(aligned[0].is_word_aligned());
-        assert_eq!(aligned[0].offset, 1048576);
-        // .rodata size (44) + gap to .data start (44) + .data padding (12) + .data size (76) = 132
-        // Gap: 1048620 - (1048576 + 44) = 0
-        // But .data aligns to 1048608, so it overlaps with end of .rodata
-        // So we get: .rodata (44) + merged .data starting at original position with 12 byte padding + data (76) = 132
-        assert_eq!(aligned[0].data.len(), 132);
-        assert!(!aligned[0].readonly, "resulted merged segment should not be readonly");
+    #[test]
+    fn test_p2id_case() {
+        // Simulate the p2id case with .rodata and .data segments
+        let mut segments = SmallVec::new();
+        segments.push(ResolvedDataSegment {
+            offset: 1048576,   // 0x100000
+            data: vec![0; 44], // Size of the .rodata string
+            name: ".rodata".to_string(),
+            readonly: true,
+        });
+        segments.push(ResolvedDataSegment {
+            offset: 1048620,   // 0x10002C
+            data: vec![0; 76], // Size of the .data segment
+            name: ".data".to_string(),
+            readonly: false,
+        });
+
+        let merged = merge_data_segments(segments).unwrap().unwrap();
+
+        assert_eq!(merged.offset, 1048576);
+        // .rodata (44) + gap (0) + .data (76) = 120, padded to 128
+        assert_eq!(merged.data.len(), 128);
+        assert!(!merged.readonly);
+        assert_eq!(merged.name, ".rodata_.data");
+    }
+
+    #[test]
+    fn test_already_aligned_size() {
+        let mut segments = SmallVec::new();
+        segments.push(ResolvedDataSegment {
+            offset: 100,
+            data: vec![1; 32], // Already divisible by 16
+            name: "aligned".to_string(),
+            readonly: true,
+        });
+
+        let merged = merge_data_segments(segments).unwrap().unwrap();
+
+        assert_eq!(merged.offset, 100);
+        assert_eq!(merged.data.len(), 32); // No padding needed
     }
 }
