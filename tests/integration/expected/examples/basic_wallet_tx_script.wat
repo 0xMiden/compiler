@@ -52,7 +52,7 @@
       (export (;0;) "adv-push-mapvaln" (func (type 0)))
     )
   )
-  (import "miden:core-intrinsics/intrinsics-io@1.0.0" (instance (;4;) (type 6)))
+  (import "miden:core-intrinsics/intrinsics-advice@1.0.0" (instance (;4;) (type 6)))
   (type (;7;)
     (instance
       (type (;0;) (func (param "num-words" f32) (param "result-ptr" s32) (param "c0" f32) (param "c1" f32) (param "c2" f32) (param "c3" f32) (result s32)))
@@ -86,7 +86,7 @@
     (type (;15;) (func (param f32 f32 f32 f32 i32) (result f32)))
     (type (;16;) (func (param i32 i32)))
     (type (;17;) (func (param i32 i32 i32 i32)))
-    (import "miden:core-intrinsics/intrinsics-io@1.0.0" "adv-push-mapvaln" (func $miden_stdlib_sys::intrinsics::io::extern_adv_push_mapvaln (;0;) (type 0)))
+    (import "miden:core-intrinsics/intrinsics-advice@1.0.0" "adv-push-mapvaln" (func $miden_stdlib_sys::intrinsics::advice::extern_adv_push_mapvaln (;0;) (type 0)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "as-u64" (func $miden_stdlib_sys::intrinsics::felt::extern_as_u64 (;1;) (type 1)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;2;) (type 2)))
     (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;3;) (type 3)))
@@ -103,65 +103,44 @@
     (export "miden:base/script@1.0.0#script" (func $miden:base/script@1.0.0#script))
     (elem (;0;) (i32.const 1) func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;9;) (type 9))
-    (func $core::slice::index::slice_index_order_fail (;10;) (type 10) (param i32 i32 i32)
+    (func $core::slice::index::slice_end_index_len_fail (;10;) (type 10) (param i32 i32 i32)
       local.get 0
       local.get 1
       local.get 2
       call $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
       unreachable
     )
-    (func $core::slice::index::slice_end_index_len_fail (;11;) (type 10) (param i32 i32 i32)
-      local.get 0
-      local.get 1
-      local.get 2
-      call $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
-      unreachable
-    )
-    (func $<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index (;12;) (type 11) (param i32 i32 i32 i32 i32)
+    (func $<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index (;11;) (type 11) (param i32 i32 i32 i32 i32)
       (local i32)
       block ;; label = @1
-        block ;; label = @2
-          local.get 3
-          local.get 2
-          i32.lt_u
-          br_if 0 (;@2;)
-          local.get 3
-          local.get 1
-          i32.load offset=8
-          local.tee 5
-          i32.gt_u
-          br_if 1 (;@1;)
-          local.get 1
-          i32.load offset=4
-          local.set 1
-          local.get 0
-          local.get 3
-          local.get 2
-          i32.sub
-          i32.store offset=4
-          local.get 0
-          local.get 1
-          local.get 2
-          i32.const 2
-          i32.shl
-          i32.add
-          i32.store
-          return
-        end
-        local.get 2
         local.get 3
+        local.get 1
+        i32.load offset=8
+        local.tee 5
+        i32.le_u
+        br_if 0 (;@1;)
+        local.get 3
+        local.get 5
         local.get 4
-        call $core::slice::index::slice_index_order_fail
+        call $core::slice::index::slice_end_index_len_fail
         unreachable
       end
+      local.get 0
       local.get 3
-      local.get 5
-      local.get 4
-      call $core::slice::index::slice_end_index_len_fail
-      unreachable
+      local.get 2
+      i32.sub
+      i32.store offset=4
+      local.get 0
+      local.get 1
+      i32.load offset=4
+      local.get 2
+      i32.const 2
+      i32.shl
+      i32.add
+      i32.store
     )
-    (func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports (;13;) (type 9))
-    (func $__rustc::__rust_alloc (;14;) (type 12) (param i32 i32) (result i32)
+    (func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports (;12;) (type 9))
+    (func $__rustc::__rust_alloc (;13;) (type 12) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
       i32.const 1048728
       i32.add
@@ -169,8 +148,8 @@
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
-    (func $__rustc::__rust_dealloc (;15;) (type 10) (param i32 i32 i32))
-    (func $__rustc::__rust_alloc_zeroed (;16;) (type 12) (param i32 i32) (result i32)
+    (func $__rustc::__rust_dealloc (;14;) (type 10) (param i32 i32 i32))
+    (func $__rustc::__rust_alloc_zeroed (;15;) (type 12) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
         i32.const 1048728
@@ -191,7 +170,7 @@
       end
       local.get 1
     )
-    (func $miden:base/script@1.0.0#script (;17;) (type 13) (param f32 f32 f32 f32)
+    (func $miden:base/script@1.0.0#script (;16;) (type 13) (param f32 f32 f32 f32)
       (local i32 i64 f32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 80
@@ -203,7 +182,7 @@
       local.get 2
       local.get 1
       local.get 0
-      call $miden_stdlib_sys::intrinsics::io::extern_adv_push_mapvaln
+      call $miden_stdlib_sys::intrinsics::advice::extern_adv_push_mapvaln
       call $miden_stdlib_sys::intrinsics::felt::extern_as_u64
       local.tee 5
       i32.wrap_i64
@@ -265,7 +244,7 @@
           i32.eqz
           br_if 1 (;@1;)
           global.get $GOT.data.internal.__memory_base
-          local.set 8
+          local.set 7
           local.get 9
           f32.load offset=12
           local.set 0
@@ -286,7 +265,7 @@
           i32.add
           i32.const 4
           i32.const 8
-          local.get 8
+          local.get 7
           i32.const 1048696
           i32.add
           call $<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
@@ -297,7 +276,7 @@
           br_if 1 (;@1;)
           local.get 4
           i32.load offset=8
-          local.tee 8
+          local.tee 9
           i64.load align=4
           local.set 5
           local.get 4
@@ -305,7 +284,7 @@
           i32.add
           i32.const 8
           i32.add
-          local.get 8
+          local.get 9
           i32.const 8
           i32.add
           i64.load align=4
@@ -313,103 +292,74 @@
           local.get 4
           local.get 5
           i64.store offset=32
-          local.get 7
+          global.get $GOT.data.internal.__memory_base
+          local.set 9
+          local.get 4
+          i32.const 64
+          i32.add
+          local.get 4
+          i32.const 32
+          i32.add
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+          local.get 3
+          local.get 2
+          local.get 1
+          local.get 0
+          local.get 4
+          i32.const 64
+          i32.add
+          call $miden_base_sys::bindings::tx::create_note
+          local.set 0
+          local.get 4
+          local.get 4
+          i32.const 20
+          i32.add
           i32.const 8
-          i32.le_u
+          i32.const 12
+          local.get 9
+          i32.const 1048712
+          i32.add
+          call $<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+          local.get 4
+          i32.load offset=4
+          i32.const 4
+          i32.ne
           br_if 1 (;@1;)
-          block ;; label = @3
-            local.get 9
-            f32.load offset=32
-            call $miden_stdlib_sys::intrinsics::felt::extern_as_u64
-            i32.wrap_i64
-            local.tee 7
-            i32.eqz
-            br_if 0 (;@3;)
-            local.get 4
-            i32.const 64
-            i32.add
-            local.get 4
-            i32.const 32
-            i32.add
-            call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
-            local.get 3
-            local.get 2
-            local.get 1
-            local.get 0
-            local.get 4
-            i32.const 64
-            i32.add
-            call $miden_base_sys::bindings::tx::create_note
-            local.set 0
-            i32.const 13
-            local.set 9
-            loop ;; label = @4
-              local.get 7
-              i32.eqz
-              br_if 1 (;@3;)
-              local.get 4
-              local.get 4
-              i32.const 20
-              i32.add
-              local.get 9
-              i32.const -4
-              i32.add
-              local.get 9
-              global.get $GOT.data.internal.__memory_base
-              i32.const 1048712
-              i32.add
-              call $<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
-              local.get 4
-              i32.load offset=4
-              i32.const 4
-              i32.ne
-              br_if 3 (;@1;)
-              local.get 4
-              i32.load
-              local.tee 8
-              i64.load align=4
-              local.set 5
-              local.get 4
-              i32.const 48
-              i32.add
-              i32.const 8
-              i32.add
-              local.get 8
-              i32.const 8
-              i32.add
-              i64.load align=4
-              i64.store
-              local.get 4
-              local.get 5
-              i64.store offset=48
-              local.get 4
-              i32.const 64
-              i32.add
-              local.get 4
-              i32.const 48
-              i32.add
-              call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
-              local.get 4
-              f32.load offset=64
-              local.get 4
-              f32.load offset=68
-              local.get 4
-              f32.load offset=72
-              local.get 4
-              f32.load offset=76
-              local.get 0
-              call $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
-              local.get 7
-              i32.const -1
-              i32.add
-              local.set 7
-              local.get 9
-              i32.const 4
-              i32.add
-              local.set 9
-              br 0 (;@4;)
-            end
-          end
+          local.get 4
+          i32.load
+          local.tee 9
+          i64.load align=4
+          local.set 5
+          local.get 4
+          i32.const 48
+          i32.add
+          i32.const 8
+          i32.add
+          local.get 9
+          i32.const 8
+          i32.add
+          i64.load align=4
+          i64.store
+          local.get 4
+          local.get 5
+          i64.store offset=48
+          local.get 4
+          i32.const 64
+          i32.add
+          local.get 4
+          i32.const 48
+          i32.add
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+          local.get 4
+          f32.load offset=64
+          local.get 4
+          f32.load offset=68
+          local.get 4
+          f32.load offset=72
+          local.get 4
+          f32.load offset=76
+          local.get 0
+          call $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
           local.get 4
           i32.const 20
           i32.add
@@ -434,10 +384,10 @@
       end
       unreachable
     )
-    (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;18;) (type 9)
+    (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;17;) (type 9)
       return
     )
-    (func $wit_bindgen_rt::run_ctors_once (;19;) (type 9)
+    (func $wit_bindgen_rt::run_ctors_once (;18;) (type 9)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -455,7 +405,7 @@
         i32.store8
       end
     )
-    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;20;) (type 14) (param i32 i32 i32) (result i32)
+    (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;19;) (type 14) (param i32 i32 i32) (result i32)
       (local i32 i32)
       block ;; label = @1
         local.get 1
@@ -527,7 +477,7 @@
       end
       unreachable
     )
-    (func $miden_base_sys::bindings::tx::create_note (;21;) (type 15) (param f32 f32 f32 f32 i32) (result f32)
+    (func $miden_base_sys::bindings::tx::create_note (;20;) (type 15) (param f32 f32 f32 f32 i32) (result f32)
       local.get 0
       local.get 1
       local.get 2
@@ -542,7 +492,7 @@
       f32.load
       call $miden_base_sys::bindings::tx::extern_tx_create_note
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;22;) (type 16) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;21;) (type 16) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -552,7 +502,7 @@
       i64.load align=4
       i64.store
     )
-    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;23;) (type 10) (param i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;22;) (type 10) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -584,7 +534,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;24;) (type 11) (param i32 i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;23;) (type 11) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
@@ -696,7 +646,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;25;) (type 10) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;24;) (type 10) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -725,7 +675,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::alloc::Global::alloc_impl (;26;) (type 17) (param i32 i32 i32 i32)
+    (func $alloc::alloc::Global::alloc_impl (;25;) (type 17) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -752,7 +702,7 @@
       local.get 1
       i32.store
     )
-    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;27;) (type 17) (param i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;26;) (type 17) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -787,7 +737,7 @@
       local.get 4
       i32.store
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;28;) (type 10) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;27;) (type 10) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -798,13 +748,13 @@
         call $__rustc::__rust_dealloc
       end
     )
-    (func $alloc::raw_vec::handle_error (;29;) (type 10) (param i32 i32 i32)
+    (func $alloc::raw_vec::handle_error (;28;) (type 10) (param i32 i32 i32)
       unreachable
     )
-    (func $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime (;30;) (type 10) (param i32 i32 i32)
+    (func $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime (;29;) (type 10) (param i32 i32 i32)
       unreachable
     )
-    (func $core::ptr::alignment::Alignment::max (;31;) (type 12) (param i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;30;) (type 12) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -813,7 +763,7 @@
       select
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.1.5/src/stdlib/mem.rs\00src/lib.rs\00")
-    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\98\00\00\00!\00\00\00)\00\10\00\0a\00\00\00,\00\00\00(\00\00\00)\00\10\00\0a\00\00\00<\00\00\00,\00\00\00")
+    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\98\00\00\00!\00\00\00)\00\10\00\0a\00\00\00+\00\00\00)\00\00\00)\00\10\00\0a\00\00\003\00\00\00%\00\00\00")
   )
   (alias export 0 "word" (type (;9;)))
   (alias export 4 "adv-push-mapvaln" (func (;0;)))
@@ -856,7 +806,7 @@
     (export "create-note" (func 8))
   )
   (core instance (;6;) (instantiate 0
-      (with "miden:core-intrinsics/intrinsics-io@1.0.0" (instance 0))
+      (with "miden:core-intrinsics/intrinsics-advice@1.0.0" (instance 0))
       (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 1))
       (with "miden:core-stdlib/stdlib-mem@1.0.0" (instance 2))
       (with "miden:basic-wallet/basic-wallet@1.0.0" (instance 3))
