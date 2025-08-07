@@ -156,16 +156,39 @@
       call $miden_base_sys::bindings::account::extern_account_add_asset
     )
     (func $miden_base_sys::bindings::account::remove_asset (;9;) (type 5) (param i32 i32)
+      (local i32)
+      global.get $__stack_pointer
+      i32.const 32
+      i32.sub
+      local.tee 2
+      global.set $__stack_pointer
       local.get 1
-      f32.load
-      local.get 1
-      f32.load offset=4
+      f32.load offset=12
       local.get 1
       f32.load offset=8
       local.get 1
-      f32.load offset=12
-      local.get 0
+      f32.load offset=4
+      local.get 1
+      f32.load
+      local.get 2
       call $miden_base_sys::bindings::account::extern_account_remove_asset
+      local.get 2
+      local.get 2
+      i64.load offset=8
+      i64.store offset=24
+      local.get 2
+      local.get 2
+      i64.load
+      i64.store offset=16
+      local.get 0
+      local.get 2
+      i32.const 16
+      i32.add
+      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      local.get 2
+      i32.const 32
+      i32.add
+      global.set $__stack_pointer
     )
     (func $miden_base_sys::bindings::tx::add_asset_to_note (;10;) (type 6) (param i32 i32 f32)
       (local i32)

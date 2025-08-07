@@ -166,6 +166,69 @@ proc.miden_base_sys::bindings::tx::extern_tx_add_asset_to_note
     exec.::miden::tx::add_asset_to_note
     trace.252
     nop
+    movup.5
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    swap.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    dup.1
+    swap.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.16
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 
 proc.__wasm_call_ctors
@@ -584,21 +647,27 @@ proc.miden_base_sys::bindings::account::add_asset
 end
 
 proc.miden_base_sys::bindings::account::remove_asset
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
+    push.1114176
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_felt
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4
+    push.32
+    u32wrapping_sub
+    push.1114176
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.12
     dup.3
     add
     u32assert
@@ -632,8 +701,8 @@ proc.miden_base_sys::bindings::account::remove_asset
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
-    movup.5
+    push.4
+    dup.5
     add
     u32assert
     push.4
@@ -649,11 +718,113 @@ proc.miden_base_sys::bindings::account::remove_asset
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movdn.3
-    swap.2
+    movup.5
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.4
+    swap.1
+    swap.3
+    swap.1
+    swap.4
     trace.240
     nop
     exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::extern_account_remove_asset
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    push.24
+    dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    dup.0
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    push.16
+    dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.16
+    dup.1
+    swap.1
+    u32wrapping_add
+    movup.2
+    trace.240
+    nop
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_stdlib_sys::intrinsics::word::Word::reverse
+    trace.252
+    nop
+    push.32
+    u32wrapping_add
+    push.1114176
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
     trace.252
     nop
 end
