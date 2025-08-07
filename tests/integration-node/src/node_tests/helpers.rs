@@ -22,8 +22,11 @@ use miden_client::{
 };
 use miden_core::{Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
-use miden_objects::account::{
-    AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+use miden_objects::{
+    account::{
+        AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+    },
+    asset::Asset,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
@@ -225,4 +228,49 @@ pub fn create_note_from_package(
     .unwrap();
 
     Note::new(config.assets, metadata, recipient)
+}
+
+/// Helper function to assert that an account contains a specific fungible asset
+/// The account may have other assets as well
+pub async fn assert_account_has_fungible_asset(
+    client: &mut Client,
+    account_id: AccountId,
+    expected_faucet_id: AccountId,
+    expected_amount: u64,
+) {
+    let account_record = client
+        .get_account(account_id)
+        .await
+        .expect("Failed to get account")
+        .expect("Account not found");
+
+    let account_state: miden_objects::account::Account = account_record.into();
+
+    // Look for the specific fungible asset in the vault
+    let found_asset = account_state.vault().assets().find_map(|asset| {
+        if let Asset::Fungible(fungible_asset) = asset {
+            if fungible_asset.faucet_id() == expected_faucet_id {
+                Some(fungible_asset)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    });
+
+    match found_asset {
+        Some(fungible_asset) => {
+            assert_eq!(
+                fungible_asset.amount(),
+                expected_amount,
+                "Found asset from faucet {expected_faucet_id} but amount {} doesn't match \
+                 expected {expected_amount}",
+                fungible_asset.amount()
+            );
+        }
+        None => {
+            panic!("Account does not contain a fungible asset from faucet {expected_faucet_id}");
+        }
+    }
 }

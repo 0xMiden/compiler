@@ -10,7 +10,6 @@ use miden_client::{
     transaction::{OutputNote, TransactionRequestBuilder, TransactionScript},
 };
 use miden_core::{utils::Serializable, Felt, FieldElement};
-use miden_objects::{account::Account, asset::Asset};
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;
@@ -123,35 +122,13 @@ pub fn test_basic_wallet_p2id_local() {
 
         eprintln!("\n=== Checking Alice's account has the minted asset ===");
 
-        let alice_account_record = client
-            .get_account(alice_account.id())
-            .await
-            .unwrap()
-            .expect("Alice's account should exist");
-        let alice_account_state: Account = alice_account_record.into();
-
-        assert_eq!(
-            alice_account_state.vault().assets().count(),
-            1,
-            "Alice should have exactly one asset after consuming the mint note"
-        );
-
-        let asset = alice_account_state.vault().assets().next().unwrap();
-
-        if let Asset::Fungible(fungible_asset) = asset {
-            assert_eq!(
-                fungible_asset.faucet_id(),
-                faucet_account.id(),
-                "Asset should be from the faucet account"
-            );
-            assert_eq!(
-                fungible_asset.amount(),
-                mint_amount,
-                "Alice should have the full minted amount of {mint_amount} tokens",
-            );
-        } else {
-            panic!("Error: Alice's account should have a fungible asset, but found {asset:?}");
-        }
+        assert_account_has_fungible_asset(
+            &mut client,
+            alice_account.id(),
+            faucet_account.id(),
+            mint_amount,
+        )
+        .await;
 
         eprintln!("\n=== Step 3: Creating Bob's account ===");
 
@@ -258,35 +235,12 @@ pub fn test_basic_wallet_p2id_local() {
 
         eprintln!("\n=== Step 6: Checking Bob's account has the transferred asset ===");
 
-        let bob_account_record = client
-            .get_account(bob_account.id())
-            .await
-            .unwrap()
-            .expect("Bob's account should exist");
-        let bob_account_state: Account = bob_account_record.into();
-
-        assert_eq!(
-            bob_account_state.vault().assets().count(),
-            1,
-            "Bob should have exactly one asset after consuming the p2id note"
-        );
-
-        let asset = bob_account_state.vault().assets().next().unwrap();
-
-        // Validate it's the asset transferred from Alice
-        if let Asset::Fungible(fungible_asset) = asset {
-            assert_eq!(
-                fungible_asset.faucet_id(),
-                faucet_account.id(),
-                "Asset should be from the original faucet account"
-            );
-            assert_eq!(
-                fungible_asset.amount(),
-                transfer_amount,
-                "Bob should have the transferred amount of {transfer_amount} tokens",
-            );
-        } else {
-            panic!("Error: Bob's account should have a fungible asset, but found {asset:?}");
-        }
+        assert_account_has_fungible_asset(
+            &mut client,
+            bob_account.id(),
+            faucet_account.id(),
+            transfer_amount,
+        )
+        .await;
     });
 }
