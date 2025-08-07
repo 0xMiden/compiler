@@ -225,7 +225,7 @@ builtin.component root_ns:root@1.0.0 {
                     v158 = hir.load v157 : i32;
                     v367 = arith.constant 0 : i32;
                     v162 = hir.bitcast v133 : u32;
-                    v152 = arith.constant 268435456 : i32;
+                    v152 = arith.constant -2 : i32;
                     v159 = arith.sub v152, v158 : i32 #[overflow = wrapping];
                     v161 = hir.bitcast v159 : u32;
                     v163 = arith.lt v161, v162 : i1;

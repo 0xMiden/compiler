@@ -140,7 +140,7 @@ builtin.component root_ns:root@1.0.0 {
                     v101 = hir.load v100 : i32;
                     v172 = arith.constant 0 : i32;
                     v105 = hir.bitcast v76 : u32;
-                    v95 = arith.constant 268435456 : i32;
+                    v95 = arith.constant -2 : i32;
                     v102 = arith.sub v95, v101 : i32 #[overflow = wrapping];
                     v104 = hir.bitcast v102 : u32;
                     v106 = arith.lt v104, v105 : i1;
