@@ -104,6 +104,9 @@ fn test_all_templates_and_examples() {
     let note = build_new_project_from_template("--note");
     assert!(note.is_program());
 
+    let tx_script = build_new_project_from_template("--tx-script");
+    assert!(tx_script.is_program());
+
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
 
@@ -323,8 +326,8 @@ fn build_new_project_from_template(template: &str) -> Package {
     let temp_dir = env::temp_dir();
     env::set_current_dir(&temp_dir).unwrap();
 
-    if template == "--note" {
-        // create the counter contract cargo project since the note depends on it
+    if template == "--note" || template == "--tx-script" {
+        // create the counter contract cargo project since the note and tx-script depend on it
         let project_name = "add-contract";
         let expected_new_project_dir = &temp_dir.join(project_name);
         if expected_new_project_dir.exists() {
