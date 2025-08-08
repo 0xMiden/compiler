@@ -242,5 +242,18 @@ pub fn test_basic_wallet_p2id_local() {
             transfer_amount,
         )
         .await;
+
+        eprintln!(
+            "\n=== Step 7: Checking Alice's account reflects the new token amount after sending \
+             to Bob ==="
+        );
+
+        assert_account_has_fungible_asset(
+            &mut client,
+            alice_account.id(),
+            faucet_account.id(),
+            mint_amount - transfer_amount,
+        )
+        .await;
     });
 }
