@@ -7,26 +7,29 @@ use miden_client::{
         component::{BasicFungibleFaucet, BasicWallet, RpoFalcon512},
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
     },
-    asset::TokenSymbol,
+    asset::{FungibleAsset, TokenSymbol},
     auth::AuthSecretKey,
     builder::ClientBuilder,
-    crypto::{FeltRng, SecretKey},
+    crypto::{FeltRng, RpoRandomCoin, SecretKey},
     keystore::FilesystemKeyStore,
     note::{
         Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
         NoteType,
     },
     rpc::{Endpoint, TonicRpcClient},
+    transaction::{TransactionRequestBuilder, TransactionScript},
     utils::Deserializable,
     Client, ClientError,
 };
 use miden_core::{Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
+use miden_mast_package::Package;
 use miden_objects::{
     account::{
         AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
     },
     asset::Asset,
+    transaction::TransactionId,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, RngCore};
@@ -91,7 +94,7 @@ impl Default for AccountCreationConfig {
 pub async fn create_account_with_component(
     client: &mut Client,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
-    package: Arc<miden_mast_package::Package>,
+    package: Arc<Package>,
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
     let account_component = match package.account_component_metadata_bytes.as_deref() {
@@ -168,7 +171,7 @@ pub async fn create_fungible_faucet_account(
 }
 
 /// Helper to compile a Rust package to Miden
-pub fn compile_rust_package(package_path: &str, release: bool) -> Arc<miden_mast_package::Package> {
+pub fn compile_rust_package(package_path: &str, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(package_path, config, []);
 
@@ -206,7 +209,7 @@ impl Default for NoteCreationConfig {
 /// Helper to create a note from a compiled package
 pub fn create_note_from_package(
     client: &mut Client,
-    package: Arc<miden_mast_package::Package>,
+    package: Arc<Package>,
     sender_id: AccountId,
     config: NoteCreationConfig,
 ) -> Note {
@@ -273,4 +276,135 @@ pub async fn assert_account_has_fungible_asset(
             panic!("Account does not contain a fungible asset from faucet {expected_faucet_id}");
         }
     }
+}
+
+/// Configuration for sending assets between accounts
+pub struct AssetTransferConfig {
+    pub note_type: NoteType,
+    pub tag: NoteTag,
+    pub execution_hint: NoteExecutionHint,
+    pub aux: Felt,
+}
+
+impl Default for AssetTransferConfig {
+    fn default() -> Self {
+        Self {
+            note_type: NoteType::Public,
+            tag: NoteTag::for_local_use_case(0, 0).unwrap(),
+            execution_hint: NoteExecutionHint::always(),
+            aux: Felt::ZERO,
+        }
+    }
+}
+
+/// Helper function to send assets from one account to another using a transaction script
+///
+/// This function creates a p2id note for the recipient and executes a transaction script
+/// to send the specified asset amount.
+///
+/// # Arguments
+/// * `client` - The client instance
+/// * `sender_account_id` - The account ID of the sender
+/// * `recipient_account_id` - The account ID of the recipient
+/// * `asset` - The fungible asset to transfer
+/// * `note_package` - The compiled note package (e.g., p2id-note)
+/// * `tx_script_package` - The compiled transaction script package
+/// * `config` - Optional configuration for the transfer
+///
+/// # Returns
+/// A tuple containing the transaction ID and the created Note for the recipient
+pub async fn send_asset_to_account(
+    client: &mut Client,
+    sender_account_id: AccountId,
+    recipient_account_id: AccountId,
+    asset: FungibleAsset,
+    note_package: Arc<Package>,
+    tx_script_package: Arc<Package>,
+    config: Option<AssetTransferConfig>,
+) -> Result<(TransactionId, Note), ClientError> {
+    let config = config.unwrap_or_default();
+
+    // Create the p2id note for the recipient
+    let p2id_note = create_note_from_package(
+        client,
+        note_package,
+        sender_account_id,
+        NoteCreationConfig {
+            assets: miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap(),
+            inputs: vec![recipient_account_id.prefix().as_felt(), recipient_account_id.suffix()],
+            note_type: config.note_type,
+            tag: config.tag,
+            execution_hint: config.execution_hint,
+            aux: config.aux,
+        },
+    );
+
+    let tx_script_program = tx_script_package.unwrap_program();
+    let tx_script = TransactionScript::from_parts(
+        tx_script_program.mast_forest().clone(),
+        tx_script_program.entrypoint(),
+    );
+
+    // Prepare note recipient
+    let program_hash = tx_script_program.hash();
+    let serial_num = RpoRandomCoin::new(program_hash.into()).draw_word();
+    let inputs = NoteInputs::new(vec![
+        recipient_account_id.prefix().as_felt(),
+        recipient_account_id.suffix(),
+    ])
+    .unwrap();
+    let note_recipient = NoteRecipient::new(serial_num, p2id_note.script().clone(), inputs);
+
+    // Prepare commitment data
+    let mut input: Vec<Felt> = vec![
+        config.tag.into(),
+        config.aux,
+        config.note_type.into(),
+        config.execution_hint.into(),
+    ];
+    let recipient_digest: [Felt; 4] = note_recipient.digest().into();
+    input.extend(recipient_digest);
+
+    let asset_arr: [Felt; 4] = asset.into();
+    input.extend(asset_arr);
+
+    let mut commitment: [Felt; 4] = miden_core::crypto::hash::Rpo256::hash_elements(&input).into();
+
+    assert_eq!(input.len() % 4, 0, "input needs to be word-aligned");
+
+    // Prepare advice map
+    let mut advice_map = std::collections::BTreeMap::new();
+    advice_map.insert(commitment.into(), input.clone());
+
+    let recipients = vec![note_recipient.clone()];
+
+    // NOTE: passed on the stack reversed
+    commitment.reverse();
+
+    let tx_request = TransactionRequestBuilder::new()
+        .custom_script(tx_script)
+        .script_arg(commitment)
+        .expected_output_recipients(recipients)
+        .extend_advice_map(advice_map)
+        .build()
+        .unwrap();
+
+    let tx = client.new_transaction(sender_account_id, tx_request).await?;
+    let tx_id = tx.executed_transaction().id();
+
+    client.submit_transaction(tx).await?;
+
+    // Create the Note that the recipient will consume
+    let assets = miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap();
+    let metadata = NoteMetadata::new(
+        sender_account_id,
+        config.note_type,
+        config.tag,
+        config.execution_hint,
+        config.aux,
+    )
+    .unwrap();
+    let recipient_note = Note::new(assets, metadata, note_recipient);
+
+    Ok((tx_id, recipient_note))
 }

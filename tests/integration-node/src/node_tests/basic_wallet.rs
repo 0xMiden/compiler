@@ -2,14 +2,10 @@
 
 use miden_client::{
     asset::{FungibleAsset, TokenSymbol},
-    crypto::{FeltRng, RpoRandomCoin},
-    note::{
-        Note, NoteAssets, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteTag,
-        NoteType,
-    },
-    transaction::{OutputNote, TransactionRequestBuilder, TransactionScript},
+    note::NoteAssets,
+    transaction::{OutputNote, TransactionRequestBuilder},
 };
-use miden_core::{utils::Serializable, Felt, FieldElement};
+use miden_core::{utils::Serializable, Felt};
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;
@@ -151,77 +147,23 @@ pub fn test_basic_wallet_p2id_local() {
         let transfer_amount = 10_000u64; // 10,000 tokens
         let transfer_asset = FungibleAsset::new(faucet_account.id(), transfer_amount).unwrap();
 
-        // Create the p2id note from Alice to Bob
-        let p2id_note = create_note_from_package(
+        let (alice_tx_id, bob_note) = send_asset_to_account(
             &mut client,
-            note_package,
             alice_account.id(),
-            NoteCreationConfig {
-                assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-                inputs: vec![bob_account.id().prefix().as_felt(), bob_account.id().suffix()],
-                ..Default::default()
-            },
-        );
-        eprintln!("P2ID note hash: {:?}", p2id_note.id().to_hex());
+            bob_account.id(),
+            transfer_asset,
+            note_package.clone(),
+            tx_script_package,
+            None, // Use default configuration
+        )
+        .await
+        .unwrap();
 
-        let tx_script_program = tx_script_package.unwrap_program();
-        let tx_script = TransactionScript::from_parts(
-            tx_script_program.mast_forest().clone(),
-            tx_script_program.entrypoint(),
-        );
-
-        let tag = NoteTag::for_local_use_case(0, 0).unwrap();
-        let aux = Felt::ZERO;
-        let note_type = NoteType::Public;
-        let execution_hint = NoteExecutionHint::always();
-
-        let program_hash = tx_script_program.hash();
-        let serial_num = RpoRandomCoin::new(program_hash.into()).draw_word();
-        let inputs =
-            NoteInputs::new(vec![bob_account.id().prefix().as_felt(), bob_account.id().suffix()])
-                .unwrap();
-        let note_recipient = NoteRecipient::new(serial_num, p2id_note.script().clone(), inputs);
-        let mut input: Vec<Felt> = vec![tag.into(), aux, note_type.into(), execution_hint.into()];
-        let recipient: [Felt; 4] = note_recipient.digest().into();
-        input.extend(recipient);
-
-        let asset_arr: [Felt; 4] = transfer_asset.into();
-        input.extend(asset_arr);
-
-        let mut commitment: [Felt; 4] =
-            miden_core::crypto::hash::Rpo256::hash_elements(&input).into();
-
-        let mut advice_map = std::collections::BTreeMap::new();
-        // NOTE: input must be word-sized
-        advice_map.insert(commitment.into(), input.clone());
-
-        let recipients = vec![note_recipient.clone()];
-
-        // NOTE: passed on the stack reversed
-        commitment.reverse();
-
-        let alice_tx_request = TransactionRequestBuilder::new()
-            .custom_script(tx_script)
-            .script_arg(commitment)
-            .expected_output_recipients(recipients)
-            .extend_advice_map(advice_map)
-            .build()
-            .unwrap();
-
-        let alice_tx = client.new_transaction(alice_account.id(), alice_tx_request).await.unwrap();
-
-        let alice_tx_id = alice_tx.executed_transaction().id();
         eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
-
-        client.submit_transaction(alice_tx).await.unwrap();
 
         // Step 5: Bob attempts to consume the p2id note
         eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
 
-        let assets = NoteAssets::new(vec![transfer_asset.into()]).unwrap();
-        let metadata =
-            NoteMetadata::new(alice_account.id(), note_type, tag, execution_hint, aux).unwrap();
-        let bob_note = Note::new(assets, metadata, note_recipient);
         let consume_request = TransactionRequestBuilder::new()
             .unauthenticated_input_notes([(bob_note, None)])
             .build()
