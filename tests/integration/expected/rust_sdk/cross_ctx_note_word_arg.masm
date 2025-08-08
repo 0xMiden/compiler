@@ -1,10 +1,10 @@
-# mod miden:base/script@1.0.0
+# mod miden:base/note-script@1.0.0
 
-export.script
-    exec.::miden:base/script@1.0.0::init
+export.note-script
+    exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::cross_ctx_note_word_arg::miden:base/script@1.0.0#script
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::miden:base/note-script@1.0.0#note-script
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -34,7 +34,7 @@ export.init
     mem_store.278537
 end
 
-# mod miden:base/script@1.0.0::cross_ctx_note_word_arg
+# mod miden:base/note-script@1.0.0::cross_ctx_note_word_arg
 
 proc.cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
     trace.240
@@ -52,14 +52,14 @@ proc.cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/script@1.0.0#script
+export.miden:base/note-script@1.0.0#note-script
     drop
     drop
     drop
     drop
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::cross_ctx_note_word_arg::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
     push.7
@@ -87,7 +87,7 @@ export.miden:base/script@1.0.0#script
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
     trace.252
     nop
     push.458760
@@ -134,7 +134,7 @@ proc.wit_bindgen_rt::run_ctors_once
         nop
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::cross_ctx_note_word_arg::__wasm_call_ctors
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::__wasm_call_ctors
         trace.252
         nop
         push.1

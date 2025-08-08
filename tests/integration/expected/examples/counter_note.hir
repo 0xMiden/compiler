@@ -1,4 +1,4 @@
-builtin.component miden:base/script@1.0.0 {
+builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @counter_note {
         private builtin.function @counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() -> felt {
         ^block3:
@@ -22,12 +22,12 @@ builtin.component miden:base/script@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/script@1.0.0#script(v2: felt, v3: felt, v4: felt, v5: felt) {
+        public builtin.function @miden:base/note-script@1.0.0#note-script(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block14(v2: felt, v3: felt, v4: felt, v5: felt):
-            hir.exec @miden:base/script@1.0.0/counter_note/wit_bindgen_rt::run_ctors_once()
-            v7 = hir.exec @miden:base/script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
-            v8 = hir.exec @miden:base/script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0() : felt
-            v12 = hir.exec @miden:base/script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
+            hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen_rt::run_ctors_once()
+            v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
+            v8 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0() : felt
+            v12 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
             v40 = arith.constant 1 : felt;
             v11 = arith.add v7, v40 : felt #[overflow = unchecked];
             hir.assert_eq v12, v11;
@@ -36,7 +36,7 @@ builtin.component miden:base/script@1.0.0 {
 
         private builtin.function @wit_bindgen_rt::run_ctors_once() {
         ^block16:
-            v14 = builtin.global_symbol @miden:base/script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v14 = builtin.global_symbol @miden:base/note-script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v15 = hir.bitcast v14 : ptr<byte, i32>;
             v16 = hir.load v15 : i32;
             v17 = arith.constant 1048628 : i32;
@@ -53,10 +53,10 @@ builtin.component miden:base/script@1.0.0 {
                 scf.yield ;
             } else {
             ^block19:
-                v26 = builtin.global_symbol @miden:base/script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v26 = builtin.global_symbol @miden:base/note-script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
                 v27 = hir.bitcast v26 : ptr<byte, i32>;
                 v28 = hir.load v27 : i32;
-                hir.exec @miden:base/script@1.0.0/counter_note/__wasm_call_ctors()
+                hir.exec @miden:base/note-script@1.0.0/counter_note/__wasm_call_ctors()
                 v42 = arith.constant 1 : u8;
                 v44 = arith.constant 1048628 : i32;
                 v30 = arith.add v28, v44 : i32 #[overflow = wrapping];
@@ -79,9 +79,9 @@ builtin.component miden:base/script@1.0.0 {
         builtin.segment @1048576 = 0x00000000000000000000000000000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
-    public builtin.function @script(v36: felt, v37: felt, v38: felt, v39: felt) {
+    public builtin.function @note-script(v36: felt, v37: felt, v38: felt, v39: felt) {
     ^block20(v36: felt, v37: felt, v38: felt, v39: felt):
-        hir.exec @miden:base/script@1.0.0/counter_note/miden:base/script@1.0.0#script(v36, v37, v38, v39)
+        hir.exec @miden:base/note-script@1.0.0/counter_note/miden:base/note-script@1.0.0#note-script(v36, v37, v38, v39)
         builtin.ret ;
     };
 };

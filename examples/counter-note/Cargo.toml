@@ -39,6 +39,9 @@ overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
 
+[package.metadata.miden]
+project-kind = "note-script"
+
 # Miden dependencies for cargo-miden build/linking
 [package.metadata.miden.dependencies]
 "miden:counter-contract" = { path = "../counter-contract" }

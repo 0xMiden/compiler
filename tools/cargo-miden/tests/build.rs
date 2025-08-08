@@ -359,7 +359,11 @@ fn build_new_project_from_template(template: &str) -> Package {
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
     let output = run(args, OutputType::Masm)
-        .expect("Failed to compile with the dev profile")
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to compile with the dev profile for template: {template} \nwith error: {e}"
+            )
+        })
         .expect("'cargo miden build' should return Some(CommandOutput)");
     let expected_masm_path = match output {
         cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {

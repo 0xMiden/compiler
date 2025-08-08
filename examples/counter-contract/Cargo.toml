@@ -17,6 +17,7 @@ wit-bindgen-rt = "0.28"
 package = "miden:counter-contract"
 
 [package.metadata.miden]
+project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
 
 [package.metadata.component.target.dependencies]

@@ -1,10 +1,10 @@
-# mod miden:base/script@1.0.0
+# mod miden:base/note-script@1.0.0
 
-export.script
-    exec.::miden:base/script@1.0.0::init
+export.note-script
+    exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::miden:base/script@1.0.0#script
+    exec.::miden:base/note-script@1.0.0::p2id::miden:base/note-script@1.0.0#note-script
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -34,7 +34,7 @@ export.init
     mem_store.278561
 end
 
-# mod miden:base/script@1.0.0::p2id
+# mod miden:base/note-script@1.0.0::p2id
 
 proc.p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
     trace.240
@@ -116,7 +116,7 @@ proc.__rustc::__rust_alloc
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/note-script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -144,7 +144,7 @@ proc.__rustc::__rust_alloc_zeroed
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/note-script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -213,7 +213,7 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-export.miden:base/script@1.0.0#script
+export.miden:base/note-script@1.0.0#note-script
     drop
     drop
     drop
@@ -240,7 +240,7 @@ export.miden:base/script@1.0.0#script
     nop
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/note-script@1.0.0::p2id::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
     push.16
@@ -249,7 +249,7 @@ export.miden:base/script@1.0.0#script
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::note::get_inputs
+    exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::get_inputs
     trace.252
     nop
     push.24
@@ -341,7 +341,7 @@ export.miden:base/script@1.0.0#script
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::account::get_id
+        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::account::get_id
         trace.252
         nop
         push.12
@@ -387,7 +387,7 @@ export.miden:base/script@1.0.0#script
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::note::get_assets
+        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::get_assets
         trace.252
         nop
         push.36
@@ -535,7 +535,7 @@ export.miden:base/script@1.0.0#script
                 swap.2
                 trace.240
                 nop
-                exec.::miden:base/script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+                exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
                 trace.252
                 nop
                 push.16
@@ -642,7 +642,7 @@ export.miden:base/script@1.0.0#script
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
         trace.252
         nop
         push.4
@@ -655,7 +655,7 @@ export.miden:base/script@1.0.0#script
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
         trace.252
         nop
         push.48
@@ -724,7 +724,7 @@ proc.wit_bindgen_rt::run_ctors_once
         nop
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::__wasm_call_ctors
+        exec.::miden:base/note-script@1.0.0::p2id::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -784,7 +784,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
         movup.2
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::core::ptr::alignment::Alignment::max
+        exec.::miden:base/note-script@1.0.0::p2id::core::ptr::alignment::Alignment::max
         trace.252
         nop
         push.0
@@ -971,7 +971,7 @@ proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
     movdn.3
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::try_allocate_in
     trace.252
     nop
     push.8
@@ -1098,7 +1098,7 @@ proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::handle_error
+        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -1133,7 +1133,7 @@ proc.miden_base_sys::bindings::account::get_id
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::account::extern_account_get_id
+    exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::account::extern_account_get_id
     trace.252
     nop
     push.8
@@ -1220,7 +1220,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1263,7 +1263,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     u32shr
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::note::extern_note_get_inputs
+    exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::extern_note_get_inputs
     trace.252
     nop
     push.8
@@ -1367,7 +1367,7 @@ proc.miden_base_sys::bindings::note::get_assets
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1410,7 +1410,7 @@ proc.miden_base_sys::bindings::note::get_assets
     u32shr
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::miden_base_sys::bindings::note::extern_note_get_assets
+    exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::note::extern_note_get_assets
     trace.252
     nop
     push.8
@@ -1505,7 +1505,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::current_memory
     trace.252
     nop
     push.8
@@ -1571,7 +1571,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
         movdn.2
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -1694,7 +1694,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
+                    exec.::miden:base/note-script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1721,7 +1721,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -2030,7 +2030,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
     trace.252
     nop
     push.12
@@ -2124,7 +2124,7 @@ proc.alloc::alloc::Global::alloc_impl
     else
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -2136,7 +2136,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::miden:base/script@1.0.0::p2id::__rustc::__rust_alloc_zeroed
+            exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -2144,7 +2144,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::miden:base/script@1.0.0::p2id::__rustc::__rust_alloc
+            exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -2328,7 +2328,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::p2id::__rustc::__rust_dealloc
+        exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_dealloc
         trace.252
         nop
     end

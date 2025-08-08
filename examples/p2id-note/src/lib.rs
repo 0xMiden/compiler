@@ -23,14 +23,14 @@ bindings::export!(MyNote with_types_in bindings);
 mod bindings;
 
 use bindings::{
-    exports::miden::base::script::Guest, miden::basic_wallet::basic_wallet::receive_asset,
+    exports::miden::base::note_script::Guest, miden::basic_wallet::basic_wallet::receive_asset,
 };
 use miden::*;
 
 struct MyNote;
 
 impl Guest for MyNote {
-    fn script(_arg: Word) {
+    fn note_script(_arg: Word) {
         let inputs = miden::note::get_inputs();
         let target_account_id_prefix = inputs[0];
         let target_account_id_suffix = inputs[1];

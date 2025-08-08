@@ -146,14 +146,22 @@ interface core-types {
 }
 
 
-/// The script interface that is expected to be implemented by the script (note script, tx script).
-interface script {
+/// The note script interface that is expected to be implemented by note scripts.
+interface note-script {
     use core-types.{word};
 
-    script: func(arg: word);
+    note-script: func(arg: word);
+}
+
+/// The transaction script interface that is expected to be implemented by transaction scripts.
+interface transaction-script {
+    use core-types.{word};
+
+    tx-script: func(arg: word);
 }
 
 world base-world {
     export core-types;
-    export script;
+    export note-script;
+    export transaction-script;
 }

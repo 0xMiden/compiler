@@ -19,6 +19,9 @@ wit-bindgen-rt = "0.28"
 [package.metadata.component]
 package = "miden:basic-wallet-tx-script"
 
+[package.metadata.miden]
+project-kind = "transaction-script"
+
 # Miden dependencies for cargo-miden build/linking
 [package.metadata.miden.dependencies]
 "miden:basic-wallet" = { path = "../basic-wallet" }

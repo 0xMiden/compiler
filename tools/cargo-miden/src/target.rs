@@ -5,39 +5,53 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use midenc_session::{RollupTarget, TargetEnv};
-
-/// Represents whether the Cargo project is a Miden program or a library.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectType {
-    /// Miden program
-    Program,
-    /// Miden library
-    Library,
-}
+use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 
 /// Detects the target environment based on Cargo metadata.
-pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> TargetEnv {
+pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> Result<TargetEnv> {
     let Some(root_pkg) = metadata.root_package() else {
-        return TargetEnv::Base;
+        return Ok(TargetEnv::Base);
     };
     let Some(meta_obj) = root_pkg.metadata.as_object() else {
-        return TargetEnv::Base;
+        return Ok(TargetEnv::Base);
     };
     let Some(miden_meta) = meta_obj.get("miden") else {
-        return TargetEnv::Base;
+        return Ok(TargetEnv::Base);
     };
     let Some(miden_meta_obj) = miden_meta.as_object() else {
-        return TargetEnv::Base;
+        return Ok(TargetEnv::Base);
     };
-    if miden_meta_obj.contains_key("supported-types") {
-        TargetEnv::Rollup {
+
+    // project-kind field is required
+    let Some(project_kind) = miden_meta_obj.get("project-kind") else {
+        bail!(
+            "Missing required field 'project-kind' in [package.metadata.miden]. Must be one of: \
+             'account', 'note-script', or 'transaction-script'"
+        );
+    };
+
+    let Some(kind_str) = project_kind.as_str() else {
+        bail!(
+            "Field 'project-kind' in [package.metadata.miden] must be a string. Must be one of: \
+             'account', 'note-script', or 'transaction-script'"
+        );
+    };
+
+    match kind_str {
+        "account" => Ok(TargetEnv::Rollup {
             target: RollupTarget::Account,
-        }
-    } else {
-        TargetEnv::Rollup {
-            target: RollupTarget::Script,
-        }
+        }),
+        "note-script" => Ok(TargetEnv::Rollup {
+            target: RollupTarget::NoteScript,
+        }),
+        "transaction-script" => Ok(TargetEnv::Rollup {
+            target: RollupTarget::TransactionScript,
+        }),
+        _ => bail!(
+            "Invalid value '{}' for 'project-kind' in [package.metadata.miden]. Must be one of: \
+             'account', 'note-script', or 'transaction-script'",
+            kind_str
+        ),
     }
 }
 
@@ -47,7 +61,7 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
         TargetEnv::Base => ProjectType::Program,
         TargetEnv::Rollup { target } => match target {
             RollupTarget::Account => ProjectType::Library,
-            RollupTarget::Script => ProjectType::Program,
+            RollupTarget::NoteScript | RollupTarget::TransactionScript => ProjectType::Program,
         },
         TargetEnv::Emu => {
             panic!("Emulator target environment is not supported for project type detection",)
@@ -56,9 +70,9 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
 }
 
 /// Detect the project type
-pub fn detect_project_type(metadata: &cargo_metadata::Metadata) -> ProjectType {
-    let target_env = detect_target_environment(metadata);
-    target_environment_to_project_type(target_env)
+pub fn detect_project_type(metadata: &cargo_metadata::Metadata) -> Result<ProjectType> {
+    let target_env = detect_target_environment(metadata)?;
+    Ok(target_environment_to_project_type(target_env))
 }
 
 pub fn install_wasm32_wasip1() -> Result<()> {

@@ -15,10 +15,10 @@ pub use commands::example_project::WIT_DEPS_PATH;
 use commands::{ExampleCommand, NewCommand};
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
-use midenc_session::{RollupTarget, TargetEnv};
+use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 use non_component::run_cargo_command_for_non_component;
 pub use target::{
-    detect_project_type, detect_target_environment, target_environment_to_project_type, ProjectType,
+    detect_project_type, detect_target_environment, target_environment_to_project_type,
 };
 
 mod cargo_component;
@@ -170,7 +170,7 @@ where
             // dbg!(&cargo_args);
             let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
 
-            let target_env = target::detect_target_environment(&metadata);
+            let target_env = target::detect_target_environment(&metadata)?;
             let project_type = target::target_environment_to_project_type(target_env);
 
             let mut packages = load_component_metadata(
@@ -358,10 +358,18 @@ fn midenc_flags_from_target(
                     midenc_args.push("rollup:account".into());
                     midenc_args.push("--lib".into());
                 }
-                RollupTarget::Script => {
-                    midenc_args.push("rollup:script".into());
+                RollupTarget::NoteScript => {
+                    midenc_args.push("rollup:note-script".into());
                     midenc_args.push("--exe".into());
-                    midenc_args.push("--entrypoint=miden:base/script@1.0.0::script".to_string())
+                    midenc_args
+                        .push("--entrypoint=miden:base/note-script@1.0.0::note-script".to_string())
+                }
+                RollupTarget::TransactionScript => {
+                    midenc_args.push("rollup:transaction-script".into());
+                    midenc_args.push("--exe".into());
+                    midenc_args.push(
+                        "--entrypoint=miden:base/transaction-script@1.0.0::tx-script".to_string(),
+                    )
                 }
             }
         }

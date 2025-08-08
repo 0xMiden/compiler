@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use cargo_metadata::MetadataCommand;
-use cargo_miden::ProjectType;
-use midenc_session::{RollupTarget, TargetEnv};
+use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 
 #[test]
 fn test_project_type_detection() {
@@ -21,7 +20,7 @@ fn test_project_type_detection() {
             "counter-note",
             ProjectType::Program,
             TargetEnv::Rollup {
-                target: RollupTarget::Script,
+                target: RollupTarget::NoteScript,
             },
         ),
         ("fibonacci", ProjectType::Program, TargetEnv::Base),
@@ -62,7 +61,13 @@ fn test_project_type_detection() {
             });
 
         // Test target environment detection
-        let detected_env = cargo_miden::detect_target_environment(&metadata);
+        let detected_env = cargo_miden::detect_target_environment(&metadata).unwrap_or_else(|e| {
+            panic!(
+                "Failed to detect target environment for {}: {}",
+                example_manifest_path.display(),
+                e
+            )
+        });
         assert_eq!(
             detected_env,
             expected_env,
@@ -75,7 +80,9 @@ fn test_project_type_detection() {
         );
 
         // Test project type detection
-        let detected_type = cargo_miden::detect_project_type(&metadata);
+        let detected_type = cargo_miden::detect_project_type(&metadata).unwrap_or_else(|e| {
+            panic!("Failed to detect project type for {}: {}", example_manifest_path.display(), e)
+        });
         assert_eq!(
             detected_type,
             expected_type,

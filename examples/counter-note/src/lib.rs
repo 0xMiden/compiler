@@ -22,13 +22,13 @@ bindings::export!(IncrementCounterNote with_types_in bindings);
 
 mod bindings;
 
-use bindings::{exports::miden::base::script::Guest, miden::counter_contract::counter};
+use bindings::{exports::miden::base::note_script::Guest, miden::counter_contract::counter};
 use miden::*;
 
 struct IncrementCounterNote;
 
 impl Guest for IncrementCounterNote {
-    fn script(_arg: Word) {
+    fn note_script(_arg: Word) {
         let initial_value = counter::get_count();
         counter::increment_count();
         let expected_value = initial_value + Felt::from_u32(1);

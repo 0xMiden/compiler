@@ -6,5 +6,5 @@ world basic-wallet-tx-script-world {
     include miden:core-base/base@1.0.0;
 
     import miden:basic-wallet/basic-wallet@1.0.0;
-    export miden:base/script@1.0.0;
+    export miden:base/transaction-script@1.0.0;
 }

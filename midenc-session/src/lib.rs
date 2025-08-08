@@ -62,7 +62,7 @@ pub use self::{
 pub use self::{duration::HumanDuration, emit::EmitExt, statistics::Statistics};
 
 /// The type of project being compiled
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ProjectType {
     /// Compile a Miden program that can be run on the Miden VM
     #[default]
@@ -463,8 +463,11 @@ impl FromStr for TargetEnv {
             "rollup:account" => Ok(Self::Rollup {
                 target: RollupTarget::Account,
             }),
-            "rollup:script" => Ok(Self::Rollup {
-                target: RollupTarget::Script,
+            "rollup:note-script" => Ok(Self::Rollup {
+                target: RollupTarget::NoteScript,
+            }),
+            "rollup:transaction-script" => Ok(Self::Rollup {
+                target: RollupTarget::TransactionScript,
             }),
             _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
         }
@@ -476,14 +479,16 @@ impl FromStr for TargetEnv {
 pub enum RollupTarget {
     #[default]
     Account,
-    Script,
+    NoteScript,
+    TransactionScript,
 }
 
 impl fmt::Display for RollupTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Account => f.write_str("account"),
-            Self::Script => f.write_str("script"),
+            Self::NoteScript => f.write_str("note-script"),
+            Self::TransactionScript => f.write_str("transaction-script"),
         }
     }
 }

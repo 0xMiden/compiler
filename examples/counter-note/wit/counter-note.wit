@@ -6,5 +6,5 @@ world counter-note-world {
     include miden:core-base/base@1.0.0;
 
     import miden:counter-contract/counter@0.1.0;
-    export miden:base/script@1.0.0;
+    export miden:base/note-script@1.0.0;
 }

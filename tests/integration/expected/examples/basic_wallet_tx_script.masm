@@ -1,10 +1,10 @@
-# mod miden:base/script@1.0.0
+# mod miden:base/transaction-script@1.0.0
 
-export.script
-    exec.::miden:base/script@1.0.0::init
+export.tx-script
+    exec.::miden:base/transaction-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::miden:base/script@1.0.0#script
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden:base/transaction-script@1.0.0#tx-script
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -34,7 +34,7 @@ export.init
     mem_store.278569
 end
 
-# mod miden:base/script@1.0.0::basic_wallet_tx_script
+# mod miden:base/transaction-script@1.0.0::basic_wallet_tx_script
 
 proc.miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
     trace.240
@@ -67,7 +67,7 @@ end
 proc.core::slice::index::slice_end_index_len_fail
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
     trace.252
     nop
     push.0
@@ -171,7 +171,7 @@ proc.<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_end_index_len_fail
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_end_index_len_fail
         trace.252
         nop
         push.0
@@ -198,7 +198,7 @@ proc.__rustc::__rust_alloc
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -226,7 +226,7 @@ proc.__rustc::__rust_alloc_zeroed
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -295,7 +295,7 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-export.miden:base/script@1.0.0#script
+export.miden:base/transaction-script@1.0.0#tx-script
     push.1114272
     u32divmod.4
     swap.1
@@ -318,7 +318,7 @@ export.miden:base/script@1.0.0#script
     nop
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::wit_bindgen_rt::run_ctors_once
     trace.252
     nop
     dup.1
@@ -388,7 +388,7 @@ export.miden:base/script@1.0.0#script
     swap.2
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::try_allocate_in
     trace.252
     nop
     push.68
@@ -475,7 +475,7 @@ export.miden:base/script@1.0.0#script
         swap.2
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::handle_error
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -515,7 +515,7 @@ export.miden:base/script@1.0.0#script
         swap.4
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
         trace.252
         nop
         drop
@@ -676,7 +676,7 @@ export.miden:base/script@1.0.0#script
             u32wrapping_add
             trace.240
             nop
-            exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
             trace.252
             nop
             push.12
@@ -809,7 +809,7 @@ export.miden:base/script@1.0.0#script
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
                 trace.252
                 nop
                 push.64
@@ -820,7 +820,7 @@ export.miden:base/script@1.0.0#script
                 movdn.5
                 trace.240
                 nop
-                exec.::miden:base/script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::tx::create_note
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::tx::create_note
                 trace.252
                 nop
                 push.1048712
@@ -836,7 +836,7 @@ export.miden:base/script@1.0.0#script
                 dup.5
                 trace.240
                 nop
-                exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
                 trace.252
                 nop
                 push.4
@@ -959,7 +959,7 @@ export.miden:base/script@1.0.0#script
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
                     trace.252
                     nop
                     push.64
@@ -1039,7 +1039,7 @@ export.miden:base/script@1.0.0#script
                     swap.3
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
                     trace.252
                     nop
                     push.4
@@ -1052,7 +1052,7 @@ export.miden:base/script@1.0.0#script
                     swap.1
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::deallocate
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::deallocate
                     trace.252
                     nop
                     push.80
@@ -1129,7 +1129,7 @@ proc.wit_bindgen_rt::run_ctors_once
         nop
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::__wasm_call_ctors
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -1189,7 +1189,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
         movup.2
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::core::ptr::alignment::Alignment::max
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::ptr::alignment::Alignment::max
         trace.252
         nop
         push.0
@@ -1416,7 +1416,7 @@ proc.miden_base_sys::bindings::tx::create_note
     swap.4
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::tx::extern_tx_create_note
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::tx::extern_tx_create_note
     trace.252
     nop
 end
@@ -1518,7 +1518,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::current_memory
     trace.252
     nop
     push.8
@@ -1584,7 +1584,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
         movdn.2
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -1707,7 +1707,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1734,7 +1734,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -2043,7 +2043,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     swap.1
     trace.240
     nop
-    exec.::miden:base/script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
     trace.252
     nop
     push.12
@@ -2137,7 +2137,7 @@ proc.alloc::alloc::Global::alloc_impl
     else
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -2149,7 +2149,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::miden:base/script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc_zeroed
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -2157,7 +2157,7 @@ proc.alloc::alloc::Global::alloc_impl
             dup.2
             trace.240
             nop
-            exec.::miden:base/script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -2341,7 +2341,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         swap.1
         trace.240
         nop
-        exec.::miden:base/script@1.0.0::basic_wallet_tx_script::__rustc::__rust_dealloc
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_dealloc
         trace.252
         nop
     end
