@@ -30,6 +30,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 stdlib::mem::PIPE_WORDS_TO_MEMORY | stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => {
                     Some(TransformStrategy::ReturnViaPointer)
                 }
+                stdlib::mem::PIPE_PREIMAGE_TO_MEMORY => Some(TransformStrategy::NoTransform),
                 _ => None,
             },
             symbols::Crypto => match components.next()?.as_symbol_name() {

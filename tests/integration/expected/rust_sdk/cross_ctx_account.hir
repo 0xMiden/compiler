@@ -15,7 +15,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v3 = builtin.global_symbol @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/GOT.data.internal.__memory_base : ptr<byte, u8>
             v4 = hir.bitcast v3 : ptr<byte, i32>;
             v5 = hir.load v4 : i32;
-            v6 = arith.constant 1048600 : i32;
+            v6 = arith.constant 1048604 : i32;
             v7 = arith.add v5, v6 : i32 #[overflow = wrapping];
             hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/wit_bindgen_rt::run_ctors_once()
             v8 = hir.bitcast v7 : u32;
@@ -43,7 +43,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v23 = builtin.global_symbol @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/GOT.data.internal.__memory_base : ptr<byte, u8>
             v24 = hir.bitcast v23 : ptr<byte, i32>;
             v25 = hir.load v24 : i32;
-            v26 = arith.constant 1048604 : i32;
+            v26 = arith.constant 1048608 : i32;
             v27 = arith.add v25, v26 : i32 #[overflow = wrapping];
             v28 = hir.bitcast v27 : u32;
             v29 = hir.int_to_ptr v28 : ptr<byte, u8>;
@@ -62,7 +62,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v37 = hir.load v36 : i32;
                 hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__wasm_call_ctors()
                 v49 = arith.constant 1 : u8;
-                v51 = arith.constant 1048604 : i32;
+                v51 = arith.constant 1048608 : i32;
                 v39 = arith.add v37, v51 : i32 #[overflow = wrapping];
                 v43 = hir.bitcast v39 : u32;
                 v44 = hir.int_to_ptr v43 : ptr<byte, u8>;
@@ -80,7 +80,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x0000002a000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x0000002a00000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @process-felt(v45: felt) -> felt {

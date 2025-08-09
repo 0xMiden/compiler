@@ -4,7 +4,10 @@
 
 use alloc::vec::Vec;
 
-use crate::{assert_eq, felt, Digest, Felt, Word};
+use crate::{
+    felt,
+    intrinsics::{assert_eq, Digest, Felt, Word},
+};
 
 #[link(wasm_import_module = "miden:core-import/stdlib-crypto-hashes-blake3@1.0.0")]
 extern "C" {

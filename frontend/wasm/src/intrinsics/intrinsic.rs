@@ -4,7 +4,7 @@ use midenc_hir::{
     FunctionType, SymbolNameComponent, SymbolPath, Type,
 };
 
-use super::{crypto, debug, felt, mem};
+use super::{advice, crypto, debug, felt, mem};
 
 /// Error raised when an attempt is made to use or load an unrecognized intrinsic
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -26,6 +26,8 @@ pub enum Intrinsic {
     Felt(Symbol),
     /// A cryptographic intrinsic
     Crypto(Symbol),
+    /// An advice intrinsic
+    Advice(Symbol),
 }
 
 /// Attempt to recognize an intrinsic function from the given [SymbolPath].
@@ -62,8 +64,9 @@ impl TryFrom<&SymbolPath> for Intrinsic {
         match kind {
             symbols::Debug => Ok(Self::Debug(function)),
             symbols::Mem => Ok(Self::Mem(function)),
-            symbols::Felt => Ok(Self::Felt(function)),
+            symbols::FeltModule => Ok(Self::Felt(function)),
             symbols::Crypto => Ok(Self::Crypto(function)),
+            symbols::Advice => Ok(Self::Advice(function)),
             _ => Err(UnknownIntrinsicError(path.clone())),
         }
     }
@@ -83,8 +86,9 @@ impl Intrinsic {
         match self {
             Self::Debug(_) => symbols::Debug,
             Self::Mem(_) => symbols::Mem,
-            Self::Felt(_) => symbols::Felt,
+            Self::Felt(_) => symbols::FeltModule,
             Self::Crypto(_) => symbols::Crypto,
+            Self::Advice(_) => symbols::Advice,
         }
     }
 
@@ -95,6 +99,7 @@ impl Intrinsic {
             Self::Mem(_) => SymbolPath::from_iter(mem::MODULE_PREFIX.iter().copied()),
             Self::Felt(_) => SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()),
             Self::Crypto(_) => SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()),
+            Self::Advice(_) => SymbolPath::from_iter(advice::MODULE_PREFIX.iter().copied()),
         }
     }
 
@@ -104,7 +109,8 @@ impl Intrinsic {
             Self::Debug(function)
             | Self::Mem(function)
             | Self::Felt(function)
-            | Self::Crypto(function) => *function,
+            | Self::Crypto(function)
+            | Self::Advice(function) => *function,
         }
     }
 
@@ -138,6 +144,7 @@ impl Intrinsic {
                     _ => None,
                 }
             }
+            Self::Advice(function) => advice::function_type(*function),
         }
     }
 
@@ -150,6 +157,10 @@ impl Intrinsic {
                 mem::function_type(*function).map(IntrinsicsConversionResult::FunctionType)
             }
             Self::Debug(_) | Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
+            Self::Advice(_function) => self
+                .function_type()
+                .map(IntrinsicsConversionResult::FunctionType)
+                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
             // Crypto intrinsics are converted to function calls
             Self::Crypto(_function) => self
                 .function_type()

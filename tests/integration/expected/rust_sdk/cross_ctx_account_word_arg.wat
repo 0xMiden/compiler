@@ -127,7 +127,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048600
+        i32.const 1048604
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -135,13 +135,13 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048600
+        i32.const 1048604
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
   )
   (alias export 1 "word" (type (;2;)))
   (alias export 1 "felt" (type (;3;)))

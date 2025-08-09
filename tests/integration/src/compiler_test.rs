@@ -588,7 +588,7 @@ impl CompilerTestBuilder {
                 static ALLOC: miden_sdk_alloc::BumpAlloc = miden_sdk_alloc::BumpAlloc::new();
 
                 extern crate miden_stdlib_sys;
-                use miden_stdlib_sys::*;
+                use miden_stdlib_sys::{{*, intrinsics}};
 
                 extern crate alloc;
 

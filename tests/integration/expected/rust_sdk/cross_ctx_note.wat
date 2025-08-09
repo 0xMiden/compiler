@@ -52,7 +52,7 @@
       local.set 0
       call $wit_bindgen_rt::run_ctors_once
       local.get 0
-      i32.const 1048604
+      i32.const 1048608
       i32.add
       local.tee 0
       i32.load
@@ -76,7 +76,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048608
+        i32.const 1048612
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -84,13 +84,13 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048608
+        i32.const 1048612
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")
   )
   (alias export 2 "from-u32" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))

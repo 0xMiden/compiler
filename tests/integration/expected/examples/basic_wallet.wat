@@ -139,7 +139,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048616
+        i32.const 1048620
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -147,7 +147,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048616
+        i32.const 1048620
         i32.add
         i32.const 1
         i32.store8
@@ -198,7 +198,7 @@
       f32.load offset=12
       call $miden_base_sys::bindings::tx::extern_tx_create_note
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01")
   )
   (alias export 2 "asset" (type (;3;)))

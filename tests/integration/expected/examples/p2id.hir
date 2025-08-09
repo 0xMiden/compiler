@@ -46,7 +46,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v23 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v24 = hir.bitcast v23 : ptr<byte, i32>;
             v25 = hir.load v24 : i32;
-            v26 = arith.constant 1048696 : i32;
+            v26 = arith.constant 1048700 : i32;
             v27 = arith.add v25, v26 : i32 #[overflow = wrapping];
             v28 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v27, v21, v20) : i32
             builtin.ret v28;
@@ -62,7 +62,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v35 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v36 = hir.bitcast v35 : ptr<byte, i32>;
             v37 = hir.load v36 : i32;
-            v38 = arith.constant 1048696 : i32;
+            v38 = arith.constant 1048700 : i32;
             v39 = arith.add v37, v38 : i32 #[overflow = wrapping];
             v40 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v39, v33, v32) : i32
             v847 = arith.constant 0 : i32;
@@ -324,7 +324,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v206 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v207 = hir.bitcast v206 : ptr<byte, i32>;
             v208 = hir.load v207 : i32;
-            v209 = arith.constant 1048700 : i32;
+            v209 = arith.constant 1048704 : i32;
             v210 = arith.add v208, v209 : i32 #[overflow = wrapping];
             v211 = hir.bitcast v210 : u32;
             v212 = hir.int_to_ptr v211 : ptr<byte, u8>;
@@ -343,7 +343,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v220 = hir.load v219 : i32;
                 hir.exec @miden:base/note-script@1.0.0/p2id/__wasm_call_ctors()
                 v974 = arith.constant 1 : u8;
-                v976 = arith.constant 1048700 : i32;
+                v976 = arith.constant 1048704 : i32;
                 v222 = arith.add v220, v976 : i32 #[overflow = wrapping];
                 v226 = hir.bitcast v222 : u32;
                 v227 = hir.int_to_ptr v226 : ptr<byte, u8>;
@@ -600,7 +600,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v411 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v412 = hir.bitcast v411 : ptr<byte, i32>;
             v413 = hir.load v412 : i32;
-            v414 = arith.constant 1048664 : i32;
+            v414 = arith.constant 1048668 : i32;
             v415 = arith.add v413, v414 : i32 #[overflow = wrapping];
             v409 = arith.constant 4 : i32;
             v407 = arith.constant 8 : i32;
@@ -670,7 +670,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v469 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v470 = hir.bitcast v469 : ptr<byte, i32>;
             v471 = hir.load v470 : i32;
-            v472 = arith.constant 1048680 : i32;
+            v472 = arith.constant 1048684 : i32;
             v473 = arith.add v471, v472 : i32 #[overflow = wrapping];
             v1047 = arith.constant 16 : i32;
             v465 = arith.constant 8 : i32;
@@ -1205,7 +1205,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x000000220000003100000029001000000000002100000013000000290010000000000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000000000000000000000073722e65746f6e2f73676e69646e69622f6372732f352e312e302d7379732d657361622d6e6564696d;
+        builtin.segment @1048576 = 0x00000022000000310000002900100000000000210000001300000029001000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000000000000000000000073722e65746f6e2f73676e69646e69622f6372732f352e312e302d7379732d657361622d6e6564696d;
     };
 
     public builtin.function @note-script() {

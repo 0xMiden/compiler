@@ -55,9 +55,20 @@ interface intrinsics-crypto {
     hmerge: func(digests-ptr: s32, result-ptr: s32);
 }
 
+interface intrinsics-io {
+
+    // See sdk/stdlib-sys/src/intrinsics/io.rs for `extern` function signatures
+
+    // Pushes a list of field elements onto the advice stack. The list is looked up in the advice map using `key` as the key.
+    // Returns the number of elements pushed on the advice stack.
+    // key: Word (4 f32 values representing the key)
+    adv-push-mapvaln: func(key0: f32, key1: f32, key2: f32, key3: f32) -> f32;
+}
+
 world intrinsics {
     import intrinsics-mem;
     import intrinsics-felt;
     import intrinsics-debug;
     import intrinsics-crypto;
+    import intrinsics-io;
 }
