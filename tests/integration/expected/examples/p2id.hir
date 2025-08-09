@@ -433,7 +433,7 @@ builtin.component miden:base/note-script@1.0.0 {
                     v289 = hir.load v288 : i32;
                     v1008 = arith.constant 0 : i32;
                     v293 = hir.bitcast v264 : u32;
-                    v283 = arith.constant 268435456 : i32;
+                    v283 = arith.constant -2 : i32;
                     v290 = arith.sub v283, v289 : i32 #[overflow = wrapping];
                     v292 = hir.bitcast v290 : u32;
                     v294 = arith.lt v292, v293 : i1;

@@ -97,7 +97,7 @@
         i32.store
       end
       block ;; label = @2
-        i32.const 268435456
+        i32.const -2
         local.get 0
         i32.load
         local.tee 4
