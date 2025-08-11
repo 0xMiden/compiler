@@ -30,6 +30,12 @@ use miden::{component, Asset};
 struct MyAccount;
 
 impl basic_wallet::Guest for MyAccount {
+    /// Adds an asset to the account.
+    ///
+    /// This function adds the specified asset to the account's asset list.
+    ///
+    /// # Arguments
+    /// * `asset` - The asset to be added to the account
     fn receive_asset(asset: Asset) {
         miden::account::add_asset(asset);
     }
