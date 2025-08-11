@@ -100,7 +100,7 @@
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
     (export "memory" (memory 0))
-    (export "miden:base/transaction-script@1.0.0#tx-script" (func $miden:base/transaction-script@1.0.0#tx-script))
+    (export "miden:base/transaction-script@1.0.0#run" (func $miden:base/transaction-script@1.0.0#run))
     (elem (;0;) (i32.const 1) func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;9;) (type 9))
     (func $core::slice::index::slice_end_index_len_fail (;10;) (type 10) (param i32 i32 i32)
@@ -170,7 +170,7 @@
       end
       local.get 1
     )
-    (func $miden:base/transaction-script@1.0.0#tx-script (;16;) (type 13) (param f32 f32 f32 f32)
+    (func $miden:base/transaction-script@1.0.0#run (;16;) (type 13) (param f32 f32 f32 f32)
       (local i32 i64 f32 i32 i32 i32)
       global.get $__stack_pointer
       i32.const 80
@@ -816,7 +816,7 @@
   )
   (alias core export 6 "memory" (core memory (;0;)))
   (type (;10;) (func (param "arg" 9)))
-  (alias core export 6 "miden:base/transaction-script@1.0.0#tx-script" (core func (;9;)))
+  (alias core export 6 "miden:base/transaction-script@1.0.0#run" (core func (;9;)))
   (func (;9;) (type 10) (canon lift (core func 9)))
   (alias export 0 "felt" (type (;11;)))
   (alias export 0 "word" (type (;12;)))
@@ -828,13 +828,13 @@
     (import "import-type-word" (type (;4;) (eq 3)))
     (import "import-type-word0" (type (;5;) (eq 4)))
     (type (;6;) (func (param "arg" 5)))
-    (import "import-func-tx-script" (func (;0;) (type 6)))
+    (import "import-func-run" (func (;0;) (type 6)))
     (export (;7;) "word" (type 4))
     (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "tx-script" (func 0) (func (type 8)))
+    (export (;1;) "run" (func 0) (func (type 8)))
   )
   (instance (;7;) (instantiate 0
-      (with "import-func-tx-script" (func 9))
+      (with "import-func-run" (func 9))
       (with "import-type-felt" (type 11))
       (with "import-type-word" (type 12))
       (with "import-type-word0" (type 9))

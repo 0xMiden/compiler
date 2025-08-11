@@ -16,7 +16,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/note-script@1.0.0#note-script(v2: felt, v3: felt, v4: felt, v5: felt) {
+        public builtin.function @miden:base/note-script@1.0.0#run(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block12(v2: felt, v3: felt, v4: felt, v5: felt):
             v8 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v9 = hir.bitcast v8 : ptr<byte, i32>;
@@ -93,9 +93,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x0000000000000000000000000000000b0000000100000001000000010000000100000001000000010000000100000001;
     };
 
-    public builtin.function @note-script(v54: felt, v55: felt, v56: felt, v57: felt) {
+    public builtin.function @run(v54: felt, v55: felt, v56: felt, v57: felt) {
     ^block18(v54: felt, v55: felt, v56: felt, v57: felt):
-        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/miden:base/note-script@1.0.0#note-script(v54, v55, v56, v57)
+        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/miden:base/note-script@1.0.0#run(v54, v55, v56, v57)
         builtin.ret ;
     };
 };

@@ -22,7 +22,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/note-script@1.0.0#note-script(v2: felt, v3: felt, v4: felt, v5: felt) {
+        public builtin.function @miden:base/note-script@1.0.0#run(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block14(v2: felt, v3: felt, v4: felt, v5: felt):
             hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen_rt::run_ctors_once()
             v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
@@ -79,9 +79,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x00000000000000000000000000000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
-    public builtin.function @note-script(v36: felt, v37: felt, v38: felt, v39: felt) {
+    public builtin.function @run(v36: felt, v37: felt, v38: felt, v39: felt) {
     ^block20(v36: felt, v37: felt, v38: felt, v39: felt):
-        hir.exec @miden:base/note-script@1.0.0/counter_note/miden:base/note-script@1.0.0#note-script(v36, v37, v38, v39)
+        hir.exec @miden:base/note-script@1.0.0/counter_note/miden:base/note-script@1.0.0#run(v36, v37, v38, v39)
         builtin.ret ;
     };
 };

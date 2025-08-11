@@ -29,7 +29,7 @@ use miden::{intrinsics::advice::adv_push_mapvaln, *};
 struct BasicWalletTxScript;
 
 impl Guest for BasicWalletTxScript {
-    fn tx_script(arg: Word) {
+    fn run(arg: Word) {
         let num_felts = adv_push_mapvaln(arg.clone());
         let num_felts_u64 = num_felts.as_u64();
         assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));

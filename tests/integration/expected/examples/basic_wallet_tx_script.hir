@@ -143,7 +143,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret v88;
         };
 
-        public builtin.function @miden:base/transaction-script@1.0.0#tx-script(v107: felt, v108: felt, v109: felt, v110: felt) {
+        public builtin.function @miden:base/transaction-script@1.0.0#run(v107: felt, v108: felt, v109: felt, v110: felt) {
         ^block38(v107: felt, v108: felt, v109: felt, v110: felt):
             v115 = builtin.global_symbol @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/__stack_pointer : ptr<byte, u8>
             v116 = hir.bitcast v115 : ptr<byte, i32>;
@@ -1225,9 +1225,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
         builtin.segment @1048576 = 0x000000000000000000000025000000330000000a00100029000000290000002b0000000a0010002900000021000000980000002800100000000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010073722e62696c2f6372730073722e6d656d2f62696c6474732f6372732f352e312e302d7379732d62696c6474732d6e6564696d;
     };
 
-    public builtin.function @tx-script(v886: felt, v887: felt, v888: felt, v889: felt) {
+    public builtin.function @run(v886: felt, v887: felt, v888: felt, v889: felt) {
     ^block106(v886: felt, v887: felt, v888: felt, v889: felt):
-        hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/miden:base/transaction-script@1.0.0#tx-script(v886, v887, v888, v889)
+        hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/miden:base/transaction-script@1.0.0#run(v886, v887, v888, v889)
         builtin.ret ;
     };
 };

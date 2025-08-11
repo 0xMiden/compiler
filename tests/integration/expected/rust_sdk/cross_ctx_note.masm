@@ -1,10 +1,10 @@
 # mod miden:base/note-script@1.0.0
 
-export.note-script
+export.run
     exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::miden:base/note-script@1.0.0#note-script
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note::miden:base/note-script@1.0.0#run
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -52,7 +52,7 @@ proc.cross_ctx_note::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/note-script@1.0.0#note-script
+export.miden:base/note-script@1.0.0#run
     drop
     drop
     drop

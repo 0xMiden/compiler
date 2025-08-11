@@ -16,7 +16,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/note-script@1.0.0#note-script(v17: felt, v18: felt, v19: felt, v20: felt) {
+        public builtin.function @miden:base/note-script@1.0.0#run(v17: felt, v18: felt, v19: felt, v20: felt) {
         ^block12(v17: felt, v18: felt, v19: felt, v20: felt):
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen_rt::run_ctors_once()
             v93 = arith.constant 7 : felt;
@@ -85,9 +85,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x0000000100000001000000010000000100000001000000010000000100000001;
     };
 
-    public builtin.function @note-script(v79: felt, v80: felt, v81: felt, v82: felt) {
+    public builtin.function @run(v79: felt, v80: felt, v81: felt, v82: felt) {
     ^block18(v79: felt, v80: felt, v81: felt, v82: felt):
-        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/miden:base/note-script@1.0.0#note-script(v79, v80, v81, v82)
+        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/miden:base/note-script@1.0.0#run(v79, v80, v81, v82)
         builtin.ret ;
     };
 };
