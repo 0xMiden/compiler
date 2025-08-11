@@ -28,6 +28,16 @@ use miden::{intrinsics::advice::adv_push_mapvaln, *};
 
 struct BasicWalletTxScript;
 
+// Input layout constants
+const TAG_INDEX: usize = 0;
+const AUX_INDEX: usize = 1;
+const NOTE_TYPE_INDEX: usize = 2;
+const EXECUTION_HINT_INDEX: usize = 3;
+const RECIPIENT_START: usize = 4;
+const RECIPIENT_END: usize = 8;
+const ASSET_START: usize = 8;
+const ASSET_END: usize = 12;
+
 impl Guest for BasicWalletTxScript {
     fn run(arg: Word) {
         let num_felts = adv_push_mapvaln(arg.clone());
@@ -36,11 +46,11 @@ impl Guest for BasicWalletTxScript {
         let num_words = Felt::from_u64_unchecked(num_felts_u64 / 4);
         let commitment = arg;
         let input = adv_load_preimage(num_words, commitment);
-        let tag = input[0];
-        let aux = input[1];
-        let note_type = input[2];
-        let execution_hint = input[3];
-        let recipient: [Felt; 4] = input[4..8].try_into().unwrap();
+        let tag = input[TAG_INDEX];
+        let aux = input[AUX_INDEX];
+        let note_type = input[NOTE_TYPE_INDEX];
+        let execution_hint = input[EXECUTION_HINT_INDEX];
+        let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
         let note_idx = miden::tx::create_note(
             tag.into(),
             aux,
@@ -48,7 +58,7 @@ impl Guest for BasicWalletTxScript {
             execution_hint,
             recipient.into(),
         );
-        let asset: [Felt; 4] = input[8..12].try_into().unwrap();
+        let asset: [Felt; 4] = input[ASSET_START..ASSET_END].try_into().unwrap();
         basic_wallet::move_asset_to_note(asset.into(), note_idx);
     }
 }
