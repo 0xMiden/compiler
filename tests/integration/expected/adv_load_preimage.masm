@@ -523,12 +523,13 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             trace.252
             nop
             push.0
+            push.4294967295
             dup.2
-            push.268435456
-            dup.3
-            u32wrapping_sub
             swap.1
-            u32lt
+            u32xor
+            dup.3
+            swap.1
+            u32gt
             neq
             if.true
                 drop
