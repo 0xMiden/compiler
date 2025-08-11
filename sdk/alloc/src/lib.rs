@@ -18,9 +18,8 @@ const MIN_ALIGN: usize = 16;
 
 /// The linear memory heap must not spill over into the region reserved for procedure locals, which
 /// begins at 2^30 in Miden's address space. In Rust address space it should be 2^30 * 4 but since
-/// it overflows the usize which is 32-bit on wasm32 we use u32::MAX. "-1" is to avoid `xor` op in
-/// the compiled Wasm.
-const HEAP_END: *mut u8 = (u32::MAX - 1) as *mut u8;
+/// it overflows the usize which is 32-bit on wasm32 we use u32::MAX.
+const HEAP_END: *mut u8 = u32::MAX as *mut u8;
 
 /// A very simple allocator for Miden SDK-based programs.
 ///

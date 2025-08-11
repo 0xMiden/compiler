@@ -182,13 +182,13 @@
         i32.store
       end
       block ;; label = @2
-        i32.const 268435456
+        local.get 2
         local.get 0
         i32.load
         local.tee 4
-        i32.sub
-        local.get 2
-        i32.lt_u
+        i32.const -1
+        i32.xor
+        i32.gt_u
         br_if 0 (;@2;)
         local.get 0
         local.get 4
