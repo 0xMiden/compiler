@@ -45,18 +45,6 @@ fn test_all_templates_and_examples() {
     env::set_var("TEST", "1");
 
     // Test example templates
-    // Test basic-wallet example (which also creates p2id-note)
-    let (basic_wallet, p2id_note) = build_paired_example_projects(
-        "basic-wallet",
-        "basic-wallet",
-        "p2id-note",
-        "basic_wallet",
-        "p2id",
-    );
-    assert!(basic_wallet.is_library());
-    assert_eq!(basic_wallet.name, "basic_wallet");
-    assert!(p2id_note.is_program());
-    assert_eq!(p2id_note.name, "p2id");
 
     // Test counter-contract example (which also creates counter-note)
     let (counter_contract, counter_note) = build_paired_example_projects(
@@ -90,6 +78,58 @@ fn test_all_templates_and_examples() {
     let storage = build_example_project_from_template("storage-example");
     assert!(storage.is_library());
     assert_eq!(storage.name, "storage_example");
+
+    // Test basic-wallet-tx-script example using different entry points
+    // Test 1: Using "basic-wallet-tx-script" as the example name
+    let (tx_script, wallet, p2id) = build_triple_example_projects(
+        "basic-wallet-tx-script",
+        "basic-wallet-tx-script",
+        "basic-wallet",
+        "p2id-note",
+        "basic_wallet_tx_script",
+        "basic_wallet",
+        "p2id",
+    );
+    assert!(tx_script.is_program());
+    assert_eq!(tx_script.name, "basic_wallet_tx_script");
+    assert!(wallet.is_library());
+    assert_eq!(wallet.name, "basic_wallet");
+    assert!(p2id.is_program());
+    assert_eq!(p2id.name, "p2id");
+
+    // Test 2: Using "basic-wallet" as the example name (should create all three)
+    let (tx_script2, wallet2, p2id2) = build_triple_example_projects(
+        "basic-wallet",
+        "basic-wallet-tx-script",
+        "basic-wallet",
+        "p2id-note",
+        "basic_wallet_tx_script",
+        "basic_wallet",
+        "p2id",
+    );
+    assert!(tx_script2.is_program());
+    assert_eq!(tx_script2.name, "basic_wallet_tx_script");
+    assert!(wallet2.is_library());
+    assert_eq!(wallet2.name, "basic_wallet");
+    assert!(p2id2.is_program());
+    assert_eq!(p2id2.name, "p2id");
+
+    // Test 3: Using "p2id-note" as the example name (should create all three)
+    let (tx_script3, wallet3, p2id3) = build_triple_example_projects(
+        "p2id-note",
+        "basic-wallet-tx-script",
+        "basic-wallet",
+        "p2id-note",
+        "basic_wallet_tx_script",
+        "basic_wallet",
+        "p2id",
+    );
+    assert!(tx_script3.is_program());
+    assert_eq!(tx_script3.name, "basic_wallet_tx_script");
+    assert!(wallet3.is_library());
+    assert_eq!(wallet3.name, "basic_wallet");
+    assert!(p2id3.is_program());
+    assert_eq!(p2id3.name, "p2id");
 
     // Verify program projects don't have WIT files
     verify_no_wit_files_for_example_template("fibonacci");
@@ -203,6 +243,66 @@ fn build_paired_example_projects(
     fs::remove_dir_all(temp_dir).unwrap();
 
     (first_package, second_package)
+}
+
+/// Build triple example projects (e.g., tx-script, account and note script) and return their packages
+/// Creates all three projects in a subdirectory and builds them separately
+fn build_triple_example_projects(
+    example_name: &str,
+    first_dir: &str,
+    second_dir: &str,
+    third_dir: &str,
+    first_expected_name: &str,
+    second_expected_name: &str,
+    third_expected_name: &str,
+) -> (Package, Package, Package) {
+    let restore_dir = env::current_dir().unwrap();
+    let temp_dir = env::temp_dir().join(format!(
+        "test_example_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
+    env::set_current_dir(&temp_dir).unwrap();
+
+    // Create the project - it will create all three projects
+    let args = example_project_args(example_name);
+
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create new project")
+        .expect("'cargo miden example' should return Some(CommandOutput)");
+    let main_project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
+            project_path.canonicalize().unwrap()
+        }
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
+    };
+    assert!(main_project_path.exists());
+
+    // Build second project (basic-wallet)
+    let second_path = main_project_path.join(second_dir);
+    assert!(second_path.exists());
+    env::set_current_dir(&second_path).unwrap();
+    let second_package = build_project_in_current_dir(second_expected_name);
+
+    // Build third project (p2id-note)
+    let third_path = main_project_path.join(third_dir);
+    assert!(third_path.exists());
+    env::set_current_dir(&third_path).unwrap();
+    let third_package = build_project_in_current_dir(third_expected_name);
+
+    // Build first project (basic-wallet-tx-script)
+    let first_path = main_project_path.join(first_dir);
+    assert!(first_path.exists());
+    env::set_current_dir(&first_path).unwrap();
+    let first_package = build_project_in_current_dir(first_expected_name);
+
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(temp_dir).unwrap();
+
+    (first_package, second_package, third_package)
 }
 
 /// Build a project in the current directory and verify it compiles correctly

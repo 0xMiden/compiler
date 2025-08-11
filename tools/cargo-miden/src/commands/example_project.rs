@@ -11,8 +11,13 @@ use crate::{commands::new_project::deploy_wit_files, utils::compiler_path};
 pub const WIT_DEPS_PATH: &str = "wit-deps";
 
 /// Paired project mappings for examples that create multiple related projects
-const PAIRED_PROJECTS: &[(&str, &str)] =
-    &[("basic-wallet", "p2id-note"), ("counter-contract", "counter-note")];
+const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")];
+
+/// Triple project mappings for examples that create three related projects
+/// Each tuple contains (tx-script, account, note) project names
+/// Any of these names can be used to create all three projects
+const TRIPLE_PROJECTS: &[(&str, &str, &str)] =
+    &[("basic-wallet-tx-script", "basic-wallet", "p2id-note")];
 
 /// Core WIT dependency mappings (package name, file name)
 const CORE_WIT_DEPS: &[(&str, &str)] = &[
@@ -28,14 +33,15 @@ const CORE_WIT_DEPS: &[(&str, &str)] = &[
 pub struct ExampleCommand {
     #[clap(help = r#"The example name to use from the compiler repository
 Available examples:
-basic-wallet      : Basic wallet account
-p2id-note         : Pay-to-ID note
-counter-contract  : Counter contract
-counter-note      : Counter note
-fibonacci         : Fibonacci sequence calculator
-collatz           : Collatz conjecture calculator
-is-prime          : Prime number checker
-storage-example   : Storage operations example"#)]
+basic-wallet          : Basic wallet account
+p2id-note             : Pay-to-ID note
+basic-wallet-tx-script: Transaction script used in basic-wallet and p2id-note
+counter-contract      : Counter contract
+counter-note          : Counter note
+fibonacci             : Fibonacci sequence calculator
+collatz               : Collatz conjecture calculator
+is-prime              : Prime number checker
+storage-example       : Storage operations example"#)]
     pub example_name: String,
 }
 
@@ -43,8 +49,17 @@ use std::fs;
 
 impl ExampleCommand {
     pub fn exec(self) -> anyhow::Result<PathBuf> {
-        // Check if this is a paired project
-        if let Some((first, second)) = PAIRED_PROJECTS
+        // Check if this is a triple project - any of the three names can be used
+        if let Some((tx_script, account, note)) =
+            TRIPLE_PROJECTS.iter().find(|(tx_script, account, note)| {
+                *tx_script == self.example_name
+                    || *account == self.example_name
+                    || *note == self.example_name
+            })
+        {
+            // Always use the tx-script name as the main directory name
+            self.exec_triple_projects(tx_script, account, note)
+        } else if let Some((first, second)) = PAIRED_PROJECTS
             .iter()
             .find(|(first, second)| *first == self.example_name || *second == self.example_name)
         {
@@ -158,26 +173,106 @@ impl ExampleCommand {
         }
 
         // Update dependencies for paired projects
-        match (first_project, second_project) {
-            ("basic-wallet", "p2id-note") => update_note_dependencies(
-                &main_dir,
-                "p2id-note",
-                "miden:basic-wallet",
-                "basic-wallet",
-                "basic-wallet.wit",
-            )?,
-            ("counter-contract", "counter-note") => update_note_dependencies(
+        if first_project == "counter-contract" && second_project == "counter-note" {
+            update_project_dependency(
                 &main_dir,
                 "counter-note",
                 "miden:counter-contract",
                 "counter-contract",
                 "counter.wit",
-            )?,
-            _ => {}
+            )?;
         }
 
         Ok(main_dir)
     }
+
+    /// Create a triple (tx-script, account and note script) projects in a sub-folder
+    fn exec_triple_projects(
+        &self,
+        tx_script: &str,
+        account: &str,
+        note: &str,
+    ) -> anyhow::Result<PathBuf> {
+        // Create main directory with the requested example name
+        let main_dir = PathBuf::from(&self.example_name);
+
+        if main_dir.exists() {
+            return Err(anyhow::anyhow!(
+                "Directory '{}' already exists. Please remove it or choose a different location.",
+                self.example_name
+            ));
+        }
+
+        // Create the main directory
+        fs::create_dir_all(&main_dir)?;
+
+        // Generate all three projects
+        let project_names = [tx_script, account, note];
+        for project_name in &project_names {
+            let template_path = template_path(project_name);
+
+            let destination = {
+                use path_absolutize::Absolutize;
+                main_dir.absolutize().map(|p| p.to_path_buf())?
+            };
+
+            let generate_args = GenerateArgs {
+                template_path,
+                destination: Some(destination),
+                name: Some(project_name.to_string()),
+                force: true,
+                force_git_init: false, // Don't init git for subdirectories
+                verbose: true,
+                ..Default::default()
+            };
+
+            cargo_generate::generate(generate_args)
+                .context(format!("Failed to scaffold {project_name} project"))?;
+
+            let project_path = main_dir.join(project_name);
+
+            // Check if the project has WIT files
+            let wit_dir = project_path.join("wit");
+            if wit_dir.exists() && wit_dir.is_dir() {
+                deploy_wit_files(&project_path)
+                    .context(format!("Failed to deploy WIT files for {project_name}"))?;
+            }
+
+            // Process the Cargo.toml
+            process_cargo_toml(&project_path)
+                .context(format!("Failed to process Cargo.toml for {project_name}"))?;
+        }
+
+        // Update dependencies for triple projects
+        update_triple_project_dependencies(&main_dir, tx_script, account, note)?;
+
+        Ok(main_dir)
+    }
+}
+
+/// Update dependencies for triple projects in a generic way
+fn update_triple_project_dependencies(
+    main_dir: &Path,
+    tx_script: &str,
+    account: &str,
+    note: &str,
+) -> anyhow::Result<()> {
+    // Use the actual WIT file name (keep hyphens)
+    let account_wit = format!("{account}.wit");
+
+    // Update note to depend on account
+    update_project_dependency(main_dir, note, &format!("miden:{account}"), account, &account_wit)?;
+
+    // Update tx script to depend on account
+    update_project_dependency(
+        main_dir,
+        tx_script,
+        &format!("miden:{account}"),
+        account,
+        &account_wit,
+    )?;
+
+    Ok(())
 }
 
 /// Process the generated Cargo.toml to update dependencies and WIT paths
@@ -237,10 +332,9 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Update note project's dependencies to use local contract
-/// The note script projects in the `example` folder of the compiler repo use a local path to
-/// specify the account Miden package and WIT file dependency.
-fn update_note_dependencies(
+/// Update a project's dependencies to use another local project
+/// This is used when one project in a pair/triple depends on another
+fn update_project_dependency(
     main_dir: &Path,
     note_dir: &str,
     dependency_name: &str,
@@ -297,6 +391,7 @@ fn update_note_dependencies(
     fs::write(&note_cargo_toml, doc.to_string())?;
     Ok(())
 }
+
 fn template_path(project_name: &str) -> TemplatePath {
     if cfg!(test) || std::env::var("TEST").is_ok() {
         TemplatePath {
