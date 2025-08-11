@@ -53,9 +53,14 @@ pub fn create_note(
 }
 
 /// Adds the asset to the note specified by the index.
+///
+/// # Arguments
+/// * `asset` - The asset to be added to the note
+/// * `note_idx` - The index of the note to which the asset will be added
+///
+/// # Returns
+/// A tuple containing the same asset and note_idx
 pub fn add_asset_to_note(asset: Asset, note_idx: NoteIdx) -> (Asset, NoteIdx) {
-    // TODO: why kernel function returns the asset and idx? If it's just
-    // to avoid duplicating them raise the question (adds overhead in Rust).
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(Asset, NoteIdx)>::uninit();
         extern_tx_add_asset_to_note(

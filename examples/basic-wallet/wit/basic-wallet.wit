@@ -6,7 +6,6 @@ interface basic-wallet {
     use core-types.{asset, tag, recipient, note-type, note-idx, felt, note-execution-hint};
 
     receive-asset: func(asset: asset);
-    // create-note: func(tag: tag, aux: felt, note-type: note-type, execution-hint: note-execution-hint,  recipient: recipient);
     move-asset-to-note: func(asset: asset, note-idx: note-idx);
 }
 
