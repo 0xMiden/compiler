@@ -54,6 +54,7 @@ impl Guest for MyNote {
         // felt2: 14*8192 = 114688
         // felt3: 15*16384 = 245760
         // Total: 49 + 1744 + 43264 + 53248 + 114688 + 245760 = 458753 + 7 = 458760
-        assert_eq(output, felt!(458760));
+        // + 1 for `+felt!(1)` for spill pass test
+        assert_eq(output, felt!(458761));
     }
 }

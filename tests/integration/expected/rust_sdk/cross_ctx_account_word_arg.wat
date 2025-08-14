@@ -113,6 +113,11 @@
       call $miden_stdlib_sys::intrinsics::felt::extern_mul
       call $miden_stdlib_sys::intrinsics::felt::extern_add
       local.set 14
+      local.get 15
+      i32.const 1
+      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $miden_stdlib_sys::intrinsics::felt::extern_add
+      local.set 15
       local.get 3
       local.get 7
       call $miden_stdlib_sys::intrinsics::felt::extern_add

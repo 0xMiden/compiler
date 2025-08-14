@@ -236,6 +236,8 @@ pub fn transform_spills(
 
     log::trace!(target: "insert-spills", "all spills and reloads inserted successfully");
 
+    log::trace!(target: "insert-spills", "op {} after inserting  spills: {}", op.name(), op.borrow());
+
     let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
 
     let region = op.borrow().regions().front().as_pointer().unwrap();
@@ -252,6 +254,7 @@ pub fn transform_spills(
         )?;
     }
 
+    log::trace!(target: "insert-spills", "op {} after rewriting  spills: {}", op.name(), op.borrow());
     Ok(PostPassStatus::Changed)
 }
 
@@ -388,12 +391,14 @@ fn rewrite_single_block_spills(
             } else {
                 // This reload is unused, so remove it entirely, and move to the next op
                 node.move_next();
+                block_q.push_back(node);
                 continue;
             }
         }
 
         // Advance the cursor in this block
         node.move_next();
+        block_q.push_back(node);
 
         // Remove any use tracking for spilled values defined by this op
         for result in ValueRange::<2>::from(op.results().all()) {
@@ -552,6 +557,7 @@ fn insert_required_phis(
     let mut required_phis = SmallDenseMap::<ValueRef, SmallSet<BlockRef, 2>, 4>::default();
     for reload in analysis.reloads() {
         let block = reload.inst.unwrap().parent().unwrap();
+        log::trace!(target: "insert-spills", "add required_phis for {}", reload.value);
         let r = required_phis.entry(reload.value).or_default();
         r.insert(block);
     }
@@ -731,9 +737,11 @@ fn rewrite_spill_pseudo_instructions(
 
         // Avoid emitting loads for unused reloads
         if is_used {
+            log::trace!(target: "insert-spills", "convert reload to load {:?}", reload.place);
             builder.set_insertion_point_after(operation);
             interface.convert_reload_to_load(&mut builder, operation)?;
         } else {
+            log::trace!(target: "insert-spills", "erase unused reload {:?}", reload.value);
             builder.erase_op(operation);
         }
     }

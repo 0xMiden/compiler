@@ -90,7 +90,7 @@ export.miden:base/note-script@1.0.0#run
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
     trace.252
     nop
-    push.458760
+    push.458761
     assert_eq
 end
 
