@@ -33,7 +33,12 @@ fn test_adv_load_preimage() {
         let num_words = Felt::from_u64_unchecked(num_felts_u64 / 4);
 
         let commitment = key;
-        adv_load_preimage(num_words, commitment)
+        let input = adv_load_preimage(num_words, commitment);
+        assert_eq(input[0], felt!(1));
+        assert_eq(input[1], felt!(2));
+        assert_eq(input[5], felt!(6));
+        assert_eq(input[14], felt!(15));
+        input
     }"#
     .to_string();
 

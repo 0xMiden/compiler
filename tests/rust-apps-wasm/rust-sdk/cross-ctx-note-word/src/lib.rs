@@ -28,7 +28,7 @@ use miden::*;
 struct MyNote;
 
 impl Guest for MyNote {
-    fn note_script() {
+    fn run(_arg: Word) {
         let input = Word {
             inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
         };

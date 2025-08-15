@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.11.0";
+const TEMPLATES_REPO_TAG: &str = "v0.12.0";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -21,14 +21,17 @@ pub const WIT_DEPS_PATH: &str = "wit-deps";
 #[derive(Clone, Debug, Args)]
 pub struct ProjectTemplate {
     /// Rust program
-    #[clap(long, group = "template", conflicts_with_all(["account", "note"]))]
+    #[clap(long, group = "template", conflicts_with_all(["account", "note", "tx_script"]))]
     program: bool,
     /// Miden rollup account
-    #[clap(long, group = "template", conflicts_with_all(["program", "note"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "note", "tx_script"]))]
     account: bool,
     /// Miden rollup note script
-    #[clap(long, group = "template", conflicts_with_all(["program", "account"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "account", "tx_script"]))]
     note: bool,
+    /// Miden rollup transaction script
+    #[clap(long, group = "template", conflicts_with_all(["program", "account", "note"]))]
+    tx_script: bool,
 }
 
 #[allow(unused)]
@@ -38,6 +41,7 @@ impl ProjectTemplate {
             program: true,
             account: false,
             note: false,
+            tx_script: false,
         }
     }
 
@@ -46,6 +50,7 @@ impl ProjectTemplate {
             program: false,
             account: true,
             note: false,
+            tx_script: false,
         }
     }
 
@@ -54,6 +59,16 @@ impl ProjectTemplate {
             program: false,
             account: false,
             note: true,
+            tx_script: false,
+        }
+    }
+
+    pub fn tx_script() -> Self {
+        Self {
+            program: false,
+            account: false,
+            note: false,
+            tx_script: true,
         }
     }
 }
@@ -72,6 +87,8 @@ impl fmt::Display for ProjectTemplate {
             write!(f, "account")
         } else if self.note {
             write!(f, "note")
+        } else if self.tx_script {
+            write!(f, "tx-script")
         } else {
             panic!("Invalid project template, at least one variant must be set")
         }

@@ -22,9 +22,7 @@ bindings::export!(MyNote with_types_in bindings);
 
 mod bindings;
 
-use bindings::{
-    exports::miden::base::note_script::Guest, miden::cross_ctx_account::foo::process_felt,
-};
+use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account::foo::process_felt};
 use miden::*;
 
 // To test the data segment loading
@@ -33,7 +31,7 @@ pub static mut BAR: u32 = 11;
 struct MyNote;
 
 impl Guest for MyNote {
-    fn note_script() {
+    fn run(_arg: Word) {
         let input = Felt::from_u32(unsafe { BAR });
         assert_eq(input, felt!(11));
         let output = process_felt(input);

@@ -1,7 +1,5 @@
 //! Basic wallet test module
 
-use std::time::Duration;
-
 use miden_client::{
     asset::{FungibleAsset, TokenSymbol},
     note::NoteAssets,
@@ -18,6 +16,7 @@ pub fn test_basic_wallet_p2id_local() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let note_package = compile_rust_package("../../examples/p2id-note", true);
+    let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -39,9 +38,6 @@ pub fn test_basic_wallet_p2id_local() {
         std::fs::write(&wallet_package_path, wallet_package.to_bytes())
             .expect("Failed to write wallet");
 
-        let sync_summary = client.sync_state().await.unwrap();
-        eprintln!("Latest block: {}", sync_summary.block_num);
-
         // Create a fungible faucet account
         let token_symbol = TokenSymbol::new("TEST").unwrap();
         let decimals = 8u8;
@@ -56,10 +52,6 @@ pub fn test_basic_wallet_p2id_local() {
         )
         .await
         .unwrap();
-
-        // Resync to show newly deployed faucet
-        client.sync_state().await.unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
 
         eprintln!("Faucet account ID: {:?}", faucet_account.id().to_hex());
 
@@ -78,8 +70,8 @@ pub fn test_basic_wallet_p2id_local() {
         .unwrap();
         eprintln!("Alice account ID: {:?}", alice_account.id().to_hex());
 
-        // Step 1: Mint tokens from faucet to Alice
         eprintln!("\n=== Step 1: Minting tokens from faucet to Alice ===");
+
         let mint_amount = 100_000u64; // 100,000 tokens
         let fungible_asset = FungibleAsset::new(faucet_account.id(), mint_amount).unwrap();
 
@@ -106,11 +98,9 @@ pub fn test_basic_wallet_p2id_local() {
         let mint_tx_id = mint_tx_result.executed_transaction().id();
         eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
 
-        // Try to submit the mint transaction
         client.submit_transaction(mint_tx_result).await.unwrap();
         eprintln!("Submitted mint transaction. Tx ID: {mint_tx_id:?}");
 
-        // Step 2: Wait and try to consume the mint note
         eprintln!("\n=== Step 2: Alice attempts to consume mint note ===");
 
         let consume_request = TransactionRequestBuilder::new()
@@ -126,8 +116,18 @@ pub fn test_basic_wallet_p2id_local() {
 
         client.submit_transaction(consume_tx).await.unwrap();
 
-        // Step 3: Create Bob's account
+        eprintln!("\n=== Checking Alice's account has the minted asset ===");
+
+        assert_account_has_fungible_asset(
+            &mut client,
+            alice_account.id(),
+            faucet_account.id(),
+            mint_amount,
+        )
+        .await;
+
         eprintln!("\n=== Step 3: Creating Bob's account ===");
+
         let bob_config = AccountCreationConfig {
             with_basic_wallet: false,
             ..Default::default()
@@ -142,53 +142,60 @@ pub fn test_basic_wallet_p2id_local() {
         .unwrap();
         eprintln!("Bob account ID: {:?}", bob_account.id().to_hex());
 
-        // Step 4: Alice creates p2id note for Bob
         eprintln!("\n=== Step 4: Alice creates p2id note for Bob ===");
+
         let transfer_amount = 10_000u64; // 10,000 tokens
         let transfer_asset = FungibleAsset::new(faucet_account.id(), transfer_amount).unwrap();
 
-        // Create the p2id note from Alice to Bob
-        let p2id_note = create_note_from_package(
+        let (alice_tx_id, bob_note) = send_asset_to_account(
             &mut client,
-            note_package,
             alice_account.id(),
-            NoteCreationConfig {
-                assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-                inputs: vec![bob_account.id().prefix().as_felt(), bob_account.id().suffix()],
-                ..Default::default()
-            },
-        );
-        eprintln!("P2ID note hash: {:?}", p2id_note.id().to_hex());
+            bob_account.id(),
+            transfer_asset,
+            note_package.clone(),
+            tx_script_package,
+            None, // Use default configuration
+        )
+        .await
+        .unwrap();
 
-        let alice_tx_request = TransactionRequestBuilder::new()
-            .own_output_notes(vec![OutputNote::Full(p2id_note.clone())])
+        eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
+
+        // Step 5: Bob attempts to consume the p2id note
+        eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
+
+        let consume_request = TransactionRequestBuilder::new()
+            .unauthenticated_input_notes([(bob_note, None)])
             .build()
             .unwrap();
 
-        let alice_tx_res = client.new_transaction(alice_account.id(), alice_tx_request).await;
-        // We can create our custom P2ID note only from the tx script.
-        // Until tx script compilation is implemented https://github.com/0xMiden/compiler/issues/622
-        assert!(alice_tx_res.is_err());
+        let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
+        let consume_tx_id = consume_tx.executed_transaction().id();
+        eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
 
-        // // let alice_tx = client.new_transaction(alice_account.id(), alice_tx_request).await.unwrap();
-        // let alice_tx_id = alice_tx.executed_transaction().id();
-        // eprintln!("Alice created p2id transaction. Tx ID: {alice_tx_id:?}");
-        //
-        // // Try to submit
-        // client.submit_transaction(alice_tx).await.unwrap();
-        //
-        // // Step 5: Bob attempts to consume the p2id note
-        // eprintln!("\n=== Step 5: Bob attempts to consume p2id note ===");
-        //
-        // let consume_request = TransactionRequestBuilder::new()
-        //     .unauthenticated_input_notes([(p2id_note.clone(), None)])
-        //     .build()
-        //     .unwrap();
-        //
-        // let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
-        // let consume_tx_id = consume_tx.executed_transaction().id();
-        // eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
-        //
-        // client.submit_transaction(consume_tx).await.unwrap();
+        client.submit_transaction(consume_tx).await.unwrap();
+
+        eprintln!("\n=== Step 6: Checking Bob's account has the transferred asset ===");
+
+        assert_account_has_fungible_asset(
+            &mut client,
+            bob_account.id(),
+            faucet_account.id(),
+            transfer_amount,
+        )
+        .await;
+
+        eprintln!(
+            "\n=== Step 7: Checking Alice's account reflects the new token amount after sending \
+             to Bob ==="
+        );
+
+        assert_account_has_fungible_asset(
+            &mut client,
+            alice_account.id(),
+            faucet_account.id(),
+            mint_amount - transfer_amount,
+        )
+        .await;
     });
 }

@@ -1,10 +1,10 @@
 # mod miden:base/note-script@1.0.0
 
-export.note-script
+export.run
     exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::miden:base/note-script@1.0.0#note-script
+    exec.::miden:base/note-script@1.0.0::counter_note::miden:base/note-script@1.0.0#run
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -15,13 +15,13 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.17709194624399802691
-    push.16317546024271837059
-    push.2378870773206530087
-    push.4951894414315594265
+    push.10372512867789291194
+    push.8847140879871234022
+    push.6349320981753112911
+    push.1226644495927898530
     adv.push_mapval
     push.262144
-    push.3
+    push.4
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
@@ -60,7 +60,11 @@ proc.counter_note::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/note-script@1.0.0#note-script
+export.miden:base/note-script@1.0.0#run
+    drop
+    drop
+    drop
+    drop
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::counter_note::wit_bindgen_rt::run_ctors_once
@@ -98,7 +102,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048624
+    push.1048628
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -133,7 +137,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048624
+        push.1048628
         movup.2
         swap.1
         u32wrapping_add

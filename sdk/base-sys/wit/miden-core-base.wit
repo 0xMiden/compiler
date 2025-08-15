@@ -46,17 +46,33 @@ interface tx {
     /// recipient is the recipient of the note.
     /// Returns the id of the created note.
     create-note: func(
-        asset0: f32,
-        asset1: f32,
-        asset2: f32,
-        asset3: f32,
-        tag: f32,
+	tag: f32,
+	aux: f32,
         note-type: f32,
+	execution-hint: f32,
         recipient0: f32,
         recipient1: f32,
         recipient2: f32,
         recipient3: f32,
     ) -> f32;
+
+
+    /// Adds the ASSET to the note specified by the index.
+    ///
+    /// Inputs:  [ASSET, note_idx]
+    /// Outputs: [ASSET, note_idx]
+    ///
+    /// Where:
+    /// - note_idx is the index of the note to which the asset is added.
+    /// - ASSET can be a fungible or non-fungible asset.
+    add-asset-to-note: func(
+    	asset0: f32,
+        asset1: f32,
+        asset2: f32,
+        asset3: f32,
+	note-idx: f32,
+	result-ptr: s32,
+    );
 
 }
 

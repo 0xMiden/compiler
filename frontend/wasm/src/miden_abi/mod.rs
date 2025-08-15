@@ -127,13 +127,13 @@ pub fn recover_imported_masm_module(wasm_module_id: &str) -> Result<SymbolPath, 
         Ok(SymbolPath::from_masm_module_id(tx_kernel::note::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-base/tx") {
         Ok(SymbolPath::from_masm_module_id(tx_kernel::tx::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/stdlib-mem") {
+    } else if wasm_module_id.starts_with("miden:core-stdlib/stdlib-mem") {
         Ok(SymbolPath::from_masm_module_id(stdlib::mem::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-dsa-rpo-falcon") {
+    } else if wasm_module_id.starts_with("miden:core-stdlib/stdlib-crypto-dsa-rpo-falcon") {
         Ok(SymbolPath::from_masm_module_id(stdlib::crypto::dsa::rpo_falcon::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-blake3") {
+    } else if wasm_module_id.starts_with("miden:core-stdlib/stdlib-crypto-hashes-blake3") {
         Ok(SymbolPath::from_masm_module_id(stdlib::crypto::hashes::blake3::MODULE_ID))
-    } else if wasm_module_id.starts_with("miden:core-import/stdlib-crypto-hashes-rpo") {
+    } else if wasm_module_id.starts_with("miden:core-stdlib/stdlib-crypto-hashes-rpo") {
         Ok(SymbolPath::from_masm_module_id(stdlib::crypto::hashes::rpo::MODULE_ID))
     } else if wasm_module_id.starts_with("miden:core-import") {
         panic!("unrecovered intrinsics or Miden SDK import module ID: {wasm_module_id}")

@@ -3,10 +3,10 @@ package miden:basic-wallet@1.0.0;
 use miden:base/core-types@1.0.0;
 
 interface basic-wallet {
-    use core-types.{asset, tag, recipient, note-type, felt};
+    use core-types.{asset, tag, recipient, note-type, note-idx, felt, note-execution-hint};
 
     receive-asset: func(asset: asset);
-    send-asset: func(core-asset: asset, tag: tag, note-type: note-type, recipient: recipient);
+    move-asset-to-note: func(asset: asset, note-idx: note-idx);
 }
 
 world basic-wallet-world {

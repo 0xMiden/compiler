@@ -40,6 +40,7 @@ debug = true
 trim-paths = ["diagnostics", "object"]
 
 [package.metadata.miden]
+project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
 
 # TODO: switch to miden table

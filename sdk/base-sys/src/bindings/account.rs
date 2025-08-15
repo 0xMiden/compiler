@@ -62,13 +62,13 @@ pub fn remove_asset(asset: Asset) -> Asset {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_account_remove_asset(
-            asset.inner[0],
-            asset.inner[1],
-            asset.inner[2],
             asset.inner[3],
+            asset.inner[2],
+            asset.inner[1],
+            asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.assume_init().reverse()
     }
 }
 

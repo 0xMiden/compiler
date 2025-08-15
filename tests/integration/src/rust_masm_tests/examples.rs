@@ -297,6 +297,17 @@ fn basic_wallet_and_p2id() {
     let account_package = test.compiled_package();
     assert!(account_package.is_library(), "expected library");
 
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../../examples/basic-wallet-tx-script",
+        config.clone(),
+        [],
+    );
+    test.expect_wasm(expect_file![format!("../../expected/examples/basic_wallet_tx_script.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/examples/basic_wallet_tx_script.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/examples/basic_wallet_tx_script.masm")]);
+    let package = test.compiled_package();
+    assert!(package.is_program(), "expected program");
+
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
     test.expect_wasm(expect_file![format!("../../expected/examples/p2id.wat")]);
     test.expect_ir(expect_file![format!("../../expected/examples/p2id.hir")]);
