@@ -418,5 +418,5 @@
     i32.gt_u
     select
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.1.5/src/stdlib/mem.rs\00\00\00\00\00\00\10\00(\00\00\00\98\00\00\00!\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.4.0/src/stdlib/mem.rs\00\00\00\00\00\00\10\00(\00\00\00\98\00\00\00!\00\00\00")
 )

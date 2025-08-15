@@ -6,6 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.1.5...cargo-miden-v0.4.0) - 2025-08-15
+
+### Added
+
+- add basic-wallet-tx-script to the `cargo miden example` command
+- add `--tx-script` option to the `cargo miden new` command
+- add `project-kind` with `account`, `note-script` and
+- add missing and fix existing tx kernel function bindings
+- rename note script rollup target into script
+- *(cargo-miden)* `example [name]` for paired projects (basic-wallet
+- move existing new project templates to `cargo miden example`
+
+### Fixed
+
+- switch to `v0.12.0` tag for new project templates
+- new templates path, test `--note` with an account
+- remove `add` from the skip list in bindings generator
+- improve the detection when to deploy Miden SDK WIT files
+- override the binary name for help and error messages to `cargo miden`
+- rewrite `ExampleCommand` to fetch from `examples` folder in the
+
+### Other
+
+- rename `note-script` and `tx-script` entrypoints to `run`
+- use local compiler path in `ExampleCommand` under tests
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- print detailed error on `cargo-miden` fail
+- `ExampleCommand` implementation, add comments
+- use `v0.11.0` tag for new project templates
+- add comments regarding Cargo.toml processing for example projects
+- print the list of the available examples on `cargo miden example --help`
+- merge new project and example test building into one test
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.1.0...cargo-miden-v0.1.5) - 2025-07-01
 
 ### Added

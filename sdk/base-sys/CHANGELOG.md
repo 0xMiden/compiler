@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.5...miden-base-sys-v0.4.0) - 2025-08-15
+
+### Added
+
+- add missing and fix existing tx kernel function bindings
+
+### Fixed
+
+- `account::remove_asset` Miden SDK bindings
+- update Miden SDK `AccountId` type and `account::get_id()` for two
+
+### Other
+
+- add doc comments
+- use advice map API in the basic wallet tx script
+- Add the test that executes counter contract, basic wallet and p2id note script on the local node ([#555](https://github.com/0xMiden/compiler/pull/555))
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.0...miden-base-sys-v0.1.5) - 2025-07-01
 
 ### Added

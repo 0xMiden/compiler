@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.1.5...midenc-debug-v0.4.0) - 2025-08-15
+
+### Fixed
+
+- handle empty iterator returned by `into_remainder()`
+- remove incorrect(order) `FromMidenRepr::from_words()` for `[Felt; 4]`
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- add `test_hmerge` integration test for `hmerge` Rust API
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.1.0...midenc-debug-v0.1.5) - 2025-07-01
 
 ### Fixed

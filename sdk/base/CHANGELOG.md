@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-base-v0.1.5...miden-base-v0.4.0) - 2025-08-15
+
+### Added
+
+- add `project-kind` with `account`, `note-script` and
+- add missing and fix existing tx kernel function bindings
+- rename note script rollup target into script
+
+### Fixed
+
+- add `arg: Word` parameter to `script`
+- update Miden SDK `AccountId` type and `account::get_id()` for two
+
+### Other
+
+- rename `note-script` and `tx-script` entrypoints to `run`
+- formatting
+- make `miden_stdlib_sys::Digest` a newtype instead of type alias
+
 ## [0.1.0](https://github.com/0xMiden/compiler/releases/tag/miden-base-v0.1.0) - 2025-05-23
 
 ### Added
