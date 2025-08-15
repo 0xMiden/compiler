@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-expect-test-v0.1.5...midenc-expect-test-v0.4.0) - 2025-08-15
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-expect-test-v0.1.0...midenc-expect-test-v0.1.5) - 2025-07-01
 
 ### Other

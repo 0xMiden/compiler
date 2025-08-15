@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-compile-v0.1.5...midenc-compile-v0.4.0) - 2025-08-15
+
+### Added
+
+- implement advice map API in Miden SDK
+- add `crypto::hmerge()` in Miden SDK (`hmerge` VM intruction);
+
+### Other
+
+- rename `io` to `advice`, export modules in stdlib SDK
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-compile-v0.1.0...midenc-compile-v0.1.5) - 2025-07-01
 
 ### Fixed

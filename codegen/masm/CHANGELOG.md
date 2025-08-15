@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.5...midenc-codegen-masm-v0.4.0) - 2025-08-15
+
+### Added
+
+- implement advice map API in Miden SDK
+- add `crypto::hmerge()` in Miden SDK (`hmerge` VM intruction);
+
+### Fixed
+
+- add an extra memory page after the data segments to accommodate for
+- start `Linker::reserved_memory_pages` on the next page after rustc
+- *(codegen)* missing result renaming in ptrtoint lowering
+- two-operand optimized stack scheduling when only one value is on the stack #606
+- fix the manual two-operand ops stack scheduling, remove `BinaryOp` gate
+- do binary stack scheduling optimizations only for the binary ops (implementing
+- `Rodata::bytes_to_elements()` check if `into_remainder()` returns
+
+### Other
+
+- rename `io` to `advice`, export modules in stdlib SDK
+- Add the test that executes counter contract, basic wallet and p2id note script on the local node ([#555](https://github.com/0xMiden/compiler/pull/555))
+- make `DEFAULT_RESERVATION` include the extra page to
+- add comments with stack state in `heap_init`
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- clean up
+- simplify `test_arg_order` test and move it to `misc` module
+- `hmerge` intrinsic to accept digests as a pointer and load
+- make `bytes_to_elements` infallible
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.0...midenc-codegen-masm-v0.1.5) - 2025-07-01
 
 ### Added

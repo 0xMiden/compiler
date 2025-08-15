@@ -530,5 +530,5 @@
     i32.gt_u
     select
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.1.5/src/bindings/note.rs\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.4.0/src/bindings/note.rs\00\00\00\00\00\10\00)\00\00\00\13\00\00\00!\00\00\00")
 )

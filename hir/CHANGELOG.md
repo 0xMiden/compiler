@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.1.5...midenc-hir-v0.4.0) - 2025-08-15
+
+### Added
+
+- panic if ops marked with SameOperandsAndResultType have no results
+- panic if ops marked with SameTypeOperands and/or SameOperandsAndResultType do not have operands
+
+### Fixed
+
+- don't panic on no operands when verifying SameTypeOperands[AndResult]
+
+### Other
+
+- Merge pull request #546 from lambdaclass/fabrizioorsi/i404-symbol-table-op-builder
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- remove InvalidOpsWithReturn entirely and replace with test::add
+- replace if statement with assert! when checking result vector size
+- remove out-dated comment
+- apply formatting
+- Typo fixes + enhacements in `SameTypeOperands` verification documentation.
+- Update comment regarding Operation::verify
+- Remove un-used imports
+- Uncomment `#[ignore]` macro in `derived_op_verifier_test()` now that the verifier is enabled
+- Delete op.verification all-together
+- Add a comment explaining why we do an initial verification
+- Add pass manager in test
+- Momentarily verify early
+- Pushing changes to save changes.
+- Verify the parent traits before the operation trait.
+- Remove the additional pattern declaration, leave an optional semi-colon which matches both patterns
+- Remove additional spaces
+- Add documentation to SameOperandsAndResultType and derive macro
+- Update diagnostic description
+- Make it possible to inherit an arbitrary amount of parent traits (comma separated)
+- Remove operand type check from SameOperandsAndResultType
+- Call parent trait verify function before OPTrait verify
+- Add $ParentTrait pattern to verify macro + Add SameTypeOperands as a explicit dependency
+- Implement SameOperandsAndResultType test.
+- Declare the InvalidOpsWithReturn struct and register it on the TestDialect Dialect
+- First implementation for SameOperandsAndResultType validation
+- Enable operands_are_the_same_type validation
+- Use the midenc_hir `test` dialect for ops in the new tests.
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.1.0...midenc-hir-v0.1.5) - 2025-07-01
 
 ### Fixed

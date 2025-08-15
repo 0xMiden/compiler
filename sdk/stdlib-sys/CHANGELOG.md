@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.1.5...miden-stdlib-sys-v0.4.0) - 2025-08-15
+
+### Added
+
+- implement advice map API in Miden SDK
+- add `crypto::hmerge()` in Miden SDK (`hmerge` VM intruction);
+
+### Fixed
+
+- WIT interface for core Wasm module imports for Miden SDK
+- change `align(32)` for `Word` to be `align(16)` #596
+- `hmerge` function declaration in WIT (invalid argument names),
+
+### Other
+
+- use advice map API in the basic wallet tx script
+- rename `io` to `advice`, export modules in stdlib SDK
+- Add the test that executes counter contract, basic wallet and p2id note script on the local node ([#555](https://github.com/0xMiden/compiler/pull/555))
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- Merge pull request #603 from 0xMiden/greenhat/i598-hmerge-pass-digest-ptr
+- pass the pointer to `[Digest; 2]` to `hmerge` intrinsic #598
+- add issue url in the comments
+- `hmerge` intrinsic to accept digests as a pointer and load
+- rename for readability, add comments
+- make `miden_stdlib_sys::Digest` a newtype instead of type alias
+- simplify the Rust part of the `hmerge` bindings
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.1.0...miden-stdlib-sys-v0.1.5) - 2025-07-01
 
 ### Fixed

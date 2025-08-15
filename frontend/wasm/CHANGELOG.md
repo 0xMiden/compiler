@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.1.5...midenc-frontend-wasm-v0.4.0) - 2025-08-15
+
+### Added
+
+- add missing and fix existing tx kernel function bindings
+- implement advice map API in Miden SDK
+- expose Miden stdlib `hash_elements` procedure in the Miden SDK
+- add `crypto::hmerge()` in Miden SDK (`hmerge` VM intruction);
+
+### Fixed
+
+- `tx:add_asset_to_note` Miden SDK bindings
+- #631 Aligned data segments overlap the `BumpAlloc` instance
+- update Miden SDK `AccountId` type and `account::get_id()` for two
+
+### Other
+
+- use advice map API in the basic wallet tx script
+- add custom `Debug` implementation for `ResolvedDataSegment`
+- rename `io` to `advice`, export modules in stdlib SDK
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- `hmerge` intrinsic to accept digests as a pointer and load
+- rename for readability, add comments
+
 ## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.1.0...midenc-frontend-wasm-v0.1.5) - 2025-07-01
 
 ### Added

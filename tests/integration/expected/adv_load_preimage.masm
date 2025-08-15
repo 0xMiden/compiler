@@ -5,10 +5,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.13186619085106056202
-    push.7994123983120291641
-    push.17386667624697142280
-    push.3776923771425457200
+    push.3642609239604542009
+    push.10317965044476189510
+    push.6175831851374349144
+    push.13568016175129161585
     adv.push_mapval
     push.262144
     push.4

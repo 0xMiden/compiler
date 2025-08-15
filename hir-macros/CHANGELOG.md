@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-macros-v0.1.5...midenc-hir-macros-v0.4.0) - 2025-08-15
+
+### Other
+
+- update operation proc macro documentation
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-macros-v0.0.7...midenc-hir-macros-v0.0.8) - 2025-04-24
 
 ### Added

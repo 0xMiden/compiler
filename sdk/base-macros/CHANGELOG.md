@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-base-macros-v0.1.5...miden-base-macros-v0.4.0) - 2025-08-15
+
+### Fixed
+
+- add empty `struct` support in `#[component]` attribute macro
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
 ## [0.1.0](https://github.com/0xMiden/compiler/releases/tag/miden-base-macros-v0.1.0) - 2025-05-23
 
 ### Added
