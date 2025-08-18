@@ -192,7 +192,12 @@ run_task = [{ name = ["midenc"] }]
 [tasks.install]
 category = "Install"
 description = "Installs the compiler via cargo"
-run_task = [{ name = ["install-midenc"] }, { name = ["install-cargo-miden"] }]
+run_task = [
+    { name = [
+       "install-midenc",
+       "install-cargo-miden",
+    ] },
+]
 
 [tasks.check]
 category = "Build"
@@ -231,11 +236,7 @@ description = "Check dependencies for lack of use, duplicates, vulnerabilities, 
 run_task = [
     { name = [
         "unused",
-    ] },
-    { name = [
         "duplicates",
-    ] },
-    { name = [
         "audit",
     ] },
 ]
