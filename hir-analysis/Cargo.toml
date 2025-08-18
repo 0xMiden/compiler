@@ -16,3 +16,12 @@ blink-alloc.workspace = true
 bitvec.workspace = true
 log.workspace = true
 midenc-hir.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1.0"
+midenc-dialect-hir = { path = "../dialects/hir" }
+midenc-dialect-arith = { path = "../dialects/arith" }
+midenc-dialect-cf = { path = "../dialects/cf" }
+midenc-dialect-scf = { path = "../dialects/scf" }
+midenc-expect-test.workspace = true
+env_logger.workspace = true

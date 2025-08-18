@@ -4126,8 +4126,15 @@ version = "0.4.0"
 dependencies = [
  "bitvec",
  "blink-alloc",
+ "env_logger",
  "log",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-expect-test",
  "midenc-hir",
+ "pretty_assertions",
 ]
 
 [[package]]
