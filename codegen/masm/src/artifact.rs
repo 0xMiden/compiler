@@ -292,6 +292,18 @@ impl MasmComponent {
 
         let converted_exports = recover_wasm_cm_interfaces(&lib);
 
+        // Workaround until https://github.com/0xMiden/compiler/issues/637 is fixed
+        let exports_wo_intrinsics = converted_exports
+            .into_iter()
+            .flat_map(|(name, node_id)| {
+                if name.to_string().starts_with("intrinsics") {
+                    None
+                } else {
+                    Some((name, node_id))
+                }
+            })
+            .collect();
+
         // Get a reference to the library MAST, then drop the library so we can obtain a mutable
         // reference so we can modify its advice map data
         let mut mast_forest = lib.mast_forest().clone();
@@ -302,7 +314,7 @@ impl MasmComponent {
         }
 
         // Reconstruct the library with the updated MAST
-        Ok(Library::new(mast_forest, converted_exports).map(Arc::new)?)
+        Ok(Library::new(mast_forest, exports_wo_intrinsics).map(Arc::new)?)
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
