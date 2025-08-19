@@ -933,7 +933,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         // find_nearest_common_dominator expects both pointers to be valid. When `from` is a virtual
         // root, then its CFG block pointer is `None`, so we have to "compute" the NCD manually
         let ncd_block = if from.block().is_some() && to.block().is_some() {
-            tree.find_nearest_common_dominator(from.block().unwrap(), from.block().unwrap())
+            tree.find_nearest_common_dominator(from.block().unwrap(), to.block().unwrap())
         } else {
             None
         };
