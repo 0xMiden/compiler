@@ -954,10 +954,10 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
 
         // Don't walk nodes above A's subtree. When we reach A's level, we must
         // either find A or be in some other subtree not dominated by A.
-        while let Some(b_idom) = b.idom() {
-            if b_idom.level() >= a_level {
-                // Walk up the tree
-                b = b_idom;
+        while b.level() > a_level {
+            match b.idom() {
+                Some(b_idom) => b = b_idom,
+                None => break,
             }
         }
 
