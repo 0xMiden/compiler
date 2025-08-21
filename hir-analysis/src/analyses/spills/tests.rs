@@ -498,7 +498,9 @@ fn spills_loop_nest() -> AnalysisResult<()> {
     let context = Rc::new(Context::default());
     let mut ob = OpBuilder::new(context.clone());
 
-    // Function: (ptr u64, u32, u32) -> u64
+    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
     let func = ob.create_function(
         Ident::with_empty_span("test::spill_loop".into()),
         Signature::new(
@@ -513,8 +515,31 @@ fn spills_loop_nest() -> AnalysisResult<()> {
             [AbiParam::new(Type::U64)],
         ),
     )?;
+    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+    let callee_sig = Signature::new(
+        [
+            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U64,
+                AddressSpace::Element,
+            )))),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+            AbiParam::new(Type::U64),
+        ],
+        [AbiParam::new(Type::U32)],
+    );
+    let callee =
+        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
+    module
+        .borrow_mut()
+        .symbol_manager_mut()
+        .insert_new(callee, ProgramPoint::Invalid);
 
-    let (_block1, _block3, _block4, _block5, _v1) = {
+    let call_op6 = {
         let mut b = FunctionBuilder::new(func, &mut ob);
         let entry = b.current_block();
         let (v0, v1, v2) = {
@@ -576,7 +601,7 @@ fn spills_loop_nest() -> AnalysisResult<()> {
         let offset = b.add_unchecked(col, row_off, span)?;
         let base = b.ptrtoint(v0, Type::U32, span)?;
         let addr = b.add_unchecked(base, offset, span)?;
-        let ptr = b.inttoptr(
+        let v3c = b.inttoptr(
             addr,
             Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U64,
@@ -584,70 +609,95 @@ fn spills_loop_nest() -> AnalysisResult<()> {
             ))),
             span,
         )?;
-        let load = b.load(ptr, span)?;
+        let load = b.load(v3c, span)?;
+        // Create extra pressure by making multiple values live and passing them to a call
+        let k1 = b.u64(1, span);
+        let k2 = b.u64(2, span);
+        let k3 = b.u64(3, span);
+        let k4 = b.u64(4, span);
+        let k5 = b.u64(5, span);
+        let k6 = b.u64(6, span);
+        let _k7 = b.u64(7, span);
+        let call = b.exec(callee, callee_sig.clone(), [v3c, load, k1, k2, k3, k4, k5, k6], span)?;
         let accn = b.add_unchecked(acc, load, span)?;
         let one2 = b.u32(1, span);
         let coln = b.add_unchecked(col, one2, span)?;
         // Backedge: continue inner loop by jumping to its header
         b.br(blk4, [coln, accn], span)?;
 
-        (blk1, blk3, blk4, blk5, v1)
+        call.as_operation_ref()
     };
 
     expect![[r#"
-            public builtin.function @test::spill_loop(v0: ptr<element, u64>, v1: u32, v2: u32) -> u64 {
-            ^block0(v0: ptr<element, u64>, v1: u32, v2: u32):
-                v3 = arith.constant 0 : u32;
-                v4 = arith.constant 0 : u32;
-                v5 = arith.constant 0 : u64;
-                cf.br ^block1(v3, v4, v5);
-            ^block1(v6: u32, v7: u32, v8: u64):
-                v9 = arith.eq v6, v1 : i1;
-                cf.cond_br v9 ^block2, ^block3;
-            ^block2:
-                builtin.ret v8;
-            ^block3:
-                cf.br ^block4(v7, v8);
-            ^block4(v10: u32, v11: u64):
-                v12 = arith.eq v10, v2 : i1;
-                cf.cond_br v12 ^block5(v10, v11), ^block6;
-            ^block5(v13: u32, v14: u64):
-                v15 = arith.constant 1 : u32;
-                v16 = arith.add v6, v15 : u32 #[overflow = unchecked];
-                cf.br ^block1(v16, v13, v14);
-            ^block6:
-                v17 = arith.constant 1 : u32;
-                v18 = arith.sub v6, v17 : u32 #[overflow = unchecked];
-                v19 = arith.mul v18, v2 : u32 #[overflow = unchecked];
-                v20 = arith.add v10, v19 : u32 #[overflow = unchecked];
-                v21 = hir.ptr_to_int v0 : u32;
-                v22 = arith.add v21, v20 : u32 #[overflow = unchecked];
-                v23 = hir.int_to_ptr v22 : ptr<element, u64>;
-                v24 = hir.load v23 : u64;
-                v25 = arith.add v11, v24 : u64 #[overflow = unchecked];
-                v26 = arith.constant 1 : u32;
-                v27 = arith.add v10, v26 : u32 #[overflow = unchecked];
-                cf.br ^block4(v27, v25);
-            };"#]]
-        .assert_eq(&func.as_operation_ref().borrow().to_string());
+        public builtin.function @test::spill_loop(v0: ptr<element, u64>, v1: u32, v2: u32) -> u64 {
+        ^block1(v0: ptr<element, u64>, v1: u32, v2: u32):
+            v3 = arith.constant 0 : u32;
+            v4 = arith.constant 0 : u32;
+            v5 = arith.constant 0 : u64;
+            cf.br ^block2(v3, v4, v5);
+        ^block2(v6: u32, v7: u32, v8: u64):
+            v9 = arith.eq v6, v1 : i1;
+            cf.cond_br v9 ^block3, ^block4;
+        ^block3:
+            builtin.ret v8;
+        ^block4:
+            cf.br ^block5(v7, v8);
+        ^block5(v10: u32, v11: u64):
+            v12 = arith.eq v10, v2 : i1;
+            cf.cond_br v12 ^block6(v10, v11), ^block7;
+        ^block6(v13: u32, v14: u64):
+            v15 = arith.constant 1 : u32;
+            v16 = arith.add v6, v15 : u32 #[overflow = unchecked];
+            cf.br ^block2(v16, v13, v14);
+        ^block7:
+            v17 = arith.constant 1 : u32;
+            v18 = arith.sub v6, v17 : u32 #[overflow = unchecked];
+            v19 = arith.mul v18, v2 : u32 #[overflow = unchecked];
+            v20 = arith.add v10, v19 : u32 #[overflow = unchecked];
+            v21 = hir.ptr_to_int v0 : u32;
+            v22 = arith.add v21, v20 : u32 #[overflow = unchecked];
+            v23 = hir.int_to_ptr v22 : ptr<element, u64>;
+            v24 = hir.load v23 : u64;
+            v25 = arith.constant 1 : u64;
+            v26 = arith.constant 2 : u64;
+            v27 = arith.constant 3 : u64;
+            v28 = arith.constant 4 : u64;
+            v29 = arith.constant 5 : u64;
+            v30 = arith.constant 6 : u64;
+            v31 = arith.constant 7 : u64;
+            v32 = hir.exec @test/example(v23, v24, v25, v26, v27, v28, v29, v30) : u32
+            v33 = arith.add v11, v24 : u64 #[overflow = unchecked];
+            v34 = arith.constant 1 : u32;
+            v35 = arith.add v10, v34 : u32 #[overflow = unchecked];
+            cf.br ^block5(v35, v33);
+        };"#]]
+    .assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
 
-    // Currently, the spill analysis determines that no spills are needed
-    // because the maximum stack pressure (9) is below K (16).
-    // The original test expected spills due to loop pressure, but the current
-    // implementation correctly determines that there is sufficient stack space.
-    // This test has been updated to reflect the current behavior.
-    assert!(!spills.has_spills());
-    assert_eq!(spills.splits().len(), 0);
-    assert_eq!(spills.spills().len(), 0);
-    assert_eq!(spills.reloads().len(), 0);
+    // With the added call in the inner loop body, stack pressure exceeds 16,
+    // so spills and reloads are expected.
+    assert!(spills.has_spills());
+    assert!(!spills.spills().is_empty());
+    assert!(!spills.reloads().is_empty());
 
-    // The original test expectations are commented out below for reference:
-    // The test was expecting a spill from block3 to block4 and a reload from block5 to block1
-    // for v1, due to operand stack pressure in the nested loops.
-    // However, with K=16 and max pressure=9, no spills are actually needed.
+    // We expect that at least one of the key live values is spilled before the call in block6
+    let spilled_at_call = spills
+        .spills()
+        .iter()
+        .filter(|s| matches!(s.place, crate::analyses::spills::Placement::At(pp) if pp == ProgramPoint::before(call_op6)))
+        .map(|s| s.value)
+        .collect::<alloc::vec::Vec<_>>();
+    assert!(!spilled_at_call.is_empty());
+    // There should be at least one split created due to differing W/S sets across edges
+    assert!(!spills.splits().is_empty());
+    // And at least one reload must be placed on a split
+    let reloads_on_splits = spills
+        .reloads()
+        .iter()
+        .any(|r| matches!(r.place, crate::analyses::spills::Placement::Split(_)));
+    assert!(reloads_on_splits);
 
     Ok(())
 }
