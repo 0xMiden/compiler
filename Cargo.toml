@@ -188,3 +188,24 @@ opt-level = 3
 
 [profile.dev.package.miden-crypto]
 opt-level = 3
+
+# Speed up the local network integration tests (proving times)
+# ============================================================
+[profile.dev.package.miden-processor]
+opt-level = 3
+
+[profile.dev.package.miden-prover]
+opt-level = 3
+
+[profile.dev.package.winter-prover]
+opt-level = 3
+
+[profile.dev.package.miden-client]
+opt-level = 3
+
+[profile.dev.package.miden-lib]
+opt-level = 3
+
+[profile.dev.package.miden-tx]
+opt-level = 3
+# ============================================================
