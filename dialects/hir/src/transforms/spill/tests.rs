@@ -355,12 +355,11 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
             cf.cond_br v11 ^block2, ^block3;
         ^block2:
             v12 = arith.constant 1 : u64;
-            hir.store_local v3 #[local = lv0];
-            hir.store_local v1 #[local = lv1];
+            hir.store_local v1 #[local = lv0];
             v13 = hir.exec @test/example(v8, v5, v9, v9, v12) : u32
             hir.store v4, v9;
             v14 = arith.constant 5 : u32;
-            v26 = hir.load_local  : u32 #[local = lv1];
+            v26 = hir.load_local  : u32 #[local = lv0];
             v15 = arith.add v26, v14 : u32 #[overflow = unchecked];
             cf.br ^block5;
         ^block5:
@@ -370,8 +369,6 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
             v17 = arith.add v1, v16 : u32 #[overflow = unchecked];
             cf.br ^block6;
         ^block6:
-            hir.store_local v3 #[local = lv0];
-            hir.store_local v1 #[local = lv1];
             cf.br ^block4(v17);
         ^block4(v18: u32):
             v19 = arith.constant 72 : u32;
@@ -392,7 +389,7 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
                 || l.trim_start().starts_with("hir.load_local ")
         })
         .count();
-    assert!(stores >= 2, "expected at least two store_local ops\n{after}");
-    assert!(loads >= 1, "expected at least one load_local op\n{after}");
+    assert!(stores == 1, "expected only one store_local ops\n{after}");
+    assert!(loads == 1, "expected only one load_local op\n{after}");
     Ok(())
 }

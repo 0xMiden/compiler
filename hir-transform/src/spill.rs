@@ -693,28 +693,42 @@ fn rewrite_spill_pseudo_instructions(
     let mut builder = RewriterImpl::<NoopRewriterListener>::new(context);
     for spill in analysis.spills() {
         let operation = spill.inst.expect("expected spill to have been materialized");
-        let op = operation.borrow();
-        let spill_like = op
-            .as_trait::<dyn SpillLike>()
-            .expect("expected materialized spill operation to implement SpillLike");
-        // The current SSA value representing the original spilled value at this point in the
-        // program
-        let stored = spill_like.spilled_value();
-        // This spill is used if it properly dominates any reload of `stored` (and all uses should
-        // be reloads)
-        //
-        // If we have no dominance info, the spill is presumed used
-        let is_used = dominfo.is_none_or(|dominfo| {
-            stored.borrow().uses().iter().any(|user| {
-                let used_by = user.owner.borrow();
-                debug_assert!(
-                    user.owner == operation || used_by.implements::<dyn ReloadLike>(),
-                    "unexpected non-reload use of spilled value"
-                );
-                op.dominates(&used_by, dominfo)
-            })
-        });
-        drop(op);
+        let spilled = {
+            let op = operation.borrow();
+            let spill_like = op
+                .as_trait::<dyn SpillLike>()
+                .expect("expected materialized spill operation to implement SpillLike");
+            spill_like.spilled_value()
+        };
+        // Only keep spills that feed a live reload dominated by this spill
+        let mut is_used = false;
+        for rinfo in analysis.reloads() {
+            if rinfo.value != spilled {
+                continue;
+            }
+            let Some(reload_op) = rinfo.inst else {
+                continue;
+            };
+            let (reload_used, dom_ok) = {
+                let rop = reload_op.borrow();
+                let rl = rop
+                    .as_trait::<dyn ReloadLike>()
+                    .expect("expected materialized reload op to implement ReloadLike");
+                let used = rl.reloaded().borrow().is_used();
+                let dom_ok = match dominfo {
+                    None => true,
+                    Some(dominfo) => {
+                        let sop = operation.borrow();
+                        sop.dominates(&rop, dominfo)
+                    }
+                };
+                (used, dom_ok)
+            };
+            if reload_used && dom_ok {
+                is_used = true;
+                break;
+            }
+        }
 
         if is_used {
             builder.set_insertion_point_after(operation);
