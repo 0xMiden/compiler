@@ -147,7 +147,9 @@ impl DominanceFrontier {
 
         let mut visit_block = |block: BlockRef, block_q: &mut VecDeque<BlockRef>| {
             // If `block` has an empty dominance frontier, there is nothing to add.
-            let Some(df) = self.dfs.get(&block) else { return; };
+            let Some(df) = self.dfs.get(&block) else {
+                return;
+            };
 
             let added = df.difference(&idf);
             if added.is_empty() {

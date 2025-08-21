@@ -173,10 +173,7 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     .assert_eq(&after);
 
     // Also assert counts for materialized spills/reloads (similar to branching test style)
-    let stores = after
-        .lines()
-        .filter(|l| l.trim_start().starts_with("hir.store_local "))
-        .count();
+    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
     let loads = after
         .lines()
         .filter(|l| {
