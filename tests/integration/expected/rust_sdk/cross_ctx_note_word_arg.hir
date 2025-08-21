@@ -35,7 +35,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v98 = arith.constant 2 : felt;
             v99 = arith.constant 1 : felt;
             v53 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v99, v98, v97, v96, v95, v94, v93, v92, v91, v90, v89, v88, v87, v86, v85, v93) : felt
-            v83 = arith.constant 458761 : felt;
+            v83 = arith.constant 458760 : felt;
             hir.assert_eq v53, v83;
             builtin.ret ;
         };

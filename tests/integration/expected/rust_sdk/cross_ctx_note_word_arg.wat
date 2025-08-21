@@ -84,7 +84,7 @@
       i32.const 7
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
-      i32.const 458761
+      i32.const 458760
       call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
       call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
     )

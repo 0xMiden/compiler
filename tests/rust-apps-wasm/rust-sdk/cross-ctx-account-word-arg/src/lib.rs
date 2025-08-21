@@ -57,7 +57,7 @@ impl foo::Guest for MyFoo {
 
         let felt_sum = felt1 * felt!(4096) + felt2 * felt!(8192) + felt3 * felt!(16384);
 
-        let felt4_sum = felt4 + felt!(1);
+        let felt4_sum = felt4;
 
         sum1 + sum2 + sum3 + felt_sum + felt4_sum
     }
