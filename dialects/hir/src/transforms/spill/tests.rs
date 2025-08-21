@@ -143,8 +143,8 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     pm.add_pass(Box::new(TransformSpills));
     pm.run(func.as_operation_ref())?;
 
-    // Check output IR: spills become store_local; reloads become load_local
     let after = func.as_operation_ref().borrow().to_string();
+    // Check output IR: spills become store_local; reloads become load_local
     expect![[r#"
         public builtin.function @test::spill(v0: ptr<element, u8>) -> u32 {
         ^block1(v0: ptr<element, u8>):
@@ -171,6 +171,21 @@ fn materializes_spills_intra_block() -> TestResult<()> {
             builtin.ret v19;
         };"#]]
     .assert_eq(&after);
+
+    // Also assert counts for materialized spills/reloads (similar to branching test style)
+    let stores = after
+        .lines()
+        .filter(|l| l.trim_start().starts_with("hir.store_local "))
+        .count();
+    let loads = after
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.contains("= hir.load_local ") || t.starts_with("hir.load_local ")
+        })
+        .count();
+    assert!(stores == 2, "expected two store_local ops\n{after}");
+    assert!(loads == 2, "expected two load_local ops\n{after}");
 
     Ok(())
 }
