@@ -282,8 +282,13 @@ impl MasmComponent {
                 );
                 continue;
             }
-            log::debug!(target: "assembly", "adding '{}' to assembler", module.path());
-            modules.push(module);
+            if module.path().to_string().starts_with("intrinsics") {
+                log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
+                assembler.add_module(module)?;
+            } else {
+                log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
+                modules.push(module);
+            }
         }
         let lib = assembler.assemble_library(modules)?;
 
