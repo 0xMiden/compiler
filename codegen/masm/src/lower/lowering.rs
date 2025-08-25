@@ -186,25 +186,16 @@ pub trait HirLowering: Op {
                             emitter.swap(1, span);
                             emitter.movup(rhs_index, span);
                         }
-                        _ => match rhs_index {
-                            0 => {
-                                emitter.movup(lhs_index, span);
+                        _ => {
+                            emitter.movup(lhs_index, span);
+                            if rhs_index == 0 {
                                 emitter.swap(1, span);
+                            } else if lhs_index > rhs_index {
+                                emitter.movup(rhs_index + 1, span);
+                            } else {
+                                emitter.movup(rhs_index, span);
                             }
-                            1 => {
-                                emitter.swap(1, span);
-                                emitter.movup(lhs_index, span);
-                            }
-                            _ => {
-                                if lhs_index > rhs_index {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.movup(rhs_index + 1, span);
-                                } else {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.movup(rhs_index, span);
-                                }
-                            }
-                        },
+                        }
                     },
                     (Constraint::Move, Constraint::Copy) => match lhs_index {
                         0 => {
