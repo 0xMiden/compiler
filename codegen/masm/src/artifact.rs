@@ -179,7 +179,7 @@ impl MasmComponent {
         _link_packages: &BTreeMap<Symbol, Arc<Package>>,
         session: &Session,
     ) -> Result<Arc<Program>, Report> {
-        use miden_assembly::{Assembler, CompileOptions};
+        use miden_assembly::Assembler;
 
         let debug_mode = session.options.emit_debug_decorators();
 
@@ -201,16 +201,11 @@ impl MasmComponent {
         }
 
         // Assemble library
-        let mut modules: Vec<Arc<masm::Module>> = self.modules.clone();
-
-        // We need to add modules according to their dependencies (add the dependency before the dependent)
-        // Workaround until https://github.com/0xMiden/miden-vm/issues/1669 is implemented
-        modules.reverse();
-
         log::debug!(target: "assembly", "start adding the following modules with assembler: {}",
-            modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
+            self.modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
 
-        for module in modules.iter().cloned() {
+        let mut modules = Vec::with_capacity(self.modules.len());
+        for module in self.modules.iter().cloned() {
             if lib_modules.contains(module.path()) {
                 log::warn!(
                     target: "assembly",
@@ -220,16 +215,20 @@ impl MasmComponent {
                 );
                 continue;
             }
-            log::debug!(target: "assembly", "adding '{}' to assembler", module.path());
-            let kind = module.kind();
-            assembler.add_module_with_options(
-                module,
-                CompileOptions {
-                    kind,
-                    warnings_as_errors: false,
-                    path: None,
-                },
-            )?;
+
+            if module.path().to_string().starts_with("intrinsics") {
+                log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
+                assembler.add_module(module)?;
+            } else {
+                log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
+                modules.push(module);
+            }
+        }
+
+        // We need to add modules according to their dependencies (add the dependency before the dependent)
+        // Workaround until https://github.com/0xMiden/miden-vm/issues/1669 is implemented
+        for module in modules.into_iter().rev() {
+            assembler.add_module(module)?;
         }
 
         let emit_test_harness = session.get_flag("test_harness");
@@ -271,6 +270,8 @@ impl MasmComponent {
         }
 
         // Assemble library
+        log::debug!(target: "assembly", "start adding the following modules with assembler: {}",
+            self.modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
         let mut modules = Vec::with_capacity(self.modules.len());
         for module in self.modules.iter().cloned() {
             if lib_modules.contains(module.path()) {
