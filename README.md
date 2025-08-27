@@ -12,7 +12,7 @@ or as means of compiling WebAssembly (Wasm) produced by another compiler to Mide
 
 This repo is broken into the following high-level components:
 
-* Miden HIR (high-level intermediate representation) and it's supporting crates;
+* Miden HIR (high-level intermediate representation) and its supporting crates;
 providing everything needed to build and compile IR for a program you want to
 emit Miden Assembly for.
 * The Wasm frontend; a library which can be used to convert a program compiled to `.wasm` to HIR
