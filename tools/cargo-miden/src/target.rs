@@ -5,13 +5,11 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use cargo_metadata::Package;
 use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 
 /// Detects the target environment based on Cargo metadata.
-pub fn detect_target_environment(metadata: &cargo_metadata::Metadata) -> Result<TargetEnv> {
-    let Some(root_pkg) = metadata.root_package() else {
-        return Ok(TargetEnv::Base);
-    };
+pub fn detect_target_environment(root_pkg: &Package) -> Result<TargetEnv> {
     let Some(meta_obj) = root_pkg.metadata.as_object() else {
         return Ok(TargetEnv::Base);
     };
@@ -70,8 +68,8 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
 }
 
 /// Detect the project type
-pub fn detect_project_type(metadata: &cargo_metadata::Metadata) -> Result<ProjectType> {
-    let target_env = detect_target_environment(metadata)?;
+pub fn detect_project_type(root_pkg: &Package) -> Result<ProjectType> {
+    let target_env = detect_target_environment(root_pkg)?;
     Ok(target_environment_to_project_type(target_env))
 }
 
