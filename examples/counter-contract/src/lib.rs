@@ -4,7 +4,7 @@
 // However, we could still use some standard library types while
 // remaining no-std compatible, if we uncommented the following lines:
 //
-extern crate alloc;
+// extern crate alloc;
 
 // Global allocator to use heap memory in no-std environment
 #[global_allocator]
