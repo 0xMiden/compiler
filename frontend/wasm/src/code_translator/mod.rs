@@ -345,6 +345,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.add_wrapping(lhs, rhs, span)?;
 
+            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split(res, span)?;
             state.pushn(&[res_lo, res_hi]);
         }
@@ -439,6 +440,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.sub_wrapping(lhs, rhs, span)?;
 
+            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split(res, span)?;
             state.pushn(&[res_lo, res_hi]);
         }
@@ -459,6 +461,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
+            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split(res, span)?;
             state.pushn(&[res_lo, res_hi]);
         }
@@ -470,6 +473,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
+            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split(res, span)?;
             state.pushn(&[res_lo, res_hi]);
         }

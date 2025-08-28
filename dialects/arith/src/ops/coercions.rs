@@ -238,9 +238,9 @@ impl Foldable for Sext {
 )]
 pub struct Join {
     #[operand]
-    lhs: Int64,
+    high_limb: Int64,
     #[operand]
-    rhs: Int64,
+    low_limb: Int64,
     #[result]
     result: SizedInt<128>,
 }
@@ -255,6 +255,11 @@ impl InferTypeOpInterface for Join {
 }
 
 /// Split a 128bit integer into two 64 bit integers.
+///
+/// The result is a pair of 64bit integers, e.g., `v1, v2 = arith.split v0 : i64, i64;` where `v1`
+/// is the high limb and `v2` is the low limb.
+///
+/// It also will leave the high limb on the top of the working stack during codegen.
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp, SameTypeOperands),
