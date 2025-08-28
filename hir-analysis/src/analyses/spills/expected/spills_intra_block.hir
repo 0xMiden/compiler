@@ -1,0 +1,20 @@
+public builtin.function @test::spill(v0: ptr<element, u8>) -> u32 {
+^block1(v0: ptr<element, u8>):
+    v1 = hir.ptr_to_int v0 : u32;
+    v2 = arith.constant 32 : u32;
+    v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
+    v4 = hir.int_to_ptr v3 : ptr<element, u128>;
+    v5 = hir.load v4 : u128;
+    v6 = arith.constant 64 : u32;
+    v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
+    v8 = hir.int_to_ptr v7 : ptr<element, u128>;
+    v9 = hir.load v8 : u128;
+    v10 = arith.constant 1 : u64;
+    v11 = hir.exec @test/example(v8, v5, v9, v9, v10) : u32
+    v12 = arith.constant 72 : u32;
+    v13 = arith.add v1, v12 : u32 #[overflow = unchecked];
+    hir.store v4, v9;
+    v14 = hir.int_to_ptr v13 : ptr<element, u64>;
+    v15 = hir.load v14 : u64;
+    builtin.ret v3;
+};

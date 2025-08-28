@@ -4,7 +4,7 @@ use std::string::ToString;
 use midenc_dialect_arith::ArithOpBuilder as Arith;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_expect_test::expect;
+use midenc_expect_test::expect_file;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::AnalysisManager,
@@ -161,28 +161,8 @@ fn spills_intra_block() -> AnalysisResult<()> {
         v3 = v3c;
     }
 
-    expect![[r#"
-            public builtin.function @test::spill(v0: ptr<element, u8>) -> u32 {
-            ^block1(v0: ptr<element, u8>):
-                v1 = hir.ptr_to_int v0 : u32;
-                v2 = arith.constant 32 : u32;
-                v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-                v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-                v5 = hir.load v4 : u128;
-                v6 = arith.constant 64 : u32;
-                v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-                v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-                v9 = hir.load v8 : u128;
-                v10 = arith.constant 1 : u64;
-                v11 = hir.exec @test/example(v8, v5, v9, v9, v10) : u32
-                v12 = arith.constant 72 : u32;
-                v13 = arith.add v1, v12 : u32 #[overflow = unchecked];
-                hir.store v4, v9;
-                v14 = hir.int_to_ptr v13 : ptr<element, u64>;
-                v15 = hir.load v14 : u64;
-                builtin.ret v3;
-            };"#]]
-    .assert_eq(&func.as_operation_ref().borrow().to_string());
+    expect_file!["expected/spills_intra_block.hir"]
+        .assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
@@ -363,39 +343,8 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
         v3 = v3c;
     }
 
-    expect![[r#"
-            public builtin.function @test::spill_branch(v0: ptr<element, u8>) -> u32 {
-            ^block1(v0: ptr<element, u8>):
-                v1 = hir.ptr_to_int v0 : u32;
-                v2 = arith.constant 32 : u32;
-                v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-                v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-                v5 = hir.load v4 : u128;
-                v6 = arith.constant 64 : u32;
-                v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-                v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-                v9 = hir.load v8 : u128;
-                v10 = arith.constant 0 : u32;
-                v11 = arith.eq v1, v10 : i1;
-                cf.cond_br v11 ^block2, ^block3;
-            ^block2:
-                v12 = arith.constant 1 : u64;
-                v13 = hir.exec @test/example(v8, v5, v9, v9, v12) : u32
-                cf.br ^block4(v13);
-            ^block3:
-                v14 = arith.constant 8 : u32;
-                v15 = arith.add v1, v14 : u32 #[overflow = unchecked];
-                cf.br ^block4(v15);
-            ^block4(v16: u32):
-                v17 = arith.constant 72 : u32;
-                v18 = arith.add v1, v17 : u32 #[overflow = unchecked];
-                v19 = arith.add v18, v16 : u32 #[overflow = unchecked];
-                v20 = hir.int_to_ptr v19 : ptr<element, u64>;
-                hir.store v4, v9;
-                v21 = hir.load v20 : u64;
-                builtin.ret v3;
-            };"#]]
-    .assert_eq(&func.as_operation_ref().borrow().to_string());
+    expect_file!["expected/spills_branch_cfg.hir"]
+        .assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
@@ -628,50 +577,8 @@ fn spills_loop_nest() -> AnalysisResult<()> {
         call.as_operation_ref()
     };
 
-    expect![[r#"
-        public builtin.function @test::spill_loop(v0: ptr<element, u64>, v1: u32, v2: u32) -> u64 {
-        ^block1(v0: ptr<element, u64>, v1: u32, v2: u32):
-            v3 = arith.constant 0 : u32;
-            v4 = arith.constant 0 : u32;
-            v5 = arith.constant 0 : u64;
-            cf.br ^block2(v3, v4, v5);
-        ^block2(v6: u32, v7: u32, v8: u64):
-            v9 = arith.eq v6, v1 : i1;
-            cf.cond_br v9 ^block3, ^block4;
-        ^block3:
-            builtin.ret v8;
-        ^block4:
-            cf.br ^block5(v7, v8);
-        ^block5(v10: u32, v11: u64):
-            v12 = arith.eq v10, v2 : i1;
-            cf.cond_br v12 ^block6(v10, v11), ^block7;
-        ^block6(v13: u32, v14: u64):
-            v15 = arith.constant 1 : u32;
-            v16 = arith.add v6, v15 : u32 #[overflow = unchecked];
-            cf.br ^block2(v16, v13, v14);
-        ^block7:
-            v17 = arith.constant 1 : u32;
-            v18 = arith.sub v6, v17 : u32 #[overflow = unchecked];
-            v19 = arith.mul v18, v2 : u32 #[overflow = unchecked];
-            v20 = arith.add v10, v19 : u32 #[overflow = unchecked];
-            v21 = hir.ptr_to_int v0 : u32;
-            v22 = arith.add v21, v20 : u32 #[overflow = unchecked];
-            v23 = hir.int_to_ptr v22 : ptr<element, u64>;
-            v24 = hir.load v23 : u64;
-            v25 = arith.constant 1 : u64;
-            v26 = arith.constant 2 : u64;
-            v27 = arith.constant 3 : u64;
-            v28 = arith.constant 4 : u64;
-            v29 = arith.constant 5 : u64;
-            v30 = arith.constant 6 : u64;
-            v31 = arith.constant 7 : u64;
-            v32 = hir.exec @test/example(v23, v24, v25, v26, v27, v28, v29, v30) : u32
-            v33 = arith.add v11, v24 : u64 #[overflow = unchecked];
-            v34 = arith.constant 1 : u32;
-            v35 = arith.add v10, v34 : u32 #[overflow = unchecked];
-            cf.br ^block5(v35, v33);
-        };"#]]
-    .assert_eq(&func.as_operation_ref().borrow().to_string());
+    expect_file!["expected/spills_loop_nest.hir"]
+        .assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;

@@ -3,7 +3,7 @@ use std::string::ToString;
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
-use midenc_expect_test::expect;
+use midenc_expect_test::expect_file;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::{Nesting, PassManager},
@@ -116,28 +116,8 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     //   store_local <spilled>
     //   load_local  : <type> #[local = lvN]
     let before = func.as_operation_ref().borrow().to_string();
-    expect![[r#"
-        public builtin.function @test::spill(v0: ptr<element, u8>) -> u32 {
-        ^block1(v0: ptr<element, u8>):
-            v1 = hir.ptr_to_int v0 : u32;
-            v2 = arith.constant 32 : u32;
-            v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-            v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-            v5 = hir.load v4 : u128;
-            v6 = arith.constant 64 : u32;
-            v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-            v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-            v9 = hir.load v8 : u128;
-            v10 = arith.constant 1 : u64;
-            v11 = hir.exec @test/example(v8, v5, v9, v9, v10) : u32
-            v12 = arith.constant 72 : u32;
-            v13 = arith.add v1, v12 : u32 #[overflow = unchecked];
-            hir.store v4, v13;
-            v14 = hir.int_to_ptr v13 : ptr<element, u64>;
-            v15 = hir.load v14 : u64;
-            builtin.ret v3;
-        };"#]]
-    .assert_eq(&before);
+
+    expect_file!["expected/materialize_spills_intra_block_before.hir"].assert_eq(&before);
 
     let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
     pm.add_pass(Box::new(TransformSpills));
@@ -145,32 +125,7 @@ fn materializes_spills_intra_block() -> TestResult<()> {
 
     let after = func.as_operation_ref().borrow().to_string();
     // Check output IR: spills become store_local; reloads become load_local
-    expect![[r#"
-        public builtin.function @test::spill(v0: ptr<element, u8>) -> u32 {
-        ^block1(v0: ptr<element, u8>):
-            v1 = hir.ptr_to_int v0 : u32;
-            v2 = arith.constant 32 : u32;
-            v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-            v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-            v5 = hir.load v4 : u128;
-            v6 = arith.constant 64 : u32;
-            v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-            v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-            v9 = hir.load v8 : u128;
-            v10 = arith.constant 1 : u64;
-            hir.store_local v3 #[local = lv0];
-            hir.store_local v4 #[local = lv1];
-            v11 = hir.exec @test/example(v8, v5, v9, v9, v10) : u32
-            v12 = arith.constant 72 : u32;
-            v13 = arith.add v1, v12 : u32 #[overflow = unchecked];
-            v18 = hir.load_local  : ptr<element, u128> #[local = lv1];
-            hir.store v18, v13;
-            v14 = hir.int_to_ptr v13 : ptr<element, u64>;
-            v15 = hir.load v14 : u64;
-            v19 = hir.load_local  : u32 #[local = lv0];
-            builtin.ret v19;
-        };"#]]
-    .assert_eq(&after);
+    expect_file!["expected/materialize_spills_intra_block_after.hir"].assert_eq(&after);
 
     // Also assert counts for materialized spills/reloads (similar to branching test style)
     let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
@@ -307,42 +262,8 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
 
     let before = func.as_operation_ref().borrow().to_string();
     assert!(before.contains("cf.cond_br") && before.contains("hir.exec"));
-    expect![[r#"
-        public builtin.function @test::spill_branch(v0: ptr<element, u8>) -> u32 {
-        ^block1(v0: ptr<element, u8>):
-            v1 = hir.ptr_to_int v0 : u32;
-            v2 = arith.constant 32 : u32;
-            v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-            v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-            v5 = hir.load v4 : u128;
-            v6 = arith.constant 64 : u32;
-            v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-            v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-            v9 = hir.load v8 : u128;
-            v10 = arith.constant 0 : u32;
-            v11 = arith.eq v1, v10 : i1;
-            cf.cond_br v11 ^block2, ^block3;
-        ^block2:
-            v12 = arith.constant 1 : u64;
-            v13 = hir.exec @test/example(v8, v5, v9, v9, v12) : u32
-            hir.store v4, v9;
-            v14 = arith.constant 5 : u32;
-            v15 = arith.add v1, v14 : u32 #[overflow = unchecked];
-            cf.br ^block4(v13);
-        ^block3:
-            v16 = arith.constant 8 : u32;
-            v17 = arith.add v1, v16 : u32 #[overflow = unchecked];
-            cf.br ^block4(v17);
-        ^block4(v18: u32):
-            v19 = arith.constant 72 : u32;
-            v20 = arith.add v1, v19 : u32 #[overflow = unchecked];
-            v21 = arith.add v20, v18 : u32 #[overflow = unchecked];
-            v22 = hir.int_to_ptr v21 : ptr<element, u64>;
-            hir.store v4, v9;
-            v23 = hir.load v22 : u64;
-            builtin.ret v3;
-        };"#]]
-    .assert_eq(&before);
+
+    expect_file!["expected/materialize_spills_branch_cfg_before.hir"].assert_eq(&before);
 
     let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
     pm.add_pass(Box::new(TransformSpills));
@@ -350,48 +271,7 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
 
     let after = func.as_operation_ref().borrow().to_string();
 
-    expect![[r#"
-        public builtin.function @test::spill_branch(v0: ptr<element, u8>) -> u32 {
-        ^block1(v0: ptr<element, u8>):
-            v1 = hir.ptr_to_int v0 : u32;
-            v2 = arith.constant 32 : u32;
-            v3 = arith.add v1, v2 : u32 #[overflow = unchecked];
-            v4 = hir.int_to_ptr v3 : ptr<element, u128>;
-            v5 = hir.load v4 : u128;
-            v6 = arith.constant 64 : u32;
-            v7 = arith.add v1, v6 : u32 #[overflow = unchecked];
-            v8 = hir.int_to_ptr v7 : ptr<element, u128>;
-            v9 = hir.load v8 : u128;
-            v10 = arith.constant 0 : u32;
-            v11 = arith.eq v1, v10 : i1;
-            cf.cond_br v11 ^block2, ^block3;
-        ^block2:
-            v12 = arith.constant 1 : u64;
-            hir.store_local v1 #[local = lv0];
-            v13 = hir.exec @test/example(v8, v5, v9, v9, v12) : u32
-            hir.store v4, v9;
-            v14 = arith.constant 5 : u32;
-            v26 = hir.load_local  : u32 #[local = lv0];
-            v15 = arith.add v26, v14 : u32 #[overflow = unchecked];
-            cf.br ^block5;
-        ^block5:
-            cf.br ^block4(v13);
-        ^block3:
-            v16 = arith.constant 8 : u32;
-            v17 = arith.add v1, v16 : u32 #[overflow = unchecked];
-            cf.br ^block6;
-        ^block6:
-            cf.br ^block4(v17);
-        ^block4(v18: u32):
-            v19 = arith.constant 72 : u32;
-            v20 = arith.add v1, v19 : u32 #[overflow = unchecked];
-            v21 = arith.add v20, v18 : u32 #[overflow = unchecked];
-            v22 = hir.int_to_ptr v21 : ptr<element, u64>;
-            hir.store v4, v9;
-            v23 = hir.load v22 : u64;
-            builtin.ret v3;
-        };"#]]
-    .assert_eq(&after);
+    expect_file!["expected/materialize_spills_branch_cfg_after.hir"].assert_eq(&after);
 
     let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
     let loads = after
