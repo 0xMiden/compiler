@@ -7,17 +7,20 @@ use crate::{Constraint, OperandStack};
 
 /// The context associated with an instance of [OperandMovementConstraintSolver].
 ///
-/// Contained in this context is the current state of the stack, the expected operands,
-/// the constraints on those operands, and metadata about copied operands.
+/// Contained in this context is the current state of the stack, the expected operands, whether the
+/// expected operands may be out of order, the constraints on those operands, and metadata about
+/// copied operands.
 #[derive(Debug)]
 pub struct SolverContext {
     stack: Stack,
     expected: Stack,
+    unordered: bool,
     copies: CopyInfo,
 }
 impl SolverContext {
     pub fn new(
         expected: &[hir::ValueRef],
+        may_be_unordered: bool,
         constraints: &[Constraint],
         stack: &OperandStack,
     ) -> Result<Self, SolverError> {
@@ -62,6 +65,7 @@ impl SolverContext {
         Ok(Self {
             stack,
             expected: expected_output,
+            unordered: may_be_unordered,
             copies,
         })
     }
@@ -92,13 +96,47 @@ impl SolverContext {
         &self.expected
     }
 
+    pub fn may_be_unordered(&self) -> bool {
+        self.unordered
+    }
+
     /// Return true if the given stack matches what is expected
     /// if a solution was correctly found.
     pub fn is_solved(&self, pending: &Stack) -> bool {
         debug_assert!(pending.len() >= self.expected.len());
-        self.expected
+
+        let is_solved_exactly = self
+            .expected
             .iter()
-            .eq(pending.iter().skip(pending.len() - self.expected.len()))
+            .eq(pending.iter().skip(pending.len() - self.expected.len()));
+
+        let both_same_value =
+            self.expected.len() == 2 && self.expected[0].value() == self.expected[1].value();
+
+        is_solved_exactly
+            || ((self.unordered || both_same_value) && self.is_solved_unordered(pending))
+    }
+
+    /// Return whether all of the expected operands are at the top of the pending stack but in any
+    /// order.
+    fn is_solved_unordered(&self, pending: &Stack) -> bool {
+        // This is effectively a multiset comparison.  Use a map from value to count as the set.
+
+        fn make_set<'a, VI>(vals_iter: VI) -> FxHashMap<ValueOrAlias, usize>
+        where
+            VI: Iterator<Item = &'a ValueOrAlias>,
+        {
+            let mut set = FxHashMap::default();
+            for val in vals_iter {
+                set.entry(*val).and_modify(|c| *c += 1).or_insert(1);
+            }
+            set
+        }
+
+        let expected_set = make_set(self.expected.iter());
+        let pending_set = make_set(pending.iter().skip(pending.len() - self.expected.len()));
+
+        pending_set == expected_set
     }
 }
 

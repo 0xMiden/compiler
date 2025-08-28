@@ -38,6 +38,15 @@ impl Stack {
         self.stack.iter().rev().position(|stack_value| value == stack_value)
     }
 
+    // pub fn position_beyond(&self, value: &ValueOrAlias, offs: usize) -> Option<usize> {
+    //     // The position 'beyond' index can't be index itself.  Start at index + 1.
+    //     self.stack
+    //         .iter()
+    //         .rev()
+    //         .skip(offs + 1)
+    //         .position(|stack_value| value == stack_value)
+    // }
+
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &ValueOrAlias> {
         self.stack.iter()
     }

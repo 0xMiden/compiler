@@ -95,20 +95,30 @@ pub struct OperandMovementConstraintSolver {
 impl OperandMovementConstraintSolver {
     /// Construct a new solver for the given expected operands, constraints, and operand stack
     /// state.
-    pub fn new(
+    pub fn new_with_unordered_flag(
         expected: &[hir::ValueRef],
+        can_be_unordered: bool,
         constraints: &[Constraint],
         stack: &crate::OperandStack,
     ) -> Result<Self, SolverError> {
         assert_eq!(expected.len(), constraints.len());
 
-        let context = SolverContext::new(expected, constraints, stack)?;
+        let context = SolverContext::new(expected, can_be_unordered, constraints, stack)?;
 
         Ok(Self {
             context,
             tactics: Default::default(),
             fuel: 25,
         })
+    }
+
+    pub fn new(
+        expected: &[hir::ValueRef],
+        constraints: &[Constraint],
+        stack: &crate::OperandStack,
+    ) -> Result<Self, SolverError> {
+        let can_be_unordered = false;
+        Self::new_with_unordered_flag(expected, can_be_unordered, constraints, stack)
     }
 
     /// Set the quantity of optimization fuel the solver has to work with
@@ -147,6 +157,7 @@ impl OperandMovementConstraintSolver {
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(CopyAll));
             }
+            self.tactics.push(Box::new(TwoArgs));
         }
 
         // Now that we know what constraints are in place, we can derive

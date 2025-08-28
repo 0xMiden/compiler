@@ -20,8 +20,7 @@ end
 
 export.entrypoint
     push.65535
-    movup.2
-    movup.2
+    movdn.2
     trace.240
     nop
     exec.::intrinsics::i32::wrapping_mul

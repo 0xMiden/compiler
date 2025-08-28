@@ -21,7 +21,6 @@ end
 export.match_enum
     push.255
     movup.3
-    swap.1
     u32and
     dup.0
     push.2147483648
@@ -73,8 +72,7 @@ export.__main
     exec.::root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824::match_enum
     trace.252
     nop
-    movup.2
-    movup.2
+    movdn.2
     u32wrapping_add
     u32wrapping_add
 end

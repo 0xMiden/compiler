@@ -7,10 +7,11 @@ mod linear;
 mod move_down_and_swap;
 mod move_up_and_swap;
 mod swap_and_move_up;
+mod two_args;
 
 pub use self::{
     copy_all::CopyAll, linear::Linear, move_down_and_swap::MoveDownAndSwap,
-    move_up_and_swap::MoveUpAndSwap, swap_and_move_up::SwapAndMoveUp,
+    move_up_and_swap::MoveUpAndSwap, swap_and_move_up::SwapAndMoveUp, two_args::TwoArgs,
 };
 
 /// An error returned by an [OperandMovementConstraintSolver] tactic
@@ -111,6 +112,10 @@ impl<'a> SolutionBuilder<'a> {
         self.context.copies().len()
     }
 
+    pub fn may_be_unordered(&self) -> bool {
+        self.context.may_be_unordered()
+    }
+
     /// Get a reference to the underlying context of the solver
     #[inline(always)]
     pub fn context(&self) -> &'a SolverContext {
@@ -193,6 +198,12 @@ impl<'a> SolutionBuilder<'a> {
     pub fn get_current_position(&self, value: &ValueOrAlias) -> Option<u8> {
         self.pending.position(value).map(|index| index as u8)
     }
+
+    // /// Get the current position of `value` in this solution starting from an offset.
+    // #[inline]
+    // pub fn get_current_position_beyond(&self, value: &ValueOrAlias, pos: u8) -> Option<u8> {
+    //     self.pending.position_beyond(value, pos as usize).map(|index| index as u8)
+    // }
 
     /// Get the current position of `value` in this solution, or panic
     #[track_caller]

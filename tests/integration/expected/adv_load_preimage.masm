@@ -116,7 +116,6 @@ export.entrypoint
     push.0
     push.4
     dup.5
-    swap.1
     u32wrapping_add
     dup.3
     dup.3
@@ -165,7 +164,6 @@ export.entrypoint
     push.0
     push.1
     movup.2
-    swap.1
     eq
     neq
     if.true
@@ -303,7 +301,6 @@ export.entrypoint
         push.0
         push.0
         dup.4
-        swap.1
         eq
         neq
         if.true
@@ -451,7 +448,6 @@ export.entrypoint
                     nop
                     push.16
                     movup.2
-                    swap.1
                     u32wrapping_add
                     push.1114176
                     u32divmod.4
@@ -504,7 +500,6 @@ proc.__rustc::__rust_alloc_zeroed
     push.0
     push.0
     dup.2
-    swap.1
     eq
     neq
     if.true
@@ -514,7 +509,6 @@ proc.__rustc::__rust_alloc_zeroed
         push.0
         push.0
         dup.3
-        swap.1
         eq
         neq
         if.true
@@ -585,10 +579,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     push.0
     push.4294967295
     dup.2
-    swap.1
     u32wrapping_add
     dup.2
-    swap.1
     u32and
     neq
     if.true
@@ -668,7 +660,6 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 swap.1
                 u32shl
                 movup.2
-                swap.1
                 u32wrapping_add
                 swap.1
                 u32divmod.4
@@ -696,7 +687,6 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             push.0
             push.4294967295
             dup.2
-            swap.1
             u32xor
             dup.3
             swap.1
@@ -740,7 +730,6 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
     push.0
     movup.2
-    swap.1
     eq
     if.true
         drop
@@ -894,12 +883,10 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
         if.true
             push.0
             dup.2
-            swap.1
             neq
             if.true
                 push.0
                 movup.6
-                swap.1
                 neq
                 if.true
                     push.1
@@ -929,7 +916,6 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 else
                     push.8
                     dup.3
-                    swap.1
                     u32wrapping_add
                     dup.6
                     dup.3
@@ -960,17 +946,16 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 push.0
                 push.0
                 dup.2
-                swap.1
                 eq
                 neq
                 dup.0
                 if.true
-                    swap.6
-                    swap.1
+                    movup.6
+                    movup.2
                     drop
                     drop
                     push.8
-                    dup.4
+                    dup.5
                     add
                     u32assert
                     push.4
@@ -979,7 +964,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     u32mod
                     u32assert
                     assertz
-                    movup.2
+                    movup.3
                     swap.1
                     u32divmod.4
                     swap.1
@@ -989,7 +974,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     trace.252
                     nop
                     push.4
-                    dup.3
+                    dup.4
                     add
                     u32assert
                     push.4
@@ -1008,11 +993,30 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     trace.252
                     nop
                 else
-                    swap.7
-                    movup.3
+                    movup.7
+                    movup.4
                     drop
                     drop
                     push.8
+                    dup.5
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.2
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                    push.4
                     dup.4
                     add
                     u32assert
@@ -1022,24 +1026,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                     u32mod
                     u32assert
                     assertz
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                    push.4
-                    dup.3
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.4
+                    movup.5
                     swap.1
                     u32divmod.4
                     swap.1
@@ -1051,7 +1038,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
                 end
                 push.0
                 push.1
-                movup.5
+                movup.2
                 cdrop
             else
                 movup.2
@@ -1234,7 +1221,6 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     push.0
     push.8
     dup.2
-    swap.1
     u32wrapping_add
     movup.2
     swap.5
@@ -1329,7 +1315,6 @@ proc.alloc::alloc::Global::alloc_impl
     push.0
     push.0
     dup.4
-    swap.1
     eq
     neq
     if.true
@@ -1344,7 +1329,6 @@ proc.alloc::alloc::Global::alloc_impl
         nop
         push.0
         movup.4
-        swap.1
         neq
         if.true
             swap.1

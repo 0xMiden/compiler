@@ -95,8 +95,6 @@ export.entrypoint.2
     nop
     movup.6
     movup.6
-    movdn.3
-    movdn.3
     trace.240
     nop
     exec.::std::math::u64::wrapping_add

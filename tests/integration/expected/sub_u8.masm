@@ -20,8 +20,7 @@ end
 
 export.entrypoint
     push.255
-    swap.1
-    movup.2
+    swap.2
     u32wrapping_sub
     u32and
 end

@@ -30,7 +30,6 @@ export.sum_arr
     push.0
     push.0
     dup.3
-    swap.1
     eq
     neq
     if.true
@@ -60,11 +59,9 @@ export.sum_arr
             u32wrapping_add
             push.4294967295
             movup.3
-            swap.1
             u32wrapping_add
             push.0
             dup.1
-            swap.1
             neq
             push.3735929054
             dup.1
@@ -81,7 +78,6 @@ export.sum_arr
             push.3735929054
             push.4
             movup.6
-            swap.1
             u32wrapping_add
             dup.4
             cdrop

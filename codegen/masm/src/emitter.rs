@@ -274,12 +274,14 @@ impl BlockEmitter<'_> {
                     }
                 }
             } else {
-                self.schedule_operands(&unused, &constraints, op.span()).unwrap_or_else(|err| {
-                    panic!(
-                        "failed to schedule unused operands for {}: {err:?}",
-                        ProgramPoint::before(op)
-                    )
-                });
+                let may_be_unordered = false;
+                self.schedule_operands(&unused, may_be_unordered, &constraints, op.span())
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "failed to schedule unused operands for {}: {err:?}",
+                            ProgramPoint::before(op)
+                        )
+                    });
                 let mut emitter = self.emitter();
                 emitter.dropn(unused.len(), op.span());
             }
@@ -289,10 +291,16 @@ impl BlockEmitter<'_> {
     pub fn schedule_operands(
         &mut self,
         expected: &[ValueRef],
+        may_be_unordered: bool,
         constraints: &[Constraint],
         span: SourceSpan,
     ) -> Result<(), SolverError> {
-        match OperandMovementConstraintSolver::new(expected, constraints, &self.stack) {
+        match OperandMovementConstraintSolver::new_with_unordered_flag(
+            expected,
+            may_be_unordered,
+            constraints,
+            &self.stack,
+        ) {
             Ok(solver) => {
                 let mut emitter = self.emitter();
                 solver.solve_and_apply(&mut emitter, span)

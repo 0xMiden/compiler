@@ -70,216 +70,22 @@ pub trait HirLowering: Op {
             constraints.swap(0, 1);
         }
 
-        // If we're emitting a two-operand op , we can produce an optimal schedule for the operands
-        // by handling the various edge cases manually, such as commutativity, or interactions
-        // where only a single move/copy is needed to get both operands into place.
-        // NOTE: This code handles any two-operand op, not only binary ops
-        let is_binary = args.len() == 2;
-        if is_binary {
-            let span = self.as_operation().span();
-            log::trace!(target: "codegen", "scheduling operands for binary op: {}", self.as_operation());
-            log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
-            let rhs = args[0];
-            let rhs_constraint = constraints[0];
-            let lhs = args[1];
-            let lhs_constraint = constraints[1];
-            let is_duplicate = rhs == lhs;
-            log::trace!(target: "codegen", "  b = {rhs} = {rhs_constraint:?}");
-            log::trace!(target: "codegen", "  a = {lhs} = {lhs_constraint:?}");
-            let current_rhs = emitter.stack[0].as_value();
-            // Handle the case with only one value on the stack (think `b = a + a`)
-            let current_lhs = emitter.stack.get(1).and_then(|o| o.as_value());
-            log::trace!(target: "codegen", "  stack[0]  = {current_rhs:?}");
-            log::trace!(target: "codegen", "  stack[1]  = {current_lhs:?}");
-            if current_rhs == Some(rhs) && current_lhs == Some(lhs) {
-                let mut emitter = emitter.emitter();
-                match (rhs_constraint, lhs_constraint) {
-                    (Constraint::Move, Constraint::Move) => (),
-                    (Constraint::Move, Constraint::Copy) => {
-                        emitter.dup(1, span);
-                        if !is_duplicate {
-                            emitter.swap(1, span);
-                        }
-                    }
-                    (Constraint::Copy, Constraint::Move) => {
-                        if is_duplicate {
-                            emitter.dup(0, span);
-                        } else {
-                            emitter.swap(1, span);
-                            emitter.dup(1, span);
-                        }
-                    }
-                    (Constraint::Copy, Constraint::Copy) => {
-                        emitter.dup(1, span);
-                        emitter.dup(1, span);
-                    }
-                }
-            } else if current_rhs == Some(lhs) && current_lhs == Some(rhs) {
-                let mut emitter = emitter.emitter();
-                let is_commutative = op.implements::<dyn Commutative>();
-                match (lhs_constraint, rhs_constraint) {
-                    (Constraint::Move, Constraint::Move) if is_commutative || is_duplicate => (),
-                    (Constraint::Move, Constraint::Move) => {
-                        emitter.swap(1, span);
-                    }
-                    (Constraint::Move, Constraint::Copy) => {
-                        emitter.dup(1, span);
-                    }
-                    (Constraint::Copy, Constraint::Move) => {
-                        if is_duplicate {
-                            emitter.dup(0, span);
-                        } else {
-                            emitter.swap(1, span);
-                            emitter.dup(1, span);
-                        }
-                    }
-                    (Constraint::Copy, Constraint::Copy) => {
-                        emitter.dup(1, span);
-                        emitter.dup(1, span);
-                    }
-                }
-            } else {
-                let rhs_index = emitter.stack.find(&rhs).unwrap() as u8;
-                // If we have two move constraints for the same value, there must be another
-                // copy on the operand stack, so we must ensure we select unique indices for
-                // both
-                let move_all = matches!(
-                    (rhs_constraint, lhs_constraint),
-                    (Constraint::Move, Constraint::Move)
-                );
-                let lhs_index = if is_duplicate {
-                    let dupe_index = emitter
-                        .stack
-                        .iter()
-                        .rev()
-                        .enumerate()
-                        .skip_while(|(index, _)| *index <= rhs_index as usize)
-                        .position(|(_, operand)| operand == &rhs);
-                    if move_all {
-                        dupe_index
-                            .expect("invalid constraints: a duplicate value cannot be moved twice")
-                            as u8
-                    } else {
-                        dupe_index
-                            .or_else(|| emitter.stack.find(&lhs))
-                            .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
-                            as u8
-                    }
-                } else {
-                    emitter
-                        .stack
-                        .find(&lhs)
-                        .unwrap_or_else(|| panic!("{lhs} is not on the operand stack"))
-                        as u8
-                };
-                let duplicate_index = rhs_index == lhs_index;
-
-                let mut emitter = emitter.emitter();
-                match (rhs_constraint, lhs_constraint) {
-                    (Constraint::Move, Constraint::Move) => match lhs_index {
-                        0 => {
-                            assert!(!is_duplicate);
-                            emitter.movup(rhs_index, span);
-                        }
-                        1 => {
-                            assert!(!is_duplicate);
-                            emitter.swap(1, span);
-                            emitter.movup(rhs_index, span);
-                        }
-                        _ => {
-                            emitter.movup(lhs_index, span);
-                            if rhs_index == 0 {
-                                emitter.swap(1, span);
-                            } else if lhs_index > rhs_index {
-                                emitter.movup(rhs_index + 1, span);
-                            } else {
-                                emitter.movup(rhs_index, span);
-                            }
-                        }
-                    },
-                    (Constraint::Move, Constraint::Copy) => match lhs_index {
-                        0 => {
-                            emitter.dup(lhs_index, span);
-                            if !duplicate_index {
-                                emitter.movup(rhs_index + 1, span);
-                            }
-                        }
-                        1 => {
-                            if duplicate_index {
-                                emitter.swap(1, span);
-                                emitter.dup(0, span);
-                            } else {
-                                emitter.dup(1, span);
-                                emitter.movup(rhs_index + 1, span);
-                            }
-                        }
-                        _ => match rhs_index {
-                            0 => {
-                                emitter.dup(lhs_index, span);
-                                emitter.swap(1, span);
-                            }
-                            1 => {
-                                emitter.dup(lhs_index, span);
-                                emitter.movup(2, span);
-                            }
-                            _ => {
-                                emitter.dup(lhs_index, span);
-                                emitter.movup(rhs_index + 1, span);
-                            }
-                        },
-                    },
-                    (Constraint::Copy, Constraint::Move) => match lhs_index {
-                        0 => {
-                            emitter.dup(rhs_index, span);
-                        }
-                        1 => {
-                            emitter.swap(1, span);
-                            emitter.dup(rhs_index, span);
-                        }
-                        _ => match rhs_index {
-                            0 => {
-                                emitter.movup(lhs_index, span);
-                                emitter.dup(1, span);
-                            }
-                            1 => {
-                                emitter.movup(lhs_index, span);
-                                emitter.dup(2, span);
-                            }
-                            _ => {
-                                if lhs_index > rhs_index {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.dup(rhs_index + 1, span);
-                                } else {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.dup(rhs_index, span);
-                                }
-                            }
-                        },
-                    },
-                    (Constraint::Copy, Constraint::Copy) => {
-                        emitter.dup(lhs_index, span);
-                        emitter.dup(rhs_index + 1, span);
-                    }
-                }
-            }
-
-            log::trace!(target: "codegen", "stack after manual scheduling: {:#?}", &emitter.stack);
-            return Ok(());
-        }
-
         log::trace!(target: "codegen", "scheduling operands for {op}");
         for arg in args.iter() {
             log::trace!(target: "codegen", "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
         log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
-        emitter.schedule_operands(&args, &constraints, op.span()).unwrap_or_else(|err| {
-            panic!(
-                "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
-                 {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                op.name(),
-                &emitter.stack,
-            )
-        });
+        let may_be_unordered = op.implements::<dyn Commutative>();
+        emitter
+            .schedule_operands(&args, may_be_unordered, &constraints, op.span())
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                    op.name(),
+                    &emitter.stack,
+                )
+            });
         log::trace!(target: "codegen", "stack after scheduling: {:#?}", &emitter.stack);
 
         Ok(())
@@ -1204,8 +1010,9 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(then_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
+            let may_be_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, &constraints, span)
+                .schedule_operands(&successor_operands, may_be_unordered, &constraints, span)
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
@@ -1233,8 +1040,9 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(else_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
+            let may_be_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, &constraints, span)
+                .schedule_operands(&successor_operands, may_be_unordered, &constraints, span)
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \

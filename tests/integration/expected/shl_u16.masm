@@ -22,7 +22,6 @@ export.entrypoint
     push.65535
     push.15
     movup.3
-    swap.1
     u32and
     movup.2
     swap.1

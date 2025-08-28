@@ -12,7 +12,6 @@ export.process-word
     push.0
     push.0
     dup.2
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -25,7 +24,6 @@ export.process-word
     push.0
     push.4
     dup.3
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -38,7 +36,6 @@ export.process-word
     push.0
     push.8
     dup.4
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -51,7 +48,6 @@ export.process-word
     push.0
     push.12
     movup.5
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -78,7 +74,6 @@ export.process-another-word
     push.0
     push.0
     dup.2
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -91,7 +86,6 @@ export.process-another-word
     push.0
     push.4
     dup.3
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -104,7 +98,6 @@ export.process-another-word
     push.0
     push.8
     dup.4
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -117,7 +110,6 @@ export.process-another-word
     push.0
     push.12
     movup.5
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -152,7 +144,6 @@ export.process-pair
     push.0
     push.0
     dup.2
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -165,7 +156,6 @@ export.process-pair
     push.0
     push.4
     movup.3
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -189,7 +179,6 @@ export.process-triple
     push.0
     push.0
     dup.2
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -202,7 +191,6 @@ export.process-triple
     push.0
     push.4
     dup.3
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -215,7 +203,6 @@ export.process-triple
     push.0
     push.8
     movup.4
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -238,7 +225,6 @@ export.process-mixed
     nop
     push.0
     dup.1
-    swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -250,7 +236,6 @@ export.process-mixed
     push.0
     push.8
     dup.4
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -262,7 +247,6 @@ export.process-mixed
     nop
     push.12
     dup.4
-    swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -274,7 +258,6 @@ export.process-mixed
     push.0
     push.16
     dup.6
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -286,7 +269,6 @@ export.process-mixed
     nop
     push.20
     dup.6
-    swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -303,7 +285,6 @@ export.process-mixed
     u32and
     push.21
     dup.7
-    swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -320,7 +301,6 @@ export.process-mixed
     u32and
     push.22
     movup.8
-    swap.1
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -356,12 +336,10 @@ export.process-nested
     nop
     push.0
     dup.1
-    swap.1
     u32wrapping_add
     push.0
     push.0
     dup.2
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -374,7 +352,6 @@ export.process-nested
     push.0
     push.4
     movup.3
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -387,7 +364,6 @@ export.process-nested
     push.0
     push.8
     movup.4
-    swap.1
     u32wrapping_add
     u32wrapping_add
     u32divmod.4
@@ -484,7 +460,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-word
     nop
     push.1048584
     movup.4
-    swap.1
     u32wrapping_add
     push.4
     trace.240
@@ -623,7 +598,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     nop
     push.1048584
     movup.4
-    swap.1
     u32wrapping_add
     push.5
     trace.240
@@ -758,7 +732,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-pair
     nop
     push.1048584
     movup.2
-    swap.1
     u32wrapping_add
     push.4
     trace.240
@@ -847,7 +820,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-triple
     nop
     push.1048584
     movup.3
-    swap.1
     u32wrapping_add
     push.5
     trace.240
@@ -955,7 +927,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     nop
     push.1048584
     movup.3
-    swap.1
     u32wrapping_add
     push.22
     dup.1
@@ -969,7 +940,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     assertz
     push.9
     movup.10
-    swap.1
     u32wrapping_add
     push.65535
     u32and
@@ -998,7 +968,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     push.0
     push.255
     movup.9
-    swap.1
     u32and
     eq
     push.255
@@ -1030,7 +999,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     mem_store
     push.11
     movup.7
-    swap.1
     u32wrapping_add
     push.255
     u32and
@@ -1090,7 +1058,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     assertz
     push.10
     movup.6
-    swap.1
     u32wrapping_add
     swap.1
     u32divmod.4
@@ -1130,8 +1097,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     push.0
     movup.5
     movup.5
-    movdn.3
-    movdn.3
     trace.240
     nop
     exec.::std::math::u64::wrapping_add
@@ -1187,7 +1152,6 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
     nop
     push.1048584
     movup.3
-    swap.1
     u32wrapping_add
     push.8
     trace.240
@@ -1301,7 +1265,6 @@ proc.wit_bindgen_rt::run_ctors_once
         push.1
         push.1048608
         movup.2
-        swap.1
         u32wrapping_add
         u32divmod.4
         swap.1
