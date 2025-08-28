@@ -143,7 +143,7 @@ impl<'a> SolutionBuilder<'a> {
 
     /// Get the value expected at `index`
     pub fn get_expected(&self, index: u8) -> Option<ValueOrAlias> {
-        self.context.expected().get(index as usize).map(|o| o.value)
+        self.context.expected().get(index as usize).copied()
     }
 
     /// Get the value expected at `index` or panic
@@ -161,19 +161,18 @@ impl<'a> SolutionBuilder<'a> {
     /// Get the value currently at `index` in this solution
     #[allow(unused)]
     pub fn get_current(&self, index: u8) -> Option<ValueOrAlias> {
-        self.pending.get(index as usize).map(|o| o.value)
+        self.pending.get(index as usize).copied()
     }
 
     /// Get the value currently at `index` in this solution
     #[track_caller]
     pub fn unwrap_current(&self, index: u8) -> ValueOrAlias {
-        match self.pending.get(index as usize) {
-            Some(operand) => operand.value,
-            None => panic!(
+        self.pending.get(index as usize).copied().unwrap_or_else(|| {
+            panic!(
                 "operand {index} does not exist: the stack contains only {} operands",
                 self.pending.len()
-            ),
-        }
+            )
+        })
     }
 
     /// Get the position at which `value` is expected
@@ -207,8 +206,8 @@ impl<'a> SolutionBuilder<'a> {
     /// Returns true if the value expected at `index` is currently at that index
     pub fn is_expected(&self, index: u8) -> bool {
         self.get_expected(index)
-            .map(|v| v.eq(&self.pending[index as usize].value))
-            .unwrap_or(true)
+            .map(|v| v == self.pending[index as usize])
+            .unwrap_or(false)
     }
 
     /// Duplicate the operand at `index` to the top of the stack

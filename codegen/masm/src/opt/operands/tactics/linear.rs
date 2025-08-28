@@ -28,26 +28,22 @@ impl Tactic for Linear {
 
             // Materialize copies
             let mut materialized = SmallSet::<ValueOrAlias, 4>::default();
-            for b in builder.context().expected().iter().rev() {
+            for (b_pos, b_value) in builder.context().expected().iter().rev().enumerate() {
                 // Where is B
-                if let Some(_b_at) = builder.get_current_position(&b.value) {
+                if let Some(_b_at) = builder.get_current_position(b_value) {
                     log::trace!(
-                        "no copy needed for {:?} from index {} to top of stack",
-                        b.value,
-                        b.pos
+                        "no copy needed for {b_value:?} from index {b_pos} to top of stack",
                     );
-                    materialized.insert(b.value);
+                    materialized.insert(*b_value);
                 } else {
                     // B isn't on the stack because it is a copy we haven't materialized yet
-                    assert!(b.value.is_alias());
-                    let b_at = builder.unwrap_current_position(&b.value.unaliased());
+                    assert!(b_value.is_alias());
+                    let b_at = builder.unwrap_current_position(&b_value.unaliased());
                     log::trace!(
-                        "materializing copy of {:?} from index {} to top of stack",
-                        b.value,
-                        b.pos
+                        "materializing copy of {b_value:?} from index {b_pos} to top of stack",
                     );
-                    builder.dup(b_at, b.value.unwrap_alias());
-                    materialized.insert(b.value);
+                    builder.dup(b_at, b_value.unwrap_alias());
+                    materialized.insert(*b_value);
                     changed = true;
                 }
             }

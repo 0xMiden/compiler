@@ -44,14 +44,17 @@ impl SolverContext {
 
         // Rename multiple occurrences of the same value on the operand stack, if present
         let mut dupes = CopyInfo::default();
-        for operand in stack.iter_mut().rev() {
-            operand.value = dupes.push_if_duplicate(operand.value);
+        for value in stack.iter_mut().rev() {
+            *value = dupes.push_if_duplicate(*value);
         }
 
         // Determine if the stack is already in the desired order
         let requires_copies = copies.copies_required();
         let is_solved = !requires_copies
-            && expected_output.iter().rev().all(|op| &stack[op.pos as usize] == op);
+            && stack.len() >= expected_output.len()
+            && expected_output
+                .iter()
+                .eq(stack.iter().skip(stack.len() - expected_output.len()));
         if is_solved {
             return Err(SolverError::AlreadySolved);
         }
@@ -93,7 +96,9 @@ impl SolverContext {
     /// if a solution was correctly found.
     pub fn is_solved(&self, pending: &Stack) -> bool {
         debug_assert!(pending.len() >= self.expected.len());
-        self.expected.iter().all(|o| pending.contains(o))
+        self.expected
+            .iter()
+            .eq(pending.iter().skip(pending.len() - self.expected.len()))
     }
 }
 

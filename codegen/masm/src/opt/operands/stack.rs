@@ -1,25 +1,18 @@
-use alloc::collections::VecDeque;
-
 use super::*;
 
-/// This implements a stack data structure for [Operand]
+/// This implements a stack data structure for [ValueOrAlias]
 #[derive(Default, Debug, Clone)]
 pub struct Stack {
-    stack: Vec<Operand>,
+    stack: Vec<ValueOrAlias>,
 }
 impl FromIterator<ValueOrAlias> for Stack {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = ValueOrAlias>,
     {
-        let mut stack = VecDeque::new();
-        for value in iter.into_iter() {
-            stack.push_front(Operand { pos: 0, value });
-        }
-        let mut stack = Vec::from(stack);
-        for (pos, operand) in stack.iter_mut().rev().enumerate() {
-            operand.pos = pos as u8;
-        }
+        let mut stack = iter.into_iter().collect::<Vec<_>>();
+        stack.reverse();
+
         Self { stack }
     }
 }
@@ -38,50 +31,31 @@ impl Stack {
     }
 
     pub fn push(&mut self, value: ValueOrAlias) {
-        self.stack.push(Operand { pos: 0, value });
-        if self.stack.len() > 1 {
-            for (pos, operand) in self.iter_mut().rev().enumerate() {
-                operand.pos = pos as u8;
-            }
-        }
+        self.stack.push(value);
     }
 
     pub fn position(&self, value: &ValueOrAlias) -> Option<usize> {
-        self.stack.iter().rev().position(|o| value == &o.value)
+        self.stack.iter().rev().position(|stack_value| value == stack_value)
     }
 
-    pub fn contains(&self, operand: &Operand) -> bool {
-        self[operand.pos as usize].value == operand.value
-    }
-
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Operand> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &ValueOrAlias> {
         self.stack.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Operand> {
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut ValueOrAlias> {
         self.stack.iter_mut()
     }
 
     pub fn dup(&mut self, n: usize, alias_id: core::num::NonZeroU8) {
-        let value = self[n].value;
-        self.stack.push(Operand {
-            pos: 0,
-            value: value.copy(alias_id),
-        });
-        for (pos, operand) in self.stack.iter_mut().rev().enumerate() {
-            operand.pos = pos as u8;
-        }
+        let value = self[n];
+        self.stack.push(value.copy(alias_id));
     }
 
     pub fn swap(&mut self, n: usize) {
         let len = self.stack.len();
-        let a = len - 1;
-        let b = a - n;
-        let a_pos = self.stack[a].pos;
-        let b_pos = self.stack[b].pos;
-        self.stack.swap(a, b);
-        self.stack[a].pos = a_pos;
-        self.stack[b].pos = b_pos;
+        let a_idx = len - 1;
+        let b_idx = a_idx - n;
+        self.stack.swap(a_idx, b_idx);
     }
 
     pub fn movup(&mut self, n: usize) {
@@ -89,9 +63,6 @@ impl Stack {
         let mid = len - (n + 1);
         let (_, r) = self.stack.split_at_mut(mid);
         r.rotate_left(1);
-        for (pos, operand) in r.iter_mut().rev().enumerate() {
-            operand.pos = pos as u8;
-        }
     }
 
     pub fn movdn(&mut self, n: usize) {
@@ -99,9 +70,6 @@ impl Stack {
         let mid = len - (n + 1);
         let (_, r) = self.stack.split_at_mut(mid);
         r.rotate_right(1);
-        for (pos, operand) in r.iter_mut().rev().enumerate() {
-            operand.pos = pos as u8;
-        }
     }
 
     pub fn reset_to(&mut self, snapshot: &Self) {
@@ -117,13 +85,13 @@ impl Stack {
         self.stack.extend_from_slice(&snapshot.stack);
     }
 
-    pub fn get(&self, index: usize) -> Option<&Operand> {
+    pub fn get(&self, index: usize) -> Option<&ValueOrAlias> {
         let len = self.stack.len();
         self.stack.get(len - index - 1)
     }
 }
 impl core::ops::Index<usize> for Stack {
-    type Output = Operand;
+    type Output = ValueOrAlias;
 
     fn index(&self, index: usize) -> &Self::Output {
         let len = self.stack.len();

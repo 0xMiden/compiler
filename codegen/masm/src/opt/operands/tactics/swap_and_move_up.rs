@@ -39,14 +39,14 @@ impl Tactic for SwapAndMoveUp {
         if expected1_pos == 0 {
             log::trace!(
                 "swapping {expected1:?} from top of the stack, with {:?} at index 1",
-                builder.stack()[1].value
+                builder.stack()[1]
             );
             builder.swap(1);
         } else {
             log::trace!(
                 "swapping {expected1:?} at index {expected1_pos} to the top of the stack, with \
                  {:?}",
-                builder.stack()[0].value
+                builder.stack()[0]
             );
             builder.swap(expected1_pos);
         }
@@ -58,7 +58,7 @@ impl Tactic for SwapAndMoveUp {
             log::trace!(
                 "moving {expected0:?} from index {expected0_pos} to the top of stack, shifting \
                  {:?} down by one",
-                builder.stack()[0].value
+                builder.stack()[0]
             );
             builder.movup(expected0_pos);
         }

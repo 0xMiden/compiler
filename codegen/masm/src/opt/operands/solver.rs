@@ -268,25 +268,20 @@ impl OperandMovementConstraintSolver {
             // Only one argument, solution is trivial
             1 => {
                 let expected = self.context.expected()[0];
-                if let Some(current_position) = self.context.stack().position(&expected.value) {
+                if let Some(current_position) = self.context.stack().position(&expected) {
                     if current_position > 0 {
                         emitter.move_operand_to_position(current_position, 0, false, span);
                     }
                 } else {
                     assert!(
-                        self.context.copies().has_copies(&expected.value.unaliased()),
-                        "{:?} was not found on the operand stack",
-                        expected.value.unaliased()
+                        self.context.copies().has_copies(&expected.unaliased()),
+                        "{:?} was not found on the operand stack copies",
+                        expected.unaliased()
                     );
                     let current_position =
-                        self.context.stack().position(&expected.value.unaliased()).unwrap_or_else(
-                            || {
-                                panic!(
-                                    "{:?} was not found on the operand stack",
-                                    expected.value.unaliased()
-                                )
-                            },
-                        );
+                        self.context.stack().position(&expected.unaliased()).unwrap_or_else(|| {
+                            panic!("{:?} was not found on the operand stack", expected.unaliased())
+                        });
                     emitter.copy_operand_to_position(current_position, 0, false, span);
                 }
 
