@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.4.0...midenc-hir-v0.4.1) - 2025-08-28
+
+### Fixed
+
+- handle empty dominance frontier at `DominanceFrontier::iterate_all`
+- typo in `find_nearest_common_common_dominator` call
+- infinite loop in `dominated_by_slow_tree_walk`.
+
+### Other
+
+- formatting
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.1.5...midenc-hir-v0.4.0) - 2025-08-15
 
 ### Added

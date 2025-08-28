@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.4.0...midenc-codegen-masm-v0.4.1) - 2025-08-28
+
+### Fixed
+
+- reverse only non-intrinsic modules when assembling a Program
+- use `Assembler::add_module` for intrinsics when assembling a `Library`
+- remove intrinsics exports from compiled MASM library #637
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.5...midenc-codegen-masm-v0.4.0) - 2025-08-15
 
 ### Added
