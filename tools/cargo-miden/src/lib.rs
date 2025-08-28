@@ -5,11 +5,12 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use cargo_component::{
     config::{CargoArguments, Config},
-    load_component_metadata, load_metadata, run_cargo_command,
+    load_component_metadata, load_metadata, run_cargo_command, PackageComponentMetadata,
 };
+use cargo_metadata::{camino, Metadata};
 use clap::{CommandFactory, Parser};
 pub use commands::example_project::WIT_DEPS_PATH;
 use commands::{ExampleCommand, NewCommand};
@@ -17,6 +18,7 @@ use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
 use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 use non_component::run_cargo_command_for_non_component;
+use path_absolutize::Absolutize;
 pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type,
 };
@@ -32,6 +34,26 @@ mod utils;
 
 pub use cargo_component::core::terminal::{Color, Terminal, Verbosity};
 pub use outputs::{BuildOutput, CommandOutput};
+
+/// Returns true if the current invocation context points at a Cargo workspace root
+/// (i.e. the manifest contains only a `[workspace]` without a `[package]`).
+fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) -> bool {
+    // If cargo metadata exposes a root package, this is not a pure workspace root manifest.
+    if metadata.root_package().is_some() {
+        return false;
+    }
+    let ws_root = metadata.workspace_root.as_std_path();
+    if let Some(path) = manifest_path {
+        // If an explicit manifest was provided and it is the workspace root manifest,
+        // then we are running from the workspace root context.
+        return path == ws_root.join("Cargo.toml");
+    }
+    // Otherwise, treat the current directory as the context
+    if let Ok(cwd) = std::env::current_dir() {
+        return cwd == ws_root;
+    }
+    false
+}
 
 fn version() -> &'static str {
     option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
@@ -170,8 +192,20 @@ where
             // dbg!(&cargo_args);
             let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
 
-            let target_env = target::detect_target_environment(&metadata)?;
-            let project_type = target::target_environment_to_project_type(target_env);
+            // If invoked at a workspace root (manifest contains only [workspace]) without
+            // selecting a specific package, fail with a clear message. We only support
+            // building a single crate at a time for now.
+            if is_workspace_root_context(&metadata, cargo_args.manifest_path.as_deref())
+                && cargo_args.packages.is_empty()
+                && !cargo_args.workspace
+            {
+                bail!(
+                    "You're running `cargo miden` from a Cargo workspace root. Building the \
+                     entire workspace is not supported yet. Build a single member instead, for \
+                     example:\n  - cd <member>/ && cargo miden build --release
+                    "
+                );
+            }
 
             let mut packages = load_component_metadata(
                 &metadata,
@@ -186,9 +220,78 @@ where
                 );
             }
 
-            // Get the root package being built
-            let root_package =
-                metadata.root_package().context("Metadata is missing a root package")?;
+            // Determine the package being built (the "root" for our purposes).
+            // Prefer cargo's root package, then `--manifest-path`, then current directory.
+            let root_package = match metadata.root_package() {
+                Some(pkg) => pkg,
+                None => {
+                    // Try to resolve via explicit manifest path
+                    if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
+                        let mp = camino::Utf8Path::from_path(manifest_path)
+                            .expect("manifest path must be valid UTF-8");
+                        metadata
+                            .packages
+                            .iter()
+                            .find(|p| {
+                                p.manifest_path.as_std_path()
+                                    == mp.as_std_path().absolutize().unwrap()
+                            })
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "unable to determine root package: manifest `{}` does not \
+                                     match any workspace package",
+                                    manifest_path.display()
+                                )
+                            })?
+                    } else {
+                        // Fall back to current working directory matching a package manifest dir
+                        let cwd = std::env::current_dir()?;
+                        metadata
+                            .packages
+                            .iter()
+                            .find(|p| {
+                                p.manifest_path.parent().map(|d| d.as_std_path())
+                                    == Some(cwd.as_path())
+                            })
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "unable to determine root package from workspace; run inside \
+                                     a member directory or pass `-p <name>` / `--manifest-path \
+                                     <path>`"
+                                )
+                            })?
+                    }
+                }
+            };
+
+            // If the selected package is a workspace member (its manifest dir differs from
+            // the workspace root), we currently do not support building it.
+            // The reason is that crate's Cargo.toml profiles are ignored and need to be defined in
+            // the workspace Cargo.toml
+            // See https://github.com/0xMiden/compiler/issues/648
+            let root_pkg_dir = root_package
+                .manifest_path
+                .parent()
+                .expect("package manifest must have a parent directory");
+            if metadata.workspace_root != root_pkg_dir {
+                bail!(
+                    "This crate is part of a Cargo workspace (root: {}). Building workspace \
+                     members is not supported yet.\n\nOptions:\n  - Move this crate as a \
+                     standalone (outside the workspace) and run `cargo miden build` there\n  - Or \
+                     remove the workspace `Cargo.toml`",
+                    metadata.workspace_root
+                );
+            }
+
+            let target_env = target::detect_target_environment(root_package)?;
+            let project_type = target::target_environment_to_project_type(target_env);
+
+            // Ensure the selected root package is included in the list of packages for which
+            // we generate bindings. This is critical in workspaces where `workspace_default_packages()`
+            // may not include the current member.
+            if !packages.iter().any(|p| p.package.id == root_package.id) {
+                packages.push(PackageComponentMetadata::new(root_package)?);
+            }
 
             let dependency_packages_paths = process_miden_dependencies(root_package, &cargo_args)?;
 

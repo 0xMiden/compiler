@@ -60,8 +60,9 @@ fn test_project_type_detection() {
                 )
             });
 
-        // Test target environment detection
-        let detected_env = cargo_miden::detect_target_environment(&metadata).unwrap_or_else(|e| {
+        // Determine root package and test target environment detection
+        let root_pkg = metadata.root_package().expect("example metadata missing root package");
+        let detected_env = cargo_miden::detect_target_environment(root_pkg).unwrap_or_else(|e| {
             panic!(
                 "Failed to detect target environment for {}: {}",
                 example_manifest_path.display(),
@@ -80,7 +81,7 @@ fn test_project_type_detection() {
         );
 
         // Test project type detection
-        let detected_type = cargo_miden::detect_project_type(&metadata).unwrap_or_else(|e| {
+        let detected_type = cargo_miden::detect_project_type(root_pkg).unwrap_or_else(|e| {
             panic!("Failed to detect project type for {}: {}", example_manifest_path.display(), e)
         });
         assert_eq!(
