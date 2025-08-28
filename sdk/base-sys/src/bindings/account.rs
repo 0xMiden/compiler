@@ -7,12 +7,19 @@ use super::types::{AccountId, Asset};
 extern "C" {
     #[link_name = "get-id"]
     pub fn extern_account_get_id(ptr: *mut AccountId);
-    #[link_name = "add-asset"]
-    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "remove-asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "incr-nonce"]
     pub fn extern_account_incr_nonce(value: i32);
+}
+
+// Remove `add-asset` from the WIT world and declare it here without an import
+// module so that it can be satisfied at core Wasm link time via a local
+// definition (stub) rather than being imported as part of the component world.
+#[allow(improper_ctypes)]
+extern "C" {
+    #[link_name = "miden::account::add_asset"]
+    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
 }
 
 /// Get the account ID of the currently executing note account.

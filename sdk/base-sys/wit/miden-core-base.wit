@@ -10,7 +10,8 @@ interface account {
     /// a non-fungible asset, then returns the same as asset. If asset is a
     /// fungible asset, then returns the total fungible asset in the account
     /// vault after asset was added to it.
-    add-asset: func(asset0: f32, asset1: f32, asset2: f32, asset3: f32, result-ptr: s32);
+    // add-asset: removed from WIT to experiment with resolving it at core Wasm
+    // link time via a stub definition rather than declaring it in the world.
     /// Remove the specified asset from the vault
     remove-asset: func(asset0: f32, asset1: f32, asset2: f32, asset3: f32, result-ptr: s32);
     /// Get the id of the currently executing account

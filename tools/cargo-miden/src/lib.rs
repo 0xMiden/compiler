@@ -55,6 +55,9 @@ fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) 
     false
 }
 
+// Stubs directory (compile-time absolute path)
+const STUBS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/stubs");
+
 fn version() -> &'static str {
     option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
@@ -323,6 +326,50 @@ where
                 ]
                 .map(|s| s.to_string()),
             );
+            // Build and link the wasm stub that defines the account add-asset symbol
+            // with an `unreachable` body so the symbol is resolved during core linking
+            // (removing the import before componentization). Build the stub rlib
+            // with rustc directly (no cargo), and link it.
+            let stub_rlib_path = {
+                let profile = if cargo_args.release {
+                    "release"
+                } else {
+                    "debug"
+                };
+                let deps_dir =
+                    metadata.target_directory.join("wasm32-wasip2").join(profile).join("deps");
+                let deps_dir_std = deps_dir.as_std_path();
+                if !deps_dir_std.exists() {
+                    std::fs::create_dir_all(deps_dir_std)?;
+                }
+                let src_path = std::path::Path::new(STUBS_DIR).join("add-asset.rs");
+                if !src_path.exists() {
+                    bail!("stub source not found: {:?}", src_path);
+                }
+                let out_path = deps_dir_std.join("libstub_add_asset.rlib");
+                let mut rustc = std::process::Command::new("rustc");
+                let status = rustc
+                    .arg("--crate-name")
+                    .arg("stub_add_asset")
+                    .arg("--edition=2021")
+                    .arg("--crate-type=rlib")
+                    .arg("--target")
+                    .arg("wasm32-wasip2")
+                    .arg("-C")
+                    .arg("opt-level=z")
+                    .arg("-C")
+                    .arg("panic=abort")
+                    .arg("-C")
+                    .arg("codegen-units=1")
+                    .arg("-o")
+                    .arg(&out_path)
+                    .arg(&src_path)
+                    .status()?;
+                if !status.success() {
+                    bail!("failed to rustc add-asset stub ({status})");
+                }
+                out_path
+            };
 
             // Convert profile options from examples/**/Cargo.toml to
             // equivalent cargo command-line overrides. This ensures the intended
@@ -356,7 +403,10 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            let extra_rust_flags = "-C target-feature=+bulk-memory,+wide-arithmetic";
+            let extra_rust_flags = format!(
+                "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args={}",
+                stub_rlib_path.display()
+            );
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {

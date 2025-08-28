@@ -2,8 +2,7 @@
   (type (;0;)
     (instance
       (type (;0;) (func (param "asset0" f32) (param "asset1" f32) (param "asset2" f32) (param "asset3" f32) (param "result-ptr" s32)))
-      (export (;0;) "add-asset" (func (type 0)))
-      (export (;1;) "remove-asset" (func (type 0)))
+      (export (;0;) "remove-asset" (func (type 0)))
     )
   )
   (import "miden:core-base/account@1.0.0" (instance (;0;) (type 0)))
@@ -44,9 +43,8 @@
     (type (;4;) (func (param f32 f32 f32 f32 f32)))
     (type (;5;) (func (param i32 i32)))
     (type (;6;) (func (param i32 i32 f32)))
-    (import "miden:core-base/account@1.0.0" "add-asset" (func $miden_base_sys::bindings::account::extern_account_add_asset (;0;) (type 0)))
-    (import "miden:core-base/account@1.0.0" "remove-asset" (func $miden_base_sys::bindings::account::extern_account_remove_asset (;1;) (type 0)))
-    (import "miden:core-base/tx@1.0.0" "add-asset-to-note" (func $miden_base_sys::bindings::tx::extern_tx_add_asset_to_note (;2;) (type 1)))
+    (import "miden:core-base/account@1.0.0" "remove-asset" (func $miden_base_sys::bindings::account::extern_account_remove_asset (;0;) (type 0)))
+    (import "miden:core-base/tx@1.0.0" "add-asset-to-note" (func $miden_base_sys::bindings::tx::extern_tx_add_asset_to_note (;1;) (type 1)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -55,9 +53,9 @@
     (export "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset))
     (export "miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note" (func $miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note))
     (elem (;0;) (i32.const 1) func $basic_wallet::bindings::__link_custom_section_describing_imports)
-    (func $__wasm_call_ctors (;3;) (type 2))
-    (func $basic_wallet::bindings::__link_custom_section_describing_imports (;4;) (type 2))
-    (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset (;5;) (type 3) (param f32 f32 f32 f32)
+    (func $__wasm_call_ctors (;2;) (type 2))
+    (func $basic_wallet::bindings::__link_custom_section_describing_imports (;3;) (type 2))
+    (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset (;4;) (type 3) (param f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -87,7 +85,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note (;6;) (type 4) (param f32 f32 f32 f32 f32)
+    (func $miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note (;5;) (type 4) (param f32 f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 64
@@ -125,7 +123,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $wit_bindgen_rt::run_ctors_once (;7;) (type 2)
+    (func $wit_bindgen_rt::run_ctors_once (;6;) (type 2)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -143,7 +141,7 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::add_asset (;8;) (type 5) (param i32 i32)
+    (func $miden_base_sys::bindings::account::add_asset (;7;) (type 5) (param i32 i32)
       local.get 1
       f32.load offset=12
       local.get 1
@@ -153,9 +151,9 @@
       local.get 1
       f32.load
       local.get 0
-      call $miden_base_sys::bindings::account::extern_account_add_asset
+      call $miden::account::add_asset
     )
-    (func $miden_base_sys::bindings::account::remove_asset (;9;) (type 5) (param i32 i32)
+    (func $miden_base_sys::bindings::account::remove_asset (;8;) (type 5) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -190,7 +188,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::tx::add_asset_to_note (;10;) (type 6) (param i32 i32 f32)
+    (func $miden_base_sys::bindings::tx::add_asset_to_note (;9;) (type 6) (param i32 i32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 48
@@ -232,7 +230,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;11;) (type 5) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;10;) (type 5) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -290,6 +288,9 @@
       i64.load align=4
       i64.store
     )
+    (func $miden::account::add_asset (;11;) (type 0) (param f32 f32 f32 f32 i32)
+      unreachable
+    )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01")
   )
@@ -300,18 +301,15 @@
   (alias export 2 "note-idx" (type (;7;)))
   (alias export 2 "felt" (type (;8;)))
   (alias export 2 "note-execution-hint" (type (;9;)))
-  (alias export 0 "add-asset" (func (;0;)))
+  (alias export 0 "remove-asset" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
-  (alias export 0 "remove-asset" (func (;1;)))
-  (core func (;1;) (canon lower (func 1)))
   (core instance (;0;)
-    (export "add-asset" (func 0))
-    (export "remove-asset" (func 1))
+    (export "remove-asset" (func 0))
   )
-  (alias export 1 "add-asset-to-note" (func (;2;)))
-  (core func (;2;) (canon lower (func 2)))
+  (alias export 1 "add-asset-to-note" (func (;1;)))
+  (core func (;1;) (canon lower (func 1)))
   (core instance (;1;)
-    (export "add-asset-to-note" (func 2))
+    (export "add-asset-to-note" (func 1))
   )
   (core instance (;2;) (instantiate 0
       (with "miden:core-base/account@1.0.0" (instance 0))
@@ -320,11 +318,11 @@
   )
   (alias core export 2 "memory" (core memory (;0;)))
   (type (;10;) (func (param "asset" 3)))
-  (alias core export 2 "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (core func (;3;)))
-  (func (;3;) (type 10) (canon lift (core func 3)))
+  (alias core export 2 "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (core func (;2;)))
+  (func (;2;) (type 10) (canon lift (core func 2)))
   (type (;11;) (func (param "asset" 3) (param "note-idx" 7)))
-  (alias core export 2 "miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note" (core func (;4;)))
-  (func (;4;) (type 11) (canon lift (core func 4)))
+  (alias core export 2 "miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note" (core func (;3;)))
+  (func (;3;) (type 11) (canon lift (core func 3)))
   (alias export 2 "felt" (type (;12;)))
   (alias export 2 "word" (type (;13;)))
   (alias export 2 "asset" (type (;14;)))
@@ -370,8 +368,8 @@
     (export (;3;) "move-asset-to-note" (func 1) (func (type 29)))
   )
   (instance (;3;) (instantiate 0
-      (with "import-func-receive-asset" (func 3))
-      (with "import-func-move-asset-to-note" (func 4))
+      (with "import-func-receive-asset" (func 2))
+      (with "import-func-move-asset-to-note" (func 3))
       (with "import-type-felt" (type 12))
       (with "import-type-word" (type 13))
       (with "import-type-asset" (type 14))
