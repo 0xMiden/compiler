@@ -7,8 +7,8 @@ use midenc_expect_test::expect_file;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::{Nesting, PassManager},
-    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, ProgramPoint,
-    Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
+    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, Report, Signature,
+    SourceSpan, Type, ValueRef,
 };
 
 use crate::{transforms::TransformSpills, HirOpBuilder};
@@ -29,7 +29,7 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     let context = Rc::new(Context::default());
     let mut ob = OpBuilder::new(context.clone());
 
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
     let module_body = module.borrow().body().as_region_ref();
     ob.create_block(module_body, None, &[]);
     let func = ob.create_function(
@@ -42,7 +42,6 @@ fn materializes_spills_intra_block() -> TestResult<()> {
             [AbiParam::new(Type::U32)],
         ),
     )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
     let callee_sig = Signature::new(
         [
             AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
@@ -58,10 +57,6 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     );
     let callee =
         ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
-    module
-        .borrow_mut()
-        .symbol_manager_mut()
-        .insert_new(callee, ProgramPoint::Invalid);
 
     {
         let mut b = FunctionBuilder::new(func, &mut ob);
@@ -155,7 +150,7 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
     let context = Rc::new(Context::default());
     let mut ob = OpBuilder::new(context.clone());
 
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
     let module_body = module.borrow().body().as_region_ref();
     ob.create_block(module_body, None, &[]);
     let func = ob.create_function(
@@ -168,7 +163,6 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
             [AbiParam::new(Type::U32)],
         ),
     )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
 
     let callee_sig = Signature::new(
         [
@@ -185,10 +179,6 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
     );
     let callee =
         ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
-    module
-        .borrow_mut()
-        .symbol_manager_mut()
-        .insert_new(callee, ProgramPoint::Invalid);
 
     {
         let mut b = FunctionBuilder::new(func, &mut ob);
