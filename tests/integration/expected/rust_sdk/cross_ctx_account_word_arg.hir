@@ -58,7 +58,8 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
             v73 = arith.add v31, v46 : felt #[overflow = unchecked];
             v74 = arith.add v73, v61 : felt #[overflow = unchecked];
             v75 = arith.add v74, v72 : felt #[overflow = unchecked];
-            v76 = arith.add v75, v15 : felt #[overflow = unchecked];
+            v133 = hir.load_local  : felt #[local = lv0];
+            v76 = arith.add v75, v133 : felt #[overflow = unchecked];
             builtin.ret v76;
         };
 
@@ -85,12 +86,12 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
                 v91 = hir.bitcast v90 : ptr<byte, i32>;
                 v92 = hir.load v91 : i32;
                 hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/__wasm_call_ctors()
-                v134 = arith.constant 1 : u8;
-                v136 = arith.constant 1048604 : i32;
-                v94 = arith.add v92, v136 : i32 #[overflow = wrapping];
+                v135 = arith.constant 1 : u8;
+                v137 = arith.constant 1048604 : i32;
+                v94 = arith.add v92, v137 : i32 #[overflow = wrapping];
                 v98 = hir.bitcast v94 : u32;
                 v99 = hir.int_to_ptr v98 : ptr<byte, u8>;
-                hir.store v99, v134;
+                hir.store v99, v135;
                 scf.yield ;
             };
             builtin.ret ;

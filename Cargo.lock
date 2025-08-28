@@ -4017,9 +4017,12 @@ dependencies = [
 name = "midenc-dialect-hir"
 version = "0.4.0"
 dependencies = [
+ "env_logger",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
+ "midenc-dialect-scf",
+ "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-hir-transform",
@@ -4126,8 +4129,15 @@ version = "0.4.0"
 dependencies = [
  "bitvec",
  "blink-alloc",
+ "env_logger",
  "log",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-expect-test",
  "midenc-hir",
+ "pretty_assertions",
 ]
 
 [[package]]

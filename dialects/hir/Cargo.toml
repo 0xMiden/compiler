@@ -22,3 +22,8 @@ midenc-dialect-cf.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-hir-transform.workspace = true
+
+[dev-dependencies]
+midenc-expect-test.workspace = true
+env_logger.workspace = true
+midenc-dialect-scf.workspace = true

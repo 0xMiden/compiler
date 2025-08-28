@@ -24,6 +24,9 @@ use crate::{
     Lattice,
 };
 
+#[cfg(test)]
+mod tests;
+
 /// This analysis is responsible for simulating the state of the operand stack at each program
 /// point, taking into account the results of liveness analysis, and computing whether or not to
 /// insert spills/reloads of values which would cause the operand stack depth to exceed 16 elements,
@@ -1201,14 +1204,17 @@ impl SpillAnalysis {
         if let Some(loop_info) =
             loops.and_then(|loops| loops.loop_for(block_ref).filter(|l| l.header() == block_ref))
         {
+            log::trace!(target: "spills", "computing W^entry for loop header {block}");
             return self.compute_w_entry_loop(block, &loop_info, liveness);
         } else if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
             let region = block.parent().unwrap();
             if loop_like.get_loop_header_region() == region && block.is_entry_block() {
+                log::trace!(target: "spills", "computing W^entry for loop-like header {block}");
                 return self.compute_w_entry_loop_like(loop_like, block, liveness);
             }
         }
 
+        log::trace!(target: "spills", "computing W^entry normally for {block}");
         self.compute_w_entry_normal(op, block, liveness);
     }
 
@@ -1500,6 +1506,8 @@ impl SpillAnalysis {
             }
         }));
 
+        log::trace!(target: "spills", "  alive at loop entry: {{{}}}", DisplayValues::new(alive.iter()));
+
         // Initial candidates are values live at block entry which are used in the loop body
         let mut cand = alive
             .iter()
@@ -1507,14 +1515,21 @@ impl SpillAnalysis {
             .copied()
             .collect::<SmallSet<_, 4>>();
 
+        log::trace!(target: "spills", "  initial candidates: {{{}}}", DisplayValues::new(cand.iter()));
+
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,
         // then we can avoid issuing spills/reloads for at least some of these values.
         let live_through = alive.difference(&cand);
 
+        log::trace!(target: "spills", "  live through loop: {{{}}}", DisplayValues::new(live_through.iter()));
+
         let w_used = cand.iter().map(|o| o.stack_size()).sum::<usize>();
+        let max_loop_pressure = max_loop_pressure(loop_info, liveness);
+        log::trace!(target: "spills", "  w_used={w_used}, K={K}, loop_pressure={max_loop_pressure}");
+
         if w_used < K {
-            if let Some(mut free_in_loop) = K.checked_sub(max_loop_pressure(loop_info, liveness)) {
+            if let Some(mut free_in_loop) = K.checked_sub(max_loop_pressure) {
                 let mut live_through = live_through.into_vec();
                 live_through.sort_by(|a, b| {
                     next_uses
@@ -1794,16 +1809,29 @@ fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis) -> usize {
     let mut block_q = VecDeque::from_iter([header]);
     let mut visited = SmallSet::<BlockRef, 4>::default();
 
+    log::trace!(target: "spills", "computing max pressure for loop headed by {header}");
+
     while let Some(block) = block_q.pop_front() {
         if !visited.insert(block) {
             continue;
         }
 
-        block_q.extend(BlockRef::children(block).filter(|b| loop_info.contains_block(*b)));
+        let children = BlockRef::children(block).collect::<Vec<_>>();
+        log::trace!(target: "spills", "    children of {block}: {children:?}");
+        let loop_children = children
+            .iter()
+            .filter(|b| loop_info.contains_block(**b))
+            .copied()
+            .collect::<Vec<_>>();
+        log::trace!(target: "spills", "    children in loop: {loop_children:?}");
+        block_q.extend(loop_children);
 
-        max = core::cmp::max(max, max_block_pressure(&block.borrow(), liveness));
+        let max_block_pressure = max_block_pressure(&block.borrow(), liveness);
+        log::trace!(target: "spills", "  block {block} pressure = {max_block_pressure}");
+        max = core::cmp::max(max, max_block_pressure);
     }
 
+    log::trace!(target: "spills", "  max loop pressure = {max}");
     max
 }
 
@@ -2369,462 +2397,3 @@ impl SpillAnalysis {
         log::trace!(target: "spills", "  S^exit = {s:?}");
     }
 }
-
-/*
-#[cfg(test)]
-mod tests {
-    use midenc_hir::{
-        testing::TestContext, AbiParam, FunctionBuilder, Immediate, InstBuilder, Signature,
-    };
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    /// In this test, we force several values to be live simultaneously inside the same block,
-    /// of sufficient size on the operand stack so as to require some of them to be spilled
-    /// at least once, and later reloaded.
-    ///
-    /// The purpose here is to validate the MIN algorithm that determines whether or not we need
-    /// to spill operands at each program point, in the following ways:
-    ///
-    /// * Ensure that we spill values we expect to be spilled
-    /// * Ensure that spills are inserted at the appropriate locations
-    /// * Ensure that we reload values that were previously spilled
-    /// * Ensure that reloads are inserted at the appropriate locations
-    ///
-    /// The following HIR is constructed for this test:
-    ///
-    /// * `in` indicates the set of values in W at an instruction, with reloads included
-    /// * `out` indicates the set of values in W after an instruction, with spills excluded
-    /// * `spills` indicates the candidates from W which were selected to be spilled at the
-    ///   instruction
-    /// * `reloads` indicates the set of values in S which must be reloaded at the instruction
-    ///
-    /// ```text,ignore
-    /// (func (export #spill) (param (ptr u8)) (result u32)
-    ///   (block 0 (param v0 (ptr u8))
-    ///     (let (v1 u32) (ptrtoint v0))              ; in=[v0] out=[v1]
-    ///     (let (v2 u32) (add v1 32))                ; in=[v1] out=[v1 v2]
-    ///     (let (v3 (ptr u128)) (inttoptr v2))       ; in=[v1 v2] out=[v1 v2 v3]
-    ///     (let (v4 u128) (load v3))                 ; in=[v1 v2 v3] out=[v1 v2 v3 v4]
-    ///     (let (v5 u32) (add v1 64))                ; in=[v1 v2 v3 v4] out=[v1 v2 v3 v4 v5]
-    ///     (let (v6 (ptr u128)) (inttoptr v5))       ; in=[v1 v2 v3 v4 v5] out=[v1 v2 v3 v4 v6]
-    ///     (let (v7 u128) (load v6))                 ; in=[v1 v2 v3 v4 v6] out=[v1 v2 v3 v4 v6 v7]
-    ///     (let (v8 u64) (const.u64 1))              ; in=[v1 v2 v3 v4 v6 v7] out=[v1 v2 v3 v4 v6 v7 v8]
-    ///     (let (v9 u32) (call (#example) v6 v4 v7 v7 v8)) <-- operand stack pressure hits 18 here
-    ///                                               ; in=[v1 v2 v3 v4 v6 v7 v7 v8] out=[v1 v7 v9]
-    ///                                               ; spills=[v2 v3] (v2 is furthest next-use, followed by v3)
-    ///     (let (v10 u32) (add v1 72))               ; in=[v1 v7] out=[v7 v10]
-    ///     (let (v11 (ptr u64)) (inttoptr v10))      ; in=[v7 v10] out=[v7 v11]
-    ///     (store v3 v7)                             ; reload=[v3] in=[v3 v7 v11] out=[v11]
-    ///     (let (v12 u64) (load v11))                ; in=[v11] out=[v12]
-    ///     (ret v2)                                  ; reload=[v2] in=[v2] out=[v2]
-    /// )
-    /// ```
-    #[test]
-    fn spills_intra_block() -> AnalysisResult<()> {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
-                [AbiParam::new(Type::U32)],
-            ),
-        );
-
-        let v2;
-        let v3;
-        let call;
-        let store;
-        let ret;
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let example = builder
-                .import_function(
-                    "foo",
-                    "example",
-                    Signature::new(
-                        [
-                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U64),
-                        ],
-                        [AbiParam::new(Type::U32)],
-                    ),
-                    SourceSpan::UNKNOWN,
-                )
-                .unwrap();
-            let entry = builder.current_block();
-            let v0 = {
-                let args = builder.block_params(entry);
-                args[0]
-            };
-
-            // entry
-            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
-            v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
-            v3 = builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
-            let v6 =
-                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
-            let v8 = builder.ins().u64(1, SourceSpan::UNKNOWN);
-            call = builder.ins().exec(example, &[v6, v4, v7, v7, v8], SourceSpan::UNKNOWN);
-            let v10 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
-            store = builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
-            let v11 =
-                builder.ins().inttoptr(v10, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            let _v12 = builder.ins().load(v11, SourceSpan::UNKNOWN);
-            ret = builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
-        }
-
-        let mut analyses = AnalysisManager::default();
-        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
-
-        assert!(spills.has_spills());
-        assert_eq!(spills.spills().len(), 2);
-        assert!(spills.is_spilled(&v2));
-        assert!(spills.is_spilled_at(v2, ProgramPoint::Inst(call)));
-        assert!(spills.is_spilled(&v3));
-        assert!(spills.is_spilled_at(v3, ProgramPoint::Inst(call)));
-        assert_eq!(spills.reloads().len(), 2);
-        assert!(spills.is_reloaded_at(v3, ProgramPoint::Inst(store)));
-        assert!(spills.is_reloaded_at(v2, ProgramPoint::Inst(ret)));
-
-        Ok(())
-    }
-
-    /// In this test, we are verifying the behavior of the spill analysis when applied to a
-    /// control flow graph with branching control flow, where spills are required along one
-    /// branch and not the other. This verifies the following:
-    ///
-    /// * Control flow edges are split as necessary to insert required spills/reloads
-    /// * Propagation of the W and S sets from predecessors to successors is correct
-    /// * The W and S sets are properly computed at join points in the CFG
-    ///
-    /// The following HIR is constructed for this test (see the first test in this file for
-    /// a description of the notation used, if unclear):
-    ///
-    /// ```text,ignore
-    /// (func (export #spill) (param (ptr u8)) (result u32)
-    ///   (block 0 (param v0 (ptr u8))
-    ///     (let (v1 u32) (ptrtoint v0))              ; in=[v0] out=[v1]
-    ///     (let (v2 u32) (add v1 32))                ; in=[v1] out=[v1 v2]
-    ///     (let (v3 (ptr u128)) (inttoptr v2))       ; in=[v1 v2] out=[v1 v2 v3]
-    ///     (let (v4 u128) (load v3))                 ; in=[v1 v2 v3] out=[v1 v2 v3 v4]
-    ///     (let (v5 u32) (add v1 64))                ; in=[v1 v2 v3 v4] out=[v1 v2 v3 v4 v5]
-    ///     (let (v6 (ptr u128)) (inttoptr v5))       ; in=[v1 v2 v3 v4 v5] out=[v1 v2 v3 v4 v6]
-    ///     (let (v7 u128) (load v6))                 ; in=[v1 v2 v3 v4 v6] out=[v1 v2 v3 v4 v6 v7]
-    ///     (let (v8 i1) (eq v1 0))                   ; in=[v1 v2 v3 v4 v6, v7] out=[v1 v2 v3 v4 v6 v7, v8]
-    ///     (cond_br v8 (block 1) (block 2)))
-    ///
-    ///   (block 1
-    ///     (let (v9 u64) (const.u64 1))              ; in=[v1 v2 v3 v4 v6 v7] out=[v1 v2 v3 v4 v6 v7 v9]
-    ///     (let (v10 u32) (call (#example) v6 v4 v7 v7 v9)) <-- operand stack pressure hits 18 here
-    ///                                               ; in=[v1 v2 v3 v4 v6 v7 v7 v9] out=[v1 v7 v10]
-    ///                                               ; spills=[v2 v3] (v2 is furthest next-use, followed by v3)
-    ///     (br (block 3 v10))) ; this edge will be split to reload v2/v3 as expected by block3
-    ///
-    ///   (block 2
-    ///     (let (v11 u32) (add v1 8))                ; in=[v1 v2 v3 v7] out=[v1 v2 v3 v7 v11]
-    ///     (br (block 3 v11))) ; this edge will be split to spill v2/v3 to match the edge from block1
-    ///
-    ///   (block 3 (param v12 u32)) ; we expect that the edge between block 2 and 3 will be split, and spills of v2/v3 inserted
-    ///     (let (v13 u32) (add v1 72))               ; in=[v1 v7 v12] out=[v7 v12 v13]
-    ///     (let (v14 u32) (add v13 v12))             ; in=[v7 v12 v13] out=[v7 v14]
-    ///     (let (v15 (ptr u64)) (inttoptr v14))      ; in=[v7 v14] out=[v7 v15]
-    ///     (store v3 v7)                             ; reload=[v3] in=[v3 v7 v15] out=[v15]
-    ///     (let (v16 u64) (load v15))                ; in=[v15] out=[v16]
-    ///     (ret v2))                                 ; reload=[v2] in=[v2] out=[v2]
-    /// )
-    /// ```
-    #[test]
-    fn spills_branching_control_flow() -> AnalysisResult<()> {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [AbiParam::new(Type::Ptr(Box::new(Type::U8)))],
-                [AbiParam::new(Type::U32)],
-            ),
-        );
-
-        let v2;
-        let v3;
-        let call;
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let example = builder
-                .import_function(
-                    "foo",
-                    "example",
-                    Signature::new(
-                        [
-                            AbiParam::new(Type::Ptr(Box::new(Type::U128))),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U128),
-                            AbiParam::new(Type::U64),
-                        ],
-                        [AbiParam::new(Type::U32)],
-                    ),
-                    SourceSpan::UNKNOWN,
-                )
-                .unwrap();
-            let entry = builder.current_block();
-            let block1 = builder.create_block();
-            let block2 = builder.create_block();
-            let block3 = builder.create_block();
-            let v0 = {
-                let args = builder.block_params(entry);
-                args[0]
-            };
-
-            // entry
-            let v1 = builder.ins().ptrtoint(v0, Type::U32, SourceSpan::UNKNOWN);
-            v2 = builder.ins().add_imm_unchecked(v1, Immediate::U32(32), SourceSpan::UNKNOWN);
-            v3 = builder.ins().inttoptr(v2, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v4 = builder.ins().load(v3, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().add_imm_unchecked(v1, Immediate::U32(64), SourceSpan::UNKNOWN);
-            let v6 =
-                builder.ins().inttoptr(v5, Type::Ptr(Box::new(Type::U128)), SourceSpan::UNKNOWN);
-            let v7 = builder.ins().load(v6, SourceSpan::UNKNOWN);
-            let v8 = builder.ins().eq_imm(v1, Immediate::U32(0), SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v8, block1, &[], block2, &[], SourceSpan::UNKNOWN);
-
-            // block1
-            builder.switch_to_block(block1);
-            let v9 = builder.ins().u64(1, SourceSpan::UNKNOWN);
-            call = builder.ins().exec(example, &[v6, v4, v7, v7, v9], SourceSpan::UNKNOWN);
-            let v10 = builder.func.dfg.first_result(call);
-            builder.ins().br(block3, &[v10], SourceSpan::UNKNOWN);
-
-            // block2
-            builder.switch_to_block(block2);
-            let v11 = builder.ins().add_imm_unchecked(v1, Immediate::U32(8), SourceSpan::UNKNOWN);
-            builder.ins().br(block3, &[v11], SourceSpan::UNKNOWN);
-
-            // block3
-            let v12 = builder.append_block_param(block3, Type::U32, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block3);
-            let v13 = builder.ins().add_imm_unchecked(v1, Immediate::U32(72), SourceSpan::UNKNOWN);
-            let v14 = builder.ins().add_unchecked(v13, v12, SourceSpan::UNKNOWN);
-            let v15 =
-                builder.ins().inttoptr(v14, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            builder.ins().store(v3, v7, SourceSpan::UNKNOWN);
-            let _v16 = builder.ins().load(v15, SourceSpan::UNKNOWN);
-            builder.ins().ret(Some(v2), SourceSpan::UNKNOWN);
-        }
-
-        let mut analyses = AnalysisManager::default();
-        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
-
-        dbg!(&spills);
-
-        assert!(spills.has_spills());
-        assert_eq!(spills.spills().len(), 4);
-        // Block created by splitting edge between block 3 and its predecessors
-        assert_eq!(spills.splits().len(), 2);
-        let block1 = Block::from_u32(1);
-        let block2 = Block::from_u32(2);
-        let block3 = Block::from_u32(3);
-        let spill_blk1_blk3 = &spills.splits()[0];
-        assert_eq!(spill_blk1_blk3.block, block3);
-        assert_eq!(spill_blk1_blk3.predecessor.block, block1);
-        let spill_blk2_blk3 = &spills.splits()[1];
-        assert_eq!(spill_blk2_blk3.block, block3);
-        assert_eq!(spill_blk2_blk3.predecessor.block, block2);
-        assert!(spills.is_spilled(&v2));
-        assert!(spills.is_spilled_at(v2, ProgramPoint::Inst(call)));
-        // v2 should have a spill inserted from block2 to block3, as it is spilled in block1
-        assert!(spills.is_spilled_in_split(v2, spill_blk2_blk3.id));
-        assert!(spills.is_spilled(&v3));
-        // v3 should have a spill inserted from block2 to block3, as it is spilled in block1
-        assert!(spills.is_spilled_at(v3, ProgramPoint::Inst(call)));
-        assert!(spills.is_spilled_in_split(v3, spill_blk2_blk3.id));
-        // v2 and v3 should be reloaded on the edge from block1 to block3, since they were
-        // spilled previously, but must be in W on entry to block3
-        assert_eq!(spills.reloads().len(), 2);
-        assert!(spills.is_reloaded_in_split(v2, spill_blk1_blk3.id));
-        assert!(spills.is_reloaded_in_split(v3, spill_blk1_blk3.id));
-
-        Ok(())
-    }
-
-    /// In this test, we are verifying the behavior of the spill analysis when applied to a
-    /// control flow graph with cyclical control flow, i.e. loops. We're interested specifically in
-    /// the following properties:
-    ///
-    /// * W and S at entry to a loop are computed correctly
-    /// * Values live-through - but not live-in - a loop, which cannot survive the loop due to
-    ///   operand stack pressure within the loop, are spilled outside of the loop, with reloads
-    ///   placed on exit edges from the loop where needed
-    /// * W and S upon exit from a loop are computed correctly
-    ///
-    /// The following HIR is constructed for this test (see the first test in this file for
-    /// a description of the notation used, if unclear):
-    ///
-    /// ```text,ignore
-    /// (func (export #spill) (param (ptr u64)) (param u32) (param u32) (result u64)
-    ///   (block 0 (param v0 (ptr u64)) (param v1 u32) (param v2 u32)
-    ///     (let (v3 u32) (const.u32 0))         ; in=[v0, v1, v2] out=[v0, v1, v2, v3]
-    ///     (let (v4 u32) (const.u32 0))         ; in=[v0, v1, v2, v3] out=[v0, v1, v2, v3, v4]
-    ///     (let (v5 u64) (const.u64 0))         ; in=[v0, v1, v2, v3, v4] out=[v0, v1, v2, v3, v4, v5]
-    ///     (br (block 1 v3 v4 v5)))
-    ///
-    ///   (block 1 (param v6 u32) (param v7 u32) (param v8 u64)) ; outer loop
-    ///     (let (v9 i1) (eq v6 v1))             ; in=[v0, v2, v6, v7, v8] out=[v0, v1, v2, v6, v7, v8, v9]
-    ///     (cond_br v9 (block 2) (block 3)))    ; in=[v0, v1, v2, v6, v7, v8, v9] out=[v0, v1, v2, v6, v7, v8]
-    ///
-    ///   (block 2 ; exit outer loop, return from function
-    ///     (ret v8))                            ; in=[v0, v1, v2, v6, v7, v8] out=[v8]
-    ///
-    ///   (block 3 ; split edge
-    ///     (br (block 4 v7 v8)))                ; in=[v0, v1, v2, v6, v7, v8] out=[v0, v1, v2, v6]
-    ///
-    ///   (block 4 (param v10 u32) (param v11 u64) ; inner loop
-    ///     (let (v12 i1) (eq v10 v2))           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v6, v10, v11, v12]
-    ///     (cond_br v12 (block 5) (block 6)))   ; in=[v0, v1, v2, v6, v10, v11, v12] out=[v0, v1, v2, v6, v10, v11]
-    ///
-    ///   (block 5 ; increment row count, continue outer loop
-    ///     (let (v13 u32) (add v6 1))           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v10, v11, v13]
-    ///     (br (block 1 v13 v10 v11)))
-    ///
-    ///   (block 6 ; load value at v0[row][col], add to sum, increment col, continue inner loop
-    ///     (let (v14 u32) (sub.saturating v6 1)) ; row_offset := ROW_SIZE * row.saturating_sub(1)
-    ///                                           ; in=[v0, v1, v2, v6, v10, v11] out=[v0, v1, v2, v6, v10, v11, 14]
-    ///     (let (v15 u32) (mul v14 v2))          ; in=[v0, v1, v2, v6, v10, v11, 14] out=[v0, v1, v2, v6, v10, v11, 15]
-    ///     (let (v16 u32) (add v10 v15))         ; offset := col + row_offset
-    ///                                           ; in=[v0, v1, v2, v6, v10, v11, 15] out=[v0, v1, v2, v6, v10, v11, v16]
-    ///     (let (v17 u32) (ptrtoint v0))         ; ptr := (v0 as u32 + offset) as *u64
-    ///                                           ; in=[v0, v1, v2, v6, v10, v11, v16] out=[v0, v1, v2, v6, v10, v11, v16, 17]
-    ///     (let (v18 u32) (add v17 v16))         ; in=[v0, v1, v2, v6, v10, v11, v16, v17] out=[v0, v1, v2, v6, v10, v11, v18]
-    ///     (let (v19 (ptr u64)) (ptrtoint v18))  ; in=[v0, v1, v2, v6, v10, v11, v18] out=[v0, v1, v2, v6, v10, v11, v19]
-    ///     (let (v20 u64) (load v19))            ; sum += *ptr
-    ///                                           ; in=[v0, v1, v2, v6, v10, v11, v19] out=[v0, v1, v2, v6, v10, v11, v20]
-    ///     (let (v21 u64) (add v11 v20))         ; in=[v0, v1, v2, v6, v10, v11, v20] out=[v0, v1, v2, v6, v10, v21]
-    ///     (let (v22 u32) (add v10 1))           ; col++
-    ///                                           ; in=[v0, v1, v2, v6, v10, v21] out=[v0, v1, v2, v6, v21, v22]
-    ///     (br (block 4 v22 v21)))
-    /// )
-    /// ```
-    #[test]
-    fn spills_loop_nest() -> AnalysisResult<()> {
-        let context = TestContext::default();
-        let id = "test::spill".parse().unwrap();
-        let mut function = Function::new(
-            id,
-            Signature::new(
-                [
-                    AbiParam::new(Type::Ptr(Box::new(Type::U64))),
-                    AbiParam::new(Type::U64),
-                    AbiParam::new(Type::U64),
-                ],
-                [AbiParam::new(Type::U64)],
-            ),
-        );
-
-        {
-            let mut builder = FunctionBuilder::new(&mut function);
-            let entry = builder.current_block();
-            let (v0, v1, v2) = {
-                let args = builder.block_params(entry);
-                (args[0], args[1], args[2])
-            };
-
-            let block1 = builder.create_block();
-            let block2 = builder.create_block();
-            let block3 = builder.create_block();
-            let block4 = builder.create_block();
-            let block5 = builder.create_block();
-            let block6 = builder.create_block();
-
-            // entry
-            let v3 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            let v4 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            let v5 = builder.ins().u64(0, SourceSpan::UNKNOWN);
-            builder.ins().br(block1, &[v3, v4, v5], SourceSpan::UNKNOWN);
-
-            // block1 - outer loop header
-            let v6 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            let v7 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            let v8 = builder.append_block_param(block1, Type::U64, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block1);
-            let v9 = builder.ins().eq(v6, v1, SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v9, block2, &[], block3, &[], SourceSpan::UNKNOWN);
-
-            // block2 - outer exit
-            builder.switch_to_block(block2);
-            builder.ins().ret(Some(v8), SourceSpan::UNKNOWN);
-
-            // block3 - split edge
-            builder.switch_to_block(block3);
-            builder.ins().br(block4, &[v7, v8], SourceSpan::UNKNOWN);
-
-            // block4 - inner loop
-            let v10 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
-            let v11 = builder.append_block_param(block4, Type::U64, SourceSpan::UNKNOWN);
-            builder.switch_to_block(block4);
-            let v12 = builder.ins().eq(v10, v2, SourceSpan::UNKNOWN);
-            builder.ins().cond_br(v12, block5, &[], block6, &[], SourceSpan::UNKNOWN);
-
-            // block5 - inner latch
-            builder.switch_to_block(block5);
-            let v13 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
-            builder.ins().br(block1, &[v13, v10, v11], SourceSpan::UNKNOWN);
-
-            // block6 - inner body
-            builder.switch_to_block(block6);
-            let v14 = builder.ins().add_imm_unchecked(v6, Immediate::U64(1), SourceSpan::UNKNOWN);
-            let v15 = builder.ins().mul_unchecked(v14, v2, SourceSpan::UNKNOWN);
-            let v16 = builder.ins().add_unchecked(v10, v15, SourceSpan::UNKNOWN);
-            let v17 = builder.ins().ptrtoint(v0, Type::U64, SourceSpan::UNKNOWN);
-            let v18 = builder.ins().add_unchecked(v17, v16, SourceSpan::UNKNOWN);
-            let v19 =
-                builder.ins().inttoptr(v18, Type::Ptr(Box::new(Type::U64)), SourceSpan::UNKNOWN);
-            let v20 = builder.ins().load(v19, SourceSpan::UNKNOWN);
-            let v21 = builder.ins().add_unchecked(v11, v20, SourceSpan::UNKNOWN);
-            let v22 = builder.ins().add_imm_unchecked(v10, Immediate::U64(1), SourceSpan::UNKNOWN);
-            builder.ins().br(block4, &[v22, v21], SourceSpan::UNKNOWN);
-        }
-
-        let mut analyses = AnalysisManager::default();
-        let spills = analyses.get_or_compute::<SpillAnalysis>(&function, &context.session)?;
-
-        dbg!(&spills);
-
-        let block1 = Block::from_u32(1);
-        let block3 = Block::from_u32(3);
-        let block4 = Block::from_u32(4);
-        let block5 = Block::from_u32(5);
-
-        assert!(spills.has_spills());
-        assert_eq!(spills.splits().len(), 2);
-
-        // We expect a spill from block3 to block4, as due to operand stack pressure in the loop,
-        // there is insufficient space to keep v1 on the operand stack through the loop
-        assert_eq!(spills.spills().len(), 1);
-        let split_blk3_blk4 = &spills.splits()[0];
-        assert_eq!(split_blk3_blk4.block, block4);
-        assert_eq!(split_blk3_blk4.predecessor.block, block3);
-        let v1 = Value::from_u32(1);
-        assert!(spills.is_spilled(&v1));
-        assert!(spills.is_spilled_in_split(v1, split_blk3_blk4.id));
-
-        // We expect a reload of v1 from block5 to block1, as block1 expects v1 on the operand stack
-        assert_eq!(spills.reloads().len(), 1);
-        let split_blk5_blk1 = &spills.splits()[1];
-        assert_eq!(split_blk5_blk1.block, block1);
-        assert_eq!(split_blk5_blk1.predecessor.block, block5);
-        assert!(spills.is_reloaded(&v1));
-        assert!(spills.is_reloaded_in_split(v1, split_blk5_blk1.id));
-
-        Ok(())
-    }
-}
- */

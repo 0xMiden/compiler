@@ -168,7 +168,7 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
                     log::trace!(target: self.analysis.debug_name(), "initializing multi-block region {region_index} with entry: {entry_block}");
                     log::trace!(target: self.analysis.debug_name(), "computing region dominance tree");
                     let domtree = dominfo.dominance(region.as_region_ref());
-                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest");
+                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest forward");
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG reverse post-order
@@ -305,7 +305,7 @@ impl<A: DenseBackwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysi
                     log::trace!(target: self.analysis.debug_name(), "initializing multi-block region {region_index} with entry: {entry_block}");
                     log::trace!(target: self.analysis.debug_name(), "computing region dominance tree");
                     let domtree = dominfo.dominance(region.as_region_ref());
-                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest");
+                    log::trace!(target: self.analysis.debug_name(), "computing region loop forest backward");
                     let loop_forest = LoopForest::new(&domtree);
 
                     // Visit blocks in CFG postorder

@@ -161,3 +161,6 @@ impl TransformSpillsInterface for TransformSpillsImpl {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub mod tests;

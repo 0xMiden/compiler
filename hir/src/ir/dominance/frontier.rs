@@ -146,7 +146,12 @@ impl DominanceFrontier {
         let mut idf = SmallSet::<_, 4>::default();
 
         let mut visit_block = |block: BlockRef, block_q: &mut VecDeque<BlockRef>| {
-            let added = self.dfs[&block].difference(&idf);
+            // If `block` has an empty dominance frontier, there is nothing to add.
+            let Some(df) = self.dfs.get(&block) else {
+                return;
+            };
+
+            let added = df.difference(&idf);
             if added.is_empty() {
                 return;
             }
