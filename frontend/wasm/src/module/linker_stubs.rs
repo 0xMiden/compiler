@@ -16,8 +16,10 @@ use midenc_hir::{
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
+    intrinsics::Intrinsic,
     miden_abi::{
-        is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
+        is_miden_abi_module, miden_abi_function_type,
+        transform::{no_transform, transform_miden_abi_call},
     },
     module::{
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -73,18 +75,23 @@ pub fn maybe_lower_linker_stub(
         Err(_) => return Ok(false),
     };
     let import_path: SymbolPath = SymbolPath::from_masm_function_id(func_ident);
-    // Ensure the stub targets a known Miden ABI module (stdlib or SDK). If not, let the normal
-    // translation proceed so “real” Rust stubs (e.g. core/alloc panics) aren’t hijacked.
-    if !is_miden_abi_module(&import_path) {
+    // Ensure the stub targets a known Miden ABI module or a recognized intrinsic.
+    let is_intrinsic = Intrinsic::try_from(&import_path).is_ok();
+    if !is_miden_abi_module(&import_path) && !is_intrinsic {
         return Ok(false);
     }
 
-    // MASM callee function type (ABI definition)
-    let import_ft: FunctionType = miden_abi_function_type(&import_path);
-    let import_sig = Signature::new(
-        import_ft.params.into_iter().map(AbiParam::new),
-        import_ft.results.into_iter().map(AbiParam::new),
-    );
+    // MASM callee function type
+    let import_sig = if is_intrinsic {
+        // For intrinsics, use the same signature as the stub function
+        function_ref.borrow().signature().clone()
+    } else {
+        let import_ft: FunctionType = miden_abi_function_type(&import_path);
+        Signature::new(
+            import_ft.params.into_iter().map(AbiParam::new),
+            import_ft.results.into_iter().map(AbiParam::new),
+        )
+    };
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
@@ -114,7 +121,11 @@ pub fn maybe_lower_linker_stub(
         .define_function(import_path.name().into(), import_sig)
         .expect("failed to create MASM import function ref");
 
-    let results = transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb);
+    let results = if is_intrinsic {
+        no_transform(import_func_ref, &args, &mut fb)
+    } else {
+        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
+    };
 
     // Return
     let exit_block = fb.create_block();

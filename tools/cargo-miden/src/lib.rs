@@ -305,6 +305,7 @@ where
                     "heap-base",
                     "hash-one-to-one",
                     "hash-two-to-one",
+                    "hmerge",
                     "add-asset",
                     "unchecked-from-u64",
                 ]

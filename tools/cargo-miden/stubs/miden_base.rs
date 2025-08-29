@@ -1,5 +1,3 @@
-#![no_std]
-
 use core::ffi::c_void;
 
 /// Unreachable stub for `add-asset` import (extern_account_add_asset).

@@ -51,8 +51,8 @@ interface intrinsics-crypto {
 
     // See sdk/stdlib-sys/src/intrinsics/crypto.rs for `extern` function signatures
 
-    // Hash merge operation - takes pointer to array of two digests and writes result to output pointer
-    hmerge: func(digests-ptr: s32, result-ptr: s32);
+    // Hash merge operation - moved to linker stub, no longer part of WIT imports.
+    // hmerge: func(digests-ptr: s32, result-ptr: s32);
 }
 
 interface intrinsics-advice {

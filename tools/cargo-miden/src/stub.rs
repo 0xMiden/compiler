@@ -18,29 +18,36 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
         std::fs::create_dir_all(deps_dir_std)?;
     }
 
-    let src_path = std::path::Path::new(super::STUBS_DIR).join("miden_base.rs");
-    if !src_path.exists() {
-        bail!("stub source not found: {:?}", src_path);
+    let stubs_dir = std::path::Path::new(super::STUBS_DIR);
+    let src_root = stubs_dir.join("lib.rs");
+    if !src_root.exists() {
+        bail!("stub crate root not found: {:?}", src_root);
     }
+    let miden_base = stubs_dir.join("miden_base.rs");
+    let intrinsics = stubs_dir.join("intrinsics.rs");
+    let src_files = [src_root.as_path(), miden_base.as_path(), intrinsics.as_path()];
 
     let out_path = deps_dir_std.join("libstub_miden_sdk.rlib");
     let needs_rebuild = match std::fs::metadata(&out_path) {
-        Ok(out_meta) => match (std::fs::metadata(&src_path), out_meta.modified()) {
-            (Ok(src_meta), Ok(out_mtime)) => match src_meta.modified() {
-                Ok(src_mtime) => out_mtime < src_mtime,
-                Err(_) => true,
-            },
-            _ => true,
+        Ok(out_meta) => match out_meta.modified() {
+            Ok(out_mtime) => {
+                // Rebuild if any source is newer than output
+                src_files.iter().any(|p| match std::fs::metadata(p) {
+                    Ok(meta) => meta.modified().map(|m| m > out_mtime).unwrap_or(true),
+                    Err(_) => true,
+                })
+            }
+            Err(_) => true,
         },
         Err(_) => true,
     };
 
     if needs_rebuild {
-        log::debug!("compiling stub rlib: {} (src={})", out_path.display(), src_path.display());
+        log::debug!("compiling stub rlib: {} (root={})", out_path.display(), src_root.display());
         let mut rustc = std::process::Command::new("rustc");
         let status = rustc
             .arg("--crate-name")
-            .arg("stub_add_asset")
+            .arg("miden_sdk_stubs")
             .arg("--edition=2021")
             .arg("--crate-type=rlib")
             .arg("--target")
@@ -53,7 +60,7 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
             .arg("codegen-units=1")
             .arg("-o")
             .arg(&out_path)
-            .arg(&src_path)
+            .arg(&src_root)
             .status()?;
         if !status.success() {
             bail!("failed to compile libstub ({status})");
