@@ -75,8 +75,11 @@ export.miden:cross-ctx-account/foo@1.0.0#process-felt
     trace.252
     nop
     movup.2
-    swap.1
-    add
+    trace.240
+    nop
+    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::intrinsics::felt::add
+    trace.252
+    nop
     swap.1
     push.4
     dup.1
@@ -167,5 +170,9 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         mem_store
     end
+end
+
+proc.intrinsics::felt::add
+    add
 end
 

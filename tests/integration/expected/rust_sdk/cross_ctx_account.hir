@@ -25,10 +25,10 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             v11 = hir.int_to_ptr v8 : ptr<byte, i32>;
             v12 = hir.load v11 : i32;
             v13 = hir.bitcast v12 : felt;
-            v14 = arith.add v0, v13 : felt #[overflow = unchecked];
+            v14 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/intrinsics::felt::add(v0, v13) : felt
             v18 = hir.bitcast v7 : u32;
-            v47 = arith.constant 4 : u32;
-            v20 = arith.mod v18, v47 : u32;
+            v51 = arith.constant 4 : u32;
+            v20 = arith.mod v18, v51 : u32;
             hir.assertz v20 #[code = 250];
             v15 = hir.cast v14 : i64;
             v16 = hir.bitcast v15 : u64;
@@ -61,15 +61,21 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
                 v36 = hir.bitcast v35 : ptr<byte, i32>;
                 v37 = hir.load v36 : i32;
                 hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/__wasm_call_ctors()
-                v49 = arith.constant 1 : u8;
-                v51 = arith.constant 1048608 : i32;
-                v39 = arith.add v37, v51 : i32 #[overflow = wrapping];
+                v53 = arith.constant 1 : u8;
+                v55 = arith.constant 1048608 : i32;
+                v39 = arith.add v37, v55 : i32 #[overflow = wrapping];
                 v43 = hir.bitcast v39 : u32;
                 v44 = hir.int_to_ptr v43 : ptr<byte, u8>;
-                hir.store v44, v49;
+                hir.store v44, v53;
                 scf.yield ;
             };
             builtin.ret ;
+        };
+
+        private builtin.function @intrinsics::felt::add(v45: felt, v46: felt) -> felt {
+        ^block15(v45: felt, v46: felt):
+            v47 = arith.add v45, v46 : felt #[overflow = unchecked];
+            builtin.ret v47;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -83,9 +89,9 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
         builtin.segment @1048576 = 0x0000002a00000001000000010000000100000001000000010000000100000001;
     };
 
-    public builtin.function @process-felt(v45: felt) -> felt {
-    ^block15(v45: felt):
-        v46 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/miden:cross-ctx-account/foo@1.0.0#process-felt(v45) : felt
-        builtin.ret v46;
+    public builtin.function @process-felt(v49: felt) -> felt {
+    ^block17(v49: felt):
+        v50 = hir.exec @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/miden:cross-ctx-account/foo@1.0.0#process-felt(v49) : felt
+        builtin.ret v50;
     };
 };

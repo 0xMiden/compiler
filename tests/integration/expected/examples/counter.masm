@@ -685,7 +685,12 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     trace.252
     nop
     push.1
-    add
+    swap.1
+    trace.240
+    nop
+    exec.::miden:counter-contract/counter@0.1.0::counter_contract::intrinsics::felt::add
+    trace.252
+    nop
     push.48
     dup.2
     swap.1
@@ -1390,5 +1395,9 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+end
+
+proc.intrinsics::felt::add
+    add
 end
 

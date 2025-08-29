@@ -16,10 +16,10 @@ use midenc_hir::{
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
-    intrinsics::Intrinsic,
+    intrinsics::{convert_intrinsics_call, Intrinsic},
     miden_abi::{
         is_miden_abi_module, miden_abi_function_type,
-        transform::{no_transform, transform_miden_abi_call},
+        transform::transform_miden_abi_call,
     },
     module::{
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -81,16 +81,19 @@ pub fn maybe_lower_linker_stub(
         return Ok(false);
     }
 
-    // MASM callee function type
-    let import_sig = if is_intrinsic {
-        // For intrinsics, use the same signature as the stub function
-        function_ref.borrow().signature().clone()
-    } else {
-        let import_ft: FunctionType = miden_abi_function_type(&import_path);
-        Signature::new(
-            import_ft.params.into_iter().map(AbiParam::new),
-            import_ft.results.into_iter().map(AbiParam::new),
-        )
+    // Classify intrinsics and obtain signature when needed
+    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) = match Intrinsic::try_from(&import_path) {
+        Ok(intr) => (function_ref.borrow().signature().clone(), Some(intr)),
+        Err(_) => {
+            let import_ft: FunctionType = miden_abi_function_type(&import_path);
+            (
+                Signature::new(
+                    import_ft.params.into_iter().map(AbiParam::new),
+                    import_ft.results.into_iter().map(AbiParam::new),
+                ),
+                None,
+            )
+        }
     };
 
     // Build the function body for the stub and replace it with an exec to MASM
@@ -112,18 +115,40 @@ pub fn maybe_lower_linker_stub(
         .collect();
 
     // Declare MASM import callee in world and exec via TransformStrategy
-    let import_module_ref = module_state
-        .world_builder
-        .declare_module_tree(&import_path.without_leaf())
-        .wrap_err("failed to create module for MASM imports")?;
-    let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-    let import_func_ref = import_module_builder
-        .define_function(import_path.name().into(), import_sig)
-        .expect("failed to create MASM import function ref");
-
-    let results = if is_intrinsic {
-        no_transform(import_func_ref, &args, &mut fb)
+    let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
+        // Decide whether the intrinsic is implemented as a function or an operation
+        let conv = intr
+            .conversion_result()
+            .expect("unknown intrinsic");
+        if conv.is_function() {
+            // Declare callee and call via convert_intrinsics_call with function_ref
+            let import_module_ref = module_state
+                .world_builder
+                .declare_module_tree(&import_path.without_leaf())
+                .wrap_err("failed to create module for intrinsics imports")?;
+            let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+            let intrinsic_func_ref = import_module_builder
+                .define_function(import_path.name().into(), import_sig.clone())
+                .expect("failed to create intrinsic function ref");
+            convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)
+                .expect("convert_intrinsics_call failed")
+                .to_vec()
+        } else {
+            // Inline conversion of intrinsic operation
+            convert_intrinsics_call(intr, None, &args, &mut fb, span)
+                .expect("convert_intrinsics_call failed")
+                .to_vec()
+        }
     } else {
+        // Miden ABI path: exec import with TransformStrategy
+        let import_module_ref = module_state
+            .world_builder
+            .declare_module_tree(&import_path.without_leaf())
+            .wrap_err("failed to create module for MASM imports")?;
+        let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+        let import_func_ref = import_module_builder
+            .define_function(import_path.name().into(), import_sig)
+            .expect("failed to create MASM import function ref");
         transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
     };
 

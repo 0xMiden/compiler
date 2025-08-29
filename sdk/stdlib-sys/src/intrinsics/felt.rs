@@ -10,9 +10,7 @@ extern "C" {
 
     #[link_name = "as-u64"]
     fn extern_as_u64(felt: Felt) -> u64;
-
-    #[link_name = "add"]
-    fn extern_add(a: Felt, b: Felt) -> Felt;
+    // add moved to stub; see separate extern block below
 
     #[link_name = "sub"]
     fn extern_sub(a: Felt, b: Felt) -> Felt;
@@ -61,6 +59,12 @@ extern "C" {
 
     #[link_name = "assert-eq"]
     fn extern_assert_eq(a: Felt, b: Felt);
+}
+
+// Resolve add via linker stub rather than WIT import
+extern "C" {
+    #[link_name = "intrinsics::felt::add"]
+    fn extern_add(a: Felt, b: Felt) -> Felt;
 }
 
 /// Creates a `Felt` from an integer constant checking that it is within the

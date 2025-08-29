@@ -18,7 +18,8 @@ interface intrinsics-felt {
     as-u64: func(a: f32) -> u64;
 
     // Arithmetic operations
-    add: func(a: f32, b: f32) -> f32;
+    // add moved to linker stub
+    // add: func(a: f32, b: f32) -> f32;
     sub: func(a: f32, b: f32) -> f32;
     mul: func(a: f32, b: f32) -> f32;
     div: func(a: f32, b: f32) -> f32;

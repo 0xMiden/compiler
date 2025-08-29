@@ -4,9 +4,15 @@ builtin.component root_ns:root@1.0.0 {
         ^block4(v0: felt, v1: felt):
             v3 = arith.mul v0, v1 : felt #[overflow = unchecked];
             v4 = arith.sub v3, v0 : felt #[overflow = unchecked];
-            v5 = arith.add v4, v1 : felt #[overflow = unchecked];
+            v5 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::add(v4, v1) : felt
             v6 = arith.div v0, v5 : felt;
             builtin.ret v6;
+        };
+
+        private builtin.function @intrinsics::felt::add(v7: felt, v8: felt) -> felt {
+        ^block6(v7: felt, v8: felt):
+            v9 = arith.add v7, v8 : felt #[overflow = unchecked];
+            builtin.ret v9;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

@@ -81,15 +81,18 @@ export.miden:base/note-script@1.0.0#run
     trace.252
     nop
     drop
+    push.1
+    swap.1
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::add
+    trace.252
+    nop
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
     trace.252
     nop
-    push.1
-    movup.2
-    swap.1
-    add
     assert_eq
 end
 
@@ -163,5 +166,9 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         mem_store
     end
+end
+
+proc.intrinsics::felt::add
+    add
 end
 
