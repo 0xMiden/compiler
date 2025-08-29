@@ -23,6 +23,7 @@ use crate::{
     error::WasmResult,
     module::{
         func_translator::FuncTranslator,
+        linker_stubs::maybe_lower_linker_stub,
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
@@ -132,7 +133,11 @@ pub fn build_ir_module(
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
-        // let mut module_func_builder = module_builder.function(func_name.as_str(), sig.clone())?;
+        // If this is a linker stub, synthesize its body to exec the MASM callee
+        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state, context.clone())? {
+            continue;
+        }
+
         let FunctionBodyData { validator, body } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
         func_translator.translate_body(

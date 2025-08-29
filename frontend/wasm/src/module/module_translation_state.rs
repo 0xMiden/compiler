@@ -22,6 +22,7 @@ pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     functions: FxHashMap<FuncIndex, CallableFunction>,
     pub module_builder: &'a mut ModuleBuilder,
+    pub world_builder: &'a mut WorldBuilder,
 }
 
 impl<'a> ModuleTranslationState<'a> {
@@ -80,6 +81,7 @@ impl<'a> ModuleTranslationState<'a> {
         Ok(Self {
             functions,
             module_builder,
+            world_builder,
         })
     }
 
