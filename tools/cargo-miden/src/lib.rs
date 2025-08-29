@@ -29,6 +29,7 @@ mod compile_masm;
 mod dependencies;
 mod non_component;
 mod outputs;
+mod stub;
 mod target;
 mod utils;
 
@@ -326,69 +327,9 @@ where
                 ]
                 .map(|s| s.to_string()),
             );
-            // Build and link the wasm stub that defines the account add-asset symbol
-            // with an `unreachable` body so the symbol is resolved during core linking
-            // (removing the import before componentization). Build the stub rlib
-            // with rustc directly (no cargo), and link it.
-            let stub_rlib_path = {
-                let profile = if cargo_args.release {
-                    "release"
-                } else {
-                    "debug"
-                };
-                let deps_dir =
-                    metadata.target_directory.join("wasm32-wasip2").join(profile).join("deps");
-                let deps_dir_std = deps_dir.as_std_path();
-                if !deps_dir_std.exists() {
-                    std::fs::create_dir_all(deps_dir_std)?;
-                }
-                let src_path = std::path::Path::new(STUBS_DIR).join("miden_base.rs");
-                if !src_path.exists() {
-                    bail!("stub source not found: {:?}", src_path);
-                }
-                let out_path = deps_dir_std.join("libstub_miden_sdk.rlib");
-                let needs_rebuild = match std::fs::metadata(&out_path) {
-                    Ok(out_meta) => match (std::fs::metadata(&src_path), out_meta.modified()) {
-                        (Ok(src_meta), Ok(out_mtime)) => match src_meta.modified() {
-                            Ok(src_mtime) => out_mtime < src_mtime,
-                            Err(_) => true,
-                        },
-                        _ => true,
-                    },
-                    Err(_) => true,
-                };
-                if needs_rebuild {
-                    log::debug!(
-                        "compiling stub rlib: {} (src={})",
-                        out_path.display(),
-                        src_path.display()
-                    );
-                    let mut rustc = std::process::Command::new("rustc");
-                    let status = rustc
-                        .arg("--crate-name")
-                        .arg("stub_add_asset")
-                        .arg("--edition=2021")
-                        .arg("--crate-type=rlib")
-                        .arg("--target")
-                        .arg("wasm32-wasip2")
-                        .arg("-C")
-                        .arg("opt-level=z")
-                        .arg("-C")
-                        .arg("panic=abort")
-                        .arg("-C")
-                        .arg("codegen-units=1")
-                        .arg("-o")
-                        .arg(&out_path)
-                        .arg(&src_path)
-                        .status()?;
-                    if !status.success() {
-                        bail!("failed to compile libstub ({status})");
-                    }
-                } else {
-                    log::debug!("using cached stub rlib: {}", out_path.display());
-                }
-                out_path
-            };
+            // Build and link the wasm stub that defines symbols with an `unreachable` body so the
+            // symbol is lowered during Wasm translation in the frontend.
+            let stub_rlib_path = stub::ensure_stub_rlib(&metadata, &cargo_args)?;
 
             // Convert profile options from examples/**/Cargo.toml to
             // equivalent cargo command-line overrides. This ensures the intended
