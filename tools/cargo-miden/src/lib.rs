@@ -343,7 +343,48 @@ where
                 .map(|s| s.to_string()),
             );
 
-            std::env::set_var("RUSTFLAGS", "-C target-feature=+bulk-memory,+wide-arithmetic");
+            // Convert profile options from examples/**/Cargo.toml to
+            // equivalent cargo command-line overrides. This ensures the intended
+            // behavior even when member profile tables are ignored by cargo
+            // (e.g., when building inside a workspace).
+            //
+            // [profile.dev]
+            //   panic = "abort"
+            //   opt-level = 1
+            //   debug-assertions = false
+            //   overflow-checks = false
+            //   debug = true
+            // [profile.release]
+            //   opt-level = "z"
+            //   panic = "abort"
+            // Configure cargo profile settings via --config overrides, mirroring
+            // what used to be in example manifests.
+
+            let cfg_pairs: Vec<(&str, &str)> = vec![
+                ("profile.dev.panic", "\"abort\""),
+                ("profile.dev.opt-level", "1"),
+                ("profile.dev.overflow-checks", "false"),
+                ("profile.dev.debug", "true"),
+                ("profile.dev.debug-assertions", "true"),
+                ("profile.release.opt-level", "\"z\""),
+                ("profile.release.panic", "\"abort\""),
+            ];
+
+            for (key, value) in cfg_pairs {
+                spawn_args.push("--config".to_string());
+                spawn_args.push(format!("{key}={value}"));
+            }
+
+            let extra_rust_flags = "-C target-feature=+bulk-memory,+wide-arithmetic";
+            // Augment RUSTFLAGS to ensure we preserve any flags set by the user
+            match std::env::var("RUSTFLAGS") {
+                Ok(current) if !current.is_empty() => {
+                    std::env::set_var("RUSTFLAGS", format!("{current} {extra_rust_flags}"));
+                }
+                _ => {
+                    std::env::set_var("RUSTFLAGS", extra_rust_flags);
+                }
+            }
             let terminal = Terminal::new(
                 if cargo_args.quiet {
                     Verbosity::Quiet
