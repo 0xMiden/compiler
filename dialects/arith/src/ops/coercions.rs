@@ -242,7 +242,7 @@ pub struct Join {
     #[operand]
     low_limb: Int64,
     #[result]
-    result: SizedInt<128>,
+    result: Int128,
 }
 
 has_no_effects!(Join);
@@ -267,7 +267,7 @@ impl InferTypeOpInterface for Join {
 )]
 pub struct Split {
     #[operand]
-    operand: SizedInt<128>,
+    operand: Int128,
     #[result]
     result_high: Int64,
     #[result]
