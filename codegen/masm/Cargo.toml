@@ -19,6 +19,7 @@ std = ["midenc-hir/std", "midenc-dialect-hir/std"]
 inventory.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true

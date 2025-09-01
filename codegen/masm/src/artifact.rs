@@ -4,10 +4,9 @@ use alloc::{
 };
 use core::fmt;
 
-use miden_assembly::{ast::InvocationTarget, Library};
-use miden_core::{utils::DisplayHex, Program};
+use miden_assembly::{ast::InvocationTarget, library::LibraryExport, Library};
+use miden_core::{Program, Word};
 use miden_mast_package::{MastArtifact, Package, ProcedureName};
-use miden_processor::Digest;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     diagnostics::{Report, SourceSpan, Span},
@@ -45,7 +44,7 @@ pub struct Rodata {
     /// The component to which this read-only data segment belongs
     pub component: builtin::ComponentId,
     /// The content digest computed for `data`
-    pub digest: Digest,
+    pub digest: Word,
     /// The address at which the data for this segment begins
     pub start: NativePtr,
     /// The raw binary data for this segment
@@ -54,7 +53,7 @@ pub struct Rodata {
 impl fmt::Debug for Rodata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rodata")
-            .field("digest", &format_args!("{}", DisplayHex::new(&self.digest.as_bytes())))
+            .field("digest", &format_args!("{}", &self.digest))
             .field("start", &self.start)
             .field_with("data", |f| {
                 f.debug_struct("ConstantData")
@@ -197,7 +196,7 @@ impl MasmComponent {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.insert(module.path().clone());
             }
-            assembler.add_library(library)?;
+            assembler.link_dynamic_library(library)?;
         }
 
         // Assemble library
@@ -218,7 +217,7 @@ impl MasmComponent {
 
             if module.path().to_string().starts_with("intrinsics") {
                 log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
-                assembler.add_module(module)?;
+                assembler.compile_and_statically_link(module)?;
             } else {
                 log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
                 modules.push(module);
@@ -228,7 +227,7 @@ impl MasmComponent {
         // We need to add modules according to their dependencies (add the dependency before the dependent)
         // Workaround until https://github.com/0xMiden/miden-vm/issues/1669 is implemented
         for module in modules.into_iter().rev() {
-            assembler.add_module(module)?;
+            assembler.compile_and_statically_link(module)?;
         }
 
         let emit_test_harness = session.get_flag("test_harness");
@@ -266,7 +265,7 @@ impl MasmComponent {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
                 lib_modules.push(module.path().clone());
             }
-            assembler.add_library(library)?;
+            assembler.link_dynamic_library(library)?;
         }
 
         // Assemble library
@@ -285,7 +284,7 @@ impl MasmComponent {
             }
             if module.path().to_string().starts_with("intrinsics") {
                 log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
-                assembler.add_module(module)?;
+                assembler.compile_and_statically_link(module)?;
             } else {
                 log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
                 modules.push(module);
@@ -409,21 +408,20 @@ impl MasmComponent {
 ///
 fn recover_wasm_cm_interfaces(
     lib: &Library,
-) -> BTreeMap<masm::QualifiedProcedureName, miden_processor::MastNodeId> {
+) -> BTreeMap<masm::QualifiedProcedureName, LibraryExport> {
     use crate::intrinsics::INTRINSICS_MODULE_NAMES;
 
     let mut exports = BTreeMap::new();
     for export in lib.exports() {
-        let export_node_id = lib.get_export_node_id(export);
-        if INTRINSICS_MODULE_NAMES.contains(&export.module.to_string().as_str())
-            || export.name.as_str().starts_with("cabi")
+        if INTRINSICS_MODULE_NAMES.contains(&export.name.module.to_string().as_str())
+            || export.name.name.as_str().starts_with("cabi")
         {
             // Preserve intrinsics modules and internal Wasm CM `cabi_*` functions
-            exports.insert(export.clone(), export_node_id);
+            exports.insert(export.name.clone(), export.clone());
             continue;
         }
 
-        if let Some((component, interface)) = export.name.as_str().rsplit_once('/') {
+        if let Some((component, interface)) = export.name.name.as_str().rsplit_once('/') {
             // Wasm CM interface
             let (interface, function) =
                 interface.rsplit_once('#').expect("invalid wasm component model identifier");
@@ -441,10 +439,10 @@ fn recover_wasm_cm_interfaces(
                 Span::unknown(Arc::from(function)),
             ));
             let new_export = masm::QualifiedProcedureName::new(path, name);
-            exports.insert(new_export, export_node_id);
+            exports.insert(new_export, export.clone());
         } else {
             // Non-Wasm CM interface, preserve as is
-            exports.insert(export.clone(), export_node_id);
+            exports.insert(export.name.clone(), export.clone());
         }
     }
     exports
