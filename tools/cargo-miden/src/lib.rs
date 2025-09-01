@@ -264,25 +264,6 @@ where
                 }
             };
 
-            // If the selected package is a workspace member (its manifest dir differs from
-            // the workspace root), we currently do not support building it.
-            // The reason is that crate's Cargo.toml profiles are ignored and need to be defined in
-            // the workspace Cargo.toml
-            // See https://github.com/0xMiden/compiler/issues/648
-            let root_pkg_dir = root_package
-                .manifest_path
-                .parent()
-                .expect("package manifest must have a parent directory");
-            if metadata.workspace_root != root_pkg_dir {
-                bail!(
-                    "This crate is part of a Cargo workspace (root: {}). Building workspace \
-                     members is not supported yet.\n\nOptions:\n  - Move this crate as a \
-                     standalone (outside the workspace) and run `cargo miden build` there\n  - Or \
-                     remove the workspace `Cargo.toml`",
-                    metadata.workspace_root
-                );
-            }
-
             let target_env = target::detect_target_environment(root_package)?;
             let project_type = target::target_environment_to_project_type(target_env);
 

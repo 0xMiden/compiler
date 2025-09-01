@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path};
 
-use cargo_miden::{run, OutputType};
+use cargo_miden::{run, BuildOutput, OutputType};
 
 /// Creates a minimal Cargo workspace at `root` with a single member named `member_name`.
 fn write_workspace_root(root: &Path, member_name: &str) {
@@ -73,11 +73,12 @@ fn build_workspace_member_account_project() {
 
     // change into the member directory and try to build using cargo-miden
     env::set_current_dir(&project_path).unwrap();
-    // see https://github.com/0xMiden/compiler/issues/648
-    let err = run(["cargo", "miden", "build"].into_iter().map(|s| s.to_string()), OutputType::Masm)
-        .expect_err("expected workspace member build to be rejected");
-    let msg = err.to_string();
-    assert!(msg.contains("part of a Cargo workspace"), "unexpected error: {msg}");
+    let output =
+        run(["cargo", "miden", "build"].into_iter().map(|s| s.to_string()), OutputType::Masm)
+            .unwrap()
+            .unwrap()
+            .unwrap_build_output();
+    assert!(matches!(output, BuildOutput::Masm { .. }));
 
     // cleanup
     env::set_current_dir(restore_dir).unwrap();
