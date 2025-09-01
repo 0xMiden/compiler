@@ -95,6 +95,8 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
         info.register_operation_trait::<arith::Ctz, dyn HirLowering>();
         info.register_operation_trait::<arith::Clo, dyn HirLowering>();
         info.register_operation_trait::<arith::Cto, dyn HirLowering>();
+        info.register_operation_trait::<arith::Join, dyn HirLowering>();
+        info.register_operation_trait::<arith::Split, dyn HirLowering>();
     });
     context.register_dialect_hook::<cf::ControlFlowDialect, _>(|info, _context| {
         info.register_operation_trait::<cf::Select, dyn HirLowering>();

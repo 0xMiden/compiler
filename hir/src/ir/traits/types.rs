@@ -287,6 +287,13 @@ pub type SInt64 = And<AnySignedInteger, SizedInt<64>>;
 /// An unsigned 64-bit integer
 pub type UInt64 = And<AnyUnsignedInteger, SizedInt<64>>;
 
+/// A signless 128-bit integer
+pub type Int128 = SizedInt<128>;
+/// A signed 128-bit integer
+pub type SInt128 = And<AnySignedInteger, SizedInt<128>>;
+/// An unsigned 128-bit integer
+pub type UInt128 = And<AnyUnsignedInteger, SizedInt<128>>;
+
 impl BuildableTypeConstraint for IntFelt {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::Felt
@@ -335,6 +342,16 @@ impl BuildableTypeConstraint for UInt64 {
 impl BuildableTypeConstraint for SInt64 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I64
+    }
+}
+impl BuildableTypeConstraint for UInt128 {
+    fn build(_context: &Context) -> crate::Type {
+        crate::Type::U128
+    }
+}
+impl BuildableTypeConstraint for SInt128 {
+    fn build(_context: &Context) -> crate::Type {
+        crate::Type::I128
     }
 }
 

@@ -499,6 +499,20 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn join(&mut self, hi: ValueRef, lo: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Join, _>(span);
+        let op = op_builder(hi, lo)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn split(&mut self, n: ValueRef, span: SourceSpan) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Split, _>(span);
+        let op = op_builder(n)?.borrow();
+        let lo = op.result_low().as_value_ref();
+        let hi = op.result_high().as_value_ref();
+        Ok((hi, lo))
+    }
+
     #[allow(clippy::wrong_self_convention)]
     fn is_odd(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::IsOdd, _>(span);

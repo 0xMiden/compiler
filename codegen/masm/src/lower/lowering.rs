@@ -186,25 +186,16 @@ pub trait HirLowering: Op {
                             emitter.swap(1, span);
                             emitter.movup(rhs_index, span);
                         }
-                        _ => match rhs_index {
-                            0 => {
-                                emitter.movup(lhs_index, span);
+                        _ => {
+                            emitter.movup(lhs_index, span);
+                            if rhs_index == 0 {
                                 emitter.swap(1, span);
+                            } else if lhs_index > rhs_index {
+                                emitter.movup(rhs_index + 1, span);
+                            } else {
+                                emitter.movup(rhs_index, span);
                             }
-                            1 => {
-                                emitter.swap(1, span);
-                                emitter.movup(lhs_index, span);
-                            }
-                            _ => {
-                                if lhs_index > rhs_index {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.movup(rhs_index + 1, span);
-                                } else {
-                                    emitter.movup(lhs_index, span);
-                                    emitter.movup(rhs_index, span);
-                                }
-                            }
-                        },
+                        }
                     },
                     (Constraint::Move, Constraint::Copy) => match lhs_index {
                         0 => {
@@ -1398,6 +1389,26 @@ impl HirLowering for arith::Clo {
 impl HirLowering for arith::Cto {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).cto(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Join {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.push(self.result().as_value_ref());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Split {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop().expect("operand stack is empty");
+        inst_emitter.push(self.result_low().as_value_ref());
+        inst_emitter.push(self.result_high().as_value_ref());
         Ok(())
     }
 }

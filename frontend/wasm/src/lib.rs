@@ -69,6 +69,7 @@ pub(crate) fn supported_features() -> WasmFeatures {
         | WasmFeatures::SATURATING_FLOAT_TO_INT
         | WasmFeatures::SIGN_EXTENSION
         | WasmFeatures::TAIL_CALL
+        | WasmFeatures::WIDE_ARITHMETIC
 }
 
 /// The extended set of WebAssembly features which are enabled when working with the Wasm Component

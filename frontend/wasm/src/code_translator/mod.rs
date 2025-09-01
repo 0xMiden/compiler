@@ -336,6 +336,19 @@ pub fn translate_operator<B: ?Sized + Builder>(
             };
             state.push1(builder.add_wrapping(arg1, arg2, span)?);
         }
+        Operator::I64Add128 => {
+            let (rhs_hi, rhs_lo) = state.pop2();
+            let (lhs_hi, lhs_lo) = state.pop2();
+
+            let lhs = builder.join(lhs_hi, lhs_lo, span)?;
+            let rhs = builder.join(rhs_hi, rhs_lo, span)?;
+
+            let res = builder.add_wrapping(lhs, rhs, span)?;
+
+            // Ensure the high limb is left on the top of the value stack.
+            let (res_hi, res_lo) = builder.split(res, span)?;
+            state.pushn(&[res_lo, res_hi]);
+        }
         Operator::I32And | Operator::I64And => {
             let (arg1, arg2) = state.pop2();
             state.push1(builder.band(arg1, arg2, span)?);
@@ -418,11 +431,51 @@ pub fn translate_operator<B: ?Sized + Builder>(
             // https://www.w3.org/TR/wasm-core-1/#op-isub
             state.push1(builder.sub_wrapping(arg1, arg2, span)?);
         }
+        Operator::I64Sub128 => {
+            let (rhs_hi, rhs_lo) = state.pop2();
+            let (lhs_hi, lhs_lo) = state.pop2();
+
+            let lhs = builder.join(lhs_hi, lhs_lo, span)?;
+            let rhs = builder.join(rhs_hi, rhs_lo, span)?;
+
+            let res = builder.sub_wrapping(lhs, rhs, span)?;
+
+            // Ensure the high limb is left on the top of the value stack.
+            let (res_hi, res_lo) = builder.split(res, span)?;
+            state.pushn(&[res_lo, res_hi]);
+        }
         Operator::I32Mul | Operator::I64Mul => {
             let (arg1, arg2) = state.pop2();
             // wrapping because the result is mod 2^N
             // https://www.w3.org/TR/wasm-core-1/#op-imul
             state.push1(builder.mul_wrapping(arg1, arg2, span)?);
+        }
+        Operator::I64MulWideU => {
+            let (arg1, arg2) = state.pop2();
+
+            let lhs_u = builder.bitcast(arg1, Type::U64, span)?;
+            let lhs = builder.zext(lhs_u, Type::U128, span)?;
+
+            let rhs_u = builder.bitcast(arg2, Type::U64, span)?;
+            let rhs = builder.zext(rhs_u, Type::U128, span)?;
+
+            let res = builder.mul_wrapping(lhs, rhs, span)?;
+
+            // Ensure the high limb is left on the top of the value stack.
+            let (res_hi, res_lo) = builder.split(res, span)?;
+            state.pushn(&[res_lo, res_hi]);
+        }
+        Operator::I64MulWideS => {
+            let (arg1, arg2) = state.pop2();
+
+            let lhs = builder.sext(arg1, Type::I128, span)?;
+            let rhs = builder.sext(arg2, Type::I128, span)?;
+
+            let res = builder.mul_wrapping(lhs, rhs, span)?;
+
+            // Ensure the high limb is left on the top of the value stack.
+            let (res_hi, res_lo) = builder.split(res, span)?;
+            state.pushn(&[res_lo, res_hi]);
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();

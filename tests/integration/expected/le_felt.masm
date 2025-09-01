@@ -14,7 +14,7 @@ end
 
 export.entrypoint
     push.0
-    swap.1
+    movup.2
     movup.2
     lte
     neq

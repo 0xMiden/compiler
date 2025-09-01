@@ -55,7 +55,74 @@ macro_rules! test_bin_op {
                     },
                     Ok(_) => (),
                     _ => panic!("Unexpected test result: {:?}", res),
-    }
+                }
+            }
+        });
+    };
+}
+
+macro_rules! test_wide_bin_op {
+    ($name:ident, $op:tt, $op_ty:ty, $res_ty:ty, $a_range:expr, $b_range:expr) => {
+        test_wide_bin_op!($name, $op, $op_ty, $op_ty, $res_ty, $a_range, $b_range);
+    };
+
+    ($name:ident, $op:tt, $a_ty:ty, $b_ty:ty, $res_ty:tt, $a_range:expr, $b_range:expr) => {
+        concat_idents::concat_idents!(test_name = $name, _, $a_ty {
+            #[test]
+            fn test_name() {
+                let op_str = stringify!($op);
+                let a_ty_str = stringify!($a_ty);
+                let b_ty_str = stringify!($b_ty);
+                let res_ty_str = stringify!($res_ty);
+                let main_fn = format!("(a: {a_ty_str}, b: {b_ty_str}) -> {res_ty_str} {{ a {op_str} b }}");
+                let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+                // Test expected compilation artifacts
+                let artifact_name = format!("{}_{}", stringify!($name), stringify!($a_ty));
+                test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+                test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
+                let package = test.compiled_package();
+
+                let res = TestRunner::default().run(&($a_range, $b_range), move |(a, b)| {
+                    dbg!(a, b);
+                    let rs_out = a $op b;
+                    dbg!(&rs_out);
+
+                    // Moves the little-endian 32bit limbs [A, B, C, D] to [D, C, B, A].
+                    let rs_out = ((rs_out >> 32) & 0xffffffff_00000000_00000000)
+                        | ((rs_out & 0xffffffff_00000000_00000000) << 32)
+                        | ((rs_out & 0xffffffff_00000000) >> 32)
+                        | ((rs_out & 0xffffffff) << 32);
+                    let rs_out_bytes = rs_out.to_le_bytes();
+
+                    // Write the operation result to 20 * PAGE_SIZE.
+                    let out_addr = 20u32 * 65536;
+
+                    let mut args = Vec::<midenc_hir::Felt>::default();
+                    b.push_to_operand_stack(&mut args);
+                    a.push_to_operand_stack(&mut args);
+                    out_addr.push_to_operand_stack(&mut args);
+                    dbg!(&args);
+
+                    eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+                        let vm_out: [u8; 16] =
+                            trace.read_from_rust_memory(out_addr).expect("output was not written");
+                        dbg!(&vm_out);
+                        dbg!(&rs_out_bytes);
+                        prop_assert_eq!(&rs_out_bytes, &vm_out, "VM output mismatch");
+                        Ok(())
+                    })?;
+
+                    Ok(())
+                });
+
+                match res {
+                    Err(TestError::Fail(_, value)) => {
+                        panic!("Found minimal(shrinked) failing case: {:?}", value);
+                    }
+                    Ok(_) => (),
+                    _ => panic!("Unexpected test result: {:?}", res),
+                }
             }
         });
     };
@@ -180,6 +247,18 @@ test_int_op!(add, +, i32, 0..=i32::MAX/2, 0..=i32::MAX/2);
 test_int_op!(add, +, i16, 0..=i16::MAX/2, 0..=i16::MAX/2);
 test_int_op!(add, +, i8, 0..=i8::MAX/2, 0..=i8::MAX/2);
 
+// Useful for debugging traces:
+// - WK1234 is (1000 << 96) | (2000 << 64) | (3000 << 32) | 4000;
+// - WC1234 is (100 << 96) | (200 << 64) | (300 << 32) | 400;
+//
+// const WK1234: i128 = 79228162551157825753847955460000;
+// const WC1234: i128 = 7922816255115782575384795546000;
+//
+// test_wide_bin_op!(xxx, x, i128, i128, WK1234..=WK1234, WC1234..=WC1234);
+
+test_wide_bin_op!(add, +, u128, u128, 0..=u128::MAX/2, 0..=u128::MAX/2);
+test_wide_bin_op!(add, +, i128, i128, i128::MIN/2..=i128::MAX/2, -1..=i128::MAX/2);
+
 test_int_op!(sub, -, u64, u64::MAX/2..=u64::MAX, 0..=u64::MAX/2);
 test_int_op!(sub, -, i64, i64::MIN/2..=i64::MAX/2, -1..=i64::MAX/2);
 test_int_op!(sub, -, u32, u32::MAX/2..=u32::MAX, 0..=u32::MAX/2);
@@ -189,6 +268,9 @@ test_int_op!(sub, -, i32, i32::MIN+1..=0, i32::MIN+1..=0);
 test_int_op!(sub, -, i16, i16::MIN+1..=0, i16::MIN+1..=0);
 test_int_op!(sub, -, i8, i8::MIN+1..=0, i8::MIN+1..=0);
 
+test_wide_bin_op!(sub, -, u128, u128, u128::MAX/2..=u128::MAX, 0..=u128::MAX/2);
+test_wide_bin_op!(sub, -, i128, i128, i128::MIN/2..=i128::MAX/2, -1..=i128::MAX/2);
+
 test_int_op!(mul, *, u64, 0u64..=16656, 0u64..=16656);
 test_int_op!(mul, *, i64, -65656i64..=65656, -65656i64..=65656);
 test_int_op!(mul, *, u32, 0u32..=16656, 0u32..=16656);
@@ -197,6 +279,13 @@ test_int_op!(mul, *, u8, 0u8..=16, 0u8..=15);
 test_int_op!(mul, *, i32, -16656i32..=16656, -16656i32..=16656);
 //test_int_op!(mul, *, i16);
 //test_int_op!(mul, *, i8);
+
+const MAX_U128_64: u128 = u64::MAX as u128;
+const MAX_I128_64: i128 = i64::MAX as i128;
+const MIN_I128_64: i128 = i64::MIN as i128;
+
+test_wide_bin_op!(mul, *, u128, u128, 0..=MAX_U128_64, 0..=MAX_U128_64);
+test_wide_bin_op!(mul, *, i128, i128, MIN_I128_64..MAX_I128_64, MIN_I128_64..=MAX_I128_64);
 
 // TODO: build with cargo to avoid core::panicking
 // TODO: separate macro for div and rem tests to filter out division by zero

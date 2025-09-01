@@ -229,3 +229,57 @@ impl Foldable for Sext {
         FoldResult::Failed
     }
 }
+
+/// Join two 64bit integers into one 128 bit integer.
+#[operation(
+    dialect = ArithDialect,
+    traits(BinaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct Join {
+    #[operand]
+    high_limb: Int64,
+    #[operand]
+    low_limb: Int64,
+    #[result]
+    result: Int128,
+}
+
+has_no_effects!(Join);
+
+impl InferTypeOpInterface for Join {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I128);
+        Ok(())
+    }
+}
+
+/// Split a 128bit integer into two 64 bit integers.
+///
+/// The result is a pair of 64bit integers, e.g., `v1, v2 = arith.split v0 : i64, i64;` where `v1`
+/// is the high limb and `v2` is the low limb.
+///
+/// It also will leave the high limb on the top of the working stack during codegen.
+#[operation(
+    dialect = ArithDialect,
+    traits(UnaryOp, SameTypeOperands),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+)]
+pub struct Split {
+    #[operand]
+    operand: Int128,
+    #[result]
+    result_high: Int64,
+    #[result]
+    result_low: Int64,
+}
+
+has_no_effects!(Split);
+
+impl InferTypeOpInterface for Split {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_low_mut().set_type(Type::I64);
+        self.result_high_mut().set_type(Type::I64);
+        Ok(())
+    }
+}
