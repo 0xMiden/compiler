@@ -5,7 +5,7 @@ use alloc::{borrow::Cow, format, str::FromStr, sync::Arc, vec::Vec};
 use alloc::{boxed::Box, string::ToString};
 use core::fmt;
 
-pub use miden_assembly::{
+pub use miden_assembly_syntax::{
     Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
 };
 #[cfg(feature = "std")]

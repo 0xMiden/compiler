@@ -15,7 +15,7 @@ publish = false
 anyhow.workspace = true
 cargo-miden.workspace = true
 fs2 = "0.4"
-miden-client = { version = "0.10", features = [
+miden-client = { version = "0.11", features = [
     "tonic",
     "sqlite",
 ] }

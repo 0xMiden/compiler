@@ -16,7 +16,8 @@ pub use miden_assembly::diagnostics::{
     reporting::{PrintDiagnostic, ReportHandlerOpts},
     Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr,
 };
-pub use miden_core::debuginfo::*;
+pub use miden_core::*;
+pub use miden_debug_types::*;
 pub use midenc_hir_macros::Spanned;
 
 #[cfg(feature = "std")]
