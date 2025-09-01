@@ -346,7 +346,7 @@ where
                 ("profile.dev.opt-level", "1"),
                 ("profile.dev.overflow-checks", "false"),
                 ("profile.dev.debug", "true"),
-                ("profile.dev.debug-assertions", "true"),
+                ("profile.dev.debug-assertions", "false"),
                 ("profile.release.opt-level", "\"z\""),
                 ("profile.release.panic", "\"abort\""),
             ];
