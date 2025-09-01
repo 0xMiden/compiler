@@ -1,3 +1,4 @@
+use miden_assembly_syntax::parser::WordValue;
 use midenc_hir::{
     self as hir, ArgumentExtension, ArgumentPurpose, Felt, FieldElement, Immediate, SourceSpan,
     Type,
@@ -26,12 +27,12 @@ impl OpEmitter<'_> {
             Type::I128 | Type::U128 => {
                 self.emit_all(
                     [
-                        masm::Instruction::PushWord([
+                        masm::Instruction::PushWord(WordValue([
                             Felt::ZERO,
                             Felt::ZERO,
                             Felt::ZERO,
                             Felt::ONE,
-                        ]),
+                        ])),
                         masm::Instruction::AssertEqw,
                     ],
                     span,
@@ -68,7 +69,10 @@ impl OpEmitter<'_> {
             }
             Type::U128 | Type::I128 => {
                 self.emit_all(
-                    [masm::Instruction::PushWord([Felt::ZERO; 4]), masm::Instruction::AssertEqw],
+                    [
+                        masm::Instruction::PushWord(WordValue([Felt::ZERO; 4])),
+                        masm::Instruction::AssertEqw,
+                    ],
                     span,
                 );
             }

@@ -1,6 +1,7 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
 use miden_assembly::{ast::InvocationTarget, LibraryPath};
+use miden_assembly_syntax::parser::WordValue;
 use miden_mast_package::ProcedureName;
 use midenc_hir::{
     diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, CallConv, FunctionIdent,
@@ -312,8 +313,13 @@ impl MasmComponentBuilder<'_> {
         let span = SourceSpan::default();
         for rodata in self.component.rodata.iter() {
             // Push the commitment hash (`COM`) for this data onto the operand stack
+
+            // WARNING: These two are equivalent, shouldn't this be a no-op?
+            let word = rodata.digest.as_elements();
+            let word_value = [word[0], word[1], word[2], word[3]];
+
             self.init_body
-                .push(Op::Inst(Span::new(span, Inst::PushWord(rodata.digest.into()))));
+                .push(Op::Inst(Span::new(span, Inst::PushWord(WordValue(word_value)))));
             // Move rodata from the advice map, using the commitment as key, to the advice stack
             self.init_body
                 .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
