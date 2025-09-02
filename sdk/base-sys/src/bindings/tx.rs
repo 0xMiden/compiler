@@ -3,9 +3,8 @@ use miden_stdlib_sys::Felt;
 use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-base/tx@1.0.0")]
 extern "C" {
-    #[link_name = "create-note"]
+    #[link_name = "miden::tx::create_note"]
     pub fn extern_tx_create_note(
         tag: Tag,
         aux: Felt,
@@ -17,7 +16,7 @@ extern "C" {
         recipient_f3: Felt,
     ) -> NoteIdx;
 
-    #[link_name = "add-asset-to-note"]
+    #[link_name = "miden::tx::add_asset_to_note"]
     pub fn extern_tx_add_asset_to_note(
         asset_f0: Felt,
         asset_f1: Felt,

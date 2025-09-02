@@ -1,85 +1,85 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @abi_transform_tx_kernel_get_id {
-        private builtin.function @miden_base_sys::bindings::account::extern_account_get_id(v0: i32) {
-        ^block3(v0: i32):
-            v1, v2 = hir.exec @miden/account/get_id() : felt, felt
-            v3 = hir.bitcast v0 : u32;
-            v4 = hir.int_to_ptr v3 : ptr<byte, felt>;
-            hir.store v4, v1;
-            v5 = arith.constant 4 : u32;
-            v6 = arith.add v3, v5 : u32 #[overflow = checked];
-            v7 = hir.int_to_ptr v6 : ptr<byte, felt>;
-            hir.store v7, v2;
-            builtin.ret ;
-        };
-
-        public builtin.function @entrypoint(v8: i32) {
-        ^block8(v8: i32):
-            v10 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v11 = hir.bitcast v10 : ptr<byte, i32>;
-            v12 = hir.load v11 : i32;
-            v13 = arith.constant 16 : i32;
-            v14 = arith.sub v12, v13 : i32 #[overflow = wrapping];
-            v15 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v16 = hir.bitcast v15 : ptr<byte, i32>;
-            hir.store v16, v14;
-            v17 = arith.constant 8 : i32;
-            v18 = arith.add v14, v17 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id(v18)
-            v20 = arith.constant 8 : u32;
-            v19 = hir.bitcast v14 : u32;
-            v21 = arith.add v19, v20 : u32 #[overflow = checked];
+        public builtin.function @entrypoint(v0: i32) {
+        ^block4(v0: i32):
+            v2 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v3 = hir.bitcast v2 : ptr<byte, i32>;
+            v4 = hir.load v3 : i32;
+            v5 = arith.constant 16 : i32;
+            v6 = arith.sub v4, v5 : i32 #[overflow = wrapping];
+            v7 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v8 = hir.bitcast v7 : ptr<byte, i32>;
+            hir.store v8, v6;
+            v9 = arith.constant 8 : i32;
+            v10 = arith.add v6, v9 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id(v10)
+            v12 = arith.constant 8 : u32;
+            v11 = hir.bitcast v6 : u32;
+            v13 = arith.add v11, v12 : u32 #[overflow = checked];
             v61 = arith.constant 8 : u32;
-            v23 = arith.mod v21, v61 : u32;
-            hir.assertz v23 #[code = 250];
-            v24 = hir.int_to_ptr v21 : ptr<byte, i64>;
-            v25 = hir.load v24 : i64;
-            v26 = hir.bitcast v8 : u32;
-            v27 = arith.constant 4 : u32;
-            v28 = arith.mod v26, v27 : u32;
-            hir.assertz v28 #[code = 250];
-            v29 = hir.int_to_ptr v26 : ptr<byte, i64>;
-            hir.store v29, v25;
+            v15 = arith.mod v13, v61 : u32;
+            hir.assertz v15 #[code = 250];
+            v16 = hir.int_to_ptr v13 : ptr<byte, i64>;
+            v17 = hir.load v16 : i64;
+            v18 = hir.bitcast v0 : u32;
+            v19 = arith.constant 4 : u32;
+            v20 = arith.mod v18, v19 : u32;
+            hir.assertz v20 #[code = 250];
+            v21 = hir.int_to_ptr v18 : ptr<byte, i64>;
+            hir.store v21, v17;
             v60 = arith.constant 16 : i32;
-            v31 = arith.add v14, v60 : i32 #[overflow = wrapping];
-            v32 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v33 = hir.bitcast v32 : ptr<byte, i32>;
-            hir.store v33, v31;
+            v23 = arith.add v6, v60 : i32 #[overflow = wrapping];
+            v24 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v25 = hir.bitcast v24 : ptr<byte, i32>;
+            hir.store v25, v23;
             builtin.ret ;
         };
 
-        private builtin.function @miden_base_sys::bindings::account::get_id(v34: i32) {
-        ^block10(v34: i32):
-            v36 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v37 = hir.bitcast v36 : ptr<byte, i32>;
-            v38 = hir.load v37 : i32;
-            v39 = arith.constant 16 : i32;
-            v40 = arith.sub v38, v39 : i32 #[overflow = wrapping];
-            v41 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v42 = hir.bitcast v41 : ptr<byte, i32>;
-            hir.store v42, v40;
-            v43 = arith.constant 8 : i32;
-            v44 = arith.add v40, v43 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::extern_account_get_id(v44)
-            v46 = arith.constant 8 : u32;
-            v45 = hir.bitcast v40 : u32;
-            v47 = arith.add v45, v46 : u32 #[overflow = checked];
-            v48 = arith.constant 4 : u32;
-            v49 = arith.mod v47, v48 : u32;
-            hir.assertz v49 #[code = 250];
-            v50 = hir.int_to_ptr v47 : ptr<byte, i64>;
-            v51 = hir.load v50 : i64;
-            v52 = hir.bitcast v34 : u32;
+        private builtin.function @miden_base_sys::bindings::account::get_id(v26: i32) {
+        ^block6(v26: i32):
+            v28 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v29 = hir.bitcast v28 : ptr<byte, i32>;
+            v30 = hir.load v29 : i32;
+            v31 = arith.constant 16 : i32;
+            v32 = arith.sub v30, v31 : i32 #[overflow = wrapping];
+            v33 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v34 = hir.bitcast v33 : ptr<byte, i32>;
+            hir.store v34, v32;
+            v35 = arith.constant 8 : i32;
+            v36 = arith.add v32, v35 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden::account::get_id(v36)
+            v38 = arith.constant 8 : u32;
+            v37 = hir.bitcast v32 : u32;
+            v39 = arith.add v37, v38 : u32 #[overflow = checked];
+            v40 = arith.constant 4 : u32;
+            v41 = arith.mod v39, v40 : u32;
+            hir.assertz v41 #[code = 250];
+            v42 = hir.int_to_ptr v39 : ptr<byte, i64>;
+            v43 = hir.load v42 : i64;
+            v44 = hir.bitcast v26 : u32;
             v63 = arith.constant 8 : u32;
-            v54 = arith.mod v52, v63 : u32;
-            hir.assertz v54 #[code = 250];
-            v55 = hir.int_to_ptr v52 : ptr<byte, i64>;
-            hir.store v55, v51;
+            v46 = arith.mod v44, v63 : u32;
+            hir.assertz v46 #[code = 250];
+            v47 = hir.int_to_ptr v44 : ptr<byte, i64>;
+            hir.store v47, v43;
             v62 = arith.constant 16 : i32;
-            v57 = arith.add v40, v62 : i32 #[overflow = wrapping];
-            v58 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
-            v59 = hir.bitcast v58 : ptr<byte, i32>;
-            hir.store v59, v57;
+            v49 = arith.add v32, v62 : i32 #[overflow = wrapping];
+            v50 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
+            v51 = hir.bitcast v50 : ptr<byte, i32>;
+            hir.store v51, v49;
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::account::get_id(v52: i32) {
+        ^block8(v52: i32):
+            v53, v54 = hir.exec @miden/account/get_id() : felt, felt
+            v55 = hir.bitcast v52 : u32;
+            v56 = hir.int_to_ptr v55 : ptr<byte, felt>;
+            hir.store v56, v53;
+            v57 = arith.constant 4 : u32;
+            v58 = arith.add v55, v57 : u32 #[overflow = checked];
+            v59 = hir.int_to_ptr v58 : ptr<byte, felt>;
+            hir.store v59, v54;
             builtin.ret ;
         };
 

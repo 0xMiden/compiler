@@ -1,31 +1,20 @@
 (component
   (type (;0;)
     (instance
-      (type (;0;) (func (param "index" f32) (param "key0" f32) (param "key1" f32) (param "key2" f32) (param "key3" f32) (param "result-ptr" s32)))
-      (export (;0;) "get-map-item" (func (type 0)))
-      (type (;1;) (func (param "index" f32) (param "key0" f32) (param "key1" f32) (param "key2" f32) (param "key3" f32) (param "value0" f32) (param "value1" f32) (param "value2" f32) (param "value3" f32) (param "result-ptr" s32)))
-      (export (;1;) "set-map-item" (func (type 1)))
-    )
-  )
-  (import "miden:core-base/account@1.0.0" (instance (;0;) (type 0)))
-  (type (;1;)
-    (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;1;) (type 1)))
+  (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
   (core module (;0;)
-    (type (;0;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
-    (type (;2;) (func))
-    (type (;3;) (func (param i32 i32)))
-    (type (;4;) (func (result f32)))
-    (type (;5;) (func (param i32) (result f32)))
-    (type (;6;) (func (param i32 f32)))
-    (type (;7;) (func (param f32 f32) (result f32)))
-    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;0;) (type 0)))
-    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;1;) (type 1)))
+    (type (;0;) (func))
+    (type (;1;) (func (param i32 i32)))
+    (type (;2;) (func (result f32)))
+    (type (;3;) (func (param i32) (result f32)))
+    (type (;4;) (func (param i32 f32)))
+    (type (;5;) (func (param f32 f32) (result f32)))
+    (type (;6;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;7;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -34,8 +23,8 @@
     (export "miden:counter-contract/counter@0.1.0#get-count" (func $miden:counter-contract/counter@0.1.0#get-count))
     (export "miden:counter-contract/counter@0.1.0#increment-count" (func $miden:counter-contract/counter@0.1.0#increment-count))
     (elem (;0;) (i32.const 1) func $counter_contract::bindings::__link_custom_section_describing_imports)
-    (func $__wasm_call_ctors (;2;) (type 2))
-    (func $miden_base_sys::bindings::storage::get_map_item (;3;) (type 3) (param i32 i32)
+    (func $__wasm_call_ctors (;0;) (type 0))
+    (func $miden_base_sys::bindings::storage::get_map_item (;1;) (type 1) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -53,7 +42,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden_base_sys::bindings::storage::extern_get_storage_map_item
+      call $miden::account::get_map_item
       local.get 2
       local.get 2
       i64.load offset=8
@@ -72,8 +61,8 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $counter_contract::bindings::__link_custom_section_describing_imports (;4;) (type 2))
-    (func $miden:counter-contract/counter@0.1.0#get-count (;5;) (type 4) (result f32)
+    (func $counter_contract::bindings::__link_custom_section_describing_imports (;2;) (type 0))
+    (func $miden:counter-contract/counter@0.1.0#get-count (;3;) (type 2) (result f32)
       (local i32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 32
@@ -117,7 +106,7 @@
       global.set $__stack_pointer
       local.get 1
     )
-    (func $miden:counter-contract/counter@0.1.0#increment-count (;6;) (type 4) (result f32)
+    (func $miden:counter-contract/counter@0.1.0#increment-count (;4;) (type 2) (result f32)
       (local i32 f32 f32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 128
@@ -180,7 +169,7 @@
       local.get 0
       i32.const 64
       i32.add
-      call $miden_base_sys::bindings::storage::extern_set_storage_map_item
+      call $miden::account::set_map_item
       local.get 0
       local.get 0
       i64.load offset=72
@@ -219,7 +208,7 @@
       global.set $__stack_pointer
       local.get 5
     )
-    (func $wit_bindgen_rt::run_ctors_once (;7;) (type 2)
+    (func $wit_bindgen_rt::run_ctors_once (;5;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -237,13 +226,13 @@
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;8;) (type 5) (param i32) (result f32)
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;6;) (type 3) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;9;) (type 3) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;7;) (type 1) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -301,7 +290,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;10;) (type 6) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;8;) (type 4) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $intrinsics::felt::from_u32
@@ -325,35 +314,30 @@
       local.get 2
       f32.store
     )
-    (func $intrinsics::felt::add (;11;) (type 7) (param f32 f32) (result f32)
+    (func $intrinsics::felt::add (;9;) (type 5) (param f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;12;) (type 5) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;10;) (type 3) (param i32) (result f32)
+      unreachable
+    )
+    (func $miden::account::get_map_item (;11;) (type 6) (param f32 f32 f32 f32 f32 i32)
+      unreachable
+    )
+    (func $miden::account::set_map_item (;12;) (type 7) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\03\01\00\01\13count_map\019counter contract storage map")
   )
-  (alias export 1 "felt" (type (;2;)))
-  (alias export 0 "get-map-item" (func (;0;)))
-  (core func (;0;) (canon lower (func 0)))
-  (alias export 0 "set-map-item" (func (;1;)))
-  (core func (;1;) (canon lower (func 1)))
-  (core instance (;0;)
-    (export "get-map-item" (func 0))
-    (export "set-map-item" (func 1))
-  )
-  (core instance (;1;) (instantiate 0
-      (with "miden:core-base/account@1.0.0" (instance 0))
-    )
-  )
-  (alias core export 1 "memory" (core memory (;0;)))
-  (type (;3;) (func (result 2)))
-  (alias core export 1 "miden:counter-contract/counter@0.1.0#get-count" (core func (;2;)))
-  (func (;2;) (type 3) (canon lift (core func 2)))
-  (alias core export 1 "miden:counter-contract/counter@0.1.0#increment-count" (core func (;3;)))
-  (func (;3;) (type 3) (canon lift (core func 3)))
-  (alias export 1 "felt" (type (;4;)))
+  (alias export 0 "felt" (type (;1;)))
+  (core instance (;0;) (instantiate 0))
+  (alias core export 0 "memory" (core memory (;0;)))
+  (type (;2;) (func (result 1)))
+  (alias core export 0 "miden:counter-contract/counter@0.1.0#get-count" (core func (;0;)))
+  (func (;0;) (type 2) (canon lift (core func 0)))
+  (alias core export 0 "miden:counter-contract/counter@0.1.0#increment-count" (core func (;1;)))
+  (func (;1;) (type 2) (canon lift (core func 1)))
+  (alias export 0 "felt" (type (;3;)))
   (component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
@@ -366,12 +350,12 @@
     (export (;2;) "get-count" (func 0) (func (type 5)))
     (export (;3;) "increment-count" (func 1) (func (type 5)))
   )
-  (instance (;2;) (instantiate 0
-      (with "import-func-get-count" (func 2))
-      (with "import-func-increment-count" (func 3))
-      (with "import-type-felt" (type 4))
-      (with "import-type-felt0" (type 2))
+  (instance (;1;) (instantiate 0
+      (with "import-func-get-count" (func 0))
+      (with "import-func-increment-count" (func 1))
+      (with "import-type-felt" (type 3))
+      (with "import-type-felt0" (type 1))
     )
   )
-  (export (;3;) "miden:counter-contract/counter@0.1.0" (instance 2))
+  (export (;2;) "miden:counter-contract/counter@0.1.0" (instance 1))
 )

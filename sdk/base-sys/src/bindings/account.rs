@@ -3,21 +3,14 @@ use miden_stdlib_sys::Felt;
 use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
-    #[link_name = "get-id"]
+    #[link_name = "miden::account::get_id"]
     pub fn extern_account_get_id(ptr: *mut AccountId);
-    #[link_name = "remove-asset"]
+    #[link_name = "miden::account::remove_asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
-    #[link_name = "incr-nonce"]
+    #[link_name = "miden::account::incr_nonce"]
     pub fn extern_account_incr_nonce(value: i32);
-}
-
-// Remove `add-asset` from the WIT world and declare it here without an import
-// module so that it can be satisfied at core Wasm link time via a local
-// definition (stub) rather than being imported as part of the component world.
-#[allow(improper_ctypes)]
-extern "C" {
+    // Resolved via stub rlib at core Wasm link time
     #[link_name = "miden::account::add_asset"]
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
 }

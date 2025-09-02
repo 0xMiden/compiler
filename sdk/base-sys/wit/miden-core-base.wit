@@ -13,30 +13,39 @@ interface account {
     // add-asset: removed from WIT to experiment with resolving it at core Wasm
     // link time via a stub definition rather than declaring it in the world.
     /// Remove the specified asset from the vault
-    remove-asset: func(asset0: f32, asset1: f32, asset2: f32, asset3: f32, result-ptr: s32);
+    // moved to stub rlib (tools/cargo-miden/stubs/miden_base.rs)
+    // remove-asset: func(asset0: f32, asset1: f32, asset2: f32, asset3: f32, result-ptr: s32);
     /// Get the id of the currently executing account
-    get-id: func(result-ptr: s32);
+    // moved to stub rlib
+    // get-id: func(result-ptr: s32);
 
     /// Gets an item from the account storage
-    get-item: func(index: f32, result-ptr: s32);
+    // moved to stub rlib
+    // get-item: func(index: f32, result-ptr: s32);
     /// Sets an item in the account storage
-    set-item: func(index: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
+    // moved to stub rlib
+    // set-item: func(index: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
     /// Gets a map item from the account storage
-    get-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, result-ptr: s32);
+    // moved to stub rlib
+    // get-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, result-ptr: s32);
     /// Sets a map item in the account storage
-    set-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
+    // moved to stub rlib
+    // set-map-item: func(index: f32, key0: f32, key1: f32, key2: f32, key3: f32, value0: f32, value1: f32, value2: f32, value3: f32, result-ptr: s32);
 
     /// Increments the account nonce by the provided value.
-    incr-nonce: func(value: u32);
+    // moved to stub rlib
+    // incr-nonce: func(value: u32);
 }
 
 
 interface note {
 
     /// Get the inputs of the currently executed note
-    get-inputs: func(ptr: s32) -> s32;
+    // moved to stub rlib
+    // get-inputs: func(ptr: s32) -> s32;
     /// Get the assets of the currently executing note
-    get-assets: func(ptr: s32) -> s32;
+    // moved to stub rlib
+    // get-assets: func(ptr: s32) -> s32;
 }
 
 interface tx {
@@ -46,16 +55,17 @@ interface tx {
     /// tag is the tag to be included in the note.
     /// recipient is the recipient of the note.
     /// Returns the id of the created note.
-    create-note: func(
-	tag: f32,
-	aux: f32,
-        note-type: f32,
-	execution-hint: f32,
-        recipient0: f32,
-        recipient1: f32,
-        recipient2: f32,
-        recipient3: f32,
-    ) -> f32;
+    // moved to stub rlib
+    // create-note: func(
+    // 	tag: f32,
+    // 	aux: f32,
+    //     note-type: f32,
+    // 	execution-hint: f32,
+    //     recipient0: f32,
+    //     recipient1: f32,
+    //     recipient2: f32,
+    //     recipient3: f32,
+    // ) -> f32;
 
 
     /// Adds the ASSET to the note specified by the index.
@@ -66,14 +76,15 @@ interface tx {
     /// Where:
     /// - note_idx is the index of the note to which the asset is added.
     /// - ASSET can be a fungible or non-fungible asset.
-    add-asset-to-note: func(
-    	asset0: f32,
-        asset1: f32,
-        asset2: f32,
-        asset3: f32,
-	note-idx: f32,
-	result-ptr: s32,
-    );
+    // moved to stub rlib
+    // add-asset-to-note: func(
+    // 	asset0: f32,
+    //     asset1: f32,
+    //     asset2: f32,
+    //     asset3: f32,
+    // 	note-idx: f32,
+    // 	result-ptr: s32,
+    // );
 
 }
 
