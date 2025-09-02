@@ -26,23 +26,3 @@ supported-types = ["RegularAccountUpdatableCode"]
 "miden:core-stdlib" = { path = "../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
 "miden:core-base" = { path = "../../sdk/base-sys/wit/miden-core-base.wit" }
 
-
-[profile.release]
-# optimize the output for size
-opt-level = "z"
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
-panic = "abort"
-
-[profile.dev]
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
-panic = "abort"
-opt-level = 1
-debug-assertions = true
-overflow-checks = false
-debug = true

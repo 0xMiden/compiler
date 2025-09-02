@@ -17,27 +17,7 @@ miden = { path = "../../sdk/sdk" }
 wit-bindgen-rt = "0.28"
 
 
-[profile.release]
-# optimize the output for size
-opt-level = "z"
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
-panic = "abort"
-trim-paths = ["diagnostics", "object"]
 
-[profile.dev]
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
-panic = "abort"
-opt-level = 1
-debug-assertions = true
-overflow-checks = false
-debug = true
-trim-paths = ["diagnostics", "object"]
 
 [package.metadata.miden]
 project-kind = "note-script"
@@ -56,6 +36,12 @@ package = "miden:counter-note"
 "miden:core-stdlib" = { path = "../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
 "miden:core-base" = { path = "../../sdk/base-sys/wit/miden-core-base.wit" }
 "miden:counter-contract" = { path = "../counter-contract/wit/counter.wit" }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]
 
 [package.metadata.cargo-machete]
 ignored = ["wit-bindgen-rt"]
