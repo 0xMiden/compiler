@@ -93,7 +93,7 @@ impl ExecutionTrace {
     ) -> Option<Word> {
         use miden_core::FieldElement;
 
-        const ZERO: Word = [Felt::ZERO; 4];
+        const ZERO: Word = Word::new([Felt::ZERO; 4]);
 
         Some(
             self.memory
@@ -212,7 +212,7 @@ impl ExecutionTrace {
                     dbg!(word_index, word);
                     words.push(word);
                 }
-                words.resize(num_words, [Felt::ZERO; 4]);
+                words.resize(num_words, Word::new([Felt::ZERO; 4]));
                 Some(T::from_words(&words))
             }
         }

@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use miden_core::{
-    crypto::hash::RpoDigest,
     utils::{Deserializable, Serializable},
-    Felt, FieldElement,
+    Felt, FieldElement, Word,
 };
 use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};

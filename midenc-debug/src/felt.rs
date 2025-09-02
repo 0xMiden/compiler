@@ -50,7 +50,7 @@ pub trait ToMidenRepr {
         let mut chunks = felts.into_iter().array_chunks::<4>();
         for mut word in chunks.by_ref() {
             word.reverse();
-            words.push(word);
+            words.push(Word::new(word));
         }
         if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
             if remainder.len() > 0 {
@@ -59,7 +59,7 @@ pub trait ToMidenRepr {
                     word[i] = felt;
                 }
                 word.reverse();
-                words.push(word);
+                words.push(Word::new(word));
             }
         }
         words
@@ -536,7 +536,7 @@ impl ToMidenRepr for RawFelt {
     fn to_words(&self) -> SmallVec<[Word; 1]> {
         let mut word = [RawFelt::ZERO; 4];
         word[0] = *self;
-        smallvec![word]
+        smallvec![Word::new(word)]
     }
 }
 
@@ -573,7 +573,7 @@ impl ToMidenRepr for Felt {
     fn to_words(&self) -> SmallVec<[Word; 1]> {
         let mut word = [RawFelt::ZERO; 4];
         word[0] = self.0;
-        smallvec![word]
+        smallvec![Word::new(word)]
     }
 }
 
