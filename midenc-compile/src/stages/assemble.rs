@@ -1,7 +1,7 @@
 use alloc::{string::ToString, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
-use miden_mast_package::{Dependency, MastArtifact, Package};
+use miden_mast_package::{Dependency, MastArtifact, Package, PackageExport};
 use midenc_session::{diagnostics::IntoDiagnostic, Session};
 
 use super::*;
@@ -68,12 +68,8 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         dependencies.push(dependency);
     }
 
-    let mut manifest = miden_mast_package::PackageManifest {
-        exports: Default::default(),
-        dependencies,
-    };
-
     // Gather all of the procedure metadata for exports of this package
+    let mut exports: Vec<PackageExport> = Vec::new();
     if let MastArtifact::Library(ref lib) = mast {
         assert!(outputs.component.entrypoint.is_none(), "expect masm component to be a library");
         for module_info in lib.module_infos() {
@@ -81,10 +77,18 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
                 let name =
                     QualifiedProcedureName::new(module_info.path().clone(), proc_info.name.clone());
                 let digest = proc_info.digest;
-                manifest.exports.insert(miden_mast_package::PackageExport { name, digest });
+                let signature = proc_info.signature.as_deref().cloned();
+                exports.push(miden_mast_package::PackageExport {
+                    name,
+                    digest,
+                    signature,
+                });
             }
         }
     }
+
+    let manifest =
+        miden_mast_package::PackageManifest::new(exports).with_dependencies(dependencies);
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
 

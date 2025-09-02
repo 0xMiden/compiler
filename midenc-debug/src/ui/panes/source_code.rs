@@ -61,7 +61,7 @@ impl SourceCodePane {
         let gutter_width = max_line_no.ilog10() as u8;
         let lines = (0..(max_line_no - 1))
             .map(|line_index| {
-                let line_index = miden_core::debuginfo::LineIndex::from(line_index as u32);
+                let line_index = miden_debug_types::LineIndex::from(line_index as u32);
                 let line_no = line_index.number().get();
                 let span = content.line_range(line_index).expect("invalid line index");
                 let span = span.start.to_usize()..span.end.to_usize();

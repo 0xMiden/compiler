@@ -7,8 +7,8 @@ use std::{
 use miden_assembly::Library as CompiledLibrary;
 use miden_core::{FieldElement, Program, StackInputs, Word};
 use miden_processor::{
-    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
-    ProcessState, RowIndex, StackOutputs, TraceLenSummary, VmState, VmStateIterator,
+    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, Process, ProcessState, RowIndex,
+    StackOutputs, TraceLenSummary, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::NativePtr;
 pub use midenc_codegen_masm::TraceEvent;

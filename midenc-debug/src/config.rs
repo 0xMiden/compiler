@@ -93,7 +93,7 @@ struct Advice {
 
 #[derive(Debug, Clone, Deserialize)]
 struct AdviceMapEntry {
-    digest: Digest,
+    digest: Word,
     /// Values that will be pushed to the advice stack when this entry is requested
     #[serde(default)]
     values: Vec<crate::Felt>,
@@ -143,14 +143,14 @@ impl clap::builder::TypedValueParser for DebuggerConfigParser {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Digest(miden_processor::Digest);
-impl<'de> Deserialize<'de> for Digest {
+struct Word(miden_core::Word);
+impl<'de> Deserialize<'de> for Word {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let digest = String::deserialize(deserializer)?;
-        miden_processor::Digest::try_from(&digest)
+        miden_core::Word::try_from(&digest)
             .map_err(|err| serde::de::Error::custom(format!("invalid digest: {err}")))
             .map(Self)
     }
