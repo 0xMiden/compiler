@@ -58,6 +58,9 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
         // also put `-Z merge-functions=disabled` in case `opt-level=1` behaviour changes
         // in the future and runs the MergeFunctions pass.
         // `opt-level=0` - introduces import for panic infra leading to WIT encoder error (unsatisfied import).
+        // Build to a unique temp file to avoid races under parallel builds
+        let tmp_out_path =
+            deps_dir_std.join(format!("libstub_miden_sdk.{}.tmp.rlib", std::process::id()));
         let status = rustc
             .arg("--crate-name")
             .arg("miden_sdk_stubs")
@@ -74,11 +77,16 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
             .arg("-Z")
             .arg("merge-functions=disabled")
             .arg("-o")
-            .arg(&out_path)
+            .arg(&tmp_out_path)
             .arg(&src_root)
             .status()?;
         if !status.success() {
             bail!("failed to compile libstub ({status})");
+        }
+        // Move the temp artifact into place (best-effort to avoid races)
+        if let Err(_e) = std::fs::rename(&tmp_out_path, &out_path) {
+            // If rename failed because another process won the race, just remove temp
+            let _ = std::fs::remove_file(&tmp_out_path);
         }
     } else {
         log::debug!("using cached stub rlib: {}", out_path.display());
