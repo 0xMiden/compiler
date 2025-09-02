@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use miden_client::{
     account::{
-        component::{BasicFungibleFaucet, BasicWallet, RpoFalcon512},
+        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
     },
     asset::{FungibleAsset, TokenSymbol},
@@ -21,7 +21,7 @@ use miden_client::{
     utils::{Deserializable, Serializable},
     Client, ClientError,
 };
-use miden_core::{utils::Deserializable as CoreDeserializable, Felt, FieldElement};
+use miden_core::{utils::Deserializable as CoreDeserializable, Felt, FieldElement, Word};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_objects::{
@@ -62,7 +62,7 @@ pub async fn setup_test_infrastructure(
         .rpc(rpc_api)
         .sqlite_store(&store_path)
         .filesystem_keystore(keystore_path.to_str().unwrap())
-        .in_debug_mode(true)
+        .in_debug_mode(miden_client::DebugMode::Enabled)
         .build()
         .await?;
 
@@ -129,7 +129,7 @@ pub async fn create_account_with_component(
     let mut builder = AccountBuilder::new(init_seed)
         .account_type(config.account_type)
         .storage_mode(config.storage_mode)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()));
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()));
 
     if config.with_basic_wallet {
         builder = builder.with_component(BasicWallet);
@@ -160,7 +160,7 @@ pub async fn create_fungible_faucet_account(
     let builder = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, decimals, max_supply).unwrap());
 
     let (account, seed) = builder.build().unwrap();
@@ -365,7 +365,7 @@ pub async fn send_asset_to_account(
     let recipient_digest: [Felt; 4] = note_recipient.digest().into();
     input.extend(recipient_digest);
 
-    let asset_arr: [Felt; 4] = asset.into();
+    let asset_arr: Word = asset.into();
     input.extend(asset_arr);
 
     let mut commitment: [Felt; 4] = miden_core::crypto::hash::Rpo256::hash_elements(&input).into();
@@ -383,7 +383,7 @@ pub async fn send_asset_to_account(
 
     let tx_request = TransactionRequestBuilder::new()
         .custom_script(tx_script)
-        .script_arg(commitment)
+        .script_arg(miden_core::Word::new(commitment))
         .expected_output_recipients(recipients)
         .extend_advice_map(advice_map)
         .build()
