@@ -20,6 +20,7 @@ glob = "0.3.1"
 miden-assembly.workspace = true
 miden-core.workspace = true
 miden-lib.workspace = true
+miden-debug-types.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
 midenc-session.workspace = true

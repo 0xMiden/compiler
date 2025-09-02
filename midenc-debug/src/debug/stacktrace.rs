@@ -8,7 +8,8 @@ use std::{
     sync::Arc,
 };
 
-use miden_core::{debuginfo::Location, AssemblyOp};
+use miden_core::AssemblyOp;
+use miden_debug_types::Location;
 use miden_processor::{Operation, RowIndex, VmState};
 use midenc_hir::demangle::demangle;
 use midenc_session::{

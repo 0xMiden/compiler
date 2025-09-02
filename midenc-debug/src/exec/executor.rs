@@ -6,13 +6,14 @@ use std::{
 };
 
 use miden_assembly::Library as CompiledLibrary;
-use miden_core::{debuginfo::SourceManagerExt, Program, StackInputs, Word};
+use miden_core::{Program, StackInputs, Word};
+use miden_debug_types::SourceManagerExt;
 use miden_mast_package::{
     Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
     MemDependencyResolverByDigest, ResolvedDependency,
 };
 use miden_processor::{
-    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
+    AdviceInputs, AdviceProvider, ContextId, ExecutionError, Felt, MastForest, Process,
     ProcessState, RowIndex, StackOutputs, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::{NativePtr, Rodata};
@@ -131,7 +132,7 @@ impl Executor {
     pub fn into_debug(mut self, program: &Program, session: &Session) -> DebugExecutor {
         log::debug!("creating debug executor");
 
-        let advice_provider = MemAdviceProvider::from(self.advice);
+        let advice_provider = AdviceProvider::from(self.advice);
         let mut host = DebuggerHost::new(advice_provider);
         for lib in core::mem::take(&mut self.libraries) {
             host.load_mast_forest(lib);
