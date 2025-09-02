@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Deref,
     rc::Rc,
     sync::Arc,
 };
@@ -69,17 +70,21 @@ impl Executor {
             DisplayHex::new(&package.digest().as_bytes())
         );
         let mut exec = Self::new(args.into_iter().collect());
-        exec.with_dependencies(&package.manifest.dependencies)?;
+        let dependencies = package.manifest.dependencies();
+        exec.with_dependencies(dependencies)?;
         log::debug!("executor created");
         Ok(exec)
     }
 
     /// Adds dependencies to the executor
-    pub fn with_dependencies(&mut self, dependencies: &[Dependency]) -> Result<&mut Self, Report> {
+    pub fn with_dependencies<'a>(
+        &mut self,
+        dependencies: impl Iterator<Item = &'a Dependency>,
+    ) -> Result<&mut Self, Report> {
         use midenc_hir::formatter::DisplayHex;
 
         for dep in dependencies {
-            match self.dependency_resolver.resolve(dep) {
+            match self.dependency_resolver.resolve(&dep) {
                 Some(resolution) => {
                     log::debug!("dependency {dep:?} resolved to {resolution:?}");
                     log::debug!("loading library from package dependency: {dep:?}");
@@ -152,8 +157,9 @@ impl Executor {
             assertion_events.borrow_mut().insert(clk, event);
         });
 
-        let mut process = Process::new_debug(program.kernel().clone(), self.stack);
-        let process_state: ProcessState = (&process).into();
+        let mut process =
+            Process::new_debug(program.kernel().clone(), self.stack, self.advice.clone());
+        let process_state: ProcessState = (&mut process).into();
         let root_context = process_state.ctx();
         let result = process.execute(program, &mut host);
         let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
@@ -199,17 +205,14 @@ impl Executor {
                     if let Some(asmop) = step.asmop.as_ref() {
                         dbg!(&step.stack);
                         let source_loc = asmop.as_ref().location().map(|loc| {
-                            let path = loc.path();
-                            let file = session
-                                .diagnostics
-                                .source_manager_ref()
-                                .load_file(std::path::Path::new(path.as_ref()))
-                                .unwrap();
+                            let path = std::path::Path::new(loc.uri().path());
+                            let file =
+                                session.diagnostics.source_manager_ref().load_file(path).unwrap();
                             (file, loc.start)
                         });
                         if let Some((source_file, line_start)) = source_loc {
                             let line_number = source_file.content().line_index(line_start).number();
-                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.name(), &line_number);
+                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.deref().uri().as_str(), &line_number);
                         } else {
                             log::trace!(target: "executor", "in {} (no source location available)", asmop.context_name());
                         }

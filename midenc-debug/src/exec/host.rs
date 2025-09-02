@@ -4,7 +4,7 @@ use miden_core::Word;
 use miden_debug_types::{Location, SourceFile, SourceSpan};
 use miden_processor::{
     AdviceInputs, AdviceProvider, BaseHost, ExecutionError, KvMap, MastForest, MastForestStore,
-    MemMastForestStore, ProcessState, RowIndex,
+    MemMastForestStore, ProcessState, RowIndex, SyncHost,
 };
 
 use super::{TraceEvent, TraceHandler};
@@ -95,5 +95,15 @@ impl BaseHost for DebuggerHost {
             // TODO: We're truncating the error code here, but we may need to handle the full range
             handler(clk, TraceEvent::AssertionFailed(NonZeroU32::new(err_code.as_int() as u32)));
         }
+    }
+}
+
+impl SyncHost for DebuggerHost {
+    fn on_event(
+        &mut self,
+        process: &ProcessState,
+        event_id: u32,
+    ) -> Result<Vec<miden_processor::AdviceMutation>, miden_processor::EventError> {
+        todo!()
     }
 }
