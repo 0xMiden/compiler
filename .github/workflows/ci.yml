@@ -25,7 +25,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -54,7 +54,7 @@ jobs:
     # But run this check even if the lint check failed
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -80,7 +80,7 @@ jobs:
     name: midenc unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -112,7 +112,7 @@ jobs:
     name: release checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -147,7 +147,7 @@ jobs:
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -175,7 +175,7 @@ jobs:
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -203,7 +203,7 @@ jobs:
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup update --no-self-update
