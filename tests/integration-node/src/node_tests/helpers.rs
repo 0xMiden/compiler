@@ -18,10 +18,10 @@ use miden_client::{
     },
     rpc::{Endpoint, TonicRpcClient},
     transaction::{TransactionRequestBuilder, TransactionScript},
-    utils::Deserializable,
+    utils::{Deserializable, Serializable},
     Client, ClientError,
 };
-use miden_core::{Felt, FieldElement};
+use miden_core::{utils::Deserializable as CoreDeserializable, Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_objects::{
