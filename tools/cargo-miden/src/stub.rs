@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use cargo_metadata::Metadata;
@@ -25,21 +25,11 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
     if !src_root.exists() {
         bail!("stub crate root not found: {:?}", src_root);
     }
-    let miden_base = stubs_dir.join("miden_base.rs");
-    let intrinsics_felt = stubs_dir.join("intrinsics_felt.rs");
-    let intrinsics_crypto = stubs_dir.join("intrinsics_crypto.rs");
-    let intrinsics_mem = stubs_dir.join("intrinsics_mem.rs");
-    let intrinsics_debug = stubs_dir.join("intrinsics_debug.rs");
-    let intrinsics_advice = stubs_dir.join("intrinsics_advice.rs");
-    let src_files = [
-        src_root.as_path(),
-        miden_base.as_path(),
-        intrinsics_felt.as_path(),
-        intrinsics_crypto.as_path(),
-        intrinsics_mem.as_path(),
-        intrinsics_debug.as_path(),
-        intrinsics_advice.as_path(),
-    ];
+    // Gather all source files in stubs dir (recursively) to drive rebuild decision
+    let mut src_files = list_rs_files(stubs_dir);
+    if !src_files.iter().any(|p| p == &src_root) {
+        src_files.push(src_root.clone());
+    }
 
     let out_path = deps_dir_std.join("libstub_miden_sdk.rlib");
     let needs_rebuild = match std::fs::metadata(&out_path) {
@@ -95,4 +85,23 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
     }
 
     Ok(out_path)
+}
+
+/// Recursively collect all .rs files in a directory
+fn list_rs_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(path) = stack.pop() {
+        if let Ok(read_dir) = std::fs::read_dir(&path) {
+            for entry in read_dir.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    files
 }
