@@ -894,6 +894,8 @@ impl Arbitrary for Felt {
 mod tests {
     use std::collections::VecDeque;
 
+    use miden_core::Word;
+
     use super::{bytes_to_words, FromMidenRepr, ToMidenRepr};
 
     #[test]
@@ -1050,7 +1052,7 @@ mod tests {
 
         // Make sure bytes_to_words and to_words agree
         let to_words_output = bytes.to_words();
-        assert_eq!(words.as_slice(), to_words_output.as_slice());
+        assert_eq!(Word::new(words[0]), to_words_output[0]);
     }
 
     #[test]
@@ -1060,7 +1062,7 @@ mod tests {
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let words = bytes_to_words(&bytes);
-        let out = <[u8; 32] as FromMidenRepr>::from_words(&words);
+        let out = <[u8; 32] as FromMidenRepr>::from_words(&[Word::new(words[0])]);
         assert_eq!(&out, &bytes);
     }
 }

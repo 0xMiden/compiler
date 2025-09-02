@@ -209,7 +209,7 @@ mod tests {
         let file = toml::from_str::<DebuggerConfig>(&text).unwrap();
         let expected_inputs = StackInputs::new(vec![]).unwrap();
         assert_eq!(file.inputs.as_ref(), expected_inputs.as_ref());
-        assert!(file.advice_inputs.stack().is_empty());
+        assert!(file.advice_inputs.stack.is_empty());
         assert!(file.options.enable_tracing());
         assert!(file.options.enable_debugging());
         assert_eq!(file.options.max_cycles(), u32::MAX);
@@ -228,7 +228,7 @@ mod tests {
         let file = DebuggerConfig::parse_str(&text).unwrap();
         let expected_inputs = StackInputs::new(vec![]).unwrap();
         assert_eq!(file.inputs.as_ref(), expected_inputs.as_ref());
-        assert!(file.advice_inputs.stack().is_empty());
+        assert!(file.advice_inputs.stack.is_empty());
         assert!(file.options.enable_tracing());
         assert!(file.options.enable_debugging());
         assert_eq!(file.options.max_cycles(), 1000);
@@ -250,7 +250,7 @@ mod tests {
         let expected_inputs =
             StackInputs::new(vec![RawFelt::new(1), RawFelt::new(2), RawFelt::new(3)]).unwrap();
         assert_eq!(file.inputs.as_ref(), expected_inputs.as_ref());
-        assert!(file.advice_inputs.stack().is_empty());
+        assert!(file.advice_inputs.stack.is_empty());
         assert!(file.options.enable_tracing());
         assert!(file.options.enable_debugging());
         assert_eq!(file.options.max_cycles(), 1000);
@@ -274,7 +274,7 @@ mod tests {
             max_cycles = 1000
         })
         .unwrap();
-        let digest = miden_processor::Digest::try_from(
+        let digest = miden_core::Word::try_from(
             "0x3cff5b58a573dc9d25fd3c57130cc57e5b1b381dc58b5ae3594b390c59835e63",
         )
         .unwrap();
@@ -283,11 +283,11 @@ mod tests {
             StackInputs::new(vec![RawFelt::new(1), RawFelt::new(2), RawFelt::new(3)]).unwrap();
         assert_eq!(file.inputs.as_ref(), expected_inputs.as_ref());
         assert_eq!(
-            file.advice_inputs.stack(),
+            file.advice_inputs.stack,
             &[RawFelt::new(4), RawFelt::new(3), RawFelt::new(2), RawFelt::new(1)]
         );
         assert_eq!(
-            file.advice_inputs.mapped_values(&digest),
+            file.advice_inputs.map.get(&digest).map(|value| value.as_ref()),
             Some([RawFelt::new(1), RawFelt::new(2), RawFelt::new(3), RawFelt::new(4)].as_slice())
         );
         assert!(file.options.enable_tracing());
