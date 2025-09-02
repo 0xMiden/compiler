@@ -137,7 +137,7 @@ impl Executor {
     pub fn into_debug(mut self, program: &Program, session: &Session) -> DebugExecutor {
         log::debug!("creating debug executor");
 
-        let advice_provider = AdviceProvider::from(self.advice);
+        let advice_provider = AdviceProvider::from(self.advice.clone());
         let mut host = DebuggerHost::new(advice_provider);
         for lib in core::mem::take(&mut self.libraries) {
             host.load_mast_forest(lib);
@@ -157,8 +157,7 @@ impl Executor {
             assertion_events.borrow_mut().insert(clk, event);
         });
 
-        let mut process =
-            Process::new_debug(program.kernel().clone(), self.stack, self.advice.clone());
+        let mut process = Process::new_debug(program.kernel().clone(), self.stack, self.advice);
         let process_state: ProcessState = (&mut process).into();
         let root_context = process_state.ctx();
         let result = process.execute(program, &mut host);
