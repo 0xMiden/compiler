@@ -52,9 +52,6 @@ project-kind = "note-script"
 
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../../../sdk/base/wit/miden.wit" }
-"miden:core-intrinsics" = { path = "../../../../sdk/stdlib-sys/wit/miden-core-intrinsics.wit" }
-"miden:core-stdlib" = { path = "../../../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
-"miden:core-base" = { path = "../../../../sdk/base-sys/wit/miden-core-base.wit" }
 "miden:cross-ctx-account-word" = { path = "../cross-ctx-account-word/wit/cross-ctx-account-word.wit" }
 
 [package.metadata.cargo-machete]

@@ -18,4 +18,4 @@ miden-base-macros = { version = "0.4.1", path = "../base-macros" }
 
 [features]
 default = []
-wit = ["miden-base-sys/wit", "miden-stdlib-sys/wit"]
+wit = []

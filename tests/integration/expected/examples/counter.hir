@@ -352,7 +352,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             v272 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
             v273 = hir.bitcast v272 : ptr<byte, i32>;
             v274 = hir.load v273 : i32;
-            v275 = arith.constant 1048620 : i32;
+            v275 = arith.constant 1048584 : i32;
             v276 = arith.add v274, v275 : i32 #[overflow = wrapping];
             v277 = hir.bitcast v276 : u32;
             v278 = hir.int_to_ptr v277 : ptr<byte, u8>;
@@ -371,7 +371,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
                 v286 = hir.load v285 : i32;
                 hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/__wasm_call_ctors()
                 v532 = arith.constant 1 : u8;
-                v534 = arith.constant 1048620 : i32;
+                v534 = arith.constant 1048584 : i32;
                 v288 = arith.add v286, v534 : i32 #[overflow = wrapping];
                 v292 = hir.bitcast v288 : u32;
                 v293 = hir.int_to_ptr v292 : ptr<byte, u8>;
@@ -635,7 +635,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x00000000000000000000000100000001;
     };
 
     public builtin.function @get-count() -> felt {

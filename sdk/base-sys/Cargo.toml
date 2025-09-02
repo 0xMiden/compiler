@@ -18,5 +18,3 @@ miden-stdlib-sys = { version = "0.4.1", path = "../stdlib-sys" }
 
 [features]
 default = []
-# WIT files for Wasm Component Model
-"wit" = []

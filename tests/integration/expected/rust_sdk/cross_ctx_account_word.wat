@@ -54,7 +54,7 @@
       call $intrinsics::felt::add
       local.set 2
       local.get 4
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 4
       local.get 3
@@ -94,7 +94,7 @@
       call $intrinsics::felt::add
       local.set 2
       local.get 4
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 4
       local.get 3
@@ -131,7 +131,7 @@
       call $intrinsics::felt::add
       local.set 0
       local.get 2
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 2
       local.get 1
@@ -160,7 +160,7 @@
       call $intrinsics::felt::add
       local.set 1
       local.get 3
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 3
       local.get 2
@@ -192,7 +192,7 @@
       call $intrinsics::felt::add
       local.set 3
       local.get 7
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 7
       local.get 6
@@ -244,7 +244,7 @@
       call $intrinsics::felt::add
       local.set 1
       local.get 3
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.tee 3
       local.get 2
@@ -264,7 +264,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048624
+        i32.const 1048608
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -272,7 +272,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048624
+        i32.const 1048608
         i32.add
         i32.const 1
         i32.store8
@@ -284,7 +284,7 @@
     (func $intrinsics::felt::from_u32 (;11;) (type 7) (param i32) (result f32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
   )
   (alias export 0 "word" (type (;1;)))
   (alias export 0 "felt" (type (;2;)))

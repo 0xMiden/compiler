@@ -212,7 +212,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048620
+        i32.const 1048584
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -220,7 +220,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048620
+        i32.const 1048584
         i32.add
         i32.const 1
         i32.store8
@@ -326,7 +326,7 @@
     (func $miden::account::set_map_item (;12;) (type 7) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\03\01\00\01\13count_map\019counter contract storage map")
   )
   (alias export 0 "felt" (type (;1;)))

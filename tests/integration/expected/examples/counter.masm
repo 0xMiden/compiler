@@ -25,23 +25,23 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.15992708329078350761
-    push.705080020562075190
-    push.17217909334739480677
-    push.1753590758213345811
+    push.7028007876379170725
+    push.18060021366771303825
+    push.13412364500725888848
+    push.14178532912296021363
     adv.push_mapval
     push.262144
-    push.3
+    push.1
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
     u32assert
-    mem_store.278544
+    mem_store.278536
     push.0
     u32assert
-    mem_store.278545
+    mem_store.278537
 end
 
 # mod miden:counter-contract/counter@0.1.0::counter_contract
@@ -51,7 +51,7 @@ proc.__wasm_call_ctors
 end
 
 proc.miden_base_sys::bindings::storage::get_map_item
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -61,7 +61,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     nop
     push.32
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -232,7 +232,7 @@ proc.miden_base_sys::bindings::storage::get_map_item
     nop
     push.32
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -247,7 +247,7 @@ proc.counter_contract::bindings::__link_custom_section_describing_imports
 end
 
 export.miden:counter-contract/counter@0.1.0#get-count
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -257,7 +257,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
     nop
     push.32
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -393,7 +393,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
     movup.2
     swap.1
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -404,7 +404,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
 end
 
 export.miden:counter-contract/counter@0.1.0#increment-count
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -414,7 +414,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     nop
     push.128
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -837,7 +837,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
     movup.2
     swap.1
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -848,7 +848,7 @@ export.miden:counter-contract/counter@0.1.0#increment-count
 end
 
 proc.wit_bindgen_rt::run_ctors_once
-    push.1114180
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -856,7 +856,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048620
+    push.1048584
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -877,7 +877,7 @@ proc.wit_bindgen_rt::run_ctors_once
     if.true
         nop
     else
-        push.1114180
+        push.1114148
         u32divmod.4
         swap.1
         trace.240
@@ -891,7 +891,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048620
+        push.1048584
         movup.2
         swap.1
         u32wrapping_add
@@ -925,7 +925,7 @@ proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
 end
 
 proc.miden_stdlib_sys::intrinsics::word::Word::reverse
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240

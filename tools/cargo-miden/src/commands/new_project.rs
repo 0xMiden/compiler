@@ -223,19 +223,6 @@ pub fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     let wit_dir = project_path.join(WIT_DEPS_PATH);
     fs::create_dir_all(&wit_dir)?;
 
-    // Write WIT files from stdlib-sys
-    write_wit_file(
-        &wit_dir.join("miden-core-stdlib.wit"),
-        miden_stdlib_sys::stdlib_wit::STDLIB_WIT,
-    )?;
-    write_wit_file(
-        &wit_dir.join("miden-core-intrinsics.wit"),
-        miden_stdlib_sys::stdlib_wit::INTRINSICS_WIT,
-    )?;
-
-    // Write WIT file from base-sys
-    write_wit_file(&wit_dir.join("miden-core-base.wit"), miden_base_sys::base_sys_wit::BASE_WIT)?;
-
     // Write WIT file from base
     write_wit_file(&wit_dir.join("miden.wit"), miden_base::base_wit::MIDEN_WIT)?;
 

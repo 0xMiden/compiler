@@ -24,7 +24,7 @@
     (func $miden:cross-ctx-account/foo@1.0.0#process-felt (;2;) (type 1) (param f32) (result f32)
       (local i32)
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048600
+      i32.const 1048584
       i32.add
       local.set 1
       call $wit_bindgen_rt::run_ctors_once
@@ -43,7 +43,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048604
+        i32.const 1048588
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -51,7 +51,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048604
+        i32.const 1048588
         i32.add
         i32.const 1
         i32.store8
@@ -66,7 +66,7 @@
     (func $intrinsics::felt::as_u64 (;6;) (type 4) (param f32) (result i64)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00*\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00*\00\00\00")
   )
   (alias export 0 "felt" (type (;1;)))
   (core instance (;0;) (instantiate 0))

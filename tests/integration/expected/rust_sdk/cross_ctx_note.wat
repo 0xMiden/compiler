@@ -42,7 +42,7 @@
       local.set 4
       call $wit_bindgen_rt::run_ctors_once
       local.get 4
-      i32.const 1048604
+      i32.const 1048588
       i32.add
       local.tee 4
       i32.load
@@ -66,7 +66,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048608
+        i32.const 1048592
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -74,7 +74,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048608
+        i32.const 1048592
         i32.add
         i32.const 1
         i32.store8
@@ -89,7 +89,7 @@
     (func $intrinsics::felt::assert_eq (;7;) (type 5) (param f32 f32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")
   )
   (alias export 0 "word" (type (;3;)))
   (alias export 1 "process-felt" (func (;0;)))

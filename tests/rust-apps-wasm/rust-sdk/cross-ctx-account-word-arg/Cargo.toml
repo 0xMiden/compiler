@@ -49,9 +49,6 @@ package = "miden:cross-ctx-account-word-arg"
 
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../../../sdk/base/wit/miden.wit" }
-"miden:core-intrinsics" = { path = "../../../../sdk/stdlib-sys/wit/miden-core-intrinsics.wit" }
-"miden:core-stdlib" = { path = "../../../../sdk/stdlib-sys/wit/miden-core-stdlib.wit" }
-"miden:core-base" = { path = "../../../../sdk/base-sys/wit/miden-core-base.wit" }
 
 [package.metadata.cargo-machete]
 ignored = ["wit-bindgen-rt"]

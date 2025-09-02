@@ -18,4 +18,3 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-wit = []

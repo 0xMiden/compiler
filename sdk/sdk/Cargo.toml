@@ -22,4 +22,3 @@ miden-base-sys = { version = "0.4.1", path = "../base-sys" }
 
 [features]
 default = []
-wit = ["miden-base/wit", "miden-base-sys/wit", "miden-stdlib-sys/wit"]

@@ -114,7 +114,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048600
+        i32.const 1048584
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -122,7 +122,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048600
+        i32.const 1048584
         i32.add
         i32.const 1
         i32.store8
@@ -137,7 +137,7 @@
     (func $intrinsics::felt::mul (;6;) (type 2) (param f32 f32) (result f32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
   )
   (alias export 0 "word" (type (;1;)))
   (alias export 0 "felt" (type (;2;)))
