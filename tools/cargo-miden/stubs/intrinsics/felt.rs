@@ -1,5 +1,3 @@
-use core::ffi::c_void;
-
 /// Unreachable stubs for intrinsics::felt::* functions.
 /// These are linked by name, and the frontend lowers calls
 /// to MASM operations or functions accordingly.
