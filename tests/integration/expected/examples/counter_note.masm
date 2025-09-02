@@ -15,13 +15,13 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.10372512867789291194
-    push.8847140879871234022
-    push.6349320981753112911
-    push.1226644495927898530
+    push.17709194624399802691
+    push.16317546024271837059
+    push.2378870773206530087
+    push.4951894414315594265
     adv.push_mapval
     push.262144
-    push.4
+    push.3
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
@@ -82,6 +82,11 @@ export.miden:base/note-script@1.0.0#run
     nop
     drop
     push.1
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::from_u32
+    trace.252
+    nop
     swap.1
     trace.240
     nop
@@ -93,7 +98,11 @@ export.miden:base/note-script@1.0.0#run
     exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
     trace.252
     nop
-    assert_eq
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::assert_eq
+    trace.252
+    nop
 end
 
 proc.wit_bindgen_rt::run_ctors_once
@@ -105,7 +114,7 @@ proc.wit_bindgen_rt::run_ctors_once
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048628
+    push.1048624
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -140,7 +149,7 @@ proc.wit_bindgen_rt::run_ctors_once
         trace.252
         nop
         push.1
-        push.1048628
+        push.1048624
         movup.2
         swap.1
         u32wrapping_add
@@ -170,5 +179,13 @@ end
 
 proc.intrinsics::felt::add
     add
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
 end
 

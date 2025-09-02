@@ -13,10 +13,17 @@ end
 # mod root_ns:root@1.0.0::gt_felt
 
 export.entrypoint
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::gt_felt::intrinsics::felt::gt
+    trace.252
+    nop
     push.0
-    swap.1
-    movup.2
-    gt
     neq
+end
+
+proc.intrinsics::felt::gt
+    swap.1
+    gt
 end
 

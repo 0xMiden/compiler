@@ -61,14 +61,33 @@ export.entrypoint
     exec.::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-    u32split
-    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
+    trace.252
+    nop
     push.3
-    dup.3
-    dup.3
+    dup.2
+    dup.2
     drop
     u32and
-    assert_eq
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+    trace.252
+    nop
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+    trace.252
+    nop
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+    trace.252
+    nop
     push.2
     push.0
     dup.0
@@ -88,21 +107,19 @@ export.entrypoint
     exec.::std::math::u64::shr
     trace.252
     nop
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u64_unchecked
     trace.252
     nop
-    assert
-    mul.4294967296
-    add
+    dup.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
+    trace.252
+    nop
     push.2
-    dup.1
-    u32split
+    movdn.2
     drop
     swap.1
     u32shl
@@ -321,7 +338,17 @@ export.entrypoint
             trace.252
             nop
             push.1
-            assert_eq
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+            trace.252
+            nop
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+            trace.252
+            nop
             push.4
             dup.2
             add
@@ -340,7 +367,17 @@ export.entrypoint
             trace.252
             nop
             push.2
-            assert_eq
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+            trace.252
+            nop
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+            trace.252
+            nop
             push.0
             push.5
             dup.4
@@ -371,7 +408,17 @@ export.entrypoint
                 trace.252
                 nop
                 push.6
-                assert_eq
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+                trace.252
+                nop
+                swap.1
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+                trace.252
+                nop
                 push.0
                 push.14
                 movup.4
@@ -402,7 +449,17 @@ export.entrypoint
                     trace.252
                     nop
                     push.15
-                    assert_eq
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+                    trace.252
+                    nop
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+                    trace.252
+                    nop
                     push.16
                     movup.2
                     swap.1
@@ -1318,5 +1375,32 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
+end
+
+proc.intrinsics::felt::from_u64_unchecked
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::as_u64
+    u32split
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
 end
 

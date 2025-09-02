@@ -87,7 +87,17 @@ export.entrypoint
     trace.252
     nop
     push.4
-    assert_eq
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::from_u32
+    trace.252
+    nop
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::assert_eq
+    trace.252
+    nop
     push.0
     push.0
     dup.2
@@ -131,7 +141,17 @@ export.entrypoint
         trace.252
         nop
         push.4294967295
-        assert_eq
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::from_u32
+        trace.252
+        nop
+        swap.1
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::assert_eq
+        trace.252
+        nop
         push.0
         push.1
         dup.3
@@ -162,7 +182,17 @@ export.entrypoint
             trace.252
             nop
             push.1
-            assert_eq
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::from_u32
+            trace.252
+            nop
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::assert_eq
+            trace.252
+            nop
             push.0
             push.2
             dup.3
@@ -193,7 +223,17 @@ export.entrypoint
                 trace.252
                 nop
                 push.2
-                assert_eq
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::from_u32
+                trace.252
+                nop
+                swap.1
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::assert_eq
+                trace.252
+                nop
                 push.0
                 push.3
                 movup.3
@@ -224,7 +264,17 @@ export.entrypoint
                     trace.252
                     nop
                     push.3
-                    assert_eq
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::from_u32
+                    trace.252
+                    nop
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::felt::assert_eq
+                    trace.252
+                    nop
                     push.4
                     push.4
                     dup.3
@@ -1735,6 +1785,14 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
 end
 
 # mod miden::note

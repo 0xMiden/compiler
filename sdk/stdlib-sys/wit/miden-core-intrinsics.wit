@@ -8,39 +8,39 @@ interface intrinsics-mem {
     heap-base: func() -> s32;
 }
 
-interface intrinsics-felt {
+// interface intrinsics-felt {
 
     // See sdk/stdlib-sys/src/intrinsics/felt.rs for `extern` function signatures
 
     // Conversion operations
-    from-u64-unchecked: func(a: u64) -> f32;
-    from-u32: func(a: u32) -> f32;
-    as-u64: func(a: f32) -> u64;
+    // from-u64-unchecked: func(a: u64) -> f32;
+    // from-u32: func(a: u32) -> f32;
+    // as-u64: func(a: f32) -> u64;
 
     // Arithmetic operations
     // add moved to linker stub
     // add: func(a: f32, b: f32) -> f32;
-    sub: func(a: f32, b: f32) -> f32;
-    mul: func(a: f32, b: f32) -> f32;
-    div: func(a: f32, b: f32) -> f32;
-    neg: func(a: f32) -> f32;
-    inv: func(a: f32) -> f32;
-    pow2: func(a: f32) -> f32;
-    exp: func(a: f32, b: f32) -> f32;
+    // sub: func(a: f32, b: f32) -> f32;
+    // mul: func(a: f32, b: f32) -> f32;
+    // div: func(a: f32, b: f32) -> f32;
+    // neg: func(a: f32) -> f32;
+    // inv: func(a: f32) -> f32;
+    // pow2: func(a: f32) -> f32;
+    // exp: func(a: f32, b: f32) -> f32;
 
     // Comparison operations
-    eq: func(a: f32, b: f32) -> s32;
-    gt: func(a: f32, b: f32) -> s32;
-    lt: func(a: f32, b: f32) -> s32;
-    ge: func(a: f32, b: f32) -> s32;
-    le: func(a: f32, b: f32) -> s32;
-    is-odd: func(a: f32) -> s32;
+    // eq: func(a: f32, b: f32) -> s32;
+    // gt: func(a: f32, b: f32) -> s32;
+    // lt: func(a: f32, b: f32) -> s32;
+    // ge: func(a: f32, b: f32) -> s32;
+    // le: func(a: f32, b: f32) -> s32;
+    // is-odd: func(a: f32) -> s32;
 
     // Assertion operations
-    assert: func(a: f32);
-    assertz: func(a: f32);
-    assert-eq: func(a: f32, b: f32);
-}
+    // assert: func(a: f32);
+    // assertz: func(a: f32);
+    // assert-eq: func(a: f32, b: f32);
+// }
 
 interface intrinsics-debug {
 
@@ -66,7 +66,7 @@ interface intrinsics-advice {
 
 world intrinsics {
     import intrinsics-mem;
-    import intrinsics-felt;
+    // import intrinsics-felt;
     import intrinsics-debug;
     import intrinsics-crypto;
     import intrinsics-advice;

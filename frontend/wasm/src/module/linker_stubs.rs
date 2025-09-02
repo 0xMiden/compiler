@@ -18,8 +18,7 @@ use wasmparser::{FunctionBody, Operator};
 use crate::{
     intrinsics::{convert_intrinsics_call, Intrinsic},
     miden_abi::{
-        is_miden_abi_module, miden_abi_function_type,
-        transform::transform_miden_abi_call,
+        is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
     },
     module::{
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -70,6 +69,7 @@ pub fn maybe_lower_linker_stub(
         let borrowed = function_ref.borrow();
         borrowed.name().as_str().to_string()
     };
+    // Expect stub export names to be fully-qualified MASM paths already (e.g. "intrinsics::felt::add").
     let func_ident = match midenc_hir::FunctionIdent::from_str(&name_string) {
         Ok(id) => id,
         Err(_) => return Ok(false),
@@ -82,19 +82,20 @@ pub fn maybe_lower_linker_stub(
     }
 
     // Classify intrinsics and obtain signature when needed
-    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) = match Intrinsic::try_from(&import_path) {
-        Ok(intr) => (function_ref.borrow().signature().clone(), Some(intr)),
-        Err(_) => {
-            let import_ft: FunctionType = miden_abi_function_type(&import_path);
-            (
-                Signature::new(
-                    import_ft.params.into_iter().map(AbiParam::new),
-                    import_ft.results.into_iter().map(AbiParam::new),
-                ),
-                None,
-            )
-        }
-    };
+    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) =
+        match Intrinsic::try_from(&import_path) {
+            Ok(intr) => (function_ref.borrow().signature().clone(), Some(intr)),
+            Err(_) => {
+                let import_ft: FunctionType = miden_abi_function_type(&import_path);
+                (
+                    Signature::new(
+                        import_ft.params.into_iter().map(AbiParam::new),
+                        import_ft.results.into_iter().map(AbiParam::new),
+                    ),
+                    None,
+                )
+            }
+        };
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
@@ -117,9 +118,7 @@ pub fn maybe_lower_linker_stub(
     // Declare MASM import callee in world and exec via TransformStrategy
     let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
         // Decide whether the intrinsic is implemented as a function or an operation
-        let conv = intr
-            .conversion_result()
-            .expect("unknown intrinsic");
+        let conv = intr.conversion_result().expect("unknown intrinsic");
         if conv.is_function() {
             // Declare callee and call via convert_intrinsics_call with function_ref
             let import_module_ref = module_state

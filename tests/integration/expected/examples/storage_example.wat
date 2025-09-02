@@ -1,15 +1,6 @@
 (component
   (type (;0;)
     (instance
-      (type (;0;) (func (param "a" u32) (result f32)))
-      (export (;0;) "from-u32" (func (type 0)))
-      (type (;1;) (func (param "a" f32) (param "b" f32) (result s32)))
-      (export (;1;) "eq" (func (type 1)))
-    )
-  )
-  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;0;) (type 0)))
-  (type (;1;)
-    (instance
       (type (;0;) (func (param "index" f32) (param "result-ptr" s32)))
       (export (;0;) "get-item" (func (type 0)))
       (type (;1;) (func (param "index" f32) (param "key0" f32) (param "key1" f32) (param "key2" f32) (param "key3" f32) (param "result-ptr" s32)))
@@ -18,8 +9,8 @@
       (export (;2;) "set-map-item" (func (type 2)))
     )
   )
-  (import "miden:core-base/account@1.0.0" (instance (;1;) (type 1)))
-  (type (;2;)
+  (import "miden:core-base/account@1.0.0" (instance (;0;) (type 0)))
+  (type (;1;)
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
@@ -30,23 +21,21 @@
       (export (;6;) "asset" (type (eq 5)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;2;) (type 2)))
+  (import "miden:base/core-types@1.0.0" (instance (;1;) (type 1)))
   (core module (;0;)
     (type (;0;) (func (param f32 i32)))
-    (type (;1;) (func (param f32 f32) (result i32)))
-    (type (;2;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
-    (type (;3;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;4;) (func (param i32) (result f32)))
-    (type (;5;) (func))
-    (type (;6;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32)))
-    (type (;7;) (func (param f32 f32 f32 f32) (result f32)))
-    (type (;8;) (func (param i32 i32)))
-    (type (;9;) (func (param i32 f32)))
+    (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;2;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;3;) (func))
+    (type (;4;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32)))
+    (type (;5;) (func (param f32 f32 f32 f32) (result f32)))
+    (type (;6;) (func (param i32) (result f32)))
+    (type (;7;) (func (param i32 i32)))
+    (type (;8;) (func (param i32 f32)))
+    (type (;9;) (func (param f32 f32) (result i32)))
     (import "miden:core-base/account@1.0.0" "get-item" (func $miden_base_sys::bindings::storage::extern_get_storage_item (;0;) (type 0)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "eq" (func $miden_stdlib_sys::intrinsics::felt::extern_eq (;1;) (type 1)))
-    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;2;) (type 2)))
-    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;3;) (type 3)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;4;) (type 4)))
+    (import "miden:core-base/account@1.0.0" "set-map-item" (func $miden_base_sys::bindings::storage::extern_set_storage_map_item (;1;) (type 1)))
+    (import "miden:core-base/account@1.0.0" "get-map-item" (func $miden_base_sys::bindings::storage::extern_get_storage_map_item (;2;) (type 2)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -55,9 +44,9 @@
     (export "miden:storage-example/foo@1.0.0#set-asset-qty" (func $miden:storage-example/foo@1.0.0#set-asset-qty))
     (export "miden:storage-example/foo@1.0.0#get-asset-qty" (func $miden:storage-example/foo@1.0.0#get-asset-qty))
     (elem (;0;) (i32.const 1) func $storage_example::bindings::__link_custom_section_describing_imports)
-    (func $__wasm_call_ctors (;5;) (type 5))
-    (func $storage_example::bindings::__link_custom_section_describing_imports (;6;) (type 5))
-    (func $miden:storage-example/foo@1.0.0#set-asset-qty (;7;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $__wasm_call_ctors (;3;) (type 3))
+    (func $storage_example::bindings::__link_custom_section_describing_imports (;4;) (type 3))
+    (func $miden:storage-example/foo@1.0.0#set-asset-qty (;5;) (type 4) (param f32 f32 f32 f32 f32 f32 f32 f32 f32)
       (local i32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 112
@@ -97,25 +86,25 @@
         local.get 0
         local.get 9
         f32.load offset=96
-        call $miden_stdlib_sys::intrinsics::felt::extern_eq
+        call $intrinsics::felt::eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 1
         local.get 10
-        call $miden_stdlib_sys::intrinsics::felt::extern_eq
+        call $intrinsics::felt::eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 2
         local.get 11
-        call $miden_stdlib_sys::intrinsics::felt::extern_eq
+        call $intrinsics::felt::eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
         local.get 3
         local.get 12
-        call $miden_stdlib_sys::intrinsics::felt::extern_eq
+        call $intrinsics::felt::eq
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
@@ -178,7 +167,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden:storage-example/foo@1.0.0#get-asset-qty (;8;) (type 7) (param f32 f32 f32 f32) (result f32)
+    (func $miden:storage-example/foo@1.0.0#get-asset-qty (;6;) (type 5) (param f32 f32 f32 f32) (result f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 48
@@ -218,11 +207,11 @@
       global.set $__stack_pointer
       local.get 0
     )
-    (func $wit_bindgen_rt::run_ctors_once (;9;) (type 5)
+    (func $wit_bindgen_rt::run_ctors_once (;7;) (type 3)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048624
+        i32.const 1048620
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -230,19 +219,19 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048624
+        i32.const 1048620
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;10;) (type 4) (param i32) (result f32)
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;8;) (type 6) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;11;) (type 8) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;9;) (type 7) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -300,16 +289,16 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;12;) (type 9) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;10;) (type 8) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       local.set 2
       i32.const 0
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       local.set 3
       i32.const 0
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       local.set 4
       local.get 0
       local.get 1
@@ -324,46 +313,43 @@
       local.get 2
       f32.store
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (func $intrinsics::felt::from_u32 (;11;) (type 6) (param i32) (result f32)
+      unreachable
+    )
+    (func $intrinsics::felt::eq (;12;) (type 9) (param f32 f32) (result i32)
+      unreachable
+    )
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map")
   )
-  (alias export 2 "felt" (type (;3;)))
-  (alias export 2 "word" (type (;4;)))
-  (alias export 2 "asset" (type (;5;)))
-  (alias export 1 "get-item" (func (;0;)))
+  (alias export 1 "felt" (type (;2;)))
+  (alias export 1 "word" (type (;3;)))
+  (alias export 1 "asset" (type (;4;)))
+  (alias export 0 "get-item" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
-  (alias export 1 "set-map-item" (func (;1;)))
+  (alias export 0 "set-map-item" (func (;1;)))
   (core func (;1;) (canon lower (func 1)))
-  (alias export 1 "get-map-item" (func (;2;)))
+  (alias export 0 "get-map-item" (func (;2;)))
   (core func (;2;) (canon lower (func 2)))
   (core instance (;0;)
     (export "get-item" (func 0))
     (export "set-map-item" (func 1))
     (export "get-map-item" (func 2))
   )
-  (alias export 0 "eq" (func (;3;)))
-  (core func (;3;) (canon lower (func 3)))
-  (alias export 0 "from-u32" (func (;4;)))
-  (core func (;4;) (canon lower (func 4)))
-  (core instance (;1;)
-    (export "eq" (func 3))
-    (export "from-u32" (func 4))
-  )
-  (core instance (;2;) (instantiate 0
+  (core instance (;1;) (instantiate 0
       (with "miden:core-base/account@1.0.0" (instance 0))
-      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 1))
     )
   )
-  (alias core export 2 "memory" (core memory (;0;)))
-  (type (;6;) (func (param "pub-key" 4) (param "asset" 5) (param "qty" 3)))
-  (alias core export 2 "miden:storage-example/foo@1.0.0#set-asset-qty" (core func (;5;)))
-  (func (;5;) (type 6) (canon lift (core func 5)))
-  (type (;7;) (func (param "asset" 5) (result 3)))
-  (alias core export 2 "miden:storage-example/foo@1.0.0#get-asset-qty" (core func (;6;)))
-  (func (;6;) (type 7) (canon lift (core func 6)))
-  (alias export 2 "felt" (type (;8;)))
-  (alias export 2 "word" (type (;9;)))
-  (alias export 2 "asset" (type (;10;)))
+  (alias core export 1 "memory" (core memory (;0;)))
+  (type (;5;) (func (param "pub-key" 3) (param "asset" 4) (param "qty" 2)))
+  (alias core export 1 "miden:storage-example/foo@1.0.0#set-asset-qty" (core func (;3;)))
+  (func (;3;) (type 5) (canon lift (core func 3)))
+  (type (;6;) (func (param "asset" 4) (result 2)))
+  (alias core export 1 "miden:storage-example/foo@1.0.0#get-asset-qty" (core func (;4;)))
+  (func (;4;) (type 6) (canon lift (core func 4)))
+  (alias export 1 "felt" (type (;7;)))
+  (alias export 1 "word" (type (;8;)))
+  (alias export 1 "asset" (type (;9;)))
   (component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
@@ -387,16 +373,16 @@
     (type (;16;) (func (param "asset" 14) (result 12)))
     (export (;3;) "get-asset-qty" (func 1) (func (type 16)))
   )
-  (instance (;3;) (instantiate 0
-      (with "import-func-set-asset-qty" (func 5))
-      (with "import-func-get-asset-qty" (func 6))
-      (with "import-type-felt" (type 8))
-      (with "import-type-word" (type 9))
-      (with "import-type-asset" (type 10))
-      (with "import-type-word0" (type 4))
-      (with "import-type-asset0" (type 5))
-      (with "import-type-felt0" (type 3))
+  (instance (;2;) (instantiate 0
+      (with "import-func-set-asset-qty" (func 3))
+      (with "import-func-get-asset-qty" (func 4))
+      (with "import-type-felt" (type 7))
+      (with "import-type-word" (type 8))
+      (with "import-type-asset" (type 9))
+      (with "import-type-word0" (type 3))
+      (with "import-type-asset0" (type 4))
+      (with "import-type-felt0" (type 2))
     )
   )
-  (export (;4;) "miden:storage-example/foo@1.0.0" (instance 3))
+  (export (;3;) "miden:storage-example/foo@1.0.0" (instance 2))
 )

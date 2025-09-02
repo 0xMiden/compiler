@@ -13,10 +13,16 @@ end
 # mod root_ns:root@1.0.0::eq_felt
 
 export.entrypoint
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::eq_felt::intrinsics::felt::eq
+    trace.252
+    nop
     push.1
-    swap.1
-    movup.2
     eq
+end
+
+proc.intrinsics::felt::eq
     eq
 end
 

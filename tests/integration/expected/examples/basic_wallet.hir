@@ -170,7 +170,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             v131 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
             v132 = hir.bitcast v131 : ptr<byte, i32>;
             v133 = hir.load v132 : i32;
-            v134 = arith.constant 1048624 : i32;
+            v134 = arith.constant 1048620 : i32;
             v135 = arith.add v133, v134 : i32 #[overflow = wrapping];
             v136 = hir.bitcast v135 : u32;
             v137 = hir.int_to_ptr v136 : ptr<byte, u8>;
@@ -189,7 +189,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
                 v145 = hir.load v144 : i32;
                 hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__wasm_call_ctors()
                 v457 = arith.constant 1 : u8;
-                v459 = arith.constant 1048624 : i32;
+                v459 = arith.constant 1048620 : i32;
                 v147 = arith.add v145, v459 : i32 #[overflow = wrapping];
                 v151 = hir.bitcast v147 : u32;
                 v152 = hir.int_to_ptr v151 : ptr<byte, u8>;
@@ -571,7 +571,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001;
     };
 
     public builtin.function @receive-asset(v436: felt, v437: felt, v438: felt, v439: felt) {

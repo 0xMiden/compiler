@@ -111,12 +111,27 @@ export.entrypoint
     swap.1
     swap.1
     u32shr
-    push.0
     push.3
-    dup.2
+    dup.1
     swap.1
     u32and
-    assert_eq
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
+    trace.252
+    nop
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
+    trace.252
+    nop
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::assert_eq
+    trace.252
+    nop
     push.8
     dup.3
     add
@@ -795,5 +810,13 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
 end
 
