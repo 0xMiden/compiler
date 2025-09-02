@@ -26,8 +26,20 @@ pub fn ensure_stub_rlib(metadata: &Metadata, cargo_args: &CargoArguments) -> Res
         bail!("stub crate root not found: {:?}", src_root);
     }
     let miden_base = stubs_dir.join("miden_base.rs");
-    let intrinsics = stubs_dir.join("intrinsics.rs");
-    let src_files = [src_root.as_path(), miden_base.as_path(), intrinsics.as_path()];
+    let intrinsics_felt = stubs_dir.join("intrinsics_felt.rs");
+    let intrinsics_crypto = stubs_dir.join("intrinsics_crypto.rs");
+    let intrinsics_mem = stubs_dir.join("intrinsics_mem.rs");
+    let intrinsics_debug = stubs_dir.join("intrinsics_debug.rs");
+    let intrinsics_advice = stubs_dir.join("intrinsics_advice.rs");
+    let src_files = [
+        src_root.as_path(),
+        miden_base.as_path(),
+        intrinsics_felt.as_path(),
+        intrinsics_crypto.as_path(),
+        intrinsics_mem.as_path(),
+        intrinsics_debug.as_path(),
+        intrinsics_advice.as_path(),
+    ];
 
     let out_path = deps_dir_std.join("libstub_miden_sdk.rlib");
     let needs_rebuild = match std::fs::metadata(&out_path) {

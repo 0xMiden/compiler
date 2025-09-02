@@ -4,8 +4,8 @@ package miden:core-intrinsics@1.0.0;
 // Rust SDK `extern` functions (see `/sdk`) using `f32` instead of `Felt` type;
 
 interface intrinsics-mem {
-
-    heap-base: func() -> s32;
+    // moved to stub rlib (tools/cargo-miden/stubs/intrinsics_mem.rs)
+    // heap-base: func() -> s32;
 }
 
 // interface intrinsics-felt {
@@ -43,9 +43,8 @@ interface intrinsics-mem {
 // }
 
 interface intrinsics-debug {
-
-    break: func();
-
+    // moved to stub rlib (tools/cargo-miden/stubs/intrinsics_debug.rs)
+    // break: func();
 }
 
 interface intrinsics-crypto {
@@ -57,11 +56,11 @@ interface intrinsics-crypto {
 }
 
 interface intrinsics-advice {
-
     // Pushes a list of field elements onto the advice stack. The list is looked up in the advice map using `key` as the key.
     // Returns the number of elements pushed on the advice stack.
     // key: Word (4 f32 values representing the key)
-    adv-push-mapvaln: func(key0: f32, key1: f32, key2: f32, key3: f32) -> f32;
+    // moved to stub rlib (tools/cargo-miden/stubs/intrinsics_advice.rs)
+    // adv-push-mapvaln: func(key0: f32, key1: f32, key2: f32, key3: f32) -> f32;
 }
 
 world intrinsics {

@@ -493,7 +493,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             else
                 trace.240
                 nop
-                exec.::intrinsics::mem::heap_base
+                exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -1793,6 +1793,14 @@ end
 
 proc.intrinsics::felt::assert_eq
     assert_eq
+end
+
+proc.intrinsics::mem::heap_base
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
 end
 
 # mod miden::note
