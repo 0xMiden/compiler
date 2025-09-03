@@ -14,7 +14,7 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-miden-stdlib-sys = { version = "0.4.0", path = "../stdlib-sys" }
+miden-stdlib-sys = { version = "0.4.1", path = "../stdlib-sys" }
 
 [features]
 default = []

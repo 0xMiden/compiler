@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.4.0...midenc-hir-analysis-v0.4.1) - 2025-09-03
+
+### Other
+
+- switch to `expect_file!` in spills tests
+- increase stack pressure in the `spills_loop_nest` test and make it spill
+- move `tests` module in spill analysis into a separate file
+- rewrite spill analysis tests, add logging
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.1.5...midenc-hir-analysis-v0.4.0) - 2025-08-15
 
 ### Other
