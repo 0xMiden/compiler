@@ -328,9 +328,6 @@ where
                 ]
                 .map(|s| s.to_string()),
             );
-            // Build and link the wasm stub that defines symbols with an `unreachable` body so the
-            // symbol is lowered during Wasm translation in the frontend.
-            let stub_rlib_path = stub::ensure_stub_rlib(&metadata, &cargo_args)?;
 
             // Convert profile options from examples/**/Cargo.toml to
             // equivalent cargo command-line overrides. This ensures the intended
@@ -363,6 +360,10 @@ where
                 spawn_args.push("--config".to_string());
                 spawn_args.push(format!("{key}={value}"));
             }
+
+            // Build and link the wasm stub that defines symbols with an `unreachable` body so the
+            // symbol is lowered during Wasm translation in the frontend.
+            let stub_rlib_path = stub::ensure_stub_rlib(&metadata, &cargo_args)?;
 
             let extra_rust_flags = format!(
                 "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args={}",
