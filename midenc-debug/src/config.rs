@@ -212,7 +212,7 @@ mod tests {
         assert!(file.advice_inputs.stack.is_empty());
         assert!(file.options.enable_tracing());
         assert!(file.options.enable_debugging());
-        assert_eq!(file.options.max_cycles(), u32::MAX);
+        assert_eq!(file.options.max_cycles(), ExecutionOptions::MAX_CYCLES);
         assert_eq!(file.options.expected_cycles(), 64);
     }
 
