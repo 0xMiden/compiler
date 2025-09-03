@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.14.0";
+const TEMPLATES_REPO_TAG: &str = "v0.15.0";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
