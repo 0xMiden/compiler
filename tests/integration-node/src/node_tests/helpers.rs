@@ -36,7 +36,7 @@ use rand::{rngs::StdRng, RngCore};
 
 /// Test setup configuration
 pub struct TestSetup {
-    pub client: Client,
+    pub client: Client<FilesystemKeyStore<StdRng>>,
     pub keystore: Arc<FilesystemKeyStore<StdRng>>,
 }
 
@@ -58,13 +58,12 @@ pub async fn setup_test_infrastructure(
 
     // Initialize client
     let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
-    let client = ClientBuilder::new()
+    let builder = ClientBuilder::new()
         .rpc(rpc_api)
         .sqlite_store(&store_path)
         .filesystem_keystore(keystore_path.to_str().unwrap())
-        .in_debug_mode(miden_client::DebugMode::Enabled)
-        .build()
-        .await?;
+        .in_debug_mode(miden_client::DebugMode::Enabled);
+    let client = builder.build().await?;
 
     Ok(TestSetup { client, keystore })
 }
@@ -92,7 +91,7 @@ impl Default for AccountCreationConfig {
 
 /// Helper to create an account with a custom component from a package
 pub async fn create_account_with_component(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     package: Arc<Package>,
     config: AccountCreationConfig,
@@ -145,7 +144,7 @@ pub async fn create_account_with_component(
 }
 
 pub async fn create_fungible_faucet_account(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     token_symbol: TokenSymbol,
     decimals: u8,
@@ -208,7 +207,7 @@ impl Default for NoteCreationConfig {
 
 /// Helper to create a note from a compiled package
 pub fn create_note_from_package(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     package: Arc<Package>,
     sender_id: AccountId,
     config: NoteCreationConfig,
@@ -236,7 +235,7 @@ pub fn create_note_from_package(
 /// Helper function to assert that an account contains a specific fungible asset
 /// The account may have other assets as well
 pub async fn assert_account_has_fungible_asset(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     account_id: AccountId,
     expected_faucet_id: AccountId,
     expected_amount: u64,
@@ -314,7 +313,7 @@ impl Default for AssetTransferConfig {
 /// # Returns
 /// A tuple containing the transaction ID and the created Note for the recipient
 pub async fn send_asset_to_account(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     sender_account_id: AccountId,
     recipient_account_id: AccountId,
     asset: FungibleAsset,
