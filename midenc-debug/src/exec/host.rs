@@ -1,10 +1,11 @@
 use std::{collections::BTreeMap, num::NonZeroU32, sync::Arc};
 
+use miden_assembly::SourceManager;
 use miden_core::Word;
 use miden_debug_types::{Location, SourceFile, SourceSpan};
 use miden_processor::{
-    AdviceInputs, AdviceProvider, BaseHost, ExecutionError, KvMap, MastForest, MastForestStore,
-    MemMastForestStore, ProcessState, RowIndex, SyncHost,
+    AdviceInputs, AdviceProvider, BaseHost, EventHandlerRegistry, ExecutionError, KvMap,
+    MastForest, MastForestStore, MemMastForestStore, ProcessState, RowIndex, SyncHost,
 };
 
 use super::{TraceEvent, TraceHandler};
@@ -13,20 +14,27 @@ use super::{TraceEvent, TraceHandler};
 /// but extended with additional functionality for debugging, in particular it manages trace
 /// events that record the entry or exit of a procedure call frame.
 #[derive(Default)]
-pub struct DebuggerHost {
+pub struct DebuggerHost<S: SourceManager> {
     adv_provider: AdviceProvider,
     store: MemMastForestStore,
     tracing_callbacks: BTreeMap<u32, Vec<Box<TraceHandler>>>,
+    event_handlers: EventHandlerRegistry,
     on_assert_failed: Option<Box<TraceHandler>>,
+    source_manager: Arc<S>,
 }
-impl DebuggerHost {
+impl<S> DebuggerHost<S>
+where
+    S: SourceManager,
+{
     /// Construct a new instance of [DebuggerHost] with the given advice provider.
-    pub fn new(adv_provider: AdviceProvider) -> Self {
+    pub fn new(adv_provider: AdviceProvider, source_manager: S) -> Self {
         Self {
             adv_provider,
             store: Default::default(),
             tracing_callbacks: Default::default(),
+            event_handlers: EventHandlerRegistry::default(),
             on_assert_failed: None,
+            source_manager: Arc::new(source_manager),
         }
     }
 
@@ -61,7 +69,10 @@ impl DebuggerHost {
     }
 }
 
-impl BaseHost for DebuggerHost {
+impl<S> BaseHost for DebuggerHost<S>
+where
+    S: SourceManager,
+{
     fn get_mast_forest(&self, node_digest: &Word) -> Option<Arc<MastForest>> {
         self.store.get(node_digest)
     }
@@ -70,8 +81,9 @@ impl BaseHost for DebuggerHost {
         &self,
         location: &Location,
     ) -> (SourceSpan, Option<Arc<SourceFile>>) {
-        // TODO: Left for later
-        todo!()
+        let maybe_file = self.source_manager.get_by_uri(location.uri());
+        let span = self.source_manager.location_to_span(location.clone()).unwrap_or_default();
+        (span, maybe_file)
     }
 
     fn on_trace(
@@ -98,12 +110,15 @@ impl BaseHost for DebuggerHost {
     }
 }
 
-impl SyncHost for DebuggerHost {
+impl<S> SyncHost for DebuggerHost<S>
+where
+    S: SourceManager,
+{
     fn on_event(
         &mut self,
         process: &ProcessState,
         event_id: u32,
     ) -> Result<Vec<miden_processor::AdviceMutation>, miden_processor::EventError> {
-        todo!()
+        Ok(Vec::new())
     }
 }

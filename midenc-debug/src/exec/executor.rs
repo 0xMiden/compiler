@@ -138,7 +138,7 @@ impl Executor {
         log::debug!("creating debug executor");
 
         let advice_provider = AdviceProvider::from(self.advice.clone());
-        let mut host = DebuggerHost::new(advice_provider);
+        let mut host = DebuggerHost::new(advice_provider, session.source_manager.clone());
         for lib in core::mem::take(&mut self.libraries) {
             host.load_mast_forest(lib);
         }
