@@ -76,4 +76,5 @@ features = [
 ]
 
 [dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-mast-package.workspace = true

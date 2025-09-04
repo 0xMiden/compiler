@@ -35,4 +35,5 @@ uuid = { version = "1.10", features = ["v4"] }
 miden-integration-tests = { path = "../integration" }
 
 [dev-dependencies]
-midenc-expect-test.workspace = true
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-expect-test = { path = "../../tools/expect-test" }

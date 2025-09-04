@@ -44,6 +44,7 @@ tokio.workspace = true
 walkdir = "2.5.0"
 
 [dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 blake3 = "1.5"
 concat-idents = "1.1"
 

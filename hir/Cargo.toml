@@ -39,5 +39,6 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 pretty_assertions = "1.0"
 env_logger.workspace = true
