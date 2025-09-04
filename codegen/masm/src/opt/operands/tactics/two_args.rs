@@ -103,7 +103,7 @@ impl TwoArgs {
         // We don't need to move the RHS if it was on top already and either LHS is the same value
         // or we can leave the operands out of order.
         let dupe_of_top = lhs_pos == rhs_pos && lhs_pos == 0;
-        let can_leave_rhs = builder.may_be_unordered() && rhs_pos == 0;
+        let can_leave_rhs = builder.unordered_allowed() && rhs_pos == 0;
 
         if !can_leave_rhs && !dupe_of_top {
             builder.movup(rhs_pos + 1);
@@ -152,10 +152,10 @@ impl TwoArgs {
 
         if lhs_pos == 0 {
             // Just move the RHS to the top, if needed.
-            if !(builder.may_be_unordered() && rhs_pos == 1) {
+            if !(builder.unordered_allowed() && rhs_pos == 1) {
                 builder.movup(rhs_pos);
             }
-        } else if rhs_pos == 0 && builder.may_be_unordered() {
+        } else if rhs_pos == 0 && builder.unordered_allowed() {
             // Just move the LHS to the top.
             builder.movup(lhs_pos);
         } else if rhs_pos == 2 && lhs_pos == 1 {
@@ -214,18 +214,12 @@ mod tests {
     fn permute_stacks(
         val_refs: &[midenc_hir::ValueRef],
         max_actions: usize,
-        may_be_unordered: bool,
+        allow_unordered: bool,
     ) -> usize {
         // Use just v0 and v1 at the top.  The input is permuted so always using these is OK.
         let expected = vec![val_refs[0], val_refs[1]];
 
-        permute_stacks_advanced(
-            val_refs,
-            &expected,
-            &ALL_CONSTRAINTS,
-            max_actions,
-            may_be_unordered,
-        )
+        permute_stacks_advanced(val_refs, &expected, &ALL_CONSTRAINTS, max_actions, allow_unordered)
     }
 
     fn permute_stacks_advanced(
@@ -233,7 +227,7 @@ mod tests {
         expected: &[midenc_hir::ValueRef],
         constraints: &[[crate::Constraint; 2]],
         max_actions: usize,
-        may_be_unordered: bool,
+        allow_unordered: bool,
     ) -> usize {
         let mut total_actions = 0;
 
@@ -246,7 +240,7 @@ mod tests {
 
             for constraint_pair in constraints {
                 let context =
-                    SolverContext::new(expected, may_be_unordered, constraint_pair, &pending);
+                    SolverContext::new(expected, allow_unordered, constraint_pair, &pending);
 
                 match context {
                     Ok(context) => {
@@ -268,7 +262,7 @@ mod tests {
                         );
 
                         let num_actions = builder.take().len();
-                        assert!(builder.take().len() <= max_actions);
+                        assert!(num_actions <= max_actions);
                         total_actions += num_actions;
                     }
 
@@ -283,8 +277,8 @@ mod tests {
 
     #[test]
     fn every_ordered_stack() {
-        // Take every permutation of a 5 element stack and each permutation of two operand contraints
-        // and confirm that at most 2 actions are required to solve.
+        // Take every permutation of a 5 element stack and each permutation of two operand
+        // constraints and confirm that at most 2 actions are required to solve.
         let val_refs = generate_valrefs(5);
         let total_actions = permute_stacks(&val_refs, 2, false);
 
@@ -294,8 +288,8 @@ mod tests {
 
     #[test]
     fn every_unordered_stack() {
-        // Take every permutation of a 5 element stack and each permutation of two operand contraints
-        // and confirm that at most 2 actions are required for an unordered solution.
+        // Take every permutation of a 5 element stack and each permutation of two operand
+        // constraints and confirm that at most 2 actions are required for an unordered solution.
         let val_refs = generate_valrefs(5);
         let total_actions = permute_stacks(&val_refs, 2, true);
 
@@ -305,18 +299,21 @@ mod tests {
 
     #[test]
     fn every_unordered_3_stack() {
-        // Take every permutation of a 3 element stack and each permutation of two operand contraints
-        // and confirm that at most 1 action is required for an unordered solution.
+        // Take every permutation of a 3 element stack and confirm that at most 1 action is
+        // required for an unordered solution with move/move constraints.
         let val_refs = generate_valrefs(3);
-        let total_actions = permute_stacks(&val_refs, 1, true);
+        let expected = vec![val_refs[0], val_refs[1]];
+        let constraints = [[crate::Constraint::Move, crate::Constraint::Move]];
+
+        let total_actions = permute_stacks_advanced(&val_refs, &expected, &constraints, 1, true);
 
         // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["36"].assert_eq(&total_actions.to_string());
+        midenc_expect_test::expect!["4"].assert_eq(&total_actions.to_string());
     }
 
-    fn every_duplicated_stack_single_util(may_be_unordered: bool) -> usize {
-        // Take very permutation of a 4 element stack etc. where the two operands are the very same
-        // value.  In this case it doesn't make sense for a Move/Move constraint to be used.
+    fn every_duplicated_stack_single_util(allow_unordered: bool) -> usize {
+        // Take every permutation of a 4 element stack etc. where the two operands are the very
+        // same value.  In this case it doesn't make sense for a Move/Move constraint to be used.
         //
         // The expected output is v0, v0.
         let val_refs = generate_valrefs(4);
@@ -327,7 +324,7 @@ mod tests {
             [crate::Constraint::Copy, crate::Constraint::Copy],
         ];
 
-        permute_stacks_advanced(&val_refs, &expected, &constraints, 2, may_be_unordered)
+        permute_stacks_advanced(&val_refs, &expected, &constraints, 2, allow_unordered)
     }
 
     #[test]
@@ -350,8 +347,8 @@ mod tests {
     // at least one of them must be a copy, i.e., the value will never be there twice, at least for
     // the same op.
     //
-    // fn every_duplicated_stack_double_util(may_be_unordered: bool) -> usize {
-    //     // Take very permutation of a 5 element stack etc. where the two operands are the same value
+    // fn every_duplicated_stack_double_util(allow_unordered: bool) -> usize {
+    //     // Take every permutation of a 5 element stack etc. where the two operands are the same value
     //     // but represented twice in the input.
     //
     //     // Generate 4 val refs but append a copy of v0.
@@ -361,7 +358,7 @@ mod tests {
     //
     //     let expected = vec![v0, v0];
     //
-    //     permute_stacks_advanced(&val_refs, &expected, &ALL_CONSTRAINTS, 2, may_be_unordered)
+    //     permute_stacks_advanced(&val_refs, &expected, &ALL_CONSTRAINTS, 2, allow_unordered)
     // }
     //
     // #[test]

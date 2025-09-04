@@ -112,8 +112,8 @@ impl<'a> SolutionBuilder<'a> {
         self.context.copies().len()
     }
 
-    pub fn may_be_unordered(&self) -> bool {
-        self.context.may_be_unordered()
+    pub fn unordered_allowed(&self) -> bool {
+        self.context.unordered_allowed()
     }
 
     /// Get a reference to the underlying context of the solver

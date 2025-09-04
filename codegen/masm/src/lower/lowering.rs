@@ -75,9 +75,9 @@ pub trait HirLowering: Op {
             log::trace!(target: "codegen", "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
         log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
-        let may_be_unordered = op.implements::<dyn Commutative>();
+        let allow_unordered = op.implements::<dyn Commutative>();
         emitter
-            .schedule_operands(&args, may_be_unordered, &constraints, op.span())
+            .schedule_operands(&args, allow_unordered, &constraints, op.span())
             .unwrap_or_else(|err| {
                 panic!(
                     "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
@@ -1010,9 +1010,9 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(then_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
-            let may_be_unordered = false;
+            let allow_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, may_be_unordered, &constraints, span)
+                .schedule_operands(&successor_operands, allow_unordered, &constraints, span)
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
@@ -1040,9 +1040,9 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(else_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
-            let may_be_unordered = false;
+            let allow_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, may_be_unordered, &constraints, span)
+                .schedule_operands(&successor_operands, allow_unordered, &constraints, span)
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \

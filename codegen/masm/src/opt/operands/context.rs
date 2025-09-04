@@ -14,13 +14,13 @@ use crate::{Constraint, OperandStack};
 pub struct SolverContext {
     stack: Stack,
     expected: Stack,
-    unordered: bool,
+    allow_unordered: bool,
     copies: CopyInfo,
 }
 impl SolverContext {
     pub fn new(
         expected: &[hir::ValueRef],
-        may_be_unordered: bool,
+        allow_unordered: bool,
         constraints: &[Constraint],
         stack: &OperandStack,
     ) -> Result<Self, SolverError> {
@@ -65,7 +65,7 @@ impl SolverContext {
         Ok(Self {
             stack,
             expected: expected_output,
-            unordered: may_be_unordered,
+            allow_unordered,
             copies,
         })
     }
@@ -96,8 +96,8 @@ impl SolverContext {
         &self.expected
     }
 
-    pub fn may_be_unordered(&self) -> bool {
-        self.unordered
+    pub fn unordered_allowed(&self) -> bool {
+        self.allow_unordered
     }
 
     /// Return true if the given stack matches what is expected
@@ -114,7 +114,7 @@ impl SolverContext {
             self.expected.len() == 2 && self.expected[0].value() == self.expected[1].value();
 
         is_solved_exactly
-            || ((self.unordered || both_same_value) && self.is_solved_unordered(pending))
+            || ((self.allow_unordered || both_same_value) && self.is_solved_unordered(pending))
     }
 
     /// Return whether all of the expected operands are at the top of the pending stack but in any

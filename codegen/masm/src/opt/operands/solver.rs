@@ -97,13 +97,13 @@ impl OperandMovementConstraintSolver {
     /// state.
     pub fn new_with_unordered_flag(
         expected: &[hir::ValueRef],
-        can_be_unordered: bool,
+        allow_unordered: bool,
         constraints: &[Constraint],
         stack: &crate::OperandStack,
     ) -> Result<Self, SolverError> {
         assert_eq!(expected.len(), constraints.len());
 
-        let context = SolverContext::new(expected, can_be_unordered, constraints, stack)?;
+        let context = SolverContext::new(expected, allow_unordered, constraints, stack)?;
 
         Ok(Self {
             context,
@@ -117,8 +117,8 @@ impl OperandMovementConstraintSolver {
         constraints: &[Constraint],
         stack: &crate::OperandStack,
     ) -> Result<Self, SolverError> {
-        let can_be_unordered = false;
-        Self::new_with_unordered_flag(expected, can_be_unordered, constraints, stack)
+        let allow_unordered = false;
+        Self::new_with_unordered_flag(expected, allow_unordered, constraints, stack)
     }
 
     /// Set the quantity of optimization fuel the solver has to work with
