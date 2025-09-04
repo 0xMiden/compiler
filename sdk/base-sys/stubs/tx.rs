@@ -1,7 +1,6 @@
 use core::ffi::c_void;
 
 /// Tx interface stubs
-
 #[export_name = "miden::tx::create_note"]
 pub extern "C" fn tx_create_note_plain(
     _tag: f32,

@@ -12,6 +12,8 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
+build = "build.rs"
+links = "miden_base_sys_stubs"
 
 [dependencies]
 miden-stdlib-sys = { version = "0.4.1", path = "../stdlib-sys" }

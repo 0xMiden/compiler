@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 
 /// Account interface stubs
-
+///
 /// Unreachable stub for `add-asset` import (extern_account_add_asset).
 /// Signature matches the Wasm lowering used by the SDK: (f32, f32, f32, f32, i32)
 #[export_name = "miden::account::add_asset"]
