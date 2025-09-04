@@ -25,10 +25,6 @@ jobs:
         run: |
           rustup update --no-self-update
           rustc --version
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/next' }}
       - name: Publish
         uses: release-plz/action@v0.5
         with:
