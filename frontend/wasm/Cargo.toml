@@ -34,5 +34,6 @@ thiserror.workspace = true
 wasmparser.workspace = true
 
 [dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 wat.workspace = true
-midenc-expect-test.workspace = true
+midenc-expect-test = { path = "../../tools/expect-test" }

@@ -37,6 +37,7 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-midenc-expect-test.workspace = true
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-expect-test = { path = "../../tools/expect-test" }
 proptest.workspace = true
 env_logger.workspace = true
