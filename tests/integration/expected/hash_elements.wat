@@ -119,7 +119,10 @@
     i64.load align=4
     i64.store
   )
-  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;3;) (type 1) (param i32 i32 i32)
+  (func $std::crypto::hashes::rpo::hash_memory (;3;) (type 1) (param i32 i32 i32)
+    unreachable
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;4;) (type 1) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -151,7 +154,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;4;) (type 3) (param i32 i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;5;) (type 3) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
@@ -186,7 +189,7 @@
     local.get 4
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;5;) (type 1) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;6;) (type 1) (param i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -197,13 +200,10 @@
       call $__rustc::__rust_dealloc
     end
   )
-  (func $intrinsics::felt::from_u32 (;6;) (type 0) (param i32) (result f32)
+  (func $intrinsics::felt::from_u32 (;7;) (type 0) (param i32) (result f32)
     unreachable
   )
-  (func $intrinsics::felt::assert_eq (;7;) (type 4) (param f32 f32)
-    unreachable
-  )
-  (func $std::crypto::hashes::rpo::hash_memory (;8;) (type 1) (param i32 i32 i32)
+  (func $intrinsics::felt::assert_eq (;8;) (type 4) (param f32 f32)
     unreachable
   )
 )

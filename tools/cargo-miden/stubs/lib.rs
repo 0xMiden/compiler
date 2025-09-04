@@ -6,6 +6,8 @@
 // via its own build.rs to avoid double definitions.
 
 mod intrinsics;
+// Stdlib stubs moved to `miden-stdlib-sys` build.rs
+#[cfg(miden_include_stdlib_stubs)]
 mod stdlib;
 
 // Base stubs have moved to `miden-base-sys` build.rs

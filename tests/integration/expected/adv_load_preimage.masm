@@ -762,6 +762,14 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
+proc.std::mem::pipe_preimage_to_memory
+    trace.240
+    nop
+    exec.::std::mem::pipe_preimage_to_memory
+    trace.252
+    nop
+end
+
 proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     push.1114176
     u32divmod.4

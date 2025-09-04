@@ -1,4 +1,4 @@
-// Build the Miden base stubs and link them for dependents.
+// Build the Miden stdlib stubs and link them for dependents.
 //
 // We produce a native static library (.a) that contains only the stub object
 // files (no panic handler) to avoid duplicate panic symbols in downstream
@@ -23,7 +23,7 @@ fn main() {
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
 
     if !target.starts_with("wasm32") {
-        // Still track files for re-run if changed in case of cross compilation.
+        // track changes, but don’t build
         let stubs_root = manifest_dir.join("stubs");
         let src_root = stubs_root.join("lib.rs");
         if src_root.exists() {
@@ -38,8 +38,8 @@ fn main() {
 
     let stubs_root = manifest_dir.join("stubs");
     let src_root = stubs_root.join("lib.rs");
-    // Ensure build script reruns when any stub file changes
     println!("cargo:rerun-if-changed={}", src_root.display());
+    // Ensure build script reruns when any stub file changes
     if let Ok(read_dir) = std::fs::read_dir(&stubs_root) {
         for entry in read_dir.flatten() {
             let p = entry.path();
@@ -60,8 +60,8 @@ fn main() {
 
     // Build a single object, then package into a static archive to avoid
     // bringing in panic symbols.
-    let out_static = out_dir.join("libmiden_base_sys_stubs.a");
-    let out_obj = out_dir.join("miden_base_sys_stubs.o");
+    let out_obj = out_dir.join("miden_stdlib_sys_stubs.o");
+    let out_a = out_dir.join("libmiden_stdlib_sys_stubs.a");
 
     // 1) Compile object
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
@@ -75,7 +75,7 @@ fn main() {
     // `opt-level=0` - introduces import for panic infra leading to WIT encoder error (unsatisfied import).
     let status = Command::new("rustc")
         .arg("--crate-name")
-        .arg("miden_base_sys_stubs")
+        .arg("miden_stdlib_sys_stubs")
         .arg("--edition=2021")
         .arg("--crate-type=rlib")
         .arg("--target")
@@ -95,23 +95,23 @@ fn main() {
         .arg(&out_obj)
         .arg(&src_root)
         .status()
-        .expect("failed to spawn rustc for base stubs object");
+        .expect("failed to spawn rustc for stdlib stub object");
     if !status.success() {
-        panic!("failed to compile miden-base-sys stubs object: {status}");
+        panic!("failed to compile stdlib stub object: {status}");
     }
 
     // 2) Archive
     let status = Command::new("ar")
         .arg("crs")
-        .arg(&out_static)
+        .arg(&out_a)
         .arg(&out_obj)
         .status()
-        .expect("failed to spawn ar for base stubs");
+        .expect("failed to spawn ar for stdlib stubs");
     if !status.success() {
-        panic!("failed to archive miden-base-sys stubs: {status}");
+        panic!("failed to archive stdlib stubs: {status}");
     }
 
     // Emit link directives for dependents
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=miden_base_sys_stubs");
+    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_stubs");
 }

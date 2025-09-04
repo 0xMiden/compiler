@@ -10,6 +10,8 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
+build = "build.rs"
+links = "miden_stdlib_sys_stubs"
 
 [lib]
 crate-type = ["rlib"]

@@ -10,10 +10,5 @@ mod account;
 mod note;
 mod tx;
 
-// Minimal panic handler for `#![no_std]` staticlib builds on wasm.
-// We never intend to panic, but the symbol must exist.
-#[cfg(stub_staticlib)]
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
+// No panic handler here; the stubs are packaged as a single object into a
+// static archive by build.rs to avoid introducing panic symbols.
