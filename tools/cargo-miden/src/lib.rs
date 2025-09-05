@@ -305,24 +305,6 @@ where
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
-                // skip functions that are provided by the Miden SDK and/or intrinsics
-                // only function names (no CM path)
-                package.metadata.section.bindings.skip = vec![
-                    // Our function names can clash with user's function names leading to
-                    // skipping the bindings generation of the user's function names
-                    // see https://github.com/0xMiden/compiler/issues/341
-                    "remove-asset",
-                    "create-note",
-                    "heap-base",
-                    "hash-one-to-one",
-                    "hash-two-to-one",
-                    "hmerge",
-                    "add-asset",
-                    "unchecked-from-u64",
-                ]
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect();
             }
 
             let mut spawn_args: Vec<_> = args.clone().into_iter().collect();
