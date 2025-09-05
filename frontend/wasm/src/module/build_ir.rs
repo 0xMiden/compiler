@@ -134,7 +134,7 @@ pub fn build_ir_module(
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
         // If this is a linker stub, synthesize its body to exec the MASM callee
-        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state, context.clone())? {
+        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
             continue;
         }
 

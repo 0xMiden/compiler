@@ -5,17 +5,18 @@
 //! `miden::account::add_asset` and is used to locate the MASM callee.
 
 use core::str::FromStr;
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder},
-    AbiParam, Context, FunctionType, Signature, SmallVec, SymbolPath, ValueRef,
+    AbiParam, FunctionType, Op, Signature, SmallVec, SymbolPath, ValueRef,
 };
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
+    error::WasmResult,
     intrinsics::{convert_intrinsics_call, Intrinsic},
     miden_abi::{
         is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
@@ -33,14 +34,14 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
         Ok(r) => r,
         Err(_) => return false,
     };
+    let mut saw_unreachable = false;
     while !reader.eof() {
         let Ok((op, _)) = reader.read_with_offset() else {
             return false;
         };
         match op {
             Operator::Unreachable => {
-                // If we see more than one meaningful operator, still ok: allow repeated unreachable
-                return true;
+                saw_unreachable = true;
             }
             Operator::End | Operator::Nop => {
                 // ignore
@@ -48,7 +49,7 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
             _ => return false,
         }
     }
-    false
+    saw_unreachable
 }
 
 /// If `body` looks like a linker stub, lowers `function_ref` to a call to the
@@ -58,8 +59,7 @@ pub fn maybe_lower_linker_stub(
     function_ref: FunctionRef,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
-    context: Rc<Context>,
-) -> Result<bool, midenc_hir::Report> {
+) -> WasmResult<bool> {
     if !is_unreachable_stub(body) {
         return Ok(false);
     }
@@ -99,9 +99,11 @@ pub fn maybe_lower_linker_stub(
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
-    let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
-    let mut op_builder = midenc_hir::OpBuilder::new(context.clone())
-        .with_listener(SSABuilderListener::new(func_ctx));
+    let context = function_ref.borrow().as_operation().context_rc();
+    let func_builder_ctx =
+        std::rc::Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+    let mut op_builder = midenc_hir::OpBuilder::new(context)
+        .with_listener(SSABuilderListener::new(func_builder_ctx));
     let mut fb = FunctionBuilderExt::new(function_ref, &mut op_builder);
 
     // Entry/args
@@ -118,7 +120,9 @@ pub fn maybe_lower_linker_stub(
     // Declare MASM import callee in world and exec via TransformStrategy
     let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
         // Decide whether the intrinsic is implemented as a function or an operation
-        let conv = intr.conversion_result().expect("unknown intrinsic");
+        let Some(conv) = intr.conversion_result() else {
+            return Ok(false);
+        };
         if conv.is_function() {
             // Declare callee and call via convert_intrinsics_call with function_ref
             let import_module_ref = module_state
@@ -128,15 +132,11 @@ pub fn maybe_lower_linker_stub(
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
             let intrinsic_func_ref = import_module_builder
                 .define_function(import_path.name().into(), import_sig.clone())
-                .expect("failed to create intrinsic function ref");
-            convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)
-                .expect("convert_intrinsics_call failed")
-                .to_vec()
+                .wrap_err("failed to create intrinsic function ref")?;
+            convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
         } else {
             // Inline conversion of intrinsic operation
-            convert_intrinsics_call(intr, None, &args, &mut fb, span)
-                .expect("convert_intrinsics_call failed")
-                .to_vec()
+            convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
         }
     } else {
         // Miden ABI path: exec import with TransformStrategy
@@ -147,7 +147,7 @@ pub fn maybe_lower_linker_stub(
         let mut import_module_builder = ModuleBuilder::new(import_module_ref);
         let import_func_ref = import_module_builder
             .define_function(import_path.name().into(), import_sig)
-            .expect("failed to create MASM import function ref");
+            .wrap_err("failed to create MASM import function ref")?;
         transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
     };
 
