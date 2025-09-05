@@ -491,6 +491,14 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
 end
 
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
+end
+
 proc.std::crypto::hashes::rpo::hash_memory
     trace.240
     nop
@@ -810,13 +818,5 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
-end
-
-proc.intrinsics::felt::from_u32
-    nop
-end
-
-proc.intrinsics::felt::assert_eq
-    assert_eq
 end
 

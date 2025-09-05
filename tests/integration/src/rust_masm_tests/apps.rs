@@ -40,7 +40,7 @@ fn cargo_toml(name: &str) -> String {
                 opt-level = 1
                 debug-assertions = true
                 overflow-checks = false
-                debug = true
+                debug = false
             "#,
         sdk_alloc_path = sdk_alloc_path.display(),
         sdk_path = sdk_path.display()

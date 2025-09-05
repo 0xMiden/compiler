@@ -29,7 +29,6 @@ mod compile_masm;
 mod dependencies;
 mod non_component;
 mod outputs;
-mod stub;
 mod target;
 mod utils;
 
@@ -56,8 +55,8 @@ fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) 
     false
 }
 
-// Stubs directory (compile-time absolute path)
-const STUBS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/stubs");
+// All wasm stub symbols are provided by miden-stdlib-sys and miden-base-sys
+// via their respective build.rs scripts.
 
 fn version() -> &'static str {
     option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
@@ -354,6 +353,7 @@ where
                 ("profile.dev.debug-assertions", "false"),
                 ("profile.release.opt-level", "\"z\""),
                 ("profile.release.panic", "\"abort\""),
+                ("profile.release.debug", "false"),
             ];
 
             for (key, value) in cfg_pairs {
@@ -361,14 +361,7 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            // Build and link the wasm stub that defines symbols with an `unreachable` body so the
-            // symbol is lowered during Wasm translation in the frontend.
-            let stub_rlib_path = stub::ensure_stub_rlib(&metadata, &cargo_args)?;
-
-            let extra_rust_flags = format!(
-                "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args={}",
-                stub_rlib_path.display()
-            );
+            let extra_rust_flags = "-C target-feature=+bulk-memory,+wide-arithmetic -C debuginfo=0";
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {

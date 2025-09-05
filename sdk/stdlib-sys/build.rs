@@ -58,12 +58,12 @@ fn main() {
         }
     }
 
-    // Build a single object, then package into a static archive to avoid
-    // bringing in panic symbols.
-    let out_obj = out_dir.join("miden_stdlib_sys_stubs.o");
+    // Build separate objects for intrinsics and stdlib stubs, then package into
+    // a single static archive to avoid large sections in a single object.
+    let out_intrinsics_obj = out_dir.join("miden_stdlib_sys_intrinsics_stubs.o");
+    let out_stdlib_obj = out_dir.join("miden_stdlib_sys_stdlib_stubs.o");
     let out_a = out_dir.join("libmiden_stdlib_sys_stubs.a");
 
-    // 1) Compile object
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
     // functions in the stub library identical (e.g. `intrinsics::felt::add` and
     // `intrinsics::felt::mul`) because besides the same sig they have the same body
@@ -73,9 +73,17 @@ fn main() {
     // also put `-Z merge-functions=disabled` in case `opt-level=1` behaviour changes
     // in the future and runs the MergeFunctions pass.
     // `opt-level=0` - introduces import for panic infra leading to WIT encoder error (unsatisfied import).
+
+    // Although the stdlib vs intrinsics split seems redundant in the future we will have to move
+    // the intrinsics to the separate crate with its own build.rs script. The reason for the
+    // separation is the automatic bindings generation. For the Miden stdlib the bindings will be
+    // generated from the Miden package, but for intrinsics they will be maintained manually since
+    // the intrinsics are part of the compiler.
+
+    // 1a) Compile intrinsics object
     let status = Command::new("rustc")
         .arg("--crate-name")
-        .arg("miden_stdlib_sys_stubs")
+        .arg("miden_stdlib_sys_intrinsics_stubs")
         .arg("--edition=2021")
         .arg("--crate-type=rlib")
         .arg("--target")
@@ -86,25 +94,58 @@ fn main() {
         .arg("panic=abort")
         .arg("-C")
         .arg("codegen-units=1")
+        .arg("-C")
+        .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("--emit=obj")
         .arg("-o")
-        .arg(&out_obj)
-        .arg(&src_root)
+        .arg(&out_intrinsics_obj)
+        .arg(stubs_root.join("intrinsics_root.rs"))
         .status()
-        .expect("failed to spawn rustc for stdlib stub object");
+        .expect("failed to spawn rustc for stdlib intrinsics stub object");
     if !status.success() {
-        panic!("failed to compile stdlib stub object: {status}");
+        panic!("failed to compile stdlib intrinsics stub object: {status}");
     }
 
-    // 2) Archive
-    let status = Command::new("ar")
+    // 1b) Compile stdlib (mem/crypto) object
+    let status = Command::new("rustc")
+        .arg("--crate-name")
+        .arg("miden_stdlib_sys_stdlib_stubs")
+        .arg("--edition=2021")
+        .arg("--crate-type=rlib")
+        .arg("--target")
+        .arg(&target)
+        .arg("-C")
+        .arg("opt-level=1")
+        .arg("-C")
+        .arg("panic=abort")
+        .arg("-C")
+        .arg("codegen-units=1")
+        .arg("-C")
+        .arg("debuginfo=0")
+        .arg("-Z")
+        .arg("merge-functions=disabled")
+        .arg("-C")
+        .arg("target-feature=+bulk-memory,+wide-arithmetic")
+        .arg("--emit=obj")
+        .arg("-o")
+        .arg(&out_stdlib_obj)
+        .arg(stubs_root.join("stdlib_root.rs"))
+        .status()
+        .expect("failed to spawn rustc for stdlib (mem/crypto) stub object");
+    if !status.success() {
+        panic!("failed to compile stdlib (mem/crypto) stub object: {status}");
+    }
+
+    // 2) Archive both objects
+    let status = Command::new("rust-ar")
         .arg("crs")
         .arg(&out_a)
-        .arg(&out_obj)
+        .arg(&out_intrinsics_obj)
+        .arg(&out_stdlib_obj)
         .status()
         .expect("failed to spawn ar for stdlib stubs");
     if !status.success() {

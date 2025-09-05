@@ -32,6 +32,9 @@ MIDENC_BUILD_PROFILE = "release"
 
 [tasks.init]
 run_task = "print-env"
+# Install proxies to the `llvm-tools` component, i.e. `rust-ar` proxy to the
+# LLVM `ar` needed to build stub libraries (see `build.rs` in `*-sys` crates)
+install_crate = { crate_name = "cargo-binutils" }
 
 [tasks.default]
 category = "Build"

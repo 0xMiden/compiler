@@ -563,7 +563,7 @@ impl CompilerTestBuilder {
                 panic = "abort"
                 # optimize for size
                 opt-level = "z"
-                debug = true
+                debug = false
                 trim-paths = ["diagnostics", "object"]
             "#,
                     sdk_alloc_path = sdk_alloc_path.display(),
@@ -639,7 +639,7 @@ impl CompilerTestBuilder {
     panic = "abort"
     # optimize for size
     opt-level = "z"
-    debug = true
+    debug = false
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),

@@ -119,18 +119,18 @@
     end
     unreachable
   )
-  (func $alloc::alloc::handle_alloc_error (;4;) (type 0) (param i32 i32)
+  (func $intrinsics::mem::heap_base (;4;) (type 4) (result i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;5;) (type 1) (param i32 i32) (result i32)
+  (func $alloc::alloc::handle_alloc_error (;5;) (type 0) (param i32 i32)
+    unreachable
+  )
+  (func $core::ptr::alignment::Alignment::max (;6;) (type 1) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
     local.get 1
     i32.gt_u
     select
-  )
-  (func $intrinsics::mem::heap_base (;6;) (type 4) (result i32)
-    unreachable
   )
 )

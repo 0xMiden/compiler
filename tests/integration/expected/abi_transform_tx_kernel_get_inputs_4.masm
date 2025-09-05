@@ -596,6 +596,14 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
+proc.intrinsics::mem::heap_base
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
 proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
     push.1114176
     u32divmod.4
@@ -916,6 +924,14 @@ end
 
 proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
     nop
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
 end
 
 proc.alloc::raw_vec::RawVecInner<A>::deallocate
@@ -1795,22 +1811,6 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
-end
-
-proc.intrinsics::felt::from_u32
-    nop
-end
-
-proc.intrinsics::felt::assert_eq
-    assert_eq
-end
-
-proc.intrinsics::mem::heap_base
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
 end
 
 # mod miden::note

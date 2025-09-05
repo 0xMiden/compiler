@@ -86,6 +86,8 @@ fn main() {
         .arg("panic=abort")
         .arg("-C")
         .arg("codegen-units=1")
+        .arg("-C")
+        .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
         .arg("-C")
@@ -101,7 +103,7 @@ fn main() {
     }
 
     // 2) Archive
-    let status = Command::new("ar")
+    let status = Command::new("rust-ar")
         .arg("crs")
         .arg(&out_static)
         .arg(&out_obj)

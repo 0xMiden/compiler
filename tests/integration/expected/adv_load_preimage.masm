@@ -762,6 +762,49 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
+proc.intrinsics::mem::heap_base
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
+proc.intrinsics::felt::from_u64_unchecked
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::as_u64
+    u32split
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
+end
+
+proc.intrinsics::advice::adv_push_mapvaln
+    trace.240
+    nop
+    exec.::intrinsics::advice::adv_push_mapvaln
+    trace.252
+    nop
+end
+
 proc.std::mem::pipe_preimage_to_memory
     trace.240
     nop
@@ -1383,48 +1426,5 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
-end
-
-proc.intrinsics::felt::from_u64_unchecked
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-end
-
-proc.intrinsics::felt::from_u32
-    nop
-end
-
-proc.intrinsics::felt::as_u64
-    u32split
-end
-
-proc.intrinsics::felt::assert_eq
-    assert_eq
-end
-
-proc.intrinsics::mem::heap_base
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
-end
-
-proc.intrinsics::advice::adv_push_mapvaln
-    trace.240
-    nop
-    exec.::intrinsics::advice::adv_push_mapvaln
-    trace.252
-    nop
 end
 

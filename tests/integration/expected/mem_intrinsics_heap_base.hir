@@ -179,28 +179,28 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v146;
         };
 
-        private builtin.function @alloc::alloc::handle_alloc_error(v120: i32, v121: i32) {
-        ^block21(v120: i32, v121: i32):
+        private builtin.function @intrinsics::mem::heap_base() -> i32 {
+        ^block21:
+            v120 = hir.exec @intrinsics/mem/heap_base() : i32
+            builtin.ret v120;
+        };
+
+        private builtin.function @alloc::alloc::handle_alloc_error(v122: i32, v123: i32) {
+        ^block25(v122: i32, v123: i32):
             ub.unreachable ;
         };
 
-        private builtin.function @core::ptr::alignment::Alignment::max(v122: i32, v123: i32) -> i32 {
-        ^block23(v122: i32, v123: i32):
-            v130 = arith.constant 0 : i32;
-            v126 = hir.bitcast v123 : u32;
-            v125 = hir.bitcast v122 : u32;
-            v127 = arith.gt v125, v126 : i1;
-            v128 = arith.zext v127 : u32;
-            v129 = hir.bitcast v128 : i32;
-            v131 = arith.neq v129, v130 : i1;
-            v132 = cf.select v131, v122, v123 : i32;
-            builtin.ret v132;
-        };
-
-        private builtin.function @intrinsics::mem::heap_base() -> i32 {
-        ^block25:
-            v133 = hir.exec @intrinsics/mem/heap_base() : i32
-            builtin.ret v133;
+        private builtin.function @core::ptr::alignment::Alignment::max(v124: i32, v125: i32) -> i32 {
+        ^block27(v124: i32, v125: i32):
+            v132 = arith.constant 0 : i32;
+            v128 = hir.bitcast v125 : u32;
+            v127 = hir.bitcast v124 : u32;
+            v129 = arith.gt v127, v128 : i1;
+            v130 = arith.zext v129 : u32;
+            v131 = hir.bitcast v130 : i32;
+            v133 = arith.neq v131, v132 : i1;
+            v134 = cf.select v133, v124, v125 : i32;
+            builtin.ret v134;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
