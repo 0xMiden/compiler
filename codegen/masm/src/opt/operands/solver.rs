@@ -160,6 +160,9 @@ impl OperandMovementConstraintSolver {
             self.tactics.push(Box::new(TwoArgs));
         }
 
+        // Ensure that TwoArgs is popped off and run first.
+        debug_assert!(self.tactics.last().map(|t| t.name() == "TwoArgs").unwrap_or(false));
+
         // Now that we know what constraints are in place, we can derive
         // a strategy to solve for those constraints. The overall strategy
         // is a restricted backtracking search based on a number of predefined
