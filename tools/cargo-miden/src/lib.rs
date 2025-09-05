@@ -230,15 +230,27 @@ where
                 None => {
                     // Try to resolve via explicit manifest path
                     if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
-                        let mp = camino::Utf8Path::from_path(manifest_path)
-                            .expect("manifest path must be valid UTF-8");
+                        let mp_utf8 =
+                            camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "manifest path is not valid UTF-8: {}",
+                                    manifest_path.display()
+                                )
+                            })?;
+                        let mp_abs = mp_utf8
+                            .as_std_path()
+                            .absolutize()
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "failed to absolutize manifest path {}: {e}",
+                                    manifest_path.display()
+                                )
+                            })?
+                            .into_owned();
                         metadata
                             .packages
                             .iter()
-                            .find(|p| {
-                                p.manifest_path.as_std_path()
-                                    == mp.as_std_path().absolutize().unwrap()
-                            })
+                            .find(|p| p.manifest_path.as_std_path() == mp_abs.as_path())
                             .ok_or_else(|| {
                                 anyhow::anyhow!(
                                     "unable to determine root package: manifest `{}` does not \
@@ -353,7 +365,6 @@ where
                 ("profile.dev.debug-assertions", "false"),
                 ("profile.release.opt-level", "\"z\""),
                 ("profile.release.panic", "\"abort\""),
-                ("profile.release.debug", "false"),
             ];
 
             for (key, value) in cfg_pairs {
@@ -361,7 +372,7 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            let extra_rust_flags = "-C target-feature=+bulk-memory,+wide-arithmetic -C debuginfo=0";
+            let extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {
@@ -384,9 +395,6 @@ where
             );
             let mut builder = tokio::runtime::Builder::new_current_thread();
             let rt = builder.enable_all().build()?;
-            // dbg!(&packages);
-            // dbg!(&spawn_args);
-            // dbg!(&target_env);
             let wasm_outputs = if matches!(target_env, TargetEnv::Rollup { .. }) {
                 rt.block_on(async {
                     let config = Config::new(terminal, None).await?;
@@ -416,15 +424,14 @@ where
                 )?
             };
             assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
-            let wasm_output = wasm_outputs.first().unwrap();
+            let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
 
             let mut midenc_flags = midenc_flags_from_target(target_env, project_type, wasm_output);
 
             // Add dependency linker arguments
             for dep_path in dependency_packages_paths {
                 midenc_flags.push("--link-library".to_string());
-                // Ensure the path is valid OsStr
-                midenc_flags.push(dep_path.to_str().unwrap().to_string());
+                midenc_flags.push(dep_path.to_string_lossy().to_string());
             }
 
             match build_output_type {
