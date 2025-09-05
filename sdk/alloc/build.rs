@@ -17,6 +17,24 @@
 
 use std::{env, path::PathBuf, process::Command};
 
+fn ensure_rust_ar() {
+    // Preflight: ensure `rust-ar` is available. This typically comes from the
+    // `llvm-tools` rustup component or via `cargo-binutils`.
+    if Command::new("rust-ar").arg("--version").output().is_ok() {
+        return;
+    }
+    // Attempt to install cargo-binutils to expose proxies
+    let _ = Command::new("cargo").args(["install", "cargo-binutils"]).status();
+    // Re-check after install
+    if Command::new("rust-ar").arg("--version").output().is_ok() {
+        return;
+    }
+    panic!(
+        "`rust-ar` was not found. Ensure the `llvm-tools` component is present (listed in \
+         rust-toolchain.toml) and try installing proxies via `cargo install cargo-binutils`."
+    );
+}
+
 fn main() {
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
 
@@ -36,6 +54,9 @@ fn main() {
 
     let out_obj = out_dir.join("miden_alloc_heap_base.o");
     let out_a = out_dir.join("libmiden_alloc_intrinsics.a");
+
+    // Ensure tools are present before invoking them.
+    ensure_rust_ar();
 
     // Compile a single object with the stub
     let status = Command::new("rustc")

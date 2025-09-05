@@ -17,6 +17,22 @@
 
 use std::{env, path::PathBuf, process::Command};
 
+fn ensure_rust_ar() {
+    // Preflight: ensure `rust-ar` is available. This typically comes from the
+    // `llvm-tools` rustup component or via `cargo-binutils`.
+    if Command::new("rust-ar").arg("--version").output().is_ok() {
+        return;
+    }
+    let _ = Command::new("cargo").args(["install", "cargo-binutils"]).status();
+    if Command::new("rust-ar").arg("--version").output().is_ok() {
+        return;
+    }
+    panic!(
+        "`rust-ar` was not found. Ensure the `llvm-tools` component is present (listed in \
+         rust-toolchain.toml) and try installing proxies via `cargo install cargo-binutils`."
+    );
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -63,6 +79,9 @@ fn main() {
     let out_intrinsics_obj = out_dir.join("miden_stdlib_sys_intrinsics_stubs.o");
     let out_stdlib_obj = out_dir.join("miden_stdlib_sys_stdlib_stubs.o");
     let out_a = out_dir.join("libmiden_stdlib_sys_stubs.a");
+
+    // Ensure tools are present before invoking them.
+    ensure_rust_ar();
 
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
     // functions in the stub library identical (e.g. `intrinsics::felt::add` and
