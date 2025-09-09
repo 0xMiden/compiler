@@ -204,3 +204,36 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     exec.with_dependencies(&package.manifest.dependencies).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
+
+#[test]
+fn rust_sdk_auth_comp_no_auth() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/auth-component-no-auth",
+        config.clone(),
+        [],
+    );
+    test.expect_wasm(expect_file![format!("../../expected/rust_sdk/auth_component_no_auth.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/rust_sdk/auth_component_no_auth.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/rust_sdk/auth_component_no_auth.masm")]);
+    let auth_comp_package = test.compiled_package();
+    let lib = auth_comp_package.unwrap_library();
+    let expected_module = "miden:base/authentication-component@1.0.0";
+    let expected_function = "auth_procedure";
+    let exports = lib
+        .exports()
+        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .collect::<Vec<_>>();
+    dbg!(&exports);
+    assert!(
+        lib.exports().any(|export| {
+            export.module.to_string() == expected_module
+                && export.name.as_str() == expected_function
+        }),
+        "expected one of the exports to contain module '{expected_module}' and function \
+         '{expected_function}"
+    );
+    // Test that the package loads
+    let bytes = auth_comp_package.to_bytes();
+    let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+}

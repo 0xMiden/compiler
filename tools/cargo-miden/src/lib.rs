@@ -488,6 +488,10 @@ fn midenc_flags_from_target(
                     midenc_args
                         .push("--entrypoint=miden:base/transaction-script@1.0.0::run".to_string())
                 }
+                RollupTarget::AuthComponent => {
+                    midenc_args.push("rollup:authentication-component".into());
+                    midenc_args.push("--lib".into());
+                }
             }
         }
     }
