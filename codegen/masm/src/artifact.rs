@@ -128,15 +128,6 @@ impl fmt::Display for MasmComponent {
         use crate::intrinsics::INTRINSICS_MODULE_NAMES;
 
         for module in self.modules.iter() {
-            // Don't print empty modules
-            //
-            // NOTE(pauls): This is a temporary workaround for the fact that component init
-            // functions require a module, and we are not yet emitting component init functions,
-            // so the generated module is empty.
-            if module.exported_procedures().next().is_none() {
-                continue;
-            }
-
             // Skip printing the standard library modules and intrinsics
             // modules to focus on the user-defined modules and avoid the
             // stack overflow error when printing large programs

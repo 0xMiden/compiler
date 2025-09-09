@@ -10,7 +10,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/authentication-component@1.0.0#auth-procedure(v0: felt, v1: felt, v2: felt, v3: felt) {
+        private builtin.function @miden:base/authentication-component@1.0.0#auth-procedure(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             hir.exec @miden:base/authentication-component@1.0.0/auth_component_no_auth/wit_bindgen_rt::run_ctors_once()
             ub.unreachable ;

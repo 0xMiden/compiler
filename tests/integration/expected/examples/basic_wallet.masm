@@ -54,7 +54,7 @@ proc.basic_wallet::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
+proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     push.1114144
     u32divmod.4
     swap.1
@@ -176,7 +176,7 @@ export.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
 end
 
-export.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
+proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     push.1114144
     u32divmod.4
     swap.1

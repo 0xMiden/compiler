@@ -10,7 +10,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-word(v0: felt, v1: felt, v2: felt, v3: felt) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-word(v0: felt, v1: felt, v2: felt, v3: felt) -> i32 {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             v6 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v7 = hir.bitcast v6 : ptr<byte, i32>;
@@ -63,7 +63,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v19;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-another-word(v45: felt, v46: felt, v47: felt, v48: felt) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-another-word(v45: felt, v46: felt, v47: felt, v48: felt) -> i32 {
         ^block11(v45: felt, v46: felt, v47: felt, v48: felt):
             v51 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v52 = hir.bitcast v51 : ptr<byte, i32>;
@@ -116,7 +116,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v64;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-felt(v90: felt) -> felt {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-felt(v90: felt) -> felt {
         ^block13(v90: felt):
             hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
             v92 = arith.constant 3 : i32;
@@ -125,7 +125,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v94;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-pair(v95: felt, v96: felt) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-pair(v95: felt, v96: felt) -> i32 {
         ^block15(v95: felt, v96: felt):
             v99 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v100 = hir.bitcast v99 : ptr<byte, i32>;
@@ -156,7 +156,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v106;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-triple(v120: felt, v121: felt, v122: felt) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-triple(v120: felt, v121: felt, v122: felt) -> i32 {
         ^block17(v120: felt, v121: felt, v122: felt):
             v125 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v126 = hir.bitcast v125 : ptr<byte, i32>;
@@ -198,7 +198,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v135;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-mixed(v155: i64, v156: felt, v157: i32, v158: felt, v159: i32, v160: i32, v161: i32) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-mixed(v155: i64, v156: felt, v157: i32, v158: felt, v159: i32, v160: i32, v161: i32) -> i32 {
         ^block19(v155: i64, v156: felt, v157: i32, v158: felt, v159: i32, v160: i32, v161: i32):
             v164 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v165 = hir.bitcast v164 : ptr<byte, i32>;
@@ -283,7 +283,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v174;
         };
 
-        public builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-nested(v231: felt, v232: felt, v233: felt) -> i32 {
+        private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-nested(v231: felt, v232: felt, v233: felt) -> i32 {
         ^block21(v231: felt, v232: felt, v233: felt):
             v236 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v237 = hir.bitcast v236 : ptr<byte, i32>;

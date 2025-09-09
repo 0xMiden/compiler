@@ -10,7 +10,7 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:cross-ctx-account/foo@1.0.0#process-felt(v0: felt) -> felt {
+        private builtin.function @miden:cross-ctx-account/foo@1.0.0#process-felt(v0: felt) -> felt {
         ^block9(v0: felt):
             v3 = builtin.global_symbol @miden:cross-ctx-account/foo@1.0.0/cross_ctx_account/GOT.data.internal.__memory_base : ptr<byte, u8>
             v4 = hir.bitcast v3 : ptr<byte, i32>;

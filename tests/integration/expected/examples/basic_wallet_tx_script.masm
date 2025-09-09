@@ -279,7 +279,7 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-export.miden:base/transaction-script@1.0.0#run
+proc.miden:base/transaction-script@1.0.0#run
     push.1114240
     u32divmod.4
     swap.1

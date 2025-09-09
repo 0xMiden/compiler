@@ -44,7 +44,7 @@ proc.auth_component_no_auth::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/authentication-component@1.0.0#auth-procedure
+proc.miden:base/authentication-component@1.0.0#auth-procedure
     drop
     drop
     drop

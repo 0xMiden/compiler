@@ -44,7 +44,7 @@ proc.cross_ctx_account::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:cross-ctx-account/foo@1.0.0#process-felt
+proc.miden:cross-ctx-account/foo@1.0.0#process-felt
     push.1114148
     u32divmod.4
     swap.1

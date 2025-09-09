@@ -93,6 +93,24 @@ impl ModuleBuilder {
         }
     }
 
+    pub fn set_function_visibility(&mut self, name: &str, visibility: Visibility) {
+        let symbol = SymbolName::intern(name);
+        match self.module.borrow_mut().get(symbol) {
+            Some(mut symbol_ref) => {
+                let mut op = symbol_ref.borrow_mut();
+                match op.as_symbol_operation_mut().downcast_mut::<Function>() {
+                    Some(function) => {
+                        function.signature_mut().visibility = visibility;
+                    }
+                    None => panic!("expected {name} to be a function"),
+                }
+            }
+            None => {
+                panic!("failed to find function {name} in module {}", self.module.borrow().name())
+            }
+        }
+    }
+
     pub fn get_global_var(&self, name: SymbolName) -> Option<GlobalVariableRef> {
         self.module.borrow().get(name).and_then(|gv_symbol| {
             let op_ref = gv_symbol.borrow().as_operation_ref();

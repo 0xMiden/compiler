@@ -52,7 +52,7 @@ proc.cross_ctx_note::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/note-script@1.0.0#run
+proc.miden:base/note-script@1.0.0#run
     drop
     drop
     drop

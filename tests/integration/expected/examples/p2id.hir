@@ -74,7 +74,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret v24;
         };
 
-        public builtin.function @miden:base/note-script@1.0.0#run(v43: felt, v44: felt, v45: felt, v46: felt) {
+        private builtin.function @miden:base/note-script@1.0.0#run(v43: felt, v44: felt, v45: felt, v46: felt) {
         ^block21(v43: felt, v44: felt, v45: felt, v46: felt):
             v50 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v51 = hir.bitcast v50 : ptr<byte, i32>;

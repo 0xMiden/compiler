@@ -164,7 +164,7 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-export.miden:base/note-script@1.0.0#run
+proc.miden:base/note-script@1.0.0#run
     drop
     drop
     drop

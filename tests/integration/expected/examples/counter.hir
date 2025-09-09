@@ -94,7 +94,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:counter-contract/counter@0.1.0#get-count() -> felt {
+        private builtin.function @miden:counter-contract/counter@0.1.0#get-count() -> felt {
         ^block11:
             v71 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v72 = hir.bitcast v71 : ptr<byte, i32>;
@@ -162,7 +162,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret v116;
         };
 
-        public builtin.function @miden:counter-contract/counter@0.1.0#increment-count() -> felt {
+        private builtin.function @miden:counter-contract/counter@0.1.0#increment-count() -> felt {
         ^block13:
             v124 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v125 = hir.bitcast v124 : ptr<byte, i32>;

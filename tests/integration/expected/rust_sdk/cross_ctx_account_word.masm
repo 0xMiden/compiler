@@ -435,7 +435,7 @@ proc.cross_ctx_account_word::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-word
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-word
     push.1114148
     u32divmod.4
     swap.1
@@ -574,7 +574,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-word
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     push.1114148
     u32divmod.4
     swap.1
@@ -713,7 +713,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-felt
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-felt
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
@@ -733,7 +733,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-felt
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-pair
     push.1114148
     u32divmod.4
     swap.1
@@ -810,7 +810,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-pair
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-triple
     push.1114148
     u32divmod.4
     swap.1
@@ -918,7 +918,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-triple
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     push.1114148
     u32divmod.4
     swap.1
@@ -1150,7 +1150,7 @@ export.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     nop
 end
 
-export.miden:cross-ctx-account-word/foo@1.0.0#process-nested
+proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
     push.1114148
     u32divmod.4
     swap.1

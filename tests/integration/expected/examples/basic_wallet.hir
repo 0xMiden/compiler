@@ -10,7 +10,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:basic-wallet/basic-wallet@1.0.0#receive-asset(v0: felt, v1: felt, v2: felt, v3: felt) {
+        private builtin.function @miden:basic-wallet/basic-wallet@1.0.0#receive-asset(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             v5 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v6 = hir.bitcast v5 : ptr<byte, i32>;
@@ -62,7 +62,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt) {
+        private builtin.function @miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt) {
         ^block11(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt):
             v46 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v47 = hir.bitcast v46 : ptr<byte, i32>;

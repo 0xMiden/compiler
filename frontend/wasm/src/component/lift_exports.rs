@@ -7,7 +7,7 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
     interner::Symbol,
     CallConv, FunctionType, Ident, Op, Signature, SmallVec, SourceSpan, SymbolPath, ValueRange,
-    ValueRef,
+    ValueRef, Visibility,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
@@ -46,10 +46,14 @@ pub fn generate_export_lifting_function(
         .resolve_module(&core_export_module_path)
         .expect("failed to find the core module");
 
-    let core_module_builder = ModuleBuilder::new(core_module_ref);
+    let mut core_module_builder = ModuleBuilder::new(core_module_ref);
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
-        .expect("failed to find the core module function");
+        .expect("failed to find the core module export function");
+    // Set the core export Wasm function visibility that we're lifting to "private". Now, the
+    // lifted function will be exported instead.
+    core_module_builder
+        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
     let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
 
     if needs_transformation(&cross_ctx_export_sig_flat) {

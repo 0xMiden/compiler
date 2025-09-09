@@ -246,7 +246,7 @@ proc.counter_contract::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:counter-contract/counter@0.1.0#get-count
+proc.miden:counter-contract/counter@0.1.0#get-count
     push.1114144
     u32divmod.4
     swap.1
@@ -403,7 +403,7 @@ export.miden:counter-contract/counter@0.1.0#get-count
     nop
 end
 
-export.miden:counter-contract/counter@0.1.0#increment-count
+proc.miden:counter-contract/counter@0.1.0#increment-count
     push.1114144
     u32divmod.4
     swap.1

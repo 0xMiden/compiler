@@ -10,7 +10,7 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt) -> felt {
+        private builtin.function @miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt) -> felt {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt):
             hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/wit_bindgen_rt::run_ctors_once()
             hir.store_local v15 #[local = lv0];
