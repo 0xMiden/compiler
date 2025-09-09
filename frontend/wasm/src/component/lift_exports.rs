@@ -5,7 +5,6 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
-    interner::Symbol,
     CallConv, FunctionType, Ident, Op, Signature, SmallVec, SourceSpan, SymbolPath, ValueRange,
     ValueRef, Visibility,
 };
@@ -38,8 +37,15 @@ pub fn generate_export_lifting_function(
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
 
-    let export_func_ident =
-        Ident::new(Symbol::intern(export_func_name.to_string()), SourceSpan::default());
+    // The miden-base expects the authentication component expects an authentication procedure with
+    // the name `auth_*` (underscore). Since WIT names are in kebab case convert this one to snake
+    // case. In the future miden-base will use annotation to mark the procedure as authentication
+    // procedure and we will remove this. Until then we use the following workaround.
+    let export_func_ident = if export_func_name.starts_with("auth-") {
+        Ident::new(export_func_name.to_string().replace("-", "_").into(), SourceSpan::default())
+    } else {
+        Ident::new(export_func_name.to_string().into(), SourceSpan::default())
+    };
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder

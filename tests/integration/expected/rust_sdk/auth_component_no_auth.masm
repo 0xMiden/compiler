@@ -1,6 +1,6 @@
 # mod miden:base/authentication-component@1.0.0
 
-export.auth-procedure
+export.auth_procedure
     exec.::miden:base/authentication-component@1.0.0::init
     trace.240
     nop
