@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use miden_core::utils::Deserializable;
+use miden_core::utils::{Deserializable, Serializable};
 use miden_mast_package::Package;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
@@ -314,4 +314,35 @@ fn basic_wallet_and_p2id() {
     test.expect_masm(expect_file![format!("../../expected/examples/p2id.masm")]);
     let note_package = test.compiled_package();
     assert!(note_package.is_program(), "expected program");
+}
+
+#[test]
+fn auth_component_no_auth() {
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
+    test.expect_wasm(expect_file![format!("../../expected/examples/auth_component_no_auth.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/examples/auth_component_no_auth.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/examples/auth_component_no_auth.masm")]);
+    let auth_comp_package = test.compiled_package();
+    let lib = auth_comp_package.unwrap_library();
+    let expected_module = "miden:base/authentication-component@1.0.0";
+    let expected_function = "auth_procedure";
+    let exports = lib
+        .exports()
+        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .collect::<Vec<_>>();
+    dbg!(&exports);
+    assert!(
+        lib.exports().any(|export| {
+            export.module.to_string() == expected_module
+                && export.name.as_str() == expected_function
+        }),
+        "expected one of the exports to contain module '{expected_module}' and function \
+         '{expected_function}'"
+    );
+
+    // Test that the package loads
+    let bytes = auth_comp_package.to_bytes();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
 }
