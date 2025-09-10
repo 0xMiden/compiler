@@ -8,16 +8,13 @@ use midenc_hir::{
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, SmallVec, Visibility,
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
 
 use super::{
-    data_segments::{merge_data_segments, ResolvedDataSegment},
-    module_translation_state::ModuleTranslationState,
-    types::ModuleTypesBuilder,
-    MemoryIndex,
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
 };
 use crate::{
     error::WasmResult,
@@ -207,38 +204,20 @@ fn build_data_segments(
     module_builder: &mut ModuleBuilder,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    // First, collect all data segments into ResolvedDataSegment structures
-    let mut resolved_segments = SmallVec::<[ResolvedDataSegment; 2]>::new();
-
     for (data_segment_idx, data_segment) in &translation.data_segments {
         let data_segment_name =
             translation.module.name_section.data_segment_names[&data_segment_idx];
         let readonly = data_segment_name.as_str().contains(".rodata");
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
-
-        resolved_segments.push(ResolvedDataSegment {
-            offset,
-            data: data_segment.data.to_vec(),
-            name: data_segment_name.as_str().to_string(),
-            readonly,
-        });
-    }
-
-    // Apply alignment and merging
-    if let Some(merged_segment) = merge_data_segments(resolved_segments)? {
-        let init = ConstantData::from(merged_segment.data);
+        let init = ConstantData::from(data_segment.data.to_vec());
         let size = init.len() as u32;
-        if let Err(e) = module_builder.define_data_segment(
-            merged_segment.offset,
-            init,
-            merged_segment.readonly,
-            SourceSpan::default(),
-        ) {
-            let message = format!(
-                "Failed to declare data segment '{}' with size '{}' at '{:#x}'",
-                merged_segment.name, size, merged_segment.offset
-            );
-            return Err(e.wrap_err(message));
+        if let Err(e) =
+            module_builder.define_data_segment(offset, init, readonly, SourceSpan::default())
+        {
+            return Err(e.wrap_err(format!(
+                "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
+                 '{offset:#x}'"
+            )));
         }
     }
     Ok(())

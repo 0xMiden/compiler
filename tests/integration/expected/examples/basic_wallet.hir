@@ -571,7 +571,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x00000000000000000000000100000001;
+        builtin.segment @1048576 = 0x0000000100000001;
     };
 
     public builtin.function @receive-asset(v436: felt, v437: felt, v438: felt, v439: felt) {

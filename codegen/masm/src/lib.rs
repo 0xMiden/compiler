@@ -9,6 +9,7 @@
 extern crate alloc;
 
 mod artifact;
+mod data_segments;
 mod emit;
 mod emitter;
 mod events;

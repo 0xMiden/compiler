@@ -138,7 +138,7 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x00000000000000000000000100000001;
+        builtin.segment @1048576 = 0x0000000100000001;
     };
 
     public builtin.function @process-word(v111: felt, v112: felt, v113: felt, v114: felt, v115: felt, v116: felt, v117: felt, v118: felt, v119: felt, v120: felt, v121: felt, v122: felt, v123: felt, v124: felt, v125: felt, v126: felt) -> felt {
