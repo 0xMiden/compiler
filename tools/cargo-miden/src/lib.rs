@@ -354,7 +354,12 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            let extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+            // `--fatal-warnings` will force the wasm-ld to error out in case of a function signature
+            // mismatch. This will surface the stub functions signature mismatches early on.
+            // Otherwise the wasm-ld will prefix the stub function name with `signature_mismatch:`.
+            let extra_rust_flags = String::from(
+                "-C target-feature=+bulk-memory,+wide-arithmetic, -C link-args=--fatal-warnings",
+            );
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {
