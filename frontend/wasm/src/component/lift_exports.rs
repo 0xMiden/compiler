@@ -42,7 +42,13 @@ pub fn generate_export_lifting_function(
     // case. In the future miden-base will use annotation to mark the procedure as authentication
     // procedure and we will remove this. Until then we use the following workaround.
     let export_func_ident = if export_func_name.starts_with("auth-") {
-        Ident::new(export_func_name.to_string().replace("-", "_").into(), SourceSpan::default())
+        Ident::new(
+            export_func_name.to_string().replace("-", "_")
+                // Temporarily to make it double underscore until
+                // https://github.com/0xMiden/miden-base/issues/1861 is implemented
+                .replace("auth_", "auth__").into(),
+            SourceSpan::default(),
+        )
     } else {
         Ident::new(export_func_name.to_string().into(), SourceSpan::default())
     };

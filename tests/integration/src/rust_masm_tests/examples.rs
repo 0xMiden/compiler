@@ -327,7 +327,7 @@ fn auth_component_no_auth() {
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
     let expected_module = "miden:base/authentication-component@1.0.0";
-    let expected_function = "auth_procedure";
+    let expected_function = "auth__procedure";
     let exports = lib
         .exports()
         .map(|e| format!("{}::{}", e.module, e.name.as_str()))
