@@ -4142,7 +4142,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
- "midenc-hir-type 0.4.1",
+ "midenc-hir-type 0.4.2",
  "midenc-session",
  "pretty_assertions",
  "rustc-demangle",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-type"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "miden-formatting",
  "serde",
