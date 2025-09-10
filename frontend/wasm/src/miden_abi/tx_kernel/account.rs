@@ -16,6 +16,8 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 pub const ADD_ASSET: &str = "add_asset";
 pub const REMOVE_ASSET: &str = "remove_asset";
 pub const GET_ID: &str = "get_id";
+pub const GET_INITIAL_COMMITMENT: &str = "get_initial_commitment";
+pub const COMPUTE_CURRENT_COMMITMENT: &str = "compute_current_commitment";
 pub const GET_STORAGE_ITEM: &str = "get_item";
 pub const SET_STORAGE_ITEM: &str = "set_item";
 pub const GET_STORAGE_MAP_ITEM: &str = "get_map_item";
@@ -34,6 +36,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     account.insert(Symbol::from(GET_ID), FunctionType::new(CallConv::Wasm, [], [Felt, Felt]));
+    account.insert(
+        Symbol::from(GET_INITIAL_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    account.insert(
+        Symbol::from(COMPUTE_CURRENT_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
     account.insert(
         Symbol::from(GET_STORAGE_ITEM),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
@@ -58,7 +68,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
         ),
     );
-    account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [I32], []));
+    account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [], [Felt]));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), account);
     m
 }

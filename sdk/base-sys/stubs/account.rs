@@ -25,6 +25,16 @@ pub extern "C" fn account_get_id_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[export_name = "miden::account::get_initial_commitment"]
+pub extern "C" fn account_get_initial_commitment_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::account::compute_current_commitment"]
+pub extern "C" fn account_compute_current_commitment_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[export_name = "miden::account::get_item"]
 pub extern "C" fn account_get_item_plain(_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
@@ -74,4 +84,3 @@ pub extern "C" fn account_set_map_item_plain(
 pub extern "C" fn account_incr_nonce_plain(_value: i32) {
     unsafe { core::hint::unreachable_unchecked() }
 }
-

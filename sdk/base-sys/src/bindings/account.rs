@@ -1,4 +1,4 @@
-use miden_stdlib_sys::Felt;
+use miden_stdlib_sys::{Felt, Word};
 
 use super::types::{AccountId, Asset};
 
@@ -9,7 +9,11 @@ extern "C" {
     #[link_name = "miden::account::remove_asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
     #[link_name = "miden::account::incr_nonce"]
-    pub fn extern_account_incr_nonce(value: i32);
+    pub fn extern_account_incr_nonce() -> Felt;
+    #[link_name = "miden::account::get_initial_commitment"]
+    pub fn extern_account_get_initial_commitment(ptr: *mut Word);
+    #[link_name = "miden::account::compute_current_commitment"]
+    pub fn extern_account_compute_current_commitment(ptr: *mut Word);
     // Resolved via stub rlib at core Wasm link time
     #[link_name = "miden::account::add_asset"]
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
@@ -72,12 +76,27 @@ pub fn remove_asset(asset: Asset) -> Asset {
     }
 }
 
-/// Increments the account nonce by the provided value.
-///
-/// Panics:
-/// - If the underlying kernel procedure panics.
-pub fn incr_nonce(value: u32) {
+/// Increments the account nonce by one and returns the new nonce.
+pub fn incr_nonce() -> Felt {
+    unsafe { extern_account_incr_nonce() }
+}
+
+/// Returns the native account commitment at the beginning of the transaction.
+#[inline]
+pub fn get_initial_commitment() -> Word {
     unsafe {
-        extern_account_incr_nonce(value as i32);
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_account_get_initial_commitment(ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
+    }
+}
+
+/// Computes and returns the commitment of the current account data.
+#[inline]
+pub fn compute_current_commitment() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_account_compute_current_commitment(ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
     }
 }

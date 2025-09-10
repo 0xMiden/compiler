@@ -76,6 +76,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     tx_kernel::account::ADD_ASSET
                     | tx_kernel::account::GET_ID
                     | tx_kernel::account::REMOVE_ASSET
+                    | tx_kernel::account::GET_INITIAL_COMMITMENT
+                    | tx_kernel::account::COMPUTE_CURRENT_COMMITMENT
                     | tx_kernel::account::GET_STORAGE_ITEM
                     | tx_kernel::account::SET_STORAGE_ITEM
                     | tx_kernel::account::GET_STORAGE_MAP_ITEM
