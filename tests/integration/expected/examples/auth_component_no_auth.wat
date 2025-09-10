@@ -11,8 +11,8 @@
   (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
   (core module (;0;)
     (type (;0;) (func))
-    (type (;1;) (func (result f32)))
-    (type (;2;) (func (param f32 f32 f32 f32)))
+    (type (;1;) (func (param f32 f32 f32 f32)))
+    (type (;2;) (func (result f32)))
     (type (;3;) (func (param i32)))
     (type (;4;) (func (param i32 i32)))
     (type (;5;) (func (param f32 f32) (result i32)))
@@ -24,11 +24,8 @@
     (export "miden:base/authentication-component@1.0.0#auth-procedure" (func $miden:base/authentication-component@1.0.0#auth-procedure))
     (elem (;0;) (i32.const 1) func $auth_component_no_auth::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;0;) (type 0))
-    (func $signature_mismatch:miden::account::incr_nonce (;1;) (type 1) (result f32)
-      unreachable
-    )
-    (func $auth_component_no_auth::bindings::__link_custom_section_describing_imports (;2;) (type 0))
-    (func $miden:base/authentication-component@1.0.0#auth-procedure (;3;) (type 2) (param f32 f32 f32 f32)
+    (func $auth_component_no_auth::bindings::__link_custom_section_describing_imports (;1;) (type 0))
+    (func $miden:base/authentication-component@1.0.0#auth-procedure (;2;) (type 1) (param f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 64
@@ -115,7 +112,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 0)
+    (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -133,13 +130,16 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::incr_nonce (;5;) (type 1) (result f32)
-      call $signature_mismatch:miden::account::incr_nonce
+    (func $miden_base_sys::bindings::account::incr_nonce (;4;) (type 2) (result f32)
+      call $miden::account::incr_nonce
     )
-    (func $miden::account::get_initial_commitment (;6;) (type 3) (param i32)
+    (func $miden::account::get_initial_commitment (;5;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::account::compute_current_commitment (;7;) (type 3) (param i32)
+    (func $miden::account::compute_current_commitment (;6;) (type 3) (param i32)
+      unreachable
+    )
+    (func $miden::account::incr_nonce (;7;) (type 2) (result f32)
       unreachable
     )
     (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;8;) (type 4) (param i32 i32)
