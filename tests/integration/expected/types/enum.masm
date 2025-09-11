@@ -23,10 +23,6 @@ export.match_enum
     movup.3
     u32and
     dup.0
-    push.2147483648
-    u32lte
-    assert
-    dup.0
     push.2
     u32lte
     if.true

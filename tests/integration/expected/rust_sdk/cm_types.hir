@@ -1,0 +1,624 @@
+builtin.component miden:cm-types/cm-types@0.1.0 {
+    builtin.module public @cm_types {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @cm_types::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-enum(v0: i32) -> i32 {
+        ^block9(v0: i32):
+            v2 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v3 = hir.bitcast v2 : ptr<byte, i32>;
+            v4 = hir.load v3 : i32;
+            v479 = arith.constant 2 : u32;
+            v7 = arith.constant 3 : i32;
+            v8 = arith.band v0, v7 : i32;
+            v11 = arith.shl v8, v479 : i32;
+            v5 = arith.constant 1048576 : i32;
+            v6 = arith.add v4, v5 : i32 #[overflow = wrapping];
+            v12 = arith.add v6, v11 : i32 #[overflow = wrapping];
+            v13 = hir.bitcast v12 : u32;
+            v14 = arith.constant 4 : u32;
+            v15 = arith.mod v13, v14 : u32;
+            hir.assertz v15 #[code = 250];
+            v16 = hir.int_to_ptr v13 : ptr<byte, i32>;
+            v17 = hir.load v16 : i32;
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            builtin.ret v17;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-flags(v18: i32) -> i32 {
+        ^block11(v18: i32):
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v24 = arith.constant 4 : i32;
+            v22 = arith.constant 2 : i32;
+            v20 = arith.constant 253 : i32;
+            v21 = arith.band v18, v20 : i32;
+            v23 = arith.bor v21, v22 : i32;
+            v27 = arith.constant 0 : i32;
+            v25 = arith.constant 1 : i32;
+            v26 = arith.band v18, v25 : i32;
+            v28 = arith.neq v26, v27 : i1;
+            v29 = cf.select v28, v23, v24 : i32;
+            builtin.ret v29;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-record(v30: i32, v31: i32, v32: i32) -> i32 {
+        ^block13(v30: i32, v31: i32, v32: i32):
+            v35 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v36 = hir.bitcast v35 : ptr<byte, i32>;
+            v37 = hir.load v36 : i32;
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v40 = hir.bitcast v30 : u32;
+            v41 = arith.trunc v40 : u8;
+            v38 = arith.constant 1048600 : i32;
+            v39 = arith.add v37, v38 : i32 #[overflow = wrapping];
+            v42 = hir.bitcast v39 : u32;
+            v43 = hir.int_to_ptr v42 : ptr<byte, u8>;
+            hir.store v43, v41;
+            v34 = arith.constant 0 : i32;
+            v45 = arith.constant 2 : i32;
+            v46 = arith.band v30, v45 : i32;
+            v48 = arith.neq v46, v34 : i1;
+            v483 = scf.if v48 : i32 {
+            ^block65:
+                v492 = arith.constant 0 : i32;
+                scf.yield v492;
+            } else {
+            ^block16:
+                v49 = arith.constant 3 : i32;
+                v491 = arith.constant 0 : i32;
+                v51 = arith.neq v31, v491 : i1;
+                v52 = cf.select v51, v32, v49 : i32;
+                v489 = arith.constant 0 : i32;
+                v490 = arith.constant 3 : i32;
+                v53 = arith.constant 255 : i32;
+                v54 = arith.band v52, v53 : i32;
+                v56 = arith.eq v54, v490 : i1;
+                v57 = arith.zext v56 : u32;
+                v58 = hir.bitcast v57 : i32;
+                v60 = arith.neq v58, v489 : i1;
+                scf.if v60{
+                ^block64:
+                    scf.yield ;
+                } else {
+                ^block17:
+                    v61 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                    v62 = hir.bitcast v61 : ptr<byte, i32>;
+                    v63 = hir.load v62 : i32;
+                    v66 = hir.bitcast v52 : u32;
+                    v67 = arith.trunc v66 : u8;
+                    v69 = arith.constant 2 : u32;
+                    v488 = arith.constant 1048600 : i32;
+                    v65 = arith.add v63, v488 : i32 #[overflow = wrapping];
+                    v68 = hir.bitcast v65 : u32;
+                    v70 = arith.add v68, v69 : u32 #[overflow = checked];
+                    v71 = hir.int_to_ptr v70 : ptr<byte, u8>;
+                    hir.store v71, v67;
+                    scf.yield ;
+                };
+                v72 = arith.constant 1 : i32;
+                v487 = arith.constant 0 : i32;
+                v485 = cf.select v60, v487, v72 : i32;
+                scf.yield v485;
+            };
+            v73 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v74 = hir.bitcast v73 : ptr<byte, i32>;
+            v75 = hir.load v74 : i32;
+            v486 = arith.constant 1048600 : i32;
+            v77 = arith.add v75, v486 : i32 #[overflow = wrapping];
+            v79 = hir.bitcast v483 : u32;
+            v80 = arith.trunc v79 : u8;
+            v82 = arith.constant 1 : u32;
+            v81 = hir.bitcast v77 : u32;
+            v83 = arith.add v81, v82 : u32 #[overflow = checked];
+            v84 = hir.int_to_ptr v83 : ptr<byte, u8>;
+            hir.store v84, v80;
+            builtin.ret v77;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-option(v85: i32, v86: i32, v87: i32, v88: i32) -> i32 {
+        ^block18(v85: i32, v86: i32, v87: i32, v88: i32):
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v504 = arith.constant 0 : i32;
+            v90 = arith.constant 0 : i32;
+            v93 = arith.eq v85, v90 : i1;
+            v94 = arith.zext v93 : u32;
+            v95 = hir.bitcast v94 : i32;
+            v97 = arith.neq v95, v504 : i1;
+            v496 = scf.if v97 : i32 {
+            ^block69:
+                v503 = arith.constant 0 : i32;
+                scf.yield v503;
+            } else {
+            ^block21:
+                v501 = arith.constant 0 : i32;
+                v502 = arith.constant 0 : i32;
+                v99 = arith.eq v87, v502 : i1;
+                v100 = arith.zext v99 : u32;
+                v101 = hir.bitcast v100 : i32;
+                v103 = arith.neq v101, v501 : i1;
+                scf.if v103{
+                ^block68:
+                    scf.yield ;
+                } else {
+                ^block22:
+                    v104 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                    v105 = hir.bitcast v104 : ptr<byte, i32>;
+                    v106 = hir.load v105 : i32;
+                    v109 = hir.bitcast v88 : u32;
+                    v110 = arith.trunc v109 : u8;
+                    v112 = arith.constant 1 : u32;
+                    v119 = arith.constant 1048600 : i32;
+                    v108 = arith.add v106, v119 : i32 #[overflow = wrapping];
+                    v111 = hir.bitcast v108 : u32;
+                    v113 = arith.add v111, v112 : u32 #[overflow = checked];
+                    v114 = hir.int_to_ptr v113 : ptr<byte, u8>;
+                    hir.store v114, v110;
+                    scf.yield ;
+                };
+                v115 = arith.constant 1 : i32;
+                v500 = arith.constant 0 : i32;
+                v498 = cf.select v103, v500, v115 : i32;
+                scf.yield v498;
+            };
+            v116 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v117 = hir.bitcast v116 : ptr<byte, i32>;
+            v118 = hir.load v117 : i32;
+            v499 = arith.constant 1048600 : i32;
+            v120 = arith.add v118, v499 : i32 #[overflow = wrapping];
+            v122 = hir.bitcast v496 : u32;
+            v123 = arith.trunc v122 : u8;
+            v124 = hir.bitcast v120 : u32;
+            v125 = hir.int_to_ptr v124 : ptr<byte, u8>;
+            hir.store v125, v123;
+            builtin.ret v120;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-tuple(v126: i32, v127: i64) -> i32 {
+        ^block23(v126: i32, v127: i64):
+            v130 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v131 = hir.bitcast v130 : ptr<byte, i32>;
+            v132 = hir.load v131 : i32;
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v133 = arith.constant 1048600 : i32;
+            v134 = arith.add v132, v133 : i32 #[overflow = wrapping];
+            v135 = hir.bitcast v126 : u32;
+            v136 = arith.trunc v135 : u8;
+            v138 = arith.constant 10 : u32;
+            v137 = hir.bitcast v134 : u32;
+            v139 = arith.add v137, v138 : u32 #[overflow = checked];
+            v140 = hir.int_to_ptr v139 : ptr<byte, u8>;
+            hir.store v140, v136;
+            v145 = arith.constant 8 : u32;
+            v144 = hir.bitcast v134 : u32;
+            v146 = arith.add v144, v145 : u32 #[overflow = checked];
+            v147 = arith.constant 2 : u32;
+            v148 = arith.mod v146, v147 : u32;
+            hir.assertz v148 #[code = 250];
+            v506 = arith.constant 257 : u16;
+            v149 = hir.int_to_ptr v146 : ptr<byte, u16>;
+            hir.store v149, v506;
+            v150 = hir.bitcast v134 : u32;
+            v507 = arith.constant 8 : u32;
+            v152 = arith.mod v150, v507 : u32;
+            hir.assertz v152 #[code = 250];
+            v153 = hir.int_to_ptr v150 : ptr<byte, i64>;
+            hir.store v153, v127;
+            builtin.ret v134;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-result-small(v154: i32, v155: i64) -> i32 {
+        ^block25(v154: i32, v155: i64):
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v158 = arith.trunc v155 : i32;
+            v532 = arith.constant 0 : i32;
+            v157 = arith.constant 0 : i32;
+            v160 = arith.eq v154, v157 : i1;
+            v161 = arith.zext v160 : u32;
+            v162 = hir.bitcast v161 : i32;
+            v164 = arith.neq v162, v532 : i1;
+            v518 = scf.if v164 : i32 {
+            ^block28:
+                v176 = arith.constant -720896 : i32;
+                v511 = arith.constant 16 : u32;
+                v175 = arith.shl v158, v511 : i32;
+                v177 = arith.add v175, v176 : i32 #[overflow = wrapping];
+                scf.yield v177;
+            } else {
+            ^block29:
+                v170 = arith.constant 65280 : i32;
+                v168 = arith.constant 5632 : i32;
+                v510 = arith.constant 8 : u32;
+                v167 = arith.shl v158, v510 : i32;
+                v169 = arith.add v167, v168 : i32 #[overflow = wrapping];
+                v171 = arith.band v169, v170 : i32;
+                scf.yield v171;
+            };
+            v528 = arith.constant 0 : i32;
+            v529 = arith.constant 0 : i32;
+            v530 = arith.constant 1 : i32;
+            v179 = arith.constant 1 : i32;
+            v531 = arith.constant 0 : i32;
+            v519 = cf.select v164, v531, v179 : i32;
+            v182 = arith.bor v518, v519 : i32;
+            v184 = arith.band v182, v530 : i32;
+            v186 = arith.eq v184, v529 : i1;
+            v187 = arith.zext v186 : u32;
+            v188 = hir.bitcast v187 : i32;
+            v190 = arith.neq v188, v528 : i1;
+            scf.if v190{
+            ^block31:
+                v207 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v208 = hir.bitcast v207 : ptr<byte, i32>;
+                v209 = hir.load v208 : i32;
+                v220 = arith.constant 2 : u32;
+                v229 = arith.constant 1048600 : i32;
+                v211 = arith.add v209, v229 : i32 #[overflow = wrapping];
+                v219 = hir.bitcast v211 : u32;
+                v221 = arith.add v219, v220 : u32 #[overflow = checked];
+                v527 = arith.constant 2 : u32;
+                v223 = arith.mod v221, v527 : u32;
+                hir.assertz v223 #[code = 250];
+                v526 = arith.constant 16 : u32;
+                v213 = hir.bitcast v518 : u32;
+                v215 = arith.shr v213, v526 : u32;
+                v216 = hir.bitcast v215 : i32;
+                v217 = hir.bitcast v216 : u32;
+                v218 = arith.trunc v217 : u16;
+                v224 = hir.int_to_ptr v221 : ptr<byte, u16>;
+                hir.store v224, v218;
+                scf.yield ;
+            } else {
+            ^block32:
+                v191 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v192 = hir.bitcast v191 : ptr<byte, i32>;
+                v193 = hir.load v192 : i32;
+                v523 = arith.constant 8 : u32;
+                v197 = hir.bitcast v518 : u32;
+                v199 = arith.shr v197, v523 : u32;
+                v200 = hir.bitcast v199 : i32;
+                v201 = hir.bitcast v200 : u32;
+                v202 = arith.trunc v201 : u8;
+                v524 = arith.constant 2 : u32;
+                v525 = arith.constant 1048600 : i32;
+                v195 = arith.add v193, v525 : i32 #[overflow = wrapping];
+                v203 = hir.bitcast v195 : u32;
+                v205 = arith.add v203, v524 : u32 #[overflow = checked];
+                v206 = hir.int_to_ptr v205 : ptr<byte, u8>;
+                hir.store v206, v202;
+                scf.yield ;
+            };
+            v226 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v227 = hir.bitcast v226 : ptr<byte, i32>;
+            v228 = hir.load v227 : i32;
+            v522 = arith.constant 1048600 : i32;
+            v230 = arith.add v228, v522 : i32 #[overflow = wrapping];
+            v520 = arith.constant 1 : i32;
+            v521 = arith.constant 0 : i32;
+            v517 = cf.select v190, v521, v520 : i32;
+            v232 = hir.bitcast v517 : u32;
+            v233 = arith.trunc v232 : u8;
+            v234 = hir.bitcast v230 : u32;
+            v235 = hir.int_to_ptr v234 : ptr<byte, u8>;
+            hir.store v235, v233;
+            builtin.ret v230;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-result-enum(v236: i32) -> i32 {
+        ^block33(v236: i32):
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v240 = arith.constant 255 : i32;
+            v241 = arith.band v236, v240 : i32;
+            v242 = hir.bitcast v241 : u32;
+            v544, v545, v546 = scf.index_switch v242 : i32, i32, u32 
+            case 0 {
+            ^block38:
+                v553 = arith.constant 0 : u32;
+                v554 = ub.poison i32 : i32;
+                v238 = arith.constant 0 : i32;
+                scf.yield v238, v554, v553;
+            }
+            case 2 {
+            ^block36:
+                v254 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v255 = hir.bitcast v254 : ptr<byte, i32>;
+                v256 = hir.load v255 : i32;
+                v536 = arith.constant 0 : u8;
+                v268 = arith.constant 1048600 : i32;
+                v258 = arith.add v256, v268 : i32 #[overflow = wrapping];
+                v262 = hir.bitcast v258 : u32;
+                v263 = hir.int_to_ptr v262 : ptr<byte, u8>;
+                hir.store v263, v536;
+                v543 = arith.constant 1 : u32;
+                v551 = arith.constant 1 : i32;
+                v552 = ub.poison i32 : i32;
+                scf.yield v552, v551, v543;
+            }
+            default {
+            ^block73:
+                v538 = arith.constant 0 : u32;
+                v542 = ub.poison i32 : i32;
+                v239 = arith.constant 1 : i32;
+                scf.yield v239, v542, v538;
+            };
+            v547 = scf.index_switch v546 : i32 
+            case 0 {
+            ^block37:
+                v244 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v245 = hir.bitcast v244 : ptr<byte, i32>;
+                v246 = hir.load v245 : i32;
+                v534 = arith.constant 1 : u8;
+                v550 = arith.constant 1048600 : i32;
+                v248 = arith.add v246, v550 : i32 #[overflow = wrapping];
+                v252 = hir.bitcast v248 : u32;
+                v253 = hir.int_to_ptr v252 : ptr<byte, u8>;
+                hir.store v253, v534;
+                scf.yield v544;
+            }
+            default {
+            ^block76:
+                scf.yield v545;
+            };
+            v265 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v266 = hir.bitcast v265 : ptr<byte, i32>;
+            v267 = hir.load v266 : i32;
+            v549 = arith.constant 1048600 : i32;
+            v269 = arith.add v267, v549 : i32 #[overflow = wrapping];
+            v272 = hir.bitcast v547 : u32;
+            v273 = arith.trunc v272 : u8;
+            v548 = arith.constant 1 : u32;
+            v274 = hir.bitcast v269 : u32;
+            v276 = arith.add v274, v548 : u32 #[overflow = checked];
+            v277 = hir.int_to_ptr v276 : ptr<byte, u8>;
+            hir.store v277, v273;
+            builtin.ret v269;
+        };
+
+        private builtin.function @miden:cm-types/cm-types@0.1.0#func-result-large(v278: i32, v279: i64, v280: i32, v281: i32) -> i32 {
+        ^block39(v278: i32, v279: i64, v280: i32, v281: i32):
+            hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/wit_bindgen::rt::run_ctors_once()
+            v566 = arith.constant 0 : i32;
+            v283 = arith.constant 0 : i32;
+            v284 = arith.eq v278, v283 : i1;
+            v285 = arith.zext v284 : u32;
+            v286 = hir.bitcast v285 : i32;
+            v288 = arith.neq v286, v566 : i1;
+            scf.if v288{
+            ^block42:
+                v299 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v300 = hir.bitcast v299 : ptr<byte, i32>;
+                v301 = hir.load v300 : i32;
+                v337 = arith.constant 1048600 : i32;
+                v303 = arith.add v301, v337 : i32 #[overflow = wrapping];
+                v308 = arith.constant 24 : u32;
+                v307 = hir.bitcast v303 : u32;
+                v309 = arith.add v307, v308 : u32 #[overflow = checked];
+                v310 = arith.constant 8 : u32;
+                v311 = arith.mod v309, v310 : u32;
+                hir.assertz v311 #[code = 250];
+                v304 = hir.bitcast v280 : u32;
+                v305 = arith.zext v304 : u64;
+                v306 = hir.bitcast v305 : i64;
+                v312 = hir.int_to_ptr v309 : ptr<byte, i64>;
+                hir.store v312, v306;
+                v316 = arith.constant 16 : u32;
+                v315 = hir.bitcast v303 : u32;
+                v317 = arith.add v315, v316 : u32 #[overflow = checked];
+                v565 = arith.constant 8 : u32;
+                v319 = arith.mod v317, v565 : u32;
+                hir.assertz v319 #[code = 250];
+                v313 = arith.constant 22 : i64;
+                v314 = arith.add v279, v313 : i64 #[overflow = wrapping];
+                v320 = hir.int_to_ptr v317 : ptr<byte, i64>;
+                hir.store v320, v314;
+                v564 = arith.constant 8 : u32;
+                v323 = hir.bitcast v303 : u32;
+                v325 = arith.add v323, v564 : u32 #[overflow = checked];
+                v563 = arith.constant 8 : u32;
+                v327 = arith.mod v325, v563 : u32;
+                hir.assertz v327 #[code = 250];
+                v321 = arith.constant 11 : i64;
+                v322 = arith.add v279, v321 : i64 #[overflow = wrapping];
+                v328 = hir.int_to_ptr v325 : ptr<byte, i64>;
+                hir.store v328, v322;
+                v558 = arith.constant 0 : u8;
+                v332 = hir.bitcast v303 : u32;
+                v333 = hir.int_to_ptr v332 : ptr<byte, u8>;
+                hir.store v333, v558;
+                scf.yield ;
+            } else {
+            ^block43:
+                v289 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v290 = hir.bitcast v289 : ptr<byte, i32>;
+                v291 = hir.load v290 : i32;
+                v556 = arith.constant 1 : u8;
+                v562 = arith.constant 1048600 : i32;
+                v293 = arith.add v291, v562 : i32 #[overflow = wrapping];
+                v297 = hir.bitcast v293 : u32;
+                v298 = hir.int_to_ptr v297 : ptr<byte, u8>;
+                hir.store v298, v556;
+                scf.yield ;
+            };
+            v334 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v335 = hir.bitcast v334 : ptr<byte, i32>;
+            v336 = hir.load v335 : i32;
+            v561 = arith.constant 1048600 : i32;
+            v338 = arith.add v336, v561 : i32 #[overflow = wrapping];
+            builtin.ret v338;
+        };
+
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
+        ^block44:
+            v340 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v341 = hir.bitcast v340 : ptr<byte, i32>;
+            v342 = hir.load v341 : i32;
+            v343 = arith.constant 1048632 : i32;
+            v344 = arith.add v342, v343 : i32 #[overflow = wrapping];
+            v345 = hir.bitcast v344 : u32;
+            v346 = hir.int_to_ptr v345 : ptr<byte, u8>;
+            v347 = hir.load v346 : u8;
+            v339 = arith.constant 0 : i32;
+            v348 = arith.zext v347 : u32;
+            v349 = hir.bitcast v348 : i32;
+            v351 = arith.neq v349, v339 : i1;
+            scf.if v351{
+            ^block46:
+                scf.yield ;
+            } else {
+            ^block47:
+                v352 = builtin.global_symbol @miden:cm-types/cm-types@0.1.0/cm_types/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v353 = hir.bitcast v352 : ptr<byte, i32>;
+                v354 = hir.load v353 : i32;
+                hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/__wasm_call_ctors()
+                v568 = arith.constant 1 : u8;
+                v570 = arith.constant 1048632 : i32;
+                v356 = arith.add v354, v570 : i32 #[overflow = wrapping];
+                v360 = hir.bitcast v356 : u32;
+                v361 = hir.int_to_ptr v360 : ptr<byte, u8>;
+                hir.store v361, v568;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment readonly @1048576 = 0x000000000000000200000001;
+
+        builtin.segment @1048588 = 0x0000000100000001;
+    };
+
+    public builtin.function @func-enum(v362: i32) -> i32 {
+    ^block48(v362: i32):
+        v363 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-enum(v362) : i32
+        builtin.ret v363;
+    };
+
+    public builtin.function @func-flags(v364: i32) -> i32 {
+    ^block50(v364: i32):
+        v365 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-flags(v364) : i32
+        builtin.ret v365;
+    };
+
+    public builtin.function @func-record(v366: i32, v367: i32, v368: i32) -> i32, i32, i32 {
+    ^block52(v366: i32, v367: i32, v368: i32):
+        v369 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-record(v366, v367, v368) : i32
+        v370 = arith.constant 0 : i32;
+        v371 = arith.add v369, v370 : i32 #[overflow = unchecked];
+        v372 = hir.int_to_ptr v371 : ptr<byte, i32>;
+        v373 = hir.load v372 : i32;
+        v374 = arith.constant 4 : i32;
+        v375 = arith.add v369, v374 : i32 #[overflow = unchecked];
+        v572 = arith.constant 0 : i32;
+        v377 = arith.add v375, v572 : i32 #[overflow = unchecked];
+        v378 = hir.int_to_ptr v377 : ptr<byte, i32>;
+        v379 = hir.load v378 : i32;
+        v571 = arith.constant 4 : i32;
+        v381 = arith.add v375, v571 : i32 #[overflow = unchecked];
+        v382 = hir.int_to_ptr v381 : ptr<byte, i32>;
+        v383 = hir.load v382 : i32;
+        builtin.ret v373, v379, v383;
+    };
+
+    public builtin.function @func-option(v387: i32, v388: i32, v389: i32, v390: i32) -> i32, i32 {
+    ^block54(v387: i32, v388: i32, v389: i32, v390: i32):
+        v391 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-option(v387, v388, v389, v390) : i32
+        v392 = arith.constant 0 : i32;
+        v393 = arith.add v391, v392 : i32 #[overflow = unchecked];
+        v394 = hir.int_to_ptr v393 : ptr<byte, i32>;
+        v395 = hir.load v394 : i32;
+        v396 = arith.constant 4 : i32;
+        v397 = arith.add v391, v396 : i32 #[overflow = unchecked];
+        v398 = hir.int_to_ptr v397 : ptr<byte, i32>;
+        v399 = hir.load v398 : i32;
+        builtin.ret v395, v399;
+    };
+
+    public builtin.function @func-tuple(v402: i32, v403: i64) -> i64, i32, i32, i32 {
+    ^block56(v402: i32, v403: i64):
+        v404 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-tuple(v402, v403) : i32
+        v405 = arith.constant 0 : i32;
+        v406 = arith.add v404, v405 : i32 #[overflow = unchecked];
+        v407 = hir.int_to_ptr v406 : ptr<byte, u64>;
+        v408 = hir.load v407 : u64;
+        v409 = arith.constant 8 : i32;
+        v410 = arith.add v404, v409 : i32 #[overflow = unchecked];
+        v575 = arith.constant 0 : i32;
+        v412 = arith.add v410, v575 : i32 #[overflow = unchecked];
+        v413 = hir.int_to_ptr v412 : ptr<byte, i32>;
+        v414 = hir.load v413 : i32;
+        v415 = arith.constant 4 : i32;
+        v416 = arith.add v410, v415 : i32 #[overflow = unchecked];
+        v574 = arith.constant 0 : i32;
+        v418 = arith.add v416, v574 : i32 #[overflow = unchecked];
+        v419 = hir.int_to_ptr v418 : ptr<byte, i32>;
+        v420 = hir.load v419 : i32;
+        v573 = arith.constant 4 : i32;
+        v422 = arith.add v416, v573 : i32 #[overflow = unchecked];
+        v423 = hir.int_to_ptr v422 : ptr<byte, i32>;
+        v424 = hir.load v423 : i32;
+        builtin.ret v408, v414, v420, v424;
+    };
+
+    public builtin.function @func-result-small(v429: i32, v430: i64) -> i32, i32 {
+    ^block58(v429: i32, v430: i64):
+        v431 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-result-small(v429, v430) : i32
+        v432 = arith.constant 0 : i32;
+        v433 = arith.add v431, v432 : i32 #[overflow = unchecked];
+        v434 = hir.int_to_ptr v433 : ptr<byte, i32>;
+        v435 = hir.load v434 : i32;
+        v436 = arith.constant 4 : i32;
+        v437 = arith.add v431, v436 : i32 #[overflow = unchecked];
+        v438 = hir.int_to_ptr v437 : ptr<byte, i32>;
+        v439 = hir.load v438 : i32;
+        builtin.ret v435, v439;
+    };
+
+    public builtin.function @func-result-enum(v442: i32) -> i32, i32 {
+    ^block60(v442: i32):
+        v443 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-result-enum(v442) : i32
+        v444 = arith.constant 0 : i32;
+        v445 = arith.add v443, v444 : i32 #[overflow = unchecked];
+        v446 = hir.int_to_ptr v445 : ptr<byte, i32>;
+        v447 = hir.load v446 : i32;
+        v448 = arith.constant 4 : i32;
+        v449 = arith.add v443, v448 : i32 #[overflow = unchecked];
+        v450 = hir.int_to_ptr v449 : ptr<byte, i32>;
+        v451 = hir.load v450 : i32;
+        builtin.ret v447, v451;
+    };
+
+    public builtin.function @func-result-large(v454: i32, v455: i64, v456: i32, v457: i32) -> i32, i64, i64, i64 {
+    ^block62(v454: i32, v455: i64, v456: i32, v457: i32):
+        v458 = hir.exec @miden:cm-types/cm-types@0.1.0/cm_types/miden:cm-types/cm-types@0.1.0#func-result-large(v454, v455, v456, v457) : i32
+        v459 = arith.constant 0 : i32;
+        v460 = arith.add v458, v459 : i32 #[overflow = unchecked];
+        v461 = hir.int_to_ptr v460 : ptr<byte, i32>;
+        v462 = hir.load v461 : i32;
+        v463 = arith.constant 4 : i32;
+        v464 = arith.add v458, v463 : i32 #[overflow = unchecked];
+        v465 = hir.int_to_ptr v464 : ptr<byte, i64>;
+        v466 = hir.load v465 : i64;
+        v467 = arith.constant 12 : i32;
+        v468 = arith.add v458, v467 : i32 #[overflow = unchecked];
+        v469 = hir.int_to_ptr v468 : ptr<byte, i64>;
+        v470 = hir.load v469 : i64;
+        v471 = arith.constant 20 : i32;
+        v472 = arith.add v458, v471 : i32 #[overflow = unchecked];
+        v473 = hir.int_to_ptr v472 : ptr<byte, i64>;
+        v474 = hir.load v473 : i64;
+        builtin.ret v462, v466, v470, v474;
+    };
+};

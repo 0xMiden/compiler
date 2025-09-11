@@ -382,8 +382,14 @@ impl Type {
                     }
                 }
             },
-            Type::List(_) => {
+            Self::List(_) => {
                 todo!("invalid type: list has no defined representation yet, so cannot be split")
+            }
+            Self::Enum(_enum_type) => {
+                // XXX: for simpler types like option and result, or old-school enums this can make
+                // sense, but only if the e.g., `some(ty)` ty is simple.  Otherwise splitting
+                // complex variants doesn't make sense and should perhaps just be bytes.
+                todo!("enum splitting is hazardous")
             }
             // These types either have no size, or are 1 byte in size, so must have
             // been handled above when checking if the size of the type is <= the
@@ -417,6 +423,8 @@ impl Type {
             Self::Array(ref array_ty) => array_ty.min_alignment(),
             // Lists use the minimum alignment of their element type
             Self::List(ref element_ty) => element_ty.min_alignment(),
+            // Variants use minimum alignment of the discriminant or payload.
+            Self::Enum(ref enum_ty) => enum_ty.min_alignment(),
         }
     }
 
@@ -448,6 +456,7 @@ impl Type {
                 "invalid type: list has no defined representation yet, so its size cannot be \
                  determined"
             ),
+            Self::Enum(ref enum_ty) => enum_ty.size as usize * 8,
         }
     }
 

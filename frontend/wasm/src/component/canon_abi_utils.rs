@@ -2,6 +2,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{AddressSpace, Builder, PointerType, SmallVec, SourceSpan, Type, ValueRef};
 
+use super::flat::flatten_type;
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt, WasmError};
 
 /// Recursively loads primitive values from memory based on the component-level type following the
@@ -38,9 +39,24 @@ pub fn load<B: ?Sized + Builder>(
             // For each field in the struct, use the pre-calculated field offset
             for field in struct_ty.fields() {
                 let field_offset = fb.i32(field.offset as i32, span);
-                let fielt_addr = fb.add_unchecked(ptr, field_offset, span)?;
+                let field_addr = fb.add_unchecked(ptr, field_offset, span)?;
                 // Recursively load the field
-                load(fb, fielt_addr, &field.ty, values, span)?;
+                load(fb, field_addr, &field.ty, values, span)?;
+            }
+        }
+
+        Type::Enum(_) => {
+            // We need to load the same values as those determined by flattening.  The discriminant
+            // is included.
+            let flat_variant_tys = flatten_type(ty)?;
+
+            let mut payload_offs = 0;
+            for midenc_hir::AbiParam { ty, .. } in flat_variant_tys {
+                let payload_offs_val = fb.i32(payload_offs, span);
+                let payload_ptr = fb.add_unchecked(ptr, payload_offs_val, span)?;
+
+                load(fb, payload_ptr, &ty, values, span)?;
+                payload_offs += ty.size_in_bytes() as i32;
             }
         }
 
@@ -101,6 +117,21 @@ pub fn store<B: ?Sized + Builder>(
                 let field_addr = fb.add_unchecked(ptr, field_offset, span)?;
                 // Recursively store the field
                 store(fb, field_addr, &field.ty, values, span)?;
+            }
+        }
+
+        Type::Enum(_) => {
+            // We need to load the same values as those determined by flattening.  The discriminant
+            // is included and should match the `values`.
+            let flat_variant_tys = flatten_type(ty)?;
+
+            let mut payload_offs = 0;
+            for midenc_hir::AbiParam { ty, .. } in flat_variant_tys {
+                let payload_offs_val = fb.i32(payload_offs, span);
+                let payload_ptr = fb.add_unchecked(ptr, payload_offs_val, span)?;
+
+                store(fb, payload_ptr, &ty, values, span)?;
+                payload_offs += ty.size_in_bytes() as i32;
             }
         }
 

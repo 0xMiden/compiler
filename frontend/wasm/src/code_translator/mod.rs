@@ -935,7 +935,7 @@ fn translate_br_table<B: ?Sized + Builder>(
 
     let selector = state.pop1();
     let selector = if selector.borrow().ty().clone() != U32 {
-        builder.cast(selector, U32, span)?
+        builder.bitcast(selector, U32, span)?
     } else {
         selector
     };

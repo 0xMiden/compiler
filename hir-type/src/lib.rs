@@ -5,6 +5,7 @@ extern crate alloc;
 
 mod alignable;
 mod array_type;
+mod enum_type;
 mod function_type;
 mod layout;
 mod pointer_type;
@@ -16,7 +17,8 @@ use core::fmt;
 use miden_formatting::prettier::PrettyPrint;
 
 pub use self::{
-    alignable::Alignable, array_type::ArrayType, function_type::*, pointer_type::*, struct_type::*,
+    alignable::Alignable, array_type::ArrayType, enum_type::*, function_type::*, pointer_type::*,
+    struct_type::*,
 };
 
 /// Represents the type of a value in the HIR type system
@@ -76,6 +78,8 @@ pub enum Type {
     List(Arc<Type>),
     /// A reference to a function with the given type signature
     Function(Arc<FunctionType>),
+    /// An algebraic sum type.
+    Enum(Arc<EnumType>),
 }
 impl Type {
     /// Returns true if this type is a zero-sized type, which includes:
@@ -106,7 +110,8 @@ impl Type {
             | Self::Felt
             | Self::Ptr(_)
             | Self::List(_)
-            | Self::Function(_) => false,
+            | Self::Function(_)
+            | Self::Enum(_) => false,
         }
     }
 
@@ -330,6 +335,27 @@ impl From<Arc<FunctionType>> for Type {
     }
 }
 
+impl From<EnumType> for Type {
+    #[inline]
+    fn from(ty: EnumType) -> Type {
+        Type::Enum(Arc::new(ty))
+    }
+}
+
+impl From<Box<EnumType>> for Type {
+    #[inline]
+    fn from(ty: Box<EnumType>) -> Type {
+        Type::Enum(Arc::from(ty))
+    }
+}
+
+impl From<Arc<EnumType>> for Type {
+    #[inline]
+    fn from(ty: Arc<EnumType>) -> Type {
+        Type::Enum(ty)
+    }
+}
+
 impl fmt::Display for Type {
     /// Print this type for display using the provided module context
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -363,6 +389,7 @@ impl PrettyPrint for Type {
             Self::Array(array_ty) => array_ty.render(),
             Self::List(ty) => const_text("list<") + ty.render() + const_text(">"),
             Self::Function(ty) => ty.render(),
+            Self::Enum(variant_ty) => variant_ty.render(),
         }
     }
 }
