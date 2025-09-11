@@ -358,7 +358,7 @@ where
             // mismatch. This will surface the stub functions signature mismatches early on.
             // Otherwise the wasm-ld will prefix the stub function name with `signature_mismatch:`.
             let extra_rust_flags = String::from(
-                "-C target-feature=+bulk-memory,+wide-arithmetic, -C link-args=--fatal-warnings",
+                "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args=--fatal-warnings",
             );
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             let maybe_old_rustflags = match std::env::var("RUSTFLAGS") {

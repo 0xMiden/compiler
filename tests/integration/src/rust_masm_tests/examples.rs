@@ -332,7 +332,7 @@ fn auth_component_no_auth() {
         .exports()
         .map(|e| format!("{}::{}", e.module, e.name.as_str()))
         .collect::<Vec<_>>();
-    dbg!(&exports);
+    // dbg!(&exports);
     assert!(
         lib.exports().any(|export| {
             export.module.to_string() == expected_module
