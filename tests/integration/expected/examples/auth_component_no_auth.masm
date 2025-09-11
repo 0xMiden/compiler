@@ -10,7 +10,7 @@ export.auth__procedure
     exec.::std::sys::truncate_stack
 end
 
-export.init
+proc.init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -25,8 +25,6 @@ export.init
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
-    drop
-    push.29
     drop
     push.1048576
     u32assert

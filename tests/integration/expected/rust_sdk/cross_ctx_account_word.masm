@@ -401,7 +401,7 @@ export.process-nested
     exec.::std::sys::truncate_stack
 end
 
-export.init
+proc.init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
