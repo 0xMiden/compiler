@@ -96,10 +96,9 @@ pub fn test_counter_contract_no_auth_local() {
 
         // Create a separate sender account using only the BasicWallet component
         let sender_cfg = AccountCreationConfig::default();
-        let sender_account =
-            create_basic_wallet_account(&mut client, keystore.clone(), sender_cfg)
-        .await
-        .unwrap();
+        let sender_account = create_basic_wallet_account(&mut client, keystore.clone(), sender_cfg)
+            .await
+            .unwrap();
         eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
         // Sender creates the counter note (note script increments counter's storage on consumption)
