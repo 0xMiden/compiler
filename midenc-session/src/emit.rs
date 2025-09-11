@@ -452,8 +452,8 @@ impl Emit for MastArtifact {
     fn write_to<W: Writer>(
         &self,
         mut writer: W,
-        mode: OutputMode,
-        session: &Session,
+        _mode: OutputMode,
+        _session: &Session,
     ) -> anyhow::Result<()> {
         let mut writer = ByteWriterAdapter(&mut writer);
         self.write_into(&mut writer);

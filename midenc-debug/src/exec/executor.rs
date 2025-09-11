@@ -84,7 +84,7 @@ impl Executor {
         use midenc_hir::formatter::DisplayHex;
 
         for dep in dependencies {
-            match self.dependency_resolver.resolve(&dep) {
+            match self.dependency_resolver.resolve(dep) {
                 Some(resolution) => {
                     log::debug!("dependency {dep:?} resolved to {resolution:?}");
                     log::debug!("loading library from package dependency: {dep:?}");

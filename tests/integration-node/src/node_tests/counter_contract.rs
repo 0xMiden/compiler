@@ -62,7 +62,7 @@ pub fn test_counter_contract_local() {
         let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
         let config = AccountCreationConfig {
             storage_slots: vec![miden_client::account::StorageSlot::Map(
-                StorageMap::with_entries([(key.into(), value)]).unwrap(),
+                StorageMap::with_entries([(key, value)]).unwrap(),
             )],
             ..Default::default()
         };

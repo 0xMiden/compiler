@@ -18,10 +18,10 @@ use miden_client::{
     },
     rpc::{Endpoint, TonicRpcClient},
     transaction::{TransactionRequestBuilder, TransactionScript},
-    utils::{Deserializable, Serializable},
+    utils::Deserializable,
     Client, ClientError,
 };
-use miden_core::{utils::Deserializable as CoreDeserializable, Felt, FieldElement, Word};
+use miden_core::{Felt, FieldElement, Word};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_objects::{
@@ -346,7 +346,7 @@ pub async fn send_asset_to_account(
 
     // Prepare note recipient
     let program_hash = tx_script_program.hash();
-    let serial_num = RpoRandomCoin::new(program_hash.into()).draw_word();
+    let serial_num = RpoRandomCoin::new(program_hash).draw_word();
     let inputs = NoteInputs::new(vec![
         recipient_account_id.prefix().as_felt(),
         recipient_account_id.suffix(),
