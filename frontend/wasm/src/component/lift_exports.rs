@@ -37,18 +37,19 @@ pub fn generate_export_lifting_function(
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
 
-    // The miden-base expects the authentication component expects an authentication procedure with
-    // the name `auth_*` (underscore). Since WIT names are in kebab case convert this one to snake
-    // case. In the future miden-base will use annotation to mark the procedure as authentication
-    // procedure and we will remove this. Until then we use the following workaround.
-    let export_func_ident = if export_func_name.starts_with("auth-") {
-        Ident::new(
-            export_func_name.to_string().replace("-", "_")
-                // Temporarily to make it double underscore until
-                // https://github.com/0xMiden/miden-base/issues/1861 is implemented
-                .replace("auth_", "auth__").into(),
-            SourceSpan::default(),
-        )
+    // Miden Base expects the authentication component to export a single
+    // procedure whose name matches `auth_*` (underscore). The base WIT
+    // defines this function as `auth-procedure` (kebab-case). Until
+    // https://github.com/0xMiden/miden-base/issues/1861 lands, we map the
+    // authentication procedure name from `auth-procedure` to
+    // `auth__procedure` (double underscore) to match the current miden-base
+    // expectation.
+    //
+    // IMPORTANT: Restrict this rename to the authentication interface only.
+    // We do this by matching the exact WIT name `auth-procedure` instead of
+    // rewriting arbitrary names that merely start with `auth-`.
+    let export_func_ident = if export_func_name == "auth-procedure" {
+        Ident::new("auth__procedure".into(), SourceSpan::default())
     } else {
         Ident::new(export_func_name.to_string().into(), SourceSpan::default())
     };
@@ -62,8 +63,10 @@ pub fn generate_export_lifting_function(
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
         .expect("failed to find the core module export function");
-    // Set the core export Wasm function visibility that we're lifting to "private". Now, the
-    // lifted function will be exported instead.
+    // Make the lowered core WASM export private so only the lifted wrapper is
+    // publicly exported from the component. This prevents double-exports and
+    // ensures all external callers go through the Canonical ABI–correct
+    // wrapper generated here.
     core_module_builder
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
     let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
