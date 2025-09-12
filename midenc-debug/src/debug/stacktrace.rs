@@ -423,11 +423,11 @@ impl OpDetail {
                 ..
             } => resolved
                 .get_or_init(|| {
-                    let path = Path::new(loc.path.as_ref());
+                    let path = Path::new(loc.uri().as_str());
                     let source_file = if path.exists() {
                         session.source_manager.load_file(path).ok()?
                     } else {
-                        session.source_manager.get_by_path(loc.path.as_ref())?
+                        session.source_manager.get_by_uri(loc.uri())?
                     };
                     let span = SourceSpan::new(source_file.id(), loc.start..loc.end);
                     let file_line_col = source_file.location(span);

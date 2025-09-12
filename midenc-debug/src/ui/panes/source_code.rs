@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, ops::Deref, sync::Arc};
 
 use miden_assembly::diagnostics::SourceCode;
 use midenc_session::diagnostics::{LineIndex, Report, SourceFile, SourceId, SourceSpan};
@@ -483,7 +483,7 @@ impl Pane for SourceCodePane {
                 )
                 .title(
                     Line::styled(
-                        resolved.source_file.path().to_string_lossy(),
+                        resolved.source_file.deref().uri().as_str(),
                         Style::default().add_modifier(Modifier::ITALIC),
                     )
                     .right_aligned(),
