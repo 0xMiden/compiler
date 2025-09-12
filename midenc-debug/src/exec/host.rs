@@ -60,11 +60,6 @@ where
 
     /// Load `forest` into the MAST store for this host
     pub fn load_mast_forest(&mut self, forest: Arc<MastForest>) {
-        // Extract and load the advice map from the forest before putting it into the store.
-        let advice_map = forest.advice_map();
-        for (digest, values) in advice_map.iter() {
-            self.adv_provider.insert_into_map(*digest, values.to_vec().clone());
-        }
         self.store.insert(forest);
     }
 }
