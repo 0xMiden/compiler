@@ -422,6 +422,8 @@ fn recover_wasm_cm_interfaces(
         }
 
         if let Some((component, interface)) = export.name.name.as_str().rsplit_once('/') {
+            let export_node_id = lib.get_export_node_id(&export.name);
+
             // Wasm CM interface
             let (interface, function) =
                 interface.rsplit_once('#').expect("invalid wasm component model identifier");
@@ -439,7 +441,10 @@ fn recover_wasm_cm_interfaces(
                 Span::unknown(Arc::from(function)),
             ));
             let new_export = masm::QualifiedProcedureName::new(path, name);
-            exports.insert(new_export, export.clone());
+
+            let new_lib_export = LibraryExport::new(export_node_id, new_export.clone());
+
+            exports.insert(new_export, new_lib_export.clone());
         } else {
             // Non-Wasm CM interface, preserve as is
             exports.insert(export.name.clone(), export.clone());
