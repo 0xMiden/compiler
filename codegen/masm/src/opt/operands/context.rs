@@ -25,7 +25,7 @@ impl SolverContext {
         stack: &OperandStack,
     ) -> Result<Self, SolverError> {
         // Compute the expected output on the stack, as well as alias/copy information
-        let mut stack = Stack::from(stack);
+        let stack = Stack::from(stack);
         let mut expected_output = Stack::default();
         let mut copies = CopyInfo::default();
         for (value, constraint) in expected.iter().rev().zip(constraints.iter().rev()) {
@@ -43,12 +43,6 @@ impl SolverContext {
                     expected_output.push(copies.push(value));
                 }
             }
-        }
-
-        // Rename multiple occurrences of the same value on the operand stack, if present
-        let mut dupes = CopyInfo::default();
-        for value in stack.iter_mut().rev() {
-            *value = dupes.push_if_duplicate(*value);
         }
 
         // Determine if the stack is already in the desired order
@@ -173,31 +167,6 @@ impl CopyInfo {
                 value.copy(unsafe { NonZeroU8::new_unchecked(1) })
             }
             Entry::Occupied(mut entry) => {
-                let next_id = entry.get_mut();
-                *next_id += 1;
-                value.copy(unsafe { NonZeroU8::new_unchecked(*next_id) })
-            }
-        }
-    }
-
-    /// Push a copy of `value`, but only if `value` has already been seen
-    /// at least once, i.e. `value` is a duplicate.
-    ///
-    /// NOTE: It is expected that `value` is not an alias.
-    pub fn push_if_duplicate(&mut self, value: ValueOrAlias) -> ValueOrAlias {
-        use hashbrown::hash_map::Entry;
-
-        assert!(!value.is_alias());
-
-        match self.copies.entry(value) {
-            // `value` is not a duplicate
-            Entry::Vacant(entry) => {
-                entry.insert(0);
-                value
-            }
-            // `value` is a duplicate, record it as such
-            Entry::Occupied(mut entry) => {
-                self.num_copies += 1;
                 let next_id = entry.get_mut();
                 *next_id += 1;
                 value.copy(unsafe { NonZeroU8::new_unchecked(*next_id) })

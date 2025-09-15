@@ -199,11 +199,9 @@ impl<'a> SolutionBuilder<'a> {
         self.pending.position(value).map(|index| index as u8)
     }
 
-    // /// Get the current position of `value` in this solution starting from an offset.
-    // #[inline]
-    // pub fn get_current_position_beyond(&self, value: &ValueOrAlias, pos: u8) -> Option<u8> {
-    //     self.pending.position_beyond(value, pos as usize).map(|index| index as u8)
-    // }
+    pub fn get_current_position_skip(&self, start_index: u8, value: &ValueOrAlias) -> Option<u8> {
+        self.pending.position_skip(start_index as usize, value).map(|index| index as u8)
+    }
 
     /// Get the current position of `value` in this solution, or panic
     #[track_caller]

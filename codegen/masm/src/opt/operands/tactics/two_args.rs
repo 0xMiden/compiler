@@ -6,7 +6,7 @@ use super::*;
 /// moves or dupes.
 ///
 /// The only criterion for success is an arity of exactly two.  Then the solution will always
-/// succeed, adjusted only by whether commutitivity is a factor.
+/// succeed, adjusted only by whether commutativity is a factor.
 
 #[derive(Default)]
 pub struct TwoArgs;
@@ -14,43 +14,41 @@ pub struct TwoArgs;
 impl Tactic for TwoArgs {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
         if builder.arity() != 2 {
-            log::trace!(
-                target: "codegen",
-                "can only apply tactic when there are exactly 2 operands ({})",
-                builder.arity()
-            );
             return Err(TacticError::PreconditionFailed);
         }
 
-        // Get the lhs and rhs values, whether they're Copy or Move, and their current positions.
-        // Then diverge based on the constraints.
-
         let rhs = builder.unwrap_expected(0);
-        let rhs_is_copy = rhs.is_alias();
+        let rhs_un = rhs.unaliased();
+        let mut rhs_is_copy = builder.context.copies().has_copies(&rhs_un);
 
         let lhs = builder.unwrap_expected(1);
-        let lhs_is_copy = lhs.is_alias();
+        let lhs_un = lhs.unaliased();
+        let mut lhs_is_copy = builder.context.copies().has_copies(&lhs_un);
 
-        if let Some((lhs_pos, rhs_pos)) =
-            builder.get_current_position(&lhs.unaliased()).and_then(|lhs_pos| {
-                builder.get_current_position(&rhs.unaliased()).map(|rhs_pos| (lhs_pos, rhs_pos))
+        let positions = if lhs_un != rhs_un {
+            // Values are distinct; just find them individually.
+            builder.get_current_position(&lhs_un).and_then(|lhs_pos| {
+                builder.get_current_position(&rhs_un).map(|rhs_pos| (lhs_pos, rhs_pos))
             })
-        {
-            // XXX: Might not be needed, as we currently never have duplicated values where both
-            // are move.  See every_duplicated_stack_double_util() below.
-            //
-            // if lhs_pos == rhs_pos {
-            //     eprintln!("XXX lhs_pos {lhs_pos} == rhs_pos {rhs_pos}");
-            //     // LHS and RHS are the same and we've found it at a single position.  But it's
-            //     // possible there's another copy further down the stack.
-            //     if let Some(new_rhs_pos) =
-            //         builder.get_current_position_beyond(&rhs.unaliased(), rhs_pos)
-            //     {
-            //         eprintln!("XXX new_rhs_pos == {new_rhs_pos}");
-            //         rhs_pos = new_rhs_pos;
-            //     }
-            // }
+        } else if lhs_is_copy {
+            // We are given the same value, but one or both is a copy.  Need to check which is an
+            // alias.
+            lhs_is_copy = lhs.is_alias();
+            rhs_is_copy = rhs.is_alias();
 
+            // Return the same position for both.
+            builder.get_current_position(&lhs_un).map(|pos| (pos, pos))
+        } else {
+            // We are given the same value, but they're not copies, implying they have different
+            // positions.  I.e., literally the same value twice in the input.
+            builder.get_current_position(&lhs_un).and_then(|lhs_pos| {
+                builder
+                    .get_current_position_skip(lhs_pos + 1, &lhs_un)
+                    .map(|rhs_pos| (lhs_pos, rhs_pos))
+            })
+        };
+
+        if let Some((lhs_pos, rhs_pos)) = positions {
             match (lhs_is_copy, rhs_is_copy) {
                 (true, true) => self.copy_copy(builder, lhs, lhs_pos, rhs, rhs_pos),
                 (true, false) => self.copy_move(builder, lhs, lhs_pos, rhs, rhs_pos),
@@ -72,8 +70,6 @@ impl TwoArgs {
         rhs: ValueOrAlias,
         rhs_pos: u8,
     ) -> TacticResult {
-        log::trace!(target: "codegen", "scheduling copy/copy for binary op");
-
         if lhs_pos == rhs_pos {
             // Copy it twice.  The scheduler will be requesting a dupe of the dupe.
             builder.dup(lhs_pos, lhs.unwrap_alias());
@@ -96,8 +92,6 @@ impl TwoArgs {
         _rhs: ValueOrAlias,
         rhs_pos: u8,
     ) -> TacticResult {
-        log::trace!(target: "codegen", "scheduling copy/move for binary op");
-
         builder.dup(lhs_pos, lhs.unwrap_alias());
 
         // We don't need to move the RHS if it was on top already and either LHS is the same value
@@ -120,8 +114,6 @@ impl TwoArgs {
         rhs: ValueOrAlias,
         rhs_pos: u8,
     ) -> TacticResult {
-        log::trace!(target: "codegen", "scheduling move/copy for binary op");
-
         if lhs_pos == 0 {
             builder.dup(rhs_pos, rhs.unwrap_alias());
         } else {
@@ -146,8 +138,6 @@ impl TwoArgs {
         _rhs: ValueOrAlias,
         rhs_pos: u8,
     ) -> TacticResult {
-        log::trace!(target: "codegen", "scheduling move/move for binary op");
-
         assert!(lhs_pos != rhs_pos);
 
         if lhs_pos == 0 {
@@ -276,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn every_ordered_stack() {
+    fn ordered_stack() {
         // Take every permutation of a 5 element stack and each permutation of two operand
         // constraints and confirm that at most 2 actions are required to solve.
         let val_refs = generate_valrefs(5);
@@ -287,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn every_unordered_stack() {
+    fn unordered_stack() {
         // Take every permutation of a 5 element stack and each permutation of two operand
         // constraints and confirm that at most 2 actions are required for an unordered solution.
         let val_refs = generate_valrefs(5);
@@ -298,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn every_unordered_3_stack() {
+    fn unordered_3_stack() {
         // Take every permutation of a 3 element stack and confirm that at most 1 action is
         // required for an unordered solution with move/move constraints.
         let val_refs = generate_valrefs(3);
@@ -311,7 +301,7 @@ mod tests {
         midenc_expect_test::expect!["4"].assert_eq(&total_actions.to_string());
     }
 
-    fn every_duplicated_stack_single_util(allow_unordered: bool) -> usize {
+    fn duplicated_stack_single_util(allow_unordered: bool) -> usize {
         // Take every permutation of a 4 element stack etc. where the two operands are the very
         // same value.  In this case it doesn't make sense for a Move/Move constraint to be used.
         //
@@ -328,52 +318,48 @@ mod tests {
     }
 
     #[test]
-    fn every_duplicated_stack_single() {
-        let total_actions = every_duplicated_stack_single_util(false);
+    fn duplicated_stack_single() {
+        let total_actions = duplicated_stack_single_util(false);
 
         // This number should only ever go down as we add optimisations.
         midenc_expect_test::expect!["132"].assert_eq(&total_actions.to_string());
     }
 
     #[test]
-    fn every_duplicated_stack_single_unordered() {
-        let total_actions = every_duplicated_stack_single_util(true);
+    fn duplicated_stack_single_unordered() {
+        let total_actions = duplicated_stack_single_util(true);
 
         // This number should only ever go down as we add optimisations.
         midenc_expect_test::expect!["132"].assert_eq(&total_actions.to_string());
     }
 
-    // XXX: There's an assumption? right now that if a value appears twice in the expected set then
-    // at least one of them must be a copy, i.e., the value will never be there twice, at least for
-    // the same op.
-    //
-    // fn every_duplicated_stack_double_util(allow_unordered: bool) -> usize {
-    //     // Take every permutation of a 5 element stack etc. where the two operands are the same value
-    //     // but represented twice in the input.
-    //
-    //     // Generate 4 val refs but append a copy of v0.
-    //     let mut val_refs = generate_valrefs(4);
-    //     let v0 = val_refs[0];
-    //     val_refs.push(v0);
-    //
-    //     let expected = vec![v0, v0];
-    //
-    //     permute_stacks_advanced(&val_refs, &expected, &ALL_CONSTRAINTS, 2, allow_unordered)
-    // }
-    //
-    // #[test]
-    // fn every_duplicated_stack_double() {
-    //     let total_actions = every_duplicated_stack_double_util(false);
-    //
-    //     // This number should only ever go down as we add optimisations.
-    //     midenc_expect_test::expect!["41"].assert_eq(&total_actions.to_string());
-    // }
-    //
-    // #[test]
-    // fn every_duplicated_stack_double_unordered() {
-    //     let total_actions = every_duplicated_stack_double_util(true);
-    //
-    //     // This number should only ever go down as we add optimisations.
-    //     midenc_expect_test::expect!["41"].assert_eq(&total_actions.to_string());
-    // }
+    fn duplicated_stack_double_util(allow_unordered: bool) -> usize {
+        // Take every permutation of a 5 element stack etc. where the two operands are the same value
+        // but represented twice in the input.
+
+        // Generate 4 val refs but append a copy of v0.
+        let mut val_refs = generate_valrefs(4);
+        let v0 = val_refs[0];
+        val_refs.push(v0);
+
+        let expected = vec![v0, v0];
+
+        permute_stacks_advanced(&val_refs, &expected, &ALL_CONSTRAINTS, 2, allow_unordered)
+    }
+
+    #[test]
+    fn duplicated_stack_double() {
+        let total_actions = duplicated_stack_double_util(false);
+
+        // This number should only ever go down as we add optimisations.
+        midenc_expect_test::expect!["396"].assert_eq(&total_actions.to_string());
+    }
+
+    #[test]
+    fn duplicated_stack_double_unordered() {
+        let total_actions = duplicated_stack_double_util(true);
+
+        // This number should only ever go down as we add optimisations.
+        midenc_expect_test::expect!["396"].assert_eq(&total_actions.to_string());
+    }
 }
