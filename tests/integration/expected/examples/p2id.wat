@@ -683,7 +683,7 @@
       i32.gt_u
       select
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.4.1/src/bindings/note.rs\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.5.0/src/bindings/note.rs\00")
     (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\12\00\00\00!\00\00\00\00\00\10\00)\00\00\000\00\00\00\22\00\00\00")
   )
   (alias export 0 "word" (type (;3;)))

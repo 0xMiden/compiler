@@ -1,7 +1,7 @@
 [package]
 name = "miden-stdlib-sys"
 description = "Low-level Rust bindings for the Miden standard library"
-version.workspace = true
+version = "0.5.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
