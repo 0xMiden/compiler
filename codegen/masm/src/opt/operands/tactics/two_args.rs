@@ -148,10 +148,12 @@ impl TwoArgs {
         } else if rhs_pos == 0 && builder.unordered_allowed() {
             // Just move the LHS to the top.
             builder.movup(lhs_pos);
-        } else if rhs_pos == 2 && lhs_pos == 1 {
+        } else if rhs_pos >= 2 && lhs_pos == 1 {
             // Swap the RHS up to the top.
-            builder.swap(2);
-        } else if rhs_pos == 1 && lhs_pos == 2 {
+            builder.swap(rhs_pos);
+        } else if (rhs_pos == 1 && lhs_pos == 2)
+            || (builder.unordered_allowed() && lhs_pos == 1 && rhs_pos == 2)
+        {
             // Can just move the top value out of the way.
             builder.movdn(2);
         } else {
@@ -273,7 +275,7 @@ mod tests {
         let total_actions = permute_stacks(&val_refs, 2, false);
 
         // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["888"].assert_eq(&total_actions.to_string());
+        midenc_expect_test::expect!["876"].assert_eq(&total_actions.to_string());
     }
 
     #[test]
@@ -284,7 +286,7 @@ mod tests {
         let total_actions = permute_stacks(&val_refs, 2, true);
 
         // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["840"].assert_eq(&total_actions.to_string());
+        midenc_expect_test::expect!["828"].assert_eq(&total_actions.to_string());
     }
 
     #[test]
@@ -352,7 +354,7 @@ mod tests {
         let total_actions = duplicated_stack_double_util(false);
 
         // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["396"].assert_eq(&total_actions.to_string());
+        midenc_expect_test::expect!["384"].assert_eq(&total_actions.to_string());
     }
 
     #[test]
@@ -360,6 +362,6 @@ mod tests {
         let total_actions = duplicated_stack_double_util(true);
 
         // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["396"].assert_eq(&total_actions.to_string());
+        midenc_expect_test::expect!["384"].assert_eq(&total_actions.to_string());
     }
 }
