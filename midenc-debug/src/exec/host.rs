@@ -4,8 +4,8 @@ use miden_assembly::SourceManager;
 use miden_core::Word;
 use miden_debug_types::{Location, SourceFile, SourceSpan};
 use miden_processor::{
-    AdviceInputs, AdviceProvider, BaseHost, EventHandlerRegistry, ExecutionError, KvMap,
-    MastForest, MastForestStore, MemMastForestStore, ProcessState, RowIndex, SyncHost,
+    AdviceInputs, AdviceProvider, BaseHost, EventHandlerRegistry, ExecutionError, MastForest,
+    MastForestStore, MemMastForestStore, ProcessState, RowIndex, SyncHost,
 };
 
 use super::{TraceEvent, TraceHandler};
@@ -68,10 +68,6 @@ impl<S> BaseHost for DebuggerHost<S>
 where
     S: SourceManager,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> Option<Arc<MastForest>> {
-        self.store.get(node_digest)
-    }
-
     fn get_label_and_source_file(
         &self,
         location: &Location,
@@ -112,8 +108,32 @@ where
     fn on_event(
         &mut self,
         process: &ProcessState,
-        event_id: u32,
     ) -> Result<Vec<miden_processor::AdviceMutation>, miden_processor::EventError> {
         Ok(Vec::new())
+    }
+
+    fn get_mast_forest(&self, node_digest: &Word) -> Option<Arc<MastForest>> {
+        self.store.get(node_digest)
+    }
+}
+
+impl<S> miden_processor::AsyncHost for DebuggerHost<S>
+where
+    S: SourceManager,
+{
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl miden_processor::FutureMaybeSend<Option<Arc<MastForest>>> {
+        core::future::ready(self.store.get(node_digest))
+    }
+
+    fn on_event(
+        &mut self,
+        process: &ProcessState<'_>,
+    ) -> impl miden_processor::FutureMaybeSend<
+        Result<Vec<miden_processor::AdviceMutation>, miden_processor::EventError>,
+    > {
+        core::future::ready(Ok(Vec::new()))
     }
 }

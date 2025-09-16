@@ -1,6 +1,6 @@
 //! Common helper functions for node tests
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{borrow::Borrow, collections::BTreeSet, sync::Arc};
 
 use miden_client::{
     account::{
@@ -23,7 +23,7 @@ use miden_client::{
 };
 use miden_core::{Felt, FieldElement, Word};
 use miden_integration_tests::CompilerTestBuilder;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, SectionId};
 use miden_objects::{
     account::{
         AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
@@ -96,7 +96,14 @@ pub async fn create_account_with_component(
     package: Arc<Package>,
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
-    let account_component = match package.account_component_metadata_bytes.as_deref() {
+    let account_component_metadata = package.sections.iter().find_map(|s| {
+        if &s.id == &SectionId::ACCOUNT_COMPONENT_METADATA {
+            Some(s.data.borrow())
+        } else {
+            None
+        }
+    });
+    let account_component = match account_component_metadata {
         None => panic!("no account component metadata present"),
         Some(bytes) => {
             let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();

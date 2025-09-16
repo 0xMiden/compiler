@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
 
 use miden_core::utils::{Deserializable, Serializable};
-use miden_mast_package::Package;
+use miden_mast_package::{Package, SectionId};
 use miden_objects::account::AccountComponentMetadata;
 use midenc_debug::{Executor, ToMidenRepr};
 use midenc_expect_test::{expect, expect_file};
@@ -24,9 +24,19 @@ fn storage_example() {
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
     let package = test.compiled_package();
-    let account_component_metadata_bytes =
-        package.as_ref().account_component_metadata_bytes.clone().unwrap();
-    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+    let account_component_metadata_bytes = package
+        .as_ref()
+        .sections
+        .iter()
+        .find_map(|s| {
+            if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+                Some(s.data.borrow())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
         .as_toml()
         .unwrap();
@@ -225,9 +235,19 @@ fn counter_contract() {
     test_release.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
     test_release.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
     let package = test_release.compiled_package();
-    let account_component_metadata_bytes =
-        package.as_ref().account_component_metadata_bytes.clone().unwrap();
-    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+    let account_component_metadata_bytes = package
+        .as_ref()
+        .sections
+        .iter()
+        .find_map(|s| {
+            if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+                Some(s.data.borrow())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
         .as_toml()
         .unwrap();

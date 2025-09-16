@@ -44,8 +44,9 @@ impl Executor {
     pub fn new(args: Vec<Felt>) -> Self {
         let mut resolver = MemDependencyResolverByDigest::default();
         resolver.add(*STDLIB.digest(), STDLIB.clone().into());
-        let base_lib = miden_lib::MidenLib::default().as_ref().clone();
-        resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
+        //TODO
+        //let base_lib = miden_lib::MidenLib::default().as_ref().clone();
+        //resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
         Self {
             stack: StackInputs::new(args).expect("invalid stack inputs"),
             advice: AdviceInputs::default(),

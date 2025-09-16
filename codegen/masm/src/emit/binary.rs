@@ -149,10 +149,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected gt operands to be the same type");
         match &ty {
             Type::Felt => {
-                self.emit_all(
-                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Gt],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::Gt, span);
             }
             Type::U64 => {
                 self.push_u64(imm.as_u64().unwrap(), span);
@@ -163,13 +161,11 @@ impl OpEmitter<'_> {
                 self.gt_i64(span);
             }
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
-                self.emit_all(
-                    [masm::Instruction::PushU32(imm.as_u32().unwrap()), masm::Instruction::U32Gt],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::U32Gt, span);
             }
             Type::I32 => {
-                self.emit(masm::Instruction::PushU32(imm.as_i32().unwrap() as u32), span);
+                self.push_immediate(imm, span);
                 self.raw_exec("intrinsics::i32::is_gt", span);
             }
             ty => unimplemented!("gt is not yet implemented for {ty}"),
@@ -208,10 +204,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected gte operands to be the same type");
         match &ty {
             Type::Felt => {
-                self.emit_all(
-                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Gte],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::Gte, span);
             }
             Type::U64 => {
                 self.push_u64(imm.as_u64().unwrap(), span);
@@ -222,13 +216,11 @@ impl OpEmitter<'_> {
                 self.gte_i64(span);
             }
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
-                self.emit_all(
-                    [masm::Instruction::PushU32(imm.as_u32().unwrap()), masm::Instruction::U32Gte],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::U32Gte, span);
             }
             Type::I32 => {
-                self.emit(masm::Instruction::PushU32(imm.as_i32().unwrap() as u32), span);
+                self.push_immediate(imm, span);
                 self.raw_exec("intrinsics::i32::is_gte", span);
             }
             ty => unimplemented!("gte is not yet implemented for {ty}"),
@@ -267,10 +259,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected lt operands to be the same type");
         match &ty {
             Type::Felt => {
-                self.emit_all(
-                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Lt],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::Lt, span);
             }
             Type::U64 => {
                 self.push_u64(imm.as_u64().unwrap(), span);
@@ -281,13 +271,11 @@ impl OpEmitter<'_> {
                 self.lt_i64(span);
             }
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
-                self.emit_all(
-                    [masm::Instruction::PushU32(imm.as_u32().unwrap()), masm::Instruction::U32Lt],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::U32Lt, span);
             }
             Type::I32 => {
-                self.emit(masm::Instruction::PushU32(imm.as_i32().unwrap() as u32), span);
+                self.push_immediate(imm, span);
                 self.raw_exec("intrinsics::i32::is_lt", span);
             }
             ty => unimplemented!("lt is not yet implemented for {ty}"),
@@ -326,10 +314,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected lte operands to be the same type");
         match &ty {
             Type::Felt => {
-                self.emit_all(
-                    [masm::Instruction::PushFelt(imm.as_felt().unwrap()), masm::Instruction::Lte],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::Lte, span);
             }
             Type::U64 => {
                 self.push_u64(imm.as_u64().unwrap(), span);
@@ -340,13 +326,11 @@ impl OpEmitter<'_> {
                 self.lte_i64(span);
             }
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
-                self.emit_all(
-                    [masm::Instruction::PushU32(imm.as_u32().unwrap()), masm::Instruction::U32Lte],
-                    span,
-                );
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::U32Lte, span);
             }
             Type::I32 => {
-                self.emit(masm::Instruction::PushU32(imm.as_i32().unwrap() as u32), span);
+                self.push_immediate(imm, span);
                 self.raw_exec("intrinsics::i32::is_lte", span);
             }
             ty => unimplemented!("lte is not yet implemented for {ty}"),
@@ -889,7 +873,7 @@ impl OpEmitter<'_> {
                 );
             }
             Type::I32 => {
-                self.emit(masm::Instruction::PushU8(exp), span);
+                self.emit_push(exp, span);
                 self.raw_exec("intrinsics::i32::ipow", span);
             }
             ty @ (Type::U16 | Type::U8) => {
@@ -926,10 +910,8 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, imm.ty(), "expected and operands to be the same type");
         assert_eq!(ty, Type::I1, "expected and operands to be of boolean type");
-        self.emit_all(
-            [masm::Instruction::PushU8(imm.as_bool().unwrap() as u8), masm::Instruction::And],
-            span,
-        );
+        self.push_immediate(imm, span);
+        self.emit(masm::Instruction::And, span);
         self.push(ty);
     }
 
@@ -949,10 +931,8 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, imm.ty(), "expected or operands to be the same type");
         assert_eq!(ty, Type::I1, "expected or operands to be of boolean type");
-        self.emit_all(
-            [masm::Instruction::PushU8(imm.as_bool().unwrap() as u8), masm::Instruction::Or],
-            span,
-        );
+        self.push_immediate(imm, span);
+        self.emit(masm::Instruction::Or, span);
         self.push(ty);
     }
 
@@ -972,10 +952,8 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, imm.ty(), "expected xor operands to be the same type");
         assert_eq!(ty, Type::I1, "expected xor operands to be of boolean type");
-        self.emit_all(
-            [masm::Instruction::PushU8(imm.as_bool().unwrap() as u8), masm::Instruction::Xor],
-            span,
-        );
+        self.push_immediate(imm, span);
+        self.emit(masm::Instruction::Xor, span);
         self.push(ty);
     }
 
@@ -1077,10 +1055,10 @@ impl OpEmitter<'_> {
             Type::I32 | Type::I16 | Type::I8 => {
                 self.band_imm_u32(imm.as_i64().unwrap() as u64 as u32, span)
             }
-            Type::I1 => self.emit_all(
-                [masm::Instruction::PushU8(imm.as_bool().unwrap() as u8), masm::Instruction::And],
-                span,
-            ),
+            Type::I1 => {
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::And, span);
+            }
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: band expects integer operands, got {ty}")
             }
@@ -1187,10 +1165,10 @@ impl OpEmitter<'_> {
             Type::I32 | Type::I16 | Type::I8 => {
                 self.bor_imm_u32(imm.as_i64().unwrap() as u64 as u32, span)
             }
-            Type::I1 => self.emit_all(
-                [masm::Instruction::PushU8(imm.as_bool().unwrap().into()), masm::Instruction::And],
-                span,
-            ),
+            Type::I1 => {
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::And, span);
+            }
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: bor expects integer operands, got {ty}")
             }
@@ -1305,10 +1283,10 @@ impl OpEmitter<'_> {
                 self.bxor_imm_u32(imm.as_i64().unwrap() as u64 as u32, span);
                 self.trunc_int32(ty.size_in_bits() as u32, span);
             }
-            Type::I1 => self.emit_all(
-                [masm::Instruction::PushU8(imm.as_bool().unwrap().into()), masm::Instruction::Xor],
-                span,
-            ),
+            Type::I1 => {
+                self.push_immediate(imm, span);
+                self.emit(masm::Instruction::Xor, span);
+            }
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: bxor expects integer operands, got {ty}")
             }

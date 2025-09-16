@@ -117,16 +117,15 @@ impl OpEmitter<'_> {
                 span,
             );
         } else {
-            self.emit_all([masm::Instruction::PushU8(0), masm::Instruction::Swap1], span);
+            self.emit_push(0u8, span);
+            self.emit(masm::Instruction::Swap1, span);
         }
     }
 
     /// Push a [NativePtr] value to the operand stack in the expected stack representation.
     fn push_native_ptr(&mut self, ptr: NativePtr, span: SourceSpan) {
-        self.emit_all(
-            [masm::Instruction::PushU8(ptr.offset), masm::Instruction::PushU32(ptr.addr)],
-            span,
-        );
+        self.emit_push(ptr.offset, span);
+        self.emit_push(ptr.addr, span);
     }
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
@@ -207,11 +206,12 @@ impl OpEmitter<'_> {
                     16 => 0xffff,
                     _ => unreachable!("load_small called with non-small type"),
                 };
-                self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
+                self.emit_push(mask as u32, span);
+                self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
-                self.emit(masm::Instruction::PushU32(imm.addr), span);
-                self.emit(masm::Instruction::PushU8(imm.offset), span);
+                self.emit_push(imm.addr, span);
+                self.emit_push(imm.offset, span);
             }
         }
 
@@ -228,11 +228,11 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Swap1, span); // [byte_offset, loaded_word, element_addr]
 
         // Shift right by (offset * 8) bits to get our byte at the low end
+        self.emit_push(8u8, span); // [8, byte_offset, loaded_word, element_addr]
         self.emit_all(
             [
-                masm::Instruction::PushU8(8), // [8, byte_offset, loaded_word, element_addr]
                 masm::Instruction::U32WrappingMul, // [offset*8, loaded_word, element_addr]
-                masm::Instruction::U32Shr,    // [shifted_word, element_addr]
+                masm::Instruction::U32Shr,         // [shifted_word, element_addr]
             ],
             span,
         );
@@ -249,7 +249,8 @@ impl OpEmitter<'_> {
             _ => unreachable!("load_small called with non-small type"),
         };
 
-        self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
+        self.emit_push(mask as u32, span);
+        self.emit(masm::Instruction::U32And, span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -607,8 +608,12 @@ impl OpEmitter<'_> {
                 // trap if it overflows
                 masm::Instruction::Dup1, // [dst, i, dst, count, value]
                 masm::Instruction::Dup1, // [i, dst, i, dst, count, value]
-                masm::Instruction::PushU32(value_size), /* [value_size, i,
-                                          * dst, ..] */
+            ],
+            span,
+        );
+        body_emitter.emit_push(value_size, span); // [value_size, i, * dst, ..]
+        body_emitter.emit_all(
+            [
                 masm::Instruction::U32OverflowingMadd, // [value_size * i + dst, i, dst, count, value]
                 masm::Instruction::Assertz,            // [aligned_dst, i, dst, count, value..]
             ],
@@ -641,14 +646,12 @@ impl OpEmitter<'_> {
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
-        self.emit_all(
-            [
-                // [dst, count, value..]
-                masm::Instruction::PushU32(0), // [i, dst, count, value..]
-                masm::Instruction::Dup2,       // [count, i, dst, count, value..]
-                masm::Instruction::PushFelt(Felt::ZERO),
-                masm::Instruction::Gte, // [count > 0, i, dst, count, value..]
-            ],
+        // [dst, count, value..]
+        self.emit_push(0u32, span); // [i, dst, count, value..]
+        self.emit(masm::Instruction::Dup2, span); // [count, i, dst, count, value..]
+        self.emit_push(Felt::ZERO, span);
+        self.emit(
+            masm::Instruction::Gte, // [count > 0, i, dst, count, value..]
             span,
         );
         self.current_block.push(masm::Op::While {
@@ -752,12 +755,22 @@ impl OpEmitter<'_> {
                 // [i, src, dst, count]
                 masm::Instruction::Dup2, // [dst, i, src, dst, count]
                 masm::Instruction::Dup1, // [i, dst, i, src, dst, count]
-                masm::Instruction::PushU32(value_size), // [offset, i, dst, i, src, dst, count]
+            ],
+            span,
+        );
+        body_emitter.emit_push(value_size, span); // [offset, i, dst, i, src, dst, count]
+        body_emitter.emit_all(
+            [
                 masm::Instruction::U32OverflowingMadd,
                 masm::Instruction::Assertz, // [new_dst := i * offset + dst, i, src, dst, count]
                 masm::Instruction::Dup2,    // [src, new_dst, i, src, dst, count]
                 masm::Instruction::Dup2,    // [i, src, new_dst, i, src, dst, count]
-                masm::Instruction::PushU32(value_size), // [offset, i, src, new_dst, i, src, dst, count]
+            ],
+            span,
+        );
+        body_emitter.emit_push(value_size, span); // [offset, i, src, new_dst, i, src, dst, count]
+        body_emitter.emit_all(
+            [
                 masm::Instruction::U32OverflowingMadd,
                 masm::Instruction::Assertz, // [new_src := i * offset + src, new_dst, i, src, dst, count]
             ],
@@ -791,14 +804,13 @@ impl OpEmitter<'_> {
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
-        self.emit_all(
-            [
-                // [src, dst, count]
-                masm::Instruction::PushU32(0), // [i, src, dst, count]
-                masm::Instruction::Dup3,       // [count, i, src, dst, count]
-                masm::Instruction::PushFelt(Felt::ZERO),
-                masm::Instruction::Gte, // [count > 0, i, src, dst, count]
-            ],
+
+        // [src, dst, count]
+        self.emit_push(0u32, span); // [i, src, dst, count]
+        self.emit(masm::Instruction::Dup3, span); // [count, i, src, dst, count]
+        self.emit_push(Felt::ZERO, span);
+        self.emit(
+            masm::Instruction::Gte, // [count > 0, i, src, dst, count]
             span,
         );
         self.current_block.push(masm::Op::While {
@@ -963,12 +975,12 @@ impl OpEmitter<'_> {
 
         // Calculate bit offset and create mask
         let type_size_mask = (1u32 << type_size) - 1;
+        self.emit(masm::Instruction::Dup2, span); // [offset, prev, addr, offset, value]
+        self.emit_push(8u8, span); // [8, offset, prev, addr, offset, value]
+        self.emit(masm::Instruction::U32WrappingMul, span); // [bit_offset, prev, addr, offset, value]
+        self.emit_push(type_size_mask, span); // [type_mask, bit_offset, prev, addr, offset, value]
         self.emit_all(
             [
-                masm::Instruction::Dup2,           // [offset, prev, addr, offset, value]
-                masm::Instruction::PushU8(8),      // [8, offset, prev, addr, offset, value]
-                masm::Instruction::U32WrappingMul, // [bit_offset, prev, addr, offset, value]
-                masm::Instruction::PushU32(type_size_mask), // [type_mask, bit_offset, prev, addr, offset, value]
                 masm::Instruction::Swap1, // [bit_offset, type_mask, prev, addr, offset, value]
                 masm::Instruction::U32Shl, // [shifted_mask, prev, addr, offset, value]
                 masm::Instruction::U32Not, // [mask, prev, addr, offset, value]
@@ -981,9 +993,14 @@ impl OpEmitter<'_> {
         // Shift value to correct position and combine
         self.emit_all(
             [
-                masm::Instruction::MovUp3,         // [value, masked_prev, addr, offset]
-                masm::Instruction::MovUp3,         // [offset, value, masked_prev, addr]
-                masm::Instruction::PushU8(8),      // [8, offset, value, masked_prev, addr]
+                masm::Instruction::MovUp3, // [value, masked_prev, addr, offset]
+                masm::Instruction::MovUp3, // [offset, value, masked_prev, addr]
+            ],
+            span,
+        );
+        self.emit_push(8u8, span); // [8, offset, value, masked_prev, addr]
+        self.emit_all(
+            [
                 masm::Instruction::U32WrappingMul, // [bit_offset, value, masked_prev, addr]
                 masm::Instruction::U32Shl,         // [shifted_value, masked_prev, addr]
                 masm::Instruction::U32Or,          // [new_value, addr]
