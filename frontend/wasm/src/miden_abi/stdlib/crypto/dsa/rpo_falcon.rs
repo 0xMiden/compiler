@@ -6,16 +6,21 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub(crate) const MODULE_ID: &str = "std::crypto::dsa::rpo_falcon";
-pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
-    SymbolNameComponent::Root,
-    SymbolNameComponent::Component(symbols::Std),
-    SymbolNameComponent::Component(symbols::Crypto),
-    SymbolNameComponent::Component(symbols::Dsa),
-    SymbolNameComponent::Component(symbols::RpoFalcon),
-];
+pub(crate) const MODULE_ID: &str = "std::crypto::dsa::rpo_falcon512";
 
-pub(crate) const RPO_FALCON512_VERIFY: &str = "rpo_falcon512_verify";
+pub(crate) const RPO_FALCON512_VERIFY: &str = "verify";
+
+fn module_path() -> SymbolPath {
+    // Build 'std::crypto::dsa::rpo_falcon512' without relying on a predeclared symbol
+    let parts = [
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component(symbols::Std),
+        SymbolNameComponent::Component(symbols::Crypto),
+        SymbolNameComponent::Component(symbols::Dsa),
+        SymbolNameComponent::Component(Symbol::from("rpo_falcon512")),
+    ];
+    SymbolPath::from_iter(parts)
+}
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -24,6 +29,6 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(RPO_FALCON512_VERIFY),
         FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt], []),
     );
-    m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), funcs);
+    m.insert(module_path(), funcs);
     m
 }

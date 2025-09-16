@@ -113,6 +113,6 @@ advice = {}
 miden = {}
 mem = {}
 note = {}
-rpo_falcon = {}
+rpo_falcon512 = {}
 std = {}
 tx = {}

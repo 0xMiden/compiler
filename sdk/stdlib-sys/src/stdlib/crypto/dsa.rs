@@ -1,8 +1,7 @@
 use crate::intrinsics::{Felt, Word};
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-dsa-rpo-falcon@1.0.0")]
 extern "C" {
-    #[link_name = "rpo-falcon512-verify"]
+    #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
     fn extern_rpo_falcon512_verify(
         pk1: Felt,
         pk2: Felt,
