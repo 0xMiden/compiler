@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr};
+use std::{ops::Deref, path::Path, str::FromStr};
 
 use glob::Pattern;
 use miden_processor::VmState;
@@ -87,9 +87,11 @@ impl BreakpointType {
     /// Return true if this breakpoint indicates we should break at `loc`
     pub fn should_break_at(&self, loc: &ResolvedLocation) -> bool {
         match self {
-            Self::File(pattern) => pattern.matches_path(loc.source_file.path()),
+            Self::File(pattern) => {
+                pattern.matches_path(Path::new(loc.source_file.deref().content().uri().as_str()))
+            }
             Self::Line { pattern, line } if line == &loc.line => {
-                pattern.matches_path(loc.source_file.path())
+                pattern.matches_path(Path::new(loc.source_file.deref().content().uri().as_str()))
             }
             _ => false,
         }

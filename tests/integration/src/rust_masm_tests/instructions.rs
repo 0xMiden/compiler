@@ -1,5 +1,4 @@
 use miden_core::{Felt, FieldElement, Word};
-use miden_objects::Digest;
 use midenc_debug::ToMidenRepr;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -458,7 +457,8 @@ fn test_hmerge() {
                 felts_in2[2].into(),
                 felts_in2[3].into(),
             ];
-            let digests_in = [Digest::from(raw_felts_in1), Digest::from(raw_felts_in2)];
+            let digests_in =
+                [miden_core::Word::from(raw_felts_in1), miden_core::Word::from(raw_felts_in2)];
             let digest_out = miden_core::crypto::hash::Rpo256::merge(&digests_in);
             let felts_out: [midenc_debug::Felt; 4] = [
                 midenc_debug::Felt(digest_out[0]),

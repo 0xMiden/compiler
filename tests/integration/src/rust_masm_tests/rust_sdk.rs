@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use miden_core::{
-    crypto::hash::RpoDigest,
     utils::{Deserializable, Serializable},
-    Felt, FieldElement,
+    Felt, FieldElement, Word,
 };
 use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
@@ -51,15 +50,16 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
     assert!(
-        !lib.exports().any(|export| { export.to_string().starts_with("intrinsics") }),
+        !lib.exports()
+            .any(|export| { export.name.to_string().starts_with("intrinsics") }),
         "expected no intrinsics in the exports"
     );
     let expected_module = "miden:cross-ctx-account/foo@1.0.0";
     let expected_function = "process-felt";
     assert!(
         lib.exports().any(|export| {
-            export.module.to_string() == expected_module
-                && export.name.as_str() == expected_function
+            export.name.module.to_string() == expected_module
+                && export.name.name.as_str() == expected_function
         }),
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}"
@@ -84,7 +84,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let mut exec = Executor::new(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    let dependencies = package.manifest.dependencies();
+    exec.with_dependencies(dependencies).unwrap();
     let trace = exec.execute(&program, &test.session);
 }
 
@@ -105,14 +106,14 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let expected_function = "process-word";
     let exports = lib
         .exports()
-        .filter(|e| !e.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
+        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
         lib.exports().any(|export| {
-            export.module.to_string() == expected_module
-                && export.name.as_str() == expected_function
+            export.name.module.to_string() == expected_module
+                && export.name.name.as_str() == expected_function
         }),
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}"
@@ -136,7 +137,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let mut exec = Executor::new(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    exec.with_dependencies(package.manifest.dependencies()).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }
 
@@ -173,14 +174,14 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let expected_function = "process-word";
     let exports = lib
         .exports()
-        .filter(|e| !e.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
+        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
         .collect::<Vec<_>>();
     dbg!(&exports);
     assert!(
         lib.exports().any(|export| {
-            export.module.to_string() == expected_module
-                && export.name.as_str() == expected_function
+            export.name.module.to_string() == expected_module
+                && export.name.name.as_str() == expected_function
         }),
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}"
@@ -201,6 +202,6 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let mut exec = Executor::new(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    exec.with_dependencies(&package.manifest.dependencies).unwrap();
+    exec.with_dependencies(package.manifest.dependencies()).unwrap();
     let trace = exec.execute(&package.unwrap_program(), &test.session);
 }

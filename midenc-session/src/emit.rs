@@ -451,20 +451,12 @@ impl Emit for MastArtifact {
 
     fn write_to<W: Writer>(
         &self,
-        writer: W,
-        mode: OutputMode,
-        session: &Session,
+        mut writer: W,
+        _mode: OutputMode,
+        _session: &Session,
     ) -> anyhow::Result<()> {
-        match self {
-            Self::Executable(ref prog) => {
-                if matches!(mode, OutputMode::Binary) {
-                    log::warn!(
-                        "unable to write 'masl' output type for miden_core::Program: skipping.."
-                    );
-                }
-                prog.write_to(writer, mode, session)
-            }
-            Self::Library(ref lib) => lib.write_to(writer, mode, session),
-        }
+        let mut writer = ByteWriterAdapter(&mut writer);
+        self.write_into(&mut writer);
+        Ok(())
     }
 }

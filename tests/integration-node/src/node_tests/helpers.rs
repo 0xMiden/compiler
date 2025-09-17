@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use miden_client::{
     account::{
-        component::{BasicFungibleFaucet, BasicWallet, RpoFalcon512},
+        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
     },
     asset::{FungibleAsset, TokenSymbol},
@@ -21,7 +21,7 @@ use miden_client::{
     utils::Deserializable,
     Client, ClientError,
 };
-use miden_core::{Felt, FieldElement};
+use miden_core::{Felt, FieldElement, Word};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_objects::{
@@ -36,7 +36,7 @@ use rand::{rngs::StdRng, RngCore};
 
 /// Test setup configuration
 pub struct TestSetup {
-    pub client: Client,
+    pub client: Client<FilesystemKeyStore<StdRng>>,
     pub keystore: Arc<FilesystemKeyStore<StdRng>>,
 }
 
@@ -58,13 +58,12 @@ pub async fn setup_test_infrastructure(
 
     // Initialize client
     let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
-    let client = ClientBuilder::new()
+    let builder = ClientBuilder::new()
         .rpc(rpc_api)
         .sqlite_store(&store_path)
         .filesystem_keystore(keystore_path.to_str().unwrap())
-        .in_debug_mode(true)
-        .build()
-        .await?;
+        .in_debug_mode(miden_client::DebugMode::Enabled);
+    let client = builder.build().await?;
 
     Ok(TestSetup { client, keystore })
 }
@@ -92,7 +91,7 @@ impl Default for AccountCreationConfig {
 
 /// Helper to create an account with a custom component from a package
 pub async fn create_account_with_component(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     package: Arc<Package>,
     config: AccountCreationConfig,
@@ -129,7 +128,7 @@ pub async fn create_account_with_component(
     let mut builder = AccountBuilder::new(init_seed)
         .account_type(config.account_type)
         .storage_mode(config.storage_mode)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()));
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()));
 
     if config.with_basic_wallet {
         builder = builder.with_component(BasicWallet);
@@ -145,7 +144,7 @@ pub async fn create_account_with_component(
 }
 
 pub async fn create_fungible_faucet_account(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     token_symbol: TokenSymbol,
     decimals: u8,
@@ -160,7 +159,7 @@ pub async fn create_fungible_faucet_account(
     let builder = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, decimals, max_supply).unwrap());
 
     let (account, seed) = builder.build().unwrap();
@@ -208,7 +207,7 @@ impl Default for NoteCreationConfig {
 
 /// Helper to create a note from a compiled package
 pub fn create_note_from_package(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     package: Arc<Package>,
     sender_id: AccountId,
     config: NoteCreationConfig,
@@ -236,7 +235,7 @@ pub fn create_note_from_package(
 /// Helper function to assert that an account contains a specific fungible asset
 /// The account may have other assets as well
 pub async fn assert_account_has_fungible_asset(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     account_id: AccountId,
     expected_faucet_id: AccountId,
     expected_amount: u64,
@@ -314,7 +313,7 @@ impl Default for AssetTransferConfig {
 /// # Returns
 /// A tuple containing the transaction ID and the created Note for the recipient
 pub async fn send_asset_to_account(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     sender_account_id: AccountId,
     recipient_account_id: AccountId,
     asset: FungibleAsset,
@@ -347,7 +346,7 @@ pub async fn send_asset_to_account(
 
     // Prepare note recipient
     let program_hash = tx_script_program.hash();
-    let serial_num = RpoRandomCoin::new(program_hash.into()).draw_word();
+    let serial_num = RpoRandomCoin::new(program_hash).draw_word();
     let inputs = NoteInputs::new(vec![
         recipient_account_id.prefix().as_felt(),
         recipient_account_id.suffix(),
@@ -365,7 +364,7 @@ pub async fn send_asset_to_account(
     let recipient_digest: [Felt; 4] = note_recipient.digest().into();
     input.extend(recipient_digest);
 
-    let asset_arr: [Felt; 4] = asset.into();
+    let asset_arr: Word = asset.into();
     input.extend(asset_arr);
 
     let mut commitment: [Felt; 4] = miden_core::crypto::hash::Rpo256::hash_elements(&input).into();
@@ -383,7 +382,7 @@ pub async fn send_asset_to_account(
 
     let tx_request = TransactionRequestBuilder::new()
         .custom_script(tx_script)
-        .script_arg(commitment)
+        .script_arg(miden_core::Word::new(commitment))
         .expected_output_recipients(recipients)
         .extend_advice_map(advice_map)
         .build()

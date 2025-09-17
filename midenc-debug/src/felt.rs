@@ -50,7 +50,7 @@ pub trait ToMidenRepr {
         let mut chunks = felts.into_iter().array_chunks::<4>();
         for mut word in chunks.by_ref() {
             word.reverse();
-            words.push(word);
+            words.push(Word::new(word));
         }
         if let Some(remainder) = chunks.into_remainder().filter(|r| r.len() > 0) {
             if remainder.len() > 0 {
@@ -59,7 +59,7 @@ pub trait ToMidenRepr {
                     word[i] = felt;
                 }
                 word.reverse();
-                words.push(word);
+                words.push(Word::new(word));
             }
         }
         words
@@ -536,7 +536,7 @@ impl ToMidenRepr for RawFelt {
     fn to_words(&self) -> SmallVec<[Word; 1]> {
         let mut word = [RawFelt::ZERO; 4];
         word[0] = *self;
-        smallvec![word]
+        smallvec![Word::new(word)]
     }
 }
 
@@ -573,7 +573,7 @@ impl ToMidenRepr for Felt {
     fn to_words(&self) -> SmallVec<[Word; 1]> {
         let mut word = [RawFelt::ZERO; 4];
         word[0] = self.0;
-        smallvec![word]
+        smallvec![Word::new(word)]
     }
 }
 
@@ -894,6 +894,8 @@ impl Arbitrary for Felt {
 mod tests {
     use std::collections::VecDeque;
 
+    use miden_core::Word;
+
     use super::{bytes_to_words, FromMidenRepr, ToMidenRepr};
 
     #[test]
@@ -1050,7 +1052,7 @@ mod tests {
 
         // Make sure bytes_to_words and to_words agree
         let to_words_output = bytes.to_words();
-        assert_eq!(words.as_slice(), to_words_output.as_slice());
+        assert_eq!(Word::new(words[0]), to_words_output[0]);
     }
 
     #[test]
@@ -1059,8 +1061,12 @@ mod tests {
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
-        let words = bytes_to_words(&bytes);
+        let words_as_bytes = bytes_to_words(&bytes);
+
+        let words = vec![Word::new(words_as_bytes[0]), Word::new(words_as_bytes[1])];
+
         let out = <[u8; 32] as FromMidenRepr>::from_words(&words);
+
         assert_eq!(&out, &bytes);
     }
 }

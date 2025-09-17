@@ -1,18 +1,20 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Deref,
     rc::Rc,
     sync::Arc,
 };
 
 use miden_assembly::Library as CompiledLibrary;
-use miden_core::{debuginfo::SourceManagerExt, Program, StackInputs, Word};
+use miden_core::{Program, StackInputs, Word};
+use miden_debug_types::SourceManagerExt;
 use miden_mast_package::{
     Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
     MemDependencyResolverByDigest, ResolvedDependency,
 };
 use miden_processor::{
-    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
+    AdviceInputs, AdviceProvider, ContextId, ExecutionError, Felt, MastForest, Process,
     ProcessState, RowIndex, StackOutputs, VmState, VmStateIterator,
 };
 use midenc_codegen_masm::{NativePtr, Rodata};
@@ -68,13 +70,17 @@ impl Executor {
             DisplayHex::new(&package.digest().as_bytes())
         );
         let mut exec = Self::new(args.into_iter().collect());
-        exec.with_dependencies(&package.manifest.dependencies)?;
+        let dependencies = package.manifest.dependencies();
+        exec.with_dependencies(dependencies)?;
         log::debug!("executor created");
         Ok(exec)
     }
 
     /// Adds dependencies to the executor
-    pub fn with_dependencies(&mut self, dependencies: &[Dependency]) -> Result<&mut Self, Report> {
+    pub fn with_dependencies<'a>(
+        &mut self,
+        dependencies: impl Iterator<Item = &'a Dependency>,
+    ) -> Result<&mut Self, Report> {
         use midenc_hir::formatter::DisplayHex;
 
         for dep in dependencies {
@@ -131,8 +137,8 @@ impl Executor {
     pub fn into_debug(mut self, program: &Program, session: &Session) -> DebugExecutor {
         log::debug!("creating debug executor");
 
-        let advice_provider = MemAdviceProvider::from(self.advice);
-        let mut host = DebuggerHost::new(advice_provider);
+        let advice_provider = AdviceProvider::from(self.advice.clone());
+        let mut host = DebuggerHost::new(advice_provider, session.source_manager.clone());
         for lib in core::mem::take(&mut self.libraries) {
             host.load_mast_forest(lib);
         }
@@ -151,8 +157,8 @@ impl Executor {
             assertion_events.borrow_mut().insert(clk, event);
         });
 
-        let mut process = Process::new_debug(program.kernel().clone(), self.stack);
-        let process_state: ProcessState = (&process).into();
+        let mut process = Process::new_debug(program.kernel().clone(), self.stack, self.advice);
+        let process_state: ProcessState = (&mut process).into();
         let root_context = process_state.ctx();
         let result = process.execute(program, &mut host);
         let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
@@ -198,17 +204,14 @@ impl Executor {
                     if let Some(asmop) = step.asmop.as_ref() {
                         dbg!(&step.stack);
                         let source_loc = asmop.as_ref().location().map(|loc| {
-                            let path = loc.path();
-                            let file = session
-                                .diagnostics
-                                .source_manager_ref()
-                                .load_file(std::path::Path::new(path.as_ref()))
-                                .unwrap();
+                            let path = std::path::Path::new(loc.uri().path());
+                            let file =
+                                session.diagnostics.source_manager_ref().load_file(path).unwrap();
                             (file, loc.start)
                         });
                         if let Some((source_file, line_start)) = source_loc {
                             let line_number = source_file.content().line_index(line_start).number();
-                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.name(), &line_number);
+                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.deref().uri().as_str(), &line_number);
                         } else {
                             log::trace!(target: "executor", "in {} (no source location available)", asmop.context_name());
                         }

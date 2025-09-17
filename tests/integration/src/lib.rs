@@ -1,7 +1,7 @@
 //! Compilation and semantic tests for the whole compiler pipeline
 #![feature(iter_array_chunks)]
 #![feature(debug_closure_helpers)]
-//#![deny(warnings)]
+#![deny(warnings)]
 #![deny(missing_docs)]
 
 mod cargo_proj;

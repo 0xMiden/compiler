@@ -5,7 +5,7 @@ use alloc::{borrow::Cow, format, str::FromStr, sync::Arc, vec::Vec};
 use alloc::{boxed::Box, string::ToString};
 use core::fmt;
 
-pub use miden_assembly::{
+pub use miden_assembly_syntax::{
     Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
 };
 #[cfg(feature = "std")]
@@ -132,9 +132,10 @@ impl LinkLibrary {
                 let ns = LibraryNamespace::new(&self.name)
                     .into_diagnostic()
                     .wrap_err_with(|| format!("invalid library namespace '{}'", &self.name))?;
-                let assembler = miden_assembly::Assembler::new(session.source_manager.clone())
-                    .with_debug_mode(true);
-                CompiledLibrary::from_dir(path, ns, assembler)
+
+                miden_assembly::Assembler::new(session.source_manager.clone())
+                    .with_debug_mode(true)
+                    .assemble_library_from_dir(path, ns)
             }
             LibraryKind::Mast => CompiledLibrary::deserialize_from_file(path).map_err(|err| {
                 Report::msg(format!(

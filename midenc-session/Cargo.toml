@@ -30,7 +30,9 @@ clap = { workspace = true, optional = true }
 inventory.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-core.workspace = true
+miden-debug-types.workspace = true
 miden-mast-package.workspace = true
 miden-stdlib.workspace = true
 midenc-hir-symbol.workspace = true
