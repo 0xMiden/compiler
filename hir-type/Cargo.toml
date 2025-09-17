@@ -2,7 +2,7 @@
 name = "midenc-hir-type"
 description = "Type system and utilities for Miden HIR"
 version = "0.4.2"
-rust-version = "1.89"
+rust-version = "1.88"
 authors.workspace = true
 repository.workspace = true
 categories.workspace = true
