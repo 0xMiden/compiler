@@ -69,6 +69,6 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret_imm 1048592;
         };
 
-        builtin.segment @1048576 = 0x00000000000000090807060504030201;
+        builtin.segment @1048576 = 0x090807060504030201;
     };
 };

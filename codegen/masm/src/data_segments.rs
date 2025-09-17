@@ -9,8 +9,6 @@ use miden_core::utils::ToHex;
 use midenc_hir::SmallVec;
 use midenc_session::diagnostics::Report;
 
-use crate::error::{WasmError, WasmResult};
-
 /// Word size in bytes for Miden VM alignment requirements
 const WORD_SIZE_BYTES: usize = 16;
 
@@ -21,8 +19,6 @@ pub struct ResolvedDataSegment {
     pub offset: u32,
     /// The initialization data
     pub data: Vec<u8>,
-    /// The name/index for debugging purposes
-    pub name: String,
     /// Whether this is readonly data
     pub readonly: bool,
 }
@@ -48,7 +44,6 @@ impl Debug for ResolvedDataSegment {
         f.debug_struct("ResolvedDataSegment")
             .field("offset", &self.offset)
             .field("size", &self.data.len())
-            .field("name", &self.name)
             .field("readonly", &self.readonly)
             .field("data", &self.data.to_hex())
             .finish()
@@ -56,42 +51,35 @@ impl Debug for ResolvedDataSegment {
 }
 
 /// Returns an error if any two segments overlap
-fn validate_no_overlaps(segments: &[ResolvedDataSegment]) -> WasmResult<()> {
+fn validate_no_overlaps(segments: &[ResolvedDataSegment]) -> Result<(), Report> {
     assert!(segments.is_sorted_by_key(|s| s.offset), "Segments must be sorted by offset");
     for window in segments.windows(2) {
         let current = &window[0];
         let next = &window[1];
         if current.end_offset() > next.offset {
             let error_msg = format!(
-                "Data segments overlap: segment '{}' at offset {:#x} (size {}) overlaps with \
-                 segment '{}' at offset {:#x}",
-                current.name,
+                "Data segments overlap: segment at offset {:#x} (size {}) overlaps with segment \
+                 at offset {:#x}",
                 current.offset,
                 current.data.len(),
-                next.name,
                 next.offset
             );
-            return Err(Report::msg(WasmError::Unsupported(error_msg)));
+            return Err(Report::msg(error_msg));
         }
     }
     Ok(())
 }
 
 /// Merges segment metadata (names and readonly status)
-/// Returns a tuple with the merged name and whether all segments are readonly
-fn merge_metadata(segments: &[ResolvedDataSegment]) -> (String, bool) {
-    let mut merged_name = String::new();
+/// Returns a  whether all segments are readonly
+fn merge_metadata(segments: &[ResolvedDataSegment]) -> bool {
     let mut all_readonly = true;
 
-    for (i, segment) in segments.iter().enumerate() {
-        if i > 0 {
-            merged_name.push('_');
-        }
-        merged_name.push_str(&segment.name);
+    for segment in segments.iter() {
         all_readonly = all_readonly && segment.readonly;
     }
 
-    (merged_name, all_readonly)
+    all_readonly
 }
 
 /// Copies all segment data into the merged buffer at their respective offsets
@@ -114,7 +102,7 @@ fn copy_segments_to_buffer(segments: &[ResolvedDataSegment], buffer: &mut [u8], 
 /// Returns `None` if the input segments are empty, otherwise returns the merged segment.
 pub fn merge_data_segments(
     mut segments: SmallVec<[ResolvedDataSegment; 2]>,
-) -> WasmResult<Option<ResolvedDataSegment>> {
+) -> Result<Option<ResolvedDataSegment>, Report> {
     if segments.is_empty() {
         return Ok(None);
     }
@@ -138,12 +126,11 @@ pub fn merge_data_segments(
 
     copy_segments_to_buffer(&segments, &mut merged_data, base_offset);
 
-    let (merged_name, all_readonly) = merge_metadata(&segments);
+    let all_readonly = merge_metadata(&segments);
 
     let mut merged_segment = ResolvedDataSegment {
         offset: base_offset,
         data: merged_data,
-        name: merged_name,
         readonly: all_readonly,
     };
 
@@ -169,7 +156,6 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 10,
             data: vec![1, 2, 3],
-            name: "test".to_string(),
             readonly: true,
         });
 
@@ -201,7 +187,6 @@ mod tests {
             segments.push(ResolvedDataSegment {
                 offset: 1000,
                 data: data.clone(),
-                name: format!("test_{data_len}_bytes"),
                 readonly: false,
             });
 
@@ -235,7 +220,6 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 100,
             data: vec![0xaa, 0xbb, 0xcc, 0xdd],
-            name: "data1".to_string(),
             readonly: false,
         });
 
@@ -243,7 +227,6 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 110,
             data: vec![0x11, 0x22],
-            name: "data2".to_string(),
             readonly: false,
         });
 
@@ -251,7 +234,6 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 120,
             data: vec![0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa],
-            name: "data3".to_string(),
             readonly: false,
         });
 
@@ -291,13 +273,11 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 0,
             data: vec![1, 2, 3, 4],
-            name: "seg1".to_string(),
             readonly: true,
         });
         segments.push(ResolvedDataSegment {
             offset: 8,
             data: vec![5, 6, 7, 8],
-            name: "seg2".to_string(),
             readonly: true,
         });
 
@@ -307,7 +287,6 @@ mod tests {
         // 4 bytes + 4 gap + 4 bytes = 12, padded to 16
         assert_eq!(merged.data.len(), 16);
         assert_eq!(merged.data, vec![1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0]);
-        assert_eq!(merged.name, "seg1_seg2");
     }
 
     #[test]
@@ -316,13 +295,11 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 0,
             data: vec![1, 2, 3, 4, 5, 6],
-            name: "seg1".to_string(),
             readonly: true,
         });
         segments.push(ResolvedDataSegment {
             offset: 4,
             data: vec![7, 8],
-            name: "seg2".to_string(),
             readonly: false,
         });
 
@@ -332,8 +309,6 @@ mod tests {
         let err = result.unwrap_err();
         let err_msg = format!("{err}");
         assert!(err_msg.contains("Data segments overlap"));
-        assert!(err_msg.contains("seg1"));
-        assert!(err_msg.contains("seg2"));
     }
 
     #[test]
@@ -343,13 +318,11 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 1048576,   // 0x100000
             data: vec![0; 44], // Size of the .rodata string
-            name: ".rodata".to_string(),
             readonly: true,
         });
         segments.push(ResolvedDataSegment {
             offset: 1048620,   // 0x10002C
             data: vec![0; 76], // Size of the .data segment
-            name: ".data".to_string(),
             readonly: false,
         });
 
@@ -359,7 +332,6 @@ mod tests {
         // .rodata (44) + gap (0) + .data (76) = 120, padded to 128
         assert_eq!(merged.data.len(), 128);
         assert!(!merged.readonly);
-        assert_eq!(merged.name, ".rodata_.data");
     }
 
     #[test]
@@ -368,7 +340,6 @@ mod tests {
         segments.push(ResolvedDataSegment {
             offset: 100,
             data: vec![1; 32], // Already divisible by 16
-            name: "aligned".to_string(),
             readonly: true,
         });
 
