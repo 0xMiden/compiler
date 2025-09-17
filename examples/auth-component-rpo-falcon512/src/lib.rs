@@ -61,12 +61,8 @@ impl Guest for AuthComponent {
 
         account::incr_nonce(felt!(1));
 
-        // Emit signature to advice (host responsibility) and verify
-        // In Rust SDK we only call the verifier; host must provide the signature.
-        // TODO: send event to load the signature on advice stack
-        // # Event to place the falcon signature of a provided message and public key on the advice stack.
-        // const.FALCON_SIG_TO_STACK=131087
-        // emit.FALCON_SIG_TO_STACK
+        // Emit signature request event to advice stack, then verify.
+        miden::emit_falcon_sig_to_stack();
         miden::rpo_falcon512_verify(pub_key, msg);
     }
 }

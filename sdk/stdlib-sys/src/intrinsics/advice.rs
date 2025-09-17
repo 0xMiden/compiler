@@ -17,3 +17,19 @@ extern "C" {
 pub fn adv_push_mapvaln(key: Word) -> Felt {
     unsafe { extern_adv_push_mapvaln(key[3], key[2], key[1], key[0]) }
 }
+
+extern "C" {
+    /// Emits an event to request a Falcon signature for the current message/public key.
+    /// This maps to a single MASM instruction: `emit.131087`.
+    /// No inputs/outputs.
+    #[link_name = "intrinsics::advice::emit_falcon_sig_to_stack"]
+    fn extern_emit_falcon_sig_to_stack();
+}
+
+/// Emits an event to request a Falcon signature for the current message/public key.
+/// Host is expected to push the signature onto the advice stack in response.
+/// This is a workaround until migrate to use the VM v0.18 where the `emit` op reads the value from the stack.
+#[inline]
+pub fn emit_falcon_sig_to_stack() {
+    unsafe { extern_emit_falcon_sig_to_stack() }
+}

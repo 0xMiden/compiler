@@ -182,6 +182,7 @@
       i32.const 1
       call $intrinsics::felt::from_u32
       call $miden::account::incr_nonce
+      call $intrinsics::advice::emit_falcon_sig_to_stack
       local.get 10
       local.get 11
       local.get 12
@@ -376,7 +377,10 @@
     (func $intrinsics::crypto::hmerge (;16;) (type 7) (param i32 i32)
       unreachable
     )
-    (func $std::crypto::dsa::rpo_falcon512::verify (;17;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $intrinsics::advice::emit_falcon_sig_to_stack (;17;) (type 0)
+      unreachable
+    )
+    (func $std::crypto::dsa::rpo_falcon512::verify (;18;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

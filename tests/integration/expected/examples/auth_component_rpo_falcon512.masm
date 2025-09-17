@@ -700,6 +700,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::account::incr_nonce
     trace.252
     nop
+    trace.240
+    nop
+    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
+    trace.252
+    nop
     movup.5
     swap.6
     movdn.5
@@ -1597,6 +1602,14 @@ proc.intrinsics::crypto::hmerge
     trace.240
     nop
     exec.::intrinsics::crypto::hmerge
+    trace.252
+    nop
+end
+
+proc.intrinsics::advice::emit_falcon_sig_to_stack
+    trace.240
+    nop
+    exec.::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
 end

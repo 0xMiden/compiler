@@ -1,4 +1,4 @@
-#! ADV_PUSH_MAPVALN: Pushes a list of field elements onto the advice stack. 
+#! ADV_PUSH_MAPVALN: Pushes a list of field elements onto the advice stack.
 #! The list is looked up in the advice map using `key` as the key.
 #!
 #! Stack Input:  [key3, key2, key1, key0, ...]
@@ -7,19 +7,29 @@
 #! The key is a Word (4 field elements) used to lookup values in the advice map
 export.adv_push_mapvaln
     # Stack: [key3, key2, key1, key0, ...]
-    
+
     # Call the VM instruction to push values from advice map
     adv.push_mapvaln
     # Stack: [key3, key2, key1, key0, ...]
     # Side effect: [n, ele1, ele2, ...] pushed to advice stack where n is the count
-    
+
     # Drop the key word from the stack
     dropw
     # Stack: [...]
-    
+
     # The adv.push_mapvaln instruction pushes the count on top of the advice stack
     # We need to pop it from the advice stack to return it
     # Note: The advice stack now has [ele1, ele2, ...] with count removed
     adv_push.1
     # Stack: [num_elements, ...]
 end
+
+#! Emits an event to request a Falcon signature loaded to the advice stack
+#!
+#! Inputs:  []
+#! Outputs: []
+export.emit_falcon_sig_to_stack
+    # 131087 == FALCON_SIG_TO_STACK from miden contracts
+    emit.131087
+end
+
