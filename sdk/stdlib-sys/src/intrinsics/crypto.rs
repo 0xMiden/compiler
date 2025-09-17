@@ -58,7 +58,9 @@ impl From<Digest> for [Felt; 4] {
     }
 }
 
-#[link(wasm_import_module = "miden:core-intrinsics/intrinsics-crypto@1.0.0")]
+// Remove WIT import module and resolve via a linker stub instead. The stub will export
+// the MASM symbol `intrinsics::crypto::hmerge`, and the frontend will lower its
+// unreachable body to a MASM exec.
 extern "C" {
     /// Computes the hash of two digests using the Rescue Prime Optimized (RPO)
     /// permutation in 2-to-1 mode.
@@ -67,7 +69,7 @@ extern "C" {
     ///
     /// Input: Pointer to an array of two digests (8 field elements total)
     /// Output: One digest (4 field elements) written to the result pointer
-    #[link_name = "hmerge"]
+    #[link_name = "intrinsics::crypto::hmerge"]
     fn extern_hmerge(
         // Pointer to array of two digests
         digests_ptr: *const Felt,

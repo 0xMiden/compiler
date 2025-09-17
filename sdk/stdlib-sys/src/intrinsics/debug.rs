@@ -1,6 +1,5 @@
-#[link(wasm_import_module = "miden:core-import/intrinsics-debug@1.0.0")]
 extern "C" {
-    #[link_name = "break"]
+    #[link_name = "intrinsics::debug::break"]
     fn extern_break();
 }
 

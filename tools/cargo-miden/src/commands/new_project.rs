@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.14.0";
+const TEMPLATES_REPO_TAG: &str = "v0.15.0";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -222,19 +222,6 @@ pub fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
     // Create wit directory
     let wit_dir = project_path.join(WIT_DEPS_PATH);
     fs::create_dir_all(&wit_dir)?;
-
-    // Write WIT files from stdlib-sys
-    write_wit_file(
-        &wit_dir.join("miden-core-stdlib.wit"),
-        miden_stdlib_sys::stdlib_wit::STDLIB_WIT,
-    )?;
-    write_wit_file(
-        &wit_dir.join("miden-core-intrinsics.wit"),
-        miden_stdlib_sys::stdlib_wit::INTRINSICS_WIT,
-    )?;
-
-    // Write WIT file from base-sys
-    write_wit_file(&wit_dir.join("miden-core-base.wit"), miden_base_sys::base_sys_wit::BASE_WIT)?;
 
     // Write WIT file from base
     write_wit_file(&wit_dir.join("miden.wit"), miden_base::base_wit::MIDEN_WIT)?;

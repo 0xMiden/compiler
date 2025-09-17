@@ -26,7 +26,6 @@ use crate::{
         StaticComponentIndex,
     },
     error::WasmResult,
-    miden_abi::recover_imported_masm_module,
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
@@ -568,12 +567,6 @@ impl<'a> ComponentTranslator<'a> {
                 let parsed_module = self.nested_modules.get_mut(*static_module_idx).unwrap();
                 for module_arg in args {
                     let arg_module_name = module_arg.0;
-                    if recover_imported_masm_module(arg_module_name).is_ok() {
-                        // Skip processing module import if its an intrinsics, stdlib, tx-kernel, etc.
-                        // They are processed in the core Wasm module translation
-                        continue;
-                    }
-
                     let module_path = SymbolPath {
                         path: smallvec![
                             SymbolNameComponent::Root,

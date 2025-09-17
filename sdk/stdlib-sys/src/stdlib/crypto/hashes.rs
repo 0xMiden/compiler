@@ -9,14 +9,13 @@ use crate::{
     intrinsics::{assert_eq, Digest, Felt, Word},
 };
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-blake3@1.0.0")]
 extern "C" {
     /// Computes BLAKE3 1-to-1 hash.
     ///
     /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
     /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
     /// The output is passed back to the caller via a pointer.
-    #[link_name = "hash-one-to-one"]
+    #[link_name = "std::crypto::hashes::blake3::hash_1to1"]
     fn extern_blake3_hash_1to1(
         e1: u32,
         e2: u32,
@@ -34,7 +33,7 @@ extern "C" {
     /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
     /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element)
     /// The output is passed back to the caller via a pointer.
-    #[link_name = "hash-two-to-one"]
+    #[link_name = "std::crypto::hashes::blake3::hash_2to1"]
     fn extern_blake3_hash_2to1(
         e1: u32,
         e2: u32,
@@ -56,14 +55,13 @@ extern "C" {
     );
 }
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-sha256@1.0.0")]
 extern "C" {
     /// Computes SHA256 1-to-1 hash.
     ///
     /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
     /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
     /// The output is passed back to the caller via a pointer.
-    #[link_name = "sha256-hash-one-to-one"]
+    #[link_name = "std::crypto::hashes::sha256::hash_1to1"]
     fn extern_sha256_hash_1to1(
         e1: u32,
         e2: u32,
@@ -81,7 +79,7 @@ extern "C" {
     /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
     /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
     /// The output is passed back to the caller via a pointer.
-    #[link_name = "sha256-hash-two-to-one"]
+    #[link_name = "std::crypto::hashes::sha256::hash_2to1"]
     fn extern_sha256_hash_2to1(
         e1: u32,
         e2: u32,
@@ -103,7 +101,6 @@ extern "C" {
     );
 }
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-hashes-rpo@1.0.0")]
 extern "C" {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
@@ -113,7 +110,7 @@ extern "C" {
     /// Input: A pointer to the memory location and the number of elements to hash
     /// Output: One digest (4 field elements)
     /// The output is passed back to the caller via a pointer.
-    #[link_name = "hash-memory"]
+    #[link_name = "std::crypto::hashes::rpo::hash_memory"]
     pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 }
 

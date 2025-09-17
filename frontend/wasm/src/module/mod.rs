@@ -12,11 +12,11 @@ use self::types::*;
 use crate::{component::SignatureIndex, error::WasmResult, unsupported_diag};
 
 pub mod build_ir;
-pub mod data_segments;
 pub mod func_translation_state;
 pub mod func_translator;
 pub mod function_builder_ext;
 pub mod instance;
+pub mod linker_stubs;
 pub mod module_env;
 pub mod module_translation_state;
 pub mod types;

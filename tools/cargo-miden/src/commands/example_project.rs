@@ -19,13 +19,7 @@ const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")]
 const TRIPLE_PROJECTS: &[(&str, &str, &str)] =
     &[("basic-wallet-tx-script", "basic-wallet", "p2id-note")];
 
-/// Core WIT dependency mappings (package name, file name)
-const CORE_WIT_DEPS: &[(&str, &str)] = &[
-    ("miden:base", "miden.wit"),
-    ("miden:core-intrinsics", "miden-core-intrinsics.wit"),
-    ("miden:core-stdlib", "miden-core-stdlib.wit"),
-    ("miden:core-base", "miden-core-base.wit"),
-];
+const CORE_WIT_DEPS: &[(&str, &str)] = &[("miden:base", "miden.wit")];
 
 /// Create a new Miden example project
 #[derive(Args)]

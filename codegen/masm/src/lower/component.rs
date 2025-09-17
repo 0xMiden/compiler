@@ -12,6 +12,7 @@ use midenc_session::{
     diagnostics::{Report, Spanned},
     TargetEnv,
 };
+use smallvec::SmallVec;
 
 use crate::{
     artifact::MasmComponent,
@@ -93,23 +94,7 @@ impl ToMasmComponent for builtin::Component {
         let modules =
             vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, id.to_library_path()))];
 
-        // Compute rodata segments for the component
-        let rodata = link_info
-            .segment_layout()
-            .iter()
-            .map(|segment_ref| {
-                let segment = segment_ref.borrow();
-                let data = segment.initializer();
-                let felts = crate::Rodata::bytes_to_elements(data.as_slice());
-                let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
-                crate::Rodata {
-                    component: link_info.component().clone(),
-                    digest,
-                    start: super::NativePtr::from_ptr(*segment.offset()),
-                    data,
-                }
-            })
-            .collect();
+        let rodata = data_segments_to_rodata(&link_info)?;
 
         let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
             Some(miden_lib::transaction::TransactionKernel::kernel())
@@ -148,6 +133,35 @@ impl ToMasmComponent for builtin::Component {
 
         Ok(masm_component)
     }
+}
+
+fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, Report> {
+    use midenc_hir::constants::ConstantData;
+
+    use crate::data_segments::{merge_data_segments, ResolvedDataSegment};
+    let mut resolved = SmallVec::<[ResolvedDataSegment; 2]>::new();
+    for sref in link_info.segment_layout().iter() {
+        let s = sref.borrow();
+        resolved.push(ResolvedDataSegment {
+            offset: *s.offset(),
+            data: s.initializer().as_slice().to_vec(),
+            readonly: *s.readonly(),
+        });
+    }
+    Ok(match merge_data_segments(resolved).map_err(Report::msg)? {
+        None => alloc::vec::Vec::new(),
+        Some(merged) => {
+            let data = alloc::sync::Arc::new(ConstantData::from(merged.data));
+            let felts = crate::Rodata::bytes_to_elements(data.as_slice());
+            let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
+            alloc::vec![crate::Rodata {
+                component: link_info.component().clone(),
+                digest,
+                start: super::NativePtr::from_ptr(merged.offset),
+                data,
+            }]
+        }
+    })
 }
 
 struct MasmComponentBuilder<'a> {

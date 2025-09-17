@@ -5,7 +5,10 @@ export.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[6511108792895883553,16222885695204016799,9743660194275725311,6517813025021579317]
+    push.16791429592475771515
+    push.1532788014365311554
+    push.16355128202447696923
+    push.13058114983777808360
     adv.push_mapval
     push.262144
     push.4
@@ -19,14 +22,6 @@ export.init
 end
 
 # mod root_ns:root@1.0.0::adv_load_preimage
-
-proc.miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
-    trace.240
-    nop
-    exec.::std::mem::pipe_preimage_to_memory
-    trace.252
-    nop
-end
 
 export.entrypoint
     push.1114176
@@ -55,17 +50,36 @@ export.entrypoint
     dup.8
     trace.240
     nop
-    exec.::intrinsics::advice::adv_push_mapvaln
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-    u32split
-    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
+    trace.252
+    nop
     push.3
-    dup.3
-    dup.3
+    dup.2
+    dup.2
     drop
     u32and
-    assert_eq
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+    trace.252
+    nop
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+    trace.252
+    nop
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+    trace.252
+    nop
     push.2
     push.0
     dup.0
@@ -85,21 +99,19 @@ export.entrypoint
     exec.::std::math::u64::shr
     trace.252
     nop
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u64_unchecked
     trace.252
     nop
-    assert
-    mul.4294967296
-    add
+    dup.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
+    trace.252
+    nop
     push.2
-    dup.1
-    u32split
+    movdn.2
     drop
     swap.1
     u32shl
@@ -234,7 +246,7 @@ export.entrypoint
         swap.4
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::adv_load_preimage::miden_stdlib_sys::stdlib::mem::extern_pipe_preimage_to_memory
+        exec.::root_ns:root@1.0.0::adv_load_preimage::std::mem::pipe_preimage_to_memory
         trace.252
         nop
         drop
@@ -318,7 +330,17 @@ export.entrypoint
             trace.252
             nop
             push.1
-            assert_eq
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+            trace.252
+            nop
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+            trace.252
+            nop
             push.4
             dup.2
             add
@@ -337,7 +359,17 @@ export.entrypoint
             trace.252
             nop
             push.2
-            assert_eq
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+            trace.252
+            nop
+            swap.1
+            trace.240
+            nop
+            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+            trace.252
+            nop
             push.0
             push.5
             dup.4
@@ -368,7 +400,17 @@ export.entrypoint
                 trace.252
                 nop
                 push.6
-                assert_eq
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+                trace.252
+                nop
+                swap.1
+                trace.240
+                nop
+                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+                trace.252
+                nop
                 push.0
                 push.14
                 movup.4
@@ -399,7 +441,17 @@ export.entrypoint
                     trace.252
                     nop
                     push.15
-                    assert_eq
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
+                    trace.252
+                    nop
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
+                    trace.252
+                    nop
                     push.16
                     movup.2
                     swap.1
@@ -599,7 +651,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             else
                 trace.240
                 nop
-                exec.::intrinsics::mem::heap_base
+                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -700,6 +752,57 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     else
         nop
     end
+end
+
+proc.intrinsics::mem::heap_base
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
+proc.intrinsics::felt::from_u64_unchecked
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::as_u64
+    u32split
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
+end
+
+proc.intrinsics::advice::adv_push_mapvaln
+    trace.240
+    nop
+    exec.::intrinsics::advice::adv_push_mapvaln
+    trace.252
+    nop
+end
+
+proc.std::mem::pipe_preimage_to_memory
+    trace.240
+    nop
+    exec.::std::mem::pipe_preimage_to_memory
+    trace.252
+    nop
 end
 
 proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in

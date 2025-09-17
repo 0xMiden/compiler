@@ -1,66 +1,65 @@
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[link(wasm_import_module = "miden:core-intrinsics/intrinsics-felt@1.0.0")]
 extern "C" {
-    #[link_name = "from-u64-unchecked"]
+    #[link_name = "intrinsics::felt::from_u64_unchecked"]
     fn extern_from_u64_unchecked(value: u64) -> Felt;
 
-    #[link_name = "from-u32"]
+    #[link_name = "intrinsics::felt::from_u32"]
     fn extern_from_u32(value: u32) -> Felt;
 
-    #[link_name = "as-u64"]
+    #[link_name = "intrinsics::felt::as_u64"]
     fn extern_as_u64(felt: Felt) -> u64;
 
-    #[link_name = "add"]
-    fn extern_add(a: Felt, b: Felt) -> Felt;
-
-    #[link_name = "sub"]
+    #[link_name = "intrinsics::felt::sub"]
     fn extern_sub(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "mul"]
+    #[link_name = "intrinsics::felt::mul"]
     fn extern_mul(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "div"]
+    #[link_name = "intrinsics::felt::div"]
     fn extern_div(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "neg"]
+    #[link_name = "intrinsics::felt::neg"]
     fn extern_neg(a: Felt) -> Felt;
 
-    #[link_name = "inv"]
+    #[link_name = "intrinsics::felt::inv"]
     fn extern_inv(a: Felt) -> Felt;
 
-    #[link_name = "pow2"]
+    #[link_name = "intrinsics::felt::pow2"]
     fn extern_pow2(a: Felt) -> Felt;
 
-    #[link_name = "exp"]
+    #[link_name = "intrinsics::felt::exp"]
     fn extern_exp(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "eq"]
+    #[link_name = "intrinsics::felt::eq"]
     fn extern_eq(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "gt"]
+    #[link_name = "intrinsics::felt::gt"]
     fn extern_gt(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "lt"]
+    #[link_name = "intrinsics::felt::lt"]
     fn extern_lt(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "ge"]
+    #[link_name = "intrinsics::felt::ge"]
     fn extern_ge(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "le"]
+    #[link_name = "intrinsics::felt::le"]
     fn extern_le(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "is-odd"]
+    #[link_name = "intrinsics::felt::is_odd"]
     fn extern_is_odd(a: Felt) -> i32;
 
-    #[link_name = "assert"]
+    #[link_name = "intrinsics::felt::assert"]
     fn extern_assert(a: Felt);
 
-    #[link_name = "assertz"]
+    #[link_name = "intrinsics::felt::assertz"]
     fn extern_assertz(a: Felt);
 
-    #[link_name = "assert-eq"]
+    #[link_name = "intrinsics::felt::assert_eq"]
     fn extern_assert_eq(a: Felt, b: Felt);
+
+    #[link_name = "intrinsics::felt::add"]
+    fn extern_add(a: Felt, b: Felt) -> Felt;
 }
 
 /// Creates a `Felt` from an integer constant checking that it is within the

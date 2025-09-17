@@ -55,6 +55,9 @@ fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) 
     false
 }
 
+// All wasm stub symbols are provided by miden-stdlib-sys and miden-base-sys
+// via their respective build.rs scripts.
+
 fn version() -> &'static str {
     option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
@@ -227,15 +230,27 @@ where
                 None => {
                     // Try to resolve via explicit manifest path
                     if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
-                        let mp = camino::Utf8Path::from_path(manifest_path)
-                            .expect("manifest path must be valid UTF-8");
+                        let mp_utf8 =
+                            camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "manifest path is not valid UTF-8: {}",
+                                    manifest_path.display()
+                                )
+                            })?;
+                        let mp_abs = mp_utf8
+                            .as_std_path()
+                            .absolutize()
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "failed to absolutize manifest path {}: {e}",
+                                    manifest_path.display()
+                                )
+                            })?
+                            .into_owned();
                         metadata
                             .packages
                             .iter()
-                            .find(|p| {
-                                p.manifest_path.as_std_path()
-                                    == mp.as_std_path().absolutize().unwrap()
-                            })
+                            .find(|p| p.manifest_path.as_std_path() == mp_abs.as_path())
                             .ok_or_else(|| {
                                 anyhow::anyhow!(
                                     "unable to determine root package: manifest `{}` does not \
@@ -290,23 +305,6 @@ where
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
-                // skip functions that are provided by the Miden SDK and/or intrinsics
-                // only function names (no CM path)
-                package.metadata.section.bindings.skip = vec![
-                    // Our function names can clash with user's function names leading to
-                    // skipping the bindings generation of the user's function names
-                    // see https://github.com/0xMiden/compiler/issues/341
-                    "remove-asset",
-                    "create-note",
-                    "heap-base",
-                    "hash-one-to-one",
-                    "hash-two-to-one",
-                    "add-asset",
-                    "unchecked-from-u64",
-                ]
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect();
             }
 
             let mut spawn_args: Vec<_> = args.clone().into_iter().collect();
@@ -356,7 +354,7 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            let extra_rust_flags = "-C target-feature=+bulk-memory,+wide-arithmetic";
+            let extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
             match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {
@@ -379,9 +377,6 @@ where
             );
             let mut builder = tokio::runtime::Builder::new_current_thread();
             let rt = builder.enable_all().build()?;
-            // dbg!(&packages);
-            // dbg!(&spawn_args);
-            // dbg!(&target_env);
             let wasm_outputs = if matches!(target_env, TargetEnv::Rollup { .. }) {
                 rt.block_on(async {
                     let config = Config::new(terminal, None).await?;
@@ -411,15 +406,14 @@ where
                 )?
             };
             assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
-            let wasm_output = wasm_outputs.first().unwrap();
+            let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
 
             let mut midenc_flags = midenc_flags_from_target(target_env, project_type, wasm_output);
 
             // Add dependency linker arguments
             for dep_path in dependency_packages_paths {
                 midenc_flags.push("--link-library".to_string());
-                // Ensure the path is valid OsStr
-                midenc_flags.push(dep_path.to_str().unwrap().to_string());
+                midenc_flags.push(dep_path.to_string_lossy().to_string());
             }
 
             match build_output_type {

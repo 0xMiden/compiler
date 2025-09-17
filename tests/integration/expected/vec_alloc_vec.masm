@@ -65,53 +65,65 @@ export.entrypoint
         push.0
         push.3735929054
     else
-        push.8
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        push.3
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.4
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        push.2
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.0
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
         push.1
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
+        trace.252
+        nop
+        push.2
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
+        trace.252
+        nop
+        push.3
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
+        trace.252
+        nop
+        push.8
+        dup.4
+        add
+        u32assert
+        push.4
+        dup.1
         swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.4
+        dup.3
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        dup.1
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
         u32divmod.4
         swap.1
         trace.240
@@ -353,7 +365,7 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
             else
                 trace.240
                 nop
-                exec.::intrinsics::mem::heap_base
+                exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -454,6 +466,18 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     else
         nop
     end
+end
+
+proc.intrinsics::mem::heap_base
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
+proc.intrinsics::felt::from_u32
+    nop
 end
 
 proc.alloc::raw_vec::RawVecInner<A>::deallocate

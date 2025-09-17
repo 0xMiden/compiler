@@ -8,21 +8,19 @@ use midenc_hir::{
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, SmallVec, Visibility,
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
 
 use super::{
-    data_segments::{merge_data_segments, ResolvedDataSegment},
-    module_translation_state::ModuleTranslationState,
-    types::ModuleTypesBuilder,
-    MemoryIndex,
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
 };
 use crate::{
     error::WasmResult,
     module::{
         func_translator::FuncTranslator,
+        linker_stubs::maybe_lower_linker_stub,
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
@@ -96,9 +94,6 @@ pub fn build_ir_module(
         .memories
         .get(MemoryIndex::from_u32(0))
         .map(|mem| mem.minimum as u32);
-    // if let Some(memory_size) = memory_size {
-    // module_builder.with_reserved_memory_pages(memory_size);
-    // }
 
     build_globals(&parsed_module.module, module_state.module_builder, context.diagnostics())?;
     build_data_segments(parsed_module, module_state.module_builder, context.diagnostics())?;
@@ -132,7 +127,13 @@ pub fn build_ir_module(
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
-        // let mut module_func_builder = module_builder.function(func_name.as_str(), sig.clone())?;
+        // If this is a linker stub, synthesize its body to exec the MASM callee.
+        // Note: Intrinsics and Miden ABI (SDK/stdlib) calls are expected to be
+        // surfaced via such linker stubs rather than as core-wasm imports.
+        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
+            continue;
+        }
+
         let FunctionBodyData { validator, body } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
         func_translator.translate_body(
@@ -145,9 +146,7 @@ pub fn build_ir_module(
             context.session(),
             &mut func_validator,
         )?;
-        // module_func_builder.build(&context.session.diagnostics)?;
     }
-    // let module = module_builder.build();
     Ok(())
 }
 
@@ -205,38 +204,20 @@ fn build_data_segments(
     module_builder: &mut ModuleBuilder,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    // First, collect all data segments into ResolvedDataSegment structures
-    let mut resolved_segments = SmallVec::<[ResolvedDataSegment; 2]>::new();
-
     for (data_segment_idx, data_segment) in &translation.data_segments {
         let data_segment_name =
             translation.module.name_section.data_segment_names[&data_segment_idx];
         let readonly = data_segment_name.as_str().contains(".rodata");
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
-
-        resolved_segments.push(ResolvedDataSegment {
-            offset,
-            data: data_segment.data.to_vec(),
-            name: data_segment_name.as_str().to_string(),
-            readonly,
-        });
-    }
-
-    // Apply alignment and merging
-    if let Some(merged_segment) = merge_data_segments(resolved_segments)? {
-        let init = ConstantData::from(merged_segment.data);
+        let init = ConstantData::from(data_segment.data.to_vec());
         let size = init.len() as u32;
-        if let Err(e) = module_builder.define_data_segment(
-            merged_segment.offset,
-            init,
-            merged_segment.readonly,
-            SourceSpan::default(),
-        ) {
-            let message = format!(
-                "Failed to declare data segment '{}' with size '{}' at '{:#x}'",
-                merged_segment.name, size, merged_segment.offset
-            );
-            return Err(e.wrap_err(message));
+        if let Err(e) =
+            module_builder.define_data_segment(offset, init, readonly, SourceSpan::default())
+        {
+            return Err(e.wrap_err(format!(
+                "Failed to declare data segment '{data_segment_name}' with size '{size}' at \
+                 '{offset:#x}'"
+            )));
         }
     }
     Ok(())

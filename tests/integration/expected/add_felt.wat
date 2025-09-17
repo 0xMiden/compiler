@@ -1,14 +1,16 @@
 (module $add_felt.wasm
   (type (;0;) (func (param f32 f32) (result f32)))
-  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "add" (func $miden_stdlib_sys::intrinsics::felt::extern_add (;0;) (type 0)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 16)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
-  (func $entrypoint (;1;) (type 0) (param f32 f32) (result f32)
+  (func $entrypoint (;0;) (type 0) (param f32 f32) (result f32)
     local.get 0
     local.get 1
-    call $miden_stdlib_sys::intrinsics::felt::extern_add
+    call $intrinsics::felt::add
+  )
+  (func $intrinsics::felt::add (;1;) (type 0) (param f32 f32) (result f32)
+    unreachable
   )
 )

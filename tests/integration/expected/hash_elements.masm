@@ -12,63 +12,6 @@ end
 
 # mod root_ns:root@1.0.0::hash_elements
 
-proc.miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
-    trace.240
-    nop
-    exec.::std::crypto::hashes::rpo::hash_memory
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    swap.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    swap.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
 export.entrypoint
     push.1114112
     u32divmod.4
@@ -111,12 +54,27 @@ export.entrypoint
     swap.1
     swap.1
     u32shr
-    push.0
     push.3
-    dup.2
+    dup.1
     swap.1
     u32and
-    assert_eq
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
+    trace.252
+    nop
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
+    trace.252
+    nop
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::assert_eq
+    trace.252
+    nop
     push.8
     dup.3
     add
@@ -141,7 +99,7 @@ export.entrypoint
     swap.2
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::miden_stdlib_sys::stdlib::crypto::hashes::extern_hash_memory
+    exec.::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory
     trace.252
     nop
     push.24
@@ -529,6 +487,71 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+end
+
+proc.intrinsics::felt::from_u32
+    nop
+end
+
+proc.intrinsics::felt::assert_eq
+    assert_eq
+end
+
+proc.std::crypto::hashes::rpo::hash_memory
+    trace.240
+    nop
+    exec.::std::crypto::hashes::rpo::hash_memory
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    swap.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end

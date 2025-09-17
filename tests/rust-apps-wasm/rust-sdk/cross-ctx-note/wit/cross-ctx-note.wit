@@ -1,8 +1,6 @@
 package miden:cross-ctx-note@1.0.0;
 
 world cross-ctx-note-world {
-    include miden:core-intrinsics/intrinsics@1.0.0;
-
     import miden:cross-ctx-account/foo@1.0.0;
     export miden:base/note-script@1.0.0;
 }

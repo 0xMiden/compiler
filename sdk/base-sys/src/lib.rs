@@ -3,6 +3,3 @@
 #![deny(warnings)]
 
 pub mod bindings;
-
-#[cfg(feature = "wit")]
-pub mod base_sys_wit;

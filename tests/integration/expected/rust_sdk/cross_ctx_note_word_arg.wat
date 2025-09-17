@@ -22,24 +22,13 @@
     )
   )
   (import "miden:cross-ctx-account-word-arg/foo@1.0.0" (instance (;1;) (type 3)))
-  (type (;4;)
-    (instance
-      (type (;0;) (func (param "a" u32) (result f32)))
-      (export (;0;) "from-u32" (func (type 0)))
-      (type (;1;) (func (param "a" f32) (param "b" f32)))
-      (export (;1;) "assert-eq" (func (type 1)))
-    )
-  )
-  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance (;2;) (type 4)))
   (core module (;0;)
-    (type (;0;) (func (param i32) (result f32)))
-    (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
-    (type (;2;) (func (param f32 f32)))
-    (type (;3;) (func))
-    (type (;4;) (func (param f32 f32 f32 f32)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
-    (import "miden:cross-ctx-account-word-arg/foo@1.0.0" "process-word" (func $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22 (;1;) (type 1)))
-    (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "assert-eq" (func $miden_stdlib_sys::intrinsics::felt::extern_assert_eq (;2;) (type 2)))
+    (type (;0;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
+    (type (;1;) (func))
+    (type (;2;) (func (param f32 f32 f32 f32)))
+    (type (;3;) (func (param i32) (result f32)))
+    (type (;4;) (func (param f32 f32)))
+    (import "miden:cross-ctx-account-word-arg/foo@1.0.0" "process-word" (func $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -47,52 +36,52 @@
     (export "memory" (memory 0))
     (export "miden:base/note-script@1.0.0#run" (func $miden:base/note-script@1.0.0#run))
     (elem (;0;) (i32.const 1) func $cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports)
-    (func $__wasm_call_ctors (;3;) (type 3))
-    (func $cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports (;4;) (type 3))
-    (func $miden:base/note-script@1.0.0#run (;5;) (type 4) (param f32 f32 f32 f32)
+    (func $__wasm_call_ctors (;1;) (type 1))
+    (func $cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports (;2;) (type 1))
+    (func $miden:base/note-script@1.0.0#run (;3;) (type 2) (param f32 f32 f32 f32)
       call $wit_bindgen_rt::run_ctors_once
       i32.const 1
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 2
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 3
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 4
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 5
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 6
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 7
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 8
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 9
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 10
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 11
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 12
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 13
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 14
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 15
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       i32.const 7
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+      call $intrinsics::felt::from_u32
       call $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
       i32.const 458760
-      call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
-      call $miden_stdlib_sys::intrinsics::felt::extern_assert_eq
+      call $intrinsics::felt::from_u32
+      call $intrinsics::felt::assert_eq
     )
-    (func $wit_bindgen_rt::run_ctors_once (;6;) (type 3)
+    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048608
+        i32.const 1048588
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -100,39 +89,36 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048608
+        i32.const 1048588
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00\01\00\00\00")
+    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+      unreachable
+    )
+    (func $intrinsics::felt::assert_eq (;6;) (type 4) (param f32 f32)
+      unreachable
+    )
+    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")
   )
-  (alias export 0 "word" (type (;5;)))
-  (alias export 2 "from-u32" (func (;0;)))
+  (alias export 0 "word" (type (;4;)))
+  (alias export 1 "process-word" (func (;0;)))
   (core func (;0;) (canon lower (func 0)))
-  (alias export 2 "assert-eq" (func (;1;)))
-  (core func (;1;) (canon lower (func 1)))
   (core instance (;0;)
-    (export "from-u32" (func 0))
-    (export "assert-eq" (func 1))
+    (export "process-word" (func 0))
   )
-  (alias export 1 "process-word" (func (;2;)))
-  (core func (;2;) (canon lower (func 2)))
-  (core instance (;1;)
-    (export "process-word" (func 2))
-  )
-  (core instance (;2;) (instantiate 0
-      (with "miden:core-intrinsics/intrinsics-felt@1.0.0" (instance 0))
-      (with "miden:cross-ctx-account-word-arg/foo@1.0.0" (instance 1))
+  (core instance (;1;) (instantiate 0
+      (with "miden:cross-ctx-account-word-arg/foo@1.0.0" (instance 0))
     )
   )
-  (alias core export 2 "memory" (core memory (;0;)))
-  (type (;6;) (func (param "arg" 5)))
-  (alias core export 2 "miden:base/note-script@1.0.0#run" (core func (;3;)))
-  (func (;3;) (type 6) (canon lift (core func 3)))
-  (alias export 0 "felt" (type (;7;)))
-  (alias export 0 "word" (type (;8;)))
+  (alias core export 1 "memory" (core memory (;0;)))
+  (type (;5;) (func (param "arg" 4)))
+  (alias core export 1 "miden:base/note-script@1.0.0#run" (core func (;1;)))
+  (func (;1;) (type 5) (canon lift (core func 1)))
+  (alias export 0 "felt" (type (;6;)))
+  (alias export 0 "word" (type (;7;)))
   (component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
@@ -146,12 +132,12 @@
     (type (;8;) (func (param "arg" 7)))
     (export (;1;) "run" (func 0) (func (type 8)))
   )
-  (instance (;3;) (instantiate 0
-      (with "import-func-run" (func 3))
-      (with "import-type-felt" (type 7))
-      (with "import-type-word" (type 8))
-      (with "import-type-word0" (type 5))
+  (instance (;2;) (instantiate 0
+      (with "import-func-run" (func 1))
+      (with "import-type-felt" (type 6))
+      (with "import-type-word" (type 7))
+      (with "import-type-word0" (type 4))
     )
   )
-  (export (;4;) "miden:base/note-script@1.0.0" (instance 3))
+  (export (;3;) "miden:base/note-script@1.0.0" (instance 2))
 )
