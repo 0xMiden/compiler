@@ -1,20 +1,18 @@
 (module $vec_alloc_vec.wasm
   (type (;0;) (func (param i32) (result f32)))
-  (type (;1;) (func (result i32)))
-  (type (;2;) (func (param i32 i32) (result i32)))
-  (type (;3;) (func (param i32 i32 i32)))
-  (type (;4;) (func))
-  (type (;5;) (func (param i32 i32 i32) (result i32)))
+  (type (;1;) (func (param i32 i32) (result i32)))
+  (type (;2;) (func (param i32 i32 i32)))
+  (type (;3;) (func))
+  (type (;4;) (func (param i32 i32 i32) (result i32)))
+  (type (;5;) (func (result i32)))
   (type (;6;) (func (param i32 i32 i32 i32)))
   (type (;7;) (func (param i32 i32)))
-  (import "miden:core-intrinsics/intrinsics-felt@1.0.0" "from-u32" (func $miden_stdlib_sys::intrinsics::felt::extern_from_u32 (;0;) (type 0)))
-  (import "miden:core-intrinsics/intrinsics-mem@1.0.0" "heap-base" (func $miden_sdk_alloc::heap_base (;1;) (type 1)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
-  (func $entrypoint (;2;) (type 0) (param i32) (result f32)
+  (func $entrypoint (;0;) (type 0) (param i32) (result f32)
     (local i32 i32 f32 f32)
     global.get $__stack_pointer
     i32.const 16
@@ -31,14 +29,14 @@
         i32.eqz
         br_if 0 (;@2;)
         i32.const 1
-        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $intrinsics::felt::from_u32
         local.set 3
         i32.const 2
-        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $intrinsics::felt::from_u32
         local.set 4
         local.get 2
         i32.const 3
-        call $miden_stdlib_sys::intrinsics::felt::extern_from_u32
+        call $intrinsics::felt::from_u32
         f32.store offset=8
         local.get 2
         local.get 4
@@ -85,17 +83,17 @@
     end
     unreachable
   )
-  (func $__rustc::__rust_alloc (;3;) (type 2) (param i32 i32) (result i32)
+  (func $__rustc::__rust_alloc (;1;) (type 1) (param i32 i32) (result i32)
     i32.const 1048576
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
-  (func $__rustc::__rust_dealloc (;4;) (type 3) (param i32 i32 i32))
-  (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;5;) (type 4)
+  (func $__rustc::__rust_dealloc (;2;) (type 2) (param i32 i32 i32))
+  (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;3;) (type 3)
     return
   )
-  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;6;) (type 5) (param i32 i32 i32) (result i32)
+  (func $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc (;4;) (type 4) (param i32 i32 i32) (result i32)
     (local i32 i32)
     block ;; label = @1
       local.get 1
@@ -136,7 +134,7 @@
         i32.load
         br_if 0 (;@2;)
         local.get 0
-        call $miden_sdk_alloc::heap_base
+        call $intrinsics::mem::heap_base
         memory.size
         i32.const 16
         i32.shl
@@ -167,7 +165,13 @@
     end
     unreachable
   )
-  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;7;) (type 3) (param i32 i32 i32)
+  (func $intrinsics::mem::heap_base (;5;) (type 5) (result i32)
+    unreachable
+  )
+  (func $intrinsics::felt::from_u32 (;6;) (type 0) (param i32) (result f32)
+    unreachable
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;7;) (type 2) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -234,7 +238,7 @@
     local.get 4
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;9;) (type 3) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;9;) (type 2) (param i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -248,7 +252,7 @@
   (func $alloc::alloc::handle_alloc_error (;10;) (type 7) (param i32 i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;11;) (type 2) (param i32 i32) (result i32)
+  (func $core::ptr::alignment::Alignment::max (;11;) (type 1) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0

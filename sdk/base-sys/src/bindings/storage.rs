@@ -3,12 +3,11 @@ use miden_stdlib_sys::{Felt, Word};
 use super::StorageCommitmentRoot;
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
-    #[link_name = "get-item"]
+    #[link_name = "miden::account::get_item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);
 
-    #[link_name = "set-item"]
+    #[link_name = "miden::account::set_item"]
     pub fn extern_set_storage_item(
         index: Felt,
         v0: Felt,
@@ -18,7 +17,7 @@ extern "C" {
         ptr: *mut (StorageCommitmentRoot, Word),
     );
 
-    #[link_name = "get-map-item"]
+    #[link_name = "miden::account::get_map_item"]
     pub fn extern_get_storage_map_item(
         index: Felt,
         k0: Felt,
@@ -28,7 +27,7 @@ extern "C" {
         ptr: *mut Word,
     );
 
-    #[link_name = "set-map-item"]
+    #[link_name = "miden::account::set_map_item"]
     pub fn extern_set_storage_map_item(
         index: Felt,
         k0: Felt,

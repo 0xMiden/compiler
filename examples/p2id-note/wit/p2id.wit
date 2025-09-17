@@ -1,10 +1,6 @@
 package miden:p2id@1.0.0;
 
 world p2id-world {
-    include miden:core-intrinsics/intrinsics@1.0.0;
-    include miden:core-stdlib/stdlib@1.0.0;
-    include miden:core-base/base@1.0.0;
-
     import miden:basic-wallet/basic-wallet@1.0.0;
     export miden:base/note-script@1.0.0;
 }

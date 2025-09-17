@@ -3,16 +3,16 @@ use miden_stdlib_sys::Felt;
 use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
-#[link(wasm_import_module = "miden:core-base/account@1.0.0")]
 extern "C" {
-    #[link_name = "get-id"]
+    #[link_name = "miden::account::get_id"]
     pub fn extern_account_get_id(ptr: *mut AccountId);
-    #[link_name = "add-asset"]
-    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
-    #[link_name = "remove-asset"]
+    #[link_name = "miden::account::remove_asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
-    #[link_name = "incr-nonce"]
+    #[link_name = "miden::account::incr_nonce"]
     pub fn extern_account_incr_nonce(value: i32);
+    // Resolved via stub rlib at core Wasm link time
+    #[link_name = "miden::account::add_asset"]
+    pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
 }
 
 /// Get the account ID of the currently executing note account.

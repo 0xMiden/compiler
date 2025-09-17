@@ -9,7 +9,5 @@ interface foo {
 }
 
 world foo-world {
-    include miden:core-intrinsics/intrinsics@1.0.0;
-
     export foo;
 }

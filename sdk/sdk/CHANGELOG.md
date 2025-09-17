@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### BREAKING
+- Remove low-level WIT interfaces for Miden standard library and transaction protocol library and link directly using stub library and transforming the stub functions into calls to MASM procedures.
+
 ## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-v0.0.7...miden-v0.0.8) - 2025-04-24
 
 ### Added

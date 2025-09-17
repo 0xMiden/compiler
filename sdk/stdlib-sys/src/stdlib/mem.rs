@@ -8,7 +8,6 @@ use crate::{
     intrinsics::{Felt, Word},
 };
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-mem@1.0.0")]
 extern "C" {
 
     /// Moves an arbitrary number of words from the advice stack to memory.
@@ -21,7 +20,7 @@ extern "C" {
     /// Cycles:
     /// - Even num_words: 48 + 9 * num_words / 2
     /// - Odd num_words: 65 + 9 * round_down(num_words / 2)
-    #[link_name = "pipe-words-to-memory"]
+    #[link_name = "std::mem::pipe_words_to_memory"]
     fn extern_pipe_words_to_memory(num_words: Felt, ptr: *mut Felt, out_ptr: *mut Felt);
 
     /// Moves an even number of words from the advice stack to memory.
@@ -36,7 +35,7 @@ extern "C" {
     /// - The value num_words = end_ptr - write_ptr must be positive and even
     ///
     /// Cycles: 10 + 9 * num_words / 2
-    #[link_name = "pipe-double-words-to-memory"]
+    #[link_name = "std::mem::pipe_double_words_to_memory"]
     fn extern_pipe_double_words_to_memory(
         c0: Felt,
         c1: Felt,
@@ -63,7 +62,7 @@ extern "C" {
     /// Cycles:
     /// - Even num_words: 58 + 9 * (num_words / 2)
     /// - Odd num_words: 75 + 9 * round_down(num_words / 2)
-    #[link_name = "pipe-preimage-to-memory"]
+    #[link_name = "std::mem::pipe_preimage_to_memory"]
     pub(crate) fn extern_pipe_preimage_to_memory(
         num_words: Felt,
         write_ptr: *mut Felt,

@@ -682,9 +682,7 @@ dependencies = [
  "libc",
  "log",
  "miden-base",
- "miden-base-sys",
  "miden-mast-package",
- "miden-stdlib-sys",
  "midenc-compile",
  "midenc-session",
  "owo-colors",
@@ -3478,7 +3476,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -3518,7 +3516,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -3527,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "miden-objects",
  "proc-macro2",
@@ -3539,7 +3537,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "miden-stdlib-sys",
 ]
@@ -3833,7 +3831,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.4.1"
+version = "0.5.0"
 
 [[package]]
 name = "miden-stdlib"
@@ -3847,7 +3845,7 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.4.1"
+version = "0.5.0"
 
 [[package]]
 name = "miden-thiserror"

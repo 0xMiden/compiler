@@ -3,25 +3,19 @@ use midenc_hir::{
     interner::Symbol,
     smallvec, CallConv, FxHashMap, Signature, SymbolNameComponent, SymbolPath, Visibility,
 };
-use midenc_session::diagnostics::DiagnosticsHandler;
+use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
 use super::{instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder, FuncIndex, Module};
 use crate::{
-    callable::CallableFunction,
-    component::lower_imports::generate_import_lowering_function,
-    error::WasmResult,
-    intrinsics::{process_intrinsics_import, Intrinsic},
-    miden_abi::{
-        define_func_for_miden_abi_transformation, is_miden_abi_module,
-        recover_imported_masm_function_id,
-    },
-    translation_utils::sig_from_func_type,
+    callable::CallableFunction, component::lower_imports::generate_import_lowering_function,
+    error::WasmResult, translation_utils::sig_from_func_type,
 };
 
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     functions: FxHashMap<FuncIndex, CallableFunction>,
     pub module_builder: &'a mut ModuleBuilder,
+    pub world_builder: &'a mut WorldBuilder,
 }
 
 impl<'a> ModuleTranslationState<'a> {
@@ -62,13 +56,28 @@ impl<'a> ModuleTranslationState<'a> {
             if module.is_imported_function(index) {
                 assert!((index.as_u32() as usize) < module.num_imported_funcs);
                 let import = &module.imports[index.as_u32() as usize];
-                let func =
-                    process_import(module_builder, world_builder, &module_args, path, sig, import)?;
+                let func = process_import(
+                    module_builder,
+                    world_builder,
+                    &module_args,
+                    path,
+                    sig,
+                    import,
+                    diagnostics,
+                )?;
                 functions.insert(index, func);
             } else {
                 let function_ref = module_builder
                     .define_function(path.name().into(), sig.clone())
-                    .expect("adding new function failed");
+                    .map_err(|e| {
+                        diagnostics
+                            .diagnostic(Severity::Error)
+                            .with_message(format!(
+                                "Failed to add new function '{}' to module: {e:?}",
+                                path.name()
+                            ))
+                            .into_report()
+                    })?;
                 let defined_function = CallableFunction::Function {
                     wasm_id: path,
                     function_ref,
@@ -80,6 +89,7 @@ impl<'a> ModuleTranslationState<'a> {
         Ok(Self {
             functions,
             module_builder,
+            world_builder,
         })
     }
 
@@ -98,44 +108,26 @@ fn process_import(
     core_func_id: SymbolPath,
     core_func_sig: Signature,
     import: &super::ModuleImport,
-) -> Result<CallableFunction, midenc_hir::Report> {
-    match recover_imported_masm_function_id(&import.module, &import.field) {
-        Some(masm_function_path) => {
-            if let Ok(intrinsic) = Intrinsic::try_from(&masm_function_path) {
-                Ok(process_intrinsics_import(world_builder, intrinsic, core_func_sig))
-            } else if is_miden_abi_module(&masm_function_path) {
-                Ok(define_func_for_miden_abi_transformation(
-                    world_builder,
-                    module_builder,
-                    core_func_id,
-                    core_func_sig,
-                    masm_function_path,
-                ))
-            } else {
-                unimplemented!("unhandled masm primitive: '{masm_function_path}'")
-            }
-        }
-        None => {
-            let import_path = SymbolPath {
-                path: smallvec![
-                    SymbolNameComponent::Root,
-                    SymbolNameComponent::Component(Symbol::intern(&import.module)),
-                    SymbolNameComponent::Leaf(Symbol::intern(&import.field))
-                ],
-            };
-            let module_arg = module_args
-                .get(&import_path)
-                .unwrap_or_else(|| panic!("unexpected import '{import_path:?}'"));
-            process_module_arg(
-                module_builder,
-                world_builder,
-                core_func_id,
-                core_func_sig,
-                import_path,
-                module_arg,
-            )
-        }
-    }
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<CallableFunction> {
+    let import_path = SymbolPath {
+        path: smallvec![
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(Symbol::intern(&import.module)),
+            SymbolNameComponent::Leaf(Symbol::intern(&import.field))
+        ],
+    };
+    let Some(module_arg) = module_args.get(&import_path) else {
+        crate::unsupported_diag!(diagnostics, "unexpected import '{import_path:?}'");
+    };
+    process_module_arg(
+        module_builder,
+        world_builder,
+        core_func_id,
+        core_func_sig,
+        import_path,
+        module_arg,
+    )
 }
 
 fn process_module_arg(
@@ -145,7 +137,7 @@ fn process_module_arg(
     sig: Signature,
     wasm_import_path: SymbolPath,
     module_arg: &ModuleArgument,
-) -> Result<CallableFunction, midenc_hir::Report> {
+) -> WasmResult<CallableFunction> {
     Ok(match module_arg {
         ModuleArgument::Function(_) => {
             todo!("core Wasm function import is not implemented yet");

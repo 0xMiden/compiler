@@ -35,13 +35,7 @@ tokio.workspace = true
 cargo-config2 = "0.1.24"
 serde.workspace = true
 serde_json = "1.0"
-miden-stdlib-sys = { version = "0.4.1", path = "../../sdk/stdlib-sys", features = [
-    "wit",
-] }
-miden-base-sys = { version = "0.4.1", path = "../../sdk/base-sys", features = [
-    "wit",
-] }
-miden-base = { version = "0.4.1", path = "../../sdk/base", features = ["wit"] }
+miden-base = { version = "0.5.0", path = "../../sdk/base", features = ["wit"] }
 
 # from cargo-component
 semver.workspace = true

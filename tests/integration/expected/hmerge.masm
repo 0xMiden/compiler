@@ -189,7 +189,7 @@ export.entrypoint
     dup.1
     trace.240
     nop
-    exec.::intrinsics::crypto::hmerge
+    exec.::root_ns:root@1.0.0::hmerge::intrinsics::crypto::hmerge
     trace.252
     nop
     push.32
@@ -219,6 +219,14 @@ export.entrypoint
     trace.240
     nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+proc.intrinsics::crypto::hmerge
+    trace.240
+    nop
+    exec.::intrinsics::crypto::hmerge
     trace.252
     nop
 end

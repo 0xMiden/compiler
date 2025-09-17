@@ -5,11 +5,10 @@ use miden_stdlib_sys::Felt;
 
 use super::Asset;
 
-#[link(wasm_import_module = "miden:core-base/note@1.0.0")]
 extern "C" {
-    #[link_name = "get-inputs"]
+    #[link_name = "miden::note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
-    #[link_name = "get-assets"]
+    #[link_name = "miden::note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
 }
 

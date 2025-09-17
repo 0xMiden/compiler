@@ -14,52 +14,67 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt):
             hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/wit_bindgen_rt::run_ctors_once()
             hir.store_local v15 #[local = lv0];
-            v117 = arith.constant 16384 : felt;
-            v71 = arith.mul v14, v117 : felt #[overflow = unchecked];
-            v118 = arith.constant 8192 : felt;
-            v67 = arith.mul v13, v118 : felt #[overflow = unchecked];
-            v119 = arith.constant 4096 : felt;
-            v64 = arith.mul v12, v119 : felt #[overflow = unchecked];
-            v68 = arith.add v64, v67 : felt #[overflow = unchecked];
-            v72 = arith.add v68, v71 : felt #[overflow = unchecked];
-            v120 = arith.constant 2048 : felt;
-            v60 = arith.mul v11, v120 : felt #[overflow = unchecked];
-            v121 = arith.constant 1024 : felt;
-            v56 = arith.mul v10, v121 : felt #[overflow = unchecked];
-            v122 = arith.constant 512 : felt;
-            v52 = arith.mul v9, v122 : felt #[overflow = unchecked];
-            v123 = arith.constant 256 : felt;
-            v49 = arith.mul v8, v123 : felt #[overflow = unchecked];
-            v53 = arith.add v49, v52 : felt #[overflow = unchecked];
-            v57 = arith.add v53, v56 : felt #[overflow = unchecked];
-            v61 = arith.add v57, v60 : felt #[overflow = unchecked];
-            v124 = arith.constant 128 : felt;
-            v45 = arith.mul v7, v124 : felt #[overflow = unchecked];
-            v125 = arith.constant 64 : felt;
-            v41 = arith.mul v6, v125 : felt #[overflow = unchecked];
-            v126 = arith.constant 32 : felt;
-            v37 = arith.mul v5, v126 : felt #[overflow = unchecked];
-            v127 = arith.constant 16 : felt;
-            v34 = arith.mul v4, v127 : felt #[overflow = unchecked];
-            v38 = arith.add v34, v37 : felt #[overflow = unchecked];
-            v42 = arith.add v38, v41 : felt #[overflow = unchecked];
-            v46 = arith.add v42, v45 : felt #[overflow = unchecked];
-            v128 = arith.constant 8 : felt;
-            v30 = arith.mul v3, v128 : felt #[overflow = unchecked];
-            v129 = arith.constant 4 : felt;
-            v26 = arith.mul v2, v129 : felt #[overflow = unchecked];
-            v130 = arith.constant 2 : felt;
-            v22 = arith.mul v1, v130 : felt #[overflow = unchecked];
-            v131 = arith.constant 1 : felt;
-            v19 = arith.mul v0, v131 : felt #[overflow = unchecked];
-            v23 = arith.add v19, v22 : felt #[overflow = unchecked];
-            v27 = arith.add v23, v26 : felt #[overflow = unchecked];
-            v31 = arith.add v27, v30 : felt #[overflow = unchecked];
-            v73 = arith.add v31, v46 : felt #[overflow = unchecked];
-            v74 = arith.add v73, v61 : felt #[overflow = unchecked];
-            v75 = arith.add v74, v72 : felt #[overflow = unchecked];
-            v133 = hir.load_local  : felt #[local = lv0];
-            v76 = arith.add v75, v133 : felt #[overflow = unchecked];
+            v17 = arith.constant 1 : i32;
+            v18 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v17) : felt
+            v19 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v0, v18) : felt
+            v20 = arith.constant 2 : i32;
+            v21 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v20) : felt
+            v22 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v1, v21) : felt
+            v23 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v19, v22) : felt
+            v24 = arith.constant 4 : i32;
+            v25 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v24) : felt
+            v26 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v2, v25) : felt
+            v27 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v23, v26) : felt
+            v28 = arith.constant 8 : i32;
+            v29 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v28) : felt
+            v30 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v3, v29) : felt
+            v31 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v27, v30) : felt
+            v32 = arith.constant 16 : i32;
+            v33 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v32) : felt
+            v34 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v4, v33) : felt
+            v35 = arith.constant 32 : i32;
+            v36 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v35) : felt
+            v37 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v5, v36) : felt
+            v38 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v34, v37) : felt
+            v39 = arith.constant 64 : i32;
+            v40 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v39) : felt
+            v41 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v6, v40) : felt
+            v42 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v38, v41) : felt
+            v43 = arith.constant 128 : i32;
+            v44 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v43) : felt
+            v45 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v7, v44) : felt
+            v46 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v42, v45) : felt
+            v47 = arith.constant 256 : i32;
+            v48 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v47) : felt
+            v49 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v8, v48) : felt
+            v50 = arith.constant 512 : i32;
+            v51 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v50) : felt
+            v52 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v9, v51) : felt
+            v53 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v49, v52) : felt
+            v54 = arith.constant 1024 : i32;
+            v55 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v54) : felt
+            v56 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v10, v55) : felt
+            v57 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v53, v56) : felt
+            v58 = arith.constant 2048 : i32;
+            v59 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v58) : felt
+            v60 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v11, v59) : felt
+            v61 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v57, v60) : felt
+            v62 = arith.constant 4096 : i32;
+            v63 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v62) : felt
+            v64 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v12, v63) : felt
+            v65 = arith.constant 8192 : i32;
+            v66 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v65) : felt
+            v67 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v13, v66) : felt
+            v68 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v64, v67) : felt
+            v69 = arith.constant 16384 : i32;
+            v70 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::from_u32(v69) : felt
+            v71 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::mul(v14, v70) : felt
+            v72 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v68, v71) : felt
+            v73 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v31, v46) : felt
+            v74 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v73, v61) : felt
+            v75 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v74, v72) : felt
+            v129 = hir.load_local  : felt #[local = lv0];
+            v76 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/intrinsics::felt::add(v75, v129) : felt
             builtin.ret v76;
         };
 
@@ -68,7 +83,7 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
             v78 = builtin.global_symbol @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
             v79 = hir.bitcast v78 : ptr<byte, i32>;
             v80 = hir.load v79 : i32;
-            v81 = arith.constant 1048604 : i32;
+            v81 = arith.constant 1048584 : i32;
             v82 = arith.add v80, v81 : i32 #[overflow = wrapping];
             v83 = hir.bitcast v82 : u32;
             v84 = hir.int_to_ptr v83 : ptr<byte, u8>;
@@ -86,15 +101,33 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
                 v91 = hir.bitcast v90 : ptr<byte, i32>;
                 v92 = hir.load v91 : i32;
                 hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/__wasm_call_ctors()
-                v135 = arith.constant 1 : u8;
-                v137 = arith.constant 1048604 : i32;
-                v94 = arith.add v92, v137 : i32 #[overflow = wrapping];
+                v131 = arith.constant 1 : u8;
+                v133 = arith.constant 1048584 : i32;
+                v94 = arith.add v92, v133 : i32 #[overflow = wrapping];
                 v98 = hir.bitcast v94 : u32;
                 v99 = hir.int_to_ptr v98 : ptr<byte, u8>;
-                hir.store v99, v135;
+                hir.store v99, v131;
                 scf.yield ;
             };
             builtin.ret ;
+        };
+
+        private builtin.function @intrinsics::felt::add(v100: felt, v101: felt) -> felt {
+        ^block15(v100: felt, v101: felt):
+            v102 = arith.add v100, v101 : felt #[overflow = unchecked];
+            builtin.ret v102;
+        };
+
+        private builtin.function @intrinsics::felt::from_u32(v104: i32) -> felt {
+        ^block17(v104: i32):
+            v105 = hir.bitcast v104 : felt;
+            builtin.ret v105;
+        };
+
+        private builtin.function @intrinsics::felt::mul(v107: felt, v108: felt) -> felt {
+        ^block19(v107: felt, v108: felt):
+            v109 = arith.mul v107, v108 : felt #[overflow = unchecked];
+            builtin.ret v109;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -105,12 +138,12 @@ builtin.component miden:cross-ctx-account-word-arg/foo@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment @1048576 = 0x0000000000000001000000010000000100000001000000010000000100000001;
+        builtin.segment @1048576 = 0x00000000000000000000000100000001;
     };
 
-    public builtin.function @process-word(v100: felt, v101: felt, v102: felt, v103: felt, v104: felt, v105: felt, v106: felt, v107: felt, v108: felt, v109: felt, v110: felt, v111: felt, v112: felt, v113: felt, v114: felt, v115: felt) -> felt {
-    ^block15(v100: felt, v101: felt, v102: felt, v103: felt, v104: felt, v105: felt, v106: felt, v107: felt, v108: felt, v109: felt, v110: felt, v111: felt, v112: felt, v113: felt, v114: felt, v115: felt):
-        v116 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(v100, v101, v102, v103, v104, v105, v106, v107, v108, v109, v110, v111, v112, v113, v114, v115) : felt
-        builtin.ret v116;
+    public builtin.function @process-word(v111: felt, v112: felt, v113: felt, v114: felt, v115: felt, v116: felt, v117: felt, v118: felt, v119: felt, v120: felt, v121: felt, v122: felt, v123: felt, v124: felt, v125: felt, v126: felt) -> felt {
+    ^block21(v111: felt, v112: felt, v113: felt, v114: felt, v115: felt, v116: felt, v117: felt, v118: felt, v119: felt, v120: felt, v121: felt, v122: felt, v123: felt, v124: felt, v125: felt, v126: felt):
+        v127 = hir.exec @miden:cross-ctx-account-word-arg/foo@1.0.0/cross_ctx_account_word_arg/miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(v111, v112, v113, v114, v115, v116, v117, v118, v119, v120, v121, v122, v123, v124, v125, v126) : felt
+        builtin.ret v127;
     };
 };
