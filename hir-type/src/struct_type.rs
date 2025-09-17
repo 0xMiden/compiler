@@ -64,6 +64,22 @@ pub enum TypeRepr {
     /// This may only be used on structs with no more than one non-zero sized field, and
     /// indicates that the representation of that field should be used for the struct.
     Transparent,
+    /// This is equivalent to the default representation, except it indicates that if multiple
+    /// field elements are required to represent the value on Miden's operand stack (i.e. the
+    /// value is larger than 4 bytes), then the field elements will be ordered on the operand stack
+    /// with the highest-addressed bytes at the top.
+    ///
+    /// Normally, types are laid out in natural order (i.e. lowest-addressed bytes on top of the
+    /// stack), and when lowering word-sized loads/stores, we are required to reverse the order
+    /// of the elements into big-endian order.
+    ///
+    /// This representation essentially disables this implicit reversal, keeping elements on the
+    /// operand stack in the order produced by `mem_loadw`.
+    ///
+    /// NOTE: This is meant to be a temporary work around to permit us to represent some legacy
+    /// types in the transaction kernel API which use a different representation on the operand
+    /// stack than in memory - this _will_ be deprecated in the future.
+    BigEndian,
 }
 
 impl TypeRepr {
@@ -163,7 +179,9 @@ impl StructType {
                 let align = match repr {
                     TypeRepr::Align(align) => core::cmp::max(align.get(), default_align),
                     TypeRepr::Packed(align) => core::cmp::min(align.get(), default_align),
-                    TypeRepr::Transparent | TypeRepr::Default => default_align,
+                    TypeRepr::Transparent | TypeRepr::Default | TypeRepr::BigEndian => {
+                        default_align
+                    }
                 };
 
                 for (index, ty) in tys.into_iter().enumerate() {
@@ -192,6 +210,7 @@ impl StructType {
                 offset.align_up(align as u32)
             }
         };
+
         Self { repr, size, fields }
     }
 
@@ -314,6 +333,7 @@ impl miden_formatting::prettier::PrettyPrint for TypeRepr {
             Self::Transparent => const_text("transparent"),
             Self::Align(align) => text(format!("align({align})")),
             Self::Packed(align) => text(format!("packed({align})")),
+            Self::BigEndian => const_text("big-endian"),
         }
     }
 }
