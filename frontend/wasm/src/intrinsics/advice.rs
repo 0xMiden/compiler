@@ -63,7 +63,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
             drop(func);
 
             // Call the function with all arguments
-            // The intrinsics::io::adv_push_mapvaln function will be mapped to the MASM adv_push_mapvaln
+            // The intrinsics::advice::adv_push_mapvaln function will be mapped to the MASM adv_push_mapvaln
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
 
             // Extract the return value from the exec operation

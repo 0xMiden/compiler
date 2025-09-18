@@ -11,13 +11,13 @@ pub(crate) const MODULE_ID: &str = "std::crypto::dsa::rpo_falcon512";
 pub(crate) const RPO_FALCON512_VERIFY: &str = "verify";
 
 fn module_path() -> SymbolPath {
-    // Build 'std::crypto::dsa::rpo_falcon512' without relying on a predeclared symbol
+    // Build 'std::crypto::dsa::rpo_falcon512' using interned symbol components
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Std),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Dsa),
-        SymbolNameComponent::Component(Symbol::from("rpo_falcon512")),
+        SymbolNameComponent::Component(symbols::RpoFalcon512),
     ];
     SymbolPath::from_iter(parts)
 }

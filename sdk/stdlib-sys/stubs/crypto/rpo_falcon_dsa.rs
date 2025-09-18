@@ -1,6 +1,6 @@
 #![no_std]
 
-/// Unreachable stub for `std::crypto::dsa::rpo_falcon::rpo_falcon512_verify`.
+/// Unreachable stub for `std::crypto::dsa::rpo_falcon512::verify`.
 ///
 /// This satisfies link-time references and allows the compiler to lower calls to MASM.
 #[export_name = "std::crypto::dsa::rpo_falcon512::verify"]

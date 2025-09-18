@@ -22,11 +22,11 @@ extern "C" {
 /// Where `pk` is the hash of the public key and `msg` is the hash of the message. Both hashes are
 /// expected to be computed using RPO hash function.
 ///
-/// The procedure relies on the `adv.push_sig` decorator to retrieve the signature from the host.
-/// The default host implementation assumes that the private-public key pair is loaded into the
-/// advice provider, and uses it to generate the signature. However, for production grade
-/// implementations, this functionality should be overridden to ensure more secure handling of
-/// private keys.
+/// The verification expects the signature to be provided by the host via the advice stack.
+/// In the current flow, callers should first trigger a signature request event using
+/// `crate::emit_falcon_sig_to_stack()` and then call this function. The host must respond by
+/// pushing the signature to the advice stack. For production deployments, ensure secret key
+/// handling occurs outside the VM.
 #[inline(always)]
 pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
     unsafe {
