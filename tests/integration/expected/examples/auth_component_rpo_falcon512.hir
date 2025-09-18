@@ -298,7 +298,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v240 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/intrinsics::felt::from_u32(v239) : felt
             hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::account::incr_nonce(v240)
             hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/intrinsics::advice::emit_falcon_sig_to_stack()
-            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/std::crypto::dsa::rpo_falcon512::verify(v217, v224, v231, v238, v155, v162, v169, v176)
+            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/std::crypto::dsa::rpo_falcon512::verify(v238, v231, v224, v217, v176, v169, v162, v155)
             v543 = arith.constant 144 : i32;
             v242 = arith.add v12, v543 : i32 #[overflow = wrapping];
             v243 = builtin.global_symbol @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>

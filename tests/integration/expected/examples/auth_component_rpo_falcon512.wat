@@ -183,14 +183,14 @@
       call $intrinsics::felt::from_u32
       call $miden::account::incr_nonce
       call $intrinsics::advice::emit_falcon_sig_to_stack
-      local.get 10
-      local.get 11
-      local.get 12
       local.get 13
-      local.get 5
-      local.get 7
-      local.get 8
+      local.get 12
+      local.get 11
+      local.get 10
       local.get 9
+      local.get 8
+      local.get 7
+      local.get 5
       call $std::crypto::dsa::rpo_falcon512::verify
       local.get 4
       i32.const 144

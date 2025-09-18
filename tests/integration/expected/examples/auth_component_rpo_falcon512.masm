@@ -705,16 +705,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
-    movup.5
-    swap.6
-    movdn.5
-    movup.4
-    swap.7
-    movdn.4
-    swap.1
-    swap.2
-    swap.1
-    swap.3
     trace.240
     nop
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
