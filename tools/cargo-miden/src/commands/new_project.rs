@@ -192,13 +192,30 @@ impl NewCommand {
             })
             .transpose()
             .context("Failed to convert destination path to an absolute path")?;
+        // Determine whether we should initialize a new Git repository.
+        // If the destination directory (where the new project directory will be created)
+        // is already inside a Git repository, avoid running `git init` to prevent creating
+        // a nested repo.
+        let should_git_init = {
+            // Resolve the directory where the project will be created (destination root).
+            // Use a concrete PathBuf to avoid lifetime issues.
+            let dest_root: PathBuf = match &destination {
+                Some(dest) => dest.clone(),
+                None => {
+                    // Fall back to current directory; cargo-generate will create a subdir here.
+                    std::env::current_dir()?
+                }
+            };
+            !is_inside_git_repo(&dest_root)
+        };
+
         let generate_args = GenerateArgs {
             template_path,
             destination,
             name: Some(name),
             // Force the `name` to not be kebab-cased
             force: true,
-            force_git_init: true,
+            force_git_init: should_git_init,
             verbose: true,
             define,
             ..Default::default()
@@ -234,4 +251,20 @@ pub fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
     let mut file = fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
+}
+
+/// Returns true if `path` is inside an existing Git repository.
+///
+/// This checks for a `.git` directory or file in `path` or any of its ancestor
+/// directories. A `.git` file is used by worktrees/submodules and should be treated
+/// as an indicator of a Git repository as well.
+fn is_inside_git_repo(path: &Path) -> bool {
+    // Walk up the directory tree from `path` to the filesystem root.
+    for ancestor in path.ancestors() {
+        let git_marker = ancestor.join(".git");
+        if git_marker.exists() {
+            return true;
+        }
+    }
+    false
 }
