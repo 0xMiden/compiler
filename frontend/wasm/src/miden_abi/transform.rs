@@ -55,9 +55,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     _ => None,
                 },
                 symbols::Dsa => match components.next()?.as_symbol_name() {
-                    symbols::RpoFalcon => {
+                    symbols::RpoFalcon512 => {
                         match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::dsa::rpo_falcon::RPO_FALCON512_VERIFY => {
+                            stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
                                 Some(TransformStrategy::NoTransform)
                             }
                             _ => None,
@@ -73,11 +73,13 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
             symbols::Account => {
                 match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                     tx_kernel::account::INCR_NONCE => Some(TransformStrategy::NoTransform),
+                    tx_kernel::account::GET_NONCE => Some(TransformStrategy::NoTransform),
                     tx_kernel::account::ADD_ASSET
                     | tx_kernel::account::GET_ID
                     | tx_kernel::account::REMOVE_ASSET
                     | tx_kernel::account::GET_INITIAL_COMMITMENT
                     | tx_kernel::account::COMPUTE_CURRENT_COMMITMENT
+                    | tx_kernel::account::COMPUTE_DELTA_COMMITMENT
                     | tx_kernel::account::GET_STORAGE_ITEM
                     | tx_kernel::account::SET_STORAGE_ITEM
                     | tx_kernel::account::GET_STORAGE_MAP_ITEM
@@ -95,6 +97,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
             symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                 tx_kernel::tx::CREATE_NOTE => Some(TransformStrategy::NoTransform),
                 tx_kernel::tx::ADD_ASSET_TO_NOTE => Some(TransformStrategy::ReturnViaPointer),
+                tx_kernel::tx::GET_BLOCK_NUMBER => Some(TransformStrategy::NoTransform),
+                tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
+                | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT => {
+                    Some(TransformStrategy::ReturnViaPointer)
+                }
                 _ => None,
             },
             _ => None,

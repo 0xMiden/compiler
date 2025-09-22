@@ -19,6 +19,11 @@ pub extern "C" fn account_get_id_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[export_name = "miden::account::get_nonce"]
+pub extern "C" fn account_get_nonce_plain() -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[export_name = "miden::account::get_initial_commitment"]
 pub extern "C" fn account_get_initial_commitment_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
@@ -26,6 +31,11 @@ pub extern "C" fn account_get_initial_commitment_plain(_out: *mut c_void) {
 
 #[export_name = "miden::account::compute_current_commitment"]
 pub extern "C" fn account_compute_current_commitment_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::account::compute_delta_commitment"]
+pub extern "C" fn account_compute_delta_commitment_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
@@ -75,6 +85,6 @@ pub extern "C" fn account_set_map_item_plain(
 }
 
 #[export_name = "miden::account::incr_nonce"]
-pub extern "C" fn account_incr_nonce_plain() -> f32 {
+pub extern "C" fn account_incr_nonce_plain(_value: f32) {
     unsafe { core::hint::unreachable_unchecked() }
 }

@@ -1,8 +1,7 @@
 use crate::intrinsics::{Felt, Word};
 
-#[link(wasm_import_module = "miden:core-stdlib/stdlib-crypto-dsa-rpo-falcon@1.0.0")]
 extern "C" {
-    #[link_name = "rpo-falcon512-verify"]
+    #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
     fn extern_rpo_falcon512_verify(
         pk1: Felt,
         pk2: Felt,
@@ -23,14 +22,14 @@ extern "C" {
 /// Where `pk` is the hash of the public key and `msg` is the hash of the message. Both hashes are
 /// expected to be computed using RPO hash function.
 ///
-/// The procedure relies on the `adv.push_sig` decorator to retrieve the signature from the host.
-/// The default host implementation assumes that the private-public key pair is loaded into the
-/// advice provider, and uses it to generate the signature. However, for production grade
-/// implementations, this functionality should be overridden to ensure more secure handling of
-/// private keys.
+/// The verification expects the signature to be provided by the host via the advice stack.
+/// In the current flow, callers should first trigger a signature request event using
+/// `crate::emit_falcon_sig_to_stack()` and then call this function. The host must respond by
+/// pushing the signature to the advice stack. For production deployments, ensure secret key
+/// handling occurs outside the VM.
 #[inline(always)]
 pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
     unsafe {
-        extern_rpo_falcon512_verify(pk[0], pk[1], pk[2], pk[3], msg[0], msg[1], msg[2], msg[3]);
+        extern_rpo_falcon512_verify(pk[3], pk[2], pk[1], pk[0], msg[3], msg[2], msg[1], msg[0]);
     }
 }

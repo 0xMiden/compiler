@@ -471,12 +471,17 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     if.true
         swap.1
         drop
+        push.1
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden_base_sys::bindings::account::incr_nonce
+        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::intrinsics::felt::from_u32
         trace.252
         nop
-        drop
+        trace.240
+        nop
+        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::account::incr_nonce
+        trace.252
+        nop
     else
         drop
     end
@@ -562,14 +567,6 @@ proc.wit_bindgen_rt::run_ctors_once
         swap.1
         mem_store
     end
-end
-
-proc.miden_base_sys::bindings::account::incr_nonce
-    trace.240
-    nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::account::incr_nonce
-    trace.252
-    nop
 end
 
 proc.miden::account::get_initial_commitment
@@ -959,6 +956,10 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
+    nop
+end
+
+proc.intrinsics::felt::from_u32
     nop
 end
 

@@ -12,10 +12,11 @@
   (core module (;0;)
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32)))
-    (type (;2;) (func (result f32)))
-    (type (;3;) (func (param i32)))
+    (type (;2;) (func (param i32)))
+    (type (;3;) (func (param f32)))
     (type (;4;) (func (param i32 i32)))
-    (type (;5;) (func (param f32 f32) (result i32)))
+    (type (;5;) (func (param i32) (result f32)))
+    (type (;6;) (func (param f32 f32) (result i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -104,8 +105,9 @@
           i32.eq
           br_if 1 (;@1;)
         end
-        call $miden_base_sys::bindings::account::incr_nonce
-        drop
+        i32.const 1
+        call $intrinsics::felt::from_u32
+        call $miden::account::incr_nonce
       end
       local.get 4
       i32.const 64
@@ -130,19 +132,16 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::incr_nonce (;4;) (type 2) (result f32)
-      call $miden::account::incr_nonce
-    )
-    (func $miden::account::get_initial_commitment (;5;) (type 3) (param i32)
+    (func $miden::account::get_initial_commitment (;4;) (type 2) (param i32)
       unreachable
     )
-    (func $miden::account::compute_current_commitment (;6;) (type 3) (param i32)
+    (func $miden::account::compute_current_commitment (;5;) (type 2) (param i32)
       unreachable
     )
-    (func $miden::account::incr_nonce (;7;) (type 2) (result f32)
+    (func $miden::account::incr_nonce (;6;) (type 3) (param f32)
       unreachable
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;8;) (type 4) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;7;) (type 4) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -200,7 +199,10 @@
       i64.load align=4
       i64.store
     )
-    (func $intrinsics::felt::eq (;9;) (type 5) (param f32 f32) (result i32)
+    (func $intrinsics::felt::from_u32 (;8;) (type 5) (param i32) (result f32)
+      unreachable
+    )
+    (func $intrinsics::felt::eq (;9;) (type 6) (param f32 f32) (result i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

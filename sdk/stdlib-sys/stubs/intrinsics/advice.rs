@@ -5,3 +5,7 @@ pub extern "C" fn advice_adv_push_mapvaln_stub(_key0: f32, _key1: f32, _key2: f3
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[export_name = "intrinsics::advice::emit_falcon_sig_to_stack"]
+pub extern "C" fn advice_emit_falcon_sig_to_stack_stub() {
+    unsafe { core::hint::unreachable_unchecked() }
+}

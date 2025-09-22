@@ -12,7 +12,7 @@ pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
         let mut m: ModuleFunctionTypeMap = Default::default();
         m.extend(crypto::hashes::blake3::signatures());
         m.extend(crypto::hashes::rpo::signatures());
-        m.extend(crypto::dsa::rpo_falcon::signatures());
+        m.extend(crypto::dsa::rpo_falcon512::signatures());
         m.extend(mem::signatures());
         m
     });

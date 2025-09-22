@@ -1,0 +1,6 @@
+package miden:auth-component-rpo-falcon512@1.0.0;
+
+world auth-component-rpo-falcon512-world {
+    export miden:base/authentication-component@1.0.0;
+}
+

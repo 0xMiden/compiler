@@ -34,6 +34,10 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
             );
             Some(sig)
         }
+        "emit_falcon_sig_to_stack" => {
+            // () -> ()
+            Some(FunctionType::new(midenc_hir::CallConv::Wasm, vec![], vec![]))
+        }
         _ => None,
     }
 }
@@ -59,7 +63,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
             drop(func);
 
             // Call the function with all arguments
-            // The intrinsics::io::adv_push_mapvaln function will be mapped to the MASM adv_push_mapvaln
+            // The intrinsics::advice::adv_push_mapvaln function will be mapped to the MASM adv_push_mapvaln
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
 
             // Extract the return value from the exec operation
@@ -70,6 +74,14 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
 
             // The function returns the number of elements pushed as i32
             Ok(result_vals)
+        }
+        "emit_falcon_sig_to_stack" => {
+            assert!(args.is_empty(), "{function} takes no arguments");
+            let func = function_ref.borrow();
+            let signature = func.signature().clone();
+            drop(func);
+            let _ = builder.exec(function_ref, signature, [], span)?;
+            Ok(SmallVec::new())
         }
         _ => {
             panic!("unsupported io intrinsic: '{function}'")

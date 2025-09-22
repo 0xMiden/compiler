@@ -1,1 +1,1 @@
-pub mod rpo_falcon;
+pub mod rpo_falcon512;
