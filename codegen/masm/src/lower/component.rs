@@ -232,7 +232,7 @@ impl MasmComponentBuilder<'_> {
             let init_body = core::mem::take(&mut self.init_body);
             let init = masm::Procedure::new(
                 Default::default(),
-                masm::Visibility::Public,
+                masm::Visibility::Private,
                 init_name,
                 0,
                 masm::Block::new(component.span(), init_body),

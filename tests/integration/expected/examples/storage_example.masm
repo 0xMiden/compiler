@@ -20,7 +20,7 @@ export.get-asset-qty
     exec.::std::sys::truncate_stack
 end
 
-export.init
+proc.init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -51,7 +51,7 @@ proc.storage_example::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:storage-example/foo@1.0.0#set-asset-qty
+proc.miden:storage-example/foo@1.0.0#set-asset-qty
     push.1114144
     u32divmod.4
     swap.1
@@ -595,7 +595,7 @@ export.miden:storage-example/foo@1.0.0#set-asset-qty
     nop
 end
 
-export.miden:storage-example/foo@1.0.0#get-asset-qty
+proc.miden:storage-example/foo@1.0.0#get-asset-qty
     push.1114144
     u32divmod.4
     swap.1

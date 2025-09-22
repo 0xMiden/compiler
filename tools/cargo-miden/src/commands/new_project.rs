@@ -11,7 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.15.0";
+const TEMPLATES_REPO_TAG: &str = "v0.16.0";
 
 /// The folder name to put Miden SDK WIT files in
 pub const WIT_DEPS_PATH: &str = "wit-deps";
@@ -21,17 +21,20 @@ pub const WIT_DEPS_PATH: &str = "wit-deps";
 #[derive(Clone, Debug, Args)]
 pub struct ProjectTemplate {
     /// Rust program
-    #[clap(long, group = "template", conflicts_with_all(["account", "note", "tx_script"]))]
+    #[clap(long, group = "template", conflicts_with_all(["account", "note", "tx_script", "auth_component"]))]
     program: bool,
     /// Miden rollup account
-    #[clap(long, group = "template", conflicts_with_all(["program", "note", "tx_script"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "note", "tx_script", "auth_component"]))]
     account: bool,
     /// Miden rollup note script
-    #[clap(long, group = "template", conflicts_with_all(["program", "account", "tx_script"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "account", "tx_script", "auth_component"]))]
     note: bool,
     /// Miden rollup transaction script
-    #[clap(long, group = "template", conflicts_with_all(["program", "account", "note"]))]
+    #[clap(long, group = "template", conflicts_with_all(["program", "account", "note", "auth_component"]))]
     tx_script: bool,
+    /// Miden rollup authentication component
+    #[clap(long, group = "template", conflicts_with_all(["program", "account", "note", "tx_script"]))]
+    auth_component: bool,
 }
 
 #[allow(unused)]
@@ -42,6 +45,7 @@ impl ProjectTemplate {
             account: false,
             note: false,
             tx_script: false,
+            auth_component: false,
         }
     }
 
@@ -51,6 +55,7 @@ impl ProjectTemplate {
             account: true,
             note: false,
             tx_script: false,
+            auth_component: false,
         }
     }
 
@@ -60,6 +65,7 @@ impl ProjectTemplate {
             account: false,
             note: true,
             tx_script: false,
+            auth_component: false,
         }
     }
 
@@ -69,6 +75,17 @@ impl ProjectTemplate {
             account: false,
             note: false,
             tx_script: true,
+            auth_component: false,
+        }
+    }
+
+    pub fn auth_component() -> Self {
+        Self {
+            program: false,
+            account: false,
+            note: false,
+            tx_script: false,
+            auth_component: true,
         }
     }
 }
@@ -89,6 +106,8 @@ impl fmt::Display for ProjectTemplate {
             write!(f, "note")
         } else if self.tx_script {
             write!(f, "tx-script")
+        } else if self.auth_component {
+            write!(f, "auth-component")
         } else {
             panic!("Invalid project template, at least one variant must be set")
         }

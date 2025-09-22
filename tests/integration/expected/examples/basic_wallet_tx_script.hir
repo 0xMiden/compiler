@@ -131,7 +131,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret v70;
         };
 
-        public builtin.function @miden:base/transaction-script@1.0.0#run(v89: felt, v90: felt, v91: felt, v92: felt) {
+        private builtin.function @miden:base/transaction-script@1.0.0#run(v89: felt, v90: felt, v91: felt, v92: felt) {
         ^block27(v89: felt, v90: felt, v91: felt, v92: felt):
             v97 = builtin.global_symbol @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/__stack_pointer : ptr<byte, u8>
             v98 = hir.bitcast v97 : ptr<byte, i32>;

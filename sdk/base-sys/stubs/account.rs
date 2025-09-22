@@ -10,18 +10,22 @@ pub extern "C" fn add_asset_plain(_a0: f32, _a1: f32, _a2: f32, _a3: f32, _out: 
 }
 
 #[export_name = "miden::account::remove_asset"]
-pub extern "C" fn remove_asset_plain(
-    _a0: f32,
-    _a1: f32,
-    _a2: f32,
-    _a3: f32,
-    _out: *mut c_void,
-) {
+pub extern "C" fn remove_asset_plain(_a0: f32, _a1: f32, _a2: f32, _a3: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[export_name = "miden::account::get_id"]
 pub extern "C" fn account_get_id_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::account::get_initial_commitment"]
+pub extern "C" fn account_get_initial_commitment_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::account::compute_current_commitment"]
+pub extern "C" fn account_compute_current_commitment_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
@@ -71,7 +75,6 @@ pub extern "C" fn account_set_map_item_plain(
 }
 
 #[export_name = "miden::account::incr_nonce"]
-pub extern "C" fn account_incr_nonce_plain(_value: i32) {
+pub extern "C" fn account_incr_nonce_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
-

@@ -10,7 +10,7 @@ export.run
     exec.::std::sys::truncate_stack
 end
 
-export.init
+proc.init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -49,7 +49,7 @@ proc.cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
     nop
 end
 
-export.miden:base/note-script@1.0.0#run
+proc.miden:base/note-script@1.0.0#run
     drop
     drop
     drop

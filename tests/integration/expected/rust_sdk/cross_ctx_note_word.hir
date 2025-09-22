@@ -191,7 +191,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        public builtin.function @miden:base/note-script@1.0.0#run(v170: felt, v171: felt, v172: felt, v173: felt) {
+        private builtin.function @miden:base/note-script@1.0.0#run(v170: felt, v171: felt, v172: felt, v173: felt) {
         ^block24(v170: felt, v171: felt, v172: felt, v173: felt):
             v177 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
             v178 = hir.bitcast v177 : ptr<byte, i32>;

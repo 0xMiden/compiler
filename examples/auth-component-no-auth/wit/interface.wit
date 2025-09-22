@@ -1,0 +1,5 @@
+package miden:auth-component-no-auth@1.0.0;
+
+world auth-component-no-auth-world {
+    export miden:base/authentication-component@1.0.0;
+}

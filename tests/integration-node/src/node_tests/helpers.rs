@@ -136,9 +136,111 @@ pub async fn create_account_with_component(
 
     builder = builder.with_component(account_component);
 
+    let (account, seed) = builder.build().unwrap_or_else(|e| {
+        eprintln!("failed to build account with custom auth component: {e}");
+        panic!("failed to build account with custom auth component")
+    });
+    client.add_account(&account, Some(seed), false).await?;
+    keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
+
+    Ok(account)
+}
+
+/// Create a basic wallet account with standard RpoFalcon512 auth.
+///
+/// This helper does not require a component package and always adds the `BasicWallet` component.
+pub async fn create_basic_wallet_account(
+    client: &mut Client,
+    keystore: Arc<FilesystemKeyStore<StdRng>>,
+    config: AccountCreationConfig,
+) -> Result<Account, ClientError> {
+    let mut init_seed = [0_u8; 32];
+    client.rng().fill_bytes(&mut init_seed);
+
+    let key_pair = SecretKey::with_rng(client.rng());
+
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
+
+    let builder = AccountBuilder::new(init_seed)
+        .account_type(config.account_type)
+        .storage_mode(config.storage_mode)
+        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_component(BasicWallet);
+
     let (account, seed) = builder.build().unwrap();
     client.add_account(&account, Some(seed), false).await?;
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
+
+    Ok(account)
+}
+
+/// Helper to create an account with a custom component and a custom authentication component
+pub async fn create_account_with_component_and_auth_package(
+    client: &mut Client,
+    component_package: Arc<Package>,
+    auth_component_package: Arc<Package>,
+    config: AccountCreationConfig,
+) -> Result<Account, ClientError> {
+    // Build the main account component from its template metadata
+    let account_component = match component_package.account_component_metadata_bytes.as_deref() {
+        None => panic!("no account component metadata present"),
+        Some(bytes) => {
+            let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
+            let template = AccountComponentTemplate::new(
+                metadata,
+                component_package.unwrap_library().as_ref().clone(),
+            );
+
+            let component =
+                AccountComponent::new(template.library().clone(), config.storage_slots.clone())
+                    .unwrap();
+
+            // Use supported types from config if provided, otherwise default to RegularAccountUpdatableCode
+            let supported_types = if let Some(types) = &config.supported_types {
+                BTreeSet::from_iter(types.iter().cloned())
+            } else {
+                BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode])
+            };
+
+            component.with_supported_types(supported_types)
+        }
+    };
+
+    // Build the authentication component from the compiled library (no storage)
+    let mut auth_component =
+        AccountComponent::new(auth_component_package.unwrap_library().as_ref().clone(), vec![])
+            .unwrap();
+
+    // Ensure auth component supports the intended account type
+    if let Some(types) = &config.supported_types {
+        auth_component =
+            auth_component.with_supported_types(BTreeSet::from_iter(types.iter().cloned()));
+    } else {
+        auth_component = auth_component
+            .with_supported_types(BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]));
+    }
+
+    let mut init_seed = [0_u8; 32];
+    client.rng().fill_bytes(&mut init_seed);
+
+    // Sync client state to get latest block info
+    let _sync_summary = client.sync_state().await.unwrap();
+
+    let mut builder = AccountBuilder::new(init_seed)
+        .account_type(config.account_type)
+        .storage_mode(config.storage_mode)
+        .with_auth_component(auth_component);
+
+    if config.with_basic_wallet {
+        builder = builder.with_component(BasicWallet);
+    }
+
+    builder = builder.with_component(account_component);
+
+    let (account, seed) = builder.build().unwrap();
+    client.add_account(&account, Some(seed), false).await?;
+    // No keystore key needed for no-auth auth component
 
     Ok(account)
 }

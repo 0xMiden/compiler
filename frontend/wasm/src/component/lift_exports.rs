@@ -5,9 +5,8 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
-    interner::Symbol,
     CallConv, FunctionType, Ident, Op, Signature, SmallVec, SourceSpan, SymbolPath, ValueRange,
-    ValueRef,
+    ValueRef, Visibility,
 };
 use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
 
@@ -38,18 +37,38 @@ pub fn generate_export_lifting_function(
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
 
-    let export_func_ident =
-        Ident::new(Symbol::intern(export_func_name.to_string()), SourceSpan::default());
+    // Miden Base expects the authentication component to export a single
+    // procedure whose name matches `auth_*` (underscore). The base WIT
+    // defines this function as `auth-procedure` (kebab-case). Until
+    // https://github.com/0xMiden/miden-base/issues/1861 lands, we map the
+    // authentication procedure name from `auth-procedure` to
+    // `auth__procedure` (double underscore) to match the current miden-base
+    // expectation.
+    //
+    // IMPORTANT: Restrict this rename to the authentication interface only.
+    // We do this by matching the exact WIT name `auth-procedure` instead of
+    // rewriting arbitrary names that merely start with `auth-`.
+    let export_func_ident = if export_func_name == "auth-procedure" {
+        Ident::new("auth__procedure".into(), SourceSpan::default())
+    } else {
+        Ident::new(export_func_name.to_string().into(), SourceSpan::default())
+    };
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
         .resolve_module(&core_export_module_path)
         .expect("failed to find the core module");
 
-    let core_module_builder = ModuleBuilder::new(core_module_ref);
+    let mut core_module_builder = ModuleBuilder::new(core_module_ref);
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
-        .expect("failed to find the core module function");
+        .expect("failed to find the core module export function");
+    // Make the lowered core WASM export private so only the lifted wrapper is
+    // publicly exported from the component. This prevents double-exports and
+    // ensures all external callers go through the Canonical ABI–correct
+    // wrapper generated here.
+    core_module_builder
+        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
     let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
 
     if needs_transformation(&cross_ctx_export_sig_flat) {

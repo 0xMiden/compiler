@@ -354,16 +354,23 @@ where
                 spawn_args.push(format!("{key}={value}"));
             }
 
-            let extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+            // `--fatal-warnings` will force the wasm-ld to error out in case of a function signature
+            // mismatch. This will surface the stub functions signature mismatches early on.
+            // Otherwise the wasm-ld will prefix the stub function name with `signature_mismatch:`.
+            let extra_rust_flags = String::from(
+                "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args=--fatal-warnings",
+            );
             // Augment RUSTFLAGS to ensure we preserve any flags set by the user
-            match std::env::var("RUSTFLAGS") {
+            let maybe_old_rustflags = match std::env::var("RUSTFLAGS") {
                 Ok(current) if !current.is_empty() => {
                     std::env::set_var("RUSTFLAGS", format!("{current} {extra_rust_flags}"));
+                    Some(current)
                 }
                 _ => {
                     std::env::set_var("RUSTFLAGS", extra_rust_flags);
+                    None
                 }
-            }
+            };
             let terminal = Terminal::new(
                 if cargo_args.quiet {
                     Verbosity::Quiet
@@ -405,6 +412,13 @@ where
                     &spawn_args,
                 )?
             };
+
+            if let Some(old_rustflags) = maybe_old_rustflags {
+                std::env::set_var("RUSTFLAGS", old_rustflags);
+            } else {
+                std::env::remove_var("RUSTFLAGS");
+            }
+
             assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
             let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
 
@@ -487,6 +501,10 @@ fn midenc_flags_from_target(
                     midenc_args.push("--exe".into());
                     midenc_args
                         .push("--entrypoint=miden:base/transaction-script@1.0.0::run".to_string())
+                }
+                RollupTarget::AuthComponent => {
+                    midenc_args.push("rollup:authentication-component".into());
+                    midenc_args.push("--lib".into());
                 }
             }
         }

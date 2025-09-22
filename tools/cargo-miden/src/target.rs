@@ -45,6 +45,9 @@ pub fn detect_target_environment(root_pkg: &Package) -> Result<TargetEnv> {
         "transaction-script" => Ok(TargetEnv::Rollup {
             target: RollupTarget::TransactionScript,
         }),
+        "authentication-component" => Ok(TargetEnv::Rollup {
+            target: RollupTarget::AuthComponent,
+        }),
         _ => bail!(
             "Invalid value '{}' for 'project-kind' in [package.metadata.miden]. Must be one of: \
              'account', 'note-script', or 'transaction-script'",
@@ -59,6 +62,7 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
         TargetEnv::Base => ProjectType::Program,
         TargetEnv::Rollup { target } => match target {
             RollupTarget::Account => ProjectType::Library,
+            RollupTarget::AuthComponent => ProjectType::Library,
             RollupTarget::NoteScript | RollupTarget::TransactionScript => ProjectType::Program,
         },
         TargetEnv::Emu => {

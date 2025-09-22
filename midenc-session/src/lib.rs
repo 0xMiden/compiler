@@ -469,6 +469,9 @@ impl FromStr for TargetEnv {
             "rollup:transaction-script" => Ok(Self::Rollup {
                 target: RollupTarget::TransactionScript,
             }),
+            "rollup:authentication-component" => Ok(Self::Rollup {
+                target: RollupTarget::AuthComponent,
+            }),
             _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
         }
     }
@@ -481,6 +484,10 @@ pub enum RollupTarget {
     Account,
     NoteScript,
     TransactionScript,
+    /// Authentication `AccountComponent` that has exactly one procedure named `auth__*` that
+    /// accepts a `Word` (authentication arguments) and throws an error in case of a failed
+    /// authentication
+    AuthComponent,
 }
 
 impl fmt::Display for RollupTarget {
@@ -489,6 +496,7 @@ impl fmt::Display for RollupTarget {
             Self::Account => f.write_str("account"),
             Self::NoteScript => f.write_str("note-script"),
             Self::TransactionScript => f.write_str("transaction-script"),
+            Self::AuthComponent => f.write_str("authentication-component"),
         }
     }
 }

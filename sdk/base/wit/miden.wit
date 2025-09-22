@@ -160,6 +160,14 @@ interface transaction-script {
     run: func(arg: word);
 }
 
+/// The authentication component interface that is expected to export exactly one `auth__*`
+/// function
+interface authentication-component {
+    use core-types.{word};
+
+    auth-procedure: func(arg: word);
+}
+
 world base-world {
     export core-types;
     export note-script;

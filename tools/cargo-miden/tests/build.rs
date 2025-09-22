@@ -152,6 +152,17 @@ fn test_all_templates_and_examples() {
 
     // Verify program projects don't have WIT files
     verify_no_wit_files_for_new_template("--program");
+
+    let auth_comp = build_new_project_from_template("--auth-component");
+    assert!(auth_comp.is_library());
+
+    let expected_function = "auth__procedure";
+    let lib = auth_comp.unwrap_library();
+    assert!(
+        lib.exports().any(|export| { export.name.as_str() == expected_function }),
+        "expected one of the authentication component exports to contain  function \
+         '{expected_function}'"
+    );
 }
 
 /// Verify that WIT files are not present for program template
