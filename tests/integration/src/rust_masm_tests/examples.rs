@@ -330,13 +330,13 @@ fn auth_component_no_auth() {
     let expected_function = "auth__procedure";
     let exports = lib
         .exports()
-        .map(|e| format!("{}::{}", e.module, e.name.as_str()))
+        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
         lib.exports().any(|export| {
-            export.module.to_string() == expected_module
-                && export.name.as_str() == expected_function
+            export.name.module.to_string() == expected_module
+                && export.name.name.as_str() == expected_function
         }),
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}'"
@@ -370,8 +370,8 @@ fn auth_component_rpo_falcon512() {
     let expected_function = "auth__procedure";
     assert!(
         lib.exports().any(|export| {
-            export.module.to_string() == expected_module
-                && export.name.as_str() == expected_function
+            export.name.module.to_string() == expected_module
+                && export.name.name.as_str() == expected_function
         }),
         "expected one of the exports to contain module '{expected_module}' and function \
          '{expected_function}'"
