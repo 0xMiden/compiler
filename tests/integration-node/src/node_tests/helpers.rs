@@ -150,7 +150,7 @@ pub async fn create_account_with_component(
 ///
 /// This helper does not require a component package and always adds the `BasicWallet` component.
 pub async fn create_basic_wallet_account(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     keystore: Arc<FilesystemKeyStore<StdRng>>,
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
@@ -165,7 +165,7 @@ pub async fn create_basic_wallet_account(
     let builder = AccountBuilder::new(init_seed)
         .account_type(config.account_type)
         .storage_mode(config.storage_mode)
-        .with_auth_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicWallet);
 
     let (account, seed) = builder.build().unwrap();
@@ -177,7 +177,7 @@ pub async fn create_basic_wallet_account(
 
 /// Helper to create an account with a custom component and a custom authentication component
 pub async fn create_account_with_component_and_auth_package(
-    client: &mut Client,
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
     component_package: Arc<Package>,
     auth_component_package: Arc<Package>,
     config: AccountCreationConfig,
