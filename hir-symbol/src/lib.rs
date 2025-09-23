@@ -10,7 +10,7 @@ pub mod sync;
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use core::{fmt, mem, ops::Deref, str};
@@ -74,8 +74,8 @@ impl Symbol {
     }
 
     /// Maps a string to its interned representation.
-    pub fn intern(string: impl ToString) -> Self {
-        let string = string.to_string();
+    pub fn intern(string: impl Into<String>) -> Self {
+        let string = string.into();
         with_interner(|interner| interner.intern(string))
     }
 
