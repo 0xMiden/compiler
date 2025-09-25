@@ -15,11 +15,9 @@ bindings::export!(AuthComponent with_types_in bindings);
 
 mod bindings;
 
-use alloc::vec::Vec;
-
 use bindings::exports::miden::base::authentication_component::Guest;
 use miden::{
-    account, component, felt, hash_elements, intrinsics::advice::adv_insert, tx, Felt, Value,
+    account, component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value,
     ValueAccess, Word,
 };
 
@@ -52,24 +50,12 @@ impl Guest for AuthComponent {
 
         let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
-        // Build MESSAGE = hash([delta, input, output, salt])
-        let mut elems: Vec<Felt> = Vec::with_capacity(16);
-        let acct_delta_arr: [Felt; 4] = (&acct_delta_commit).into();
-        let input_arr: [Felt; 4] = (&input_notes_commit).into();
-        let output_arr: [Felt; 4] = (&output_notes_commit).into();
-        let salt_arr: [Felt; 4] = (&salt).into();
-        elems.extend_from_slice(&acct_delta_arr);
-        elems.extend_from_slice(&input_arr);
-        elems.extend_from_slice(&output_arr);
-        elems.extend_from_slice(&salt_arr);
-        // TODO: use `hash_memory_words` after https://github.com/0xMiden/compiler/issues/644 is
-        // implemented
-        let msg: Word = hash_elements(elems).into();
-
-        adv_insert(
-            msg.clone(),
-            &[salt, output_notes_commit, input_notes_commit, acct_delta_commit],
-        );
+        let mut tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+        let msg: Word = hash_words(&tx_summary).into();
+        // On the advice stack the words are expected to be in the reverse order
+        tx_summary.reverse();
+        // Insert tx summary into advice map under key `msg`
+        adv_insert(msg.clone(), &tx_summary);
 
         // Load public key from storage slot 0
         let storage = AuthStorage::default();
