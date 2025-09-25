@@ -19,17 +19,58 @@ pub fn adv_push_mapvaln(key: Word) -> Felt {
 }
 
 extern "C" {
-    /// Emits an event to request a Falcon signature for the current message/public key.
+    /// Emits an event to request a Falcon signature for the provided message/public key.
     /// This maps to a single MASM instruction: `emit.131087`.
-    /// No inputs/outputs.
     #[link_name = "intrinsics::advice::emit_falcon_sig_to_stack"]
-    fn extern_emit_falcon_sig_to_stack();
+    fn extern_emit_falcon_sig_to_stack(
+        msg0: Felt,
+        msg1: Felt,
+        msg2: Felt,
+        msg3: Felt,
+        pk0: Felt,
+        pk1: Felt,
+        pk2: Felt,
+        pk3: Felt,
+    );
 }
 
 /// Emits an event to request a Falcon signature for the current message/public key.
 /// Host is expected to push the signature onto the advice stack in response.
-/// This is a workaround until migrate to use the VM v0.18 where the `emit` op reads the value from the stack.
+/// This is a workaround until migrating to VM v0.18 where the `emit` op reads the value from the stack.
 #[inline]
-pub fn emit_falcon_sig_to_stack() {
-    unsafe { extern_emit_falcon_sig_to_stack() }
+pub fn emit_falcon_sig_to_stack(msg: Word, pub_key: Word) {
+    unsafe {
+        extern_emit_falcon_sig_to_stack(
+            msg[3], msg[2], msg[1], msg[0], pub_key[3], pub_key[2], pub_key[1], pub_key[0],
+        );
+    }
+}
+
+extern "C" {
+    /// Inserts values from memory into the advice map using the provided key and memory range.
+    /// Maps to the VM op: adv.insert_mem
+    /// Signature: (key0..key3, start_addr, end_addr)
+    #[link_name = "intrinsics::advice::adv_insert_mem"]
+    fn extern_adv_insert_mem(
+        k0: Felt,
+        k1: Felt,
+        k2: Felt,
+        k3: Felt,
+        start_addr: u32,
+        end_addr: u32,
+    );
+}
+
+/// Insert memory region [start, end) into advice map under the given key.
+#[inline]
+pub fn adv_insert_mem(key: Word, start_addr: u32, end_addr: u32) {
+    unsafe { extern_adv_insert_mem(key[3], key[2], key[1], key[0], start_addr, end_addr) }
+}
+
+/// Insert values into advice map under the given key.
+pub fn adv_insert(key: Word, values: &[Word]) {
+    let rust_ptr = values.as_ptr() as u32;
+    let miden_ptr = rust_ptr / 4;
+    let end_addr = miden_ptr + values.len() as u32 * 4;
+    adv_insert_mem(key, miden_ptr, end_addr);
 }

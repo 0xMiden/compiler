@@ -25,18 +25,39 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
             let sig = FunctionType::new(
                 midenc_hir::CallConv::Wasm,
                 vec![
-                    Type::I32, // key0
-                    Type::I32, // key1
-                    Type::I32, // key2
-                    Type::I32, // key3
+                    Type::Felt, // key0
+                    Type::Felt, // key1
+                    Type::Felt, // key2
+                    Type::Felt, // key3
                 ],
-                vec![Type::I32], // Returns number of elements pushed
+                vec![Type::Felt], // Returns number of elements pushed
             );
             Some(sig)
         }
+        "adv_insert_mem" => {
+            // Signature: (key0..key3, start_ptr, end_ptr) -> ()
+            Some(FunctionType::new(
+                midenc_hir::CallConv::Wasm,
+                vec![Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::Felt],
+                vec![],
+            ))
+        }
         "emit_falcon_sig_to_stack" => {
-            // () -> ()
-            Some(FunctionType::new(midenc_hir::CallConv::Wasm, vec![], vec![]))
+            // (msg0..msg3, pk0..pk3) -> ()
+            Some(FunctionType::new(
+                midenc_hir::CallConv::Wasm,
+                vec![
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                    Type::Felt,
+                ],
+                vec![],
+            ))
         }
         _ => None,
     }
@@ -76,11 +97,20 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
             Ok(result_vals)
         }
         "emit_falcon_sig_to_stack" => {
-            assert!(args.is_empty(), "{function} takes no arguments");
+            assert_eq!(args.len(), 8, "{function} takes exactly eight arguments");
             let func = function_ref.borrow();
             let signature = func.signature().clone();
             drop(func);
-            let _ = builder.exec(function_ref, signature, [], span)?;
+            let _ = builder.exec(function_ref, signature, args.iter().copied(), span)?;
+            Ok(SmallVec::new())
+        }
+        "adv_insert_mem" => {
+            // Lower to MASM intrinsic call: intrinsics::advice::insert_mem
+            assert_eq!(args.len(), 6, "insert_mem takes exactly six arguments");
+            let func = function_ref.borrow();
+            let signature = func.signature().clone();
+            drop(func);
+            let _ = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             Ok(SmallVec::new())
         }
         _ => {

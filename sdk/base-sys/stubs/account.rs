@@ -85,6 +85,6 @@ pub extern "C" fn account_set_map_item_plain(
 }
 
 #[export_name = "miden::account::incr_nonce"]
-pub extern "C" fn account_incr_nonce_plain(_value: f32) {
+pub extern "C" fn account_incr_nonce_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }

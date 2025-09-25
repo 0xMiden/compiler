@@ -12,13 +12,15 @@
   (core module (;0;)
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32)))
-    (type (;2;) (func (param i32)))
-    (type (;3;) (func (result f32)))
+    (type (;2;) (func (result f32)))
+    (type (;3;) (func (param i32)))
     (type (;4;) (func (param f32 i32)))
-    (type (;5;) (func (param f32)))
+    (type (;5;) (func (param i32 i32 i32)))
     (type (;6;) (func (param i32) (result f32)))
     (type (;7;) (func (param i32 i32)))
-    (type (;8;) (func (param f32 f32 f32 f32 f32 f32 f32 f32)))
+    (type (;8;) (func (param f32 f32)))
+    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 f32 f32)))
+    (type (;10;) (func (param f32 f32 f32 f32 i32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -29,123 +31,147 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $auth_component_rpo_falcon512::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:base/authentication-component@1.0.0#auth-procedure (;2;) (type 1) (param f32 f32 f32 f32)
-      (local i32 f32 i64 f32 f32 f32 f32 f32 f32 f32)
+      (local i32 f32 f32 i32 f32 f32 i32 f32 f32 f32 f32)
       global.get $__stack_pointer
-      i32.const 144
+      i32.const 112
       i32.sub
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen_rt::run_ctors_once
-      local.get 4
-      i32.const 112
-      i32.add
-      call $miden_base_sys::bindings::tx::get_output_notes_commitment
+      call $miden_base_sys::bindings::tx::get_block_number
+      local.set 5
+      call $miden::account::incr_nonce
+      local.set 6
       local.get 4
       i32.const 80
       i32.add
-      call $miden_base_sys::bindings::tx::get_input_notes_commitment
-      call $miden::account::get_nonce
-      local.set 5
+      call $miden::account::compute_delta_commitment
       local.get 4
-      i32.const 8
+      local.get 4
+      i64.load offset=88
+      i64.store offset=104
+      local.get 4
+      local.get 4
+      i64.load offset=80
+      i64.store offset=96
+      local.get 4
+      local.get 4
+      i32.const 96
       i32.add
-      call $miden_base_sys::bindings::account::get_id
-      local.get 4
-      i64.load offset=8
-      local.set 6
-      i32.const 0
-      call $intrinsics::felt::from_u32
-      local.set 7
-      i32.const 0
-      call $intrinsics::felt::from_u32
-      local.set 8
-      i32.const 0
-      call $intrinsics::felt::from_u32
-      local.set 9
-      i32.const 0
-      call $intrinsics::felt::from_u32
-      local.set 10
-      i32.const 0
-      call $intrinsics::felt::from_u32
-      local.set 11
-      local.get 4
-      local.get 5
-      f32.store offset=60
-      local.get 4
-      local.get 11
-      f32.store offset=56
-      local.get 4
-      local.get 10
-      f32.store offset=52
-      local.get 4
-      local.get 9
-      f32.store offset=48
-      local.get 4
-      local.get 6
-      i64.store offset=40
-      local.get 4
-      local.get 8
-      f32.store offset=36
-      local.get 4
-      local.get 7
-      f32.store offset=32
-      local.get 4
-      i32.const 32
-      i32.add
+      call $miden_stdlib_sys::intrinsics::word::Word::reverse
       local.get 4
       i32.const 16
       i32.add
-      call $intrinsics::crypto::hmerge
+      call $miden_base_sys::bindings::tx::get_input_notes_commitment
+      local.get 4
+      i32.const 32
+      i32.add
+      call $miden_base_sys::bindings::tx::get_output_notes_commitment
+      i32.const 0
+      local.set 7
+      i32.const 0
+      call $intrinsics::felt::from_u32
+      local.set 8
+      i32.const 0
+      call $intrinsics::felt::from_u32
+      local.set 9
+      local.get 4
+      local.get 6
+      f32.store offset=60
+      local.get 4
+      local.get 5
+      f32.store offset=56
+      local.get 4
+      local.get 9
+      f32.store offset=52
+      local.get 4
+      local.get 8
+      f32.store offset=48
+      i32.const 0
+      call $intrinsics::felt::from_u32
+      i32.const 0
+      call $intrinsics::felt::from_u32
+      call $intrinsics::felt::assert_eq
+      local.get 4
+      i32.const 2
+      i32.shr_u
+      i32.const 16
       local.get 4
       i32.const 80
       i32.add
-      i32.const 24
-      i32.add
-      local.get 4
-      i64.load offset=24
-      i64.store
+      call $std::crypto::hashes::rpo::hash_memory
       local.get 4
       local.get 4
-      i64.load offset=16
+      i64.load offset=88
+      i64.store offset=104
+      local.get 4
+      local.get 4
+      i64.load offset=80
       i64.store offset=96
-      local.get 4
-      i32.const 80
-      i32.add
       local.get 4
       i32.const 64
       i32.add
-      call $intrinsics::crypto::hmerge
       local.get 4
-      i32.const 112
+      i32.const 96
       i32.add
-      i32.const 24
-      i32.add
+      call $miden_stdlib_sys::intrinsics::word::Word::reverse
       local.get 4
-      i64.load offset=72
-      i64.store
-      local.get 4
-      local.get 4
-      i64.load offset=64
-      i64.store offset=128
-      local.get 4
-      i32.const 112
-      i32.add
-      local.get 4
-      i32.const 80
-      i32.add
-      call $intrinsics::crypto::hmerge
-      local.get 4
-      f32.load offset=80
+      f32.load offset=64
       local.set 5
       local.get 4
-      f32.load offset=84
-      local.set 7
+      f32.load offset=68
+      local.set 6
       local.get 4
-      f32.load offset=88
+      f32.load offset=72
       local.set 8
       local.get 4
-      f32.load offset=92
+      f32.load offset=76
       local.set 9
+      local.get 4
+      i32.const 48
+      i32.add
+      local.set 10
+      block ;; label = @1
+        loop ;; label = @2
+          local.get 7
+          i32.const 32
+          i32.eq
+          br_if 1 (;@1;)
+          local.get 4
+          local.get 7
+          i32.add
+          local.get 10
+          i32.const 4
+          call $core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
+          local.get 7
+          i32.const 16
+          i32.add
+          local.set 7
+          local.get 10
+          i32.const -16
+          i32.add
+          local.set 10
+          br 0 (;@2;)
+        end
+      end
+      local.get 4
+      local.get 9
+      f32.store offset=108
+      local.get 4
+      local.get 8
+      f32.store offset=104
+      local.get 4
+      local.get 6
+      f32.store offset=100
+      local.get 4
+      local.get 5
+      f32.store offset=96
+      local.get 4
+      i32.const 96
+      i32.add
+      local.get 4
+      i32.const 4
+      call $miden_stdlib_sys::intrinsics::advice::adv_insert
       i32.const 0
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 4
@@ -155,45 +181,46 @@
       local.get 4
       local.get 4
       i64.load offset=88
-      i64.store offset=120
+      i64.store offset=104
       local.get 4
       local.get 4
       i64.load offset=80
-      i64.store offset=112
+      i64.store offset=96
       local.get 4
-      i32.const 32
+      i32.const 64
       i32.add
       local.get 4
-      i32.const 112
+      i32.const 96
       i32.add
       call $miden_stdlib_sys::intrinsics::word::Word::reverse
-      local.get 4
-      f32.load offset=32
-      local.set 10
-      local.get 4
-      f32.load offset=36
-      local.set 11
-      local.get 4
-      f32.load offset=40
-      local.set 12
-      local.get 4
-      f32.load offset=44
-      local.set 13
-      i32.const 1
-      call $intrinsics::felt::from_u32
-      call $miden::account::incr_nonce
-      call $intrinsics::advice::emit_falcon_sig_to_stack
-      local.get 13
-      local.get 12
-      local.get 11
-      local.get 10
       local.get 9
       local.get 8
-      local.get 7
+      local.get 6
+      local.get 5
+      local.get 4
+      f32.load offset=76
+      local.tee 11
+      local.get 4
+      f32.load offset=72
+      local.tee 12
+      local.get 4
+      f32.load offset=68
+      local.tee 13
+      local.get 4
+      f32.load offset=64
+      local.tee 14
+      call $intrinsics::advice::emit_falcon_sig_to_stack
+      local.get 11
+      local.get 12
+      local.get 13
+      local.get 14
+      local.get 9
+      local.get 8
+      local.get 6
       local.get 5
       call $std::crypto::dsa::rpo_falcon512::verify
       local.get 4
-      i32.const 144
+      i32.const 112
       i32.add
       global.set $__stack_pointer
     )
@@ -215,27 +242,10 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::get_id (;4;) (type 2) (param i32)
-      (local i32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 1
-      global.set $__stack_pointer
-      local.get 1
-      i32.const 8
-      i32.add
-      call $miden::account::get_id
-      local.get 0
-      local.get 1
-      i64.load offset=8 align=4
-      i64.store
-      local.get 1
-      i32.const 16
-      i32.add
-      global.set $__stack_pointer
+    (func $miden_base_sys::bindings::tx::get_block_number (;4;) (type 2) (result f32)
+      call $miden::tx::get_block_number
     )
-    (func $miden_base_sys::bindings::tx::get_input_notes_commitment (;5;) (type 2) (param i32)
+    (func $miden_base_sys::bindings::tx::get_input_notes_commitment (;5;) (type 3) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -262,7 +272,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::tx::get_output_notes_commitment (;6;) (type 2) (param i32)
+    (func $miden_base_sys::bindings::tx::get_output_notes_commitment (;6;) (type 3) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -289,31 +299,84 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden::account::get_id (;7;) (type 2) (param i32)
+    (func $miden::account::compute_delta_commitment (;7;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::account::get_nonce (;8;) (type 3) (result f32)
+    (func $miden::account::get_item (;8;) (type 4) (param f32 i32)
       unreachable
     )
-    (func $miden::account::get_item (;9;) (type 4) (param f32 i32)
+    (func $miden::account::incr_nonce (;9;) (type 2) (result f32)
       unreachable
     )
-    (func $miden::account::incr_nonce (;10;) (type 5) (param f32)
+    (func $miden::tx::get_block_number (;10;) (type 2) (result f32)
       unreachable
     )
-    (func $miden::tx::get_input_notes_commitment (;11;) (type 2) (param i32)
+    (func $miden::tx::get_input_notes_commitment (;11;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::tx::get_output_notes_commitment (;12;) (type 2) (param i32)
+    (func $miden::tx::get_output_notes_commitment (;12;) (type 3) (param i32)
       unreachable
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;13;) (type 6) (param i32) (result f32)
+    (func $core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks (;13;) (type 5) (param i32 i32 i32)
+      (local i32)
+      block ;; label = @1
+        loop ;; label = @2
+          local.get 2
+          i32.eqz
+          br_if 1 (;@1;)
+          local.get 0
+          i32.load align=1
+          local.set 3
+          local.get 0
+          local.get 1
+          i32.load align=1
+          i32.store align=1
+          local.get 1
+          local.get 3
+          i32.store align=1
+          local.get 2
+          i32.const -1
+          i32.add
+          local.set 2
+          local.get 1
+          i32.const 4
+          i32.add
+          local.set 1
+          local.get 0
+          i32.const 4
+          i32.add
+          local.set 0
+          br 0 (;@2;)
+        end
+      end
+    )
+    (func $miden_stdlib_sys::intrinsics::advice::adv_insert (;14;) (type 5) (param i32 i32 i32)
+      local.get 0
+      f32.load offset=12
+      local.get 0
+      f32.load offset=8
+      local.get 0
+      f32.load offset=4
+      local.get 0
+      f32.load
+      local.get 1
+      i32.const 2
+      i32.shr_u
+      local.tee 0
+      local.get 0
+      local.get 2
+      i32.const 2
+      i32.shl
+      i32.add
+      call $intrinsics::advice::adv_insert_mem
+    )
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;15;) (type 6) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;14;) (type 7) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;16;) (type 7) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -371,16 +434,22 @@
       i64.load align=4
       i64.store
     )
-    (func $intrinsics::felt::from_u32 (;15;) (type 6) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;17;) (type 6) (param i32) (result f32)
       unreachable
     )
-    (func $intrinsics::crypto::hmerge (;16;) (type 7) (param i32 i32)
+    (func $intrinsics::felt::assert_eq (;18;) (type 8) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::advice::emit_falcon_sig_to_stack (;17;) (type 0)
+    (func $intrinsics::advice::emit_falcon_sig_to_stack (;19;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $std::crypto::dsa::rpo_falcon512::verify (;18;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $intrinsics::advice::adv_insert_mem (;20;) (type 10) (param f32 f32 f32 f32 i32 i32)
+      unreachable
+    )
+    (func $std::crypto::hashes::rpo::hash_memory (;21;) (type 5) (param i32 i32 i32)
+      unreachable
+    )
+    (func $std::crypto::dsa::rpo_falcon512::verify (;22;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

@@ -75,7 +75,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
         ),
     );
-    account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [Felt], []));
+    account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [], [Felt]));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), account);
     m
 }

@@ -112,7 +112,6 @@ async fn create_counter_account_with_rust_rpo_auth(
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
 /// the counter account which uses the Rust-compiled RPO-Falcon512 authentication component.
 #[test]
-#[ignore = "until migrated to miden client v0.11"]
 pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);

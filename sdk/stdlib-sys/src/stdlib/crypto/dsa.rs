@@ -24,7 +24,7 @@ extern "C" {
 ///
 /// The verification expects the signature to be provided by the host via the advice stack.
 /// In the current flow, callers should first trigger a signature request event using
-/// `crate::emit_falcon_sig_to_stack()` and then call this function. The host must respond by
+/// `crate::emit_falcon_sig_to_stack(msg, pk)` and then call this function. The host must respond by
 /// pushing the signature to the advice stack. For production deployments, ensure secret key
 /// handling occurs outside the VM.
 #[inline(always)]

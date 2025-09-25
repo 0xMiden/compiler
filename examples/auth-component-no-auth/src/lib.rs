@@ -37,7 +37,7 @@ impl Guest for AuthComponent {
         // check if the account state has changed by comparing initial and final commitments
         if curr_comm != init_comm {
             // if the account has been updated, increment the nonce
-            account::incr_nonce(felt!(1));
+            account::incr_nonce();
         }
     }
 }

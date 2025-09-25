@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 #[global_allocator]
 static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
@@ -15,9 +17,8 @@ mod bindings;
 
 use bindings::exports::miden::base::authentication_component::Guest;
 use miden::{
-    account, component, felt,
-    intrinsics::crypto::{merge, Digest},
-    tx, Felt, Value, ValueAccess, Word,
+    account, component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value,
+    ValueAccess, Word,
 };
 
 /// Authentication component storage/layout.
@@ -39,30 +40,31 @@ struct AuthComponent;
 
 impl Guest for AuthComponent {
     fn auth_procedure(_arg: Word) {
-        // Translated from MASM at:
-        // https://github.com/0xMiden/miden-base/blob/280a53f8e7dcfa98fb88e6872e6972ec45c8ccc2/crates/miden-lib/asm/miden/contracts/auth/basic.masm?plain=1#L18-L57
+        let ref_block_num = tx::get_block_number();
+        let final_nonce = account::incr_nonce();
 
-        // Get commitments and account context
-        let out_notes: Word = tx::get_output_notes_commitment();
-        let in_notes: Word = tx::get_input_notes_commitment();
-        let nonce: Felt = account::get_nonce();
-        let acct_id = account::get_id();
+        // Gather tx summary parts
+        let acct_delta_commit = account::compute_delta_commitment();
+        let input_notes_commit = tx::get_input_notes_commitment();
+        let output_notes_commit = tx::get_output_notes_commitment();
 
-        // Compute MESSAGE = h(OUT, h(IN, h([0,0,acc_id_prefix,acc_id_suffix], [0,0,0,nonce])))
-        let w_id = Word::from([felt!(0), felt!(0), acct_id.prefix, acct_id.suffix]);
-        let w_nonce = Word::from([felt!(0), felt!(0), felt!(0), nonce]);
-        let inner = merge([Digest::from(w_id), Digest::from(w_nonce)]);
-        let mid = merge([Digest::from(in_notes), inner]);
-        let msg: Word = merge([Digest::from(out_notes), mid]).into();
+        let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+
+        let mut tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+        let msg: Word = hash_words(&tx_summary).into();
+        // On the advice stack the words are expected to be in the reverse order
+        tx_summary.reverse();
+        // Insert tx summary into advice map under key `msg`
+        adv_insert(msg.clone(), &tx_summary);
 
         // Load public key from storage slot 0
         let storage = AuthStorage::default();
         let pub_key: Word = storage.owner_public_key.read();
 
-        account::incr_nonce(felt!(1));
+        // Emit signature request event to advice stack,
+        miden::emit_falcon_sig_to_stack(msg.clone(), pub_key.clone());
 
-        // Emit signature request event to advice stack, then verify.
-        miden::emit_falcon_sig_to_stack();
+        // Verify the signature loaded on the advice stack.
         miden::rpo_falcon512_verify(pub_key, msg);
     }
 }
