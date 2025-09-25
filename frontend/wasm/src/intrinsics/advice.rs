@@ -24,14 +24,13 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
             // The WASM import signature: takes 4 f32 values (Word) and returns 1 f32
             let sig = FunctionType::new(
                 midenc_hir::CallConv::Wasm,
-                // TODO: why not Type::Felt
                 vec![
-                    Type::I32, // key0
-                    Type::I32, // key1
-                    Type::I32, // key2
-                    Type::I32, // key3
+                    Type::Felt, // key0
+                    Type::Felt, // key1
+                    Type::Felt, // key2
+                    Type::Felt, // key3
                 ],
-                vec![Type::I32], // Returns number of elements pushed
+                vec![Type::Felt], // Returns number of elements pushed
             );
             Some(sig)
         }

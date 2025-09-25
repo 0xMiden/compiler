@@ -15,7 +15,7 @@ proc.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[11355601264433387451,1723126682593995395,12428040542766009663,1722840321430463048]
+    push.[9759658069395559580,14607678431724643635,7647066641494391734,12188165784813698488]
     adv.push_mapval
     push.262144
     push.3
@@ -466,7 +466,7 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-proc.miden:base/authentication-component@1.0.0#auth-procedure.8
+proc.miden:base/authentication-component@1.0.0#auth-procedure
     drop
     drop
     drop
@@ -479,12 +479,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4294967264
-    push.256
-    dup.2
-    swap.1
+    push.240
     u32wrapping_sub
-    u32and
     push.1114176
     dup.1
     swap.1
@@ -510,7 +506,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::account::incr_nonce
     trace.252
     nop
-    push.240
+    push.224
     dup.3
     swap.1
     u32wrapping_add
@@ -519,7 +515,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::account::compute_delta_commitment
     trace.252
     nop
-    push.248
+    push.232
     dup.3
     add
     u32assert
@@ -536,7 +532,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.136
+    push.152
     dup.5
     add
     u32assert
@@ -553,7 +549,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.240
+    push.224
     dup.3
     add
     u32assert
@@ -570,7 +566,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.128
+    push.144
     dup.5
     add
     u32assert
@@ -587,7 +583,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.128
+    push.144
     dup.3
     swap.1
     u32wrapping_add
@@ -630,7 +626,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     push.4
     push.0
     push.16
-    push.128
+    push.144
     dup.8
     swap.1
     u32wrapping_add
@@ -644,7 +640,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::alloc::raw_vec::RawVecInner<A>::try_allocate_in
     trace.252
     nop
-    push.132
+    push.148
     dup.5
     add
     u32assert
@@ -661,7 +657,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.128
+    push.144
     dup.6
     add
     u32assert
@@ -707,7 +703,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        push.136
+        push.152
         dup.7
         add
         u32assert
@@ -760,47 +756,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        push.12
+        push.8
         dup.6
         add
         u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.76
-        dup.7
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
         push.8
-        dup.7
-        add
-        u32assert
-        push.4
         dup.1
         swap.1
         u32mod
@@ -810,7 +770,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.72
@@ -823,20 +783,15 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.1
-        swap.1
         u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.4
-        dup.8
-        add
-        u32assert
-        push.4
+        dup.5
+        push.8
         dup.1
         swap.1
         u32mod
@@ -846,63 +801,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.68
-        dup.9
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.8
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.64
-        dup.10
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.28
-        dup.10
+        dup.8
         add
         u32assert
         push.4
@@ -915,33 +818,14 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.92
-        dup.11
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
         push.24
-        dup.11
+        dup.6
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
@@ -951,30 +835,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.88
-        dup.12
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.20
-        dup.12
+        dup.8
         add
         u32assert
         push.4
@@ -987,33 +852,14 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.84
-        dup.13
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
         push.16
-        dup.13
+        dup.6
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
@@ -1023,39 +869,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.80
-        movup.15
-        locaddr.0
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
-        dup.14
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.44
-        dup.14
+        dup.8
         add
         u32assert
         push.4
@@ -1068,42 +886,14 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.108
-        movup.2
-        locaddr.1
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
         push.40
-        dup.14
+        dup.6
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
@@ -1113,39 +903,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.104
-        movup.2
-        locaddr.2
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.36
-        dup.14
+        dup.8
         add
         u32assert
         push.4
@@ -1158,42 +920,14 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        push.100
-        movup.2
-        locaddr.3
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        dup.1
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
         push.32
-        dup.14
+        dup.6
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
@@ -1203,20 +937,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
         push.96
-        movup.2
-        locaddr.4
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
+        dup.8
         add
         u32assert
         push.4
@@ -1225,17 +950,15 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.1
-        swap.1
         u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
         push.124
-        dup.14
+        dup.6
         add
         u32assert
         push.4
@@ -1244,7 +967,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.12
+        dup.4
         swap.1
         u32divmod.4
         swap.1
@@ -1254,7 +977,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.120
-        dup.14
+        dup.6
         add
         u32assert
         push.4
@@ -1263,7 +986,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.13
+        dup.5
         swap.1
         u32divmod.4
         swap.1
@@ -1273,7 +996,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.116
-        dup.14
+        dup.6
         add
         u32assert
         push.4
@@ -1282,7 +1005,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.10
+        dup.2
         swap.1
         u32divmod.4
         swap.1
@@ -1292,7 +1015,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.112
-        dup.14
+        dup.6
         add
         u32assert
         push.4
@@ -1301,7 +1024,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        dup.11
+        dup.3
         swap.1
         u32divmod.4
         swap.1
@@ -1311,11 +1034,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.64
-        dup.14
+        dup.6
         swap.1
         u32wrapping_add
         push.52
-        dup.15
+        dup.7
         swap.1
         u32wrapping_add
         trace.240
@@ -1324,11 +1047,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.80
-        dup.14
+        dup.6
         swap.1
         u32wrapping_add
         push.52
-        dup.15
+        dup.7
         swap.1
         u32wrapping_add
         trace.240
@@ -1337,11 +1060,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.96
-        dup.14
+        dup.6
         swap.1
         u32wrapping_add
         push.52
-        dup.15
+        dup.7
         swap.1
         u32wrapping_add
         trace.240
@@ -1350,11 +1073,11 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.112
-        dup.14
+        dup.6
         swap.1
         u32wrapping_add
         push.52
-        dup.15
+        dup.7
         swap.1
         u32wrapping_add
         trace.240
@@ -1363,12 +1086,12 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.8
-        push.208
-        dup.15
+        push.128
+        dup.7
         swap.1
         u32wrapping_add
         u32wrapping_add
-        movup.9
+        swap.1
         push.4
         dup.1
         swap.1
@@ -1383,15 +1106,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         dup.1
-        movup.12
-        locaddr.5
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
         push.4
         dup.1
         swap.1
@@ -1406,7 +1120,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.52
-        dup.13
+        dup.6
         add
         u32assert
         push.4
@@ -1422,17 +1136,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.208
-        movup.12
-        locaddr.6
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
+        push.128
+        dup.8
         add
         u32assert
         push.8
@@ -1448,8 +1153,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.212
-        dup.12
+        push.132
+        dup.6
         add
         u32assert
         push.4
@@ -1504,8 +1209,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.240
-        dup.13
+        push.224
+        dup.7
         swap.1
         u32wrapping_add
         swap.2
@@ -1514,8 +1219,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo::hash_memory
         trace.252
         nop
-        push.248
-        dup.11
+        push.232
+        dup.5
         add
         u32assert
         push.8
@@ -1531,8 +1236,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.136
-        dup.13
+        push.152
+        dup.7
         add
         u32assert
         push.8
@@ -1548,8 +1253,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.240
-        dup.11
+        push.224
+        dup.5
         add
         u32assert
         push.8
@@ -1565,8 +1270,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.128
-        dup.13
+        push.144
+        dup.7
         add
         u32assert
         push.8
@@ -1582,12 +1287,12 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.128
-        dup.11
+        push.144
+        dup.5
         swap.1
         u32wrapping_add
-        push.224
-        dup.12
+        push.208
+        dup.6
         swap.1
         u32wrapping_add
         trace.240
@@ -1596,8 +1301,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.4
-        push.208
-        dup.12
+        push.128
+        dup.6
         swap.1
         u32wrapping_add
         dup.1
@@ -1608,8 +1313,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::alloc::raw_vec::RawVecInner<A>::deallocate
         trace.252
         nop
-        push.224
-        dup.11
+        push.208
+        dup.5
         add
         u32assert
         push.4
@@ -1625,8 +1330,8 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        push.228
-        dup.12
+        push.212
+        dup.6
         add
         u32assert
         push.4
@@ -1642,8 +1347,25 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        push.232
-        dup.13
+        push.216
+        dup.7
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_felt
+        trace.252
+        nop
+        push.220
+        dup.8
         add
         u32assert
         push.4
@@ -1660,10 +1382,86 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.236
-        dup.14
+        dup.9
         add
         u32assert
         push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        dup.1
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.232
+        dup.9
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        dup.2
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.228
+        dup.9
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        dup.3
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.224
+        dup.9
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        dup.4
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.40
+        dup.9
+        add
+        u32assert
+        push.8
         dup.1
         swap.1
         u32mod
@@ -1673,96 +1471,28 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.188
-        swap.1
-        locaddr.7
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        dup.14
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.11
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.184
-        dup.13
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.10
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.180
-        dup.12
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.9
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.176
+        push.168
         dup.11
-        add
-        u32assert
-        push.4
+        swap.1
+        u32wrapping_add
+        push.8
         dup.1
         swap.1
         u32mod
         u32assert
         assertz
-        movup.8
-        swap.1
         u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.172
-        dup.10
+        push.156
+        dup.9
         add
         u32assert
         push.4
@@ -1780,26 +1510,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_felt
         trace.252
         nop
-        push.168
-        dup.9
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.6
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.164
+        push.152
         dup.8
         add
         u32assert
@@ -1809,85 +1520,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        movup.5
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.160
-        dup.7
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        locaddr.1
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.156
-        dup.7
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        locaddr.2
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.152
-        dup.7
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        locaddr.3
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
+        movup.7
         swap.1
         u32divmod.4
         swap.1
@@ -1906,14 +1539,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         u32mod
         u32assert
         assertz
-        locaddr.4
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
+        movup.5
         swap.1
         u32divmod.4
         swap.1
@@ -1923,147 +1549,203 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.144
+        dup.6
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        movup.5
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_felt
+        trace.252
+        nop
+        push.32
+        dup.5
+        add
+        u32assert
+        push.8
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_dw
+        trace.252
+        nop
+        push.160
         dup.7
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
         u32assert
         assertz
-        movup.4
-        swap.1
         u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.140
-        dup.6
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.4
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.136
+        push.24
         dup.5
         add
         u32assert
-        push.4
+        push.8
         dup.1
         swap.1
         u32mod
         u32assert
         assertz
-        movup.4
-        swap.1
         u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::store_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.132
-        dup.4
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        locaddr.6
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.128
-        dup.4
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        locaddr.5
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_felt
-        trace.252
-        nop
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_felt
-        trace.252
-        nop
-        push.2
-        push.128
-        dup.5
+        push.184
+        dup.7
         swap.1
         u32wrapping_add
+        push.8
+        dup.1
         swap.1
-        u32shr
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_dw
+        trace.252
+        nop
         push.16
+        dup.5
+        add
+        u32assert
+        push.8
         dup.1
         swap.1
-        u32wrapping_add
-        locaddr.7
-        push.0
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
         trace.240
         nop
-        exec.::intrinsics::mem::load_felt
+        exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        dup.0
-        dup.4
-        dup.6
-        dup.8
-        movup.4
-        swap.6
-        movdn.4
+        push.176
+        dup.7
+        add
+        u32assert
+        push.8
+        dup.1
         swap.1
-        swap.2
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
-        swap.3
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::adv_insert_mem
+        exec.::intrinsics::mem::store_dw
+        trace.252
+        nop
+        push.8
+        dup.5
+        add
+        u32assert
+        push.8
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_dw
+        trace.252
+        nop
+        push.200
+        dup.7
+        swap.1
+        u32wrapping_add
+        push.8
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_dw
+        trace.252
+        nop
+        dup.4
+        push.8
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_dw
+        trace.252
+        nop
+        push.192
+        dup.7
+        add
+        u32assert
+        push.8
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_dw
+        trace.252
+        nop
+        push.4
+        push.144
+        dup.6
+        swap.1
+        u32wrapping_add
+        push.224
+        dup.7
+        swap.1
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
         trace.252
         nop
         push.0
@@ -2099,7 +1781,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.248
+        push.152
         dup.7
         add
         u32assert
@@ -2133,7 +1815,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_dw
         trace.252
         nop
-        push.240
+        push.144
         dup.7
         add
         u32assert
@@ -2150,7 +1832,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::store_dw
         trace.252
         nop
-        push.240
+        push.144
         dup.5
         swap.1
         u32wrapping_add
@@ -2215,7 +1897,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         trace.252
         nop
         push.208
-        movup.8
+        dup.8
         add
         u32assert
         push.4
@@ -2251,16 +1933,9 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
         trace.252
         nop
+        push.240
+        u32wrapping_add
         push.1114176
-        locaddr.0
-        push.0
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        swap.1
         u32divmod.4
         swap.1
         trace.240
@@ -2271,8 +1946,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
     else
         movdn.4
         dropw
-        movup.2
-        drop
         push.1114180
         u32divmod.4
         swap.1
@@ -2281,7 +1954,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure.8
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.136
+        push.152
         movup.3
         add
         u32assert
@@ -3053,6 +2726,97 @@ proc.miden::tx::get_output_notes_commitment
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+proc.miden_stdlib_sys::intrinsics::advice::adv_insert
+    push.12
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    movup.3
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.2
+    movup.5
+    swap.1
+    u32shr
+    push.2
+    movup.6
+    swap.1
+    u32shl
+    dup.1
+    swap.1
+    u32wrapping_add
+    movup.2
+    swap.3
+    movdn.2
+    swap.1
+    swap.4
+    swap.1
+    swap.5
+    trace.240
+    nop
+    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::adv_insert_mem
     trace.252
     nop
 end
