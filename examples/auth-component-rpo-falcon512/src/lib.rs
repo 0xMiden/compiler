@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 #[global_allocator]
 static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
@@ -13,11 +15,12 @@ bindings::export!(AuthComponent with_types_in bindings);
 
 mod bindings;
 
+use alloc::vec::Vec;
+
 use bindings::exports::miden::base::authentication_component::Guest;
 use miden::{
-    account, component, felt,
-    intrinsics::crypto::{merge, Digest},
-    tx, Felt, Value, ValueAccess, Word,
+    account, component, felt, hash_elements, intrinsics::advice::adv_insert, tx, Felt, Value,
+    ValueAccess, Word,
 };
 
 /// Authentication component storage/layout.
@@ -39,30 +42,43 @@ struct AuthComponent;
 
 impl Guest for AuthComponent {
     fn auth_procedure(_arg: Word) {
-        // Translated from MASM at:
-        // https://github.com/0xMiden/miden-base/blob/280a53f8e7dcfa98fb88e6872e6972ec45c8ccc2/crates/miden-lib/asm/miden/contracts/auth/basic.masm?plain=1#L18-L57
+        let ref_block_num = tx::get_block_number();
+        let final_nonce = account::incr_nonce();
 
-        // Get commitments and account context
-        let out_notes: Word = tx::get_output_notes_commitment();
-        let in_notes: Word = tx::get_input_notes_commitment();
-        let nonce: Felt = account::get_nonce();
-        let acct_id = account::get_id();
+        // Gather tx summary parts
+        let acct_delta_commit = account::compute_delta_commitment();
+        let input_notes_commit = tx::get_input_notes_commitment();
+        let output_notes_commit = tx::get_output_notes_commitment();
 
-        // Compute MESSAGE = h(OUT, h(IN, h([0,0,acc_id_prefix,acc_id_suffix], [0,0,0,nonce])))
-        let w_id = Word::from([felt!(0), felt!(0), acct_id.prefix, acct_id.suffix]);
-        let w_nonce = Word::from([felt!(0), felt!(0), felt!(0), nonce]);
-        let inner = merge([Digest::from(w_id), Digest::from(w_nonce)]);
-        let mid = merge([Digest::from(in_notes), inner]);
-        let msg: Word = merge([Digest::from(out_notes), mid]).into();
+        let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+
+        // Build MESSAGE = hash([delta, input, output, salt])
+        let mut elems: Vec<Felt> = Vec::with_capacity(16);
+        let acct_delta_arr: [Felt; 4] = (&acct_delta_commit).into();
+        let input_arr: [Felt; 4] = (&input_notes_commit).into();
+        let output_arr: [Felt; 4] = (&output_notes_commit).into();
+        let salt_arr: [Felt; 4] = (&salt).into();
+        elems.extend_from_slice(&acct_delta_arr);
+        elems.extend_from_slice(&input_arr);
+        elems.extend_from_slice(&output_arr);
+        elems.extend_from_slice(&salt_arr);
+        // TODO: use `hash_memory_words` after https://github.com/0xMiden/compiler/issues/644 is
+        // implemented
+        let msg: Word = hash_elements(elems).into();
+
+        adv_insert(
+            msg.clone(),
+            &[salt, output_notes_commit, input_notes_commit, acct_delta_commit],
+        );
 
         // Load public key from storage slot 0
         let storage = AuthStorage::default();
         let pub_key: Word = storage.owner_public_key.read();
 
-        account::incr_nonce(felt!(1));
+        // Emit signature request event to advice stack,
+        miden::emit_falcon_sig_to_stack(msg.clone(), pub_key.clone());
 
-        // Emit signature request event to advice stack, then verify.
-        miden::emit_falcon_sig_to_stack();
+        // Verify the signature loaded on the advice stack.
         miden::rpo_falcon512_verify(pub_key, msg);
     }
 }

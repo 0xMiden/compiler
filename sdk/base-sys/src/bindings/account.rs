@@ -11,7 +11,7 @@ extern "C" {
     #[link_name = "miden::account::get_nonce"]
     pub fn extern_account_get_nonce() -> Felt;
     #[link_name = "miden::account::incr_nonce"]
-    pub fn extern_account_incr_nonce(_: Felt);
+    pub fn extern_account_incr_nonce() -> Felt;
     #[link_name = "miden::account::get_initial_commitment"]
     pub fn extern_account_get_initial_commitment(ptr: *mut Word);
     #[link_name = "miden::account::compute_current_commitment"]
@@ -86,10 +86,10 @@ pub fn get_nonce() -> Felt {
     unsafe { extern_account_get_nonce() }
 }
 
-/// Increments the account nonce by the provided value.
+/// Increments the account nonce by one and return the new nonce
 #[inline]
-pub fn incr_nonce(value: Felt) {
-    unsafe { extern_account_incr_nonce(value) }
+pub fn incr_nonce() -> Felt {
+    unsafe { extern_account_incr_nonce() }
 }
 
 /// Returns the native account commitment at the beginning of the transaction.

@@ -25,11 +25,25 @@ export.adv_push_mapvaln
 end
 
 #! Emits an event to request a Falcon signature loaded to the advice stack
+#! MSG and PK are expected to be on the operand stack.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:  [msg3, msg2, msg1, msg0, pk3, pk2, pk1, pk0, ...]
+#! Outputs: [...]
 export.emit_falcon_sig_to_stack
     # 131087 == FALCON_SIG_TO_STACK from miden contracts
     emit.131087
+    dropw dropw
 end
 
+#! Insert words loaded from a memory range into the advice map under the given key
+#!
+#! Inputs:  [key3, key2, key1, key0, start_addr, end_addr, ...]
+#! Outputs: [...]
+#! Side effects: advice_map[key] <- mem[start_addr..end_addr]
+export.adv_insert_mem
+    # VM op expects [KEY, a, b, ...] and leaves them on the stack
+    adv.insert_mem
+    # Drop a,b and the key word from the stack so the proc has no outputs
+    drop drop
+    dropw
+end
