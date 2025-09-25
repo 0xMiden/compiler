@@ -199,7 +199,7 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
 ///
 /// # Arguments
-/// * `elements` - A slice of field elements to be hashed
+/// * `elements` - A Vec of field elements to be hashed
 #[inline]
 pub fn hash_elements(elements: Vec<Felt>) -> Digest {
     let rust_ptr = elements.as_ptr().addr() as u32;
@@ -212,6 +212,32 @@ pub fn hash_elements(elements: Vec<Felt>) -> Digest {
         assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
 
         extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
+
+        Digest::from_word(ret_area.assume_init().reverse())
+    }
+}
+
+/// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
+/// hash function.
+///
+/// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib treating the
+/// `words` as an array of fielt elements.
+///
+/// # Arguments
+/// * `words` - A slice of words to be hashed
+#[inline]
+pub fn hash_words(words: &[Word]) -> Digest {
+    let rust_ptr = words.as_ptr().addr() as u32;
+
+    unsafe {
+        let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
+        let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
+        let miden_ptr = rust_ptr / 4;
+        // It's safe to assume the `words` ptr is word-aligned.
+        assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+
+        let num_elements = (words.len() * 4) as u32;
+        extern_hash_memory(miden_ptr, num_elements, result_ptr);
 
         Digest::from_word(ret_area.assume_init().reverse())
     }
