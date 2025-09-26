@@ -80,7 +80,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 4
       i32.const 16
       i32.add
@@ -182,7 +182,7 @@
     (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;7;) (type 1)
       return
     )
-    (func $wit_bindgen_rt::run_ctors_once (;8;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;8;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

@@ -5,9 +5,5 @@ pub use miden_base::*;
 pub use miden_base_sys::bindings::*;
 pub use miden_sdk_alloc::BumpAlloc;
 pub use miden_stdlib_sys::*;
-pub use wit_bindgen_rt;
-
-#[doc(hidden)]
-pub mod __wit_codegen_support {
-    pub use wit_bindgen;
-}
+// Re-export since `wit_bindgen::generate!` is used in `miden_generate!`
+pub use wit_bindgen;

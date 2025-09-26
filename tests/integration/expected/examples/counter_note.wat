@@ -40,7 +40,7 @@
     (func $counter_note::bindings::__link_custom_section_describing_imports (;3;) (type 1))
     (func $miden:base/note-script@1.0.0#run (;4;) (type 2) (param f32 f32 f32 f32)
       (local f32)
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       call $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
       local.set 4
       call $counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0
@@ -54,7 +54,7 @@
       local.get 4
       call $intrinsics::felt::assert_eq
     )
-    (func $wit_bindgen_rt::run_ctors_once (;5;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;5;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

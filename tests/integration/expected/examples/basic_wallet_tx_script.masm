@@ -296,7 +296,7 @@ proc.miden:base/transaction-script@1.0.0#run
     nop
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.1
@@ -1062,7 +1062,7 @@ proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114244
     u32divmod.4
     swap.1

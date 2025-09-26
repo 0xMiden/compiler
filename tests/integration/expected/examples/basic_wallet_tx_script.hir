@@ -141,7 +141,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v102 = builtin.global_symbol @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/__stack_pointer : ptr<byte, u8>
             v103 = hir.bitcast v102 : ptr<byte, i32>;
             hir.store v103, v101;
-            hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/wit_bindgen::rt::run_ctors_once()
             v104 = hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/intrinsics::advice::adv_push_mapvaln(v92, v91, v90, v89) : felt
             v105 = hir.exec @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/intrinsics::felt::as_u64(v104) : i64
             v107 = arith.constant 3 : i32;
@@ -506,7 +506,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block37:
             v381 = builtin.global_symbol @miden:base/transaction-script@1.0.0/basic_wallet_tx_script/GOT.data.internal.__memory_base : ptr<byte, u8>
             v382 = hir.bitcast v381 : ptr<byte, i32>;

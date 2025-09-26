@@ -39,7 +39,7 @@
       i32.sub
       local.tee 9
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       i32.const 0
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 9
@@ -160,7 +160,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       i32.const 1
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 3
@@ -193,7 +193,7 @@
       global.set $__stack_pointer
       local.get 0
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;4;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

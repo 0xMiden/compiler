@@ -84,7 +84,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v55 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v56 = hir.bitcast v55 : ptr<byte, i32>;
             hir.store v56, v54;
-            hir.exec @miden:base/note-script@1.0.0/p2id/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/p2id/wit_bindgen::rt::run_ctors_once()
             v57 = arith.constant 16 : i32;
             v58 = arith.add v54, v57 : i32 #[overflow = wrapping];
             hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::note::get_inputs(v58)
@@ -294,7 +294,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block31:
             v194 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v195 = hir.bitcast v194 : ptr<byte, i32>;

@@ -37,11 +37,11 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 #[doc(hidden)]
                 #[allow(dead_code)]
                 pub mod bindings {
-                    ::miden::__wit_codegen_support::wit_bindgen::generate!({
+                    ::miden::wit_bindgen::generate!({
                         #world_clause
                         path: [#(#path_literals),*],
                         generate_all,
-                        runtime_path: "::miden::wit_bindgen_rt",
+                        runtime_path: "::miden::wit_bindgen::rt",
                         // path to use in the generated `export!` macro
                         default_bindings_module: "bindings",
                         with: {

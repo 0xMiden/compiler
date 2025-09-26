@@ -74,7 +74,7 @@ proc.miden:storage-example/foo@1.0.0#set-asset-qty
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen_rt::run_ctors_once
+    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -605,7 +605,7 @@ proc.miden:storage-example/foo@1.0.0#get-asset-qty
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen_rt::run_ctors_once
+    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1
@@ -736,7 +736,7 @@ proc.miden:storage-example/foo@1.0.0#get-asset-qty
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

@@ -24,7 +24,7 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @miden:base/note-script@1.0.0#run(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block14(v2: felt, v3: felt, v4: felt, v5: felt):
-            hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen::rt::run_ctors_once()
             v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
             v8 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0() : felt
             v9 = arith.constant 1 : i32;
@@ -35,7 +35,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block16:
             v14 = builtin.global_symbol @miden:base/note-script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v15 = hir.bitcast v14 : ptr<byte, i32>;
