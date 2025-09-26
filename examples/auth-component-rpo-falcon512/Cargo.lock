@@ -674,6 +674,7 @@ name = "miden"
 version = "0.5.0"
 dependencies = [
  "miden-base",
+ "miden-base-macros",
  "miden-base-sys",
  "miden-sdk-alloc",
  "miden-stdlib-sys",

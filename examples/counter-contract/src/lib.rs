@@ -8,7 +8,7 @@
 
 // Global allocator to use heap memory in no-std environment
 #[global_allocator]
-static ALLOC: ::miden::BumpAlloc = ::miden::BumpAlloc::new();
+static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
 // Define a panic handler as required by the `no_std` environment
 #[cfg(not(test))]
@@ -18,10 +18,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// TODO: fix `::miden`
-use ::miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
+use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
-use crate::exports::miden::counter_contract::counter::Guest;
+use crate::bindings::exports::miden::counter_contract::counter::Guest;
 
 /// Main contract structure for the counter example.
 #[component]

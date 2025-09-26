@@ -18,12 +18,12 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(IncrementCounterNote with_types_in bindings);
-
-mod bindings;
-
-use bindings::{exports::miden::base::note_script::Guest, miden::counter_contract::counter};
 use miden::*;
+
+miden::miden_generate!();
+bindings::export!(IncrementCounterNote);
+
+use crate::bindings::{exports::miden::base::note_script::Guest, miden::counter_contract::counter};
 
 struct IncrementCounterNote;
 

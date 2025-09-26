@@ -12,6 +12,12 @@ use toml::Value;
 extern crate proc_macro;
 
 mod account_component_metadata;
+mod miden_generate;
+
+#[proc_macro]
+pub fn miden_generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    miden_generate::expand(input)
+}
 
 struct CargoMetadata {
     name: String,
@@ -386,11 +392,11 @@ pub fn component(
     let link_section = generate_link_section(&acc_component_metadata_bytes);
 
     let output = quote! {
-        ::miden::miden_generate!();
+        miden::miden_generate!();
         #input_struct
         #default_impl
         #link_section
-        export!(#struct_name);
+        bindings::export!(#struct_name);
     };
 
     proc_macro::TokenStream::from(output)
