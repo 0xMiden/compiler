@@ -1,11 +1,11 @@
 //! Cargo support for WebAssembly components.
 
+// TODO: remove after switching to generate! macros
+#![allow(unused)]
+
 use core::lock::{LockFile, LockFileResolver};
 use std::{
-    collections::HashMap,
-    env,
     fmt::{self},
-    fs::{self},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -14,7 +14,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use bindings::BindingsGenerator;
 use cargo_config2::{PathAndArgs, TargetTripleRef};
 use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package};
 use config::{CargoArguments, CargoPackageSpec, Config};
@@ -24,7 +23,6 @@ use registry::{PackageDependencyResolution, PackageResolutionMap};
 use target::install_wasm32_wasip2;
 use wasm_pkg_client::caching::{CachingClient, FileCache};
 
-mod bindings;
 pub mod config;
 pub mod core;
 mod lock;
@@ -120,15 +118,15 @@ impl From<&str> for CargoCommand {
 ///
 /// Returns any relevant output components.
 pub async fn run_cargo_command(
-    client: Arc<CachingClient<FileCache>>,
+    _client: Arc<CachingClient<FileCache>>,
     config: &Config,
-    metadata: &Metadata,
-    packages: &[PackageComponentMetadata<'_>],
+    _metadata: &Metadata,
+    _packages: &[PackageComponentMetadata<'_>],
     subcommand: Option<&str>,
     cargo_args: &CargoArguments,
     spawn_args: &[String],
 ) -> Result<Vec<PathBuf>> {
-    let _ = generate_bindings(client, config, metadata, packages, cargo_args).await?;
+    // resolve_component_dependencies(client, config, metadata, packages, cargo_args).await?;
 
     let cargo_path = std::env::var("CARGO")
         .map(PathBuf::from)
@@ -496,13 +494,13 @@ pub fn load_component_metadata<'a>(
     pkgs.into_iter().map(PackageComponentMetadata::new).collect::<Result<_>>()
 }
 
-async fn generate_bindings(
+async fn resolve_component_dependencies(
     client: Arc<CachingClient<FileCache>>,
     config: &Config,
     metadata: &Metadata,
     packages: &[PackageComponentMetadata<'_>],
     cargo_args: &CargoArguments,
-) -> Result<HashMap<String, HashMap<String, String>>> {
+) -> Result<()> {
     let file_lock = acquire_lock_file_ro(config.terminal(), metadata)?;
     let lock_file = file_lock
         .as_ref()
@@ -513,19 +511,8 @@ async fn generate_bindings(
         })
         .transpose()?;
 
-    let cwd =
-        env::current_dir().with_context(|| "couldn't get the current directory of the process")?;
-
     let resolver = lock_file.as_ref().map(LockFileResolver::new);
     let resolution_map = create_resolution_map(client, packages, resolver).await?;
-    let mut import_name_map = HashMap::new();
-    for PackageComponentMetadata { package, .. } in packages {
-        let resolution = resolution_map.get(&package.id).expect("missing resolution");
-        import_name_map.insert(
-            package.name.clone(),
-            generate_package_bindings(config, resolution, &cwd).await?,
-        );
-    }
 
     // Update the lock file if it exists or if the new lock file is non-empty
     let new_lock_file = resolution_map.to_lock_file();
@@ -544,7 +531,7 @@ async fn generate_bindings(
         })?;
     }
 
-    Ok(import_name_map)
+    Ok(())
 }
 
 async fn create_resolution_map<'a>(
@@ -562,49 +549,4 @@ async fn create_resolution_map<'a>(
     }
 
     Ok(map)
-}
-
-async fn generate_package_bindings(
-    config: &Config,
-    resolution: &PackageDependencyResolution<'_>,
-    cwd: &Path,
-) -> Result<HashMap<String, String>> {
-    if !resolution.metadata.section_present && resolution.metadata.target_path().is_none() {
-        log::debug!(
-            "skipping generating bindings for package `{name}`",
-            name = resolution.metadata.name
-        );
-        return Ok(HashMap::new());
-    }
-
-    // If there is no wit files and no dependencies, stop generating the bindings file for it.
-    let (generator, import_name_map) = match BindingsGenerator::new(resolution).await? {
-        Some(v) => v,
-        None => return Ok(HashMap::new()),
-    };
-
-    // TODO: make the output path configurable
-    let output_dir = resolution.metadata.manifest_path.parent().unwrap().join("src");
-    let bindings_path = output_dir.join("bindings.rs");
-
-    config.terminal().status(
-        "Generating",
-        format!(
-            "bindings for {name} ({path})",
-            name = resolution.metadata.name,
-            path = bindings_path.strip_prefix(cwd).unwrap_or(&bindings_path).display()
-        ),
-    )?;
-
-    let bindings = generator.generate()?;
-    fs::create_dir_all(&output_dir).with_context(|| {
-        format!("failed to create output directory `{path}`", path = output_dir.display())
-    })?;
-    if fs::read_to_string(&bindings_path).unwrap_or_default() != bindings {
-        fs::write(&bindings_path, bindings).with_context(|| {
-            format!("failed to write bindings file `{path}`", path = bindings_path.display())
-        })?;
-    }
-
-    Ok(import_name_map)
 }

@@ -12,7 +12,7 @@ use cargo_component::{
 };
 use cargo_metadata::{camino, Metadata};
 use clap::{CommandFactory, Parser};
-pub use commands::example_project::WIT_DEPS_PATH;
+pub use commands::new_project::WIT_DEPS_PATH;
 use commands::{ExampleCommand, NewCommand};
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
@@ -290,22 +290,6 @@ where
             }
 
             let dependency_packages_paths = process_miden_dependencies(root_package, &cargo_args)?;
-
-            for package in packages.iter_mut() {
-                package.metadata.section.bindings.with = [
-                    ("miden:base/core-types@1.0.0/felt", "miden::Felt"),
-                    ("miden:base/core-types@1.0.0/word", "miden::Word"),
-                    ("miden:base/core-types@1.0.0/asset", "miden::Asset"),
-                    ("miden:base/core-types@1.0.0/account-id", "miden::AccountId"),
-                    ("miden:base/core-types@1.0.0/tag", "miden::Tag"),
-                    ("miden:base/core-types@1.0.0/note-type", "miden::NoteType"),
-                    ("miden:base/core-types@1.0.0/recipient", "miden::Recipient"),
-                    ("miden:base/core-types@1.0.0/note-idx", "miden::NoteIdx"),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect();
-            }
 
             let mut spawn_args: Vec<_> = args.clone().into_iter().collect();
             spawn_args.extend_from_slice(

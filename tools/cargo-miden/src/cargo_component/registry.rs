@@ -1,4 +1,5 @@
 //! Module for interacting with component registries.
+#![allow(dead_code)] // Some resolution helpers remain unused after switching to compile-time bindings.
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;

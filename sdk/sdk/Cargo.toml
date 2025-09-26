@@ -19,6 +19,8 @@ miden-sdk-alloc = { version = "0.5.0", path = "../alloc" }
 miden-stdlib-sys = { version = "0.5.0", path = "../stdlib-sys" }
 miden-base = { version = "0.5.0", path = "../base" }
 miden-base-sys = { version = "0.5.0", path = "../base-sys" }
+wit-bindgen = { version = "0.41", default-features = false, features = ["macros"] }
+wit-bindgen-rt = { version = "0.41", default-features = false, features = ["bitflags"] }
 
 [features]
 default = []

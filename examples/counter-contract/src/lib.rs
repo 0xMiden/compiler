@@ -8,7 +8,7 @@
 
 // Global allocator to use heap memory in no-std environment
 #[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+static ALLOC: ::miden::BumpAlloc = ::miden::BumpAlloc::new();
 
 // Define a panic handler as required by the `no_std` environment
 #[cfg(not(test))]
@@ -18,10 +18,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-mod bindings;
+// TODO: fix `::miden`
+use ::miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
-use bindings::exports::miden::counter_contract::counter::Guest;
-use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
+use crate::exports::miden::counter_contract::counter::Guest;
 
 /// Main contract structure for the counter example.
 #[component]
@@ -30,8 +30,6 @@ struct CounterContract {
     #[storage(slot(0), description = "counter contract storage map")]
     count_map: StorageMap,
 }
-
-bindings::export!(CounterContract with_types_in bindings);
 
 impl Guest for CounterContract {
     /// Returns the current counter value stored in the contract's storage map.

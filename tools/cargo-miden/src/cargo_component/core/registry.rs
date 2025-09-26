@@ -1,4 +1,5 @@
 //! Module for resolving dependencies from a component registry.
+#![allow(dead_code)] // Retained while migration to `wit_bindgen::generate!` leaves some helpers unused.
 use std::{
     collections::{hash_map, HashMap},
     fmt::Debug,

@@ -386,9 +386,11 @@ pub fn component(
     let link_section = generate_link_section(&acc_component_metadata_bytes);
 
     let output = quote! {
+        ::miden::miden_generate!();
         #input_struct
         #default_impl
         #link_section
+        export!(#struct_name);
     };
 
     proc_macro::TokenStream::from(output)

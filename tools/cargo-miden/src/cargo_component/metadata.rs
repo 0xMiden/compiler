@@ -1,4 +1,5 @@
 //! Module for component metadata representation in `Cargo.toml`.
+#![allow(dead_code)] // Some metadata helpers remain unused now that bindings are generated at compile time.
 use std::{
     borrow::Cow,
     collections::HashMap,

@@ -662,7 +662,6 @@ dependencies = [
  "dirs 5.0.1",
  "env_logger",
  "futures",
- "heck 0.5.0",
  "indexmap 2.10.0",
  "libc",
  "log",
@@ -681,11 +680,8 @@ dependencies = [
  "toml_edit",
  "url",
  "wasm-pkg-client",
- "wasmparser 0.227.1",
  "which",
  "windows-sys 0.52.0",
- "wit-bindgen-core",
- "wit-bindgen-rust",
  "wit-component 0.227.1",
  "wit-parser 0.227.1",
 ]
@@ -3449,6 +3445,8 @@ dependencies = [
  "miden-base-sys",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
+ "wit-bindgen",
+ "wit-bindgen-rt 0.41.0",
 ]
 
 [[package]]
@@ -7654,7 +7652,7 @@ version = "0.14.2+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9683f9a5a998d873c0d21fcbe3c083009670149a8fab228644b8bd36b2c48cb3"
 dependencies = [
- "wit-bindgen-rt",
+ "wit-bindgen-rt 0.39.0",
 ]
 
 [[package]]
@@ -8545,6 +8543,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10fb6648689b3929d56bbc7eb1acf70c9a42a29eb5358c67c10f54dbd5d695de"
+dependencies = [
+ "wit-bindgen-rt 0.41.0",
+ "wit-bindgen-rust-macro",
+]
+
+[[package]]
 name = "wit-bindgen-core"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8565,6 +8573,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen-rt"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db52a11d4dfb0a59f194c064055794ee6564eb1ced88c25da2cf76e50c5621"
+dependencies = [
+ "bitflags 2.9.1",
+]
+
+[[package]]
 name = "wit-bindgen-rust"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8578,6 +8595,21 @@ dependencies = [
  "wasm-metadata 0.227.1",
  "wit-bindgen-core",
  "wit-component 0.227.1",
+]
+
+[[package]]
+name = "wit-bindgen-rust-macro"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad19eec017904e04c60719592a803ee5da76cb51c81e3f6fbf9457f59db49799"
+dependencies = [
+ "anyhow",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
