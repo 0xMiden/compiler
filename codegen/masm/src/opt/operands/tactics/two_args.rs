@@ -7,7 +7,6 @@ use super::*;
 ///
 /// The only criterion for success is an arity of exactly two.  Then the solution will always
 /// succeed, adjusted only by whether commutativity is a factor.
-
 #[derive(Default)]
 pub struct TwoArgs;
 
@@ -172,23 +171,163 @@ impl TwoArgs {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use itertools::Itertools;
+    use midenc_hir::Context;
 
     use super::*;
+    use crate::{opt::SolverError, Constraint, OperandStack};
 
     // These are actually RHS/LHS pairs.
-    const ALL_CONSTRAINTS: [[crate::Constraint; 2]; 4] = [
-        [crate::Constraint::Move, crate::Constraint::Move],
-        [crate::Constraint::Move, crate::Constraint::Copy],
-        [crate::Constraint::Copy, crate::Constraint::Move],
-        [crate::Constraint::Copy, crate::Constraint::Copy],
+    const ALL_CONSTRAINTS: [[Constraint; 2]; 4] = [
+        [Constraint::Move, Constraint::Move],
+        [Constraint::Move, Constraint::Copy],
+        [Constraint::Copy, Constraint::Move],
+        [Constraint::Copy, Constraint::Copy],
     ];
 
-    fn generate_valrefs(k: usize) -> Vec<midenc_hir::ValueRef> {
-        // The easiest? way to create a bunch of ValueRefs is to create a block with args and use them.
-        let hir_ctx = std::rc::Rc::new(midenc_hir::Context::default());
+    #[test]
+    fn solves_with_strict_operand_order() {
+        let hir_ctx = Rc::new(Context::default());
 
-        let block = hir_ctx
+        // Take every permutation of a 5 element stack and each permutation of two operand
+        // constraints and confirm that at most 2 actions are required to solve.
+        let val_refs = generate_valrefs(&hir_ctx, 5);
+        let total_actions = permute_stacks(&val_refs, 2, false);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 876,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_for_any_commutative_permutation() {
+        let hir_ctx = Rc::new(Context::default());
+
+        // Take every permutation of a 5 element stack and each permutation of two operand
+        // constraints and confirm that at most 2 actions are required for an unordered solution.
+        let val_refs = generate_valrefs(&hir_ctx, 5);
+        let total_actions = permute_stacks(&val_refs, 2, true);
+
+        // This number should only ever go down as we add optimisations.
+        //
+        // This value should always be smaller than that of `solves_with_strict_operand_order`
+        assert!(
+            total_actions <= 828,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_optimally_for_move_move_commutative_permutation() {
+        let hir_ctx = Rc::new(Context::default());
+
+        // Take every permutation of a 3 element stack and confirm that at most 1 action is
+        // required for an unordered solution with move/move constraints.
+        let val_refs = generate_valrefs(&hir_ctx, 3);
+        let expected = [val_refs[0], val_refs[1]];
+        let constraints = [[Constraint::Move, Constraint::Move]];
+
+        let total_actions = permute_stacks_advanced(&val_refs, expected, &constraints, 1, true);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 4,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_with_materialized_copy_strict() {
+        let hir_ctx = Rc::new(Context::default());
+        let total_actions = duplicated_stack_single_util(&hir_ctx, false);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 132,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_with_materialized_copy_commutative() {
+        let hir_ctx = Rc::new(Context::default());
+        let total_actions = duplicated_stack_single_util(&hir_ctx, true);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 132,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_with_existing_copy_strict() {
+        let hir_ctx = Rc::new(Context::default());
+        let total_actions = duplicated_stack_double_util(&hir_ctx, false);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 384,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    #[test]
+    fn solves_with_existing_copy_commutative() {
+        let hir_ctx = Rc::new(Context::default());
+        let total_actions = duplicated_stack_double_util(&hir_ctx, true);
+
+        // This number should only ever go down as we add optimisations.
+        assert!(
+            total_actions <= 384,
+            "optimization regression, observed an unexpected increase in number of stack ops \
+             needed to solve"
+        );
+    }
+
+    fn duplicated_stack_single_util(context: &Context, allow_unordered: bool) -> usize {
+        // Take every permutation of a 4 element stack etc. where the two operands are the very
+        // same value.  In this case it doesn't make sense for a Move/Move constraint to be used.
+        //
+        // The expected output is v0, v0.
+        let val_refs = generate_valrefs(context, 4);
+        let expected = [val_refs[0], val_refs[0]];
+        let constraints = [
+            [Constraint::Move, Constraint::Copy],
+            [Constraint::Copy, Constraint::Move],
+            [Constraint::Copy, Constraint::Copy],
+        ];
+
+        permute_stacks_advanced(&val_refs, expected, &constraints, 2, allow_unordered)
+    }
+
+    fn duplicated_stack_double_util(context: &Context, allow_unordered: bool) -> usize {
+        // Take every permutation of a 5 element stack etc. where the two operands are the same value
+        // but represented twice in the input.
+
+        // Generate 4 val refs but append a copy of v0.
+        let mut val_refs = generate_valrefs(context, 4);
+        let v0 = val_refs[0];
+        val_refs.push(v0);
+
+        let expected = [v0, v0];
+
+        permute_stacks_advanced(&val_refs, expected, &ALL_CONSTRAINTS, 2, allow_unordered)
+    }
+
+    fn generate_valrefs(context: &Context, k: usize) -> Vec<midenc_hir::ValueRef> {
+        // The easiest? way to create a bunch of ValueRefs is to create a block with args and use them.
+        let block = context
             .create_block_with_params(core::iter::repeat_n(midenc_hir::Type::I32, k))
             .borrow();
 
@@ -209,15 +348,15 @@ mod tests {
         allow_unordered: bool,
     ) -> usize {
         // Use just v0 and v1 at the top.  The input is permuted so always using these is OK.
-        let expected = vec![val_refs[0], val_refs[1]];
+        let expected = [val_refs[0], val_refs[1]];
 
-        permute_stacks_advanced(val_refs, &expected, &ALL_CONSTRAINTS, max_actions, allow_unordered)
+        permute_stacks_advanced(val_refs, expected, &ALL_CONSTRAINTS, max_actions, allow_unordered)
     }
 
     fn permute_stacks_advanced(
         val_refs: &[midenc_hir::ValueRef],
-        expected: &[midenc_hir::ValueRef],
-        constraints: &[[crate::Constraint; 2]],
+        expected: [midenc_hir::ValueRef; 2],
+        constraints: &[[Constraint; 2]],
         max_actions: usize,
         allow_unordered: bool,
     ) -> usize {
@@ -225,14 +364,14 @@ mod tests {
 
         // Permute every possible input stack variation and solve for each.
         for val_refs_perm in val_refs.iter().permutations(val_refs.len()).unique() {
-            let mut pending = crate::OperandStack::default();
-            for value in val_refs_perm {
+            let mut pending = OperandStack::default();
+            for value in val_refs_perm.into_iter().rev() {
                 pending.push(*value);
             }
 
             for constraint_pair in constraints {
                 let context =
-                    SolverContext::new(expected, allow_unordered, constraint_pair, &pending);
+                    SolverContext::new(&expected, allow_unordered, constraint_pair, &pending);
 
                 match context {
                     Ok(context) => {
@@ -258,110 +397,12 @@ mod tests {
                         total_actions += num_actions;
                     }
 
-                    Err(crate::opt::SolverError::AlreadySolved) => {}
+                    Err(SolverError::AlreadySolved) => {}
                     Err(_) => panic!("Unexpected error while building the solver context."),
                 }
             }
         }
 
         total_actions
-    }
-
-    #[test]
-    fn ordered_stack() {
-        // Take every permutation of a 5 element stack and each permutation of two operand
-        // constraints and confirm that at most 2 actions are required to solve.
-        let val_refs = generate_valrefs(5);
-        let total_actions = permute_stacks(&val_refs, 2, false);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["876"].assert_eq(&total_actions.to_string());
-    }
-
-    #[test]
-    fn unordered_stack() {
-        // Take every permutation of a 5 element stack and each permutation of two operand
-        // constraints and confirm that at most 2 actions are required for an unordered solution.
-        let val_refs = generate_valrefs(5);
-        let total_actions = permute_stacks(&val_refs, 2, true);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["828"].assert_eq(&total_actions.to_string());
-    }
-
-    #[test]
-    fn unordered_3_stack() {
-        // Take every permutation of a 3 element stack and confirm that at most 1 action is
-        // required for an unordered solution with move/move constraints.
-        let val_refs = generate_valrefs(3);
-        let expected = vec![val_refs[0], val_refs[1]];
-        let constraints = [[crate::Constraint::Move, crate::Constraint::Move]];
-
-        let total_actions = permute_stacks_advanced(&val_refs, &expected, &constraints, 1, true);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["4"].assert_eq(&total_actions.to_string());
-    }
-
-    fn duplicated_stack_single_util(allow_unordered: bool) -> usize {
-        // Take every permutation of a 4 element stack etc. where the two operands are the very
-        // same value.  In this case it doesn't make sense for a Move/Move constraint to be used.
-        //
-        // The expected output is v0, v0.
-        let val_refs = generate_valrefs(4);
-        let expected = vec![val_refs[0], val_refs[0]];
-        let constraints = [
-            [crate::Constraint::Move, crate::Constraint::Copy],
-            [crate::Constraint::Copy, crate::Constraint::Move],
-            [crate::Constraint::Copy, crate::Constraint::Copy],
-        ];
-
-        permute_stacks_advanced(&val_refs, &expected, &constraints, 2, allow_unordered)
-    }
-
-    #[test]
-    fn duplicated_stack_single() {
-        let total_actions = duplicated_stack_single_util(false);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["132"].assert_eq(&total_actions.to_string());
-    }
-
-    #[test]
-    fn duplicated_stack_single_unordered() {
-        let total_actions = duplicated_stack_single_util(true);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["132"].assert_eq(&total_actions.to_string());
-    }
-
-    fn duplicated_stack_double_util(allow_unordered: bool) -> usize {
-        // Take every permutation of a 5 element stack etc. where the two operands are the same value
-        // but represented twice in the input.
-
-        // Generate 4 val refs but append a copy of v0.
-        let mut val_refs = generate_valrefs(4);
-        let v0 = val_refs[0];
-        val_refs.push(v0);
-
-        let expected = vec![v0, v0];
-
-        permute_stacks_advanced(&val_refs, &expected, &ALL_CONSTRAINTS, 2, allow_unordered)
-    }
-
-    #[test]
-    fn duplicated_stack_double() {
-        let total_actions = duplicated_stack_double_util(false);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["384"].assert_eq(&total_actions.to_string());
-    }
-
-    #[test]
-    fn duplicated_stack_double_unordered() {
-        let total_actions = duplicated_stack_double_util(true);
-
-        // This number should only ever go down as we add optimisations.
-        midenc_expect_test::expect!["384"].assert_eq(&total_actions.to_string());
     }
 }
