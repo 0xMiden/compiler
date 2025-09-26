@@ -36,5 +36,3 @@ trim-paths = ["diagnostics", "object"]
 [profile.dev]
 trim-paths = ["diagnostics", "object"]
 
-[package.metadata.cargo-machete]
-ignored = ["wit-bindgen-rt"]

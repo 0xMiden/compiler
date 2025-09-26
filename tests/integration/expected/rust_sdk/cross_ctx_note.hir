@@ -21,7 +21,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v8 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v9 = hir.bitcast v8 : ptr<byte, i32>;
             v10 = hir.load v9 : i32;
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/wit_bindgen::rt::run_ctors_once()
             v11 = arith.constant 1048588 : i32;
             v12 = arith.add v10, v11 : i32 #[overflow = wrapping];
             v13 = hir.bitcast v12 : u32;
@@ -50,7 +50,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block14:
             v32 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v33 = hir.bitcast v32 : ptr<byte, i32>;

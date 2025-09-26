@@ -39,7 +39,7 @@
     (func $__wasm_call_ctors (;1;) (type 1))
     (func $cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports (;2;) (type 1))
     (func $miden:base/note-script@1.0.0#run (;3;) (type 2) (param f32 f32 f32 f32)
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       i32.const 1
       call $intrinsics::felt::from_u32
       i32.const 2
@@ -77,7 +77,7 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;4;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

@@ -201,7 +201,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v182 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
             v183 = hir.bitcast v182 : ptr<byte, i32>;
             hir.store v183, v181;
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/wit_bindgen::rt::run_ctors_once()
             v184 = arith.constant 2 : i32;
             v185 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v184) : felt
             v186 = arith.constant 3 : i32;
@@ -546,7 +546,7 @@ builtin.component miden:base/note-script@1.0.0 {
             ub.unreachable ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block28:
             v469 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v470 = hir.bitcast v469 : ptr<byte, i32>;

@@ -20,9 +20,8 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 
 use bindings::exports::miden::cross_ctx_account::*;
 
-bindings::export!(MyFoo with_types_in bindings);
-
-mod bindings;
+miden::miden_generate!();
+bindings::export!(MyFoo);
 
 use miden::Felt;
 

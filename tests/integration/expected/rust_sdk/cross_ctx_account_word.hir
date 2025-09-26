@@ -15,7 +15,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v6 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v7 = hir.bitcast v6 : ptr<byte, i32>;
             v8 = hir.load v7 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v9 = arith.constant 1 : i32;
             v10 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v9) : felt
             v11 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v0, v10) : felt
@@ -68,7 +68,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v51 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v52 = hir.bitcast v51 : ptr<byte, i32>;
             v53 = hir.load v52 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v54 = arith.constant 2 : i32;
             v55 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v54) : felt
             v56 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v45, v55) : felt
@@ -118,7 +118,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
 
         private builtin.function @miden:cross-ctx-account-word/foo@1.0.0#process-felt(v90: felt) -> felt {
         ^block13(v90: felt):
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v92 = arith.constant 3 : i32;
             v93 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v92) : felt
             v94 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v90, v93) : felt
@@ -130,7 +130,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v99 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v100 = hir.bitcast v99 : ptr<byte, i32>;
             v101 = hir.load v100 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v102 = arith.constant 4 : i32;
             v103 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v102) : felt
             v104 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v95, v103) : felt
@@ -161,7 +161,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v125 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v126 = hir.bitcast v125 : ptr<byte, i32>;
             v127 = hir.load v126 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v128 = arith.constant 5 : i32;
             v129 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v128) : felt
             v130 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v120, v129) : felt
@@ -203,7 +203,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v164 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v165 = hir.bitcast v164 : ptr<byte, i32>;
             v166 = hir.load v165 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v167 = arith.constant 6 : i32;
             v168 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v167) : felt
             v169 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v156, v168) : felt
@@ -288,7 +288,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             v236 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v237 = hir.bitcast v236 : ptr<byte, i32>;
             v238 = hir.load v237 : i32;
-            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/wit_bindgen::rt::run_ctors_once()
             v239 = arith.constant 8 : i32;
             v240 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::from_u32(v239) : felt
             v241 = hir.exec @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/intrinsics::felt::add(v231, v240) : felt
@@ -325,7 +325,7 @@ builtin.component miden:cross-ctx-account-word/foo@1.0.0 {
             builtin.ret v246;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block23:
             v267 = builtin.global_symbol @miden:cross-ctx-account-word/foo@1.0.0/cross_ctx_account_word/GOT.data.internal.__memory_base : ptr<byte, u8>
             v268 = hir.bitcast v267 : ptr<byte, i32>;

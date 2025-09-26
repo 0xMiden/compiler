@@ -455,7 +455,7 @@ proc.miden:base/note-script@1.0.0#run
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.2
@@ -1381,7 +1381,7 @@ proc.miden:base/note-script@1.0.0#run
     end
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

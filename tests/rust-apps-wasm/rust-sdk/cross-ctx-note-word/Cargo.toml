@@ -14,8 +14,6 @@ crate-type = ["cdylib"]
 # Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../../../sdk/sdk" }
-wit-bindgen-rt = "0.28"
-
 
 [profile.release]
 # optimize the output for size
@@ -39,10 +37,6 @@ overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
 
-# TODO: switch to miden table
-[package.metadata.component]
-package = "miden:cross-ctx-note-word"
-
 [package.metadata.miden]
 project-kind = "note-script"
 
@@ -53,6 +47,3 @@ project-kind = "note-script"
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../../../sdk/base/wit/miden.wit" }
 "miden:cross-ctx-account-word" = { path = "../cross-ctx-account-word/wit/cross-ctx-account-word.wit" }
-
-[package.metadata.cargo-machete]
-ignored = ["wit-bindgen-rt"]
