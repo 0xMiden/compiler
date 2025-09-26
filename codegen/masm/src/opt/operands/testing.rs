@@ -299,15 +299,19 @@ prop_compose! {
 }
 
 pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE").is_test(true).try_init();
     let block = problem.block.borrow();
     let block_args = block.arguments();
-    match OperandMovementConstraintSolver::new(
+    match OperandMovementConstraintSolver::new_with_options(
         &problem.expected,
         &problem.constraints,
         &problem.stack,
+        SolverOptions {
+            fuel: 10,
+            ..Default::default()
+        },
     ) {
-        Ok(mut solver) => {
-            solver.set_optimization_fuel(10);
+        Ok(solver) => {
             let result = solver.solve();
             // We are expecting solutions for all inputs
             prop_assert!(
@@ -363,13 +367,16 @@ pub fn solve_problem_with_tactic<T: tactics::Tactic + Default>(
 ) -> Result<(), TestCaseError> {
     let block = problem.block.borrow();
     let block_args = block.arguments();
-    match OperandMovementConstraintSolver::new(
+    match OperandMovementConstraintSolver::new_with_options(
         &problem.expected,
         &problem.constraints,
         &problem.stack,
+        SolverOptions {
+            fuel: 10,
+            ..Default::default()
+        },
     ) {
-        Ok(mut solver) => {
-            solver.set_optimization_fuel(10);
+        Ok(solver) => {
             let result = solver.solve_with_tactic::<T>();
             // We are expecting solutions for all inputs
             prop_assert!(

@@ -112,8 +112,9 @@ impl<'a> SolutionBuilder<'a> {
         self.context.copies().len()
     }
 
-    pub fn unordered_allowed(&self) -> bool {
-        self.context.unordered_allowed()
+    /// Returns true if the solution must be strict
+    pub fn requires_strict_solution(&self) -> bool {
+        self.context.is_strict()
     }
 
     /// Get a reference to the underlying context of the solver

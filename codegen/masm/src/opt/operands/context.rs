@@ -1,8 +1,9 @@
 use core::num::NonZeroU8;
 
 use midenc_hir::{self as hir, hashbrown, FxHashMap};
+use smallvec::SmallVec;
 
-use super::{SolverError, Stack, ValueOrAlias};
+use super::{SolverError, SolverOptions, Stack, ValueOrAlias};
 use crate::{Constraint, OperandStack};
 
 /// The context associated with an instance of [OperandMovementConstraintSolver].
@@ -12,17 +13,17 @@ use crate::{Constraint, OperandStack};
 /// copied operands.
 #[derive(Debug)]
 pub struct SolverContext {
+    options: SolverOptions,
     stack: Stack,
     expected: Stack,
-    allow_unordered: bool,
     copies: CopyInfo,
 }
 impl SolverContext {
     pub fn new(
         expected: &[hir::ValueRef],
-        allow_unordered: bool,
         constraints: &[Constraint],
         stack: &OperandStack,
+        options: SolverOptions,
     ) -> Result<Self, SolverError> {
         // Compute the expected output on the stack, as well as alias/copy information
         let stack = Stack::from(stack);
@@ -31,14 +32,18 @@ impl SolverContext {
         for (value, constraint) in expected.iter().rev().zip(constraints.iter().rev()) {
             let value = ValueOrAlias::from(*value);
             match constraint {
-                // If we observe a value with move semantics, then it is
-                // always referencing the original value
+                // If we observe a value with move semantics, then it is always referencing the
+                // original value
                 Constraint::Move => {
                     expected_output.push(value);
                 }
-                // If we observe a value with copy semantics, then the expected
-                // output is always an alias, because the original would need to
-                // be preserved
+                // If we observe a value with copy semantics, then the expected output is always an
+                // alias, because the original needs to be preserved.
+                //
+                // NOTE: Just because an expected operand has a copy constraint applied, does not
+                // mean that there aren't multiple copies on the input stack already - it indicates
+                // that all of those copies must be preserved, and a _new_ copy must be materialized
+                // by the solution we produce.
                 Constraint::Copy => {
                     expected_output.push(copies.push(value));
                 }
@@ -46,22 +51,27 @@ impl SolverContext {
         }
 
         // Determine if the stack is already in the desired order
-        let requires_copies = copies.copies_required();
-        let is_solved = !requires_copies
-            && stack.len() >= expected_output.len()
-            && expected_output
-                .iter()
-                .eq(stack.iter().skip(stack.len() - expected_output.len()));
+        let context = Self {
+            options,
+            stack,
+            expected: expected_output,
+            copies,
+        };
+        let is_solved = !context.copies.copies_required()
+            && context.stack.len() >= context.expected.len()
+            && context.is_solved(&context.stack);
         if is_solved {
             return Err(SolverError::AlreadySolved);
         }
 
-        Ok(Self {
-            stack,
-            expected: expected_output,
-            allow_unordered,
-            copies,
-        })
+        Ok(context)
+    }
+
+    /// Access the current [SolverOptions]
+    #[allow(unused)]
+    #[inline(always)]
+    pub fn options(&self) -> &SolverOptions {
+        &self.options
     }
 
     /// Returns the number of operands expected by the current instruction
@@ -90,8 +100,10 @@ impl SolverContext {
         &self.expected
     }
 
-    pub fn unordered_allowed(&self) -> bool {
-        self.allow_unordered
+    /// Returns true if the current solver requires a strict solution
+    #[inline(always)]
+    pub fn is_strict(&self) -> bool {
+        self.options.strict
     }
 
     /// Return true if the given stack matches what is expected
@@ -99,38 +111,22 @@ impl SolverContext {
     pub fn is_solved(&self, pending: &Stack) -> bool {
         debug_assert!(pending.len() >= self.expected.len());
 
-        let is_solved_exactly = self
-            .expected
-            .iter()
-            .eq(pending.iter().skip(pending.len() - self.expected.len()));
+        let is_strict_solution =
+            self.expected.iter().rev().eq(pending.iter().rev().take(self.expected.len()));
 
-        let both_same_value =
-            self.expected.len() == 2 && self.expected[0].value() == self.expected[1].value();
-
-        is_solved_exactly
-            || ((self.allow_unordered || both_same_value) && self.is_solved_unordered(pending))
+        is_strict_solution || (!self.is_strict() && self.is_non_strict_solution(pending))
     }
 
     /// Return whether all of the expected operands are at the top of the pending stack but in any
     /// order.
-    fn is_solved_unordered(&self, pending: &Stack) -> bool {
-        // This is effectively a multiset comparison.  Use a map from value to count as the set.
+    fn is_non_strict_solution(&self, pending: &Stack) -> bool {
+        let mut expected = self.expected.iter().rev().collect::<SmallVec<[_; 4]>>();
+        let mut pending = pending.iter().rev().take(expected.len()).collect::<SmallVec<[_; 4]>>();
 
-        fn make_set<'a, VI>(vals_iter: VI) -> FxHashMap<ValueOrAlias, usize>
-        where
-            VI: Iterator<Item = &'a ValueOrAlias>,
-        {
-            let mut set = FxHashMap::default();
-            for val in vals_iter {
-                set.entry(*val).and_modify(|c| *c += 1).or_insert(1);
-            }
-            set
-        }
+        expected.sort();
+        pending.sort();
 
-        let expected_set = make_set(self.expected.iter());
-        let pending_set = make_set(pending.iter().skip(pending.len() - self.expected.len()));
-
-        pending_set == expected_set
+        expected == pending
     }
 }
 
@@ -176,7 +172,9 @@ impl CopyInfo {
 
     /// Returns true if `value` has at least one copy
     pub fn has_copies(&self, value: &ValueOrAlias) -> bool {
-        self.copies.get(value).map(|count| *count > 0).unwrap_or(false)
+        // Make sure we're checking for copies of the unaliased value
+        let value = value.unaliased();
+        self.copies.get(&value).map(|count| *count > 0).unwrap_or(false)
     }
 
     /// Returns true if any of the values seen so far have copies

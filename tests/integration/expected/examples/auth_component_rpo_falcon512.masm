@@ -83,7 +83,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.80
     dup.3
-    swap.1
     u32wrapping_add
     trace.240
     nop
@@ -160,7 +159,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.96
     dup.3
-    swap.1
     u32wrapping_add
     dup.3
     trace.240
@@ -170,7 +168,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.16
     dup.3
-    swap.1
     u32wrapping_add
     trace.240
     nop
@@ -179,7 +176,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.32
     dup.3
-    swap.1
     u32wrapping_add
     trace.240
     nop
@@ -290,7 +286,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.80
     dup.1
-    swap.1
     u32wrapping_add
     push.16
     push.2
@@ -372,11 +367,9 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.96
     dup.1
-    swap.1
     u32wrapping_add
     push.64
     dup.2
-    swap.1
     u32wrapping_add
     trace.240
     nop
@@ -453,7 +446,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.48
     dup.5
-    swap.1
     u32wrapping_add
     push.0
     movup.6
@@ -463,13 +455,12 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
         push.0
         push.32
         dup.2
-        swap.1
         eq
         neq
         dup.0
         if.true
-            swap.3
-            swap.1
+            movup.3
+            movup.2
             drop
             drop
             push.3735929054
@@ -488,16 +479,17 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
             nop
             push.4294967280
             movup.4
-            swap.1
             u32wrapping_add
             push.16
             movup.3
-            swap.1
             u32wrapping_add
-            movup.2
-            swap.3
-            movdn.2
         end
+        push.3735929054
+        dup.3
+        dup.9
+        swap.2
+        swap.1
+        cdrop
         push.3735929054
         dup.4
         dup.9
@@ -522,15 +514,9 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
         swap.2
         swap.1
         cdrop
-        push.3735929054
-        dup.8
-        dup.8
-        swap.2
-        swap.1
-        cdrop
         push.1
         push.0
-        movup.10
+        movup.9
         cdrop
         push.1
         u32and
@@ -645,7 +631,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     push.4
     push.96
     dup.2
-    swap.1
     u32wrapping_add
     dup.2
     swap.1
@@ -662,7 +647,6 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.80
     dup.2
-    swap.1
     u32wrapping_add
     swap.1
     trace.240
@@ -740,11 +724,9 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     push.96
     dup.1
-    swap.1
     u32wrapping_add
     push.64
     dup.2
-    swap.1
     u32wrapping_add
     trace.240
     nop
@@ -905,7 +887,6 @@ proc.wit_bindgen_rt::run_ctors_once
         push.1
         push.1048584
         movup.2
-        swap.1
         u32wrapping_add
         u32divmod.4
         swap.1
@@ -1033,7 +1014,6 @@ proc.miden_base_sys::bindings::tx::get_input_notes_commitment
     nop
     push.16
     dup.1
-    swap.1
     u32wrapping_add
     movup.2
     trace.240
@@ -1147,7 +1127,6 @@ proc.miden_base_sys::bindings::tx::get_output_notes_commitment
     nop
     push.16
     dup.1
-    swap.1
     u32wrapping_add
     movup.2
     trace.240
@@ -1186,7 +1165,6 @@ proc.miden::account::compute_delta_commitment
     nop
     push.4
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1200,7 +1178,6 @@ proc.miden::account::compute_delta_commitment
     nop
     push.8
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1243,7 +1220,6 @@ proc.miden::account::get_item
     nop
     push.4
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1257,7 +1233,6 @@ proc.miden::account::get_item
     nop
     push.8
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1316,7 +1291,6 @@ proc.miden::tx::get_input_notes_commitment
     nop
     push.4
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1330,7 +1304,6 @@ proc.miden::tx::get_input_notes_commitment
     nop
     push.8
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1373,7 +1346,6 @@ proc.miden::tx::get_output_notes_commitment
     nop
     push.4
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1387,7 +1359,6 @@ proc.miden::tx::get_output_notes_commitment
     nop
     push.8
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1418,7 +1389,6 @@ proc.core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
         push.0
         push.0
         dup.2
-        swap.1
         eq
         neq
         dup.0
@@ -1466,15 +1436,12 @@ proc.core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
             nop
             push.4
             movup.4
-            swap.1
             u32wrapping_add
             push.4
             movup.4
-            swap.1
             u32wrapping_add
             push.4294967295
             movup.4
-            swap.1
             u32wrapping_add
         end
         push.1
@@ -1569,7 +1536,6 @@ proc.miden_stdlib_sys::intrinsics::advice::adv_insert
     swap.1
     u32shl
     dup.1
-    swap.1
     u32wrapping_add
     movup.2
     swap.3
@@ -1665,7 +1631,6 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
     push.12
     dup.1
-    swap.1
     u32wrapping_add
     push.0
     movup.2
@@ -1675,13 +1640,12 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
         push.0
         push.8
         dup.2
-        swap.1
         eq
         neq
         dup.0
         if.true
-            swap.3
-            swap.1
+            movup.3
+            movup.2
             drop
             drop
             push.3735929054
@@ -1748,31 +1712,26 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
             nop
             push.4294967292
             movup.4
-            swap.1
             u32wrapping_add
             push.4
             movup.3
-            swap.1
             u32wrapping_add
-            movup.2
-            swap.3
-            movdn.2
         end
+        push.3735929054
+        dup.3
+        dup.6
+        swap.2
+        swap.1
+        cdrop
         push.3735929054
         dup.4
         dup.6
         swap.2
         swap.1
         cdrop
-        push.3735929054
-        dup.5
-        dup.5
-        swap.2
-        swap.1
-        cdrop
         push.1
         push.0
-        movup.7
+        movup.6
         cdrop
         push.1
         u32and
@@ -1901,7 +1860,6 @@ proc.std::crypto::hashes::rpo::hash_memory
     nop
     push.4
     dup.1
-    swap.1
     add
     u32assert
     movup.2
@@ -1915,7 +1873,6 @@ proc.std::crypto::hashes::rpo::hash_memory
     nop
     push.8
     dup.1
-    swap.1
     add
     u32assert
     movup.2

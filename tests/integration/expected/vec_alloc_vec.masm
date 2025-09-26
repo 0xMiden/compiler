@@ -425,8 +425,8 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
                 u32mod
                 u32assert
                 assertz
-                dup.1
-                movup.3
+                movup.2
+                dup.2
                 u32wrapping_add
                 swap.1
                 u32divmod.4

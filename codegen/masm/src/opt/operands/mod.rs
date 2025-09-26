@@ -7,7 +7,7 @@ mod testing;
 
 pub use midenc_hir::{StackOperand as Operand, ValueOrAlias};
 
-pub use self::solver::{OperandMovementConstraintSolver, SolverError};
+pub use self::solver::{OperandMovementConstraintSolver, SolverError, SolverOptions};
 use self::{context::SolverContext, stack::Stack};
 
 /// This represents a specific action that should be taken by

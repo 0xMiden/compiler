@@ -12,7 +12,7 @@ use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::{smallvec, SmallVec};
 
 use super::*;
-use crate::{emitter::BlockEmitter, masm, Constraint};
+use crate::{emitter::BlockEmitter, masm, opt::operands::SolverOptions, Constraint};
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
 ///
@@ -75,9 +75,16 @@ pub trait HirLowering: Op {
             log::trace!(target: "codegen", "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
         log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
-        let allow_unordered = op.implements::<dyn Commutative>();
         emitter
-            .schedule_operands(&args, allow_unordered, &constraints, op.span())
+            .schedule_operands(
+                &args,
+                &constraints,
+                op.span(),
+                SolverOptions {
+                    strict: !op.implements::<dyn Commutative>(),
+                    ..Default::default()
+                },
+            )
             .unwrap_or_else(|err| {
                 panic!(
                     "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
@@ -1010,9 +1017,8 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(then_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
-            let allow_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, allow_unordered, &constraints, span)
+                .schedule_operands(&successor_operands, &constraints, span, Default::default())
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
@@ -1040,9 +1046,8 @@ impl HirLowering for cf::CondBr {
             let successor_operands = ValueRange::from(else_operand.arguments);
             let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
             let successor_operands = successor_operands.into_smallvec();
-            let allow_unordered = false;
             emitter
-                .schedule_operands(&successor_operands, allow_unordered, &constraints, span)
+                .schedule_operands(&successor_operands, &constraints, span, Default::default())
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \

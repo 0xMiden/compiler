@@ -10,7 +10,7 @@ use crate::{
     emit::{InstOpEmitter, OpEmitter},
     linker::LinkInfo,
     masm,
-    opt::{OperandMovementConstraintSolver, SolverError},
+    opt::{operands::SolverOptions, OperandMovementConstraintSolver, SolverError},
     Constraint, OperandStack,
 };
 
@@ -274,8 +274,7 @@ impl BlockEmitter<'_> {
                     }
                 }
             } else {
-                let allow_unordered = false;
-                self.schedule_operands(&unused, allow_unordered, &constraints, op.span())
+                self.schedule_operands(&unused, &constraints, op.span(), Default::default())
                     .unwrap_or_else(|err| {
                         panic!(
                             "failed to schedule unused operands for {}: {err:?}",
@@ -291,15 +290,15 @@ impl BlockEmitter<'_> {
     pub fn schedule_operands(
         &mut self,
         expected: &[ValueRef],
-        allow_unordered: bool,
         constraints: &[Constraint],
         span: SourceSpan,
+        options: SolverOptions,
     ) -> Result<(), SolverError> {
-        match OperandMovementConstraintSolver::new_with_unordered_flag(
+        match OperandMovementConstraintSolver::new_with_options(
             expected,
-            allow_unordered,
             constraints,
             &self.stack,
+            options,
         ) {
             Ok(solver) => {
                 let mut emitter = self.emitter();
