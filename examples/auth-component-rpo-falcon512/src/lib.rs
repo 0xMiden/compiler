@@ -11,22 +11,19 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(AuthComponent with_types_in bindings);
-
-mod bindings;
-
-use bindings::exports::miden::base::authentication_component::Guest;
 use miden::{
     account, component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value,
     ValueAccess, Word,
 };
+
+use crate::bindings::exports::miden::base::authentication_component::Guest;
 
 /// Authentication component storage/layout.
 ///
 /// Public key is expected to be in the slot 0. Matches MASM constant `PUBLIC_KEY_SLOT=0` in
 /// ../base/crates/miden-lib/asm/account_components/rpo_falcon_512.masm
 #[component]
-struct AuthStorage {
+struct AuthComponent {
     /// The account owner's public key (RPO-Falcon512 public key hash).
     #[storage(
         slot(0),
@@ -35,8 +32,6 @@ struct AuthStorage {
     )]
     owner_public_key: Value,
 }
-
-struct AuthComponent;
 
 impl Guest for AuthComponent {
     fn auth_procedure(_arg: Word) {
@@ -58,7 +53,7 @@ impl Guest for AuthComponent {
         adv_insert(msg.clone(), &tx_summary);
 
         // Load public key from storage slot 0
-        let storage = AuthStorage::default();
+        let storage = Self::default();
         let pub_key: Word = storage.owner_public_key.read();
 
         // Emit signature request event to advice stack,

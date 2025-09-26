@@ -17,13 +17,9 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use bindings::exports::miden::storage_example::*;
+use ::miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
 
-bindings::export!(MyAccount with_types_in bindings);
-
-mod bindings;
-
-use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
+use crate::bindings::exports::miden::storage_example::*;
 
 #[component]
 struct MyAccount {

@@ -18,26 +18,26 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(MyNote with_types_in bindings);
+miden::miden_generate!();
+bindings::export!(MyNote);
 
-mod bindings;
+use ::miden::*;
 
-use bindings::{
+use crate::bindings::{
     exports::miden::base::note_script::Guest, miden::basic_wallet::basic_wallet::receive_asset,
 };
-use miden::*;
 
 struct MyNote;
 
 impl Guest for MyNote {
     fn run(_arg: Word) {
-        let inputs = miden::note::get_inputs();
+        let inputs = ::miden::note::get_inputs();
         let target_account_id_prefix = inputs[0];
         let target_account_id_suffix = inputs[1];
-        let account_id = miden::account::get_id();
+        let account_id = ::miden::account::get_id();
         assert_eq(account_id.prefix, target_account_id_prefix);
         assert_eq(account_id.suffix, target_account_id_suffix);
-        let assets = miden::note::get_assets();
+        let assets = ::miden::note::get_assets();
         for asset in assets {
             receive_asset(asset);
         }

@@ -19,12 +19,12 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(AuthComponent with_types_in bindings);
+miden::miden_generate!();
+bindings::export!(AuthComponent);
 
-mod bindings;
+use ::miden::{account, *};
 
-use bindings::exports::miden::base::authentication_component::Guest;
-use miden::{account, *};
+use crate::bindings::exports::miden::base::authentication_component::Guest;
 
 struct AuthComponent;
 

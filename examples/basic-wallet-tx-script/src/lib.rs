@@ -19,12 +19,14 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(BasicWalletTxScript with_types_in bindings);
+miden::miden_generate!();
+crate::bindings::export!(BasicWalletTxScript);
 
-mod bindings;
+use ::miden::{intrinsics::advice::adv_push_mapvaln, *};
 
-use bindings::{exports::miden::base::transaction_script::Guest, miden::basic_wallet::basic_wallet};
-use miden::{intrinsics::advice::adv_push_mapvaln, *};
+use crate::bindings::{
+    exports::miden::base::transaction_script::Guest, miden::basic_wallet::basic_wallet,
+};
 
 struct BasicWalletTxScript;
 
@@ -51,7 +53,7 @@ impl Guest for BasicWalletTxScript {
         let note_type = input[NOTE_TYPE_INDEX];
         let execution_hint = input[EXECUTION_HINT_INDEX];
         let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
-        let note_idx = miden::tx::create_note(
+        let note_idx = ::miden::tx::create_note(
             tag.into(),
             aux,
             note_type.into(),

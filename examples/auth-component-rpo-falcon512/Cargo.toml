@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = { path = "../../sdk/sdk" }
-wit-bindgen-rt = "0.28"
 
 [package.metadata.component]
 package = "miden:auth-component-rpo-falcon512"
@@ -28,4 +27,3 @@ trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
 trim-paths = ["diagnostics", "object"]
-

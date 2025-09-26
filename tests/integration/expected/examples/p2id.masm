@@ -45,10 +45,6 @@ proc.__wasm_call_ctors
     nop
 end
 
-proc.p2id::bindings::__link_custom_section_describing_imports
-    nop
-end
-
 proc.__rustc::__rust_alloc
     push.1114212
     u32divmod.4
@@ -157,6 +153,10 @@ proc.__rustc::__rust_alloc_zeroed
             dropw
         end
     end
+end
+
+proc.p2id::bindings::__link_custom_section_describing_imports
+    nop
 end
 
 proc.miden:base/note-script@1.0.0#run
