@@ -59,7 +59,7 @@ impl Tactic for MoveDownAndSwap {
                 .enumerate()
                 .fold(0, |acc, (offset, operand)| {
                     builder
-                        .get_expected_position(&operand.value)
+                        .get_expected_position(&operand)
                         .and_then(|operand_expected_at| {
                             if target_pos >= operand_expected_at {
                                 Some(offset + 1)

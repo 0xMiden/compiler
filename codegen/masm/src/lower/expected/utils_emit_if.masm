@@ -1,7 +1,7 @@
 
     push.0
-    dup.1
-    movup.3
+    movup.2
+    dup.2
     eq
     if.true
         drop

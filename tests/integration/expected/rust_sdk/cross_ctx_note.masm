@@ -187,7 +187,6 @@ proc.wit_bindgen_rt::run_ctors_once
         push.1
         push.1048592
         movup.2
-        swap.1
         u32wrapping_add
         u32divmod.4
         swap.1

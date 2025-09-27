@@ -19,9 +19,9 @@ end
 # mod root_ns:root@1.0.0::test_rust_c232a9b0045c768c9a1fca4d8a419280b591a50dcbebe88fe280529cdd423ec0
 
 export.entrypoint
-    movdn.2
-    movup.4
-    movup.4
+    movdn.4
+    movup.3
+    movup.3
     movup.6
     movup.6
     movup.8

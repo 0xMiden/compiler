@@ -20,14 +20,12 @@ export.entrypoint
         push.0
         push.1
         dup.2
-        swap.1
         neq
         neq
         dup.0
         if.true
             push.1
             dup.3
-            swap.1
             u32wrapping_add
             push.1
             dup.3
@@ -36,7 +34,6 @@ export.entrypoint
             push.1
             push.3
             dup.5
-            swap.1
             trace.240
             nop
             exec.::intrinsics::i32::wrapping_mul
@@ -46,7 +43,6 @@ export.entrypoint
             push.0
             push.1
             movup.6
-            swap.1
             u32and
             neq
             cdrop

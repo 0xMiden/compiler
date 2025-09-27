@@ -87,9 +87,9 @@ impl Tactic for MoveUpAndSwap {
         //    [a, b, c, d, e]
         let mut descending_pair = None;
         let mut last_pos = None;
-        for operand in builder.stack().iter().rev() {
-            if let Some(expected_pos) = builder.get_expected_position(&operand.value) {
-                let current = (operand.pos, expected_pos);
+        for (operand_pos, operand) in builder.stack().iter().rev().enumerate() {
+            if let Some(expected_pos) = builder.get_expected_position(operand) {
+                let current = (operand_pos as u8, expected_pos);
                 let last_operand_pos = last_pos.replace(current);
                 if let Some(last @ (_, last_expected_pos)) = last_operand_pos {
                     if expected_pos >= last_expected_pos {
@@ -114,24 +114,24 @@ impl Tactic for MoveUpAndSwap {
             if a_expected == 0 {
                 log::trace!(
                     "moving {:?} to the top of stack, shifting {:?} down",
-                    builder.stack()[a_actual as usize].value,
-                    builder.stack()[0].value
+                    builder.stack()[a_actual as usize],
+                    builder.stack()[0]
                 );
                 builder.movup(a_actual);
             } else {
                 if b_actual > 0 {
                     log::trace!(
                         "moving {:?} to the top of stack, shifting {:?} down",
-                        builder.stack()[b_actual as usize].value,
-                        builder.stack()[0].value
+                        builder.stack()[b_actual as usize],
+                        builder.stack()[0]
                     );
                     builder.movup(b_actual);
                 }
                 let expected0_at = builder.unwrap_current_position(&expected0);
                 log::trace!(
                     "moving {:?} to the top of stack, shifting {:?} down",
-                    builder.stack()[expected0_at as usize].value,
-                    builder.stack()[0].value
+                    builder.stack()[expected0_at as usize],
+                    builder.stack()[0]
                 );
                 builder.movup(expected0_at);
             }

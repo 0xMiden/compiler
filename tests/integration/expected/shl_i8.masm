@@ -21,7 +21,6 @@ end
 export.entrypoint
     push.7
     movup.2
-    swap.1
     u32and
     u32shl
 end

@@ -1,14 +1,14 @@
 
-    dup.1
-    dup.1
+    dup.0
+    dup.2
     eq
     if.true
         drop
         drop
         push.1
     else
-        dup.1
-        dup.1
+        dup.0
+        dup.2
         u32lt
         if.true
             drop

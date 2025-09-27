@@ -88,7 +88,6 @@ export.__main
     while.true
         push.1048585
         dup.1
-        swap.1
         u32wrapping_add
         u32divmod.4
         swap.1
@@ -108,11 +107,9 @@ export.__main
         u32wrapping_add
         push.1
         movup.2
-        swap.1
         u32wrapping_add
         push.0
         dup.1
-        swap.1
         neq
         push.3735929054
         dup.1

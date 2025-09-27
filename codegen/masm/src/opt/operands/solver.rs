@@ -13,6 +13,38 @@ pub enum SolverError {
     NoSolution,
 }
 
+/// Configures the behavior of the [OperandMovementConstraintSolver].
+#[derive(Debug, Copy, Clone)]
+pub struct SolverOptions {
+    /// This flag conveys to the solver that the solution(s) it computes must adhere strictly to
+    /// the order of the expected operands provided to the solver.
+    ///
+    /// When `false`, the solver is only required to ensure that the solution(s) it computes place
+    /// the expected operands provided to it on top of the operand stack; however, the order of
+    /// operands in the solution does not matter.
+    ///
+    /// This flag defaults to true.
+    ///
+    /// WARNING: Setting this to `false` is only useful when producing an operand schedule for
+    /// commutative instructions, where we don't care/need to know the order of the operands, as
+    /// the instruction semantics are equivalent in any permutation. Using non-strict operation in
+    /// any other use case is likely to lead to miscompilation.
+    pub strict: bool,
+    /// An integer representing the amount of optimization fuel we have available
+    ///
+    /// The more fuel, the more effort will be spent attempting to find an optimal solution.
+    pub fuel: usize,
+}
+
+impl Default for SolverOptions {
+    fn default() -> Self {
+        Self {
+            strict: true,
+            fuel: 25,
+        }
+    }
+}
+
 /// The [OperandMovementConstraintSolver] is used to produce a solution to the following problem:
 ///
 /// An instruction is being emitted which requires some specific set of operands, in a particular
@@ -89,7 +121,6 @@ pub enum SolverError {
 pub struct OperandMovementConstraintSolver {
     context: SolverContext,
     tactics: SmallVec<[Box<dyn Tactic>; 4]>,
-    /// An integer representing the amount of optimization fuel we have available
     fuel: usize,
 }
 impl OperandMovementConstraintSolver {
@@ -100,21 +131,26 @@ impl OperandMovementConstraintSolver {
         constraints: &[Constraint],
         stack: &crate::OperandStack,
     ) -> Result<Self, SolverError> {
+        Self::new_with_options(expected, constraints, stack, Default::default())
+    }
+
+    /// Same as [Self::new], but takes [SolverOptions] to customize the behavior of the solver.
+    pub fn new_with_options(
+        expected: &[hir::ValueRef],
+        constraints: &[Constraint],
+        stack: &crate::OperandStack,
+        options: SolverOptions,
+    ) -> Result<Self, SolverError> {
         assert_eq!(expected.len(), constraints.len());
 
-        let context = SolverContext::new(expected, constraints, stack)?;
+        let fuel = options.fuel;
+        let context = SolverContext::new(expected, constraints, stack, options)?;
 
         Ok(Self {
             context,
             tactics: Default::default(),
-            fuel: 25,
+            fuel,
         })
-    }
-
-    /// Set the quantity of optimization fuel the solver has to work with
-    #[allow(unused)]
-    pub fn set_optimization_fuel(&mut self, fuel: usize) {
-        self.fuel = fuel;
     }
 
     /// Compute a solution that can be used to get the stack into the correct state
@@ -138,7 +174,10 @@ impl OperandMovementConstraintSolver {
 
         // The tactics are pushed in reverse order
         if self.tactics.is_empty() {
-            if self.context.copies().is_empty() {
+            let is_binary = self.context.arity() == 2;
+            if is_binary {
+                self.tactics.push(Box::new(TwoArgs));
+            } else if self.context.copies().is_empty() {
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(SwapAndMoveUp));
                 self.tactics.push(Box::new(MoveUpAndSwap));
@@ -268,25 +307,20 @@ impl OperandMovementConstraintSolver {
             // Only one argument, solution is trivial
             1 => {
                 let expected = self.context.expected()[0];
-                if let Some(current_position) = self.context.stack().position(&expected.value) {
+                if let Some(current_position) = self.context.stack().position(&expected) {
                     if current_position > 0 {
                         emitter.move_operand_to_position(current_position, 0, false, span);
                     }
                 } else {
                     assert!(
-                        self.context.copies().has_copies(&expected.value.unaliased()),
-                        "{:?} was not found on the operand stack",
-                        expected.value.unaliased()
+                        self.context.copies().has_copies(&expected.unaliased()),
+                        "{:?} was not found on the operand stack copies",
+                        expected.unaliased()
                     );
                     let current_position =
-                        self.context.stack().position(&expected.value.unaliased()).unwrap_or_else(
-                            || {
-                                panic!(
-                                    "{:?} was not found on the operand stack",
-                                    expected.value.unaliased()
-                                )
-                            },
-                        );
+                        self.context.stack().position(&expected.unaliased()).unwrap_or_else(|| {
+                            panic!("{:?} was not found on the operand stack", expected.unaliased())
+                        });
                     emitter.copy_operand_to_position(current_position, 0, false, span);
                 }
 
