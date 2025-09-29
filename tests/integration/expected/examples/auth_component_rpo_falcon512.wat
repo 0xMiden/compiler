@@ -453,7 +453,7 @@
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\03\00\00\00!owner_public_key\01!owner public key9auth::rpo_falcon512::pub_key")
+    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\03\00\00\00!owner_public_key\01!owner public key9auth::rpo_falcon512::pub_key\00\00\00\00\00\00\00")
   )
   (alias export 0 "word" (type (;1;)))
   (core instance (;0;) (instantiate 0))

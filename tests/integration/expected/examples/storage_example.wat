@@ -315,7 +315,7 @@
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map")
+    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export 0 "felt" (type (;1;)))
   (alias export 0 "word" (type (;2;)))
