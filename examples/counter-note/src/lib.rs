@@ -20,19 +20,13 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 
 use miden::*;
 
-miden::miden_generate!();
-bindings::export!(IncrementCounterNote);
+use crate::bindings::miden::counter_contract::counter;
 
-use crate::bindings::{exports::miden::base::note_script::Guest, miden::counter_contract::counter};
-
-struct IncrementCounterNote;
-
-impl Guest for IncrementCounterNote {
-    fn run(_arg: Word) {
-        let initial_value = counter::get_count();
-        counter::increment_count();
-        let expected_value = initial_value + Felt::from_u32(1);
-        let final_value = counter::get_count();
-        assert_eq(final_value, expected_value);
-    }
+#[note_script]
+fn run(_arg: Word) {
+    let initial_value = counter::get_count();
+    counter::increment_count();
+    let expected_value = initial_value + Felt::from_u32(1);
+    let final_value = counter::get_count();
+    assert_eq(final_value, expected_value);
 }

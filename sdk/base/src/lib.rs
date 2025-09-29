@@ -4,5 +4,5 @@
 pub mod base_wit;
 mod types;
 
-pub use miden_base_macros::{component, miden_generate};
+pub use miden_base_macros::{component, miden_generate, note_script};
 pub use types::*;

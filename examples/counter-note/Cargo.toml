@@ -18,13 +18,13 @@ miden = { path = "../../sdk/sdk" }
 [package.metadata.miden]
 project-kind = "note-script"
 
+# TODO: switch to miden table
+[package.metadata.component]
+package = "miden:counter-note"
+
 # Miden dependencies for cargo-miden build/linking
 [package.metadata.miden.dependencies]
 "miden:counter-contract" = { path = "../counter-contract" }
-
-# # TODO: switch to miden table
-# [package.metadata.component]
-# package = "miden:counter-note"
 
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../sdk/base/wit/miden.wit" }

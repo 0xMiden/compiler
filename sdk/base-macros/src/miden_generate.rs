@@ -5,17 +5,66 @@ use std::{
 
 use proc_macro2::{Literal, Span};
 use quote::quote;
-use syn::Error;
+use syn::{
+    parse::{Parse, ParseStream},
+    Error, LitStr, Token,
+};
+
+#[derive(Default)]
+struct GenerateArgs {
+    inline: Option<LitStr>,
+}
+
+impl Parse for GenerateArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let mut args = GenerateArgs::default();
+
+        while !input.is_empty() {
+            let ident: syn::Ident = input.parse()?;
+            let name = ident.to_string();
+            input.parse::<Token![=]>()?;
+
+            match name.as_str() {
+                "inline" => {
+                    if args.inline.is_some() {
+                        return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
+                    }
+                    args.inline = Some(input.parse()?);
+                }
+                _ => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unsupported miden_generate! argument `{name}`"),
+                    ));
+                }
+            }
+
+            if input.peek(Token![,]) {
+                let _ = input.parse::<Token![,]>()?;
+            }
+        }
+
+        Ok(args)
+    }
+}
 
 /// Implements the expansion logic for the `miden_generate!` macro.
 pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    if !input.is_empty() {
-        return Error::new(Span::call_site(), "miden_generate! does not take any arguments")
-            .to_compile_error()
-            .into();
-    }
+    let input_tokens: proc_macro2::TokenStream = input.into();
+    let args = if input_tokens.is_empty() {
+        GenerateArgs::default()
+    } else {
+        match syn::parse2::<GenerateArgs>(input_tokens) {
+            Ok(parsed) => parsed,
+            Err(err) => return err.to_compile_error().into(),
+        }
+    };
 
-    match manifest_paths::resolve_wit_paths() {
+    let resolve_opts = manifest_paths::ResolveOptions {
+        allow_missing_local_wit: args.inline.is_some(),
+    };
+
+    match manifest_paths::resolve_wit_paths(resolve_opts) {
         Ok(config) => {
             if config.paths.is_empty() {
                 return Error::new(
@@ -27,8 +76,26 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 .into();
             }
 
-            let path_literals = config.paths.iter().map(|path| Literal::string(path));
-            let world_clause = config.world.as_ref().map(|world| {
+            let path_literals: Vec<_> =
+                config.paths.iter().map(|path| Literal::string(path)).collect();
+
+            let inline_clause = args.inline.as_ref().map(|src| quote! { inline: #src, });
+            let inline_world = args
+                .inline
+                .as_ref()
+                .and_then(|src| manifest_paths::extract_world_name(&src.value()));
+            let world_value = inline_world.or_else(|| config.world.clone());
+
+            if args.inline.is_some() && world_value.is_none() {
+                return Error::new(
+                    Span::call_site(),
+                    "failed to detect world name for inline WIT provided to miden_generate!",
+                )
+                .to_compile_error()
+                .into();
+            }
+
+            let world_clause = world_value.as_ref().map(|world| {
                 let literal = Literal::string(world);
                 quote! { world: #literal, }
             });
@@ -38,6 +105,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 #[allow(dead_code)]
                 pub mod bindings {
                     ::miden::wit_bindgen::generate!({
+                        #inline_clause
                         #world_clause
                         path: [#(#path_literals),*],
                         generate_all,
@@ -75,8 +143,13 @@ mod manifest_paths {
         pub world: Option<String>,
     }
 
+    #[derive(Default)]
+    pub struct ResolveOptions {
+        pub allow_missing_local_wit: bool,
+    }
+
     /// Collects WIT search paths and the target world from `Cargo.toml` + local files.
-    pub fn resolve_wit_paths() -> Result<ResolvedWit, Error> {
+    pub fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, Error> {
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
             Error::new(Span::call_site(), format!("failed to read CARGO_MANIFEST_DIR: {err}"))
         })?;
@@ -180,7 +253,23 @@ mod manifest_paths {
         }
 
         let local_wit_root = Path::new(&manifest_dir).join("wit");
-        if !local_wit_root.exists() {
+        let mut world = None;
+
+        if local_wit_root.exists() {
+            if !options.allow_missing_local_wit {
+                let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
+                let local_root_str = local_root.to_str().ok_or_else(|| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("path '{}' contains invalid UTF-8", local_root.display()),
+                    )
+                })?;
+                if !resolved.iter().any(|existing| existing == local_root_str) {
+                    resolved.push(local_root_str.to_owned());
+                }
+                world = detect_world_name(&local_root)?;
+            }
+        } else if !options.allow_missing_local_wit {
             return Err(Error::new(
                 Span::call_site(),
                 format!(
@@ -189,18 +278,6 @@ mod manifest_paths {
                 ),
             ));
         }
-        let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
-        let local_root_str = local_root.to_str().ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                format!("path '{}' contains invalid UTF-8", local_root.display()),
-            )
-        })?;
-        if !resolved.iter().any(|existing| existing == local_root_str) {
-            resolved.push(local_root_str.to_owned());
-        }
-
-        let world = detect_world_name(&local_root)?;
 
         Ok(ResolvedWit {
             paths: resolved,
@@ -284,7 +361,7 @@ mod manifest_paths {
     }
 
     /// Returns the first world identifier from a WIT source string, if present.
-    fn extract_world_name(contents: &str) -> Option<String> {
+    pub(super) fn extract_world_name(contents: &str) -> Option<String> {
         for line in contents.lines() {
             let trimmed = strip_comment(line).trim_start();
             if let Some(rest) = trimmed.strip_prefix("world ") {
