@@ -14,6 +14,8 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod miden_generate;
 mod note_script;
+mod script;
+mod tx_script;
 
 #[proc_macro]
 pub fn miden_generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -26,6 +28,14 @@ pub fn note_script(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     note_script::expand(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn tx_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    tx_script::expand(attr, item)
 }
 
 struct CargoMetadata {

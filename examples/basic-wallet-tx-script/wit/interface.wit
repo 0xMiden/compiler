@@ -1,6 +1,0 @@
-package miden:basic-wallet-tx-script@1.0.0;
-
-world basic-wallet-tx-script-world {
-    import miden:basic-wallet/basic-wallet@1.0.0;
-    export miden:base/transaction-script@1.0.0;
-}
