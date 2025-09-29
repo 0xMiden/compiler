@@ -9,13 +9,13 @@ use semver::Version;
 use syn::{parse_macro_input, spanned::Spanned};
 use toml::Value;
 
+use crate::script::{expand, ScriptConfig};
+
 extern crate proc_macro;
 
 mod account_component_metadata;
 mod miden_generate;
-mod note_script;
 mod script;
-mod tx_script;
 
 #[proc_macro]
 pub fn miden_generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -27,7 +27,14 @@ pub fn note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    note_script::expand(attr, item)
+    expand(
+        attr,
+        item,
+        ScriptConfig {
+            export_interface: "miden:base/note-script@1.0.0",
+            guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
+        },
+    )
 }
 
 #[proc_macro_attribute]
@@ -35,7 +42,14 @@ pub fn tx_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    tx_script::expand(attr, item)
+    expand(
+        attr,
+        item,
+        ScriptConfig {
+            export_interface: "miden:base/transaction-script@1.0.0",
+            guest_trait_path: "self::bindings::exports::miden::base::transaction_script::Guest",
+        },
+    )
 }
 
 struct CargoMetadata {
