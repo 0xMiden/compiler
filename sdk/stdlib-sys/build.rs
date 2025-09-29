@@ -1,9 +1,9 @@
 // Build the Miden stdlib stubs and link them for dependents.
 //
-// We produce a native static library (.a) that contains only the stub object
+// We produce native static libraries (.a) that contain only the stub object
 // files (no panic handler) to avoid duplicate panic symbols in downstream
-// component builds. We do this by compiling a single object with rustc and
-// packaging it into an archive with `ar`.
+// component builds. We do this by compiling rlibs with rustc and naming the
+// outputs `.a` so dependents pick them up via the native link search path.
 //
 // Why not an rlib?
 // - `cargo:rustc-link-lib`/`cargo:rustc-link-search` are for native archives;
@@ -16,22 +16,6 @@
 //   symbols.
 
 use std::{env, path::PathBuf, process::Command};
-
-fn ensure_rust_ar() {
-    // Preflight: ensure `rust-ar` is available. This typically comes from the
-    // `llvm-tools` rustup component or via `cargo-binutils`.
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-    let _ = Command::new("cargo").args(["install", "cargo-binutils"]).status();
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-    panic!(
-        "`rust-ar` was not found. Ensure the `llvm-tools` component is present (listed in \
-         rust-toolchain.toml) and try installing proxies via `cargo install cargo-binutils`."
-    );
-}
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -74,14 +58,11 @@ fn main() {
         }
     }
 
-    // Build separate objects for intrinsics and stdlib stubs, then package into
-    // a single static archive to avoid large sections in a single object.
-    let out_intrinsics_obj = out_dir.join("miden_stdlib_sys_intrinsics_stubs.o");
-    let out_stdlib_obj = out_dir.join("miden_stdlib_sys_stdlib_stubs.o");
-    let out_a = out_dir.join("libmiden_stdlib_sys_stubs.a");
-
-    // Ensure tools are present before invoking them.
-    ensure_rust_ar();
+    // Build separate libraries for intrinsics and stdlib stubs to keep
+    // individual object sections small. Each rlib is emitted with a `.a`
+    // extension so cargo treats it as a native archive.
+    let out_intrinsics_rlib = out_dir.join("libmiden_stdlib_sys_intrinsics_stubs.a");
+    let out_stdlib_rlib = out_dir.join("libmiden_stdlib_sys_stdlib_stubs.a");
 
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
     // functions in the stub library identical (e.g. `intrinsics::felt::add` and
@@ -99,7 +80,7 @@ fn main() {
     // generated from the Miden package, but for intrinsics they will be maintained manually since
     // the intrinsics are part of the compiler.
 
-    // 1a) Compile intrinsics object
+    // 1a) Compile intrinsics stubs archive
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_stdlib_sys_intrinsics_stubs")
@@ -119,9 +100,8 @@ fn main() {
         .arg("merge-functions=disabled")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
-        .arg("--emit=obj")
         .arg("-o")
-        .arg(&out_intrinsics_obj)
+        .arg(&out_intrinsics_rlib)
         .arg(stubs_root.join("intrinsics_root.rs"))
         .status()
         .expect("failed to spawn rustc for stdlib intrinsics stub object");
@@ -129,7 +109,7 @@ fn main() {
         panic!("failed to compile stdlib intrinsics stub object: {status}");
     }
 
-    // 1b) Compile stdlib (mem/crypto) object
+    // 1b) Compile stdlib (mem/crypto) stubs archive
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_stdlib_sys_stdlib_stubs")
@@ -149,9 +129,8 @@ fn main() {
         .arg("merge-functions=disabled")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
-        .arg("--emit=obj")
         .arg("-o")
-        .arg(&out_stdlib_obj)
+        .arg(&out_stdlib_rlib)
         .arg(stubs_root.join("stdlib_root.rs"))
         .status()
         .expect("failed to spawn rustc for stdlib (mem/crypto) stub object");
@@ -159,19 +138,8 @@ fn main() {
         panic!("failed to compile stdlib (mem/crypto) stub object: {status}");
     }
 
-    // 2) Archive both objects
-    let status = Command::new("rust-ar")
-        .arg("crs")
-        .arg(&out_a)
-        .arg(&out_intrinsics_obj)
-        .arg(&out_stdlib_obj)
-        .status()
-        .expect("failed to spawn ar for stdlib stubs");
-    if !status.success() {
-        panic!("failed to archive stdlib stubs: {status}");
-    }
-
     // Emit link directives for dependents
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_stubs");
+    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_intrinsics_stubs");
+    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_stdlib_stubs");
 }

@@ -883,16 +883,6 @@ proc.miden_base_sys::bindings::note::get_inputs
     nop
 end
 
-proc.miden::note::get_inputs
-    trace.240
-    nop
-    exec.::miden::note::get_inputs
-    trace.252
-    nop
-    swap.1
-    drop
-end
-
 proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
     nop
 end
@@ -1772,6 +1762,16 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
+end
+
+proc.miden::note::get_inputs
+    trace.240
+    nop
+    exec.::miden::note::get_inputs
+    trace.252
+    nop
+    swap.1
+    drop
 end
 
 # mod miden::note

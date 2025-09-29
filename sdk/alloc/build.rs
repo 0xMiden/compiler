@@ -2,8 +2,8 @@
 //
 // We produce a native static library (.a) that contains only the stub object
 // files (no panic handler) to avoid duplicate panic symbols in downstream
-// component builds. We do this by compiling a single object with rustc and
-// packaging it into an archive with `ar`.
+// component builds. We do this by compiling a single rlib with rustc and naming
+// the output `.a` so dependents pick it up via the native link search path.
 //
 // Why not an rlib?
 // - `cargo:rustc-link-lib`/`cargo:rustc-link-search` are for native archives;
@@ -16,24 +16,6 @@
 //   symbols.
 
 use std::{env, path::PathBuf, process::Command};
-
-fn ensure_rust_ar() {
-    // Preflight: ensure `rust-ar` is available. This typically comes from the
-    // `llvm-tools` rustup component or via `cargo-binutils`.
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-    // Attempt to install cargo-binutils to expose proxies
-    let _ = Command::new("cargo").args(["install", "cargo-binutils"]).status();
-    // Re-check after install
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-    panic!(
-        "`rust-ar` was not found. Ensure the `llvm-tools` component is present (listed in \
-         rust-toolchain.toml) and try installing proxies via `cargo install cargo-binutils`."
-    );
-}
 
 fn main() {
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
@@ -52,13 +34,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed=RUSTFLAGS");
     println!("cargo:rerun-if-changed={}", manifest_dir.join("stubs/heap_base.rs").display());
 
-    let out_obj = out_dir.join("miden_alloc_heap_base.o");
-    let out_a = out_dir.join("libmiden_alloc_intrinsics.a");
+    let out_rlib = out_dir.join("libmiden_alloc_intrinsics.a");
 
-    // Ensure tools are present before invoking them.
-    ensure_rust_ar();
-
-    // Compile a single object with the stub
+    // Compile the stub crate into an rlib archive
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_alloc_heap_base_stub")
@@ -78,25 +56,13 @@ fn main() {
         .arg("merge-functions=disabled")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
-        .arg("--emit=obj")
         .arg("-o")
-        .arg(&out_obj)
+        .arg(&out_rlib)
         .arg(manifest_dir.join("stubs/heap_base.rs"))
         .status()
         .expect("failed to spawn rustc for heap_base stub object");
     if !status.success() {
         panic!("failed to compile heap_base stub object: {status}");
-    }
-
-    // Archive
-    let status = Command::new("rust-ar")
-        .arg("crs")
-        .arg(&out_a)
-        .arg(&out_obj)
-        .status()
-        .expect("failed to spawn ar for alloc stubs");
-    if !status.success() {
-        panic!("failed to archive alloc stubs: {status}");
     }
 
     // Link for dependents of this crate

@@ -14,13 +14,13 @@
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (result f32)))
     (type (;3;) (func (param i32)))
-    (type (;4;) (func (param f32 i32)))
-    (type (;5;) (func (param i32 i32 i32)))
-    (type (;6;) (func (param i32) (result f32)))
-    (type (;7;) (func (param i32 i32)))
-    (type (;8;) (func (param f32 f32)))
-    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 f32 f32)))
-    (type (;10;) (func (param f32 f32 f32 f32 i32 i32)))
+    (type (;4;) (func (param i32 i32 i32)))
+    (type (;5;) (func (param i32) (result f32)))
+    (type (;6;) (func (param i32 i32)))
+    (type (;7;) (func (param f32 f32)))
+    (type (;8;) (func (param f32 f32 f32 f32 f32 f32 f32 f32)))
+    (type (;9;) (func (param f32 f32 f32 f32 i32 i32)))
+    (type (;10;) (func (param f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -299,25 +299,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden::account::compute_delta_commitment (;7;) (type 3) (param i32)
-      unreachable
-    )
-    (func $miden::account::get_item (;8;) (type 4) (param f32 i32)
-      unreachable
-    )
-    (func $miden::account::incr_nonce (;9;) (type 2) (result f32)
-      unreachable
-    )
-    (func $miden::tx::get_block_number (;10;) (type 2) (result f32)
-      unreachable
-    )
-    (func $miden::tx::get_input_notes_commitment (;11;) (type 3) (param i32)
-      unreachable
-    )
-    (func $miden::tx::get_output_notes_commitment (;12;) (type 3) (param i32)
-      unreachable
-    )
-    (func $core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks (;13;) (type 5) (param i32 i32 i32)
+    (func $core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks (;7;) (type 4) (param i32 i32 i32)
       (local i32)
       block ;; label = @1
         loop ;; label = @2
@@ -350,7 +332,7 @@
         end
       end
     )
-    (func $miden_stdlib_sys::intrinsics::advice::adv_insert (;14;) (type 5) (param i32 i32 i32)
+    (func $miden_stdlib_sys::intrinsics::advice::adv_insert (;8;) (type 4) (param i32 i32 i32)
       local.get 0
       f32.load offset=12
       local.get 0
@@ -370,13 +352,13 @@
       i32.add
       call $intrinsics::advice::adv_insert_mem
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;15;) (type 6) (param i32) (result f32)
+    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;9;) (type 5) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;16;) (type 7) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;10;) (type 6) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -434,22 +416,40 @@
       i64.load align=4
       i64.store
     )
-    (func $intrinsics::felt::from_u32 (;17;) (type 6) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;11;) (type 5) (param i32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::assert_eq (;18;) (type 8) (param f32 f32)
+    (func $intrinsics::felt::assert_eq (;12;) (type 7) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::advice::emit_falcon_sig_to_stack (;19;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $intrinsics::advice::emit_falcon_sig_to_stack (;13;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $intrinsics::advice::adv_insert_mem (;20;) (type 10) (param f32 f32 f32 f32 i32 i32)
+    (func $intrinsics::advice::adv_insert_mem (;14;) (type 9) (param f32 f32 f32 f32 i32 i32)
       unreachable
     )
-    (func $std::crypto::hashes::rpo::hash_memory (;21;) (type 5) (param i32 i32 i32)
+    (func $std::crypto::hashes::rpo::hash_memory (;15;) (type 4) (param i32 i32 i32)
       unreachable
     )
-    (func $std::crypto::dsa::rpo_falcon512::verify (;22;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $std::crypto::dsa::rpo_falcon512::verify (;16;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
+      unreachable
+    )
+    (func $miden::account::compute_delta_commitment (;17;) (type 3) (param i32)
+      unreachable
+    )
+    (func $miden::account::get_item (;18;) (type 10) (param f32 i32)
+      unreachable
+    )
+    (func $miden::account::incr_nonce (;19;) (type 2) (result f32)
+      unreachable
+    )
+    (func $miden::tx::get_block_number (;20;) (type 2) (result f32)
+      unreachable
+    )
+    (func $miden::tx::get_input_notes_commitment (;21;) (type 3) (param i32)
+      unreachable
+    )
+    (func $miden::tx::get_output_notes_commitment (;22;) (type 3) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

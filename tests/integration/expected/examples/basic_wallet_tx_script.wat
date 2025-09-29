@@ -37,14 +37,14 @@
     (type (;7;) (func (result i32)))
     (type (;8;) (func (param f32 f32 f32 f32 i32) (result f32)))
     (type (;9;) (func (param i32 i32)))
-    (type (;10;) (func (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
-    (type (;11;) (func (param i64) (result f32)))
-    (type (;12;) (func (param i32) (result f32)))
-    (type (;13;) (func (param f32) (result i64)))
-    (type (;14;) (func (param f32 f32)))
-    (type (;15;) (func (param f32 f32 f32 f32) (result f32)))
-    (type (;16;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
-    (type (;17;) (func (param i32 i32 i32 i32)))
+    (type (;10;) (func (param i64) (result f32)))
+    (type (;11;) (func (param i32) (result f32)))
+    (type (;12;) (func (param f32) (result i64)))
+    (type (;13;) (func (param f32 f32)))
+    (type (;14;) (func (param f32 f32 f32 f32) (result f32)))
+    (type (;15;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
+    (type (;16;) (func (param i32 i32 i32 i32)))
+    (type (;17;) (func (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
     (import "miden:basic-wallet/basic-wallet@1.0.0" "move-asset-to-note" (func $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -456,28 +456,25 @@
       i64.load align=4
       i64.store
     )
-    (func $miden::tx::create_note (;15;) (type 10) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;15;) (type 10) (param i64) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u64_unchecked (;16;) (type 11) (param i64) (result f32)
+    (func $intrinsics::felt::from_u32 (;16;) (type 11) (param i32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;17;) (type 12) (param i32) (result f32)
+    (func $intrinsics::felt::as_u64 (;17;) (type 12) (param f32) (result i64)
       unreachable
     )
-    (func $intrinsics::felt::as_u64 (;18;) (type 13) (param f32) (result i64)
+    (func $intrinsics::felt::assert_eq (;18;) (type 13) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::felt::assert_eq (;19;) (type 14) (param f32 f32)
+    (func $intrinsics::advice::adv_push_mapvaln (;19;) (type 14) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::advice::adv_push_mapvaln (;20;) (type 15) (param f32 f32 f32 f32) (result f32)
+    (func $std::mem::pipe_preimage_to_memory (;20;) (type 15) (param f32 i32 f32 f32 f32 f32) (result i32)
       unreachable
     )
-    (func $std::mem::pipe_preimage_to_memory (;21;) (type 16) (param f32 i32 f32 f32 f32 f32) (result i32)
-      unreachable
-    )
-    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;22;) (type 2) (param i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::deallocate (;21;) (type 2) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -509,7 +506,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;23;) (type 3) (param i32 i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::try_allocate_in (;22;) (type 3) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
@@ -621,7 +618,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;24;) (type 2) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;23;) (type 2) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -650,7 +647,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::alloc::Global::alloc_impl (;25;) (type 17) (param i32 i32 i32 i32)
+    (func $alloc::alloc::Global::alloc_impl (;24;) (type 16) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -677,7 +674,7 @@
       local.get 1
       i32.store
     )
-    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;26;) (type 17) (param i32 i32 i32 i32)
+    (func $alloc::raw_vec::RawVecInner<A>::current_memory (;25;) (type 16) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -712,7 +709,7 @@
       local.get 4
       i32.store
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;27;) (type 2) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;26;) (type 2) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -723,19 +720,22 @@
         call $__rustc::__rust_dealloc
       end
     )
-    (func $alloc::raw_vec::handle_error (;28;) (type 2) (param i32 i32 i32)
+    (func $alloc::raw_vec::handle_error (;27;) (type 2) (param i32 i32 i32)
       unreachable
     )
-    (func $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime (;29;) (type 2) (param i32 i32 i32)
+    (func $core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime (;28;) (type 2) (param i32 i32 i32)
       unreachable
     )
-    (func $core::ptr::alignment::Alignment::max (;30;) (type 4) (param i32 i32) (result i32)
+    (func $core::ptr::alignment::Alignment::max (;29;) (type 4) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
       local.get 1
       i32.gt_u
       select
+    )
+    (func $miden::tx::create_note (;30;) (type 17) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+      unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.5.0/src/stdlib/mem.rs\00src/lib.rs\00")
     (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\005\00\00\00)\00\00\00)\00\10\00\0a\00\00\00=\00\00\00%\00\00\00")

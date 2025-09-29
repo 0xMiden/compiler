@@ -1146,242 +1146,6 @@ proc.miden_base_sys::bindings::tx::get_output_notes_commitment
     nop
 end
 
-proc.miden::account::compute_delta_commitment
-    trace.240
-    nop
-    exec.::miden::account::compute_delta_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-proc.miden::account::get_item
-    trace.240
-    nop
-    exec.::miden::account::get_item
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-proc.miden::account::incr_nonce
-    trace.240
-    nop
-    exec.::miden::account::incr_nonce
-    trace.252
-    nop
-end
-
-proc.miden::tx::get_block_number
-    trace.240
-    nop
-    exec.::miden::tx::get_block_number
-    trace.252
-    nop
-end
-
-proc.miden::tx::get_input_notes_commitment
-    trace.240
-    nop
-    exec.::miden::tx::get_input_notes_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-proc.miden::tx::get_output_notes_commitment
-    trace.240
-    nop
-    exec.::miden::tx::get_output_notes_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
 proc.core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
     movup.2
     push.1
@@ -1900,6 +1664,242 @@ proc.std::crypto::dsa::rpo_falcon512::verify
     trace.240
     nop
     exec.::std::crypto::dsa::rpo_falcon512::verify
+    trace.252
+    nop
+end
+
+proc.miden::account::compute_delta_commitment
+    trace.240
+    nop
+    exec.::miden::account::compute_delta_commitment
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+proc.miden::account::get_item
+    trace.240
+    nop
+    exec.::miden::account::get_item
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+proc.miden::account::incr_nonce
+    trace.240
+    nop
+    exec.::miden::account::incr_nonce
+    trace.252
+    nop
+end
+
+proc.miden::tx::get_block_number
+    trace.240
+    nop
+    exec.::miden::tx::get_block_number
+    trace.252
+    nop
+end
+
+proc.miden::tx::get_input_notes_commitment
+    trace.240
+    nop
+    exec.::miden::tx::get_input_notes_commitment
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+proc.miden::tx::get_output_notes_commitment
+    trace.240
+    nop
+    exec.::miden::tx::get_output_notes_commitment
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end
