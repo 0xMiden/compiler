@@ -1,0 +1,6 @@
+package miden:swapp-note@1.0.0;
+
+world swapp-note-world {
+    import miden:basic-wallet/basic-wallet@1.0.0;
+    export miden:base/note-script@1.0.0;
+}
