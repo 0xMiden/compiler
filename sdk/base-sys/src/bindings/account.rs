@@ -121,3 +121,11 @@ pub fn compute_delta_commitment() -> Word {
         ret_area.assume_init().reverse()
     }
 }
+
+/// Get the balance of a specific asset in the account vault.
+/// TODO: This is stubbed - needs proper implementation
+pub fn get_balance(_asset: Asset) -> u64 {
+    // Stubbed implementation - returns a dummy balance
+    // In real implementation, this would query the account vault for the specific asset
+    100u64
+}

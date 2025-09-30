@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, hash_words};
 
 use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
@@ -105,5 +105,19 @@ pub fn get_output_notes_commitment() -> Word {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_tx_get_output_notes_commitment(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
+    }
+}
+
+/// Build a recipient hash from serial number, script root, and inputs hash.
+pub fn build_recipient_hash(serial_num: Felt, script_root: Word, inputs_hash: Word) -> Recipient {
+    // Hash the serial number with padding to create a word
+    let serial_word = Word::from([serial_num, Felt::from(0u32), Felt::from(0u32), Felt::from(0u32)]);
+    
+    // Hash all components together
+    let components = [serial_word, script_root, inputs_hash];
+    let recipient_hash = hash_words(&components);
+    
+    Recipient {
+        inner: recipient_hash.into()
     }
 }

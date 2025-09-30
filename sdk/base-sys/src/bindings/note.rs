@@ -5,11 +5,18 @@ use miden_stdlib_sys::Felt;
 
 use super::Asset;
 
+#[allow(improper_ctypes)]
 extern "C" {
     #[link_name = "miden::note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
     #[link_name = "miden::note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
+    #[link_name = "miden::note::get_serial_number"]
+    pub fn extern_note_get_serial_number() -> Felt;
+    #[link_name = "miden::note::get_script_root"]
+    pub fn extern_note_get_script_root(ptr: *mut miden_stdlib_sys::Word);
+    #[link_name = "miden::note::get_args"]
+    pub fn extern_note_get_args(ptr: *mut miden_stdlib_sys::Word);
 }
 
 /// Get the inputs of the currently executing note.
@@ -54,4 +61,39 @@ pub fn get_assets() -> Vec<Asset> {
         inputs.set_len(num_inputs);
     }
     inputs
+}
+
+/// Get the serial number of the currently executing note.
+/// TODO: This is stubbed - needs proper implementation
+pub fn get_serial_number() -> Felt {
+    // Stubbed implementation - returns a dummy value
+    Felt::from(1u32)
+}
+
+/// Get the script root of the currently executing note.
+/// TODO: This is stubbed - needs proper implementation
+pub fn get_script_root() -> miden_stdlib_sys::Word {
+    // Stubbed implementation - returns a dummy word
+    // In real implementation, this would call the extern function with a buffer
+    // and construct the Word from the returned Felts
+    miden_stdlib_sys::Word::from([
+        Felt::from(0u32),
+        Felt::from(0u32),
+        Felt::from(0u32),
+        Felt::from(0u32),
+    ])
+}
+
+/// Get the arguments passed to the currently executing note.
+/// TODO: This is stubbed - needs proper implementation
+pub fn get_args() -> miden_stdlib_sys::Word {
+    // Stubbed implementation - returns a dummy word
+    // In real implementation, this would call the extern function with a buffer
+    // and construct the Word from the returned Felts
+    miden_stdlib_sys::Word::from([
+        Felt::from(0u32),
+        Felt::from(0u32),
+        Felt::from(0u32),
+        Felt::from(0u32),
+    ])
 }
