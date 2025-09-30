@@ -1462,14 +1462,6 @@ proc.<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     nop
 end
 
-proc.miden::tx::create_note
-    trace.240
-    nop
-    exec.::miden::tx::create_note
-    trace.252
-    nop
-end
-
 proc.intrinsics::felt::from_u64_unchecked
     dup.1
     dup.1
@@ -2388,5 +2380,13 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
+end
+
+proc.miden::tx::create_note
+    trace.240
+    nop
+    exec.::miden::tx::create_note
+    trace.252
+    nop
 end
 

@@ -214,16 +214,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden::account::add_asset (;8;) (type 5) (param f32 f32 f32 f32 i32)
-      unreachable
-    )
-    (func $miden::account::remove_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
-      unreachable
-    )
-    (func $miden::tx::add_asset_to_note (;10;) (type 6) (param f32 f32 f32 f32 f32 i32)
-      unreachable
-    )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;11;) (type 3) (param i32 i32)
+    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;8;) (type 3) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -280,6 +271,15 @@
       local.get 2
       i64.load align=4
       i64.store
+    )
+    (func $miden::account::add_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
+      unreachable
+    )
+    (func $miden::account::remove_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
+      unreachable
+    )
+    (func $miden::tx::add_asset_to_note (;11;) (type 6) (param f32 f32 f32 f32 f32 i32)
+      unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01")

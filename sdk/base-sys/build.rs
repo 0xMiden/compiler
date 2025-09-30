@@ -1,9 +1,9 @@
 // Build the Miden base stubs and link them for dependents.
 //
-// We produce a native static library (.a) that contains only the stub object
+// We produce native static libraries (.a) that contain only the stub object
 // files (no panic handler) to avoid duplicate panic symbols in downstream
-// component builds. We do this by compiling a single object with rustc and
-// packaging it into an archive with `ar`.
+// component builds. We do this by compiling rlibs with rustc and naming the
+// outputs `.a` so dependents pick them up via the native link search path.
 //
 // Why not an rlib?
 // - `cargo:rustc-link-lib`/`cargo:rustc-link-search` are for native archives;
@@ -16,23 +16,6 @@
 //   symbols.
 
 use std::{env, path::PathBuf, process::Command};
-
-fn ensure_rust_ar() {
-    // Preflight: ensure `rust-ar` is available. This typically comes from the
-    // `llvm-tools` rustup component or via `cargo-binutils`.
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-
-    let _ = Command::new("cargo").args(["install", "cargo-binutils"]).status();
-    if Command::new("rust-ar").arg("--version").output().is_ok() {
-        return;
-    }
-    panic!(
-        "`rust-ar` was not found. Ensure the `llvm-tools` component is present (listed in \
-         rust-toolchain.toml) and try installing proxies via `cargo install cargo-binutils`."
-    );
-}
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -75,13 +58,10 @@ fn main() {
         }
     }
 
-    // Build a single object, then package into a static archive to avoid
-    // bringing in panic symbols.
-    let out_static = out_dir.join("libmiden_base_sys_stubs.a");
-    let out_obj = out_dir.join("miden_base_sys_stubs.o");
+    // Build a rlib, but named it .a otherwise it will not be propagated to dependends linking
+    let out_rlib = out_dir.join("libmiden_base_sys_stubs.a");
 
     // Ensure tools are present before invoking them.
-    ensure_rust_ar();
 
     // 1) Compile object
     // These stubs intentionally compile to `unreachable` so the frontend recognizes
@@ -114,9 +94,8 @@ fn main() {
         .arg("merge-functions=disabled")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
-        .arg("--emit=obj")
         .arg("-o")
-        .arg(&out_obj)
+        .arg(&out_rlib)
         .arg(&src_root)
         .status()
         .expect("failed to spawn rustc for base stubs object");
@@ -124,18 +103,8 @@ fn main() {
         panic!("failed to compile miden-base-sys stubs object: {status}");
     }
 
-    // 2) Archive
-    let status = Command::new("rust-ar")
-        .arg("crs")
-        .arg(&out_static)
-        .arg(&out_obj)
-        .status()
-        .expect("failed to spawn ar for base stubs");
-    if !status.success() {
-        panic!("failed to archive miden-base-sys stubs: {status}");
-    }
-
     // Emit link directives for dependents
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=miden_base_sys_stubs");
+    // `lib` prefix is adde by the linker automatically when it searches for the file
+    println!("cargo:rustc-link-lib=miden_base_sys_stubs");
 }

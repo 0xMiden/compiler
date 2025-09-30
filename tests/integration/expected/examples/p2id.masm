@@ -1417,55 +1417,6 @@ proc.miden_base_sys::bindings::note::get_assets
     nop
 end
 
-proc.miden::account::get_id
-    trace.240
-    nop
-    exec.::miden::account::get_id
-    trace.252
-    nop
-    movup.2
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-proc.miden::note::get_inputs
-    trace.240
-    nop
-    exec.::miden::note::get_inputs
-    trace.252
-    nop
-    swap.1
-    drop
-end
-
-proc.miden::note::get_assets
-    trace.240
-    nop
-    exec.::miden::note::get_assets
-    trace.252
-    nop
-    swap.1
-    drop
-end
-
 proc.intrinsics::felt::assert_eq
     assert_eq
 end
@@ -2337,5 +2288,54 @@ proc.core::ptr::alignment::Alignment::max
     u32gt
     neq
     cdrop
+end
+
+proc.miden::account::get_id
+    trace.240
+    nop
+    exec.::miden::account::get_id
+    trace.252
+    nop
+    movup.2
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+proc.miden::note::get_inputs
+    trace.240
+    nop
+    exec.::miden::note::get_inputs
+    trace.252
+    nop
+    swap.1
+    drop
+end
+
+proc.miden::note::get_assets
+    trace.240
+    nop
+    exec.::miden::note::get_assets
+    trace.252
+    nop
+    swap.1
+    drop
 end
 
