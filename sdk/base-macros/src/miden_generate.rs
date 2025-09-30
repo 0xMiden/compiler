@@ -101,6 +101,9 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
             });
 
             quote! {
+                // Wrap the bindings in the `bindings` module since `generate!` makes a top level
+                // module named after the package namespace which is `miden` for all our projects
+                // so its conflicts with the `miden` crate (SDK)
                 #[doc(hidden)]
                 #[allow(dead_code)]
                 pub mod bindings {

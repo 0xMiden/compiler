@@ -22,7 +22,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 miden::miden_generate!();
 bindings::export!(AuthComponent);
 
-use ::miden::{account, *};
+use miden::{account, *};
 
 use crate::bindings::exports::miden::base::authentication_component::Guest;
 

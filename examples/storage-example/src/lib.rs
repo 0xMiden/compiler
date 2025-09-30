@@ -17,7 +17,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use ::miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
+use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
 
 use crate::bindings::exports::miden::storage_example::*;
 

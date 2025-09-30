@@ -17,7 +17,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use miden::{component, Asset, NoteIdx};
+use miden::{account, component, tx, Asset, NoteIdx};
 
 use crate::bindings::exports::miden::basic_wallet::*;
 
@@ -32,7 +32,7 @@ impl basic_wallet::Guest for MyAccount {
     /// # Arguments
     /// * `asset` - The asset to be added to the account
     fn receive_asset(asset: Asset) {
-        ::miden::account::add_asset(asset);
+        account::add_asset(asset);
     }
 
     /// Moves an asset from the account to a note.
@@ -44,7 +44,7 @@ impl basic_wallet::Guest for MyAccount {
     /// * `asset` - The asset to move from the account to the note
     /// * `note_idx` - The index of the note to receive the asset
     fn move_asset_to_note(asset: Asset, note_idx: NoteIdx) {
-        let asset = ::miden::account::remove_asset(asset);
-        ::miden::tx::add_asset_to_note(asset, note_idx);
+        let asset = account::remove_asset(asset);
+        tx::add_asset_to_note(asset, note_idx);
     }
 }
