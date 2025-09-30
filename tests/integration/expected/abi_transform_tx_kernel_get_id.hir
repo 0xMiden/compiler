@@ -254,30 +254,30 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::get_id(v172: i32) {
-        ^block30(v172: i32):
-            v173, v174 = hir.exec @miden/account/get_id() : felt, felt
+        private builtin.function @core::ptr::alignment::Alignment::max(v172: i32, v173: i32) -> i32 {
+        ^block30(v172: i32, v173: i32):
+            v180 = arith.constant 0 : i32;
+            v176 = hir.bitcast v173 : u32;
             v175 = hir.bitcast v172 : u32;
-            v176 = hir.int_to_ptr v175 : ptr<byte, felt>;
-            hir.store v176, v173;
-            v177 = arith.constant 4 : u32;
-            v178 = arith.add v175, v177 : u32 #[overflow = checked];
-            v179 = hir.int_to_ptr v178 : ptr<byte, felt>;
-            hir.store v179, v174;
-            builtin.ret ;
+            v177 = arith.gt v175, v176 : i1;
+            v178 = arith.zext v177 : u32;
+            v179 = hir.bitcast v178 : i32;
+            v181 = arith.neq v179, v180 : i1;
+            v182 = cf.select v181, v172, v173 : i32;
+            builtin.ret v182;
         };
 
-        private builtin.function @core::ptr::alignment::Alignment::max(v180: i32, v181: i32) -> i32 {
-        ^block34(v180: i32, v181: i32):
-            v188 = arith.constant 0 : i32;
-            v184 = hir.bitcast v181 : u32;
-            v183 = hir.bitcast v180 : u32;
-            v185 = arith.gt v183, v184 : i1;
-            v186 = arith.zext v185 : u32;
-            v187 = hir.bitcast v186 : i32;
-            v189 = arith.neq v187, v188 : i1;
-            v190 = cf.select v189, v180, v181 : i32;
-            builtin.ret v190;
+        private builtin.function @miden::account::get_id(v183: i32) {
+        ^block32(v183: i32):
+            v184, v185 = hir.exec @miden/account/get_id() : felt, felt
+            v186 = hir.bitcast v183 : u32;
+            v187 = hir.int_to_ptr v186 : ptr<byte, felt>;
+            hir.store v187, v184;
+            v188 = arith.constant 4 : u32;
+            v189 = arith.add v186, v188 : u32 #[overflow = checked];
+            v190 = hir.int_to_ptr v189 : ptr<byte, felt>;
+            hir.store v190, v185;
+            builtin.ret ;
         };
 
         public builtin.function @cabi_realloc(v191: i32, v192: i32, v193: i32, v194: i32) -> i32 {

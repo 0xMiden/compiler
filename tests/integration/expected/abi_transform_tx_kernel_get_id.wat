@@ -162,16 +162,16 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $miden::account::get_id (;7;) (type 0) (param i32)
-    unreachable
-  )
-  (func $core::ptr::alignment::Alignment::max (;8;) (type 1) (param i32 i32) (result i32)
+  (func $core::ptr::alignment::Alignment::max (;7;) (type 1) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
     local.get 1
     i32.gt_u
     select
+  )
+  (func $miden::account::get_id (;8;) (type 0) (param i32)
+    unreachable
   )
   (func $cabi_realloc (;9;) (type 2) (param i32 i32 i32 i32) (result i32)
     local.get 0
