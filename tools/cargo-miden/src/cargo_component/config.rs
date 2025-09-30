@@ -18,22 +18,15 @@
 //! that `cargo` supports which are necessary for `cargo-component`
 //! to function.
 
-use std::{collections::BTreeMap, fmt, fmt::Display, path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, fmt, fmt::Display, path::PathBuf, str::FromStr};
 
 use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::Metadata;
 use parse_arg::{iter_short, match_arg};
 use semver::Version;
 use toml_edit::DocumentMut;
-use wasm_pkg_client::{
-    caching::{CachingClient, FileCache},
-    Client,
-};
 
-use super::core::{
-    cache_dir,
-    terminal::{Color, Terminal},
-};
+use super::core::terminal::{Color, Terminal};
 
 /// Represents a cargo package specifier.
 ///
@@ -406,6 +399,7 @@ impl CargoArguments {
     }
 
     /// Determines if an update to the lock file is allowed based on the configuration.
+    #[allow(unused)]
     pub fn lock_update_allowed(&self) -> bool {
         !self.frozen && !self.locked
     }
@@ -492,46 +486,19 @@ impl CargoArguments {
 /// This is used to configure the behavior of cargo-component.
 #[derive(Debug)]
 pub struct Config {
-    /// The package configuration to use
-    pub pkg_config: wasm_pkg_client::Config,
     /// The terminal to use.
     terminal: Terminal,
 }
 
 impl Config {
     /// Create a new `Config` with the given terminal.
-    pub async fn new(terminal: Terminal, config_path: Option<PathBuf>) -> Result<Self> {
-        let pkg_config = match config_path {
-            Some(path) => wasm_pkg_client::Config::from_file(path).await?,
-            None => wasm_pkg_client::Config::global_defaults().await?,
-        };
-        Ok(Self {
-            pkg_config,
-            terminal,
-        })
-    }
-
-    /// Gets the package configuration.
-    #[allow(unused)]
-    pub fn pkg_config(&self) -> &wasm_pkg_client::Config {
-        &self.pkg_config
+    pub async fn new(terminal: Terminal) -> Result<Self> {
+        Ok(Self { terminal })
     }
 
     /// Gets a reference to the terminal for writing messages.
     pub fn terminal(&self) -> &Terminal {
         &self.terminal
-    }
-
-    /// Creates a [`Client`] from this configuration.
-    pub async fn client(
-        &self,
-        cache: Option<PathBuf>,
-        offline: bool,
-    ) -> anyhow::Result<Arc<CachingClient<FileCache>>> {
-        Ok(Arc::new(CachingClient::new(
-            (!offline).then(|| Client::new(self.pkg_config.clone())),
-            FileCache::new(cache_dir(cache)?).await?,
-        )))
     }
 }
 

@@ -370,18 +370,10 @@ where
             let rt = builder.enable_all().build()?;
             let wasm_outputs = if matches!(target_env, TargetEnv::Rollup { .. }) {
                 rt.block_on(async {
-                    let config = Config::new(terminal, None).await?;
-                    let client = config.client(None, cargo_args.offline).await?;
-                    let wasm_outputs_res = run_cargo_command(
-                        client,
-                        &config,
-                        &metadata,
-                        &packages,
-                        subcommand.as_deref(),
-                        &cargo_args,
-                        &spawn_args,
-                    )
-                    .await;
+                    let config = Config::new(terminal).await?;
+                    let wasm_outputs_res =
+                        run_cargo_command(&config, subcommand.as_deref(), &cargo_args, &spawn_args)
+                            .await;
 
                     if let Err(e) = wasm_outputs_res {
                         config.terminal().error(format!("{e:?}"))?;

@@ -1,33 +1,20 @@
 //! Cargo support for WebAssembly components.
 
-// TODO: remove after switching to generate! macros
-#![allow(unused)]
-
-use core::lock::{LockFile, LockFileResolver};
 use std::{
     fmt::{self},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Arc,
-    time::SystemTime,
 };
 
 use anyhow::{bail, Context, Result};
 use cargo_config2::{PathAndArgs, TargetTripleRef};
 use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package};
 use config::{CargoArguments, CargoPackageSpec, Config};
-use lock::{acquire_lock_file_ro, acquire_lock_file_rw};
-use metadata::ComponentMetadata;
-use registry::{PackageDependencyResolution, PackageResolutionMap};
 use target::install_wasm32_wasip2;
-use wasm_pkg_client::caching::{CachingClient, FileCache};
 
 pub mod config;
 pub mod core;
-mod lock;
-mod metadata;
-mod registry;
 mod target;
 
 fn is_wasm_target(target: &str) -> bool {
@@ -42,17 +29,12 @@ fn is_wasm_target(target: &str) -> bool {
 pub struct PackageComponentMetadata<'a> {
     /// The cargo package.
     pub package: &'a Package,
-    /// The associated component metadata.
-    pub metadata: ComponentMetadata,
 }
 
 impl<'a> PackageComponentMetadata<'a> {
     /// Creates a new package metadata from the given package.
     pub fn new(package: &'a Package) -> Result<Self> {
-        Ok(Self {
-            package,
-            metadata: ComponentMetadata::from_package(package)?,
-        })
+        Ok(Self { package })
     }
 }
 
@@ -118,10 +100,7 @@ impl From<&str> for CargoCommand {
 ///
 /// Returns any relevant output components.
 pub async fn run_cargo_command(
-    _client: Arc<CachingClient<FileCache>>,
     config: &Config,
-    _metadata: &Metadata,
-    _packages: &[PackageComponentMetadata<'_>],
     subcommand: Option<&str>,
     cargo_args: &CargoArguments,
     spawn_args: &[String],
@@ -431,17 +410,6 @@ fn spawn_outputs(
     }
 }
 
-fn last_modified_time(path: &Path) -> Result<SystemTime> {
-    path.metadata()
-        .with_context(|| {
-            format!("failed to read file metadata for `{path}`", path = path.display())
-        })?
-        .modified()
-        .with_context(|| {
-            format!("failed to retrieve last modified time for `{path}`", path = path.display())
-        })
-}
-
 /// Loads the workspace metadata based on the given manifest path.
 pub fn load_metadata(manifest_path: Option<&Path>) -> Result<Metadata> {
     let mut command = MetadataCommand::new();
@@ -492,61 +460,4 @@ pub fn load_component_metadata<'a>(
     };
 
     pkgs.into_iter().map(PackageComponentMetadata::new).collect::<Result<_>>()
-}
-
-async fn resolve_component_dependencies(
-    client: Arc<CachingClient<FileCache>>,
-    config: &Config,
-    metadata: &Metadata,
-    packages: &[PackageComponentMetadata<'_>],
-    cargo_args: &CargoArguments,
-) -> Result<()> {
-    let file_lock = acquire_lock_file_ro(config.terminal(), metadata)?;
-    let lock_file = file_lock
-        .as_ref()
-        .map(|f| {
-            LockFile::read(f.file()).with_context(|| {
-                format!("failed to read lock file `{path}`", path = f.path().display())
-            })
-        })
-        .transpose()?;
-
-    let resolver = lock_file.as_ref().map(LockFileResolver::new);
-    let resolution_map = create_resolution_map(client, packages, resolver).await?;
-
-    // Update the lock file if it exists or if the new lock file is non-empty
-    let new_lock_file = resolution_map.to_lock_file();
-    if (lock_file.is_some() || !new_lock_file.packages.is_empty())
-        && Some(&new_lock_file) != lock_file.as_ref()
-    {
-        drop(file_lock);
-        let file_lock = acquire_lock_file_rw(
-            config.terminal(),
-            metadata,
-            cargo_args.lock_update_allowed(),
-            cargo_args.locked,
-        )?;
-        new_lock_file.write(file_lock.file(), "cargo-component").with_context(|| {
-            format!("failed to write lock file `{path}`", path = file_lock.path().display())
-        })?;
-    }
-
-    Ok(())
-}
-
-async fn create_resolution_map<'a>(
-    client: Arc<CachingClient<FileCache>>,
-    packages: &'a [PackageComponentMetadata<'_>],
-    lock_file: Option<LockFileResolver<'_>>,
-) -> Result<PackageResolutionMap<'a>> {
-    let mut map = PackageResolutionMap::default();
-
-    for PackageComponentMetadata { package, metadata } in packages {
-        let resolution =
-            PackageDependencyResolution::new(client.clone(), metadata, lock_file).await?;
-
-        map.insert(package.id.clone(), resolution);
-    }
-
-    Ok(map)
 }
