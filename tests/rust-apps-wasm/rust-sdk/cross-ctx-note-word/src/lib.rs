@@ -18,7 +18,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-miden::miden_generate!();
+miden::generate!();
 bindings::export!(MyNote);
 
 use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account_word::foo::*};

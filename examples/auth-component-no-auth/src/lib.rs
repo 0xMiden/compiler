@@ -19,7 +19,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-miden::miden_generate!();
+miden::generate!();
 bindings::export!(AuthComponent);
 
 use miden::{account, *};

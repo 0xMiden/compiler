@@ -20,7 +20,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 
 use miden::*;
 
-miden::miden_generate!();
+miden::generate!();
 bindings::export!(MyFoo);
 
 use bindings::exports::miden::cross_ctx_account_word_arg::*;

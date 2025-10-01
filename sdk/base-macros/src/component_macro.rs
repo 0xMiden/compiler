@@ -96,7 +96,7 @@ pub fn component(
     let link_section = generate_link_section(&metadata_bytes);
 
     quote! {
-        miden::miden_generate!();
+        miden::generate!();
         #input_struct
         #default_impl
         #link_section

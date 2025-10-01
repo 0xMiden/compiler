@@ -20,7 +20,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 
 use miden::*;
 
-miden::miden_generate!();
+miden::generate!();
 bindings::export!(MyNote);
 
 use bindings::{

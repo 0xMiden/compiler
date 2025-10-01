@@ -4,12 +4,12 @@ extern crate proc_macro;
 
 mod account_component_metadata;
 mod component_macro;
-mod miden_generate;
+mod generate;
 mod script;
 
 #[proc_macro]
-pub fn miden_generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    miden_generate::expand(input)
+pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    generate::expand(input)
 }
 
 #[proc_macro_attribute]

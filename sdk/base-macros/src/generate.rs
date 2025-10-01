@@ -34,7 +34,7 @@ impl Parse for GenerateArgs {
                 _ => {
                     return Err(syn::Error::new(
                         ident.span(),
-                        format!("unsupported miden_generate! argument `{name}`"),
+                        format!("unsupported generate! argument `{name}`"),
                     ));
                 }
             }
@@ -48,7 +48,7 @@ impl Parse for GenerateArgs {
     }
 }
 
-/// Implements the expansion logic for the `miden_generate!` macro.
+/// Implements the expansion logic for the `generate!` macro.
 pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input_tokens: proc_macro2::TokenStream = input.into();
     let args = if input_tokens.is_empty() {
@@ -89,7 +89,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
             if args.inline.is_some() && world_value.is_none() {
                 return Error::new(
                     Span::call_site(),
-                    "failed to detect world name for inline WIT provided to miden_generate!",
+                    "failed to detect world name for inline WIT provided to generate!",
                 )
                 .to_compile_error()
                 .into();
