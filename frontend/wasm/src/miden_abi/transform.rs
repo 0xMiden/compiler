@@ -72,8 +72,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
         symbols::Miden => match components.next()?.as_symbol_name() {
             symbols::Account => {
                 match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::account::INCR_NONCE => Some(TransformStrategy::NoTransform),
-                    tx_kernel::account::GET_NONCE => Some(TransformStrategy::NoTransform),
+                    tx_kernel::account::INCR_NONCE
+                    | tx_kernel::account::GET_NONCE
+                    | tx_kernel::account::GET_BALANCE => Some(TransformStrategy::NoTransform),
                     tx_kernel::account::ADD_ASSET
                     | tx_kernel::account::GET_ID
                     | tx_kernel::account::REMOVE_ASSET
@@ -92,6 +93,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
             symbols::Note => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                 tx_kernel::note::GET_INPUTS => Some(TransformStrategy::ListReturn),
                 tx_kernel::note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                tx_kernel::note::GET_SENDER
+                | tx_kernel::note::GET_SCRIPT_ROOT
+                | tx_kernel::note::GET_SERIAL_NUMBER => Some(TransformStrategy::ReturnViaPointer),
                 _ => None,
             },
             symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {

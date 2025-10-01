@@ -88,3 +88,8 @@ pub extern "C" fn account_set_map_item_plain(
 pub extern "C" fn account_incr_nonce_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[export_name = "miden::account::get_balance"]
+pub extern "C" fn account_get_balance_plain(_prefix: f32, _suffix: f32) -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}

@@ -21,6 +21,8 @@ extern "C" {
     // Resolved via stub rlib at core Wasm link time
     #[link_name = "miden::account::add_asset"]
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
+    #[link_name = "miden::account::get_balance"]
+    pub fn extern_account_get_balance(faucet_id_prefix: Felt, faucet_id_suffix: Felt) -> Felt;
 }
 
 /// Get the account ID of the currently executing note account.
@@ -120,4 +122,14 @@ pub fn compute_delta_commitment() -> Word {
         extern_account_compute_delta_commitment(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
+}
+
+/// Returns the balance of the fungible asset identified by `faucet_id`.
+///
+/// # Panics
+///
+/// Propagates kernel errors if the referenced asset is non-fungible or the
+/// account vault invariants are violated.
+pub fn get_balance(faucet_id: AccountId) -> Felt {
+    unsafe { extern_account_get_balance(faucet_id.prefix, faucet_id.suffix) }
 }
