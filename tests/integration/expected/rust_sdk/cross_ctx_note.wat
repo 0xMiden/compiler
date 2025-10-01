@@ -40,7 +40,7 @@
       (local i32 f32)
       global.get $GOT.data.internal.__memory_base
       local.set 4
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 4
       i32.const 1048588
       i32.add
@@ -62,7 +62,7 @@
       call $intrinsics::felt::as_u64
       i64.store32
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;4;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

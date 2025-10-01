@@ -37,7 +37,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       call $miden_base_sys::bindings::tx::get_block_number
       local.set 5
       call $miden::account::incr_nonce
@@ -224,7 +224,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -453,7 +453,7 @@
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\03\00\00\00!owner_public_key\01!owner public key9auth::rpo_falcon512::pub_key")
+    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\03\00\00\00!owner_public_key\01!owner public key9auth::rpo_falcon512::pub_key\00\00\00\00\00\00\00")
   )
   (alias export 0 "word" (type (;1;)))
   (core instance (;0;) (instantiate 0))

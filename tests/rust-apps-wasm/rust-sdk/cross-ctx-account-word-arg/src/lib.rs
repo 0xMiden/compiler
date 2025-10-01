@@ -18,13 +18,12 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use bindings::exports::miden::cross_ctx_account_word_arg::*;
-
-bindings::export!(MyFoo with_types_in bindings);
-
-mod bindings;
-
 use miden::*;
+
+miden::generate!();
+bindings::export!(MyFoo);
+
+use bindings::exports::miden::cross_ctx_account_word_arg::*;
 
 struct MyFoo;
 

@@ -265,7 +265,7 @@ proc.miden:counter-contract/counter@0.1.0#get-count
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter@0.1.0::counter_contract::wit_bindgen_rt::run_ctors_once
+    exec.::miden:counter-contract/counter@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -420,7 +420,7 @@ proc.miden:counter-contract/counter@0.1.0#increment-count
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter@0.1.0::counter_contract::wit_bindgen_rt::run_ctors_once
+    exec.::miden:counter-contract/counter@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -832,7 +832,7 @@ proc.miden:counter-contract/counter@0.1.0#increment-count
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

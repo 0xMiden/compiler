@@ -18,12 +18,14 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-bindings::export!(MyNote with_types_in bindings);
-
-mod bindings;
-
-use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account::foo::process_felt};
 use miden::*;
+
+miden::generate!();
+bindings::export!(MyNote);
+
+use bindings::{
+    exports::miden::base::note_script::Guest, miden::cross_ctx_account::foo::process_felt,
+};
 
 // To test the data segment loading
 pub static mut BAR: u32 = 11;

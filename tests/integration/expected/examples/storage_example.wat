@@ -39,7 +39,7 @@
       i32.sub
       local.tee 9
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       i32.const 0
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 9
@@ -160,7 +160,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       i32.const 1
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 3
@@ -193,7 +193,7 @@
       global.set $__stack_pointer
       local.get 0
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;4;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -315,7 +315,7 @@
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map")
+    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export 0 "felt" (type (;1;)))
   (alias export 0 "word" (type (;2;)))

@@ -20,7 +20,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v15 = builtin.global_symbol @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
             v16 = hir.bitcast v15 : ptr<byte, i32>;
             hir.store v16, v14;
-            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/wit_bindgen::rt::run_ctors_once()
             v17 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_block_number() : felt
             v18 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::account::incr_nonce() : felt
             v19 = arith.constant 80 : i32;
@@ -350,7 +350,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block15:
             v267 = builtin.global_symbol @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/GOT.data.internal.__memory_base : ptr<byte, u8>
             v268 = hir.bitcast v267 : ptr<byte, i32>;

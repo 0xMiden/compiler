@@ -24,7 +24,7 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $cross_ctx_account_word_arg::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:cross-ctx-account-word-arg/foo@1.0.0#process-word (;2;) (type 1) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 1
       call $intrinsics::felt::from_u32
@@ -110,7 +110,7 @@
       local.get 15
       call $intrinsics::felt::add
     )
-    (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

@@ -27,7 +27,7 @@
       i32.const 1048584
       i32.add
       local.set 1
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 1
       local.get 0
       local.get 1
@@ -39,7 +39,7 @@
       i64.store32
       local.get 0
     )
-    (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

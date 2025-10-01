@@ -104,7 +104,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             v76 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v77 = hir.bitcast v76 : ptr<byte, i32>;
             hir.store v77, v75;
-            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/wit_bindgen::rt::run_ctors_once()
             v69 = arith.constant 0 : i32;
             v79 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/intrinsics::felt::from_u32(v69) : felt
             v507 = arith.constant 0 : i32;
@@ -172,7 +172,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             v129 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v130 = hir.bitcast v129 : ptr<byte, i32>;
             hir.store v130, v128;
-            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/wit_bindgen::rt::run_ctors_once()
             v122 = arith.constant 0 : i32;
             v132 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/intrinsics::felt::from_u32(v122) : felt
             v530 = arith.constant 0 : i32;
@@ -347,7 +347,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret v174;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block15:
             v272 = builtin.global_symbol @miden:counter-contract/counter@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
             v273 = hir.bitcast v272 : ptr<byte, i32>;

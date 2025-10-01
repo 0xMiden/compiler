@@ -419,7 +419,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-word
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1
@@ -557,7 +557,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.2
@@ -687,7 +687,7 @@ end
 proc.miden:cross-ctx-account-word/foo@1.0.0#process-felt
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.3
@@ -715,7 +715,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-pair
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.4
@@ -791,7 +791,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-triple
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.5
@@ -898,7 +898,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.6
@@ -1123,7 +1123,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
     nop
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.8
@@ -1219,7 +1219,7 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

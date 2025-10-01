@@ -37,7 +37,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 4
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 1
       call $intrinsics::felt::from_u32
@@ -77,7 +77,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 4
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 2
       call $intrinsics::felt::from_u32
@@ -114,7 +114,7 @@
       local.get 4
     )
     (func $miden:cross-ctx-account-word/foo@1.0.0#process-felt (;4;) (type 2) (param f32) (result f32)
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 3
       call $intrinsics::felt::from_u32
@@ -124,7 +124,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 2
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 4
       call $intrinsics::felt::from_u32
@@ -148,7 +148,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 3
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 5
       call $intrinsics::felt::from_u32
@@ -180,7 +180,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 7
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 1
       i32.const 6
       call $intrinsics::felt::from_u32
@@ -232,7 +232,7 @@
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 3
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 0
       i32.const 8
       call $intrinsics::felt::from_u32
@@ -260,7 +260,7 @@
       f32.store
       local.get 3
     )
-    (func $wit_bindgen_rt::run_ctors_once (;9;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;9;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

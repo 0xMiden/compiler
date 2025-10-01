@@ -18,7 +18,7 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @miden:base/note-script@1.0.0#run(v17: felt, v18: felt, v19: felt, v20: felt) {
         ^block12(v17: felt, v18: felt, v19: felt, v20: felt):
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen::rt::run_ctors_once()
             v21 = arith.constant 1 : i32;
             v22 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v21) : felt
             v23 = arith.constant 2 : i32;
@@ -58,7 +58,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block14:
             v57 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
             v58 = hir.bitcast v57 : ptr<byte, i32>;

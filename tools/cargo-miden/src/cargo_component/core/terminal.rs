@@ -10,7 +10,6 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-pub use owo_colors::AnsiColors as Colors;
 use owo_colors::{AnsiColors, OwoColorize};
 
 /// The supported color options of `cargo`.

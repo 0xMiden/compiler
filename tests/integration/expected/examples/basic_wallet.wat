@@ -46,7 +46,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 4
       local.get 3
       f32.store offset=12
@@ -76,7 +76,7 @@
       i32.sub
       local.tee 5
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 5
       local.get 3
       f32.store offset=12
@@ -107,7 +107,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $wit_bindgen_rt::run_ctors_once (;4;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;4;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -282,7 +282,7 @@
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01")
+    (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01\00\00\00\00\00\00\00\00\00")
   )
   (alias export 0 "asset" (type (;1;)))
   (alias export 0 "tag" (type (;2;)))

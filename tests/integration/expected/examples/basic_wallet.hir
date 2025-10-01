@@ -20,7 +20,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             v10 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v11 = hir.bitcast v10 : ptr<byte, i32>;
             hir.store v11, v9;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v13 = arith.constant 12 : u32;
             v12 = hir.bitcast v9 : u32;
             v14 = arith.add v12, v13 : u32 #[overflow = checked];
@@ -72,7 +72,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             v51 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v52 = hir.bitcast v51 : ptr<byte, i32>;
             hir.store v52, v50;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v54 = arith.constant 12 : u32;
             v53 = hir.bitcast v50 : u32;
             v55 = arith.add v53, v54 : u32 #[overflow = checked];
@@ -119,7 +119,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block13:
             v86 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
             v87 = hir.bitcast v86 : ptr<byte, i32>;

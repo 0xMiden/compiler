@@ -74,7 +74,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen_rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -195,7 +195,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     nop
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen_rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -307,7 +307,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

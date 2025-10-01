@@ -20,7 +20,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v10 = builtin.global_symbol @miden:base/authentication-component@1.0.0/auth_component_no_auth/__stack_pointer : ptr<byte, u8>
             v11 = hir.bitcast v10 : ptr<byte, i32>;
             hir.store v11, v9;
-            hir.exec @miden:base/authentication-component@1.0.0/auth_component_no_auth/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/authentication-component@1.0.0/auth_component_no_auth/wit_bindgen::rt::run_ctors_once()
             v12 = arith.constant 32 : i32;
             v13 = arith.add v9, v12 : i32 #[overflow = wrapping];
             hir.exec @miden:base/authentication-component@1.0.0/auth_component_no_auth/miden::account::get_initial_commitment(v13)
@@ -241,7 +241,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block17:
             v164 = builtin.global_symbol @miden:base/authentication-component@1.0.0/auth_component_no_auth/GOT.data.internal.__memory_base : ptr<byte, u8>
             v165 = hir.bitcast v164 : ptr<byte, i32>;

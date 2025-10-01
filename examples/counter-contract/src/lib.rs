@@ -18,10 +18,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-mod bindings;
-
-use bindings::exports::miden::counter_contract::counter::Guest;
 use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
+
+use crate::bindings::exports::miden::counter_contract::counter::Guest;
 
 /// Main contract structure for the counter example.
 #[component]
@@ -30,8 +29,6 @@ struct CounterContract {
     #[storage(slot(0), description = "counter contract storage map")]
     count_map: StorageMap,
 }
-
-bindings::export!(CounterContract with_types_in bindings);
 
 impl Guest for CounterContract {
     /// Returns the current counter value stored in the contract's storage map.

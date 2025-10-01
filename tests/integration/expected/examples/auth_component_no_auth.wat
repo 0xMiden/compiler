@@ -32,7 +32,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 4
       i32.const 32
       i32.add
@@ -112,7 +112,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $wit_bindgen_rt::run_ctors_once (;3;) (type 0)
+    (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

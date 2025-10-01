@@ -42,8 +42,7 @@
     (export "miden:base/note-script@1.0.0#run" (func $miden:base/note-script@1.0.0#run))
     (elem (;0;) (i32.const 1) func $p2id::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;1;) (type 1))
-    (func $p2id::bindings::__link_custom_section_describing_imports (;2;) (type 1))
-    (func $__rustc::__rust_alloc (;3;) (type 2) (param i32 i32) (result i32)
+    (func $__rustc::__rust_alloc (;2;) (type 2) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
       i32.const 1048664
       i32.add
@@ -51,8 +50,8 @@
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
-    (func $__rustc::__rust_dealloc (;4;) (type 3) (param i32 i32 i32))
-    (func $__rustc::__rust_alloc_zeroed (;5;) (type 2) (param i32 i32) (result i32)
+    (func $__rustc::__rust_dealloc (;3;) (type 3) (param i32 i32 i32))
+    (func $__rustc::__rust_alloc_zeroed (;4;) (type 2) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
         i32.const 1048664
@@ -73,6 +72,7 @@
       end
       local.get 1
     )
+    (func $p2id::bindings::__link_custom_section_describing_imports (;5;) (type 1))
     (func $miden:base/note-script@1.0.0#run (;6;) (type 0) (param f32 f32 f32 f32)
       (local i32 i32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
@@ -80,7 +80,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 4
       i32.const 16
       i32.add
@@ -182,7 +182,7 @@
     (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;7;) (type 1)
       return
     )
-    (func $wit_bindgen_rt::run_ctors_once (;8;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;8;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base

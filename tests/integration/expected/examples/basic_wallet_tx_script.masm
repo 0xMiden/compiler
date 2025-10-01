@@ -15,7 +15,7 @@ proc.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[12854956927142009897,11856979172059048066,13357988120828940708,10468901649221237290]
+    push.[14912407070443505053,2692321110534392322,13830094342964981073,5167895646385843236]
     adv.push_mapval
     push.262144
     push.7
@@ -159,10 +159,6 @@ proc.<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
     end
 end
 
-proc.basic_wallet_tx_script::bindings::__link_custom_section_describing_imports
-    nop
-end
-
 proc.__rustc::__rust_alloc
     push.1114244
     u32divmod.4
@@ -273,6 +269,10 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
+proc.basic_wallet_tx_script::bindings::__link_custom_section_describing_imports
+    nop
+end
+
 proc.miden:base/transaction-script@1.0.0#run
     push.1114240
     u32divmod.4
@@ -296,7 +296,7 @@ proc.miden:base/transaction-script@1.0.0#run
     nop
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.1
@@ -1062,7 +1062,7 @@ proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114244
     u32divmod.4
     swap.1

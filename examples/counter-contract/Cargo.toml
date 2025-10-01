@@ -11,10 +11,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = { path = "../../sdk/sdk" }
-wit-bindgen-rt = "0.28"
 
-[package.metadata.component]
-package = "miden:counter-contract"
+# [package.metadata.component]
+# package = "miden:counter-contract"
 
 [package.metadata.miden]
 project-kind = "account"
@@ -22,4 +21,3 @@ supported-types = ["RegularAccountUpdatableCode"]
 
 [package.metadata.component.target.dependencies]
 "miden:base" = { path = "../../sdk/base/wit/miden.wit" }
-

@@ -20,7 +20,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v16 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : ptr<byte, u8>
             v17 = hir.bitcast v16 : ptr<byte, i32>;
             hir.store v17, v15;
-            hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen::rt::run_ctors_once()
             v9 = arith.constant 0 : i32;
             v19 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v9) : felt
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::account::get_item(v19, v15)
@@ -277,7 +277,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v212 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/__stack_pointer : ptr<byte, u8>
             v213 = hir.bitcast v212 : ptr<byte, i32>;
             hir.store v213, v211;
-            hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen::rt::run_ctors_once()
             v214 = arith.constant 1 : i32;
             v215 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v214) : felt
             v216 = arith.constant 16 : i32;
@@ -334,7 +334,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret v252;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block18:
             v258 = builtin.global_symbol @miden:storage-example/foo@1.0.0/storage_example/GOT.data.internal.__memory_base : ptr<byte, u8>
             v259 = hir.bitcast v258 : ptr<byte, i32>;

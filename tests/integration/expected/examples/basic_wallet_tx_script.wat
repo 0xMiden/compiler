@@ -90,8 +90,7 @@
       i32.add
       i32.store
     )
-    (func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports (;4;) (type 1))
-    (func $__rustc::__rust_alloc (;5;) (type 4) (param i32 i32) (result i32)
+    (func $__rustc::__rust_alloc (;4;) (type 4) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
       i32.const 1048688
       i32.add
@@ -99,8 +98,8 @@
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     )
-    (func $__rustc::__rust_dealloc (;6;) (type 2) (param i32 i32 i32))
-    (func $__rustc::__rust_alloc_zeroed (;7;) (type 4) (param i32 i32) (result i32)
+    (func $__rustc::__rust_dealloc (;5;) (type 2) (param i32 i32 i32))
+    (func $__rustc::__rust_alloc_zeroed (;6;) (type 4) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
         i32.const 1048688
@@ -121,6 +120,7 @@
       end
       local.get 1
     )
+    (func $basic_wallet_tx_script::bindings::__link_custom_section_describing_imports (;7;) (type 1))
     (func $miden:base/transaction-script@1.0.0#run (;8;) (type 5) (param f32 f32 f32 f32)
       (local i32 i64 f32 i32 i32 i32)
       global.get $__stack_pointer
@@ -128,7 +128,7 @@
       i32.sub
       local.tee 4
       global.set $__stack_pointer
-      call $wit_bindgen_rt::run_ctors_once
+      call $wit_bindgen::rt::run_ctors_once
       local.get 3
       local.get 2
       local.get 1
@@ -338,7 +338,7 @@
     (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;9;) (type 1)
       return
     )
-    (func $wit_bindgen_rt::run_ctors_once (;10;) (type 1)
+    (func $wit_bindgen::rt::run_ctors_once (;10;) (type 1)
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
@@ -738,7 +738,7 @@
       unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.5.0/src/stdlib/mem.rs\00src/lib.rs\00")
-    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\005\00\00\00)\00\00\00)\00\10\00\0a\00\00\00=\00\00\00%\00\00\00")
+    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\000\00\00\00%\00\00\00)\00\10\00\0a\00\00\003\00\00\00!\00\00\00")
   )
   (alias export 0 "word" (type (;4;)))
   (alias export 1 "move-asset-to-note" (func (;0;)))

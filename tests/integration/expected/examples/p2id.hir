@@ -11,13 +11,8 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @p2id::bindings::__link_custom_section_describing_imports() {
-        ^block10:
-            builtin.ret ;
-        };
-
         private builtin.function @__rustc::__rust_alloc(v4: i32, v5: i32) -> i32 {
-        ^block12(v4: i32, v5: i32):
+        ^block10(v4: i32, v5: i32):
             v7 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v8 = hir.bitcast v7 : ptr<byte, i32>;
             v9 = hir.load v8 : i32;
@@ -28,12 +23,12 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @__rustc::__rust_dealloc(v13: i32, v14: i32, v15: i32) {
-        ^block14(v13: i32, v14: i32, v15: i32):
+        ^block12(v13: i32, v14: i32, v15: i32):
             builtin.ret ;
         };
 
         private builtin.function @__rustc::__rust_alloc_zeroed(v16: i32, v17: i32) -> i32 {
-        ^block16(v16: i32, v17: i32):
+        ^block14(v16: i32, v17: i32):
             v19 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v20 = hir.bitcast v19 : ptr<byte, i32>;
             v21 = hir.load v20 : i32;
@@ -47,10 +42,10 @@ builtin.component miden:base/note-script@1.0.0 {
             v28 = hir.bitcast v27 : i32;
             v30 = arith.neq v28, v859 : i1;
             scf.if v30{
-            ^block18:
+            ^block16:
                 scf.yield ;
             } else {
-            ^block19:
+            ^block17:
                 v857 = arith.constant 0 : i32;
                 v858 = arith.constant 0 : i32;
                 v32 = arith.eq v16, v858 : i1;
@@ -61,7 +56,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 ^block110:
                     scf.yield ;
                 } else {
-                ^block20:
+                ^block18:
                     v851 = arith.constant 0 : u8;
                     v39 = hir.bitcast v16 : u32;
                     v40 = hir.bitcast v24 : u32;
@@ -74,6 +69,11 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret v24;
         };
 
+        private builtin.function @p2id::bindings::__link_custom_section_describing_imports() {
+        ^block19:
+            builtin.ret ;
+        };
+
         private builtin.function @miden:base/note-script@1.0.0#run(v43: felt, v44: felt, v45: felt, v46: felt) {
         ^block21(v43: felt, v44: felt, v45: felt, v46: felt):
             v50 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
@@ -84,7 +84,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v55 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v56 = hir.bitcast v55 : ptr<byte, i32>;
             hir.store v56, v54;
-            hir.exec @miden:base/note-script@1.0.0/p2id/wit_bindgen_rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/p2id/wit_bindgen::rt::run_ctors_once()
             v57 = arith.constant 16 : i32;
             v58 = arith.add v54, v57 : i32 #[overflow = wrapping];
             hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::note::get_inputs(v58)
@@ -294,7 +294,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @wit_bindgen_rt::run_ctors_once() {
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block31:
             v194 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v195 = hir.bitcast v194 : ptr<byte, i32>;

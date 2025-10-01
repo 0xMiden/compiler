@@ -54,7 +54,7 @@ proc.miden:cross-ctx-account/foo@1.0.0#process-felt
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen_rt::run_ctors_once
+    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
@@ -107,7 +107,7 @@ proc.miden:cross-ctx-account/foo@1.0.0#process-felt
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1

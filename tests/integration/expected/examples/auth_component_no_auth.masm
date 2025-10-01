@@ -68,7 +68,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::wit_bindgen_rt::run_ctors_once
+    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.32
@@ -480,7 +480,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
 end
 
-proc.wit_bindgen_rt::run_ctors_once
+proc.wit_bindgen::rt::run_ctors_once
     push.1114148
     u32divmod.4
     swap.1
