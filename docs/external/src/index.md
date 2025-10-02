@@ -1,5 +1,5 @@
 ---
-title: Getting Started
+title: Compiler
 sidebar_position: 1
 ---
 
