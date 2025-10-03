@@ -1,0 +1,18 @@
+[book]
+authors      = ["Miden contributors"]
+description  = "Internal documentation for the Miden compiler."
+language     = "en"
+multilingual = false
+title        = "Miden Compiler"
+
+[output.html]
+git-repository-url = "https://github.com/0xMiden/compiler"
+
+[preprocessor.katex]
+after = ["links"]
+
+[preprocessor.alerts]
+
+[output.linkcheck]
+follow-web-links = false
+traverse-parent-directories = true
