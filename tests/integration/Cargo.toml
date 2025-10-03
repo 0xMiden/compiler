@@ -24,6 +24,7 @@ miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-objects = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
+miden-debug = { workspace = true, features = ["proptest"] }
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
@@ -33,7 +34,6 @@ midenc-hir-eval.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
-midenc-debug.workspace = true
 cargo-miden.workspace = true
 wasmprinter = "0.227"
 proptest.workspace = true

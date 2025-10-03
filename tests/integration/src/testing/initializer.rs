@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use miden_core::{Felt, Word};
-use midenc_debug::ToMidenRepr;
+use miden_debug::ToMidenRepr;
 
 /// An [Initializer] represents a known initialization pattern that is handled by the compiler-
 /// emitted test harness, when enabled.

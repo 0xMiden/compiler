@@ -13,6 +13,7 @@ use miden_client::{
     Client, DebugMode, Word,
 };
 use miden_core::{Felt, FieldElement};
+use miden_mast_package::SectionId;
 use rand::{rngs::StdRng, RngCore};
 
 use super::helpers::*;
@@ -56,7 +57,13 @@ async fn create_counter_account_with_rust_rpo_auth(
     };
 
     // Build counter component from template/metadata with initial storage
-    let account_component = match component_package.account_component_metadata_bytes.as_deref() {
+    let account_component = match component_package.sections.iter().find_map(|s| {
+        if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+            Some(s.data.as_ref())
+        } else {
+            None
+        }
+    }) {
         None => panic!("no account component metadata present"),
         Some(bytes) => {
             let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();

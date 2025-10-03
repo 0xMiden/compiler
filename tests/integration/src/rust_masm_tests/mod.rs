@@ -4,7 +4,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use miden_core::Felt;
-use midenc_debug::{Executor, FromMidenRepr};
+use miden_debug::{Executor, FromMidenRepr};
 use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
@@ -26,9 +26,9 @@ pub fn run_masm_vs_rust<T>(
 where
     T: Clone + FromMidenRepr + PartialEq + std::fmt::Debug,
 {
-    let exec = Executor::for_package(package, args.iter().copied(), session)
+    let exec = Executor::for_package(package, args.iter().copied())
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    let output = exec.execute_into(&package.unwrap_program(), session);
+    let output = exec.execute_into(&package.unwrap_program(), session.source_manager.clone());
     std::dbg!(&output);
     prop_assert_eq!(rust_out.clone(), output, "VM output mismatch");
     // TODO: Uncomment after https://github.com/0xMiden/compiler/issues/228 is fixed

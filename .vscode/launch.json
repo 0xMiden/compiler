@@ -97,11 +97,11 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug unit tests in library 'midenc_frontend_wasm2'",
+      "name": "Debug unit tests in library 'midenc_frontend_wasm'",
       "cargo": {
-        "args": ["test", "--no-run", "--lib", "--package=midenc-frontend-wasm2"],
+        "args": ["test", "--no-run", "--lib", "--package=midenc-frontend-wasm"],
         "filter": {
-          "name": "midenc_frontend_wasm2",
+          "name": "midenc_frontend_wasm",
           "kind": "lib"
         }
       },
@@ -162,21 +162,6 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-compile"],
         "filter": {
           "name": "midenc_compile",
-          "kind": "lib"
-        }
-      },
-      "args": [],
-      "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
-    },
-    {
-      "type": "lldb",
-      "request": "launch",
-      "name": "Debug unit tests in library 'midenc_debug'",
-      "cargo": {
-        "args": ["test", "--no-run", "--lib", "--package=midenc-debug"],
-        "filter": {
-          "name": "midenc_debug",
           "kind": "lib"
         }
       },

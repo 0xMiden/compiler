@@ -1,7 +1,7 @@
 use miden_core::{Felt, FieldElement};
+use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::AdviceInputs;
 use midenc_compile::LinkOutput;
-use midenc_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use midenc_session::Session;
 use proptest::test_runner::TestCaseError;
 
@@ -43,7 +43,7 @@ where
                 value.push_words_to_advice_stack(&mut advice_stack) as u32
             }
             Initializer::MemoryBytes { bytes, .. } => {
-                let words = midenc_debug::bytes_to_words(bytes);
+                let words = miden_debug::bytes_to_words(bytes);
                 let num_words = words.len() as u32;
                 for word in words.into_iter().rev() {
                     for felt in word.into_iter() {
@@ -102,7 +102,7 @@ where
     // Push the number of initializers on the advice stack
     advice_stack.push(Felt::new(num_initializers));
 
-    let mut exec = Executor::for_package(package, args.to_vec(), session)
+    let mut exec = Executor::for_package(package, args.to_vec())
         .map_err(|err| TestCaseError::fail(format_report(err)))?;
 
     // Reverse the stack contents, so that the correct order is preserved after MemAdviceProvider
@@ -111,7 +111,7 @@ where
 
     exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack));
 
-    let trace = exec.execute(&package.unwrap_program(), session);
+    let trace = exec.execute(&package.unwrap_program(), session.source_manager.clone());
     verify_trace(&trace)?;
 
     dbg!(trace.outputs());

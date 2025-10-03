@@ -1,7 +1,7 @@
 use core::panic;
 
 use miden_core::Felt;
-use midenc_debug::{TestFelt, ToMidenRepr};
+use miden_debug::{Felt as TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use proptest::{

@@ -1,9 +1,9 @@
 use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
 
 use miden_core::utils::{Deserializable, Serializable};
+use miden_debug::{Executor, ToMidenRepr};
 use miden_mast_package::{Package, SectionId};
 use miden_objects::account::AccountComponentMetadata;
-use midenc_debug::{Executor, ToMidenRepr};
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
@@ -86,9 +86,10 @@ fn fibonacci() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
             let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
+            let exec = Executor::for_package(&package, args)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out, output);
             Ok(())
@@ -129,9 +130,10 @@ fn collatz() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
             let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
+            let exec = Executor::for_package(&package, args)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out, output);
             Ok(())
@@ -209,9 +211,10 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
+            let exec = Executor::for_package(&package, args)
                 .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out as u32, output);
             Ok(())

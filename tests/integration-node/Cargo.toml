@@ -14,10 +14,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 fs2 = "0.4"
-miden-client = { version = "0.11", features = [
-    "tonic",
-    "sqlite",
-] }
+miden-client = { version = "0.12", features = ["std"] }
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-objects = { workspace = true, features = ["std"] }

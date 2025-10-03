@@ -2,8 +2,8 @@ use std::fmt::Write;
 
 use miden_assembly::LibraryPath;
 use miden_core::{Felt, FieldElement};
+use miden_debug::Executor;
 use miden_processor::ExecutionError;
-use midenc_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_session::{diagnostics::Report, Emit};
@@ -68,8 +68,8 @@ end
     test.expect_masm(expect_file![format!("../../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
 
-    let exec = Executor::for_package(&package, vec![], &test.session)?;
-    let _ = exec.execute(&package.unwrap_program(), &test.session);
+    let exec = Executor::for_package(&package, vec![])?;
+    let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
     Ok(())
 }
 

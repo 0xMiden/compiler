@@ -2,8 +2,8 @@ use core::panic;
 use std::collections::VecDeque;
 
 use miden_core::{utils::group_slice_elements, FieldElement, StarkField};
+use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
 use miden_processor::AdviceInputs;
-use midenc_debug::{Executor, FromMidenRepr, TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
@@ -87,10 +87,10 @@ fn test_adv_load_preimage() {
         Felt::new(out_addr as u64),
     ];
 
-    let mut exec = Executor::for_package(&package, args.to_vec(), &test.session)
-        .expect("Failed to create executor");
+    let mut exec =
+        Executor::for_package(&package, args.to_vec()).expect("Failed to create executor");
     exec.with_advice_inputs(AdviceInputs::default().with_map(advice_map));
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)

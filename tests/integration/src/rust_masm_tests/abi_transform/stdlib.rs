@@ -2,8 +2,8 @@ use core::panic;
 use std::collections::VecDeque;
 
 use miden_core::{utils::group_slice_elements, FieldElement};
+use miden_debug::{Executor, Felt as TestFelt, ToMidenRepr};
 use miden_processor::AdviceInputs;
-use midenc_debug::{Executor, TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
@@ -109,8 +109,8 @@ fn test_hash_elements() {
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     let config = proptest::test_runner::Config::with_cases(32);
-    // let res = TestRunner::new(config).run(&any::<[midenc_debug::Felt; 8]>(), move |test_felts| {
-    let res = TestRunner::new(config).run(&any::<Vec<midenc_debug::Felt>>(), move |test_felts| {
+    // let res = TestRunner::new(config).run(&any::<[miden_debug::Felt; 8]>(), move |test_felts| {
+    let res = TestRunner::new(config).run(&any::<Vec<miden_debug::Felt>>(), move |test_felts| {
         let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
 
         dbg!(raw_felts.len());
@@ -192,7 +192,7 @@ fn test_hash_words() {
 
     let config = proptest::test_runner::Config::with_cases(32);
     let res =
-        TestRunner::new(config).run(&any::<Vec<[midenc_debug::Felt; 4]>>(), move |test_words| {
+        TestRunner::new(config).run(&any::<Vec<[miden_debug::Felt; 4]>>(), move |test_words| {
             let raw_words: Vec<[Felt; 4]> = test_words
                 .into_iter()
                 .map(|w| [w[0].into(), w[1].into(), w[2].into(), w[3].into()])
