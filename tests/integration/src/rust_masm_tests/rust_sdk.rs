@@ -12,7 +12,9 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
 
 use crate::{
-    cargo_proj::project, compiler_test::sdk_crate_path, CompilerTest, CompilerTestBuilder,
+    cargo_proj::project,
+    compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    CompilerTest, CompilerTestBuilder,
 };
 
 #[test]
@@ -34,6 +36,105 @@ fn account() {
     // test.expect_masm(expect_file![format!(
     //     "../../expected/rust_sdk_account_test/{artifact_name}.masm"
     // )]);
+}
+
+#[test]
+fn rust_sdk_swapp_note_bindings() {
+    let name = "rust_sdk_swapp_note_bindings";
+    let sdk_path = sdk_crate_path();
+    let sdk_alloc_path = sdk_alloc_crate_path();
+    let base_wit_path = sdk_path
+        .parent()
+        .expect("sdk path has parent")
+        .join("base")
+        .join("wit")
+        .join("miden.wit");
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2021"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+
+[package.metadata.component.target.dependencies]
+"miden:base" = {{ path = "{base_wit_path}" }}
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+"#,
+        name = name,
+        sdk_path = sdk_path.display(),
+        sdk_alloc_path = sdk_alloc_path.display(),
+        base_wit_path = base_wit_path.display(),
+        component_package = component_package,
+    );
+
+    let lib_rs = r#"#![no_std]
+
+#[global_allocator]
+static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+
+#[cfg(not(test))]
+#[panic_handler]
+fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+use miden::*;
+
+#[note_script]
+fn run(_arg: Word) {
+    let sender = note::get_sender();
+    let script_root = note::get_script_root();
+    let serial_number = note::get_serial_number();
+    let balance = account::get_balance(sender);
+
+    assert_eq!(sender.prefix, sender.prefix);
+    assert_eq!(sender.suffix, sender.suffix);
+    assert_eq!(script_root, script_root);
+    assert_eq!(serial_number, serial_number);
+    assert_eq!(balance, balance);
+}
+"#;
+
+    let cargo_proj =
+        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+
+    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    )
+    .build();
+
+    test.expect_wasm(expect_file![format!(
+        "../../expected/rust_sdk/rust_sdk_swapp_note_bindings.wat"
+    )]);
+    test.expect_ir(expect_file![format!(
+        "../../expected/rust_sdk/rust_sdk_swapp_note_bindings.hir"
+    )]);
+    test.expect_masm(expect_file![format!(
+        "../../expected/rust_sdk/rust_sdk_swapp_note_bindings.masm"
+    )]);
+    // Ensure the crate compiles all the way to a package, exercising the bindings.
+    test.compiled_package();
 }
 
 #[test]

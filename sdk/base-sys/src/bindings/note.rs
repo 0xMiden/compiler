@@ -1,15 +1,22 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::Felt;
+use miden_stdlib_sys::{Felt, Word};
 
-use super::Asset;
+use super::{AccountId, Asset};
 
+#[allow(improper_ctypes)]
 extern "C" {
     #[link_name = "miden::note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
     #[link_name = "miden::note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
+    #[link_name = "miden::note::get_sender"]
+    pub fn extern_note_get_sender(ptr: *mut AccountId);
+    #[link_name = "miden::note::get_script_root"]
+    pub fn extern_note_get_script_root(ptr: *mut Word);
+    #[link_name = "miden::note::get_serial_number"]
+    pub fn extern_note_get_serial_number(ptr: *mut Word);
 }
 
 /// Get the inputs of the currently executing note.
@@ -54,4 +61,31 @@ pub fn get_assets() -> Vec<Asset> {
         inputs.set_len(num_inputs);
     }
     inputs
+}
+
+/// Returns the sender [`AccountId`] of the note that is currently executing.
+pub fn get_sender() -> AccountId {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<AccountId>::uninit();
+        extern_note_get_sender(ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
+}
+
+/// Returns the script root of the currently executing note.
+pub fn get_script_root() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_note_get_script_root(ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
+    }
+}
+
+/// Returns the serial number of the currently executing note.
+pub fn get_serial_number() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_note_get_serial_number(ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
+    }
 }
