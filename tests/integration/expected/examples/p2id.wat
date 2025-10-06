@@ -30,7 +30,7 @@
     (type (;5;) (func (result i32)))
     (type (;6;) (func (param i32 i32 i32 i32)))
     (type (;7;) (func (param i32)))
-    (type (;8;) (func (param f32 f32)))
+    (type (;8;) (func (param f32 f32) (result i32)))
     (type (;9;) (func (param i32 i32 i32 i32 i32)))
     (type (;10;) (func (param i32) (result i32)))
     (import "miden:basic-wallet/basic-wallet@1.0.0" "receive-asset" (func $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7 (;0;) (type 0)))
@@ -89,95 +89,102 @@
         block ;; label = @2
           local.get 4
           i32.load offset=24
-          br_table 0 (;@2;) 0 (;@2;) 1 (;@1;)
+          br_table 1 (;@1;) 1 (;@1;) 0 (;@2;)
         end
-        unreachable
-      end
-      local.get 4
-      i32.load offset=20
-      local.tee 5
-      f32.load offset=4
-      local.set 6
-      local.get 5
-      f32.load
-      local.set 7
-      local.get 4
-      i32.const 8
-      i32.add
-      call $miden_base_sys::bindings::account::get_id
-      local.get 4
-      f32.load offset=12
-      local.set 8
-      local.get 4
-      f32.load offset=8
-      local.get 7
-      call $intrinsics::felt::assert_eq
-      local.get 8
-      local.get 6
-      call $intrinsics::felt::assert_eq
-      local.get 4
-      i32.const 28
-      i32.add
-      call $miden_base_sys::bindings::note::get_assets
-      local.get 4
-      i32.load offset=36
-      i32.const 4
-      i32.shl
-      local.set 9
-      local.get 4
-      i32.load offset=28
-      local.set 10
-      local.get 4
-      i32.load offset=32
-      local.tee 11
-      local.set 5
-      block ;; label = @1
-        loop ;; label = @2
-          local.get 9
-          i32.eqz
-          br_if 1 (;@1;)
-          local.get 5
-          f32.load
-          local.get 5
-          f32.load offset=4
-          local.get 5
-          f32.load offset=8
-          local.get 5
-          f32.load offset=12
-          call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
-          local.get 9
-          i32.const -16
-          i32.add
-          local.set 9
-          local.get 5
-          i32.const 16
-          i32.add
-          local.set 5
-          br 0 (;@2;)
+        local.get 4
+        i32.load offset=20
+        local.tee 5
+        f32.load offset=4
+        local.set 6
+        local.get 5
+        f32.load
+        local.set 7
+        local.get 4
+        i32.const 8
+        i32.add
+        call $miden_base_sys::bindings::account::get_id
+        local.get 4
+        f32.load offset=12
+        local.set 8
+        local.get 4
+        f32.load offset=8
+        local.get 7
+        call $intrinsics::felt::eq
+        i32.const 1
+        i32.ne
+        br_if 0 (;@1;)
+        local.get 8
+        local.get 6
+        call $intrinsics::felt::eq
+        i32.const 1
+        i32.ne
+        br_if 0 (;@1;)
+        local.get 4
+        i32.const 28
+        i32.add
+        call $miden_base_sys::bindings::note::get_assets
+        local.get 4
+        i32.load offset=36
+        i32.const 4
+        i32.shl
+        local.set 9
+        local.get 4
+        i32.load offset=28
+        local.set 10
+        local.get 4
+        i32.load offset=32
+        local.tee 11
+        local.set 5
+        block ;; label = @2
+          loop ;; label = @3
+            local.get 9
+            i32.eqz
+            br_if 1 (;@2;)
+            local.get 5
+            f32.load
+            local.get 5
+            f32.load offset=4
+            local.get 5
+            f32.load offset=8
+            local.get 5
+            f32.load offset=12
+            call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+            local.get 9
+            i32.const -16
+            i32.add
+            local.set 9
+            local.get 5
+            i32.const 16
+            i32.add
+            local.set 5
+            br 0 (;@3;)
+          end
         end
+        local.get 4
+        local.get 11
+        i32.store offset=44
+        local.get 4
+        local.get 10
+        i32.store offset=40
+        local.get 4
+        i32.const 40
+        i32.add
+        i32.const 16
+        i32.const 16
+        call $alloc::raw_vec::RawVecInner<A>::deallocate
+        local.get 4
+        i32.const 16
+        i32.add
+        i32.const 4
+        i32.const 4
+        call $alloc::raw_vec::RawVecInner<A>::deallocate
+        local.get 4
+        i32.const 48
+        i32.add
+        global.set $__stack_pointer
+        return
       end
-      local.get 4
-      local.get 11
-      i32.store offset=44
-      local.get 4
-      local.get 10
-      i32.store offset=40
-      local.get 4
-      i32.const 40
-      i32.add
-      i32.const 16
-      i32.const 16
-      call $alloc::raw_vec::RawVecInner<A>::deallocate
-      local.get 4
-      i32.const 16
-      i32.add
-      i32.const 4
-      i32.const 4
-      call $alloc::raw_vec::RawVecInner<A>::deallocate
-      local.get 4
-      i32.const 48
-      i32.add
-      global.set $__stack_pointer
+      unreachable
     )
     (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;7;) (type 1)
       return
@@ -414,7 +421,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $intrinsics::felt::assert_eq (;15;) (type 8) (param f32 f32)
+    (func $intrinsics::felt::eq (;15;) (type 8) (param f32 f32) (result i32)
       unreachable
     )
     (func $alloc::raw_vec::RawVecInner<A>::deallocate (;16;) (type 3) (param i32 i32 i32)
