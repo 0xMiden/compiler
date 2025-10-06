@@ -1,0 +1,79 @@
+// Do not link against libstd (i.e. anything defined in `std::`)
+#![no_std]
+
+// However, we could still use some standard library types while
+// remaining no-std compatible, if we uncommented the following lines:
+//
+// extern crate alloc;
+// use alloc::vec::Vec;
+
+// Global allocator to use heap memory in no-std environment
+#[global_allocator]
+static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+
+// Required for no-std crates
+#[cfg(not(test))]
+#[panic_handler]
+fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+use miden::*;
+
+use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
+
+fn consume_assets() {
+    let assets = note::get_assets();
+    for asset in assets {
+        receive_asset(asset);
+    }
+}
+
+fn reclaim_assets(consuming_account: AccountId) {
+    let creator_account = note::get_sender();
+
+    let is_creator = creator_account.prefix == consuming_account.prefix
+        && creator_account.suffix == consuming_account.suffix;
+
+    if is_creator {
+        consume_assets();
+    } else {
+        panic!();
+    }
+}
+
+#[note_script]
+fn run(_arg: Word) {
+    let inputs = note::get_inputs();
+    let target_account_id_prefix = inputs[0];
+    let target_account_id_suffix = inputs[1];
+    let timelock_height = inputs[2];
+    let reclaim_height = inputs[3];
+
+    // make sure the number of inputs is 4
+    // assert_eq(inputs.len().into(), Felt::from(4u32));
+
+    // sanity check
+    // assert_eq(timelock_height, Felt::from(1000u32));
+    // assert_eq(reclaim_height, Felt::from(1010u32));
+
+    // get block number
+    let block_number = tx::get_block_number();
+
+    assert!(block_number >= timelock_height);
+
+    // get consuming account id
+    let consuming_account_id = account::get_id();
+
+    // if consuming account is target, claim assets
+    // if consuming account is creator account, claim assets
+    // else panic
+    let is_target = consuming_account_id.prefix == target_account_id_prefix
+        && consuming_account_id.suffix == target_account_id_suffix;
+
+    if is_target {
+        consume_assets();
+    } else {
+        reclaim_assets(consuming_account_id);
+    }
+}
