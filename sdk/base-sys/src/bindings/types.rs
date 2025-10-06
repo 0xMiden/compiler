@@ -1,13 +1,18 @@
 use miden_stdlib_sys::{Felt, Word};
 
 #[allow(unused)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AccountId {
     pub prefix: Felt,
     pub suffix: Felt,
 }
 
-impl AccountId {}
+impl AccountId {
+    /// Creates a new AccountId from prefix and suffix Felt values
+    pub fn from(prefix: Felt, suffix: Felt) -> Self {
+        Self { prefix, suffix }
+    }
+}
 
 #[derive(Clone)]
 #[repr(transparent)]
