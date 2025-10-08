@@ -45,5 +45,4 @@ project-kind = "note-script"
 "miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg" }
 
 [package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../../../sdk/base/wit/miden.wit" }
 "miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg/wit/cross-ctx-account-word.wit" }

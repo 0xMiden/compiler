@@ -5,10 +5,7 @@ use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
-use crate::{commands::new_project::deploy_wit_files, utils::compiler_path};
-
-/// The folder name to put Miden SDK WIT files in
-pub const WIT_DEPS_PATH: &str = "wit-deps";
+use crate::utils::compiler_path;
 
 /// Paired project mappings for examples that create multiple related projects
 const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")];
@@ -18,8 +15,6 @@ const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")]
 /// Any of these names can be used to create all three projects
 const TRIPLE_PROJECTS: &[(&str, &str, &str)] =
     &[("basic-wallet-tx-script", "basic-wallet", "p2id-note")];
-
-const CORE_WIT_DEPS: &[(&str, &str)] = &[("miden:base", "miden.wit")];
 
 /// Create a new Miden example project
 #[derive(Args)]
@@ -97,13 +92,6 @@ impl ExampleCommand {
         cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
-        // Check if the project has WIT files
-        let wit_dir = project_path.join("wit");
-        if wit_dir.exists() && wit_dir.is_dir() {
-            // Deploy core WIT files to the project
-            deploy_wit_files(&project_path).context("Failed to deploy WIT files")?;
-        }
-
         // Process the Cargo.toml to update dependencies and WIT paths
         process_cargo_toml(&project_path).context("Failed to process Cargo.toml")?;
 
@@ -153,13 +141,6 @@ impl ExampleCommand {
                 .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);
-
-            // Check if the project has WIT files
-            let wit_dir = project_path.join("wit");
-            if wit_dir.exists() && wit_dir.is_dir() {
-                deploy_wit_files(&project_path)
-                    .context(format!("Failed to deploy WIT files for {project_name}"))?;
-            }
 
             // Process the Cargo.toml
             process_cargo_toml(&project_path)
@@ -225,13 +206,6 @@ impl ExampleCommand {
 
             let project_path = main_dir.join(project_name);
 
-            // Check if the project has WIT files
-            let wit_dir = project_path.join("wit");
-            if wit_dir.exists() && wit_dir.is_dir() {
-                deploy_wit_files(&project_path)
-                    .context(format!("Failed to deploy WIT files for {project_name}"))?;
-            }
-
             // Process the Cargo.toml
             process_cargo_toml(&project_path)
                 .context(format!("Failed to process Cargo.toml for {project_name}"))?;
@@ -269,10 +243,11 @@ fn update_triple_project_dependencies(
     Ok(())
 }
 
-/// Process the generated Cargo.toml to update dependencies and WIT paths
+/// Process the generated Cargo.toml to update dependencies and WIT paths.
 /// The projects in `example` folder set Miden SDK dependencies as local paths.
-/// After copying we need to change them to be git dependency (Miden SDK crate) and local WIT files
-/// (deployed from the Miden SDK crates by `deploy_wit_files()`)
+/// After copying we switch them to a git dependency (Miden SDK crate) and drop
+/// the explicit `miden:base` WIT dependency since the SDK prelude is injected
+/// automatically by the `miden::generate!` macro.
 fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
     let cargo_toml_path = project_path.join("Cargo.toml");
     let content = fs::read_to_string(&cargo_toml_path)?;
@@ -291,33 +266,6 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
 
                 table
             }));
-        }
-    }
-
-    // Update WIT file paths to use the deployed files
-    if let Some(metadata) = doc
-        .get_mut("package")
-        .and_then(|p| p.as_table_mut())
-        .and_then(|t| t.get_mut("metadata"))
-        .and_then(|m| m.as_table_mut())
-        .and_then(|t| t.get_mut("component"))
-        .and_then(|c| c.as_table_mut())
-        .and_then(|t| t.get_mut("target"))
-        .and_then(|t| t.as_table_mut())
-        .and_then(|t| t.get_mut("dependencies"))
-        .and_then(|d| d.as_table_mut())
-    {
-        // Update each WIT dependency to use the deployed files
-        for (key, value) in metadata.iter_mut() {
-            if let Some(table) = value.as_inline_table_mut() {
-                if let Some(path_value) = table.get_mut("path") {
-                    if let Some((_, wit_file)) =
-                        CORE_WIT_DEPS.iter().find(|(dep, _)| *dep == key.get())
-                    {
-                        *path_value = toml_edit::Value::from(format!("{WIT_DEPS_PATH}/{wit_file}"));
-                    };
-                }
-            }
         }
     }
 

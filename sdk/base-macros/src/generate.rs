@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -9,6 +10,13 @@ use syn::{
     parse::{Parse, ParseStream},
     Error, LitStr, Token,
 };
+
+/// Folder within a project that holds generated WIT dependencies.
+const WIT_DEPS_DIR: &str = "wit-deps";
+/// File name for the embedded Miden WIT prelude.
+const PRELUDE_WIT_FILE: &str = "miden.wit";
+/// Embedded Miden WIT prelude source.
+const PRELUDE_WIT_SOURCE: &str = include_str!("../../base/wit/miden.wit");
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -172,7 +180,23 @@ mod manifest_paths {
             )
         })?;
 
-        let dependencies = manifest
+        let canonical_prelude_dir = ensure_prelude_wit(Path::new(&manifest_dir))?;
+
+        let mut resolved = Vec::new();
+
+        let prelude_dir = canonical_prelude_dir
+            .to_str()
+            .ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!("path '{}' contains invalid UTF-8", canonical_prelude_dir.display()),
+                )
+            })?
+            .to_owned();
+
+        resolved.push(prelude_dir);
+
+        if let Some(dependencies) = manifest
             .get("package")
             .and_then(Value::as_table)
             .and_then(|package| package.get("metadata"))
@@ -183,75 +207,68 @@ mod manifest_paths {
             .and_then(Value::as_table)
             .and_then(|target| target.get("dependencies"))
             .and_then(Value::as_table)
-            .ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    "missing [package.metadata.component.target.dependencies] table in Cargo.toml",
-                )
-            })?;
+        {
+            for (name, dependency) in dependencies.iter() {
+                let table = dependency.as_table().ok_or_else(|| {
+                    Error::new(
+                        Span::call_site(),
+                        format!(
+                            "dependency '{name}' under \
+                             [package.metadata.component.target.dependencies] must be a table"
+                        ),
+                    )
+                })?;
 
-        let mut resolved = Vec::new();
+                let path_value = table.get("path").and_then(Value::as_str).ok_or_else(|| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("dependency '{name}' is missing a 'path' entry"),
+                    )
+                })?;
 
-        for (name, dependency) in dependencies.iter() {
-            let table = dependency.as_table().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!(
-                        "dependency '{name}' under \
-                         [package.metadata.component.target.dependencies] must be a table"
-                    ),
-                )
-            })?;
+                let raw_path = PathBuf::from(path_value);
+                let absolute = if raw_path.is_absolute() {
+                    raw_path
+                } else {
+                    Path::new(&manifest_dir).join(&raw_path)
+                };
 
-            let path_value = table.get("path").and_then(Value::as_str).ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{name}' is missing a 'path' entry"),
-                )
-            })?;
+                let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
 
-            let raw_path = PathBuf::from(path_value);
-            let absolute = if raw_path.is_absolute() {
-                raw_path
-            } else {
-                Path::new(&manifest_dir).join(&raw_path)
-            };
+                let metadata = fs::metadata(&canonical).map_err(|err| {
+                    Error::new(
+                        Span::call_site(),
+                        format!(
+                            "failed to read metadata for dependency '{name}' path '{}': {err}",
+                            canonical.display()
+                        ),
+                    )
+                })?;
 
-            let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
+                let search_path = if metadata.is_dir() {
+                    canonical
+                } else if let Some(parent) = canonical.parent() {
+                    parent.to_path_buf()
+                } else {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        format!(
+                            "dependency '{name}' path '{}' does not have a parent directory",
+                            canonical.display()
+                        ),
+                    ));
+                };
 
-            let metadata = fs::metadata(&canonical).map_err(|err| {
-                Error::new(
-                    Span::call_site(),
-                    format!(
-                        "failed to read metadata for dependency '{name}' path '{}': {err}",
-                        canonical.display()
-                    ),
-                )
-            })?;
+                let path_str = search_path.to_str().ok_or_else(|| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("dependency '{name}' path contains invalid UTF-8"),
+                    )
+                })?;
 
-            let search_path = if metadata.is_dir() {
-                canonical
-            } else if let Some(parent) = canonical.parent() {
-                parent.to_path_buf()
-            } else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "dependency '{name}' path '{}' does not have a parent directory",
-                        canonical.display()
-                    ),
-                ));
-            };
-
-            let path_str = search_path.to_str().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{name}' path contains invalid UTF-8"),
-                )
-            })?;
-
-            if !resolved.iter().any(|existing| existing == path_str) {
-                resolved.push(path_str.to_owned());
+                if !resolved.iter().any(|existing| existing == path_str) {
+                    resolved.push(path_str.to_owned());
+                }
             }
         }
 
@@ -286,6 +303,48 @@ mod manifest_paths {
             paths: resolved,
             world,
         })
+    }
+
+    /// Ensures the embedded Miden WIT prelude is materialized in the project's `wit-deps` folder.
+    fn ensure_prelude_wit(manifest_dir: &Path) -> Result<PathBuf, Error> {
+        let wit_deps_dir = manifest_dir.join(super::WIT_DEPS_DIR);
+        fs::create_dir_all(&wit_deps_dir).map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!(
+                    "failed to create WIT dependencies directory '{}': {err}",
+                    wit_deps_dir.display()
+                ),
+            )
+        })?;
+
+        let prelude_path = wit_deps_dir.join(super::PRELUDE_WIT_FILE);
+
+        match fs::read_to_string(&prelude_path) {
+            Ok(existing) if existing == super::PRELUDE_WIT_SOURCE => {}
+            Ok(_) => fs::write(&prelude_path, super::PRELUDE_WIT_SOURCE).map_err(|err| {
+                Error::new(
+                    Span::call_site(),
+                    format!("failed to write '{}': {err}", prelude_path.display()),
+                )
+            })?,
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                fs::write(&prelude_path, super::PRELUDE_WIT_SOURCE).map_err(|err| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("failed to write '{}': {err}", prelude_path.display()),
+                    )
+                })?;
+            }
+            Err(err) => {
+                return Err(Error::new(
+                    Span::call_site(),
+                    format!("failed to read '{}': {err}", prelude_path.display()),
+                ))
+            }
+        }
+
+        Ok(fs::canonicalize(&wit_deps_dir).unwrap_or(wit_deps_dir))
     }
 
     /// Scans the component's `wit` directory to find the default world.
