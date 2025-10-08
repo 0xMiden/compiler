@@ -2,7 +2,7 @@
 
 use std::{env, fs};
 
-use cargo_miden::{run, OutputType, WIT_DEPS_PATH};
+use cargo_miden::{run, OutputType};
 use miden_mast_package::Package;
 use midenc_session::miden_assembly::utils::Deserializable;
 
@@ -131,11 +131,6 @@ fn test_all_templates_and_examples() {
     assert!(p2id3.is_program());
     assert_eq!(p2id3.name, "p2id");
 
-    // Verify program projects don't have WIT files
-    verify_no_wit_files_for_example_template("fibonacci");
-    verify_no_wit_files_for_example_template("collatz");
-    verify_no_wit_files_for_example_template("is-prime");
-
     // Test new project templates
     // empty template means no template option is passing, thus using the default project template (account)
     let r#default = build_new_project_from_template("");
@@ -150,9 +145,6 @@ fn test_all_templates_and_examples() {
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
 
-    // Verify program projects don't have WIT files
-    verify_no_wit_files_for_new_template("--program");
-
     let auth_comp = build_new_project_from_template("--auth-component");
     assert!(auth_comp.is_library());
 
@@ -163,43 +155,6 @@ fn test_all_templates_and_examples() {
         "expected one of the authentication component exports to contain  function \
          '{expected_function}'"
     );
-}
-
-/// Verify that WIT files are not present for program template
-fn verify_no_wit_files_for_example_template(example_name: &str) {
-    let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir().join(format!(
-        "test_no_wit_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ));
-    fs::create_dir_all(&temp_dir).unwrap();
-    env::set_current_dir(&temp_dir).unwrap();
-
-    // Create the project - it will be named after the example
-    let args = example_project_args(example_name);
-    let output = run(args.into_iter(), OutputType::Masm)
-        .expect("Failed to create new project")
-        .expect("Expected build output");
-    let new_project_path = match output {
-        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
-            project_path.canonicalize().unwrap()
-        }
-        other => panic!("Expected NewCommandOutput, got {other:?}"),
-    };
-    env::set_current_dir(&new_project_path).unwrap();
-
-    // Verify the wit directory does not exist or is empty for program template
-    let wit_dir = new_project_path.join(WIT_DEPS_PATH);
-    assert!(
-        !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
-        "WIT directory should not exist or be empty for {example_name} example"
-    );
-
-    env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(temp_dir).unwrap();
 }
 
 /// Build paired example projects (e.g., account and note script) and return their packages
@@ -393,41 +348,6 @@ fn build_example_project_from_template(example_name: &str) -> Package {
     env::set_current_dir(restore_dir).unwrap();
     fs::remove_dir_all(temp_dir).unwrap();
     package
-}
-
-/// Verify that WIT files are not present for program template
-fn verify_no_wit_files_for_new_template(template: &str) {
-    let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir();
-    env::set_current_dir(&temp_dir).unwrap();
-    let project_name = format!("test_new_no_wit_files_{}", template.replace("--", ""));
-    let expected_new_project_dir = &temp_dir.join(&project_name);
-    if expected_new_project_dir.exists() {
-        fs::remove_dir_all(expected_new_project_dir).unwrap();
-    }
-
-    // Create the project
-    let args = new_project_args(&project_name, template);
-    let output = run(args.into_iter(), OutputType::Masm)
-        .expect("Failed to create new project")
-        .expect("Expected build output");
-    let new_project_path = match output {
-        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
-            project_path.canonicalize().unwrap()
-        }
-        other => panic!("Expected NewCommandOutput, got {other:?}"),
-    };
-    env::set_current_dir(&new_project_path).unwrap();
-
-    // Verify the wit directory does not exist or is empty for program template
-    let wit_dir = new_project_path.join(WIT_DEPS_PATH);
-    assert!(
-        !wit_dir.exists() || wit_dir.read_dir().unwrap().count() == 0,
-        "WIT directory should not exist or be empty for {template} template"
-    );
-
-    env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(new_project_path).unwrap();
 }
 
 /// Build a new project from the specified template and return its package

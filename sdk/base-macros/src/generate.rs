@@ -11,12 +11,13 @@ use syn::{
     Error, LitStr, Token,
 };
 
-/// Folder within a project that holds generated WIT dependencies.
-const WIT_DEPS_DIR: &str = "wit-deps";
-/// File name for the embedded Miden WIT prelude.
-const PRELUDE_WIT_FILE: &str = "miden.wit";
-/// Embedded Miden WIT prelude source.
-const PRELUDE_WIT_SOURCE: &str = include_str!("../../base/wit/miden.wit");
+/// Folder within a project that holds bundled WIT dependencies.
+/// This directory is managed by the SDK and should not be edited manually.
+const BUNDLED_WIT_DEPS_DIR: &str = "wit-auto-generated";
+/// File name for the embedded Miden SDK WIT .
+const SDK_WIT_FILE_NAME: &str = "miden.wit";
+/// Embedded Miden SDK WIT source.
+const SDK_WIT_SOURCE: &str = include_str!("../../base/wit/miden.wit");
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -180,7 +181,7 @@ mod manifest_paths {
             )
         })?;
 
-        let canonical_prelude_dir = ensure_prelude_wit(Path::new(&manifest_dir))?;
+        let canonical_prelude_dir = ensure_sdk_wit(Path::new(&manifest_dir))?;
 
         let mut resolved = Vec::new();
 
@@ -305,9 +306,9 @@ mod manifest_paths {
         })
     }
 
-    /// Ensures the embedded Miden WIT prelude is materialized in the project's `wit-deps` folder.
-    fn ensure_prelude_wit(manifest_dir: &Path) -> Result<PathBuf, Error> {
-        let wit_deps_dir = manifest_dir.join(super::WIT_DEPS_DIR);
+    /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.
+    fn ensure_sdk_wit(manifest_dir: &Path) -> Result<PathBuf, Error> {
+        let wit_deps_dir = manifest_dir.join(super::BUNDLED_WIT_DEPS_DIR);
         fs::create_dir_all(&wit_deps_dir).map_err(|err| {
             Error::new(
                 Span::call_site(),
@@ -318,30 +319,30 @@ mod manifest_paths {
             )
         })?;
 
-        let prelude_path = wit_deps_dir.join(super::PRELUDE_WIT_FILE);
-
-        match fs::read_to_string(&prelude_path) {
-            Ok(existing) if existing == super::PRELUDE_WIT_SOURCE => {}
-            Ok(_) => fs::write(&prelude_path, super::PRELUDE_WIT_SOURCE).map_err(|err| {
-                Error::new(
-                    Span::call_site(),
-                    format!("failed to write '{}': {err}", prelude_path.display()),
-                )
-            })?,
-            Err(err) if err.kind() == ErrorKind::NotFound => {
-                fs::write(&prelude_path, super::PRELUDE_WIT_SOURCE).map_err(|err| {
-                    Error::new(
-                        Span::call_site(),
-                        format!("failed to write '{}': {err}", prelude_path.display()),
-                    )
-                })?;
-            }
+        let sdk_wit_path = wit_deps_dir.join(super::SDK_WIT_FILE_NAME);
+        let sdk_version: &str = env!("CARGO_PKG_VERSION");
+        let expected_source = format!(
+            "/// NOTE: This file is auto-generated from the Miden SDK.\n/// Version: \
+             v{sdk_version}\n/// Any manual edits will be overwritten.\n\n{SDK_WIT_SOURCE}"
+        );
+        let should_write_wit = match fs::read_to_string(&sdk_wit_path) {
+            Ok(existing) => existing != expected_source,
+            Err(err) if err.kind() == ErrorKind::NotFound => true,
             Err(err) => {
                 return Err(Error::new(
                     Span::call_site(),
-                    format!("failed to read '{}': {err}", prelude_path.display()),
-                ))
+                    format!("failed to read '{}': {err}", sdk_wit_path.display()),
+                ));
             }
+        };
+
+        if should_write_wit {
+            fs::write(&sdk_wit_path, expected_source).map_err(|err| {
+                Error::new(
+                    Span::call_site(),
+                    format!("failed to write '{}': {err}", sdk_wit_path.display()),
+                )
+            })?;
         }
 
         Ok(fs::canonicalize(&wit_deps_dir).unwrap_or(wit_deps_dir))
