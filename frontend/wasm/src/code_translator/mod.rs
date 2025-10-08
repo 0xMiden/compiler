@@ -682,8 +682,13 @@ fn translate_load_zext<B: ?Sized + Builder>(
     let addr_int = state.pop1();
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     let val = builder.load(addr, span)?;
-    let zext_val = builder.zext(val, zext_ty, span)?;
-    state.push1(zext_val);
+    let zext_val = builder.zext(val, zext_ty.clone(), span)?;
+    let bitcast_val = match zext_ty {
+        Type::U32 => builder.bitcast(zext_val, Type::I32, span),
+        Type::U64 => builder.bitcast(zext_val, Type::I64, span),
+        _ => Ok(zext_val),
+    }?;
+    state.push1(bitcast_val);
     Ok(())
 }
 

@@ -103,7 +103,6 @@ export.__main
         push.255
         u32and
         movup.2
-        swap.1
         u32wrapping_add
         push.1
         movup.2
