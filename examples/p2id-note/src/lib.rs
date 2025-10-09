@@ -27,9 +27,11 @@ fn run(_arg: Word) {
     let inputs = note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
-    let account_id = account::get_id();
-    assert_eq(account_id.prefix, target_account_id_prefix);
-    assert_eq(account_id.suffix, target_account_id_suffix);
+
+    let target_account = AccountId::from(target_account_id_prefix, target_account_id_suffix);
+    let current_account = account::get_id();
+    assert_eq!(current_account, target_account);
+
     let assets = note::get_assets();
     for asset in assets {
         receive_asset(asset);

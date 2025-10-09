@@ -5,6 +5,7 @@ public builtin.function @test_wrapper() {
     v2 = hir.int_to_ptr v1 : ptr<byte, u8>;
     v3 = hir.load v2 : u8;
     v4 = arith.zext v3 : u64;
+    v5 = hir.bitcast v4 : i64;
     cf.br ^block5;
 ^block5:
     builtin.ret ;

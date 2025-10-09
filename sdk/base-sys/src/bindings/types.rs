@@ -1,15 +1,20 @@
 use miden_stdlib_sys::{Felt, Word};
 
 #[allow(unused)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AccountId {
     pub prefix: Felt,
     pub suffix: Felt,
 }
 
-impl AccountId {}
+impl AccountId {
+    /// Creates a new AccountId from prefix and suffix Felt values
+    pub fn from(prefix: Felt, suffix: Felt) -> Self {
+        Self { prefix, suffix }
+    }
+}
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Asset {
     pub inner: Word,
@@ -56,6 +61,7 @@ impl AsRef<Word> for Asset {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,
@@ -69,6 +75,13 @@ impl From<[Felt; 4]> for Recipient {
     }
 }
 
+impl From<Word> for Recipient {
+    fn from(value: Word) -> Self {
+        Recipient { inner: value }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Tag {
     pub inner: Felt,
@@ -80,12 +93,13 @@ impl From<Felt> for Tag {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct NoteIdx {
     pub inner: Felt,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct NoteType {
     pub inner: Felt,
@@ -97,6 +111,7 @@ impl From<Felt> for NoteType {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct StorageCommitmentRoot(Word);
 

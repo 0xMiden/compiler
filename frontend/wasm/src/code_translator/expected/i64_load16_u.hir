@@ -8,6 +8,7 @@ public builtin.function @test_wrapper() {
     v4 = hir.int_to_ptr v1 : ptr<byte, u16>;
     v5 = hir.load v4 : u16;
     v6 = arith.zext v5 : u64;
+    v7 = hir.bitcast v6 : i64;
     cf.br ^block5;
 ^block5:
     builtin.ret ;
