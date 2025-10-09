@@ -112,7 +112,7 @@ impl fmt::Display for ProjectTemplate {
 }
 
 /// Create a new clean slate Miden project at <path>
-#[derive(Args)]
+#[derive(Debug, Args)]
 #[clap(disable_version_flag = true)]
 pub struct NewCommand {
     /// The path for the generated package (the directory name is used for project name)
