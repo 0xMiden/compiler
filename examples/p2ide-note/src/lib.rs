@@ -32,10 +32,7 @@ fn consume_assets() {
 fn reclaim_assets(consuming_account: AccountId) {
     let creator_account = note::get_sender();
 
-    let is_creator = creator_account.prefix == consuming_account.prefix
-        && creator_account.suffix == consuming_account.suffix;
-
-    if is_creator {
+    if consuming_account == creator_account {
         consume_assets();
     } else {
         panic!();
@@ -47,8 +44,8 @@ fn run(_arg: Word) {
     let inputs = note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
-    let timelock_height = inputs[2];
-    let reclaim_height = inputs[3];
+    // let timelock_height = inputs[2];
+    // let reclaim_height = inputs[3];
 
     // make sure the number of inputs is 4
     // assert_eq(inputs.len().into(), Felt::from(4u32));
@@ -58,22 +55,24 @@ fn run(_arg: Word) {
     // assert_eq(reclaim_height, Felt::from(1010u32));
 
     // get block number
-    let block_number = tx::get_block_number();
+    // let block_number = tx::get_block_number();
 
-    assert!(block_number >= timelock_height);
+    // assert!(block_number >= timelock_height);
 
     // get consuming account id
-    let consuming_account_id = account::get_id();
+    // let consuming_account_id = account::get_id();
+
+    consume_assets();
 
     // if consuming account is target, claim assets
     // if consuming account is creator account, claim assets
     // else panic
-    let is_target = consuming_account_id.prefix == target_account_id_prefix
+/*     let is_target = consuming_account_id.prefix == target_account_id_prefix
         && consuming_account_id.suffix == target_account_id_suffix;
 
     if is_target {
         consume_assets();
     } else {
         reclaim_assets(consuming_account_id);
-    }
+    } */
 }
