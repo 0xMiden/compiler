@@ -11,10 +11,7 @@ use clap::Args;
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.17.0";
-
-/// The folder name to put Miden SDK WIT files in
-pub const WIT_DEPS_PATH: &str = "wit-deps";
+const TEMPLATES_REPO_TAG: &str = "v0.18.0";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
@@ -138,8 +135,6 @@ pub struct NewCommand {
     pub compiler_branch: Option<String>,
 }
 
-use std::{fs, io::Write};
-
 use crate::utils::set_default_test_compiler;
 
 impl NewCommand {
@@ -239,37 +234,11 @@ impl NewCommand {
             define,
             ..Default::default()
         };
-        let project_path = cargo_generate::generate(generate_args)
+        let _project_path = cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
-
-        // Check if the project has WIT files
-        let wit_dir = project_path.join("wit");
-        if wit_dir.exists() && wit_dir.is_dir() {
-            // Deploy core WIT files to the project
-            deploy_wit_files(&project_path).context("Failed to deploy WIT files")?;
-        }
 
         Ok(self.path)
     }
-}
-
-/// Deploy WIT files to the project's wit directory
-pub fn deploy_wit_files(project_path: &Path) -> anyhow::Result<()> {
-    // Create wit directory
-    let wit_dir = project_path.join(WIT_DEPS_PATH);
-    fs::create_dir_all(&wit_dir)?;
-
-    // Write WIT file from base
-    write_wit_file(&wit_dir.join("miden.wit"), miden_base::base_wit::MIDEN_WIT)?;
-
-    Ok(())
-}
-
-/// Helper function to write a WIT file
-pub fn write_wit_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
-    let mut file = fs::File::create(path)?;
-    file.write_all(content.as_bytes())?;
-    Ok(())
 }
 
 /// Returns true if `path` is inside an existing Git repository.

@@ -12,7 +12,6 @@ use cargo_component::{
 };
 use cargo_metadata::{camino, Metadata};
 use clap::{CommandFactory, Parser};
-pub use commands::new_project::WIT_DEPS_PATH;
 use commands::{ExampleCommand, NewCommand};
 use compile_masm::wasm_to_masm;
 use dependencies::process_miden_dependencies;
