@@ -17,7 +17,7 @@ const TRIPLE_PROJECTS: &[(&str, &str, &str)] =
     &[("basic-wallet-tx-script", "basic-wallet", "p2id-note")];
 
 /// Create a new Miden example project
-#[derive(Args)]
+#[derive(Debug, Args)]
 #[clap(disable_version_flag = true)]
 pub struct ExampleCommand {
     #[clap(help = r#"The example name to use from the compiler repository
