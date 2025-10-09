@@ -12,8 +12,7 @@ use syn::{
 };
 
 /// Folder within a project that holds bundled WIT dependencies.
-/// This directory is managed by the SDK and should not be edited manually.
-const BUNDLED_WIT_DEPS_DIR: &str = "wit-auto-generated";
+const BUNDLED_WIT_DEPS_DIR: &str = "miden-wit-auto-generated";
 /// File name for the embedded Miden SDK WIT .
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
 /// Embedded Miden SDK WIT source.
@@ -181,7 +180,7 @@ mod manifest_paths {
             )
         })?;
 
-        let canonical_prelude_dir = ensure_sdk_wit(Path::new(&manifest_dir))?;
+        let canonical_prelude_dir = ensure_sdk_wit()?;
 
         let mut resolved = Vec::new();
 
@@ -307,8 +306,10 @@ mod manifest_paths {
     }
 
     /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.
-    fn ensure_sdk_wit(manifest_dir: &Path) -> Result<PathBuf, Error> {
-        let wit_deps_dir = manifest_dir.join(super::BUNDLED_WIT_DEPS_DIR);
+    fn ensure_sdk_wit() -> Result<PathBuf, Error> {
+        let out_dir =
+            PathBuf::from(env::var("CARGO_TARGET_DIR").expect("CARGO_TARGET_DIR is not set"));
+        let wit_deps_dir = out_dir.join(BUNDLED_WIT_DEPS_DIR);
         fs::create_dir_all(&wit_deps_dir).map_err(|err| {
             Error::new(
                 Span::call_site(),
