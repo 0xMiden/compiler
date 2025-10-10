@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["midenc-hir/std", "midenc-dialect-hir/std"]
+std = ["midenc-hir/std", "midenc-dialect-hir/std", "petgraph/std"]
 
 [dependencies]
 inventory.workspace = true

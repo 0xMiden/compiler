@@ -108,7 +108,7 @@ impl Tactic for Linear {
                          be moved to make space for {:?}",
                         root.value
                     );
-                    let mut seen = std::collections::BTreeSet::default();
+                    let mut seen = alloc::collections::BTreeSet::default();
                     seen.insert(root);
                     while let Some(parent_operand) = parent {
                         root = parent_operand;
