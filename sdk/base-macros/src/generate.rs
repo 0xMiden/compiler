@@ -307,8 +307,12 @@ mod manifest_paths {
 
     /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.
     fn ensure_sdk_wit() -> Result<PathBuf, Error> {
-        let out_dir =
-            PathBuf::from(env::var("CARGO_TARGET_DIR").expect("CARGO_TARGET_DIR is not set"));
+        let out_dir = PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+            let mut manifest_dir =
+                env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
+            manifest_dir.push_str("/target/");
+            manifest_dir
+        }));
         let wit_deps_dir = out_dir.join(BUNDLED_WIT_DEPS_DIR);
         fs::create_dir_all(&wit_deps_dir).map_err(|err| {
             Error::new(
