@@ -16,7 +16,7 @@ const BUNDLED_WIT_DEPS_DIR: &str = "miden-wit-auto-generated";
 /// File name for the embedded Miden SDK WIT .
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
 /// Embedded Miden SDK WIT source.
-const SDK_WIT_SOURCE: &str = include_str!("../../base/wit/miden.wit");
+const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 
 #[derive(Default)]
 struct GenerateArgs {

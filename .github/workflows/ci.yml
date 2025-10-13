@@ -139,6 +139,10 @@ jobs:
         # unification and avoid surprises on publishing the crates.
         run: |
           cargo make check-each --release --all-features
+      - name: cargo publish dry run
+        # Simulate publishing to uncover any build errors when each crate folder is built in isolation
+        run: |
+          cargo publish --dry-run
 
   midenc_integration_tests:
     name: midenc integration tests
