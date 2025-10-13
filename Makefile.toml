@@ -375,3 +375,12 @@ args = [
     "-D",
     "warnings",
 ]
+
+[tasks.publish-dry-run]
+category = "Test"
+description = "Simulate publishing to uncover any build errors when each crate folder is built in isolation"
+command = "cargo"
+args = [
+    "publish",
+    "--dry-run",
+]
