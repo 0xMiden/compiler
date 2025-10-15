@@ -400,15 +400,15 @@ export.store_sw # [addr, offset, value]
         push.32 dup.4 sub # [32 - bit_offset, e0, e1, addr, bit_offset, value]
 
         # compute the masks
-        push.4294967295 dup.1 u32shl  # [mask_hi, rshift, e0, e1, addr, bit_offset, value]
-        dup.0 u32not                  # [mask_lo, mask_hi, rshift, e0, e1, addr, bit_offset, value]
+        push.4294967295 dup.1 u32shr  # [mask_lo, rshift, e0, e1, addr, bit_offset, value]
+        dup.0 u32not                  # [mask_hi, mask_lo, rshift, e0, e1, addr, bit_offset, value]
 
         # manipulate the bits of the two target elements, such that the 32-bit word we're storing
         # is placed at the correct offset from the start of the memory cell when viewing the cell
         # as a set of 4 32-bit chunks
         #
         # First, mask out the bits we're going to overwrite in the two elements we loaded
-        movup.4 u32and         # [e1_masked, mask_hi, rshift, e0, addr, bit_offset, value]
+        movup.4 u32and         # [e1_masked, mask_lo, rshift, e0, addr, bit_offset, value]
         movup.3 movup.2 u32and # [e0_masked, e1_masked, rshift, addr, bit_offset, value]
 
         # now, we need to shift/mask/split the 32-bit value into two elements, then
