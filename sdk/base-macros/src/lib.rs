@@ -4,8 +4,10 @@ extern crate proc_macro;
 
 mod account_component_metadata;
 mod component_macro;
+mod export_type;
 mod generate;
 mod script;
+mod types;
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -48,4 +50,12 @@ pub fn component(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     component_macro::component(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn export_type(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    export_type::expand(attr, item)
 }

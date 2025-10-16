@@ -1,18 +1,28 @@
-use std::{collections::BTreeSet, fmt::Write, fs, io::ErrorKind, path::Path, str::FromStr};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt::Write,
+    fs,
+    io::ErrorKind,
+    path::Path,
+    str::FromStr,
+};
 
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_objects::{account::AccountType, utils::Serializable};
 use proc_macro::Span;
-use proc_macro2::{Literal, TokenStream as TokenStream2};
-use quote::{format_ident, quote, ToTokens};
+use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
 use semver::Version;
 use syn::{
-    punctuated::Punctuated, spanned::Spanned, token::Comma, Attribute, FnArg, ImplItem, ImplItemFn,
-    ItemImpl, ItemStruct, ReturnType, Type, Visibility,
+    spanned::Spanned, Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType,
+    Type, Visibility,
 };
 use toml::Value;
 
-use crate::account_component_metadata::AccountComponentMetadataBuilder;
+use crate::{
+    account_component_metadata::AccountComponentMetadataBuilder,
+    types::{map_type_to_wit_type, registered_export_types, ExportedTypeDef, WitType},
+};
 
 /// Cargo metadata relevant for the `#[component]` macro expansion.
 struct CargoMetadata {
@@ -49,11 +59,21 @@ enum ReceiverKind {
 }
 
 /// Metadata describing a WIT function parameter generated from a Rust method argument.
-struct WitParam {
-    /// Parameter name rendered in kebab-case for WIT code.
-    name: String,
-    /// Core types identifier associated with the parameter type.
-    ty: String,
+struct MethodParam {
+    ident: syn::Ident,
+    user_ty: syn::Type,
+    wit_type: WitType,
+    wit_type_name: String,
+    wit_param_name: String,
+}
+
+enum MethodReturn {
+    Unit,
+    Type {
+        user_ty: Box<syn::Type>,
+        wit_type: WitType,
+        wit_type_name: String,
+    },
 }
 
 /// Captures all information required to render WIT signatures and the guest trait implementation
@@ -63,22 +83,14 @@ struct ComponentMethod {
     fn_ident: syn::Ident,
     /// Documentation attributes carried over to the guest trait implementation.
     doc_attrs: Vec<Attribute>,
-    /// Method inputs excluding the receiver, used to recreate the guest trait signature.
-    inputs: Punctuated<FnArg, Comma>,
-    /// Idents used when invoking the original method from the guest trait implementation.
-    call_arg_idents: Vec<syn::Ident>,
+    /// Method parameters metadata.
+    params: Vec<MethodParam>,
     /// Receiver mode required by the method.
     receiver_kind: ReceiverKind,
-    /// Original return type for the method.
-    output: ReturnType,
-    /// Indicates whether the method returns the unit type.
-    returns_unit: bool,
+    /// Return type metadata.
+    return_info: MethodReturn,
     /// Method name rendered in kebab-case for WIT output.
     wit_name: String,
-    /// Parameters rendered for WIT.
-    wit_params: Vec<WitParam>,
-    /// Optional WIT return type identifier.
-    wit_return: Option<String>,
 }
 
 /// Expands the `#[component]` attribute applied to either a struct declaration or an inherent
@@ -209,6 +221,7 @@ fn expand_component_impl(
     })?;
 
     let interface_name = metadata.name.to_kebab_case();
+    let interface_module = to_snake_case(&interface_name);
     let world_name = format!("{interface_name}-world");
 
     let mut methods = Vec::new();
@@ -226,25 +239,38 @@ fn expand_component_impl(
         }
     }
 
+    let mut exported_types = registered_export_types();
+    exported_types.sort_by(|a, b| a.wit_name.cmp(&b.wit_name));
+    let exported_types_map: HashMap<_, _> =
+        exported_types.iter().cloned().map(|def| (def.wit_name.clone(), def)).collect();
+    let bindings_segments = build_bindings_module_segments(&component_package, &interface_module);
+    let conversion_impls: Vec<TokenStream2> = exported_types_map
+        .values()
+        .map(|def| generate_export_type_impls(def, &bindings_segments))
+        .collect();
+
     let wit_source = build_component_wit(
         &component_package,
         &interface_name,
         &world_name,
         &type_imports,
         &methods,
+        &exported_types,
     );
     write_component_wit_file(call_site_span, &wit_source, &interface_name)?;
     let inline_literal = Literal::string(&wit_source);
 
-    let guest_trait_path =
-        build_guest_trait_path(&component_package, &interface_name.to_snake_case())?;
+    let guest_trait_path = build_guest_trait_path(&component_package, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods
         .iter()
-        .map(|method| render_guest_method(method, &component_type))
+        .map(|method| {
+            render_guest_method(method, &component_type, &bindings_segments, &exported_types_map)
+        })
         .collect();
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal);
+        #(#conversion_impls)*
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
@@ -260,6 +286,7 @@ fn build_component_wit(
     world_name: &str,
     type_imports: &BTreeSet<String>,
     methods: &[ComponentMethod],
+    exported_types: &[ExportedTypeDef],
 ) -> String {
     let package_with_version = if component_package.contains('@') {
         component_package.to_string()
@@ -275,30 +302,53 @@ fn build_component_wit(
     wit_source.push('\n');
     let _ = writeln!(wit_source, "use {CORE_TYPES_PACKAGE};");
     wit_source.push('\n');
+
+    let mut combined_core_imports = type_imports.clone();
+    for exported in exported_types {
+        for field in &exported.fields {
+            if let WitType::Core(core_ty) = &field.ty {
+                combined_core_imports.insert(core_ty.clone());
+            }
+        }
+    }
+
     let _ = writeln!(wit_source, "interface {interface_name} {{");
 
-    if !type_imports.is_empty() {
-        let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
+    if !combined_core_imports.is_empty() {
+        let imports = combined_core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
         let _ = writeln!(wit_source, "    use core-types.{{{imports}}};");
         wit_source.push('\n');
     }
 
+    for exported in exported_types {
+        let _ = writeln!(wit_source, "    record {} {{", exported.wit_name);
+        for field in &exported.fields {
+            let field_name = to_kebab_case(&field.name);
+            let _ = writeln!(wit_source, "        {}: {},", field_name, field.ty.as_str());
+        }
+        let _ = writeln!(wit_source, "    }}\n");
+    }
+
     for method in methods {
-        let signature = if method.wit_params.is_empty() {
-            match &method.wit_return {
-                Some(ret) => format!("    {}: func() -> {};", method.wit_name, ret),
-                None => format!("    {}: func();", method.wit_name),
+        let signature = if method.params.is_empty() {
+            match &method.return_info {
+                MethodReturn::Unit => format!("    {}: func();", method.wit_name),
+                MethodReturn::Type { wit_type_name, .. } => {
+                    format!("    {}: func() -> {};", method.wit_name, wit_type_name)
+                }
             }
         } else {
             let params = method
-                .wit_params
+                .params
                 .iter()
-                .map(|param| format!("{}: {}", param.name, param.ty))
+                .map(|param| format!("{}: {}", param.wit_param_name, param.wit_type_name))
                 .collect::<Vec<_>>()
                 .join(", ");
-            match &method.wit_return {
-                Some(ret) => format!("    {}: func({}) -> {};", method.wit_name, params, ret),
-                None => format!("    {}: func({});", method.wit_name, params),
+            match &method.return_info {
+                MethodReturn::Unit => format!("    {}: func({});", method.wit_name, params),
+                MethodReturn::Type { wit_type_name, .. } => {
+                    format!("    {}: func({}) -> {};", method.wit_name, params, wit_type_name)
+                }
             }
         };
         let _ = writeln!(wit_source, "{signature}");
@@ -386,13 +436,52 @@ fn build_guest_trait_path(
 }
 
 /// Emits the guest trait method forwarding logic invoking the user-defined implementation.
-fn render_guest_method(method: &ComponentMethod, component_type: &Type) -> TokenStream2 {
+fn render_guest_method(
+    method: &ComponentMethod,
+    component_type: &Type,
+    bindings_segments: &[proc_macro2::Ident],
+    exported_types: &HashMap<String, ExportedTypeDef>,
+) -> TokenStream2 {
     let fn_ident = &method.fn_ident;
     let doc_attrs = &method.doc_attrs;
-    let inputs = &method.inputs;
-    let output = &method.output;
-    let call_args = &method.call_arg_idents;
     let component_ident = format_ident!("__component_instance");
+    let bindings_base = quote! { self::bindings::exports #( :: #bindings_segments )* };
+
+    let mut param_tokens = Vec::new();
+    let mut call_args = Vec::new();
+    let mut pre_call = Vec::new();
+
+    for param in &method.params {
+        let ident = &param.ident;
+        call_args.push(quote!(#ident));
+
+        let param_ty = match param.wit_type {
+            WitType::Core(_) => {
+                let ty = &param.user_ty;
+                quote!(#ty)
+            }
+            WitType::Custom(ref wit_name) => {
+                let def = exported_types.get(wit_name).expect("unknown exported type");
+                let type_ident = format_ident!("{}", def.rust_name);
+                quote!(#bindings_base :: #type_ident)
+            }
+        };
+
+        param_tokens.push(quote!(#ident: #param_ty));
+
+        if matches!(param.wit_type, WitType::Custom(_)) {
+            let user_ty = &param.user_ty;
+            pre_call.push(quote! {
+                let #ident: #user_ty = #ident.into();
+            });
+        }
+    }
+
+    let fn_inputs = if param_tokens.is_empty() {
+        quote!()
+    } else {
+        quote!(#(#param_tokens),*)
+    };
 
     let component_init = match method.receiver_kind {
         ReceiverKind::Ref => quote! { let #component_ident = #component_type::default(); },
@@ -403,22 +492,127 @@ fn render_guest_method(method: &ComponentMethod, component_type: &Type) -> Token
 
     let call_expr = quote! { #component_ident.#fn_ident(#(#call_args),*) };
 
-    let body = if method.returns_unit {
-        quote! {
+    let output = match &method.return_info {
+        MethodReturn::Unit => quote!(),
+        MethodReturn::Type {
+            wit_type, user_ty, ..
+        } => match wit_type {
+            WitType::Core(_) => quote!(-> #user_ty),
+            WitType::Custom(wit_name) => {
+                let def = exported_types.get(wit_name).expect("unknown exported type");
+                let type_ident = format_ident!("{}", def.rust_name);
+                quote!(-> #bindings_base :: #type_ident)
+            }
+        },
+    };
+
+    let body = match &method.return_info {
+        MethodReturn::Unit => quote! {
             #component_init
+            #(#pre_call)*
             #call_expr;
-        }
-    } else {
-        quote! {
-            #component_init
-            #call_expr
-        }
+        },
+        MethodReturn::Type { wit_type, .. } => match wit_type {
+            WitType::Core(_) => quote! {
+                #component_init
+                #(#pre_call)*
+                #call_expr
+            },
+            WitType::Custom(_) => quote! {
+                #component_init
+                #(#pre_call)*
+                let result = #call_expr;
+                result.into()
+            },
+        },
     };
 
     quote! {
         #(#doc_attrs)*
-        fn #fn_ident(#inputs) #output {
+        fn #fn_ident(#fn_inputs) #output {
             #body
+        }
+    }
+}
+
+fn build_bindings_module_segments(component_package: &str, interface_module: &str) -> Vec<Ident> {
+    let mut segments = Vec::new();
+    for segment in component_package.split([':', '/']) {
+        if segment.is_empty() {
+            continue;
+        }
+        segments.push(format_ident!("{}", to_snake_case(segment)));
+    }
+    segments.push(format_ident!("{}", to_snake_case(interface_module)));
+    segments
+}
+
+fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]) -> TokenStream2 {
+    let struct_ident = format_ident!("{}", def.rust_name);
+    let binding_type_ident = format_ident!("{}", def.rust_name);
+    let bindings_path =
+        quote! { self::bindings::exports #( :: #bindings_segments )* :: #binding_type_ident };
+
+    if def.fields.is_empty() {
+        return quote! {
+            impl From<#bindings_path> for #struct_ident {
+                fn from(_: #bindings_path) -> Self {
+                    Self
+                }
+            }
+
+            impl From<#struct_ident> for #bindings_path {
+                fn from(_: #struct_ident) -> Self {
+                    Self
+                }
+            }
+        };
+    }
+
+    let field_idents: Vec<_> =
+        def.fields.iter().map(|field| format_ident!("{}", field.name)).collect();
+
+    let binding_to_user_fields: Vec<_> = def
+        .fields
+        .iter()
+        .map(|field| {
+            let ident = format_ident!("{}", field.name);
+            match field.ty {
+                WitType::Core(_) => quote! { #ident },
+                WitType::Custom(_) => quote! { #ident.into() },
+            }
+        })
+        .collect();
+
+    let user_to_binding_fields: Vec<_> = def
+        .fields
+        .iter()
+        .map(|field| {
+            let ident = format_ident!("{}", field.name);
+            match field.ty {
+                WitType::Core(_) => quote! { #ident },
+                WitType::Custom(_) => quote! { #ident.into() },
+            }
+        })
+        .collect();
+
+    quote! {
+        impl From<#bindings_path> for #struct_ident {
+            fn from(value: #bindings_path) -> Self {
+                let #bindings_path { #( #field_idents ),* } = value;
+                Self {
+                    #( #field_idents: #binding_to_user_fields ),*
+                }
+            }
+        }
+
+        impl From<#struct_ident> for #bindings_path {
+            fn from(value: #struct_ident) -> Self {
+                let #struct_ident { #( #field_idents ),* } = value;
+                Self {
+                    #( #field_idents: #user_to_binding_fields ),*
+                }
+            }
         }
     }
 }
@@ -486,9 +680,7 @@ fn parse_component_method(
         }
     };
 
-    let mut inputs = Punctuated::<FnArg, Comma>::new();
-    let mut call_arg_idents = Vec::new();
-    let mut wit_params = Vec::new();
+    let mut params = Vec::new();
     let mut type_imports = BTreeSet::new();
 
     for arg in inputs_iter {
@@ -504,14 +696,18 @@ fn parse_component_method(
                     }
                 };
 
-                let wit_type = map_type_to_core_type(&pat_type.ty)?;
-                type_imports.insert(wit_type.clone());
+                let user_ty = (*pat_type.ty).clone();
+                let wit_type = map_type_to_wit_type(&pat_type.ty)?;
+                if let WitType::Core(core_ty) = &wit_type {
+                    type_imports.insert(core_ty.clone());
+                }
 
-                inputs.push(FnArg::Typed(pat_type.clone()));
-                call_arg_idents.push(ident.clone());
-                wit_params.push(WitParam {
-                    name: to_kebab_case(&ident.to_string()),
-                    ty: wit_type,
+                params.push(MethodParam {
+                    ident: ident.clone(),
+                    user_ty,
+                    wit_type: wit_type.clone(),
+                    wit_type_name: wit_type.as_str().to_string(),
+                    wit_param_name: to_kebab_case(&ident.to_string()),
                 });
             }
             FnArg::Receiver(other) => {
@@ -523,14 +719,19 @@ fn parse_component_method(
         }
     }
 
-    let output = method.sig.output.clone();
-    let (returns_unit, wit_return) = match &method.sig.output {
-        ReturnType::Default => (true, None),
-        ReturnType::Type(_, ty) if is_unit_type(ty) => (true, None),
+    let return_info = match &method.sig.output {
+        ReturnType::Default => MethodReturn::Unit,
+        ReturnType::Type(_, ty) if is_unit_type(ty) => MethodReturn::Unit,
         ReturnType::Type(_, ty) => {
-            let wit_type = map_type_to_core_type(ty)?;
-            type_imports.insert(wit_type.clone());
-            (false, Some(wit_type))
+            let wit_type = map_type_to_wit_type(ty)?;
+            if let WitType::Core(core_ty) = &wit_type {
+                type_imports.insert(core_ty.clone());
+            }
+            MethodReturn::Type {
+                user_ty: ty.clone(),
+                wit_type: wit_type.clone(),
+                wit_type_name: wit_type.as_str().to_string(),
+            }
         }
     };
 
@@ -544,14 +745,10 @@ fn parse_component_method(
     let component_method = ComponentMethod {
         fn_ident: method.sig.ident.clone(),
         doc_attrs,
-        inputs,
-        call_arg_idents,
+        params,
         receiver_kind,
-        output,
-        returns_unit,
+        return_info,
         wit_name: to_kebab_case(&method.sig.ident.to_string()),
-        wit_params,
-        wit_return,
     };
 
     Ok((component_method, type_imports))
@@ -568,41 +765,6 @@ fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
 }
 
 /// Maps a Rust type used in the public interface to the corresponding WIT core-types identifier.
-fn map_type_to_core_type(ty: &Type) -> Result<String, syn::Error> {
-    match ty {
-        Type::Reference(reference) => map_type_to_core_type(&reference.elem),
-        Type::Group(group) => map_type_to_core_type(&group.elem),
-        Type::Paren(paren) => map_type_to_core_type(&paren.elem),
-        Type::Path(path) => {
-            let ident = path
-                .path
-                .segments
-                .last()
-                .ok_or_else(|| {
-                    syn::Error::new(path.span(), "unsupported type in component interface")
-                })?
-                .ident
-                .to_string();
-
-            if ident.is_empty() {
-                return Err(syn::Error::new(
-                    ty.span(),
-                    "unsupported type in component interface; identifier cannot be empty",
-                ));
-            }
-
-            Ok(to_kebab_case(&ident))
-        }
-        _ => Err(syn::Error::new(
-            ty.span(),
-            format!(
-                "unsupported type `{}` in component interface; only core-types are supported",
-                type_to_string(ty)
-            ),
-        )),
-    }
-}
-
 /// Determines whether a type represents the unit type `()`.
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
@@ -616,11 +778,6 @@ fn to_kebab_case(name: &str) -> String {
 /// Converts a kebab-case identifier into snake_case.
 fn to_snake_case(name: &str) -> String {
     name.to_snake_case()
-}
-
-/// Translates a type into a token string for diagnostics.
-fn type_to_string(ty: &Type) -> String {
-    ty.to_token_stream().to_string()
 }
 
 /// Reads component metadata (name/description/version/supported types) from the enclosing package

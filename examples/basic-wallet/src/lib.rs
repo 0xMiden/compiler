@@ -17,7 +17,18 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use miden::{account, component, tx, Asset, NoteIdx};
+use miden::{account, component, export_type, tx, Asset, Felt, NoteIdx, Word};
+
+#[export_type]
+struct CustomTypeA {
+    foo: Word,
+}
+
+#[export_type]
+struct CustomTypeB {
+    bar: Felt,
+    baz: Felt,
+}
 
 #[component]
 struct MyAccount;
@@ -46,5 +57,11 @@ impl MyAccount {
         let asset = account::remove_asset(asset);
         tx::add_asset_to_note(asset, note_idx);
     }
-}
 
+    pub fn test_custom_types(&self, a: CustomTypeA) -> CustomTypeB {
+        CustomTypeB {
+            bar: a.foo.inner.0,
+            baz: a.foo.inner.1,
+        }
+    }
+}

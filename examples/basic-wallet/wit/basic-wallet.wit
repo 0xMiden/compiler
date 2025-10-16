@@ -6,10 +6,20 @@ package miden:basic-wallet@1.0.0;
 use miden:base/core-types@1.0.0;
 
 interface basic-wallet {
-    use core-types.{asset, note-idx};
+    use core-types.{asset, felt, note-idx, word};
+
+    record custom-type-a {
+        foo: word,
+    }
+
+    record custom-type-b {
+        bar: felt,
+        baz: felt,
+    }
 
     receive-asset: func(asset: asset);
     move-asset-to-note: func(asset: asset, note-idx: note-idx);
+    test-custom-types: func(a: custom-type-a) -> custom-type-b;
 }
 
 world basic-wallet-world {

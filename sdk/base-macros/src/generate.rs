@@ -32,19 +32,16 @@ impl Parse for GenerateArgs {
             let name = ident.to_string();
             input.parse::<Token![=]>()?;
 
-            match name.as_str() {
-                "inline" => {
-                    if args.inline.is_some() {
-                        return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
-                    }
-                    args.inline = Some(input.parse()?);
+            if name == "inline" {
+                if args.inline.is_some() {
+                    return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
                 }
-                _ => {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        format!("unsupported generate! argument `{name}`"),
-                    ));
-                }
+                args.inline = Some(input.parse()?);
+            } else {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("unsupported generate! argument `{name}`"),
+                ));
             }
 
             if input.peek(Token![,]) {
@@ -88,6 +85,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 config.paths.iter().map(|path| Literal::string(path)).collect();
 
             let inline_clause = args.inline.as_ref().map(|src| quote! { inline: #src, });
+
             let inline_world = args
                 .inline
                 .as_ref()

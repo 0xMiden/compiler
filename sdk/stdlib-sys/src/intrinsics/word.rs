@@ -3,7 +3,7 @@ use core::ops::{Index, IndexMut};
 use super::felt::Felt;
 use crate::felt;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(C, align(16))]
 pub struct Word {
     pub inner: (Felt, Felt, Felt, Felt),
