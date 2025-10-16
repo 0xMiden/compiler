@@ -293,17 +293,19 @@ end
 # Returns three 32-bit chunks [chunk_lo, chunk_mid, chunk_hi]
 export.offset_dw # [value_hi, value_lo, offset]
     dup.0
-    dup.3 u32shr # [chunk_hi, value_hi, value_lo, offset]
+    dup.3 u32shl # [chunk_hi, value_hi, value_lo, offset]
+
     movdn.3      # [value_hi, value_lo, offset, chunk_hi]
     push.32 dup.3 u32wrapping_sub # [32 - offset, value_hi, value_lo, offset, chunk_hi]
-    u32shl       # [ chunk_mid_hi, value_lo, offset, chunk_hi]
+    u32shr       # [ chunk_mid_hi, value_lo, offset, chunk_hi]
     dup.1        # [ value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
     dup.3        # [ offset, value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
-    u32shr       # [ chunk_mid_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
+    u32shl       # [ chunk_mid_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
     u32or        # [ chunk_mid, value_lo, offset, chunk_hi]
+
     movdn.2      # [ value_lo, offset, chunk_mid, chunk_hi]
     push.32 movup.2 u32wrapping_sub # [32 - offset, value_lo, offset, chunk_mid, chunk_hi]
-    u32shl       # [ chunk_lo, chunk_mid, chunk_hi]
+    u32shr       # [ chunk_lo, chunk_mid, chunk_hi]
 end
 
 # Load a machine double-word (64-bit value, in two 32-bit chunks) to the operand stack
@@ -454,6 +456,7 @@ export.store_dw # [addr, offset, value_hi, value_lo]
         #
         # convert offset from bytes to bits
         swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value_hi, value_lo]
+
         movdn.3        # [bit_offset, value_hi, value_lo, addr]
         dup.0 movdn.4  # [bit_offset, value_hi, value_lo, addr, bit_offset]
         movdn.2        # [value_hi, value_lo, bit_offset, addr, bit_offset]
@@ -463,7 +466,7 @@ export.store_dw # [addr, offset, value_hi, value_lo]
         push.32 movup.5 sub           # [32 - bit_offset, lo, mid, hi, addr]
 
         # compute the masks
-        push.4294967295 swap.1 u32shl # [mask_hi, lo, mid, hi, addr]
+        push.4294967295 swap.1 u32shr # [mask_hi, lo, mid, hi, addr]
         dup.0 u32not                  # [mask_lo, mask_hi, lo, mid, hi, addr]
 
         # combine the bits of the lo and hi chunks with their corresponding elements, so that we
