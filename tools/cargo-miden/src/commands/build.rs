@@ -1,19 +1,21 @@
-use std::path::Path;
+use std::{
+    io::{BufRead, BufReader},
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 
-use anyhow::{bail, Result};
-use cargo_metadata::{camino, Metadata};
+use anyhow::{bail, Context, Result};
+use cargo_metadata::{camino, Artifact, Message, Metadata, MetadataCommand, Package};
 use clap::Args;
+use midenc_session::TargetEnv;
 use path_absolutize::Absolutize;
 
 use crate::{
-    cargo_component::{
-        config::{CargoArguments, Config},
-        load_component_metadata, load_metadata, run_cargo_command, PackageComponentMetadata,
-    },
     compile_masm,
+    config::{CargoArguments, CargoPackageSpec},
     dependencies::process_miden_dependencies,
-    non_component::run_cargo_command_for_non_component,
-    target, BuildOutput, CommandOutput, OutputType, Terminal, Verbosity,
+    target::{self, install_wasm32_target},
+    BuildOutput, CommandOutput, OutputType,
 };
 
 /// Command-line arguments accepted by `cargo miden build`.
@@ -110,34 +112,12 @@ impl BuildCommand {
             }
         };
 
-        let terminal = Terminal::new(
-            if cargo_args.quiet {
-                Verbosity::Quiet
-            } else {
-                match cargo_args.verbose {
-                    0 => Verbosity::Normal,
-                    _ => Verbosity::Verbose,
-                }
-            },
-            cargo_args.color.unwrap_or_default(),
-        );
-        let mut builder = tokio::runtime::Builder::new_current_thread();
-        let rt = builder.enable_all().build()?;
-        let wasm_outputs = if matches!(target_env, midenc_session::TargetEnv::Rollup { .. }) {
-            rt.block_on(async {
-                let config = Config::new(terminal).await?;
-                let wasm_outputs_res =
-                    run_cargo_command(&config, Some("build"), &cargo_args, &spawn_args).await;
-
-                if let Err(e) = wasm_outputs_res.as_ref() {
-                    config.terminal().error(format!("{e:?}"))?;
-                    std::process::exit(1);
-                };
-                wasm_outputs_res
-            })?
-        } else {
-            run_cargo_command_for_non_component(Some("build"), &cargo_args, &spawn_args)?
+        let wasi = match target_env {
+            TargetEnv::Rollup { .. } => "wasip2",
+            _ => "wasip1",
         };
+
+        let wasm_outputs = run_cargo(wasi, &cargo_args, &spawn_args)?;
 
         if let Some(old_rustflags) = maybe_old_rustflags {
             std::env::set_var("RUSTFLAGS", old_rustflags);
@@ -188,6 +168,109 @@ impl BuildCommand {
             }
         }
     }
+}
+
+fn run_cargo(
+    wasi: &str,
+    cargo_args: &CargoArguments,
+    spawn_args: &[String],
+) -> Result<Vec<PathBuf>> {
+    let cargo_path = std::env::var("CARGO")
+        .map(PathBuf::from)
+        .ok()
+        .unwrap_or_else(|| PathBuf::from("cargo"));
+
+    let mut cargo = Command::new(&cargo_path);
+    cargo.args(spawn_args);
+
+    // Handle the target for buildable commands
+    install_wasm32_target(wasi)?;
+
+    cargo.arg("--target").arg(format!("wasm32-{wasi}"));
+
+    if let Some(format) = &cargo_args.message_format {
+        if format != "json-render-diagnostics" {
+            bail!("unsupported cargo message format `{format}`");
+        }
+    }
+
+    // It will output the message as json so we can extract the wasm files
+    // that will be componentized
+    cargo.arg("--message-format").arg("json-render-diagnostics");
+    cargo.stdout(Stdio::piped());
+
+    let artifacts = spawn_cargo(cargo, &cargo_path, cargo_args, true)?;
+
+    let outputs: Vec<PathBuf> = artifacts
+        .into_iter()
+        .filter_map(|a| {
+            let path: PathBuf = a.filenames.first().unwrap().clone().into();
+            if path.to_str().unwrap().contains("wasm32-wasip") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(outputs)
+}
+
+pub fn spawn_cargo(
+    mut cmd: Command,
+    cargo: &Path,
+    cargo_args: &CargoArguments,
+    process_messages: bool,
+) -> Result<Vec<Artifact>> {
+    log::debug!("spawning command {cmd:?}");
+
+    let mut child = cmd
+        .spawn()
+        .context(format!("failed to spawn `{cargo}`", cargo = cargo.display()))?;
+
+    let mut artifacts = Vec::new();
+    if process_messages {
+        let stdout = child.stdout.take().expect("no stdout");
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = line.context("failed to read output from `cargo`")?;
+
+            // If the command line arguments also had `--message-format`, echo the line
+            if cargo_args.message_format.is_some() {
+                println!("{line}");
+            }
+
+            if line.is_empty() {
+                continue;
+            }
+
+            for message in Message::parse_stream(line.as_bytes()) {
+                if let Message::CompilerArtifact(artifact) =
+                    message.context("unexpected JSON message from cargo")?
+                {
+                    for path in &artifact.filenames {
+                        match path.extension() {
+                            Some("wasm") => {
+                                artifacts.push(artifact);
+                                break;
+                            }
+                            _ => continue,
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .context(format!("failed to wait for `{cargo}` to finish", cargo = cargo.display()))?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(artifacts)
 }
 
 fn determine_root_package<'a>(
@@ -259,14 +342,14 @@ fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) 
 
 /// Produces the `midenc` CLI flags implied by the detected target environment and project type.
 fn midenc_flags_from_target(
-    target_env: midenc_session::TargetEnv,
+    target_env: TargetEnv,
     project_type: midenc_session::ProjectType,
     wasm_output: &Path,
 ) -> Vec<String> {
     let mut midenc_args = Vec::new();
 
     match target_env {
-        midenc_session::TargetEnv::Base | midenc_session::TargetEnv::Emu => match project_type {
+        TargetEnv::Base | TargetEnv::Emu => match project_type {
             midenc_session::ProjectType::Program => {
                 midenc_args.push("--exe".into());
                 let masm_module_name = wasm_output
@@ -279,7 +362,7 @@ fn midenc_flags_from_target(
             }
             midenc_session::ProjectType::Library => midenc_args.push("--lib".into()),
         },
-        midenc_session::TargetEnv::Rollup { target } => {
+        TargetEnv::Rollup { target } => {
             midenc_args.push("--target".into());
             match target {
                 midenc_session::RollupTarget::Account => {
@@ -305,4 +388,70 @@ fn midenc_flags_from_target(
         }
     }
     midenc_args
+}
+
+/// Loads the workspace metadata based on the given manifest path.
+fn load_metadata(manifest_path: Option<&Path>) -> Result<Metadata> {
+    let mut command = MetadataCommand::new();
+    command.no_deps();
+
+    if let Some(path) = manifest_path {
+        log::debug!("loading metadata from manifest `{path}`", path = path.display());
+        command.manifest_path(path);
+    } else {
+        log::debug!("loading metadata from current directory");
+    }
+
+    command.exec().context("failed to load cargo metadata")
+}
+
+/// Loads the component metadata for the given package specs.
+///
+/// If `workspace` is true, all workspace packages are loaded.
+fn load_component_metadata<'a>(
+    metadata: &'a Metadata,
+    specs: impl ExactSizeIterator<Item = &'a CargoPackageSpec>,
+    workspace: bool,
+) -> Result<Vec<PackageComponentMetadata<'a>>> {
+    let pkgs = if workspace {
+        metadata.workspace_packages()
+    } else if specs.len() > 0 {
+        let mut pkgs = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let pkg = metadata
+                .packages
+                .iter()
+                .find(|p| {
+                    p.name == spec.name
+                        && match spec.version.as_ref() {
+                            Some(v) => &p.version == v,
+                            None => true,
+                        }
+                })
+                .with_context(|| {
+                    format!("package ID specification `{spec}` did not match any packages")
+                })?;
+            pkgs.push(pkg);
+        }
+
+        pkgs
+    } else {
+        metadata.workspace_default_packages()
+    };
+
+    pkgs.into_iter().map(PackageComponentMetadata::new).collect::<Result<_>>()
+}
+
+/// Represents a cargo package paired with its component metadata.
+#[derive(Debug)]
+pub struct PackageComponentMetadata<'a> {
+    /// The cargo package.
+    pub package: &'a Package,
+}
+
+impl<'a> PackageComponentMetadata<'a> {
+    /// Creates a new package metadata from the given package.
+    pub fn new(package: &'a Package) -> Result<Self> {
+        Ok(Self { package })
+    }
 }
