@@ -21,6 +21,7 @@ miden-objects.workspace = true
 semver.workspace = true
 toml.workspace = true
 syn.workspace = true
+heck.workspace = true
 
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging

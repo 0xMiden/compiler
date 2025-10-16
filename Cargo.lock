@@ -2672,6 +2672,7 @@ dependencies = [
 name = "miden-base-macros"
 version = "0.6.0"
 dependencies = [
+ "heck",
  "miden-objects",
  "proc-macro2",
  "quote",

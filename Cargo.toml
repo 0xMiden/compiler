@@ -105,6 +105,7 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
     "rc",
 ] }
+heck = "0.5"
 
 smallvec = { version = "1.14", default-features = false, features = [
     "union",
