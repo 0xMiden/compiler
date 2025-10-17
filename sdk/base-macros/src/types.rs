@@ -1,27 +1,22 @@
-use std::sync::{Mutex, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{spanned::Spanned, ItemStruct, Type};
 
 #[derive(Clone, Debug)]
-pub(crate) enum WitType {
-    Core(String),
-    Custom(String),
-}
-
-impl WitType {
-    pub(crate) fn as_str(&self) -> &str {
-        match self {
-            WitType::Core(name) | WitType::Custom(name) => name,
-        }
-    }
+pub(crate) struct TypeRef {
+    pub(crate) wit_name: String,
+    pub(crate) is_custom: bool,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
     pub(crate) name: String,
-    pub(crate) ty: WitType,
+    pub(crate) ty: TypeRef,
 }
 
 #[derive(Clone, Debug)]
@@ -55,65 +50,56 @@ pub(crate) fn registered_export_types() -> Vec<ExportedTypeDef> {
     exported_types_registry().lock().expect("mutex poisoned").clone()
 }
 
-const CORE_TYPE_MAPPINGS: &[(&str, &str)] = &[
-    ("AccountCodeRoot", "account-code-root"),
-    ("AccountHash", "account-hash"),
-    ("AccountId", "account-id"),
-    ("Asset", "asset"),
-    ("BlockHash", "block-hash"),
-    ("Digest", "digest"),
-    ("Felt", "felt"),
-    ("NoteExecutionHint", "note-execution-hint"),
-    ("NoteIdx", "note-idx"),
-    ("NoteType", "note-type"),
-    ("Nonce", "nonce"),
-    ("Recipient", "recipient"),
-    ("StorageRoot", "storage-root"),
-    ("StorageValue", "storage-value"),
-    ("Tag", "tag"),
-    ("VaultCommitment", "vault-commitment"),
-    ("Word", "word"),
-];
+pub(crate) fn registered_export_type_map() -> HashMap<String, ExportedTypeDef> {
+    registered_export_types()
+        .into_iter()
+        .map(|def| (def.rust_name.clone(), def))
+        .collect()
+}
 
-pub(crate) fn map_type_to_wit_type(ty: &Type) -> Result<WitType, syn::Error> {
+pub(crate) fn map_type_to_type_ref(
+    ty: &Type,
+    exported_types: &HashMap<String, ExportedTypeDef>,
+) -> Result<TypeRef, syn::Error> {
     match ty {
-        Type::Reference(reference) => map_type_to_wit_type(&reference.elem),
-        Type::Group(group) => map_type_to_wit_type(&group.elem),
-        Type::Paren(paren) => map_type_to_wit_type(&paren.elem),
+        Type::Reference(reference) => map_type_to_type_ref(&reference.elem, exported_types),
+        Type::Group(group) => map_type_to_type_ref(&group.elem, exported_types),
+        Type::Paren(paren) => map_type_to_type_ref(&paren.elem, exported_types),
         Type::Path(path) => {
-            if let Some(last) = path.path.segments.last() {
-                if !last.arguments.is_empty() {
-                    return Err(syn::Error::new(
-                        last.span(),
-                        "generic type arguments are not supported in exported types",
-                    ));
-                }
+            let last = path.path.segments.last().ok_or_else(|| {
+                syn::Error::new(ty.span(), "unsupported type in component interface")
+            })?;
 
-                let ident = last.ident.to_string();
-                if ident.is_empty() {
-                    return Err(syn::Error::new(
-                        ty.span(),
-                        "unsupported type in component interface; identifier cannot be empty",
-                    ));
-                }
+            if !last.arguments.is_empty() {
+                return Err(syn::Error::new(
+                    last.span(),
+                    "generic type arguments are not supported in exported types",
+                ));
+            }
 
-                if let Some((_, wit)) =
-                    CORE_TYPE_MAPPINGS.iter().find(|(core_ident, _)| *core_ident == ident)
-                {
-                    Ok(WitType::Core((*wit).to_string()))
-                } else {
-                    Ok(WitType::Custom(ident.to_kebab_case()))
-                }
+            let ident = last.ident.to_string();
+            if ident.is_empty() {
+                return Err(syn::Error::new(
+                    ty.span(),
+                    "unsupported type in component interface; identifier cannot be empty",
+                ));
+            }
+
+            if exported_types.contains_key(&ident) {
+                Ok(TypeRef {
+                    wit_name: ident.to_kebab_case(),
+                    is_custom: true,
+                })
             } else {
-                Err(syn::Error::new(ty.span(), "unsupported type in component interface"))
+                Ok(TypeRef {
+                    wit_name: ident.to_kebab_case(),
+                    is_custom: false,
+                })
             }
         }
         _ => Err(syn::Error::new(
             ty.span(),
-            format!(
-                "unsupported type `{}` in component interface; only paths are supported",
-                quote::ToTokens::to_token_stream(ty)
-            ),
+            "unsupported type in component interface; only paths are supported",
         )),
     }
 }
@@ -121,6 +107,7 @@ pub(crate) fn map_type_to_wit_type(ty: &Type) -> Result<WitType, syn::Error> {
 pub(crate) fn exported_type_from_struct(
     item_struct: &ItemStruct,
 ) -> Result<ExportedTypeDef, syn::Error> {
+    let known_exported = registered_export_type_map();
     match &item_struct.fields {
         syn::Fields::Named(named) => {
             let mut fields = Vec::new();
@@ -128,7 +115,7 @@ pub(crate) fn exported_type_from_struct(
                 let field_ident = field.ident.as_ref().ok_or_else(|| {
                     syn::Error::new(field.span(), "exported type fields must be named")
                 })?;
-                let field_ty = map_type_to_wit_type(&field.ty)?;
+                let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
                     name: field_ident.to_string(),
                     ty: field_ty,

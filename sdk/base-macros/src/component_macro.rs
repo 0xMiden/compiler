@@ -21,7 +21,7 @@ use toml::Value;
 
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
-    types::{map_type_to_wit_type, registered_export_types, ExportedTypeDef, WitType},
+    types::{map_type_to_type_ref, registered_export_types, ExportedTypeDef, TypeRef},
 };
 
 /// Cargo metadata relevant for the `#[component]` macro expansion.
@@ -62,8 +62,7 @@ enum ReceiverKind {
 struct MethodParam {
     ident: syn::Ident,
     user_ty: syn::Type,
-    wit_type: WitType,
-    wit_type_name: String,
+    type_ref: TypeRef,
     wit_param_name: String,
 }
 
@@ -71,8 +70,7 @@ enum MethodReturn {
     Unit,
     Type {
         user_ty: Box<syn::Type>,
-        wit_type: WitType,
-        wit_type_name: String,
+        type_ref: TypeRef,
     },
 }
 
@@ -224,6 +222,18 @@ fn expand_component_impl(
     let interface_module = to_snake_case(&interface_name);
     let world_name = format!("{interface_name}-world");
 
+    let mut exported_types = registered_export_types();
+    exported_types.sort_by(|a, b| a.wit_name.cmp(&b.wit_name));
+    let exported_types_by_wit: HashMap<_, _> =
+        exported_types.iter().map(|def| (def.wit_name.clone(), def.clone())).collect();
+    let exported_types_by_rust: HashMap<_, _> =
+        exported_types.iter().map(|def| (def.rust_name.clone(), def.clone())).collect();
+    let bindings_segments = build_bindings_module_segments(&component_package, &interface_module);
+    let conversion_impls: Vec<TokenStream2> = exported_types
+        .iter()
+        .map(|def| generate_export_type_impls(def, &bindings_segments))
+        .collect();
+
     let mut methods = Vec::new();
     let mut type_imports = BTreeSet::new();
 
@@ -233,21 +243,11 @@ fn expand_component_impl(
                 continue;
             }
 
-            let (parsed_method, imports) = parse_component_method(method)?;
+            let (parsed_method, imports) = parse_component_method(method, &exported_types_by_rust)?;
             type_imports.extend(imports);
             methods.push(parsed_method);
         }
     }
-
-    let mut exported_types = registered_export_types();
-    exported_types.sort_by(|a, b| a.wit_name.cmp(&b.wit_name));
-    let exported_types_map: HashMap<_, _> =
-        exported_types.iter().cloned().map(|def| (def.wit_name.clone(), def)).collect();
-    let bindings_segments = build_bindings_module_segments(&component_package, &interface_module);
-    let conversion_impls: Vec<TokenStream2> = exported_types_map
-        .values()
-        .map(|def| generate_export_type_impls(def, &bindings_segments))
-        .collect();
 
     let wit_source = build_component_wit(
         &component_package,
@@ -264,7 +264,7 @@ fn expand_component_impl(
     let guest_methods: Vec<TokenStream2> = methods
         .iter()
         .map(|method| {
-            render_guest_method(method, &component_type, &bindings_segments, &exported_types_map)
+            render_guest_method(method, &component_type, &bindings_segments, &exported_types_by_wit)
         })
         .collect();
 
@@ -306,8 +306,8 @@ fn build_component_wit(
     let mut combined_core_imports = type_imports.clone();
     for exported in exported_types {
         for field in &exported.fields {
-            if let WitType::Core(core_ty) = &field.ty {
-                combined_core_imports.insert(core_ty.clone());
+            if !field.ty.is_custom {
+                combined_core_imports.insert(field.ty.wit_name.clone());
             }
         }
     }
@@ -324,7 +324,7 @@ fn build_component_wit(
         let _ = writeln!(wit_source, "    record {} {{", exported.wit_name);
         for field in &exported.fields {
             let field_name = to_kebab_case(&field.name);
-            let _ = writeln!(wit_source, "        {}: {},", field_name, field.ty.as_str());
+            let _ = writeln!(wit_source, "        {}: {},", field_name, field.ty.wit_name);
         }
         let _ = writeln!(wit_source, "    }}\n");
     }
@@ -333,21 +333,21 @@ fn build_component_wit(
         let signature = if method.params.is_empty() {
             match &method.return_info {
                 MethodReturn::Unit => format!("    {}: func();", method.wit_name),
-                MethodReturn::Type { wit_type_name, .. } => {
-                    format!("    {}: func() -> {};", method.wit_name, wit_type_name)
+                MethodReturn::Type { type_ref, .. } => {
+                    format!("    {}: func() -> {};", method.wit_name, type_ref.wit_name)
                 }
             }
         } else {
             let params = method
                 .params
                 .iter()
-                .map(|param| format!("{}: {}", param.wit_param_name, param.wit_type_name))
+                .map(|param| format!("{}: {}", param.wit_param_name, param.type_ref.wit_name))
                 .collect::<Vec<_>>()
                 .join(", ");
             match &method.return_info {
                 MethodReturn::Unit => format!("    {}: func({});", method.wit_name, params),
-                MethodReturn::Type { wit_type_name, .. } => {
-                    format!("    {}: func({}) -> {};", method.wit_name, params, wit_type_name)
+                MethodReturn::Type { type_ref, .. } => {
+                    format!("    {}: func({}) -> {};", method.wit_name, params, type_ref.wit_name)
                 }
             }
         };
@@ -439,7 +439,7 @@ fn build_guest_trait_path(
 fn render_guest_method(
     method: &ComponentMethod,
     component_type: &Type,
-    bindings_segments: &[proc_macro2::Ident],
+    bindings_segments: &[Ident],
     exported_types: &HashMap<String, ExportedTypeDef>,
 ) -> TokenStream2 {
     let fn_ident = &method.fn_ident;
@@ -455,21 +455,18 @@ fn render_guest_method(
         let ident = &param.ident;
         call_args.push(quote!(#ident));
 
-        let param_ty = match param.wit_type {
-            WitType::Core(_) => {
-                let ty = &param.user_ty;
-                quote!(#ty)
-            }
-            WitType::Custom(ref wit_name) => {
-                let def = exported_types.get(wit_name).expect("unknown exported type");
-                let type_ident = format_ident!("{}", def.rust_name);
-                quote!(#bindings_base :: #type_ident)
-            }
+        let param_ty = if param.type_ref.is_custom {
+            let def = exported_types.get(&param.type_ref.wit_name).expect("unknown exported type");
+            let type_ident = format_ident!("{}", def.rust_name);
+            quote!(#bindings_base :: #type_ident)
+        } else {
+            let ty = &param.user_ty;
+            quote!(#ty)
         };
 
         param_tokens.push(quote!(#ident: #param_ty));
 
-        if matches!(param.wit_type, WitType::Custom(_)) {
+        if param.type_ref.is_custom {
             let user_ty = &param.user_ty;
             pre_call.push(quote! {
                 let #ident: #user_ty = #ident.into();
@@ -494,16 +491,16 @@ fn render_guest_method(
 
     let output = match &method.return_info {
         MethodReturn::Unit => quote!(),
-        MethodReturn::Type {
-            wit_type, user_ty, ..
-        } => match wit_type {
-            WitType::Core(_) => quote!(-> #user_ty),
-            WitType::Custom(wit_name) => {
-                let def = exported_types.get(wit_name).expect("unknown exported type");
+        MethodReturn::Type { type_ref, user_ty } => {
+            let user_ty = user_ty.as_ref();
+            if type_ref.is_custom {
+                let def = exported_types.get(&type_ref.wit_name).expect("unknown exported type");
                 let type_ident = format_ident!("{}", def.rust_name);
                 quote!(-> #bindings_base :: #type_ident)
+            } else {
+                quote!(-> #user_ty)
             }
-        },
+        }
     };
 
     let body = match &method.return_info {
@@ -512,19 +509,22 @@ fn render_guest_method(
             #(#pre_call)*
             #call_expr;
         },
-        MethodReturn::Type { wit_type, .. } => match wit_type {
-            WitType::Core(_) => quote! {
-                #component_init
-                #(#pre_call)*
-                #call_expr
-            },
-            WitType::Custom(_) => quote! {
-                #component_init
-                #(#pre_call)*
-                let result = #call_expr;
-                result.into()
-            },
-        },
+        MethodReturn::Type { type_ref, .. } => {
+            if type_ref.is_custom {
+                quote! {
+                    #component_init
+                    #(#pre_call)*
+                    let result = #call_expr;
+                    result.into()
+                }
+            } else {
+                quote! {
+                    #component_init
+                    #(#pre_call)*
+                    #call_expr
+                }
+            }
+        }
     };
 
     quote! {
@@ -577,9 +577,10 @@ fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]
         .iter()
         .map(|field| {
             let ident = format_ident!("{}", field.name);
-            match field.ty {
-                WitType::Core(_) => quote! { #ident },
-                WitType::Custom(_) => quote! { #ident.into() },
+            if field.ty.is_custom {
+                quote! { #ident.into() }
+            } else {
+                quote! { #ident }
             }
         })
         .collect();
@@ -589,9 +590,10 @@ fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]
         .iter()
         .map(|field| {
             let ident = format_ident!("{}", field.name);
-            match field.ty {
-                WitType::Core(_) => quote! { #ident },
-                WitType::Custom(_) => quote! { #ident.into() },
+            if field.ty.is_custom {
+                quote! { #ident.into() }
+            } else {
+                quote! { #ident }
             }
         })
         .collect();
@@ -620,6 +622,7 @@ fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]
 /// Parses a public inherent method and extracts the metadata necessary to export it via WIT.
 fn parse_component_method(
     method: &ImplItemFn,
+    exported_types: &HashMap<String, ExportedTypeDef>,
 ) -> Result<(ComponentMethod, BTreeSet<String>), syn::Error> {
     if method.sig.constness.is_some() {
         return Err(syn::Error::new(
@@ -697,16 +700,15 @@ fn parse_component_method(
                 };
 
                 let user_ty = (*pat_type.ty).clone();
-                let wit_type = map_type_to_wit_type(&pat_type.ty)?;
-                if let WitType::Core(core_ty) = &wit_type {
-                    type_imports.insert(core_ty.clone());
+                let type_ref = map_type_to_type_ref(&pat_type.ty, exported_types)?;
+                if !type_ref.is_custom {
+                    type_imports.insert(type_ref.wit_name.clone());
                 }
 
                 params.push(MethodParam {
                     ident: ident.clone(),
                     user_ty,
-                    wit_type: wit_type.clone(),
-                    wit_type_name: wit_type.as_str().to_string(),
+                    type_ref,
                     wit_param_name: to_kebab_case(&ident.to_string()),
                 });
             }
@@ -723,14 +725,13 @@ fn parse_component_method(
         ReturnType::Default => MethodReturn::Unit,
         ReturnType::Type(_, ty) if is_unit_type(ty) => MethodReturn::Unit,
         ReturnType::Type(_, ty) => {
-            let wit_type = map_type_to_wit_type(ty)?;
-            if let WitType::Core(core_ty) = &wit_type {
-                type_imports.insert(core_ty.clone());
+            let type_ref = map_type_to_type_ref(ty, exported_types)?;
+            if !type_ref.is_custom {
+                type_imports.insert(type_ref.wit_name.clone());
             }
             MethodReturn::Type {
                 user_ty: ty.clone(),
-                wit_type: wit_type.clone(),
-                wit_type_name: wit_type.as_str().to_string(),
+                type_ref,
             }
         }
     };
