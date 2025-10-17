@@ -17,8 +17,6 @@ path = "src/is_prime.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-serde = { workspace = true, features = ["std"] }
-toml.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"
