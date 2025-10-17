@@ -62,7 +62,10 @@ pub(crate) fn map_type_to_type_ref(
     exported_types: &HashMap<String, ExportedTypeDef>,
 ) -> Result<TypeRef, syn::Error> {
     match ty {
-        Type::Reference(reference) => map_type_to_type_ref(&reference.elem, exported_types),
+        Type::Reference(reference) => Err(syn::Error::new(
+            reference.span(),
+            "references are not supported in component interfaces or exported types",
+        )),
         Type::Group(group) => map_type_to_type_ref(&group.elem, exported_types),
         Type::Paren(paren) => map_type_to_type_ref(&paren.elem, exported_types),
         Type::Path(path) => {
