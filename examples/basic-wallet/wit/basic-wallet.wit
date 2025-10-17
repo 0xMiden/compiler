@@ -8,18 +8,24 @@ use miden:base/core-types@1.0.0;
 interface basic-wallet {
     use core-types.{asset, felt, note-idx, word};
 
-    record custom-type-a {
-        foo: word,
+    variant enum-a {
+        variant-a,
+        variant-b,
     }
 
-    record custom-type-b {
+    record struct-a {
+        foo: word,
+        an-enum: enum-a,
+    }
+
+    record struct-b {
         bar: felt,
         baz: felt,
     }
 
     receive-asset: func(asset: asset);
     move-asset-to-note: func(asset: asset, note-idx: note-idx);
-    test-custom-types: func(a: custom-type-a) -> custom-type-b;
+    test-custom-types: func(a: struct-a, b: enum-a) -> struct-b;
 }
 
 world basic-wallet-world {

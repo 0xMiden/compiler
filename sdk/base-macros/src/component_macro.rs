@@ -21,7 +21,9 @@ use toml::Value;
 
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
-    types::{map_type_to_type_ref, registered_export_types, ExportedTypeDef, TypeRef},
+    types::{
+        map_type_to_type_ref, registered_export_types, ExportedTypeDef, ExportedTypeKind, TypeRef,
+    },
 };
 
 /// Cargo metadata relevant for the `#[component]` macro expansion.
@@ -305,9 +307,22 @@ fn build_component_wit(
 
     let mut combined_core_imports = type_imports.clone();
     for exported in exported_types {
-        for field in &exported.fields {
-            if !field.ty.is_custom {
-                combined_core_imports.insert(field.ty.wit_name.clone());
+        match &exported.kind {
+            ExportedTypeKind::Record { fields } => {
+                for field in fields {
+                    if !field.ty.is_custom {
+                        combined_core_imports.insert(field.ty.wit_name.clone());
+                    }
+                }
+            }
+            ExportedTypeKind::Variant { variants } => {
+                for variant in variants {
+                    if let Some(payload) = &variant.payload {
+                        if !payload.is_custom {
+                            combined_core_imports.insert(payload.wit_name.clone());
+                        }
+                    }
+                }
             }
         }
     }
@@ -321,12 +336,31 @@ fn build_component_wit(
     }
 
     for exported in exported_types {
-        let _ = writeln!(wit_source, "    record {} {{", exported.wit_name);
-        for field in &exported.fields {
-            let field_name = to_kebab_case(&field.name);
-            let _ = writeln!(wit_source, "        {}: {},", field_name, field.ty.wit_name);
+        match &exported.kind {
+            ExportedTypeKind::Record { fields } => {
+                let _ = writeln!(wit_source, "    record {} {{", exported.wit_name);
+                for field in fields {
+                    let field_name = to_kebab_case(&field.name);
+                    let _ = writeln!(wit_source, "        {}: {},", field_name, field.ty.wit_name);
+                }
+                let _ = writeln!(wit_source, "    }}\n");
+            }
+            ExportedTypeKind::Variant { variants } => {
+                let _ = writeln!(wit_source, "    variant {} {{", exported.wit_name);
+                for variant in variants {
+                    if let Some(payload) = &variant.payload {
+                        let _ = writeln!(
+                            wit_source,
+                            "        {}({}),",
+                            variant.wit_name, payload.wit_name
+                        );
+                    } else {
+                        let _ = writeln!(wit_source, "        {},", variant.wit_name);
+                    }
+                }
+                let _ = writeln!(wit_source, "    }}\n");
+            }
         }
-        let _ = writeln!(wit_source, "    }}\n");
     }
 
     for method in methods {
@@ -552,67 +586,131 @@ fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]
     let binding_type_ident = format_ident!("{}", def.rust_name);
     let bindings_path =
         quote! { self::bindings::exports #( :: #bindings_segments )* :: #binding_type_ident };
+    match &def.kind {
+        ExportedTypeKind::Record { fields } => {
+            if fields.is_empty() {
+                quote! {
+                    impl From<#bindings_path> for #struct_ident {
+                        fn from(_: #bindings_path) -> Self {
+                            Self
+                        }
+                    }
 
-    if def.fields.is_empty() {
-        return quote! {
-            impl From<#bindings_path> for #struct_ident {
-                fn from(_: #bindings_path) -> Self {
-                    Self
+                    impl From<#struct_ident> for #bindings_path {
+                        fn from(_: #struct_ident) -> Self {
+                            Self
+                        }
+                    }
                 }
-            }
-
-            impl From<#struct_ident> for #bindings_path {
-                fn from(_: #struct_ident) -> Self {
-                    Self
-                }
-            }
-        };
-    }
-
-    let field_idents: Vec<_> =
-        def.fields.iter().map(|field| format_ident!("{}", field.name)).collect();
-
-    let binding_to_user_fields: Vec<_> = def
-        .fields
-        .iter()
-        .map(|field| {
-            let ident = format_ident!("{}", field.name);
-            if field.ty.is_custom {
-                quote! { #ident.into() }
             } else {
-                quote! { #ident }
-            }
-        })
-        .collect();
+                let field_idents: Vec<_> =
+                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
 
-    let user_to_binding_fields: Vec<_> = def
-        .fields
-        .iter()
-        .map(|field| {
-            let ident = format_ident!("{}", field.name);
-            if field.ty.is_custom {
-                quote! { #ident.into() }
-            } else {
-                quote! { #ident }
-            }
-        })
-        .collect();
+                let binding_to_user_fields: Vec<_> = fields
+                    .iter()
+                    .map(|field| {
+                        let ident = format_ident!("{}", field.name);
+                        if field.ty.is_custom {
+                            quote! { #ident.into() }
+                        } else {
+                            quote! { #ident }
+                        }
+                    })
+                    .collect();
 
-    quote! {
-        impl From<#bindings_path> for #struct_ident {
-            fn from(value: #bindings_path) -> Self {
-                let #bindings_path { #( #field_idents ),* } = value;
-                Self {
-                    #( #field_idents: #binding_to_user_fields ),*
+                let user_to_binding_fields: Vec<_> = fields
+                    .iter()
+                    .map(|field| {
+                        let ident = format_ident!("{}", field.name);
+                        if field.ty.is_custom {
+                            quote! { #ident.into() }
+                        } else {
+                            quote! { #ident }
+                        }
+                    })
+                    .collect();
+
+                quote! {
+                    impl From<#bindings_path> for #struct_ident {
+                        fn from(value: #bindings_path) -> Self {
+                            let #bindings_path { #( #field_idents ),* } = value;
+                            Self {
+                                #( #field_idents: #binding_to_user_fields ),*
+                            }
+                        }
+                    }
+
+                    impl From<#struct_ident> for #bindings_path {
+                        fn from(value: #struct_ident) -> Self {
+                            let #struct_ident { #( #field_idents ),* } = value;
+                            Self {
+                                #( #field_idents: #user_to_binding_fields ),*
+                            }
+                        }
+                    }
                 }
             }
         }
+        ExportedTypeKind::Variant { variants } => {
+            let binding_match_arms: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let binding_ident = format_ident!("{}", variant.rust_name);
+                    let user_ident = format_ident!("{}", variant.rust_name);
+                    if let Some(payload) = &variant.payload {
+                        let binding_pat = quote! { #bindings_path::#binding_ident(value) };
+                        let user_ctor = quote! { #struct_ident::#user_ident };
+                        let user_payload = if payload.is_custom {
+                            quote! {{
+                                value.into()
+                            }}
+                        } else {
+                            quote! { value }
+                        };
+                        quote! { #binding_pat => #user_ctor(#user_payload) }
+                    } else {
+                        quote! { #bindings_path::#binding_ident => #struct_ident::#user_ident }
+                    }
+                })
+                .collect();
 
-        impl From<#struct_ident> for #bindings_path {
-            fn from(value: #struct_ident) -> Self {
-                let #struct_ident { #( #field_idents ),* } = value;
-                Self {
-                    #( #field_idents: #user_to_binding_fields ),*
+            let user_match_arms: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let binding_ident = format_ident!("{}", variant.rust_name);
+                    let user_ident = format_ident!("{}", variant.rust_name);
+                    if let Some(payload) = &variant.payload {
+                        let user_pat = quote! { #struct_ident::#user_ident(value) };
+                        let binding_payload = if payload.is_custom {
+                            quote! {{
+                                let value = value.into();
+                                value
+                            }}
+                        } else {
+                            quote! { value }
+                        };
+                        quote! { #user_pat => #bindings_path::#binding_ident(#binding_payload) }
+                    } else {
+                        quote! { #struct_ident::#user_ident => #bindings_path::#binding_ident }
+                    }
+                })
+                .collect();
+
+            quote! {
+                impl From<#bindings_path> for #struct_ident {
+                    fn from(value: #bindings_path) -> Self {
+                        match value {
+                            #( #binding_match_arms ),*
+                        }
+                    }
+                }
+
+                impl From<#struct_ident> for #bindings_path {
+                    fn from(value: #struct_ident) -> Self {
+                        match value {
+                            #( #user_match_arms ),*
+                        }
+                    }
                 }
             }
         }

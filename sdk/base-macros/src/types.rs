@@ -20,10 +20,23 @@ pub(crate) struct ExportedField {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ExportedVariant {
+    pub(crate) rust_name: String,
+    pub(crate) wit_name: String,
+    pub(crate) payload: Option<TypeRef>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ExportedTypeKind {
+    Record { fields: Vec<ExportedField> },
+    Variant { variants: Vec<ExportedVariant> },
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ExportedTypeDef {
     pub(crate) rust_name: String,
     pub(crate) wit_name: String,
-    pub(crate) fields: Vec<ExportedField>,
+    pub(crate) kind: ExportedTypeKind,
 }
 
 static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
@@ -32,7 +45,7 @@ fn exported_types_registry() -> &'static Mutex<Vec<ExportedTypeDef>> {
     EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-pub(crate) fn register_export_type(def: ExportedTypeDef, span: Span) -> Result<(), syn::Error> {
+pub(crate) fn register_export_type(def: ExportedTypeDef, _span: Span) -> Result<(), syn::Error> {
     let mut registry = exported_types_registry().lock().expect("mutex poisoned");
 
     if let Some(existing) = registry.iter_mut().find(|existing| existing.wit_name == def.wit_name) {
@@ -126,17 +139,60 @@ pub(crate) fn exported_type_from_struct(
             Ok(ExportedTypeDef {
                 rust_name: item_struct.ident.to_string(),
                 wit_name: item_struct.ident.to_string().to_kebab_case(),
-                fields,
+                kind: ExportedTypeKind::Record { fields },
             })
         }
         syn::Fields::Unit => Ok(ExportedTypeDef {
             rust_name: item_struct.ident.to_string(),
             wit_name: item_struct.ident.to_string().to_kebab_case(),
-            fields: Vec::new(),
+            kind: ExportedTypeKind::Record { fields: Vec::new() },
         }),
         syn::Fields::Unnamed(_) => Err(syn::Error::new(
             item_struct.ident.span(),
             "tuple structs are not supported by #[export_type]",
         )),
     }
+}
+
+pub(crate) fn exported_type_from_enum(
+    item_enum: &syn::ItemEnum,
+) -> Result<ExportedTypeDef, syn::Error> {
+    let known_exported = registered_export_type_map();
+    let mut variants = Vec::new();
+    for variant in &item_enum.variants {
+        let rust_name = variant.ident.to_string();
+        let wit_name = rust_name.to_kebab_case();
+        let payload = match &variant.fields {
+            syn::Fields::Unit => None,
+            syn::Fields::Unnamed(fields) => {
+                if fields.unnamed.len() != 1 {
+                    return Err(syn::Error::new(
+                        fields.span(),
+                        "tuple variants in #[export_type] enums must have exactly one field",
+                    ));
+                }
+                let field_ty = &fields.unnamed[0].ty;
+                let type_ref = map_type_to_type_ref(field_ty, &known_exported)?;
+                Some(type_ref)
+            }
+            syn::Fields::Named(named) => {
+                return Err(syn::Error::new(
+                    named.span(),
+                    "struct variants are not supported by #[export_type]",
+                ));
+            }
+        };
+
+        variants.push(ExportedVariant {
+            rust_name,
+            wit_name,
+            payload,
+        });
+    }
+
+    Ok(ExportedTypeDef {
+        rust_name: item_enum.ident.to_string(),
+        wit_name: item_enum.ident.to_string().to_kebab_case(),
+        kind: ExportedTypeKind::Variant { variants },
+    })
 }

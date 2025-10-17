@@ -347,6 +347,10 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#test-custom-types
     drop
     movup.2
     drop
+    movup.2
+    drop
+    movup.2
+    drop
     push.1114148
     u32divmod.4
     swap.1

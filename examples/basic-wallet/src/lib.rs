@@ -20,12 +20,19 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 use miden::{account, component, export_type, tx, Asset, Felt, NoteIdx, Word};
 
 #[export_type]
-struct CustomTypeA {
-    foo: Word,
+enum EnumA {
+    VariantA,
+    VariantB,
 }
 
 #[export_type]
-struct CustomTypeB {
+struct StructA {
+    foo: Word,
+    an_enum: EnumA,
+}
+
+#[export_type]
+struct StructB {
     bar: Felt,
     baz: Felt,
 }
@@ -58,8 +65,8 @@ impl MyAccount {
         tx::add_asset_to_note(asset, note_idx);
     }
 
-    pub fn test_custom_types(&self, a: CustomTypeA) -> CustomTypeB {
-        CustomTypeB {
+    pub fn test_custom_types(&self, a: StructA, _b: EnumA) -> StructB {
+        StructB {
             bar: a.foo.inner.0,
             baz: a.foo.inner.1,
         }
