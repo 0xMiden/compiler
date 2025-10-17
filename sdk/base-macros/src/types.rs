@@ -35,11 +35,9 @@ fn exported_types_registry() -> &'static Mutex<Vec<ExportedTypeDef>> {
 pub(crate) fn register_export_type(def: ExportedTypeDef, span: Span) -> Result<(), syn::Error> {
     let mut registry = exported_types_registry().lock().expect("mutex poisoned");
 
-    if registry.iter().any(|existing| existing.wit_name == def.wit_name) {
-        return Err(syn::Error::new(
-            span,
-            format!("duplicate exported type '{}'; names must be unique", def.rust_name),
-        ));
+    if let Some(existing) = registry.iter_mut().find(|existing| existing.wit_name == def.wit_name) {
+        *existing = def;
+        return Ok(());
     }
 
     registry.push(def);
