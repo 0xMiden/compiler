@@ -22,6 +22,7 @@ use std::{collections::BTreeMap, fmt, fmt::Display, path::PathBuf, str::FromStr}
 
 use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::Metadata;
+use midenc_session::ColorChoice;
 use parse_arg::{iter_short, match_arg};
 use semver::Version;
 use toml_edit::DocumentMut;
@@ -355,42 +356,6 @@ impl Args {
     }
 }
 
-/// The supported color options of `cargo`.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Color {
-    /// Automatically provide colorized output based on whether
-    /// the output is a terminal.
-    #[default]
-    Auto,
-    /// Never provide colorized output.
-    Never,
-    /// Always provide colorized output.
-    Always,
-}
-
-impl FromStr for Color {
-    type Err = anyhow::Error;
-
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "auto" => Ok(Self::Auto),
-            "never" => Ok(Self::Never),
-            "always" => Ok(Self::Always),
-            _ => bail!("argument for --color must be auto, always, or never, but found `{value}`"),
-        }
-    }
-}
-
-impl fmt::Display for Color {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Auto => write!(f, "auto"),
-            Self::Never => write!(f, "never"),
-            Self::Always => write!(f, "always"),
-        }
-    }
-}
-
 /// Represents known cargo arguments.
 ///
 /// This is a subset of the arguments that cargo supports that
@@ -398,7 +363,7 @@ impl fmt::Display for Color {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CargoArguments {
     /// The --color argument.
-    pub color: Option<Color>,
+    pub color: Option<ColorChoice>,
     /// The (count of) --verbose argument.
     pub verbose: usize,
     /// The --help argument.
@@ -812,7 +777,7 @@ mod test {
         assert_eq!(
             args,
             CargoArguments {
-                color: Some(Color::Auto),
+                color: Some(ColorChoice::Auto),
                 verbose: 3,
                 help: true,
                 quiet: true,

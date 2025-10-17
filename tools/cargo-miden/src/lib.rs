@@ -11,7 +11,6 @@ mod commands;
 mod compile_masm;
 mod config;
 mod dependencies;
-mod non_component;
 mod outputs;
 mod target;
 mod utils;
