@@ -8,8 +8,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{camino, Package};
 use serde::Deserialize;
 
-use super::cargo_component::config::CargoArguments;
-use crate::{BuildOutput, OutputType};
+use crate::{config::CargoArguments, BuildOutput, OutputType};
 
 /// Defines dependency (the rhs of the dependency `"ns:package" = { path = "..." }` pair)
 #[derive(Deserialize, Debug, Clone)]

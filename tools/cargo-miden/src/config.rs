@@ -22,11 +22,10 @@ use std::{collections::BTreeMap, fmt, fmt::Display, path::PathBuf, str::FromStr}
 
 use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::Metadata;
+use midenc_session::ColorChoice;
 use parse_arg::{iter_short, match_arg};
 use semver::Version;
 use toml_edit::DocumentMut;
-
-use super::core::terminal::{Color, Terminal};
 
 /// Represents a cargo package specifier.
 ///
@@ -364,7 +363,7 @@ impl Args {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CargoArguments {
     /// The --color argument.
-    pub color: Option<Color>,
+    pub color: Option<ColorChoice>,
     /// The (count of) --verbose argument.
     pub verbose: usize,
     /// The --help argument.
@@ -478,27 +477,6 @@ impl CargoArguments {
                 .map(CargoPackageSpec::new)
                 .collect::<Result<_>>()?,
         })
-    }
-}
-
-/// Configuration information for cargo-component.
-///
-/// This is used to configure the behavior of cargo-component.
-#[derive(Debug)]
-pub struct Config {
-    /// The terminal to use.
-    terminal: Terminal,
-}
-
-impl Config {
-    /// Create a new `Config` with the given terminal.
-    pub async fn new(terminal: Terminal) -> Result<Self> {
-        Ok(Self { terminal })
-    }
-
-    /// Gets a reference to the terminal for writing messages.
-    pub fn terminal(&self) -> &Terminal {
-        &self.terminal
     }
 }
 
@@ -799,7 +777,7 @@ mod test {
         assert_eq!(
             args,
             CargoArguments {
-                color: Some(Color::Auto),
+                color: Some(ColorChoice::Auto),
                 verbose: 3,
                 help: true,
                 quiet: true,

@@ -6,17 +6,15 @@
 use anyhow::Result;
 use clap::Parser;
 
-mod cargo_component;
 mod cli;
 mod commands;
 mod compile_masm;
+mod config;
 mod dependencies;
-mod non_component;
 mod outputs;
 mod target;
 mod utils;
 
-pub use cargo_component::core::terminal::{Color, Terminal, Verbosity};
 pub use outputs::{BuildOutput, CommandOutput};
 pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type,
