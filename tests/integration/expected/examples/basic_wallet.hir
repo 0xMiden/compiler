@@ -1,4 +1,4 @@
-builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
+builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
     builtin.module public @basic_wallet {
         private builtin.function @__wasm_call_ctors() {
         ^block5:
@@ -10,17 +10,17 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden:basic-wallet/basic-wallet@1.0.0#receive-asset(v0: felt, v1: felt, v2: felt, v3: felt) {
+        private builtin.function @miden:basic-wallet/basic-wallet@0.1.0#receive-asset(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
-            v5 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v5 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v6 = hir.bitcast v5 : ptr<byte, i32>;
             v7 = hir.load v6 : i32;
             v8 = arith.constant 32 : i32;
             v9 = arith.sub v7, v8 : i32 #[overflow = wrapping];
-            v10 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v10 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v11 = hir.bitcast v10 : ptr<byte, i32>;
             hir.store v11, v9;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v13 = arith.constant 12 : u32;
             v12 = hir.bitcast v9 : u32;
             v14 = arith.add v12, v13 : u32 #[overflow = checked];
@@ -53,26 +53,26 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.store v33, v0;
             v34 = arith.constant 16 : i32;
             v35 = arith.add v9, v34 : i32 #[overflow = wrapping];
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden_base_sys::bindings::account::add_asset(v35, v9)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::account::add_asset(v35, v9)
             v489 = arith.constant 32 : i32;
             v37 = arith.add v9, v489 : i32 #[overflow = wrapping];
-            v38 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v38 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v39 = hir.bitcast v38 : ptr<byte, i32>;
             hir.store v39, v37;
             builtin.ret ;
         };
 
-        private builtin.function @miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt) {
+        private builtin.function @miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt) {
         ^block11(v40: felt, v41: felt, v42: felt, v43: felt, v44: felt):
-            v46 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v46 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v47 = hir.bitcast v46 : ptr<byte, i32>;
             v48 = hir.load v47 : i32;
             v49 = arith.constant 64 : i32;
             v50 = arith.sub v48, v49 : i32 #[overflow = wrapping];
-            v51 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v51 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v52 = hir.bitcast v51 : ptr<byte, i32>;
             hir.store v52, v50;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v54 = arith.constant 12 : u32;
             v53 = hir.bitcast v50 : u32;
             v55 = arith.add v53, v54 : u32 #[overflow = checked];
@@ -105,26 +105,26 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.store v74, v40;
             v75 = arith.constant 16 : i32;
             v76 = arith.add v50, v75 : i32 #[overflow = wrapping];
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden_base_sys::bindings::account::remove_asset(v76, v50)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::account::remove_asset(v76, v50)
             v495 = arith.constant 16 : i32;
             v80 = arith.add v50, v495 : i32 #[overflow = wrapping];
             v77 = arith.constant 32 : i32;
             v78 = arith.add v50, v77 : i32 #[overflow = wrapping];
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden_base_sys::bindings::tx::add_asset_to_note(v78, v80, v44)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::tx::add_asset_to_note(v78, v80, v44)
             v494 = arith.constant 64 : i32;
             v82 = arith.add v50, v494 : i32 #[overflow = wrapping];
-            v83 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v83 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v84 = hir.bitcast v83 : ptr<byte, i32>;
             hir.store v84, v82;
             builtin.ret ;
         };
 
-        private builtin.function @miden:basic-wallet/basic-wallet@1.0.0#test-custom-types(v85: felt, v86: felt, v87: felt, v88: felt, v89: i32, v90: i32) -> i32 {
+        private builtin.function @miden:basic-wallet/basic-wallet@0.1.0#test-custom-types(v85: felt, v86: felt, v87: felt, v88: felt, v89: i32, v90: i32) -> i32 {
         ^block13(v85: felt, v86: felt, v87: felt, v88: felt, v89: i32, v90: i32):
-            v93 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v93 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
             v94 = hir.bitcast v93 : ptr<byte, i32>;
             v95 = hir.load v94 : i32;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v96 = arith.constant 1048584 : i32;
             v97 = arith.add v95, v96 : i32 #[overflow = wrapping];
             v99 = arith.constant 4 : u32;
@@ -146,7 +146,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block15:
-            v109 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v109 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
             v110 = hir.bitcast v109 : ptr<byte, i32>;
             v111 = hir.load v110 : i32;
             v112 = arith.constant 1048592 : i32;
@@ -163,10 +163,10 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
                 scf.yield ;
             } else {
             ^block18:
-                v121 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v121 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
                 v122 = hir.bitcast v121 : ptr<byte, i32>;
                 v123 = hir.load v122 : i32;
-                hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__wasm_call_ctors()
+                hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__wasm_call_ctors()
                 v503 = arith.constant 1 : u8;
                 v505 = arith.constant 1048592 : i32;
                 v125 = arith.add v123, v505 : i32 #[overflow = wrapping];
@@ -210,18 +210,18 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.assertz v156 #[code = 250];
             v157 = hir.int_to_ptr v154 : ptr<byte, felt>;
             v158 = hir.load v157 : felt;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden::account::add_asset(v139, v146, v153, v158, v131)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::account::add_asset(v139, v146, v153, v158, v131)
             builtin.ret ;
         };
 
         private builtin.function @miden_base_sys::bindings::account::remove_asset(v159: i32, v160: i32) {
         ^block21(v159: i32, v160: i32):
-            v162 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v162 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v163 = hir.bitcast v162 : ptr<byte, i32>;
             v164 = hir.load v163 : i32;
             v165 = arith.constant 32 : i32;
             v166 = arith.sub v164, v165 : i32 #[overflow = wrapping];
-            v167 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v167 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v168 = hir.bitcast v167 : ptr<byte, i32>;
             hir.store v168, v166;
             v170 = arith.constant 12 : u32;
@@ -254,7 +254,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.assertz v192 #[code = 250];
             v193 = hir.int_to_ptr v190 : ptr<byte, felt>;
             v194 = hir.load v193 : felt;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden::account::remove_asset(v175, v182, v189, v194, v166)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::account::remove_asset(v175, v182, v189, v194, v166)
             v515 = arith.constant 8 : u32;
             v195 = hir.bitcast v166 : u32;
             v197 = arith.add v195, v515 : u32 #[overflow = checked];
@@ -287,10 +287,10 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.store v218, v212;
             v219 = arith.constant 16 : i32;
             v220 = arith.add v166, v219 : i32 #[overflow = wrapping];
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden_stdlib_sys::intrinsics::word::Word::reverse(v159, v220)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_stdlib_sys::intrinsics::word::Word::reverse(v159, v220)
             v510 = arith.constant 32 : i32;
             v222 = arith.add v166, v510 : i32 #[overflow = wrapping];
-            v223 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v223 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v224 = hir.bitcast v223 : ptr<byte, i32>;
             hir.store v224, v222;
             builtin.ret ;
@@ -298,12 +298,12 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
 
         private builtin.function @miden_base_sys::bindings::tx::add_asset_to_note(v225: i32, v226: i32, v227: felt) {
         ^block23(v225: i32, v226: i32, v227: felt):
-            v229 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v229 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v230 = hir.bitcast v229 : ptr<byte, i32>;
             v231 = hir.load v230 : i32;
             v232 = arith.constant 48 : i32;
             v233 = arith.sub v231, v232 : i32 #[overflow = wrapping];
-            v234 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v234 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v235 = hir.bitcast v234 : ptr<byte, i32>;
             hir.store v235, v233;
             v237 = arith.constant 12 : u32;
@@ -336,7 +336,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.assertz v259 #[code = 250];
             v260 = hir.int_to_ptr v257 : ptr<byte, felt>;
             v261 = hir.load v260 : felt;
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden::tx::add_asset_to_note(v242, v249, v256, v261, v227, v233)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::tx::add_asset_to_note(v242, v249, v256, v261, v227, v233)
             v528 = arith.constant 8 : u32;
             v262 = hir.bitcast v233 : u32;
             v264 = arith.add v262, v528 : u32 #[overflow = checked];
@@ -377,7 +377,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             v292 = hir.load v291 : felt;
             v293 = arith.constant 32 : i32;
             v294 = arith.add v233, v293 : i32 #[overflow = wrapping];
-            hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden_stdlib_sys::intrinsics::word::Word::reverse(v225, v294)
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_stdlib_sys::intrinsics::word::Word::reverse(v225, v294)
             v522 = arith.constant 16 : u32;
             v295 = hir.bitcast v225 : u32;
             v297 = arith.add v295, v522 : u32 #[overflow = checked];
@@ -388,7 +388,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
             hir.store v300, v292;
             v520 = arith.constant 48 : i32;
             v302 = arith.add v233, v520 : i32 #[overflow = wrapping];
-            v303 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v303 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v304 = hir.bitcast v303 : ptr<byte, i32>;
             hir.store v304, v302;
             builtin.ret ;
@@ -396,7 +396,7 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
 
         private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v305: i32, v306: i32) {
         ^block25(v305: i32, v306: i32):
-            v309 = builtin.global_symbol @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v309 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v310 = hir.bitcast v309 : ptr<byte, i32>;
             v311 = hir.load v310 : i32;
             v312 = arith.constant 16 : i32;
@@ -601,19 +601,19 @@ builtin.component miden:basic-wallet/basic-wallet@1.0.0 {
 
     public builtin.function @receive-asset(v459: felt, v460: felt, v461: felt, v462: felt) {
     ^block40(v459: felt, v460: felt, v461: felt, v462: felt):
-        hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden:basic-wallet/basic-wallet@1.0.0#receive-asset(v459, v460, v461, v462)
+        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#receive-asset(v459, v460, v461, v462)
         builtin.ret ;
     };
 
     public builtin.function @move-asset-to-note(v463: felt, v464: felt, v465: felt, v466: felt, v467: felt) {
     ^block42(v463: felt, v464: felt, v465: felt, v466: felt, v467: felt):
-        hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note(v463, v464, v465, v466, v467)
+        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note(v463, v464, v465, v466, v467)
         builtin.ret ;
     };
 
     public builtin.function @test-custom-types(v468: felt, v469: felt, v470: felt, v471: felt, v472: i32, v473: i32) -> felt, felt {
     ^block44(v468: felt, v469: felt, v470: felt, v471: felt, v472: i32, v473: i32):
-        v474 = hir.exec @miden:basic-wallet/basic-wallet@1.0.0/basic_wallet/miden:basic-wallet/basic-wallet@1.0.0#test-custom-types(v468, v469, v470, v471, v472, v473) : i32
+        v474 = hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#test-custom-types(v468, v469, v470, v471, v472, v473) : i32
         v621 = arith.constant 0 : i32;
         v475 = arith.constant 0 : i32;
         v476 = arith.add v474, v475 : i32 #[overflow = unchecked];

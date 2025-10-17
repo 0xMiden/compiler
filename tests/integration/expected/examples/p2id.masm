@@ -36,7 +36,7 @@ end
 proc.p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
     trace.240
     nop
-    call.::miden:basic-wallet/basic-wallet@1.0.0::receive-asset
+    call.::miden:basic-wallet/basic-wallet@0.1.0::receive-asset
     trace.252
     nop
 end

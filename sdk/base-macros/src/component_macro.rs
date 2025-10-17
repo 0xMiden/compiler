@@ -42,10 +42,6 @@ struct StorageAttributeArgs {
     type_attr: Option<String>,
 }
 
-/// Default version appended to component WIT package identifiers when a version is not provided in
-/// manifest metadata.
-const COMPONENT_PACKAGE_VERSION: &str = "1.0.0";
-
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 
@@ -253,6 +249,7 @@ fn expand_component_impl(
 
     let wit_source = build_component_wit(
         &component_package,
+        &metadata.version,
         &interface_name,
         &world_name,
         &type_imports,
@@ -284,6 +281,7 @@ fn expand_component_impl(
 /// Renders the inline WIT source describing the component interface exported by the `impl` block.
 fn build_component_wit(
     component_package: &str,
+    component_version: &Version,
     interface_name: &str,
     world_name: &str,
     type_imports: &BTreeSet<String>,
@@ -293,7 +291,7 @@ fn build_component_wit(
     let package_with_version = if component_package.contains('@') {
         component_package.to_string()
     } else {
-        format!("{component_package}@{COMPONENT_PACKAGE_VERSION}")
+        format!("{component_package}@{component_version}")
     };
 
     let mut wit_source = String::new();

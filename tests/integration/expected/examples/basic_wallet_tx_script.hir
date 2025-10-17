@@ -2,7 +2,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
     builtin.module public @basic_wallet_tx_script {
         private builtin.function @basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt):
-            hir.call v0, v1, v2, v3, v4 #[callee = miden:basic-wallet/basic-wallet@1.0.0/move-asset-to-note] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt)];
+            hir.call v0, v1, v2, v3, v4 #[callee = miden:basic-wallet/basic-wallet@0.1.0/move-asset-to-note] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt)];
             builtin.ret ;
         };
 

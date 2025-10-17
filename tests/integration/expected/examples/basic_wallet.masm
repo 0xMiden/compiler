@@ -1,30 +1,30 @@
-# mod miden:basic-wallet/basic-wallet@1.0.0
+# mod miden:basic-wallet/basic-wallet@0.1.0
 
 export.receive-asset
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::init
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::init
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden:basic-wallet/basic-wallet@1.0.0#receive-asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden:basic-wallet/basic-wallet@0.1.0#receive-asset
     trace.252
     nop
     exec.::std::sys::truncate_stack
 end
 
 export.move-asset-to-note
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::init
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::init
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note
     trace.252
     nop
     exec.::std::sys::truncate_stack
 end
 
 export.test-custom-types
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::init
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::init
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden:basic-wallet/basic-wallet@1.0.0#test-custom-types
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden:basic-wallet/basic-wallet@0.1.0#test-custom-types
     trace.252
     nop
     push.0
@@ -76,7 +76,7 @@ proc.init
     mem_store.278537
 end
 
-# mod miden:basic-wallet/basic-wallet@1.0.0::basic_wallet
+# mod miden:basic-wallet/basic-wallet@0.1.0::basic_wallet
 
 proc.__wasm_call_ctors
     nop
@@ -86,7 +86,7 @@ proc.basic_wallet::bindings::__link_custom_section_describing_imports
     nop
 end
 
-proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
+proc.miden:basic-wallet/basic-wallet@0.1.0#receive-asset
     push.1114144
     u32divmod.4
     swap.1
@@ -109,7 +109,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen::rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -192,7 +192,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     swap.1
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::account::add_asset
     trace.252
     nop
     push.32
@@ -207,7 +207,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#receive-asset
     nop
 end
 
-proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
+proc.miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note
     push.1114144
     u32divmod.4
     swap.1
@@ -230,7 +230,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     nop
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen::rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -313,7 +313,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     swap.1
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::account::remove_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::account::remove_asset
     trace.252
     nop
     push.16
@@ -327,7 +327,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     movdn.2
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_base_sys::bindings::tx::add_asset_to_note
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::tx::add_asset_to_note
     trace.252
     nop
     push.64
@@ -342,7 +342,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note
     nop
 end
 
-proc.miden:basic-wallet/basic-wallet@1.0.0#test-custom-types
+proc.miden:basic-wallet/basic-wallet@0.1.0#test-custom-types
     movup.2
     drop
     movup.2
@@ -361,7 +361,7 @@ proc.miden:basic-wallet/basic-wallet@1.0.0#test-custom-types
     nop
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::wit_bindgen::rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -443,7 +443,7 @@ proc.wit_bindgen::rt::run_ctors_once
         nop
         trace.240
         nop
-        exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::__wasm_call_ctors
+        exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -544,7 +544,7 @@ proc.miden_base_sys::bindings::account::add_asset
     swap.2
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden::account::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden::account::add_asset
     trace.252
     nop
 end
@@ -642,7 +642,7 @@ proc.miden_base_sys::bindings::account::remove_asset
     swap.4
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden::account::remove_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden::account::remove_asset
     trace.252
     nop
     push.8
@@ -716,7 +716,7 @@ proc.miden_base_sys::bindings::account::remove_asset
     movup.2
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.32
@@ -826,7 +826,7 @@ proc.miden_base_sys::bindings::tx::add_asset_to_note
     swap.4
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden::tx::add_asset_to_note
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden::tx::add_asset_to_note
     trace.252
     nop
     push.8
@@ -917,7 +917,7 @@ proc.miden_base_sys::bindings::tx::add_asset_to_note
     dup.2
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@1.0.0::basic_wallet::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.16

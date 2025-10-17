@@ -27,13 +27,13 @@
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
     (export "memory" (memory 0))
-    (export "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset))
-    (export "miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note" (func $miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note))
-    (export "miden:basic-wallet/basic-wallet@1.0.0#test-custom-types" (func $miden:basic-wallet/basic-wallet@1.0.0#test-custom-types))
+    (export "miden:basic-wallet/basic-wallet@0.1.0#receive-asset" (func $miden:basic-wallet/basic-wallet@0.1.0#receive-asset))
+    (export "miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note" (func $miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note))
+    (export "miden:basic-wallet/basic-wallet@0.1.0#test-custom-types" (func $miden:basic-wallet/basic-wallet@0.1.0#test-custom-types))
     (elem (;0;) (i32.const 1) func $basic_wallet::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $basic_wallet::bindings::__link_custom_section_describing_imports (;1;) (type 0))
-    (func $miden:basic-wallet/basic-wallet@1.0.0#receive-asset (;2;) (type 1) (param f32 f32 f32 f32)
+    (func $miden:basic-wallet/basic-wallet@0.1.0#receive-asset (;2;) (type 1) (param f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -63,7 +63,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note (;3;) (type 2) (param f32 f32 f32 f32 f32)
+    (func $miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note (;3;) (type 2) (param f32 f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 64
@@ -101,7 +101,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden:basic-wallet/basic-wallet@1.0.0#test-custom-types (;4;) (type 3) (param f32 f32 f32 f32 i32 i32) (result i32)
+    (func $miden:basic-wallet/basic-wallet@0.1.0#test-custom-types (;4;) (type 3) (param f32 f32 f32 f32 i32 i32) (result i32)
       (local i32)
       global.get $GOT.data.internal.__memory_base
       local.set 6
@@ -304,13 +304,13 @@
   (core instance (;0;) (instantiate 0))
   (alias core export 0 "memory" (core memory (;0;)))
   (type (;8;) (func (param "asset" 1)))
-  (alias core export 0 "miden:basic-wallet/basic-wallet@1.0.0#receive-asset" (core func (;0;)))
+  (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#receive-asset" (core func (;0;)))
   (func (;0;) (type 8) (canon lift (core func 0)))
   (type (;9;) (func (param "asset" 1) (param "note-idx" 3)))
-  (alias core export 0 "miden:basic-wallet/basic-wallet@1.0.0#move-asset-to-note" (core func (;1;)))
+  (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note" (core func (;1;)))
   (func (;1;) (type 9) (canon lift (core func 1)))
   (type (;10;) (func (param "a" 6) (param "b" 5) (result 7)))
-  (alias core export 0 "miden:basic-wallet/basic-wallet@1.0.0#test-custom-types" (core func (;2;)))
+  (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#test-custom-types" (core func (;2;)))
   (func (;2;) (type 10) (canon lift (core func 2) (memory 0)))
   (alias export 0 "felt" (type (;11;)))
   (alias export 0 "word" (type (;12;)))
@@ -376,5 +376,5 @@
       (with "import-type-struct-b" (type 7))
     )
   )
-  (export (;2;) "miden:basic-wallet/basic-wallet@1.0.0" (instance 1))
+  (export (;2;) "miden:basic-wallet/basic-wallet@0.1.0" (instance 1))
 )

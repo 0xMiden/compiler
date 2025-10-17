@@ -2,7 +2,7 @@ builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @p2id {
         private builtin.function @p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt):
-            hir.call v0, v1, v2, v3 #[callee = miden:basic-wallet/basic-wallet@1.0.0/receive-asset] #[signature = (param felt) (param felt) (param felt) (param felt)];
+            hir.call v0, v1, v2, v3 #[callee = miden:basic-wallet/basic-wallet@0.1.0/receive-asset] #[signature = (param felt) (param felt) (param felt) (param felt)];
             builtin.ret ;
         };
 
