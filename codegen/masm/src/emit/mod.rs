@@ -253,19 +253,18 @@ impl<'a> OpEmitter<'a> {
 
     /// Emit `n` copies of the sequence `ops` to the current block
     #[inline]
+    #[allow(unused)]
     pub fn emit_template<const N: usize, F>(&mut self, count: usize, template: F)
     where
         F: Fn(usize) -> [Span<masm::Instruction>; N],
     {
-        for op in template(0) {
-            self.maybe_register_invoke(op.inner());
-        }
-
         for n in 0..count {
-            self.current_block.extend(template(n).into_iter().map(|inst| {
-                let (span, inst) = inst.into_parts();
-                Op::Inst(Span::new(span, inst))
-            }));
+            let ops = template(n);
+            for op in ops {
+                self.maybe_register_invoke(op.inner());
+                let (span, inst) = op.into_parts();
+                self.current_block.push(Op::Inst(Span::new(span, inst)));
+            }
         }
     }
 
