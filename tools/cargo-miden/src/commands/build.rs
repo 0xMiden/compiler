@@ -33,11 +33,9 @@ pub struct BuildCommand {
 impl BuildCommand {
     /// Executes `cargo miden build`, returning the resulting command output.
     pub fn exec(self, build_output_type: OutputType) -> Result<Option<CommandOutput>> {
-        let mut invocation = Vec::with_capacity(self.cargo_args.len() + 1);
-        invocation.push("build".to_string());
-        invocation.extend(self.cargo_args);
-
-        let cargo_args = CargoArguments::parse_from(invocation.clone().into_iter())?;
+        let raw_cargo_args = self.cargo_args;
+        let (cargo_args, passthrough_args) =
+            CargoArguments::parse_from_with_passthrough(raw_cargo_args.into_iter())?;
         let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
 
         let mut packages =
@@ -61,14 +59,15 @@ impl BuildCommand {
 
         let dependency_packages_paths = process_miden_dependencies(cargo_package, &cargo_args)?;
 
-        let mut spawn_args: Vec<_> = invocation.clone();
-        spawn_args.extend_from_slice(
-            &[
+        let mut spawn_args = cargo_args.to_cargo_build_args();
+        spawn_args.extend(
+            [
                 "-Z",
                 "build-std=std,core,alloc,panic_abort",
                 "-Z",
                 "build-std-features=panic_immediate_abort",
             ]
+            .into_iter()
             .map(|s| s.to_string()),
         );
 
@@ -128,6 +127,8 @@ impl BuildCommand {
             midenc_flags.push(dep_path.to_string_lossy().to_string());
         }
 
+        midenc_flags = merge_midenc_flags(midenc_flags, passthrough_args);
+
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
                 output: BuildOutput::Wasm {
@@ -159,6 +160,61 @@ impl BuildCommand {
                     },
                 }))
             }
+        }
+    }
+}
+
+/// Removes conflicting defaults from `base` and appends passthrough arguments, ensuring the
+/// resulting flag list is accepted by the `midenc` frontend.
+fn merge_midenc_flags(mut base: Vec<String>, passthrough: Vec<String>) -> Vec<String> {
+    if passthrough.is_empty() {
+        return base;
+    }
+
+    let mut iter = passthrough.into_iter().peekable();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--lib" | "--exe" => {
+                remove_flag(&mut base, "--lib");
+                remove_flag(&mut base, "--exe");
+                base.push(arg);
+            }
+            "--entrypoint" => {
+                remove_entrypoint(&mut base);
+                base.push(arg);
+                if let Some(next) = iter.peek() {
+                    if !next.starts_with('-') || next == "-" {
+                        base.push(iter.next().unwrap());
+                    }
+                }
+            }
+            _ if arg.starts_with("--entrypoint=") => {
+                remove_entrypoint(&mut base);
+                base.push(arg);
+            }
+            _ => base.push(arg),
+        }
+    }
+
+    base
+}
+
+fn remove_flag(flags: &mut Vec<String>, needle: &str) {
+    flags.retain(|flag| flag != needle);
+}
+
+fn remove_entrypoint(flags: &mut Vec<String>) {
+    let mut i = 0;
+    while i < flags.len() {
+        if flags[i] == "--entrypoint" {
+            flags.remove(i);
+            if i < flags.len() && !flags[i].starts_with('-') {
+                flags.remove(i);
+            }
+        } else if flags[i].starts_with("--entrypoint=") {
+            flags.remove(i);
+        } else {
+            i += 1;
         }
     }
 }
