@@ -878,12 +878,28 @@ impl OpEmitter<'_> {
                         );
                     }
                     n => {
-                        self.emit_template(n, |n| {
+                        // Invert the top limb
+                        self.emit(masm::Instruction::U32Not, span);
+                        // Invert the second limb and restore ordering
+                        self.emit_all(
                             [
-                                Span::new(span, movup_from_offset(n)),
-                                Span::new(span, masm::Instruction::U32Not),
-                            ]
-                        });
+                                masm::Instruction::Swap1,
+                                masm::Instruction::U32Not,
+                                masm::Instruction::Swap1,
+                            ],
+                            span,
+                        );
+                        // For remaining limbs, bring each to top, invert, then move back
+                        for i in 2..n {
+                            self.emit_all(
+                                [
+                                    movup_from_offset(i),
+                                    masm::Instruction::U32Not,
+                                    movdn_from_offset(i),
+                                ],
+                                span,
+                            );
+                        }
                     }
                 }
             }
