@@ -239,6 +239,17 @@ struct Args {
     short: BTreeMap<char, usize>,
 }
 
+/// Describes the outcome of a parsing attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParseStatus {
+    /// The argument matched one of the known options and was parsed successfully.
+    Recognized,
+    /// The argument resembled an option but wasn't among those registered.
+    Unrecognized,
+    /// The argument is not an option (positional argument or other token).
+    NotOption,
+}
+
 impl Args {
     fn flag(self, name: &'static str, short: Option<char>) -> Self {
         self.insert(Arg::Flag {
@@ -304,38 +315,71 @@ impl Args {
         self
     }
 
-    /// Parses an argument as an option.
-    ///
-    /// Returns `Ok(true)` if the argument is an option.
-    ///
-    /// Returns `Ok(false)` if the argument is not an option.
-    fn parse(&mut self, arg: &str, iter: &mut impl Iterator<Item = String>) -> Result<bool> {
+    fn contains_long(&self, name: &str) -> bool {
+        self.long.contains_key(name)
+    }
+
+    fn contains_short(&self, short: char) -> bool {
+        self.short.contains_key(&short)
+    }
+
+    fn short_expects_value(&self, short: char) -> Option<bool> {
+        self.short.get(&short).map(|&i| self.args[i].expects_value())
+    }
+
+    /// Parses an argument as an option and reports whether it was recognized.
+    fn parse(&mut self, arg: &str, iter: &mut impl Iterator<Item = String>) -> Result<ParseStatus> {
         // Handle short options
-        if let Some(mut short) = iter_short(arg) {
-            while let Some(c) = short.next() {
-                if let Some(option) = self.get_short_mut(c) {
-                    if option.expects_value() {
-                        let value: String = short.parse_remaining(iter).map_err(|_| {
-                            anyhow!("a value is required for '{option}' but none was supplied")
-                        })?;
-
-                        // Strip a leading `=` out of the value if present
-                        option
-                            .set_value(value.strip_prefix('=').map(Into::into).unwrap_or(value))?;
-                        return Ok(true);
+        if iter_short(arg).is_some() {
+            let mut recognized = true;
+            if let Some(mut probe) = iter_short(arg) {
+                for c in &mut probe {
+                    if !self.contains_short(c) {
+                        recognized = false;
+                        break;
                     }
-
-                    option.set_present()?;
+                    if self.short_expects_value(c).unwrap_or(false) {
+                        break;
+                    }
                 }
             }
 
-            // The argument is an option
-            return Ok(true);
+            if !recognized {
+                return Ok(ParseStatus::Unrecognized);
+            }
+
+            let mut short = iter_short(arg).unwrap();
+            while let Some(c) = short.next() {
+                let Some(option) = self.get_short_mut(c) else {
+                    continue;
+                };
+                if option.expects_value() {
+                    let value: String = short.parse_remaining(iter).map_err(|_| {
+                        anyhow!("a value is required for '{option}' but none was supplied")
+                    })?;
+
+                    option.set_value(value.strip_prefix('=').map(Into::into).unwrap_or(value))?;
+                    break;
+                }
+
+                option.set_present()?;
+            }
+
+            return Ok(if recognized {
+                ParseStatus::Recognized
+            } else {
+                ParseStatus::Unrecognized
+            });
         }
 
         // Handle long options
         if arg.starts_with("--") {
-            if let Some(option) = self.get_mut(arg.split_once('=').map(|(n, _)| n).unwrap_or(arg)) {
+            let long_name = arg.split_once('=').map(|(n, _)| n).unwrap_or(arg);
+            if !self.contains_long(long_name) {
+                return Ok(ParseStatus::Unrecognized);
+            }
+
+            if let Some(option) = self.get_mut(long_name) {
                 if option.expects_value() {
                     if let Some(v) = match_arg(option.name(), &arg, iter) {
                         option.set_value(v.map_err(|_| {
@@ -347,12 +391,10 @@ impl Args {
                 }
             }
 
-            // The argument is an option
-            return Ok(true);
+            return Ok(ParseStatus::Recognized);
         }
 
-        // Not an option
-        Ok(false)
+        Ok(ParseStatus::NotOption)
     }
 }
 
@@ -409,8 +451,11 @@ impl CargoArguments {
         Self::parse_from(std::env::args().skip(1))
     }
 
-    /// Parses the arguments from an iterator.
-    pub fn parse_from<T>(iter: impl Iterator<Item = T>) -> Result<Self>
+    /// Parses the arguments from an iterator, returning the structured arguments along with any
+    /// unhandled options that should be forwarded to subsequent compilation stages.
+    pub fn parse_from_with_passthrough<T>(
+        iter: impl Iterator<Item = T>,
+    ) -> Result<(Self, Vec<String>)>
     where
         T: Into<String>,
     {
@@ -431,6 +476,7 @@ impl CargoArguments {
             .flag("--help", Some('h'));
 
         let mut iter = iter.map(Into::into).peekable();
+        let mut passthrough = Vec::new();
 
         // Skip the first argument if it is `component`
         if let Some(arg) = iter.peek() {
@@ -440,43 +486,145 @@ impl CargoArguments {
         }
 
         while let Some(arg) = iter.next() {
-            // Break out of processing at the first `--`
             if arg == "--" {
+                passthrough.extend(iter);
                 break;
             }
 
-            // Parse options
-            if args.parse(&arg, &mut iter)? {
-                continue;
+            match args.parse(&arg, &mut iter)? {
+                ParseStatus::Recognized => continue,
+                ParseStatus::Unrecognized => {
+                    let is_long = arg.starts_with("--");
+                    let has_equals = arg.contains('=');
+                    let arg_value = arg;
+                    passthrough.push(arg_value);
+
+                    if is_long && !has_equals {
+                        if let Some(next) = iter.peek() {
+                            if !next.starts_with('-') || next == "-" {
+                                passthrough.push(iter.next().unwrap());
+                            }
+                        }
+                    }
+                }
+                ParseStatus::NotOption => {
+                    passthrough.push(arg);
+                }
             }
         }
 
-        Ok(Self {
-            color: args.get_mut("--color").unwrap().take_single().map(|v| v.parse()).transpose()?,
-            verbose: args.get("--verbose").unwrap().count(),
-            help: args.get("--help").unwrap().count() > 0,
-            quiet: args.get("--quiet").unwrap().count() > 0,
-            manifest_path: args
-                .get_mut("--manifest-path")
-                .unwrap()
-                .take_single()
-                .map(PathBuf::from),
-            message_format: args.get_mut("--message-format").unwrap().take_single(),
-            targets: args.get_mut("--target").unwrap().take_multiple(),
-            frozen: args.get("--frozen").unwrap().count() > 0,
-            locked: args.get("--locked").unwrap().count() > 0,
-            offline: args.get("--offline").unwrap().count() > 0,
-            release: args.get("--release").unwrap().count() > 0,
-            workspace: args.get("--workspace").unwrap().count() > 0
-                || args.get("--all").unwrap().count() > 0,
-            packages: args
-                .get_mut("--package")
-                .unwrap()
-                .take_multiple()
-                .into_iter()
-                .map(CargoPackageSpec::new)
-                .collect::<Result<_>>()?,
-        })
+        Ok((
+            Self {
+                color: args
+                    .get_mut("--color")
+                    .unwrap()
+                    .take_single()
+                    .map(|v| v.parse())
+                    .transpose()?,
+                verbose: args.get("--verbose").unwrap().count(),
+                help: args.get("--help").unwrap().count() > 0,
+                quiet: args.get("--quiet").unwrap().count() > 0,
+                manifest_path: args
+                    .get_mut("--manifest-path")
+                    .unwrap()
+                    .take_single()
+                    .map(PathBuf::from),
+                message_format: args.get_mut("--message-format").unwrap().take_single(),
+                targets: args.get_mut("--target").unwrap().take_multiple(),
+                frozen: args.get("--frozen").unwrap().count() > 0,
+                locked: args.get("--locked").unwrap().count() > 0,
+                offline: args.get("--offline").unwrap().count() > 0,
+                release: args.get("--release").unwrap().count() > 0,
+                workspace: args.get("--workspace").unwrap().count() > 0
+                    || args.get("--all").unwrap().count() > 0,
+                packages: args
+                    .get_mut("--package")
+                    .unwrap()
+                    .take_multiple()
+                    .into_iter()
+                    .map(CargoPackageSpec::new)
+                    .collect::<Result<_>>()?,
+            },
+            passthrough,
+        ))
+    }
+
+    /// Parses the arguments from an iterator.
+    pub fn parse_from<T>(iter: impl Iterator<Item = T>) -> Result<Self>
+    where
+        T: Into<String>,
+    {
+        let (args, _) = Self::parse_from_with_passthrough(iter)?;
+        Ok(args)
+    }
+
+    /// Builds the canonical argument vector forwarded to an underlying `cargo build` invocation.
+    pub fn to_cargo_build_args(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        args.push("build".to_string());
+
+        if let Some(color) = self.color {
+            args.push("--color".to_string());
+            args.push(color_choice_as_str(color).to_string());
+        }
+
+        for _ in 0..self.verbose {
+            args.push("--verbose".to_string());
+        }
+
+        if self.help {
+            args.push("--help".to_string());
+        }
+        if self.quiet {
+            args.push("--quiet".to_string());
+        }
+
+        for target in &self.targets {
+            args.push("--target".to_string());
+            args.push(target.clone());
+        }
+
+        if let Some(manifest_path) = self.manifest_path.as_ref() {
+            args.push("--manifest-path".to_string());
+            args.push(manifest_path.to_string_lossy().to_string());
+        }
+
+        if let Some(format) = self.message_format.as_ref() {
+            args.push("--message-format".to_string());
+            args.push(format.clone());
+        }
+
+        if self.frozen {
+            args.push("--frozen".to_string());
+        }
+        if self.locked {
+            args.push("--locked".to_string());
+        }
+        if self.release {
+            args.push("--release".to_string());
+        }
+        if self.offline {
+            args.push("--offline".to_string());
+        }
+        if self.workspace {
+            args.push("--workspace".to_string());
+        }
+
+        for package in &self.packages {
+            args.push("--package".to_string());
+            args.push(package.to_string());
+        }
+
+        args
+    }
+}
+
+fn color_choice_as_str(choice: ColorChoice) -> &'static str {
+    match choice {
+        ColorChoice::Always => "always",
+        ColorChoice::AlwaysAnsi => "always-ansi",
+        ColorChoice::Auto => "auto",
+        ColorChoice::Never => "never",
     }
 }
 
@@ -491,12 +639,18 @@ mod test {
         let mut args = Args::default().flag("--flag", Some('f'));
 
         // Test not the flag
-        args.parse("--not-flag", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--not-flag", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get("--flag").unwrap();
         assert_eq!(arg.count(), 0);
 
         // Test the flag
-        args.parse("--flag", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--flag", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         assert_eq!(
             args.parse("--flag", &mut empty::<String>()).unwrap_err().to_string(),
             "the argument '--flag' cannot be used multiple times"
@@ -506,16 +660,27 @@ mod test {
         arg.reset();
 
         // Test not the short flag
-        args.parse("-rxd", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-rxd", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get("--flag").unwrap();
         assert_eq!(arg.count(), 0);
 
         // Test the short flag
-        args.parse("-rfx", &mut empty::<String>()).unwrap();
+        assert!(matches!(args.parse("-f", &mut empty::<String>()), Ok(ParseStatus::Recognized)));
+        assert!(matches!(
+            args.parse("-fx", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         assert_eq!(
-            args.parse("-fxz", &mut empty::<String>()).unwrap_err().to_string(),
+            args.parse("-f", &mut empty::<String>()).unwrap_err().to_string(),
             "the argument '--flag' cannot be used multiple times"
         );
+        assert!(matches!(
+            args.parse("-fxz", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get("--flag").unwrap();
         assert_eq!(arg.count(), 1);
 
@@ -528,7 +693,10 @@ mod test {
         let mut args = Args::default().single("--option", "VALUE", Some('o'));
 
         // Test not the option
-        args.parse("--not-option", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--not-option", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_single(), None);
 
@@ -539,7 +707,10 @@ mod test {
         );
 
         // Test the option with equals
-        args.parse("--option=value", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--option=value", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         assert_eq!(
             args.parse("--option=value", &mut empty::<String>()).unwrap_err().to_string(),
             "the argument '--option <VALUE>' cannot be used multiple times"
@@ -550,7 +721,7 @@ mod test {
 
         // Test the option with space
         let mut iter = ["value".to_string()].into_iter();
-        args.parse("--option", &mut iter).unwrap();
+        assert!(matches!(args.parse("--option", &mut iter), Ok(ParseStatus::Recognized)));
         assert!(iter.next().is_none());
         let mut iter = ["value".to_string()].into_iter();
         assert_eq!(
@@ -562,28 +733,37 @@ mod test {
         arg.reset();
 
         // Test not the short option
-        args.parse("-xyz", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-zo", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_single(), None);
 
         assert_eq!(
-            args.parse("-fo", &mut empty::<String>()).unwrap_err().to_string(),
+            args.parse("-o", &mut empty::<String>()).unwrap_err().to_string(),
             "a value is required for '--option <VALUE>' but none was supplied"
         );
 
         // Test the short option without equals
-        args.parse("-xofoo", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-ofoo", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         assert_eq!(
-            args.parse("-zyobar", &mut iter).unwrap_err().to_string(),
+            args.parse("-obar", &mut empty::<String>()).unwrap_err().to_string(),
             "the argument '--option <VALUE>' cannot be used multiple times"
         );
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_single(), Some(String::from("foo")));
 
         // Test the short option with equals
-        args.parse("-xo=foo", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-o=foo", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         assert_eq!(
-            args.parse("-zyo=bar", &mut iter).unwrap_err().to_string(),
+            args.parse("-o=bar", &mut empty::<String>()).unwrap_err().to_string(),
             "the argument '--option <VALUE>' cannot be used multiple times"
         );
         let arg = args.get_mut("--option").unwrap();
@@ -591,17 +771,23 @@ mod test {
 
         // Test the short option with space
         let mut iter = ["value".to_string()].into_iter();
-        args.parse("-xo", &mut iter).unwrap();
+        assert!(matches!(args.parse("-o", &mut iter), Ok(ParseStatus::Recognized)));
         let mut iter = ["value".to_string()].into_iter();
         assert_eq!(
-            args.parse("-zyo", &mut iter).unwrap_err().to_string(),
+            args.parse("-o", &mut iter).unwrap_err().to_string(),
             "the argument '--option <VALUE>' cannot be used multiple times"
         );
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_single(), Some(String::from("value")));
 
         // Test it prints correctly
-        assert_eq!(arg.to_string(), "--option <VALUE>")
+        assert_eq!(arg.to_string(), "--option <VALUE>");
+
+        // Unknown short options should be treated as passthrough.
+        assert!(matches!(
+            args.parse("-zo", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
     }
 
     #[test]
@@ -609,7 +795,10 @@ mod test {
         let mut args = Args::default().multiple("--option", "VALUE", Some('o'));
 
         // Test not the option
-        args.parse("--not-option", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--not-option", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_multiple(), Vec::<String>::new());
 
@@ -620,9 +809,18 @@ mod test {
         );
 
         // Test the option with equals
-        args.parse("--option=foo", &mut empty::<String>()).unwrap();
-        args.parse("--option=bar", &mut empty::<String>()).unwrap();
-        args.parse("--option=baz", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--option=foo", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("--option=bar", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("--option=baz", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(
             arg.take_multiple(),
@@ -632,13 +830,13 @@ mod test {
 
         // Test the option with space
         let mut iter = ["foo".to_string()].into_iter();
-        args.parse("--option", &mut iter).unwrap();
+        assert!(matches!(args.parse("--option", &mut iter), Ok(ParseStatus::Recognized)));
         assert!(iter.next().is_none());
         let mut iter = ["bar".to_string()].into_iter();
-        args.parse("--option", &mut iter).unwrap();
+        assert!(matches!(args.parse("--option", &mut iter), Ok(ParseStatus::Recognized)));
         assert!(iter.next().is_none());
         let mut iter = ["baz".to_string()].into_iter();
-        args.parse("--option", &mut iter).unwrap();
+        assert!(matches!(args.parse("--option", &mut iter), Ok(ParseStatus::Recognized)));
         assert!(iter.next().is_none());
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(
@@ -648,20 +846,32 @@ mod test {
         arg.reset();
 
         // Test not the short option
-        args.parse("-xyz", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-xyz", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(arg.take_single(), None);
 
         // Test missing shot option value
         assert_eq!(
-            args.parse("-fo", &mut empty::<String>()).unwrap_err().to_string(),
+            args.parse("-o", &mut empty::<String>()).unwrap_err().to_string(),
             "a value is required for '--option <VALUE>' but none was supplied"
         );
 
         // Test the short option without equals
-        args.parse("-xofoo", &mut empty::<String>()).unwrap();
-        args.parse("-yobar", &mut empty::<String>()).unwrap();
-        args.parse("-zobaz", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-ofoo", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("-obar", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("-obaz", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(
             arg.take_multiple(),
@@ -669,9 +879,18 @@ mod test {
         );
 
         // Test the short option with equals
-        args.parse("-xo=foo", &mut empty::<String>()).unwrap();
-        args.parse("-yo=bar", &mut empty::<String>()).unwrap();
-        args.parse("-zo=baz", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("-o=foo", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("-o=bar", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("-o=baz", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(
             arg.take_multiple(),
@@ -680,11 +899,11 @@ mod test {
 
         // Test the short option with space
         let mut iter = ["foo".to_string()].into_iter();
-        args.parse("-xo", &mut iter).unwrap();
+        assert!(matches!(args.parse("-o", &mut iter), Ok(ParseStatus::Recognized)));
         let mut iter = ["bar".to_string()].into_iter();
-        args.parse("-yo", &mut iter).unwrap();
+        assert!(matches!(args.parse("-o", &mut iter), Ok(ParseStatus::Recognized)));
         let mut iter = ["baz".to_string()].into_iter();
-        args.parse("-zo", &mut iter).unwrap();
+        assert!(matches!(args.parse("-o", &mut iter), Ok(ParseStatus::Recognized)));
         let arg = args.get_mut("--option").unwrap();
         assert_eq!(
             arg.take_multiple(),
@@ -700,24 +919,43 @@ mod test {
         let mut args = Args::default().counting("--flag", Some('f'));
 
         // Test not the the flag
-        args.parse("--not-flag", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--not-flag", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
         let arg = args.get("--flag").unwrap();
         assert_eq!(arg.count(), 0);
 
         // Test the flag
-        args.parse("--flag", &mut empty::<String>()).unwrap();
-        args.parse("--flag", &mut empty::<String>()).unwrap();
-        args.parse("--flag", &mut empty::<String>()).unwrap();
+        assert!(matches!(
+            args.parse("--flag", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("--flag", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
+        assert!(matches!(
+            args.parse("--flag", &mut empty::<String>()),
+            Ok(ParseStatus::Recognized)
+        ));
         let arg = args.get_mut("--flag").unwrap();
         assert_eq!(arg.count(), 3);
         arg.reset();
 
         // Test the short flag
-        args.parse("-xfzf", &mut empty::<String>()).unwrap();
-        args.parse("-pfft", &mut empty::<String>()).unwrap();
-        args.parse("-abcd", &mut empty::<String>()).unwrap();
+        assert!(matches!(args.parse("-f", &mut empty::<String>()), Ok(ParseStatus::Recognized)));
+        assert!(matches!(args.parse("-f", &mut empty::<String>()), Ok(ParseStatus::Recognized)));
         let arg = args.get_mut("--flag").unwrap();
-        assert_eq!(arg.count(), 4);
+        assert_eq!(arg.count(), 2);
+        arg.reset();
+
+        assert!(matches!(
+            args.parse("-fx", &mut empty::<String>()),
+            Ok(ParseStatus::Unrecognized)
+        ));
+        let arg = args.get_mut("--flag").unwrap();
+        assert_eq!(arg.count(), 0);
 
         // Test it prints correctly
         assert_eq!(arg.to_string(), "--flag")
@@ -801,5 +1039,15 @@ mod test {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn it_collects_passthrough_arguments() {
+        let (args, passthrough) = CargoArguments::parse_from_with_passthrough(
+            ["--release", "--emit", "ALL=out"].into_iter(),
+        )
+        .unwrap();
+        assert!(args.release);
+        assert_eq!(passthrough, vec!["--emit".to_string(), "ALL=out".to_string()]);
     }
 }
