@@ -21,6 +21,9 @@ use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAc
 
 use crate::bindings::exports::miden::storage_example::*;
 
+miden::generate!();
+bindings::export!(MyAccount);
+
 #[component]
 struct MyAccount {
     #[storage(
