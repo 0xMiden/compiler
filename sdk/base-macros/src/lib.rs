@@ -8,6 +8,7 @@ mod export_type;
 mod generate;
 mod script;
 mod types;
+mod util;
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
