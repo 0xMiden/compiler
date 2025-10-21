@@ -257,7 +257,6 @@ fn expand_component_impl(
         &exported_types,
     );
     write_component_wit_file(call_site_span, &wit_source, &interface_name)?;
-    let inline_literal = Literal::string(&wit_source);
 
     let guest_trait_path = build_guest_trait_path(&component_package, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods
@@ -268,7 +267,7 @@ fn expand_component_impl(
         .collect();
 
     Ok(quote! {
-        ::miden::generate!(inline = #inline_literal);
+        ::miden::generate!();
         #(#conversion_impls)*
         #impl_block
         impl #guest_trait_path for #component_type {
