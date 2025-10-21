@@ -211,12 +211,12 @@ impl OpEmitter<'_> {
                     [
                         // stack starts as [c, b_hi, b_lo, a_hi, a_lo]
                         masm::Instruction::Dup0, // [c, c, b_hi, b_lo, a_hi, a_lo]
-                        masm::Instruction::MovDn6, // [c, b_hi, b_lo, a_hi, a_lo, c]
+                        masm::Instruction::MovDn5, // [c, b_hi, b_lo, a_hi, a_lo, c]
                         masm::Instruction::MovUp3, // [a_hi, c, b_hi, b_lo, a_lo, c]
                         masm::Instruction::MovUp2, // [b_hi, a_hi, c, b_lo, a_lo, c]
-                        masm::Instruction::MovUp6, // [c, b_hi, a_hi, c, b_lo, a_lo]
+                        masm::Instruction::MovUp5, // [c, b_hi, a_hi, c, b_lo, a_lo]
                         masm::Instruction::CDrop, // [d_hi, c, b_lo, a_lo]
-                        masm::Instruction::MovDn4, // [c, b_lo, a_lo, d_hi]
+                        masm::Instruction::MovDn3, // [c, b_lo, a_lo, d_hi]
                         masm::Instruction::CDrop, // [d_lo, d_hi]
                         masm::Instruction::Swap1, // [d_hi, d_lo]
                     ],
