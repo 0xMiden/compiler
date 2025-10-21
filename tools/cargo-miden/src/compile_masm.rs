@@ -45,6 +45,7 @@ pub fn wasm_to_masm(
     ];
     args.append(&mut midenc_args);
 
+    log::debug!("midenc arguments: {}", &args.join(" "));
     let session = Rc::new(Compiler::new_session([input], None, args));
     let context = Rc::new(Context::new(session));
     println!("Creating Miden package {}", output_file.display());
