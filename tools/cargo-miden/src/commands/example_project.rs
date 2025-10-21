@@ -323,8 +323,12 @@ fn update_project_dependency(
         if let Some(wit_dep) = wit_deps.get_mut(dependency_name) {
             if let Some(table) = wit_dep.as_inline_table_mut() {
                 if let Some(path_value) = table.get_mut("path") {
-                    *path_value =
-                        toml_edit::Value::from(format!("../{contract_dir}/wit/{wit_file_name}"));
+                    let path = path_value.to_string();
+                    *path_value = if path.contains("target/generated-wit") {
+                        toml_edit::Value::from(format!("../{contract_dir}/target/generated-wit/"))
+                    } else {
+                        toml_edit::Value::from(format!("../{contract_dir}/wit/{wit_file_name}"))
+                    };
                 }
             }
         }
