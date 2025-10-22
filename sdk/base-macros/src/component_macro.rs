@@ -228,11 +228,6 @@ fn expand_component_impl(
     let exported_types_by_rust: HashMap<_, _> =
         exported_types.iter().map(|def| (def.rust_name.clone(), def.clone())).collect();
     let bindings_segments = build_bindings_module_segments(&component_package, &interface_module);
-    let conversion_impls: Vec<TokenStream2> = exported_types
-        .iter()
-        .map(|def| generate_export_type_impls(def, &bindings_segments))
-        .collect();
-
     let mut methods = Vec::new();
     let mut type_imports = BTreeSet::new();
 
@@ -277,7 +272,6 @@ fn expand_component_impl(
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal);
-        #(#conversion_impls)*
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
@@ -497,8 +491,11 @@ fn render_guest_method(
 
         if param.type_ref.is_custom {
             let user_ty = &param.user_ty;
+            let def = exported_types.get(&param.type_ref.wit_name).expect("unknown exported type");
+            let conversion =
+                convert_binding_to_user_expr(def, &bindings_base, exported_types, quote!(#ident));
             pre_call.push(quote! {
-                let #ident: #user_ty = #ident.into();
+                let #ident: #user_ty = #conversion;
             });
         }
     }
@@ -540,11 +537,18 @@ fn render_guest_method(
         },
         MethodReturn::Type { type_ref, .. } => {
             if type_ref.is_custom {
+                let def = exported_types.get(&type_ref.wit_name).expect("unknown exported type");
+                let conversion = convert_user_to_binding_expr(
+                    def,
+                    &bindings_base,
+                    exported_types,
+                    quote!(result),
+                );
                 quote! {
                     #component_init
                     #(#pre_call)*
                     let result = #call_expr;
-                    result.into()
+                    #conversion
                 }
             } else {
                 quote! {
@@ -564,6 +568,188 @@ fn render_guest_method(
     }
 }
 
+fn convert_binding_to_user_expr(
+    def: &ExportedTypeDef,
+    bindings_base: &TokenStream2,
+    exported_types: &HashMap<String, ExportedTypeDef>,
+    value_expr: TokenStream2,
+) -> TokenStream2 {
+    let struct_ident = format_ident!("{}", def.rust_name);
+    let binding_type_ident = format_ident!("{}", def.rust_name);
+    let bindings_path = quote! { #bindings_base :: #binding_type_ident };
+
+    match &def.kind {
+        ExportedTypeKind::Record { fields } => {
+            if fields.is_empty() {
+                quote!({
+                    let _ = #value_expr;
+                    #struct_ident
+                })
+            } else {
+                let field_idents: Vec<_> =
+                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
+                let field_values: Vec<_> = fields
+                    .iter()
+                    .map(|field| {
+                        let ident = format_ident!("{}", field.name);
+                        if field.ty.is_custom {
+                            let nested_def = exported_types
+                                .get(&field.ty.wit_name)
+                                .expect("unknown exported type");
+                            convert_binding_to_user_expr(
+                                nested_def,
+                                bindings_base,
+                                exported_types,
+                                quote!(#ident),
+                            )
+                        } else {
+                            quote!(#ident)
+                        }
+                    })
+                    .collect();
+
+                quote!({
+                    let #bindings_path { #( #field_idents ),* } = #value_expr;
+                    #struct_ident {
+                        #( #field_idents: #field_values ),*
+                    }
+                })
+            }
+        }
+        ExportedTypeKind::Variant { variants } => {
+            let match_arms: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let binding_ident = format_ident!("{}", variant.rust_name);
+                    let user_ident = format_ident!("{}", variant.rust_name);
+                    if let Some(payload) = &variant.payload {
+                        let payload_expr = if payload.is_custom {
+                            let nested_def = exported_types
+                                .get(&payload.wit_name)
+                                .expect("unknown exported type");
+                            convert_binding_to_user_expr(
+                                nested_def,
+                                bindings_base,
+                                exported_types,
+                                quote!(value),
+                            )
+                        } else {
+                            quote!(value)
+                        };
+                        quote! {
+                            #bindings_path::#binding_ident(value) => {
+                                let value = #payload_expr;
+                                #struct_ident::#user_ident(value)
+                            }
+                        }
+                    } else {
+                        quote! {
+                            #bindings_path::#binding_ident => #struct_ident::#user_ident
+                        }
+                    }
+                })
+                .collect();
+
+            quote!({
+                match #value_expr {
+                    #( #match_arms ),*
+                }
+            })
+        }
+    }
+}
+
+fn convert_user_to_binding_expr(
+    def: &ExportedTypeDef,
+    bindings_base: &TokenStream2,
+    exported_types: &HashMap<String, ExportedTypeDef>,
+    value_expr: TokenStream2,
+) -> TokenStream2 {
+    let struct_ident = format_ident!("{}", def.rust_name);
+    let binding_type_ident = format_ident!("{}", def.rust_name);
+    let bindings_path = quote! { #bindings_base :: #binding_type_ident };
+
+    match &def.kind {
+        ExportedTypeKind::Record { fields } => {
+            if fields.is_empty() {
+                quote!({
+                    let _ = #value_expr;
+                    #bindings_path
+                })
+            } else {
+                let field_idents: Vec<_> =
+                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
+                let field_values: Vec<_> = fields
+                    .iter()
+                    .map(|field| {
+                        let ident = format_ident!("{}", field.name);
+                        if field.ty.is_custom {
+                            let nested_def = exported_types
+                                .get(&field.ty.wit_name)
+                                .expect("unknown exported type");
+                            convert_user_to_binding_expr(
+                                nested_def,
+                                bindings_base,
+                                exported_types,
+                                quote!(#ident),
+                            )
+                        } else {
+                            quote!(#ident)
+                        }
+                    })
+                    .collect();
+
+                quote!({
+                    let #struct_ident { #( #field_idents ),* } = #value_expr;
+                    #bindings_path {
+                        #( #field_idents: #field_values ),*
+                    }
+                })
+            }
+        }
+        ExportedTypeKind::Variant { variants } => {
+            let match_arms: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let binding_ident = format_ident!("{}", variant.rust_name);
+                    let user_ident = format_ident!("{}", variant.rust_name);
+                    if let Some(payload) = &variant.payload {
+                        let payload_expr = if payload.is_custom {
+                            let nested_def = exported_types
+                                .get(&payload.wit_name)
+                                .expect("unknown exported type");
+                            convert_user_to_binding_expr(
+                                nested_def,
+                                bindings_base,
+                                exported_types,
+                                quote!(value),
+                            )
+                        } else {
+                            quote!(value)
+                        };
+                        quote! {
+                            #struct_ident::#user_ident(value) => {
+                                let value = #payload_expr;
+                                #bindings_path::#binding_ident(value)
+                            }
+                        }
+                    } else {
+                        quote! {
+                            #struct_ident::#user_ident => #bindings_path::#binding_ident
+                        }
+                    }
+                })
+                .collect();
+
+            quote!({
+                match #value_expr {
+                    #( #match_arms ),*
+                }
+            })
+        }
+    }
+}
+
 fn build_bindings_module_segments(component_package: &str, interface_module: &str) -> Vec<Ident> {
     let mut segments = Vec::new();
     for segment in component_package.split([':', '/']) {
@@ -574,142 +760,6 @@ fn build_bindings_module_segments(component_package: &str, interface_module: &st
     }
     segments.push(format_ident!("{}", to_snake_case(interface_module)));
     segments
-}
-
-fn generate_export_type_impls(def: &ExportedTypeDef, bindings_segments: &[Ident]) -> TokenStream2 {
-    let struct_ident = format_ident!("{}", def.rust_name);
-    let binding_type_ident = format_ident!("{}", def.rust_name);
-    let bindings_path =
-        quote! { self::bindings::exports #( :: #bindings_segments )* :: #binding_type_ident };
-    match &def.kind {
-        ExportedTypeKind::Record { fields } => {
-            if fields.is_empty() {
-                quote! {
-                    impl From<#bindings_path> for #struct_ident {
-                        fn from(_: #bindings_path) -> Self {
-                            Self
-                        }
-                    }
-
-                    impl From<#struct_ident> for #bindings_path {
-                        fn from(_: #struct_ident) -> Self {
-                            Self
-                        }
-                    }
-                }
-            } else {
-                let field_idents: Vec<_> =
-                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
-
-                let binding_to_user_fields: Vec<_> = fields
-                    .iter()
-                    .map(|field| {
-                        let ident = format_ident!("{}", field.name);
-                        if field.ty.is_custom {
-                            quote! { #ident.into() }
-                        } else {
-                            quote! { #ident }
-                        }
-                    })
-                    .collect();
-
-                let user_to_binding_fields: Vec<_> = fields
-                    .iter()
-                    .map(|field| {
-                        let ident = format_ident!("{}", field.name);
-                        if field.ty.is_custom {
-                            quote! { #ident.into() }
-                        } else {
-                            quote! { #ident }
-                        }
-                    })
-                    .collect();
-
-                quote! {
-                    impl From<#bindings_path> for #struct_ident {
-                        fn from(value: #bindings_path) -> Self {
-                            let #bindings_path { #( #field_idents ),* } = value;
-                            Self {
-                                #( #field_idents: #binding_to_user_fields ),*
-                            }
-                        }
-                    }
-
-                    impl From<#struct_ident> for #bindings_path {
-                        fn from(value: #struct_ident) -> Self {
-                            let #struct_ident { #( #field_idents ),* } = value;
-                            Self {
-                                #( #field_idents: #user_to_binding_fields ),*
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        ExportedTypeKind::Variant { variants } => {
-            let binding_match_arms: Vec<_> = variants
-                .iter()
-                .map(|variant| {
-                    let binding_ident = format_ident!("{}", variant.rust_name);
-                    let user_ident = format_ident!("{}", variant.rust_name);
-                    if let Some(payload) = &variant.payload {
-                        let binding_pat = quote! { #bindings_path::#binding_ident(value) };
-                        let user_ctor = quote! { #struct_ident::#user_ident };
-                        let user_payload = if payload.is_custom {
-                            quote! {{
-                                value.into()
-                            }}
-                        } else {
-                            quote! { value }
-                        };
-                        quote! { #binding_pat => #user_ctor(#user_payload) }
-                    } else {
-                        quote! { #bindings_path::#binding_ident => #struct_ident::#user_ident }
-                    }
-                })
-                .collect();
-
-            let user_match_arms: Vec<_> = variants
-                .iter()
-                .map(|variant| {
-                    let binding_ident = format_ident!("{}", variant.rust_name);
-                    let user_ident = format_ident!("{}", variant.rust_name);
-                    if let Some(payload) = &variant.payload {
-                        let user_pat = quote! { #struct_ident::#user_ident(value) };
-                        let binding_payload = if payload.is_custom {
-                            quote! {{
-                                let value = value.into();
-                                value
-                            }}
-                        } else {
-                            quote! { value }
-                        };
-                        quote! { #user_pat => #bindings_path::#binding_ident(#binding_payload) }
-                    } else {
-                        quote! { #struct_ident::#user_ident => #bindings_path::#binding_ident }
-                    }
-                })
-                .collect();
-
-            quote! {
-                impl From<#bindings_path> for #struct_ident {
-                    fn from(value: #bindings_path) -> Self {
-                        match value {
-                            #( #binding_match_arms ),*
-                        }
-                    }
-                }
-
-                impl From<#struct_ident> for #bindings_path {
-                    fn from(value: #struct_ident) -> Self {
-                        match value {
-                            #( #user_match_arms ),*
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// Parses a public inherent method and extracts the metadata necessary to export it via WIT.

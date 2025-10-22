@@ -343,7 +343,13 @@ proc.miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note
 end
 
 proc.miden:basic-wallet/basic-wallet@0.1.0#test-custom-types
-    movup.2
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
+    drop
+    swap.1
     drop
     movup.2
     drop

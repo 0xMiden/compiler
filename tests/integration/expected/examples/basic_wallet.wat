@@ -17,7 +17,7 @@
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (param f32 f32 f32 f32 f32)))
-    (type (;3;) (func (param f32 f32 f32 f32 i32 i32) (result i32)))
+    (type (;3;) (func (param f32 f32 f32 f32 i32 f32 f32 f32 f32) (result i32)))
     (type (;4;) (func (param i32 i32)))
     (type (;5;) (func (param i32 i32 f32)))
     (type (;6;) (func (param f32 f32 f32 f32 i32)))
@@ -101,21 +101,21 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden:basic-wallet/basic-wallet@0.1.0#test-custom-types (;4;) (type 3) (param f32 f32 f32 f32 i32 i32) (result i32)
+    (func $miden:basic-wallet/basic-wallet@0.1.0#test-custom-types (;4;) (type 3) (param f32 f32 f32 f32 i32 f32 f32 f32 f32) (result i32)
       (local i32)
       global.get $GOT.data.internal.__memory_base
-      local.set 6
+      local.set 9
       call $wit_bindgen::rt::run_ctors_once
-      local.get 6
+      local.get 9
       i32.const 1048584
       i32.add
-      local.tee 6
-      local.get 1
+      local.tee 9
+      local.get 5
       f32.store offset=4
-      local.get 6
+      local.get 9
       local.get 0
       f32.store
-      local.get 6
+      local.get 9
     )
     (func $wit_bindgen::rt::run_ctors_once (;5;) (type 0)
       (local i32)
@@ -301,21 +301,22 @@
   (type (;5;) (variant (case "variant-a") (case "variant-b")))
   (type (;6;) (record (field "foo" 4) (field "an-enum" 5)))
   (type (;7;) (record (field "bar" 2) (field "baz" 2)))
+  (type (;8;) (record (field "c-inner" 2)))
   (core instance (;0;) (instantiate 0))
   (alias core export 0 "memory" (core memory (;0;)))
-  (type (;8;) (func (param "asset" 1)))
+  (type (;9;) (func (param "asset" 1)))
   (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#receive-asset" (core func (;0;)))
-  (func (;0;) (type 8) (canon lift (core func 0)))
-  (type (;9;) (func (param "asset" 1) (param "note-idx" 3)))
+  (func (;0;) (type 9) (canon lift (core func 0)))
+  (type (;10;) (func (param "asset" 1) (param "note-idx" 3)))
   (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note" (core func (;1;)))
-  (func (;1;) (type 9) (canon lift (core func 1)))
-  (type (;10;) (func (param "a" 6) (param "b" 5) (result 7)))
+  (func (;1;) (type 10) (canon lift (core func 1)))
+  (type (;11;) (func (param "a" 6) (param "asset" 1) (result 7)))
   (alias core export 0 "miden:basic-wallet/basic-wallet@0.1.0#test-custom-types" (core func (;2;)))
-  (func (;2;) (type 10) (canon lift (core func 2) (memory 0)))
-  (alias export 0 "felt" (type (;11;)))
-  (alias export 0 "word" (type (;12;)))
-  (alias export 0 "asset" (type (;13;)))
-  (alias export 0 "note-idx" (type (;14;)))
+  (func (;2;) (type 11) (canon lift (core func 2) (memory 0)))
+  (alias export 0 "felt" (type (;12;)))
+  (alias export 0 "word" (type (;13;)))
+  (alias export 0 "asset" (type (;14;)))
+  (alias export 0 "note-idx" (type (;15;)))
   (component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
@@ -340,7 +341,7 @@
     (import "import-type-felt0" (type (;18;) (eq 1)))
     (type (;19;) (record (field "bar" 18) (field "baz" 18)))
     (import "import-type-struct-b" (type (;20;) (eq 19)))
-    (type (;21;) (func (param "a" 17) (param "b" 15) (result 20)))
+    (type (;21;) (func (param "a" 17) (param "asset" 9) (result 20)))
     (import "import-func-test-custom-types" (func (;2;) (type 21)))
     (export (;22;) "asset" (type 6))
     (export (;23;) "felt" (type 1))
@@ -352,21 +353,23 @@
     (export (;29;) "struct-a" (type 28))
     (type (;30;) (record (field "bar" 23) (field "baz" 23)))
     (export (;31;) "struct-b" (type 30))
-    (type (;32;) (func (param "asset" 22)))
-    (export (;3;) "receive-asset" (func 0) (func (type 32)))
-    (type (;33;) (func (param "asset" 22) (param "note-idx" 24)))
-    (export (;4;) "move-asset-to-note" (func 1) (func (type 33)))
-    (type (;34;) (func (param "a" 29) (param "b" 27) (result 31)))
-    (export (;5;) "test-custom-types" (func 2) (func (type 34)))
+    (type (;32;) (record (field "c-inner" 23)))
+    (export (;33;) "struct-c" (type 32))
+    (type (;34;) (func (param "asset" 22)))
+    (export (;3;) "receive-asset" (func 0) (func (type 34)))
+    (type (;35;) (func (param "asset" 22) (param "note-idx" 24)))
+    (export (;4;) "move-asset-to-note" (func 1) (func (type 35)))
+    (type (;36;) (func (param "a" 29) (param "asset" 22) (result 31)))
+    (export (;5;) "test-custom-types" (func 2) (func (type 36)))
   )
   (instance (;1;) (instantiate 0
       (with "import-func-receive-asset" (func 0))
       (with "import-func-move-asset-to-note" (func 1))
       (with "import-func-test-custom-types" (func 2))
-      (with "import-type-felt" (type 11))
-      (with "import-type-word" (type 12))
-      (with "import-type-asset" (type 13))
-      (with "import-type-note-idx" (type 14))
+      (with "import-type-felt" (type 12))
+      (with "import-type-word" (type 13))
+      (with "import-type-asset" (type 14))
+      (with "import-type-note-idx" (type 15))
       (with "import-type-asset0" (type 1))
       (with "import-type-note-idx0" (type 3))
       (with "import-type-word0" (type 4))

@@ -37,6 +37,11 @@ struct StructB {
     baz: Felt,
 }
 
+#[export_type]
+struct StructC {
+    c_inner: Felt,
+}
+
 #[component]
 struct MyAccount;
 
@@ -65,10 +70,24 @@ impl MyAccount {
         tx::add_asset_to_note(asset, note_idx);
     }
 
-    pub fn test_custom_types(&self, a: StructA, _b: EnumA) -> StructB {
+    pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
+        StructB {
+            bar: a.foo.inner.0,
+            baz: asset.inner.inner.0,
+        }
+    }
+
+    fn test_custom_types_private(&self, a: StructA, _b: EnumA, _asset: Asset) -> StructB {
         StructB {
             bar: a.foo.inner.0,
             baz: a.foo.inner.1,
+        }
+    }
+
+    fn test_exported_type_in_private_method(&self, c: StructC) -> StructB {
+        StructB {
+            bar: c.c_inner,
+            baz: c.c_inner,
         }
     }
 }
