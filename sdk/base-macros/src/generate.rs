@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use proc_macro2::{Literal, Span};
+use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
@@ -19,6 +19,7 @@ const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 #[derive(Default)]
 struct GenerateArgs {
     inline: Option<LitStr>,
+    with: Option<TokenStream2>,
 }
 
 impl Parse for GenerateArgs {
@@ -35,6 +36,14 @@ impl Parse for GenerateArgs {
                     return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
                 }
                 args.inline = Some(input.parse()?);
+            } else if name == "with" {
+                if args.with.is_some() {
+                    return Err(syn::Error::new(ident.span(), "duplicate `with` argument"));
+                }
+                let content;
+                syn::braced!(content in input);
+                let tokens = content.parse::<TokenStream2>()?;
+                args.with = Some(tokens);
             } else {
                 return Err(syn::Error::new(
                     ident.span(),
@@ -83,6 +92,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 config.paths.iter().map(|path| Literal::string(path)).collect();
 
             let inline_clause = args.inline.as_ref().map(|src| quote! { inline: #src, });
+            let custom_with_entries = args.with.unwrap_or_else(TokenStream2::new);
 
             let inline_world = args
                 .inline
@@ -120,6 +130,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                         // path to use in the generated `export!` macro
                         default_bindings_module: "bindings",
                         with: {
+                            #custom_with_entries
                             "miden:base/core-types@1.0.0": generate,
                             "miden:base/core-types@1.0.0/felt": ::miden::Felt,
                             "miden:base/core-types@1.0.0/word": ::miden::Word,

@@ -21,7 +21,6 @@ pub(crate) struct ExportedField {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedVariant {
-    pub(crate) rust_name: String,
     pub(crate) wit_name: String,
     pub(crate) payload: Option<TypeRef>,
 }
@@ -160,8 +159,7 @@ pub(crate) fn exported_type_from_enum(
     let known_exported = registered_export_type_map();
     let mut variants = Vec::new();
     for variant in &item_enum.variants {
-        let rust_name = variant.ident.to_string();
-        let wit_name = rust_name.to_kebab_case();
+        let wit_name = variant.ident.to_string().to_kebab_case();
         let payload = match &variant.fields {
             syn::Fields::Unit => None,
             syn::Fields::Unnamed(fields) => {
@@ -183,11 +181,7 @@ pub(crate) fn exported_type_from_enum(
             }
         };
 
-        variants.push(ExportedVariant {
-            rust_name,
-            wit_name,
-            payload,
-        });
+        variants.push(ExportedVariant { wit_name, payload });
     }
 
     Ok(ExportedTypeDef {

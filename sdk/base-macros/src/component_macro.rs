@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeSet, HashMap},
+    env,
     fmt::Write,
     fs,
     io::ErrorKind,
@@ -10,7 +11,7 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_objects::{account::AccountType, utils::Serializable};
 use proc_macro::Span;
-use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
+use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use semver::Version;
 use syn::{
@@ -223,11 +224,8 @@ fn expand_component_impl(
 
     let mut exported_types = registered_export_types();
     exported_types.sort_by(|a, b| a.wit_name.cmp(&b.wit_name));
-    let exported_types_by_wit: HashMap<_, _> =
-        exported_types.iter().map(|def| (def.wit_name.clone(), def.clone())).collect();
     let exported_types_by_rust: HashMap<_, _> =
         exported_types.iter().map(|def| (def.rust_name.clone(), def.clone())).collect();
-    let bindings_segments = build_bindings_module_segments(&component_package, &interface_module);
     let mut methods = Vec::new();
     let mut type_imports = BTreeSet::new();
 
@@ -265,13 +263,28 @@ fn expand_component_impl(
     let guest_trait_path = build_guest_trait_path(&component_package, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods
         .iter()
-        .map(|method| {
-            render_guest_method(method, &component_type, &bindings_segments, &exported_types_by_wit)
-        })
+        .map(|method| render_guest_method(method, &component_type))
         .collect();
 
+    let interface_path = format!("{}/{}@{}", component_package, interface_name, metadata.version);
+    let super_depth = component_package
+        .split([':', '/'])
+        .filter(|segment| !segment.is_empty())
+        .count()
+        + 3;
+    let (custom_with_entries, debug_with_entries) =
+        build_custom_with_entries(&exported_types, &interface_path, super_depth);
+
+    if env::var_os("MIDEN_COMPONENT_DEBUG_WITH").is_some() {
+        eprintln!(
+            "[miden::component] with mappings for {}: {}",
+            component_package,
+            debug_with_entries.join(", ")
+        );
+    }
+
     Ok(quote! {
-        ::miden::generate!(inline = #inline_literal);
+        ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
@@ -459,45 +472,20 @@ fn build_guest_trait_path(
 }
 
 /// Emits the guest trait method forwarding logic invoking the user-defined implementation.
-fn render_guest_method(
-    method: &ComponentMethod,
-    component_type: &Type,
-    bindings_segments: &[Ident],
-    exported_types: &HashMap<String, ExportedTypeDef>,
-) -> TokenStream2 {
+fn render_guest_method(method: &ComponentMethod, component_type: &Type) -> TokenStream2 {
     let fn_ident = &method.fn_ident;
     let doc_attrs = &method.doc_attrs;
     let component_ident = format_ident!("__component_instance");
-    let bindings_base = quote! { self::bindings::exports #( :: #bindings_segments )* };
 
     let mut param_tokens = Vec::new();
     let mut call_args = Vec::new();
-    let mut pre_call = Vec::new();
 
     for param in &method.params {
         let ident = &param.ident;
         call_args.push(quote!(#ident));
 
-        let param_ty = if param.type_ref.is_custom {
-            let def = exported_types.get(&param.type_ref.wit_name).expect("unknown exported type");
-            let type_ident = format_ident!("{}", def.rust_name);
-            quote!(#bindings_base :: #type_ident)
-        } else {
-            let ty = &param.user_ty;
-            quote!(#ty)
-        };
-
+        let param_ty = &param.user_ty;
         param_tokens.push(quote!(#ident: #param_ty));
-
-        if param.type_ref.is_custom {
-            let user_ty = &param.user_ty;
-            let def = exported_types.get(&param.type_ref.wit_name).expect("unknown exported type");
-            let conversion =
-                convert_binding_to_user_expr(def, &bindings_base, exported_types, quote!(#ident));
-            pre_call.push(quote! {
-                let #ident: #user_ty = #conversion;
-            });
-        }
     }
 
     let fn_inputs = if param_tokens.is_empty() {
@@ -517,45 +505,21 @@ fn render_guest_method(
 
     let output = match &method.return_info {
         MethodReturn::Unit => quote!(),
-        MethodReturn::Type { type_ref, user_ty } => {
+        MethodReturn::Type { user_ty, .. } => {
             let user_ty = user_ty.as_ref();
-            if type_ref.is_custom {
-                let def = exported_types.get(&type_ref.wit_name).expect("unknown exported type");
-                let type_ident = format_ident!("{}", def.rust_name);
-                quote!(-> #bindings_base :: #type_ident)
-            } else {
-                quote!(-> #user_ty)
-            }
+            quote!(-> #user_ty)
         }
     };
 
     let body = match &method.return_info {
         MethodReturn::Unit => quote! {
             #component_init
-            #(#pre_call)*
             #call_expr;
         },
-        MethodReturn::Type { type_ref, .. } => {
-            if type_ref.is_custom {
-                let def = exported_types.get(&type_ref.wit_name).expect("unknown exported type");
-                let conversion = convert_user_to_binding_expr(
-                    def,
-                    &bindings_base,
-                    exported_types,
-                    quote!(result),
-                );
-                quote! {
-                    #component_init
-                    #(#pre_call)*
-                    let result = #call_expr;
-                    #conversion
-                }
-            } else {
-                quote! {
-                    #component_init
-                    #(#pre_call)*
-                    #call_expr
-                }
+        MethodReturn::Type { .. } => {
+            quote! {
+                #component_init
+                #call_expr
             }
         }
     };
@@ -568,198 +532,25 @@ fn render_guest_method(
     }
 }
 
-fn convert_binding_to_user_expr(
-    def: &ExportedTypeDef,
-    bindings_base: &TokenStream2,
-    exported_types: &HashMap<String, ExportedTypeDef>,
-    value_expr: TokenStream2,
-) -> TokenStream2 {
-    let struct_ident = format_ident!("{}", def.rust_name);
-    let binding_type_ident = format_ident!("{}", def.rust_name);
-    let bindings_path = quote! { #bindings_base :: #binding_type_ident };
+fn build_custom_with_entries(
+    exported_types: &[ExportedTypeDef],
+    interface_path: &str,
+    super_depth: usize,
+) -> (Vec<TokenStream2>, Vec<String>) {
+    let mut tokens = Vec::new();
+    let mut debug = Vec::new();
 
-    match &def.kind {
-        ExportedTypeKind::Record { fields } => {
-            if fields.is_empty() {
-                quote!({
-                    let _ = #value_expr;
-                    #struct_ident
-                })
-            } else {
-                let field_idents: Vec<_> =
-                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
-                let field_values: Vec<_> = fields
-                    .iter()
-                    .map(|field| {
-                        let ident = format_ident!("{}", field.name);
-                        if field.ty.is_custom {
-                            let nested_def = exported_types
-                                .get(&field.ty.wit_name)
-                                .expect("unknown exported type");
-                            convert_binding_to_user_expr(
-                                nested_def,
-                                bindings_base,
-                                exported_types,
-                                quote!(#ident),
-                            )
-                        } else {
-                            quote!(#ident)
-                        }
-                    })
-                    .collect();
+    for def in exported_types {
+        let wit_path_str = format!("{interface_path}/{}", def.wit_name);
+        let wit_path = Literal::string(&wit_path_str);
+        let type_ident = format_ident!("{}", def.rust_name);
+        let super_segments: Vec<TokenStream2> = (0..super_depth).map(|_| quote!(super::)).collect();
 
-                quote!({
-                    let #bindings_path { #( #field_idents ),* } = #value_expr;
-                    #struct_ident {
-                        #( #field_idents: #field_values ),*
-                    }
-                })
-            }
-        }
-        ExportedTypeKind::Variant { variants } => {
-            let match_arms: Vec<_> = variants
-                .iter()
-                .map(|variant| {
-                    let binding_ident = format_ident!("{}", variant.rust_name);
-                    let user_ident = format_ident!("{}", variant.rust_name);
-                    if let Some(payload) = &variant.payload {
-                        let payload_expr = if payload.is_custom {
-                            let nested_def = exported_types
-                                .get(&payload.wit_name)
-                                .expect("unknown exported type");
-                            convert_binding_to_user_expr(
-                                nested_def,
-                                bindings_base,
-                                exported_types,
-                                quote!(value),
-                            )
-                        } else {
-                            quote!(value)
-                        };
-                        quote! {
-                            #bindings_path::#binding_ident(value) => {
-                                let value = #payload_expr;
-                                #struct_ident::#user_ident(value)
-                            }
-                        }
-                    } else {
-                        quote! {
-                            #bindings_path::#binding_ident => #struct_ident::#user_ident
-                        }
-                    }
-                })
-                .collect();
-
-            quote!({
-                match #value_expr {
-                    #( #match_arms ),*
-                }
-            })
-        }
+        tokens.push(quote! { #wit_path: #(#super_segments)* #type_ident, });
+        debug.push(format!("{wit_path_str} => {}{}", "super::".repeat(super_depth), def.rust_name));
     }
-}
 
-fn convert_user_to_binding_expr(
-    def: &ExportedTypeDef,
-    bindings_base: &TokenStream2,
-    exported_types: &HashMap<String, ExportedTypeDef>,
-    value_expr: TokenStream2,
-) -> TokenStream2 {
-    let struct_ident = format_ident!("{}", def.rust_name);
-    let binding_type_ident = format_ident!("{}", def.rust_name);
-    let bindings_path = quote! { #bindings_base :: #binding_type_ident };
-
-    match &def.kind {
-        ExportedTypeKind::Record { fields } => {
-            if fields.is_empty() {
-                quote!({
-                    let _ = #value_expr;
-                    #bindings_path
-                })
-            } else {
-                let field_idents: Vec<_> =
-                    fields.iter().map(|field| format_ident!("{}", field.name)).collect();
-                let field_values: Vec<_> = fields
-                    .iter()
-                    .map(|field| {
-                        let ident = format_ident!("{}", field.name);
-                        if field.ty.is_custom {
-                            let nested_def = exported_types
-                                .get(&field.ty.wit_name)
-                                .expect("unknown exported type");
-                            convert_user_to_binding_expr(
-                                nested_def,
-                                bindings_base,
-                                exported_types,
-                                quote!(#ident),
-                            )
-                        } else {
-                            quote!(#ident)
-                        }
-                    })
-                    .collect();
-
-                quote!({
-                    let #struct_ident { #( #field_idents ),* } = #value_expr;
-                    #bindings_path {
-                        #( #field_idents: #field_values ),*
-                    }
-                })
-            }
-        }
-        ExportedTypeKind::Variant { variants } => {
-            let match_arms: Vec<_> = variants
-                .iter()
-                .map(|variant| {
-                    let binding_ident = format_ident!("{}", variant.rust_name);
-                    let user_ident = format_ident!("{}", variant.rust_name);
-                    if let Some(payload) = &variant.payload {
-                        let payload_expr = if payload.is_custom {
-                            let nested_def = exported_types
-                                .get(&payload.wit_name)
-                                .expect("unknown exported type");
-                            convert_user_to_binding_expr(
-                                nested_def,
-                                bindings_base,
-                                exported_types,
-                                quote!(value),
-                            )
-                        } else {
-                            quote!(value)
-                        };
-                        quote! {
-                            #struct_ident::#user_ident(value) => {
-                                let value = #payload_expr;
-                                #bindings_path::#binding_ident(value)
-                            }
-                        }
-                    } else {
-                        quote! {
-                            #struct_ident::#user_ident => #bindings_path::#binding_ident
-                        }
-                    }
-                })
-                .collect();
-
-            quote!({
-                match #value_expr {
-                    #( #match_arms ),*
-                }
-            })
-        }
-    }
-}
-
-fn build_bindings_module_segments(component_package: &str, interface_module: &str) -> Vec<Ident> {
-    let mut segments = Vec::new();
-    for segment in component_package.split([':', '/']) {
-        if segment.is_empty() {
-            continue;
-        }
-        segments.push(format_ident!("{}", to_snake_case(segment)));
-    }
-    segments.push(format_ident!("{}", to_snake_case(interface_module)));
-    segments
+    (tokens, debug)
 }
 
 /// Parses a public inherent method and extracts the metadata necessary to export it via WIT.

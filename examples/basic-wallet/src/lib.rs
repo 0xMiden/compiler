@@ -20,24 +20,28 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 use miden::{account, component, export_type, tx, Asset, Felt, NoteIdx, Word};
 
 #[export_type]
+#[derive(Clone, Copy, Debug)]
 enum EnumA {
     VariantA,
     VariantB,
 }
 
 #[export_type]
+#[derive(Clone, Copy, Debug)]
 struct StructA {
     foo: Word,
     an_enum: EnumA,
 }
 
 #[export_type]
+#[derive(Clone, Copy, Debug)]
 struct StructB {
     bar: Felt,
     baz: Felt,
 }
 
 #[export_type]
+#[derive(Clone, Copy, Debug)]
 struct StructC {
     c_inner: Felt,
 }
