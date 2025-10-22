@@ -2820,6 +2820,7 @@ dependencies = [
  "midenc-compile",
  "midenc-debug",
  "midenc-dialect-arith",
+ "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-expect-test",
  "midenc-frontend-wasm",
