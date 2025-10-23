@@ -14,7 +14,7 @@ use syn::{
 /// File name for the embedded Miden SDK WIT .
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
 /// Embedded Miden SDK WIT source.
-const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
+pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 
 #[derive(Default)]
 struct GenerateArgs {

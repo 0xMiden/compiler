@@ -1,11 +1,13 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{spanned::Spanned, ItemStruct, Type};
+
+use crate::generate::SDK_WIT_SOURCE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
@@ -109,6 +111,16 @@ pub(crate) fn map_type_to_type_ref(
                     path: path_segments,
                 })
             } else {
+                let wit_name = ident.to_kebab_case();
+                if !sdk_core_type_names().contains(&wit_name) {
+                    return Err(syn::Error::new(
+                        ty.span(),
+                        format!(
+                            "type `{ident}` is not a known Miden SDK type; add #[export_type] to \
+                             its definition to export it from this component"
+                        ),
+                    ));
+                }
                 Ok(TypeRef {
                     wit_name: ident.to_kebab_case(),
                     is_custom: false,
@@ -120,6 +132,61 @@ pub(crate) fn map_type_to_type_ref(
             ty.span(),
             "unsupported type in component interface; only paths are supported",
         )),
+    }
+}
+
+fn sdk_core_type_names() -> &'static HashSet<String> {
+    static NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| parse_wit_type_names(SDK_WIT_SOURCE))
+}
+
+fn parse_wit_type_names(source: &str) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if let Some(name) = extract_wit_type_name(trimmed, "record") {
+            names.insert(name);
+            continue;
+        }
+        if let Some(name) = extract_wit_type_name(trimmed, "variant") {
+            names.insert(name);
+            continue;
+        }
+        if let Some(name) = extract_wit_type_name(trimmed, "enum") {
+            names.insert(name);
+            continue;
+        }
+        if let Some(name) = extract_wit_type_name(trimmed, "flags") {
+            names.insert(name);
+            continue;
+        }
+        if let Some(name) = extract_wit_type_name(trimmed, "resource") {
+            names.insert(name);
+            continue;
+        }
+        if let Some(name) = extract_wit_type_name(trimmed, "type") {
+            names.insert(name);
+            continue;
+        }
+    }
+    names
+}
+
+fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
+    let prefix = format!("{keyword} ");
+    let rest = line.strip_prefix(&prefix)?;
+    let mut name = String::new();
+    for ch in rest.chars() {
+        if ch.is_alphanumeric() || ch == '-' || ch == '_' {
+            name.push(ch);
+        } else {
+            break;
+        }
+    }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
     }
 }
 
