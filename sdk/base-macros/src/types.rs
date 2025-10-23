@@ -226,6 +226,9 @@ pub(crate) fn exported_type_from_struct(
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) fn exported_type_from_enum(
     item_enum: &syn::ItemEnum,
 ) -> Result<ExportedTypeDef, syn::Error> {
