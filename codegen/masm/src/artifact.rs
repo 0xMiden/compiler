@@ -357,32 +357,71 @@ impl MasmComponent {
     }
 
     fn emit_test_harness(&self, block: &mut masm::Block) {
-        use masm::{Instruction as Inst, Op};
+        use masm::{Instruction as Inst, IntValue, Op};
+        use miden_core::{Felt, FieldElement};
 
         let span = SourceSpan::default();
 
         let pipe_words_to_memory = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
         let std_mem = masm::LibraryPath::new("std::mem").unwrap();
 
-        // Advice Stack: [dest_ptr, num_words, ...]
+        // Step 1: Get the number of initializers to run
+        // => [inits] on operand stack
+        block.push(Op::Inst(Span::new(span, Inst::AdvPush(1.into()))));
 
-        // => [num_words, dest_ptr] on operand stack
-        block.push(Op::Inst(Span::new(span, Inst::AdvPush(2.into()))));
-        // => [C, B, A, dest_ptr] on operand stack
-        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
-        block.push(Op::Inst(Span::new(
+        // Step 2: Evaluate the initial state of the loop condition `inits > 0`
+        // => [inits, inits]
+        block.push(Op::Inst(Span::new(span, Inst::Dup0)));
+        // => [inits > 0, inits]
+        block.push(Op::Inst(Span::new(span, Inst::Push(IntValue::U8(0).into()))));
+        block.push(Op::Inst(Span::new(span, Inst::Gt)));
+
+        // Step 3: Loop until `inits == 0`
+        let mut loop_body = Vec::with_capacity(16);
+
+        // State of operand stack on entry to `loop_body`: [inits]
+        // State of advice stack on entry to `loop_body`: [dest_ptr, num_words, ...]
+        //
+        // Step 3a: Compute next value of `inits`, i.e. `inits'`
+        // => [inits - 1]
+        loop_body.push(Op::Inst(Span::new(span, Inst::SubImm(Felt::ONE.into()))));
+
+        // Step 3b: Copy initializer data to memory
+        // => [num_words, dest_ptr, inits']
+        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush(2.into()))));
+        // => [C, B, A, dest_ptr, inits'] on operand stack
+        loop_body
+            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
+        loop_body.push(Op::Inst(Span::new(
             span,
             Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
                 name: pipe_words_to_memory,
                 path: std_mem,
             }),
         )));
-        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+        loop_body
+            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
         // Drop C, B, A
-        block.push(Op::Inst(Span::new(span, Inst::DropW)));
-        block.push(Op::Inst(Span::new(span, Inst::DropW)));
-        block.push(Op::Inst(Span::new(span, Inst::DropW)));
-        // Drop dest_ptr
+        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+        // => [inits']
+        loop_body.push(Op::Inst(Span::new(span, Inst::Drop)));
+
+        // Step 3c: Evaluate loop condition `inits' > 0`
+        // => [inits', inits']
+        loop_body.push(Op::Inst(Span::new(span, Inst::Dup0)));
+        // => [inits' > 0, inits']
+        loop_body.push(Op::Inst(Span::new(span, Inst::Push(IntValue::U8(0).into()))));
+        loop_body.push(Op::Inst(Span::new(span, Inst::Gt)));
+
+        // Step 4: Enter (or skip) loop
+        block.push(Op::While {
+            span,
+            body: masm::Block::new(span, loop_body),
+        });
+
+        // Step 5: Drop `inits` after loop is evaluated
         block.push(Op::Inst(Span::new(span, Inst::Drop)));
     }
 }

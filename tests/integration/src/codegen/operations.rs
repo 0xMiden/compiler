@@ -5,7 +5,7 @@ use midenc_hir::{
     ValueRef,
 };
 
-use crate::testing::{compile_test_module, eval_package, Initializer};
+use crate::testing::{compile_test_module, eval_package};
 
 fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_result: &[u64]) {
     let span = SourceSpan::default();
@@ -26,15 +26,9 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
     });
 
     let run_test = |cond_val, expected: &[u64]| {
-        // XXX: The initialisers can't be empty otherwise eval_package() will abort early.
-        let inits = [Initializer::Value {
-            addr: 0,
-            value: Box::new(Felt::from(0_u32)),
-        }];
-
         eval_package::<u32, _, _>(
             &package,
-            inits,
+            None,
             &[Felt::from(cond_val)],
             context.session(),
             |trace| {

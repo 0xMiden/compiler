@@ -20,8 +20,11 @@ mod opt;
 mod stack;
 
 pub mod masm {
-    pub use miden_assembly::{
-        ast::*, KernelLibrary, Library, LibraryNamespace, LibraryPath, SourceSpan, Span, Spanned,
+    pub use miden_assembly_syntax::{
+        ast::*,
+        debuginfo::{SourceSpan, Span, Spanned},
+        parser::IntValue,
+        KernelLibrary, Library, LibraryNamespace, LibraryPath,
     };
 }
 
