@@ -17,43 +17,10 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-use miden::{account, component, export_type, tx, Asset, Felt, NoteIdx, Word};
-
-mod my_types {
-    use miden::export_type;
-
-    #[export_type]
-    #[derive(Clone, Copy, Debug)]
-    pub enum EnumA {
-        VariantA,
-        VariantB,
-    }
-}
-
-#[export_type]
-#[derive(Clone, Copy, Debug)]
-struct StructA {
-    foo: Word,
-    an_enum: my_types::EnumA,
-}
-
-#[export_type]
-#[derive(Clone, Copy, Debug)]
-struct StructB {
-    bar: Felt,
-    baz: Felt,
-}
-
-#[export_type]
-#[derive(Clone, Copy, Debug)]
-struct StructC {
-    c_inner: Felt,
-}
+use miden::{account, component, tx, Asset, NoteIdx};
 
 #[component]
 struct MyAccount;
-
-// TODO: why EnumA is still defined in the bindings and not use type alias as SDK types?
 
 #[component]
 impl MyAccount {
@@ -78,26 +45,5 @@ impl MyAccount {
     pub fn move_asset_to_note(&self, asset: Asset, note_idx: NoteIdx) {
         let asset = account::remove_asset(asset);
         tx::add_asset_to_note(asset, note_idx);
-    }
-
-    pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
-        StructB {
-            bar: a.foo.inner.0,
-            baz: asset.inner.inner.0,
-        }
-    }
-
-    fn test_custom_types_private(&self, a: StructA, _b: my_types::EnumA, _asset: Asset) -> StructB {
-        StructB {
-            bar: a.foo.inner.0,
-            baz: a.foo.inner.1,
-        }
-    }
-
-    fn test_exported_type_in_private_method(&self, c: StructC) -> StructB {
-        StructB {
-            bar: c.c_inner,
-            baz: c.c_inner,
-        }
     }
 }
