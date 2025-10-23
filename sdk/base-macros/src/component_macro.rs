@@ -11,7 +11,7 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_objects::{account::AccountType, utils::Serializable};
 use proc_macro::Span;
-use proc_macro2::{Literal, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use semver::Version;
 use syn::{
@@ -267,13 +267,16 @@ fn expand_component_impl(
         .collect();
 
     let interface_path = format!("{}/{}@{}", component_package, interface_name, metadata.version);
-    let super_depth = component_package
-        .split([':', '/'])
-        .filter(|segment| !segment.is_empty())
-        .count()
-        + 3;
-    let (custom_with_entries, debug_with_entries) =
-        build_custom_with_entries(&exported_types, &interface_path, super_depth);
+    let module_prefix = component_module_prefix(&component_type);
+
+    let custom_type_paths = collect_custom_type_paths(&exported_types, &methods);
+
+    let (custom_with_entries, debug_with_entries) = build_custom_with_entries(
+        &exported_types,
+        &interface_path,
+        module_prefix.as_ref(),
+        &custom_type_paths,
+    );
 
     if env::var_os("MIDEN_COMPONENT_DEBUG_WITH").is_some() {
         eprintln!(
@@ -535,7 +538,8 @@ fn render_guest_method(method: &ComponentMethod, component_type: &Type) -> Token
 fn build_custom_with_entries(
     exported_types: &[ExportedTypeDef],
     interface_path: &str,
-    super_depth: usize,
+    module_prefix: Option<&syn::Path>,
+    custom_type_paths: &HashMap<String, Vec<String>>,
 ) -> (Vec<TokenStream2>, Vec<String>) {
     let mut tokens = Vec::new();
     let mut debug = Vec::new();
@@ -544,13 +548,117 @@ fn build_custom_with_entries(
         let wit_path_str = format!("{interface_path}/{}", def.wit_name);
         let wit_path = Literal::string(&wit_path_str);
         let type_ident = format_ident!("{}", def.rust_name);
-        let super_segments: Vec<TokenStream2> = (0..super_depth).map(|_| quote!(super::)).collect();
+        let type_tokens = if let Some(prefix) = module_prefix {
+            quote!(#prefix :: #type_ident)
+        } else if let Some(segments) = custom_type_paths.get(&def.wit_name) {
+            build_path_tokens(segments, &type_ident)
+        } else {
+            quote!(crate :: #type_ident)
+        };
 
-        tokens.push(quote! { #wit_path: #(#super_segments)* #type_ident, });
-        debug.push(format!("{wit_path_str} => {}{}", "super::".repeat(super_depth), def.rust_name));
+        debug.push(format!("{wit_path_str} => {type_tokens}"));
+        tokens.push(quote! { #wit_path: #type_tokens, });
     }
 
     (tokens, debug)
+}
+
+fn component_module_prefix(component_type: &Type) -> Option<syn::Path> {
+    if let Type::Path(type_path) = component_type {
+        let mut path = type_path.path.clone();
+        if path.segments.len() <= 1 {
+            return None;
+        }
+        path.segments.pop();
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn record_type_path(paths: &mut HashMap<String, Vec<String>>, type_ref: &TypeRef) {
+    if !type_ref.is_custom {
+        return;
+    }
+
+    if type_ref.path.len() <= 1 {
+        return;
+    }
+
+    paths.entry(type_ref.wit_name.clone()).or_insert_with(|| type_ref.path.clone());
+}
+
+fn collect_custom_type_paths(
+    exported_types: &[ExportedTypeDef],
+    methods: &[ComponentMethod],
+) -> HashMap<String, Vec<String>> {
+    let mut paths = HashMap::new();
+
+    for def in exported_types {
+        match &def.kind {
+            ExportedTypeKind::Record { fields } => {
+                for field in fields {
+                    record_type_path(&mut paths, &field.ty);
+                }
+            }
+            ExportedTypeKind::Variant { variants } => {
+                for variant in variants {
+                    if let Some(payload) = &variant.payload {
+                        record_type_path(&mut paths, payload);
+                    }
+                }
+            }
+        }
+    }
+
+    for method in methods {
+        for param in &method.params {
+            record_type_path(&mut paths, &param.type_ref);
+        }
+        if let MethodReturn::Type { type_ref, .. } = &method.return_info {
+            record_type_path(&mut paths, type_ref);
+        }
+    }
+
+    paths
+}
+
+fn build_path_tokens(segments: &[String], type_ident: &Ident) -> TokenStream2 {
+    if segments.is_empty() {
+        return quote!(crate :: #type_ident);
+    }
+
+    let mut modules: Vec<String> = segments.to_vec();
+    let type_name = type_ident.to_string();
+    if modules.last().map(|seg| seg == &type_name).unwrap_or(false) {
+        modules.pop();
+    }
+
+    let mut iter = modules.iter();
+    let mut tokens: Option<TokenStream2> = None;
+
+    if let Some(first) = iter.next() {
+        tokens = Some(match first.as_str() {
+            "crate" => quote!(crate),
+            "self" => quote!(self),
+            "super" => quote!(super),
+            other => {
+                let ident = format_ident!("{}", other);
+                quote!(crate :: #ident)
+            }
+        });
+    }
+
+    for segment in iter {
+        let ident = format_ident!("{}", segment);
+        tokens = Some(match tokens {
+            Some(existing) => quote!(#existing :: #ident),
+            None => quote!(crate :: #ident),
+        });
+    }
+
+    let base = tokens.unwrap_or_else(|| quote!(crate));
+    quote!(#base :: #type_ident)
 }
 
 /// Parses a public inherent method and extracts the metadata necessary to export it via WIT.

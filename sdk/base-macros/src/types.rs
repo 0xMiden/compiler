@@ -11,6 +11,7 @@ use syn::{spanned::Spanned, ItemStruct, Type};
 pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
+    pub(crate) path: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -98,15 +99,20 @@ pub(crate) fn map_type_to_type_ref(
                 ));
             }
 
+            let path_segments: Vec<String> =
+                path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
+
             if exported_types.contains_key(&ident) {
                 Ok(TypeRef {
                     wit_name: ident.to_kebab_case(),
                     is_custom: true,
+                    path: path_segments,
                 })
             } else {
                 Ok(TypeRef {
                     wit_name: ident.to_kebab_case(),
                     is_custom: false,
+                    path: path_segments,
                 })
             }
         }
