@@ -5,13 +5,21 @@ use std::{
 
 use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
-use clap::Args;
+use clap::{Args, Parser};
 
 /// The tag used in checkout of the new project template.
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
 const TEMPLATES_REPO_TAG: &str = "v0.19.0";
+
+/// The language that the project is programmed in
+#[derive(Parser, Clone, Copy, Debug, clap::ValueEnum)]
+pub enum Language {
+    Rust,
+    #[clap(name = "assembly")]
+    MidenAssembly,
+}
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
@@ -121,6 +129,9 @@ pub struct NewCommand {
     /// The template name to use to generate the package
     #[clap(flatten)]
     pub template: Option<ProjectTemplate>,
+    /// The language in which the project is written in.
+    #[clap(long, short)]
+    pub language: Language,
     /// The path to the template to use to generate the package
     #[clap(long, conflicts_with("template"))]
     pub template_path: Option<PathBuf>,
