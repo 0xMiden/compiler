@@ -190,9 +190,13 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         config.clone(),
         [],
     );
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account_word.wat")]);
+    test.expect_wasm(expect_file![format!(
+        "../../../expected/rust_sdk/cross_ctx_account_word.wat"
+    )]);
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account_word.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account_word.masm")]);
+    test.expect_masm(expect_file![format!(
+        "../../../expected/rust_sdk/cross_ctx_account_word.masm"
+    )]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
     let expected_module = "miden:cross-ctx-account-word/foo@1.0.0";
@@ -256,7 +260,9 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     test.expect_wasm(expect_file![format!(
         "../../../expected/rust_sdk/cross_ctx_account_word_arg.wat"
     )]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account_word_arg.hir")]);
+    test.expect_ir(expect_file![format!(
+        "../../../expected/rust_sdk/cross_ctx_account_word_arg.hir"
+    )]);
     test.expect_masm(expect_file![format!(
         "../../../expected/rust_sdk/cross_ctx_account_word_arg.masm"
     )]);
@@ -287,9 +293,13 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         [],
     );
     let mut test = builder.build();
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word_arg.wat")]);
+    test.expect_wasm(expect_file![format!(
+        "../../../expected/rust_sdk/cross_ctx_note_word_arg.wat"
+    )]);
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word_arg.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word_arg.masm")]);
+    test.expect_masm(expect_file![format!(
+        "../../../expected/rust_sdk/cross_ctx_note_word_arg.masm"
+    )]);
     let package = test.compiled_package();
     assert!(package.is_program());
     let mut exec = Executor::new(vec![]);
