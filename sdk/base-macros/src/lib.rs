@@ -1,3 +1,51 @@
+//! Module for Miden SDK macros
+//!
+//! ### How to use WIT generation.
+//!
+//! 1. Add `#[component]` on you `impl MyAccountType {`.
+//! 2. Add `#[export_type]` on every defined type that is used in the public(exported) method
+//!    signature.
+//!
+//! Example:
+//! ```rust
+//!
+//! #[export_type]
+//! pub struct StructA {
+//!     pub foo: Word,
+//!     pub asset: Asset,
+//! }
+//!
+//! #[export_type]
+//! pub struct StructB {
+//!     pub bar: Felt,
+//!     pub baz: Felt,
+//! }
+//!
+//! #[component]
+//! struct MyAccount;
+//!
+//! #[component]
+//! impl MyAccount {
+//!     pub fn (&self, a: StructA) -> StructB {
+//!         ...
+//!     }
+//! }
+//! ```
+//!
+
+//! ### Escape hatch (disable WIT generation)
+//!
+//! in a small fraction of the cases where the WIT generation is not possible (think a type defined
+//! only in an external WIT file) or not desirable the WIT generation can be disabled:
+//!
+//! To disable WIT interface generation:
+//! - Don't use `#[component]` attribute macro in the `impl MyAccountType` section;
+//!
+//! To use manually crafted WIT interface:
+//! - Put the WIT file in the `wit` folder;
+//! - call `miden::generate!();` and `bindings::export!(MyAccountType);`
+//! - implement `impl Guest for MyAccountType`;
+
 use crate::script::ScriptConfig;
 
 extern crate proc_macro;
@@ -9,6 +57,69 @@ mod generate;
 mod script;
 mod types;
 mod util;
+
+/// Generates the WIT interface and storage metadata.
+///
+/// **NOTE:** Mark each type used in the public method with `#[export_type]` attribute macro.
+///
+/// To disable WIT interface generation:
+/// - don't use `#[component]` attribute macro in the `impl MyAccountType` section;
+///
+/// To use manually crafted WIT interface:
+/// - put WIT interface file in the `wit` folder;
+/// - call `miden::generate!();` and `bindings::export!(MyAccountType);`
+/// - implement `impl Guest for MyAccountType`;
+#[proc_macro_attribute]
+pub fn component(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component_macro::component(attr, item)
+}
+
+/// Generates an equvalent type in the WIT interface.
+/// Required for every type mentioned in the public methods of an account component.
+///
+/// Intended to be used together with `#[component]` attribute macro.
+#[proc_macro_attribute]
+pub fn export_type(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    export_type::expand(attr, item)
+}
+
+/// Marks the function as a note script
+#[proc_macro_attribute]
+pub fn note_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    script::expand(
+        attr,
+        item,
+        ScriptConfig {
+            export_interface: "miden:base/note-script@1.0.0",
+            guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
+        },
+    )
+}
+
+/// Marks the function as a transaction script
+#[proc_macro_attribute]
+pub fn tx_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    script::expand(
+        attr,
+        item,
+        ScriptConfig {
+            export_interface: "miden:base/transaction-script@1.0.0",
+            guest_trait_path: "self::bindings::exports::miden::base::transaction_script::Guest",
+        },
+    )
+}
 
 /// Generate bindings for an input WIT document.
 ///
@@ -151,66 +262,4 @@ mod util;
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     generate::expand(input)
-}
-
-/// Marks the function as a note script
-#[proc_macro_attribute]
-pub fn note_script(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    script::expand(
-        attr,
-        item,
-        ScriptConfig {
-            export_interface: "miden:base/note-script@1.0.0",
-            guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
-        },
-    )
-}
-
-/// Marks the function as a transaction script
-#[proc_macro_attribute]
-pub fn tx_script(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    script::expand(
-        attr,
-        item,
-        ScriptConfig {
-            export_interface: "miden:base/transaction-script@1.0.0",
-            guest_trait_path: "self::bindings::exports::miden::base::transaction_script::Guest",
-        },
-    )
-}
-
-/// Generates the WIT interface and storage metadata.
-/// Mark each type used in the public method with `#[export_type]` attribute macro.
-///
-/// To disable WIT interface generation:
-/// - don't use `#[component]` attribute macro in the `impl MyAccountType` section;
-///
-/// To manually craft WIT interface:
-/// - put WIT interface file in the `wit` folder;
-/// - call `miden::generate!();` and `bindings::export!(MyAccountType);`
-/// - implement `impl Guest for MyAccountType`;
-#[proc_macro_attribute]
-pub fn component(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    component_macro::component(attr, item)
-}
-
-/// Generates an equvalent type in the WIT interface.
-/// Required for every type mentioned in the public methods of an account component.
-///
-/// Intended to be used together with `#[component]` attribute macro.
-#[proc_macro_attribute]
-pub fn export_type(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    export_type::expand(attr, item)
 }
