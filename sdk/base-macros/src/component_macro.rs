@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     env,
     fmt::Write,
     fs,
@@ -23,7 +23,8 @@ use toml::Value;
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     types::{
-        map_type_to_type_ref, registered_export_types, ExportedTypeDef, ExportedTypeKind, TypeRef,
+        ensure_custom_type_defined, map_type_to_type_ref, registered_export_types, ExportedTypeDef,
+        ExportedTypeKind, TypeRef,
     },
     util::generated_wit_folder,
 };
@@ -256,7 +257,7 @@ fn expand_component_impl(
         &type_imports,
         &methods,
         &exported_types,
-    );
+    )?;
     write_component_wit_file(call_site_span, &wit_source, &component_package)?;
     let inline_literal = Literal::string(&wit_source);
 
@@ -305,7 +306,7 @@ fn build_component_wit(
     type_imports: &BTreeSet<String>,
     methods: &[ComponentMethod],
     exported_types: &[ExportedTypeDef],
-) -> String {
+) -> Result<String, syn::Error> {
     let package_with_version = if component_package.contains('@') {
         component_package.to_string()
     } else {
@@ -321,11 +322,19 @@ fn build_component_wit(
     let _ = writeln!(wit_source, "use {CORE_TYPES_PACKAGE};");
     wit_source.push('\n');
 
+    let exported_type_names: HashSet<String> =
+        exported_types.iter().map(|def| def.wit_name.clone()).collect();
+
     let mut combined_core_imports = type_imports.clone();
     for exported in exported_types {
         match &exported.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
+                    ensure_custom_type_defined(
+                        &field.ty,
+                        &exported_type_names,
+                        Span::call_site().into(),
+                    )?;
                     if !field.ty.is_custom {
                         combined_core_imports.insert(field.ty.wit_name.clone());
                     }
@@ -334,6 +343,11 @@ fn build_component_wit(
             ExportedTypeKind::Variant { variants } => {
                 for variant in variants {
                     if let Some(payload) = &variant.payload {
+                        ensure_custom_type_defined(
+                            payload,
+                            &exported_type_names,
+                            Span::call_site().into(),
+                        )?;
                         if !payload.is_custom {
                             combined_core_imports.insert(payload.wit_name.clone());
                         }
@@ -380,6 +394,17 @@ fn build_component_wit(
     }
 
     for method in methods {
+        for param in &method.params {
+            ensure_custom_type_defined(
+                &param.type_ref,
+                &exported_type_names,
+                param.user_ty.span(),
+            )?;
+        }
+        if let MethodReturn::Type { type_ref, user_ty } = &method.return_info {
+            ensure_custom_type_defined(type_ref, &exported_type_names, user_ty.span())?;
+        }
+
         let signature = if method.params.is_empty() {
             match &method.return_info {
                 MethodReturn::Unit => format!("    {}: func();", method.wit_name),
@@ -410,7 +435,7 @@ fn build_component_wit(
     let _ = writeln!(wit_source, "    export {interface_name};");
     let _ = writeln!(wit_source, "}}");
 
-    wit_source
+    Ok(wit_source)
 }
 
 /// Writes the generated component WIT to the crate's `wit` directory so that dependent targets can

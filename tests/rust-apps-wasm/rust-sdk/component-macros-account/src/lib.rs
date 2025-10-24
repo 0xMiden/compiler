@@ -45,6 +45,16 @@ pub struct StructD {
     pub baz: Felt,
 }
 
+#[export_type]
+pub struct ForwardHolder {
+    pub nested: LaterDefined,
+}
+
+#[export_type]
+pub struct LaterDefined {
+    pub value: Felt,
+}
+
 #[component]
 struct MyAccount;
 
@@ -69,6 +79,10 @@ impl MyAccount {
     /// Exercises user-defined types in a sub-module
     pub fn test_custom_types2(&self, a: StructA, asset: Asset) -> my_types::StructC {
         let d = self.test_custom_types_private(a, asset);
+
+        let _forward = ForwardHolder {
+            nested: LaterDefined { value: d.bar },
+        };
 
         my_types::StructC {
             inner1: d.bar,

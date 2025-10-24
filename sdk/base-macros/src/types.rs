@@ -3,6 +3,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
+
 use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{spanned::Spanned, ItemStruct, Type};
@@ -41,26 +43,20 @@ pub(crate) struct ExportedTypeDef {
     pub(crate) kind: ExportedTypeKind,
 }
 
-static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
-
-fn exported_types_registry() -> &'static Mutex<Vec<ExportedTypeDef>> {
-    EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()))
-}
-
 pub(crate) fn register_export_type(def: ExportedTypeDef, _span: Span) -> Result<(), syn::Error> {
-    let mut registry = exported_types_registry().lock().expect("mutex poisoned");
-
+    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
+    let mut registry = registry.lock().expect("mutex poisoned");
     if let Some(existing) = registry.iter_mut().find(|existing| existing.wit_name == def.wit_name) {
         *existing = def;
         return Ok(());
     }
-
     registry.push(def);
     Ok(())
 }
 
 pub(crate) fn registered_export_types() -> Vec<ExportedTypeDef> {
-    exported_types_registry().lock().expect("mutex poisoned").clone()
+    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
+    registry.lock().expect("mutex poisoned").clone()
 }
 
 pub(crate) fn registered_export_type_map() -> HashMap<String, ExportedTypeDef> {
@@ -103,30 +99,29 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
+            let wit_name = ident.to_kebab_case();
 
             if exported_types.contains_key(&ident) {
-                Ok(TypeRef {
-                    wit_name: ident.to_kebab_case(),
+                return Ok(TypeRef {
+                    wit_name,
                     is_custom: true,
                     path: path_segments,
-                })
-            } else {
-                let wit_name = ident.to_kebab_case();
-                if !sdk_core_type_names().contains(&wit_name) {
-                    return Err(syn::Error::new(
-                        ty.span(),
-                        format!(
-                            "type `{ident}` is not a known Miden SDK type; add #[export_type] to \
-                             its definition to export it from this component"
-                        ),
-                    ));
-                }
-                Ok(TypeRef {
-                    wit_name: ident.to_kebab_case(),
+                });
+            }
+
+            if sdk_core_type_names().contains(&wit_name) {
+                return Ok(TypeRef {
+                    wit_name,
                     is_custom: false,
                     path: path_segments,
-                })
+                });
             }
+
+            Ok(TypeRef {
+                wit_name,
+                is_custom: true,
+                path: path_segments,
+            })
         }
         _ => Err(syn::Error::new(
             ty.span(),
@@ -265,4 +260,33 @@ pub(crate) fn exported_type_from_enum(
         wit_name: item_enum.ident.to_string().to_kebab_case(),
         kind: ExportedTypeKind::Variant { variants },
     })
+}
+
+pub(crate) fn ensure_custom_type_defined(
+    type_ref: &TypeRef,
+    exported_type_names: &HashSet<String>,
+    span: Span,
+) -> Result<(), syn::Error> {
+    if type_ref.is_custom && !exported_type_names.contains(&type_ref.wit_name) {
+        let rust_name = type_ref
+            .path
+            .last()
+            .cloned()
+            .unwrap_or_else(|| type_ref.wit_name.replace('-', "::"));
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "type `{rust_name}` is used in the exported interface but is not exported; add \
+                 #[export_type] to its definition"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn reset_export_type_registry_for_tests() {
+    if let Some(registry) = EXPORTED_TYPES.get() {
+        registry.lock().expect("mutex poisoned").clear();
+    }
 }
