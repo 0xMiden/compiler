@@ -1814,6 +1814,72 @@ mod tests {
     }
 
     #[test]
+    fn op_emitter_u128_bnot_shadowing_fix_test() {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::default();
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        // Push a U128-typed operand; value is irrelevant for emission semantics here
+        emitter.push(Type::U128);
+        assert_eq!(emitter.stack_len(), 1);
+
+        let span = SourceSpan::default();
+        emitter.bnot(span);
+
+        // Type preserved, no panic
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::U128);
+
+        // For 128-bit values, limb count is 4; template should emit MovUp4 + U32Not per limb
+        {
+            let ops = emitter.current_block();
+            assert_eq!(ops.len(), 8);
+            assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[2], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[3], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[4], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[5], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[6], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[7], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+        }
+    }
+
+    #[test]
+    fn op_emitter_i128_bnot_shadowing_fix_test() {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::default();
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        // Push an I128-typed operand
+        emitter.push(Type::I128);
+        assert_eq!(emitter.stack_len(), 1);
+
+        let span = SourceSpan::default();
+        emitter.bnot(span);
+
+        // Type preserved, no panic
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I128);
+
+        // Expect same instruction pattern as U128
+        {
+            let ops = emitter.current_block();
+            assert_eq!(ops.len(), 8);
+            assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[2], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[3], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[4], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[5], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+            assert_eq!(&ops[6], &Op::Inst(Span::new(span, masm::Instruction::MovUp4)));
+            assert_eq!(&ops[7], &Op::Inst(Span::new(span, masm::Instruction::U32Not)));
+        }
+    }
+
+    #[test]
     fn op_emitter_u32_pow2_test() {
         let mut block = Vec::default();
         let mut stack = OperandStack::default();

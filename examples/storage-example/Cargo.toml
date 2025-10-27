@@ -18,6 +18,3 @@ package = "miden:storage-example"
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
-
-[package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../sdk/base/wit/miden.wit" }

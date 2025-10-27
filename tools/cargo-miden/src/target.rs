@@ -77,32 +77,32 @@ pub fn detect_project_type(root_pkg: &Package) -> Result<ProjectType> {
     Ok(target_environment_to_project_type(target_env))
 }
 
-pub fn install_wasm32_wasip1() -> Result<()> {
+pub fn install_wasm32_target(wasi: &str) -> Result<()> {
     let sysroot = get_sysroot()?;
-    if sysroot.join("lib/rustlib/wasm32-wasip1").exists() {
+    if sysroot.join(format!("lib/rustlib/wasm32-{wasi}")).exists() {
         return Ok(());
     }
 
     if env::var_os("RUSTUP_TOOLCHAIN").is_none() {
         bail!(
-            "failed to find the `wasm32-wasip1` target and `rustup` is not available. If you're \
+            "failed to find the `wasm32-{wasi}` target and `rustup` is not available. If you're \
              using rustup make sure that it's correctly installed; if not, make sure to install \
-             the `wasm32-wasip1` target before using this command"
+             the `wasm32-{wasi}` target before using this command"
         );
     }
 
-    log::info!("Installing wasm32-wasip1 target");
+    log::info!("Installing wasm32-{wasi} target");
 
     let output = Command::new("rustup")
         .arg("target")
         .arg("add")
-        .arg("wasm32-wasip1")
+        .arg(format!("wasm32-{wasi}"))
         .stderr(Stdio::inherit())
         .stdout(Stdio::inherit())
         .output()?;
 
     if !output.status.success() {
-        bail!("failed to install the `wasm32-wasip1` target");
+        bail!("failed to install the `wasm32-{wasi}` target");
     }
 
     Ok(())

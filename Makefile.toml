@@ -328,11 +328,25 @@ description = "Set up the litcheck utility"
 install_crate = { crate_name = "litcheck", test_arg = "--help" }
 
 [tasks.docs]
+category = "Documentation"
+description = "Opens the public compiler documentation"
+dependencies = ["docusaurus"]
+cwd = "./docs/external"
+command = "npm"
+args = ["run", "start:dev"]
+
+[tasks.docusaurus]
 category = "Build"
-description = "Builds the compiler documentation"
+cwd = "./docs/external"
+command = "npm"
+args = ["install"]
+
+[tasks.internal-docs]
+category = "Documentation"
+description = "Builds the internal compiler documentation"
 dependencies = ["mdbook", "mdbook-linkcheck", "mdbook-alerts", "mdbook-katex"]
 command = "mdbook"
-args = ["build", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs"]
+args = ["build", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs/internal"]
 
 [tasks.mdbook]
 category = "Build"
@@ -374,4 +388,13 @@ args = [
     "clippy::all",
     "-D",
     "warnings",
+]
+
+[tasks.publish-dry-run]
+category = "Test"
+description = "Simulate publishing to uncover any build errors when each crate folder is built in isolation"
+command = "cargo"
+args = [
+    "publish",
+    "--dry-run",
 ]

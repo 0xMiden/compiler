@@ -1,5 +1,5 @@
 use anyhow::Ok;
-use cargo_miden::{run, Color, OutputType, Terminal, Verbosity};
+use cargo_miden::{run, OutputType};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger
@@ -9,8 +9,7 @@ fn main() -> anyhow::Result<()> {
     builder.init();
 
     if let Err(e) = run(std::env::args(), OutputType::Masm) {
-        let terminal = Terminal::new(Verbosity::Normal, Color::Auto);
-        terminal.error(format!("{e:?}"))?;
+        eprintln!("{e:?}");
         std::process::exit(1);
     }
     Ok(())

@@ -22,9 +22,6 @@ package = "miden:basic-wallet"
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
 
-[package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../sdk/base/wit/miden.wit" }
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 

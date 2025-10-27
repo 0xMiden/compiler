@@ -21,9 +21,6 @@ package = "miden:auth-component-no-auth"
 [package.metadata.miden]
 project-kind = "authentication-component"
 
-[package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../sdk/base/wit/miden.wit" }
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 

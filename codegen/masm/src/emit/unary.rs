@@ -878,7 +878,7 @@ impl OpEmitter<'_> {
                         );
                     }
                     n => {
-                        self.emit_template(n, |n| {
+                        self.emit_template(n, |_| {
                             [
                                 Span::new(span, movup_from_offset(n)),
                                 Span::new(span, masm::Instruction::U32Not),

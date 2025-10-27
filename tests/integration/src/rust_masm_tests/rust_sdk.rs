@@ -43,12 +43,6 @@ fn rust_sdk_swapp_note_bindings() {
     let name = "rust_sdk_swapp_note_bindings";
     let sdk_path = sdk_crate_path();
     let sdk_alloc_path = sdk_alloc_crate_path();
-    let base_wit_path = sdk_path
-        .parent()
-        .expect("sdk path has parent")
-        .join("base")
-        .join("wit")
-        .join("miden.wit");
     let component_package = format!("miden:{}", name.replace('_', "-"));
     let cargo_toml = format!(
         r#"
@@ -68,9 +62,6 @@ miden = {{ path = "{sdk_path}" }}
 [package.metadata.component]
 package = "{component_package}"
 
-[package.metadata.component.target.dependencies]
-"miden:base" = {{ path = "{base_wit_path}" }}
-
 [package.metadata.miden]
 project-kind = "note-script"
 
@@ -82,7 +73,6 @@ debug = false
         name = name,
         sdk_path = sdk_path.display(),
         sdk_alloc_path = sdk_alloc_path.display(),
-        base_wit_path = base_wit_path.display(),
         component_package = component_package,
     );
 

@@ -35,7 +35,9 @@ where
     // First, convert the input to words, zero-padding as needed; and push on to the
     // advice stack in reverse.
     let mut advice_stack = Vec::<Felt>::with_capacity(64);
+    let mut num_initializers = 0u64;
     for initializer in initializers {
+        num_initializers += 1;
         let num_words = match &initializer {
             Initializer::Value { value, .. } => {
                 value.push_words_to_advice_stack(&mut advice_stack) as u32
@@ -96,6 +98,9 @@ where
         advice_stack.push(Felt::new(num_words as u64)); // num_words
         advice_stack.push(Felt::new(initializer.element_addr() as u64)); // dest_ptr
     }
+
+    // Push the number of initializers on the advice stack
+    advice_stack.push(Felt::new(num_initializers));
 
     let mut exec = Executor::for_package(package, args.to_vec(), session)
         .map_err(|err| TestCaseError::fail(format_report(err)))?;

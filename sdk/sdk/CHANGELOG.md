@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### BREAKING
+- Add `#[note_script]` and `#[tx_script]` attribute macros;
+- Generate Rust bindings in the attributes macros instead of in the `src/bindings.rs` file;
+- Remove explicit `miden::base`(`miden.wit` file) dependency in Cargo.toml and generate it in the macros;
+
 ## [0.5.0]
 
 ### BREAKING

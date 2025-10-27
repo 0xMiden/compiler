@@ -499,7 +499,7 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "miden"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "miden-objects",
  "proc-macro2",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "miden-stdlib-sys",
 ]
@@ -724,11 +724,11 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "miden-utils-diagnostics"

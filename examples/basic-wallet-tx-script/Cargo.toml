@@ -27,7 +27,6 @@ project-kind = "transaction-script"
 
 
 [package.metadata.component.target.dependencies]
-"miden:base" = { path = "../../sdk/base/wit/miden.wit" }
 "miden:basic-wallet" = { path = "../basic-wallet/wit/basic-wallet.wit" }
 
 [profile.release]
