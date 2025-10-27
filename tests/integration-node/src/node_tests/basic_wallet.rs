@@ -201,11 +201,13 @@ pub fn test_basic_wallet_p2id_local() {
 }
 
 /// Tests the basic-wallet contract deployment and p2ide note consumption workflow on a local node.
+/// This is a simplified test demonstrating P2IDE note functionality without timelock/reclaim.
 #[test]
 pub fn test_basic_wallet_p2ide_local() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let note_package = compile_rust_package("../../examples/p2ide-note", true);
+    let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
+    let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
     let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -223,12 +225,8 @@ pub fn test_basic_wallet_p2ide_local() {
             .await
             .expect("Failed to setup test infrastructure");
 
-        // Write wallet package to disk for potential future use
-        let wallet_package_path = temp_dir.path().join("basic_wallet.masp");
-        std::fs::write(&wallet_package_path, wallet_package.to_bytes())
-            .expect("Failed to write wallet");
-
-        // Create a fungible faucet account
+        // Step 1: Create a fungible faucet account
+        eprintln!("\n=== Step 1: Creating fungible faucet ===");
         let token_symbol = TokenSymbol::new("TEST").unwrap();
         let decimals = 8u8;
         let max_supply = Felt::new(1_000_000_000); // 1 billion tokens
@@ -247,7 +245,7 @@ pub fn test_basic_wallet_p2ide_local() {
 
         // Create Alice's account with basic-wallet component
         let alice_config = AccountCreationConfig {
-            with_basic_wallet: false,
+            with_basic_wallet: true,
             ..Default::default()
         };
         let alice_account = create_account_with_component(
@@ -260,35 +258,27 @@ pub fn test_basic_wallet_p2ide_local() {
         .unwrap();
         eprintln!("Alice account ID: {:?}", alice_account.id().to_hex());
 
-        eprintln!("\n=== Step 1: Minting tokens from faucet to Alice ===");
+        // Step 2: Mint assets from faucet to Alice using p2id note
+        eprintln!("\n=== Step 2: Minting tokens from faucet to Alice (p2id note) ===");
 
         let mint_amount = 100_000u64; // 100,000 tokens
         let fungible_asset = FungibleAsset::new(faucet_account.id(), mint_amount).unwrap();
 
-        // p2ide inputs
-        let timelock_height = 1000u32;
-        let reclaim_height = 1010u32;
-
-        // Create the p2ide note from faucet to Alice
-        let p2ide_note_mint = create_note_from_package(
+        // Create the p2id note from faucet to Alice
+        let p2id_note_mint = create_note_from_package(
             &mut client,
-            note_package.clone(),
+            p2id_note_package.clone(),
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: vec![
-                    alice_account.id().prefix().as_felt(),
-                    alice_account.id().suffix(),
-                    timelock_height.into(),
-                    reclaim_height.into(),
-                ],
+                inputs: vec![alice_account.id().prefix().as_felt(), alice_account.id().suffix()],
                 ..Default::default()
             },
         );
-        eprintln!("P2IDE mint note hash: {:?}", p2ide_note_mint.id().to_hex());
+        eprintln!("P2ID mint note hash: {:?}", p2id_note_mint.id().to_hex());
 
         let mint_request = TransactionRequestBuilder::new()
-            .own_output_notes(vec![OutputNote::Full(p2ide_note_mint.clone())])
+            .own_output_notes(vec![OutputNote::Full(p2id_note_mint.clone())])
             .build()
             .unwrap();
 
@@ -300,10 +290,11 @@ pub fn test_basic_wallet_p2ide_local() {
         client.submit_transaction(mint_tx_result).await.unwrap();
         eprintln!("Submitted mint transaction. Tx ID: {mint_tx_id:?}");
 
-        eprintln!("\n=== Step 2: Alice attempts to consume mint note ===");
+        // Step 3: Alice consumes the p2id note
+        eprintln!("\n=== Step 3: Alice consumes p2id mint note ===");
 
         let consume_request = TransactionRequestBuilder::new()
-            .unauthenticated_input_notes([(p2ide_note_mint, None)])
+            .unauthenticated_input_notes([(p2id_note_mint, None)])
             .build()
             .unwrap();
 
@@ -325,7 +316,8 @@ pub fn test_basic_wallet_p2ide_local() {
         )
         .await;
 
-        eprintln!("\n=== Step 3: Creating Bob's account ===");
+        // Create Bob's account
+        eprintln!("\n=== Creating Bob's account ===");
 
         let bob_config = AccountCreationConfig {
             with_basic_wallet: false,
@@ -341,30 +333,52 @@ pub fn test_basic_wallet_p2ide_local() {
         .unwrap();
         eprintln!("Bob account ID: {:?}", bob_account.id().to_hex());
 
+        // Step 4: Alice creates p2ide note for Bob
         eprintln!("\n=== Step 4: Alice creates p2ide note for Bob ===");
 
         let transfer_amount = 10_000u64; // 10,000 tokens
         let transfer_asset = FungibleAsset::new(faucet_account.id(), transfer_amount).unwrap();
 
-        let (alice_tx_id, bob_note) = send_asset_to_account(
-            &mut client,
-            alice_account.id(),
-            bob_account.id(),
-            transfer_asset,
-            note_package.clone(),
-            tx_script_package,
-            None, // Use default configuration
-        )
-        .await
-        .unwrap();
+        let timelock_height = Felt::new(0);
+        let reclaim_height = Felt::new(0);
 
+        // Create the p2ide note with only 2 inputs (account ID)
+        // This is a simplified P2IDE note without timelock/reclaim functionality
+        let p2ide_note = create_note_from_package(
+            &mut client,
+            p2ide_note_package.clone(),
+            alice_account.id(),
+            NoteCreationConfig {
+                assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
+                inputs: vec![
+                    bob_account.id().prefix().as_felt(),
+                    bob_account.id().suffix(),
+                    timelock_height,
+                    reclaim_height,
+                ],
+                ..Default::default()
+            },
+        );
+        eprintln!("P2IDE note hash: {:?}", p2ide_note.id().to_hex());
+
+        let transfer_request = TransactionRequestBuilder::new()
+            .own_output_notes(vec![OutputNote::Full(p2ide_note.clone())])
+            .build()
+            .unwrap();
+
+        let transfer_tx_result =
+            client.new_transaction(alice_account.id(), transfer_request).await.unwrap();
+        let alice_tx_id = transfer_tx_result.executed_transaction().id();
         eprintln!("Alice created p2ide transaction. Tx ID: {alice_tx_id:?}");
 
-        // Step 5: Bob attempts to consume the p2ide note
-        eprintln!("\n=== Step 5: Bob attempts to consume p2ide note ===");
+        client.submit_transaction(transfer_tx_result).await.unwrap();
+        eprintln!("Submitted p2ide transaction. Tx ID: {alice_tx_id:?}");
+
+        // Step 5: Bob consumes the p2ide note
+        eprintln!("\n=== Step 5: Bob consumes p2ide note ===");
 
         let consume_request = TransactionRequestBuilder::new()
-            .unauthenticated_input_notes([(bob_note, None)])
+            .unauthenticated_input_notes([(p2ide_note, None)])
             .build()
             .unwrap();
 
@@ -374,7 +388,7 @@ pub fn test_basic_wallet_p2ide_local() {
 
         client.submit_transaction(consume_tx).await.unwrap();
 
-        eprintln!("\n=== Step 6: Checking Bob's account has the transferred asset ===");
+        eprintln!("\n=== Checking Bob's account has the transferred asset ===");
 
         assert_account_has_fungible_asset(
             &mut client,
@@ -384,10 +398,7 @@ pub fn test_basic_wallet_p2ide_local() {
         )
         .await;
 
-        eprintln!(
-            "\n=== Step 7: Checking Alice's account reflects the new token amount after sending \
-             to Bob ==="
-        );
+        eprintln!("\n=== Checking Alice's account reflects the new token amount ===");
 
         assert_account_has_fungible_asset(
             &mut client,
