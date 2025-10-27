@@ -199,11 +199,18 @@ impl NewCommand {
                     Some(kind) => kind.to_string(),
                     None => ProjectTemplate::default().to_string(),
                 };
-                TemplatePath {
-                    git: Some("https://github.com/0xMiden/rust-templates".into()),
-                    tag: Some(TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(project_kind_str),
-                    ..Default::default()
+                match self.language {
+                    Language::Rust => TemplatePath {
+                        git: Some("https://github.com/0xMiden/rust-templates".into()),
+                        tag: Some(TEMPLATES_REPO_TAG.into()),
+                        auto_path: Some(project_kind_str),
+                        ..Default::default()
+                    },
+                    Language::MidenAssembly => TemplatePath {
+                        git: Some("https://github.com/0xMiden/project-template".into()),
+                        branch: Some("ajl-add-counter-contract".into()),
+                        ..Default::default()
+                    },
                 }
             }
         };
