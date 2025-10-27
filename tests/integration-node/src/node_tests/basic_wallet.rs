@@ -208,7 +208,6 @@ pub fn test_basic_wallet_p2ide_local() {
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
     let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
-    let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
