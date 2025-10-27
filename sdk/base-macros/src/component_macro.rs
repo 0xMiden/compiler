@@ -269,8 +269,12 @@ fn expand_component_impl(
 
     let interface_path = format!("{}/{}@{}", component_package, interface_name, metadata.version);
     let module_prefix = component_module_prefix(&component_type);
+    let module_prefix_segments: Option<Vec<String>> = module_prefix
+        .as_ref()
+        .map(|path| path.segments.iter().map(|segment| segment.ident.to_string()).collect());
 
-    let custom_type_paths = collect_custom_type_paths(&exported_types, &methods);
+    let custom_type_paths =
+        collect_custom_type_paths(&exported_types, &methods, module_prefix_segments.as_deref());
 
     let (custom_with_entries, debug_with_entries) = build_custom_with_entries(
         &exported_types,
@@ -592,10 +596,15 @@ fn build_custom_with_entries(
         let wit_path_str = format!("{interface_path}/{}", def.wit_name);
         let wit_path = Literal::string(&wit_path_str);
         let type_ident = format_ident!("{}", def.rust_name);
-        let type_tokens = if let Some(prefix) = module_prefix {
-            quote!(#prefix :: #type_ident)
-        } else if let Some(segments) = custom_type_paths.get(&def.wit_name) {
+        // Prefer the fully-qualified path discovered while scanning method signatures or exported
+        // fields. These paths already include any crate/module prefixes, so they work even when
+        // the type lives outside the component's module.
+        let type_tokens = if let Some(segments) = custom_type_paths.get(&def.wit_name) {
             build_path_tokens(segments, &type_ident)
+        } else if let Some(prefix) = module_prefix {
+            // Fallback to the component's module prefix when no explicit path was collected. This
+            // preserves the old behaviour for types declared alongside the component.
+            quote!(#prefix :: #type_ident)
         } else {
             quote!(crate :: #type_ident)
         };
@@ -620,18 +629,57 @@ fn component_module_prefix(component_type: &Type) -> Option<syn::Path> {
     }
 }
 
-fn record_type_path(paths: &mut HashMap<String, Vec<String>>, type_ref: &TypeRef) {
+fn record_type_path(
+    paths: &mut HashMap<String, Vec<String>>,
+    type_ref: &TypeRef,
+    module_prefix_segments: Option<&[String]>,
+) {
     if !type_ref.is_custom {
         return;
     }
 
     let mut segments = type_ref.path.clone();
+    // Normalise `self::` and `super::` prefixes relative to the module where the component impl
+    // lives so the generated path points at the original user type rather than the generated
+    // bindings module.
+    if let Some(first) = segments.first().cloned() {
+        match first.as_str() {
+            "self" => {
+                segments.remove(0);
+                if let Some(prefix) = module_prefix_segments {
+                    let mut resolved = prefix.to_vec();
+                    resolved.extend(segments);
+                    segments = resolved;
+                }
+            }
+            "super" => {
+                let super_count = segments.iter().take_while(|segment| *segment == "super").count();
+                let mut resolved =
+                    module_prefix_segments.map(|prefix| prefix.to_vec()).unwrap_or_default();
+                if super_count > resolved.len() {
+                    resolved.clear();
+                } else {
+                    for _ in 0..super_count {
+                        let _ = resolved.pop();
+                    }
+                }
+                segments =
+                    resolved.into_iter().chain(segments.into_iter().skip(super_count)).collect();
+            }
+            "crate" => {}
+            _ => {}
+        }
+    }
+
+    // Give single-segment paths a module prefix so we don't generate bare identifiers that fail to
+    // resolve outside the component module.
     if segments.len() <= 1 {
-        if let Some(last) = segments.first().cloned() {
-            // Preserve single-segment paths by treating them as relative to `self::`.
-            // This keeps nested modules working while still allowing the generated path
-            // to compile in the expanded module.
-            segments = vec!["self".to_string(), last];
+        if let Some(last) = segments.last().cloned() {
+            if let Some(prefix) = module_prefix_segments {
+                let mut resolved = prefix.to_vec();
+                resolved.push(last);
+                segments = resolved;
+            }
         }
     }
 
@@ -641,6 +689,7 @@ fn record_type_path(paths: &mut HashMap<String, Vec<String>>, type_ref: &TypeRef
 fn collect_custom_type_paths(
     exported_types: &[ExportedTypeDef],
     methods: &[ComponentMethod],
+    module_prefix_segments: Option<&[String]>,
 ) -> HashMap<String, Vec<String>> {
     let mut paths = HashMap::new();
 
@@ -648,13 +697,13 @@ fn collect_custom_type_paths(
         match &def.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
-                    record_type_path(&mut paths, &field.ty);
+                    record_type_path(&mut paths, &field.ty, module_prefix_segments);
                 }
             }
             ExportedTypeKind::Variant { variants } => {
                 for variant in variants {
                     if let Some(payload) = &variant.payload {
-                        record_type_path(&mut paths, payload);
+                        record_type_path(&mut paths, payload, module_prefix_segments);
                     }
                 }
             }
@@ -663,10 +712,10 @@ fn collect_custom_type_paths(
 
     for method in methods {
         for param in &method.params {
-            record_type_path(&mut paths, &param.type_ref);
+            record_type_path(&mut paths, &param.type_ref, module_prefix_segments);
         }
         if let MethodReturn::Type { type_ref, .. } = &method.return_info {
-            record_type_path(&mut paths, type_ref);
+            record_type_path(&mut paths, type_ref, module_prefix_segments);
         }
     }
 
@@ -1146,7 +1195,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn record_type_path_adds_self_prefix_for_single_segment() {
+    fn record_type_path_defaults_to_crate_root() {
         let mut paths = HashMap::new();
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
@@ -1154,16 +1203,83 @@ mod tests {
             path: vec!["StructA".into()],
         };
 
-        record_type_path(&mut paths, &type_ref);
+        record_type_path(&mut paths, &type_ref, None);
 
-        assert_eq!(paths.get("struct-a"), Some(&vec!["self".to_string(), "StructA".to_string()]));
+        assert_eq!(paths.get("struct-a"), Some(&vec!["StructA".to_string()]));
     }
 
     #[test]
-    fn build_path_tokens_uses_self_prefix() {
-        let segments = vec!["self".to_string(), "StructA".to_string()];
+    fn record_type_path_applies_module_prefix() {
+        let mut paths = HashMap::new();
+        let type_ref = TypeRef {
+            wit_name: "struct-a".into(),
+            is_custom: true,
+            path: vec!["StructA".into()],
+        };
+        let prefix = vec!["foo".to_string(), "bar".to_string()];
+
+        record_type_path(&mut paths, &type_ref, Some(prefix.as_slice()));
+
+        assert_eq!(
+            paths.get("struct-a"),
+            Some(&vec!["foo".to_string(), "bar".to_string(), "StructA".to_string()])
+        );
+    }
+
+    #[test]
+    fn record_type_path_resolves_super_segments() {
+        let mut paths = HashMap::new();
+        let type_ref = TypeRef {
+            wit_name: "struct-a".into(),
+            is_custom: true,
+            path: vec!["super".into(), "StructA".into()],
+        };
+        let prefix = vec!["foo".to_string(), "bar".to_string()];
+
+        record_type_path(&mut paths, &type_ref, Some(prefix.as_slice()));
+
+        assert_eq!(paths.get("struct-a"), Some(&vec!["foo".to_string(), "StructA".to_string()]));
+    }
+
+    #[test]
+    fn build_path_tokens_generates_absolute_path() {
+        let segments = vec!["foo".to_string(), "bar".to_string(), "StructA".to_string()];
         let ident = format_ident!("StructA");
         let tokens = build_path_tokens(&segments, &ident).to_string();
-        assert_eq!(tokens, "self :: StructA");
+        assert_eq!(tokens, "crate :: foo :: bar :: StructA");
+    }
+
+    #[test]
+    fn build_path_tokens_defaults_to_crate_root_for_single_segment() {
+        let segments = vec!["StructA".to_string()];
+        let ident = format_ident!("StructA");
+        let tokens = build_path_tokens(&segments, &ident).to_string();
+        assert_eq!(tokens, "crate :: StructA");
+    }
+
+    #[test]
+    fn build_custom_with_entries_prefers_custom_paths() {
+        let exported_types = vec![ExportedTypeDef {
+            rust_name: "StructA".into(),
+            wit_name: "struct-a".into(),
+            kind: ExportedTypeKind::Record { fields: Vec::new() },
+        }];
+        let interface_path = "miden:component/path";
+        let module_prefix: syn::Path = syn::parse_quote!(module::account);
+        let mut custom_paths = HashMap::new();
+        custom_paths.insert("struct-a".into(), vec!["types".into(), "StructA".into()]);
+
+        let (entries, _) = build_custom_with_entries(
+            &exported_types,
+            interface_path,
+            Some(&module_prefix),
+            &custom_paths,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].to_string(),
+            "\"miden:component/path/struct-a\" : crate :: types :: StructA ,"
+        );
     }
 }
