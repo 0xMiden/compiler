@@ -203,12 +203,12 @@ fn expand_component_impl(
     }
 
     let component_type = (*impl_block.self_ty).clone();
-    let struct_ident = extract_type_ident(&component_type).ok_or_else(|| {
-        syn::Error::new(
+    if extract_type_ident(&component_type).is_none() {
+        return Err(syn::Error::new(
             impl_block.self_ty.span(),
             "Failed to determine the struct name targeted by this implementation.",
-        )
-    })?;
+        ));
+    }
 
     let metadata = get_package_metadata(call_site_span)?;
     let component_package = metadata.component_package.clone().ok_or_else(|| {
@@ -293,7 +293,9 @@ fn expand_component_impl(
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
         }
-        self::bindings::export!(#struct_ident);
+        // Use the fully-qualified component type here so the export macro works even when
+        // the impl block was declared through a module-qualified path (e.g. `impl super::Foo`).
+        self::bindings::export!(#component_type);
     })
 }
 
@@ -606,11 +608,17 @@ fn record_type_path(paths: &mut HashMap<String, Vec<String>>, type_ref: &TypeRef
         return;
     }
 
-    if type_ref.path.len() <= 1 {
-        return;
+    let mut segments = type_ref.path.clone();
+    if segments.len() <= 1 {
+        if let Some(last) = segments.first().cloned() {
+            // Preserve single-segment paths by treating them as relative to `self::`.
+            // This keeps nested modules working while still allowing the generated path
+            // to compile in the expanded module.
+            segments = vec!["self".to_string(), last];
+        }
     }
 
-    paths.entry(type_ref.wit_name.clone()).or_insert_with(|| type_ref.path.clone());
+    paths.entry(type_ref.wit_name.clone()).or_insert(segments);
 }
 
 fn collect_custom_type_paths(
@@ -1111,5 +1119,34 @@ fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
         #[doc(hidden)]
         #[allow(clippy::octal_escapes)]
         pub static __MIDEN_ACCOUNT_COMPONENT_METADATA_BYTES: [u8; #link_section_bytes_len] = *#encoded_bytes_str;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn record_type_path_adds_self_prefix_for_single_segment() {
+        let mut paths = HashMap::new();
+        let type_ref = TypeRef {
+            wit_name: "struct-a".into(),
+            is_custom: true,
+            path: vec!["StructA".into()],
+        };
+
+        record_type_path(&mut paths, &type_ref);
+
+        assert_eq!(paths.get("struct-a"), Some(&vec!["self".to_string(), "StructA".to_string()]));
+    }
+
+    #[test]
+    fn build_path_tokens_uses_self_prefix() {
+        let segments = vec!["self".to_string(), "StructA".to_string()];
+        let ident = format_ident!("StructA");
+        let tokens = build_path_tokens(&segments, &ident).to_string();
+        assert_eq!(tokens, "self :: StructA");
     }
 }
