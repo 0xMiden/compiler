@@ -208,13 +208,17 @@ pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
 /// hash function.
 ///
-/// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
+/// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib and to the
+/// `std::crypto::hashes::rpo::hash_memory_words` word-optimized variant when the input length is a
+/// multiple of 4.
 ///
 /// # Arguments
 /// * `elements` - A Vec of field elements to be hashed
 #[inline]
 pub fn hash_elements(elements: Vec<Felt>) -> Digest {
     let rust_ptr = elements.as_ptr().addr() as u32;
+    let element_count = elements.len();
+    let num_elements = element_count as u32;
 
     unsafe {
         let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
@@ -223,7 +227,13 @@ pub fn hash_elements(elements: Vec<Felt>) -> Digest {
         // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
         assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
 
-        extern_hash_memory(miden_ptr, elements.len() as u32, result_ptr);
+        if element_count.is_multiple_of(4) {
+            let start_addr = miden_ptr;
+            let end_addr = start_addr + num_elements;
+            extern_hash_memory_words(start_addr, end_addr, result_ptr);
+        } else {
+            extern_hash_memory(miden_ptr, num_elements, result_ptr);
+        }
 
         Digest::from_word(ret_area.assume_init().reverse())
     }

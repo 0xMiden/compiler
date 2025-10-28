@@ -10,30 +10,50 @@
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;0;) (type 0) (param i32) (result f32)
-    (local i32 i32 f32)
+    (local i32 i32 i32 f32)
     global.get $__stack_pointer
     i32.const 48
     i32.sub
     local.tee 1
     global.set $__stack_pointer
     local.get 0
+    i32.load offset=8
+    local.set 2
+    local.get 0
     i32.load offset=4
     i32.const 2
     i32.shr_u
-    local.tee 2
+    local.tee 3
     i32.const 3
     i32.and
     call $intrinsics::felt::from_u32
     i32.const 0
     call $intrinsics::felt::from_u32
     call $intrinsics::felt::assert_eq
-    local.get 2
-    local.get 0
-    i32.load offset=8
-    local.get 1
-    i32.const 16
-    i32.add
-    call $std::crypto::hashes::rpo::hash_memory
+    block ;; label = @1
+      block ;; label = @2
+        local.get 2
+        i32.const 3
+        i32.and
+        i32.eqz
+        br_if 0 (;@2;)
+        local.get 3
+        local.get 2
+        local.get 1
+        i32.const 16
+        i32.add
+        call $std::crypto::hashes::rpo::hash_memory
+        br 1 (;@1;)
+      end
+      local.get 3
+      local.get 3
+      local.get 2
+      i32.add
+      local.get 1
+      i32.const 16
+      i32.add
+      call $std::crypto::hashes::rpo::hash_memory_words
+    end
     local.get 1
     local.get 1
     i64.load offset=24
@@ -53,12 +73,12 @@
     call $alloc::raw_vec::RawVecInner<A>::deallocate
     local.get 1
     f32.load
-    local.set 3
+    local.set 4
     local.get 1
     i32.const 48
     i32.add
     global.set $__stack_pointer
-    local.get 3
+    local.get 4
   )
   (func $__rustc::__rust_dealloc (;1;) (type 1) (param i32 i32 i32))
   (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;2;) (type 2) (param i32 i32)
@@ -128,7 +148,10 @@
   (func $std::crypto::hashes::rpo::hash_memory (;5;) (type 1) (param i32 i32 i32)
     unreachable
   )
-  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;6;) (type 1) (param i32 i32 i32)
+  (func $std::crypto::hashes::rpo::hash_memory_words (;6;) (type 1) (param i32 i32 i32)
+    unreachable
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;7;) (type 1) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -160,7 +183,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;7;) (type 4) (param i32 i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;8;) (type 4) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
@@ -195,7 +218,7 @@
     local.get 4
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;8;) (type 1) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;9;) (type 1) (param i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
