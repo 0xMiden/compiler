@@ -30,13 +30,16 @@
     local.get 2
     i32.const 2
     i32.shr_u
+    local.tee 2
+    local.get 2
     local.get 3
     i32.const 2
     i32.shl
+    i32.add
     local.get 1
     i32.const 16
     i32.add
-    call $std::crypto::hashes::rpo::hash_memory
+    call $std::crypto::hashes::rpo::hash_memory_words
     local.get 1
     local.get 1
     i64.load offset=24
@@ -128,7 +131,7 @@
   (func $intrinsics::felt::assert_eq (;4;) (type 3) (param f32 f32)
     unreachable
   )
-  (func $std::crypto::hashes::rpo::hash_memory (;5;) (type 1) (param i32 i32 i32)
+  (func $std::crypto::hashes::rpo::hash_memory_words (;5;) (type 1) (param i32 i32 i32)
     unreachable
   )
   (func $alloc::raw_vec::RawVecInner<A>::deallocate (;6;) (type 1) (param i32 i32 i32)

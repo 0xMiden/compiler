@@ -112,6 +112,18 @@ extern "C" {
     /// The output is passed back to the caller via a pointer.
     #[link_name = "std::crypto::hashes::rpo::hash_memory"]
     pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
+
+    /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
+    /// function.
+    ///
+    /// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden
+    /// stdlib.
+    ///
+    /// Input: The start and end addresses (in field elements) of the words to hash.
+    /// Output: One digest (4 field elements)
+    /// The output is passed back to the caller via a pointer.
+    #[link_name = "std::crypto::hashes::rpo::hash_memory_words"]
+    pub fn extern_hash_memory_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
 }
 
 /// Hashes a 32-byte input to a 32-byte output using the given hash function.
@@ -220,8 +232,7 @@ pub fn hash_elements(elements: Vec<Felt>) -> Digest {
 /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
 /// hash function.
 ///
-/// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib treating the
-/// `words` as an array of fielt elements.
+/// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden stdlib.
 ///
 /// # Arguments
 /// * `words` - A slice of words to be hashed
@@ -236,8 +247,9 @@ pub fn hash_words(words: &[Word]) -> Digest {
         // It's safe to assume the `words` ptr is word-aligned.
         assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
 
-        let num_elements = (words.len() * 4) as u32;
-        extern_hash_memory(miden_ptr, num_elements, result_ptr);
+        let start_addr = miden_ptr;
+        let end_addr = start_addr + (words.len() as u32 * 4);
+        extern_hash_memory_words(start_addr, end_addr, result_ptr);
 
         Digest::from_word(ret_area.assume_init().reverse())
     }
