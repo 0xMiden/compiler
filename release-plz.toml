@@ -1,10 +1,22 @@
 [workspace]
-# Only publish when the release PR is merged (starts with `release-plz-`)
-# https://release-plz.ieni.dev/docs/config#the-release_always-field
+pr_branch_prefix = "release-plz-"
+# Only publish when the release PR is merged
+# https://release-plz.dev/docs/config#the-release_always-field
 release_always = false
-# Do not create a github release
-# https://release-plz.ieni.dev/docs/config#the-git_release_enable-field
-git_release_enable = false  
-# Does not create a git tag
-# https://release-plz.ieni.dev/docs/config#the-git_tag_enable-field
+# Skip GitHub releases and git tags by default, individual crates can opt in
+git_release_enable = false
 git_tag_enable = false
+
+[[package]]
+name = "midenc"
+git_release_enable = true
+git_tag_enable = true
+git_tag_name = "{{ version }}"
+git_release_name = "{{ version }}"
+
+# SDK
+[[package]]
+name = "miden"
+git_release_enable = false
+git_tag_enable = true
+git_tag_name = "SDK-v{{ version }}"
