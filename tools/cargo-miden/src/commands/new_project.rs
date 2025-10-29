@@ -205,25 +205,32 @@ impl NewCommand {
                 path: Some(template_path.display().to_string()),
                 ..Default::default()
             },
-            None => {
-                let project_kind_str = match self.template.as_ref() {
-                    Some(kind) => kind.to_string(),
-                    None => RustProjectTemplate::default().to_string(),
-                };
-                match self.language {
-                    Language::Rust => TemplatePath {
+            None => match self.language {
+                Language::Rust => {
+                    let project_kind_str = match self.template.as_ref() {
+                        Some(kind) => kind.to_string(),
+                        None => RustProjectTemplate::default().to_string(),
+                    };
+                    TemplatePath {
                         git: Some("https://github.com/0xMiden/rust-templates".into()),
                         tag: Some(TEMPLATES_REPO_TAG.into()),
                         auto_path: Some(project_kind_str),
                         ..Default::default()
-                    },
-                    Language::MidenAssembly => TemplatePath {
+                    }
+                }
+                Language::MidenAssembly => {
+                    if let Some(template) = self.template {
+                        anyhow::bail!(
+                            "'--{template}' flag is not valid with an 'assembly' project."
+                        );
+                    }
+                    TemplatePath {
                         git: Some("https://github.com/0xMiden/project-template".into()),
                         branch: Some("ajl-add-counter-contract".into()),
                         ..Default::default()
-                    },
+                    }
                 }
-            }
+            },
         };
 
         let destination = self
