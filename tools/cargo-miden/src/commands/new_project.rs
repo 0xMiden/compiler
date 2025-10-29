@@ -34,7 +34,7 @@ impl fmt::Display for Language {
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
 #[derive(Clone, Debug, Args)]
-pub struct ProjectTemplate {
+pub struct RustProjectTemplate {
     /// Rust program
     #[clap(long, group = "template", conflicts_with_all(["account", "note", "tx_script", "auth_component"]))]
     program: bool,
@@ -53,7 +53,7 @@ pub struct ProjectTemplate {
 }
 
 #[allow(unused)]
-impl ProjectTemplate {
+impl RustProjectTemplate {
     pub fn program() -> Self {
         Self {
             program: true,
@@ -105,13 +105,13 @@ impl ProjectTemplate {
     }
 }
 
-impl Default for ProjectTemplate {
+impl Default for RustProjectTemplate {
     fn default() -> Self {
         Self::account()
     }
 }
 
-impl fmt::Display for ProjectTemplate {
+impl fmt::Display for RustProjectTemplate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.program {
             write!(f, "program")
@@ -138,7 +138,7 @@ pub struct NewCommand {
     pub path: PathBuf,
     /// The template name to use to generate the package
     #[clap(flatten)]
-    pub template: Option<ProjectTemplate>,
+    pub template: Option<RustProjectTemplate>,
     /// The language in which the project is written in.
     #[clap(long, short)]
     #[arg(default_value_t)]
@@ -208,7 +208,7 @@ impl NewCommand {
             None => {
                 let project_kind_str = match self.template.as_ref() {
                     Some(kind) => kind.to_string(),
-                    None => ProjectTemplate::default().to_string(),
+                    None => RustProjectTemplate::default().to_string(),
                 };
                 match self.language {
                     Language::Rust => TemplatePath {
