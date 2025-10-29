@@ -14,11 +14,21 @@ use clap::{Args, Parser};
 const TEMPLATES_REPO_TAG: &str = "v0.19.0";
 
 /// The language that the project is programmed in
-#[derive(Parser, Clone, Copy, Debug, clap::ValueEnum)]
+#[derive(Parser, Clone, Copy, Debug, clap::ValueEnum, Default)]
 pub enum Language {
+    #[default]
     Rust,
     #[clap(name = "assembly")]
     MidenAssembly,
+}
+
+impl fmt::Display for Language {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Language::MidenAssembly => write!(f, "assembly"),
+            Language::Rust => write!(f, "rust"),
+        }
+    }
 }
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
@@ -131,6 +141,7 @@ pub struct NewCommand {
     pub template: Option<ProjectTemplate>,
     /// The language in which the project is written in.
     #[clap(long, short)]
+    #[arg(default_value_t)]
     pub language: Language,
     /// The path to the template to use to generate the package
     #[clap(long, conflicts_with("template"))]
