@@ -7,11 +7,20 @@ use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::{Args, Parser};
 
+// ======================== Rust Template Repository ===========================
+/// Repository containing all the available rust templates.
+const RUST_TEMPLATE_REPO: &str = "https://github.com/0xMiden/rust-templates";
+
 /// The tag used in checkout of the new project template.
 ///
-/// Before changing it make sure the new tag exists in the rust-templates repo and points to the
-/// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.19.0";
+/// Before changing it make sure the new tag exists in the
+/// [[RUST_TEMPLATE_REPO]] repo and points to the desired commit.
+const RUST_TEMPLATES_REPO_TAG: &str = "v0.19.0";
+
+// ====================== Assembly Template Repository =========================
+
+/// Repository containing the assembly project template.
+const ASSEMBLY_TEMPLATE_REPO: &str = "https://github.com/0xMiden/project-template";
 
 /// The language that the project is programmed in
 #[derive(Parser, Clone, Copy, Debug, clap::ValueEnum, Default)]
@@ -212,8 +221,8 @@ impl NewCommand {
                         None => RustProjectTemplate::default().to_string(),
                     };
                     TemplatePath {
-                        git: Some("https://github.com/0xMiden/rust-templates".into()),
-                        tag: Some(TEMPLATES_REPO_TAG.into()),
+                        git: Some(RUST_TEMPLATE_REPO.into()),
+                        tag: Some(RUST_TEMPLATES_REPO_TAG.into()),
                         auto_path: Some(project_kind_str),
                         ..Default::default()
                     }
@@ -225,7 +234,7 @@ impl NewCommand {
                         );
                     }
                     TemplatePath {
-                        git: Some("https://github.com/0xMiden/project-template".into()),
+                        git: Some(ASSEMBLY_TEMPLATE_REPO.into()),
                         branch: Some("ajl-add-counter-contract".into()),
                         ..Default::default()
                     }
