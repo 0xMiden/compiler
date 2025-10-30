@@ -690,7 +690,7 @@
     (func $miden::note::get_assets (;26;) (type 10) (param i32) (result i32)
       unreachable
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.6.0/src/bindings/note.rs\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/note.rs\00")
     (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\19\00\00\00!\00\00\00\00\00\10\00)\00\00\007\00\00\00\22\00\00\00")
   )
   (alias export 0 "word" (type (;3;)))
