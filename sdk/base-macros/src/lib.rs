@@ -51,6 +51,7 @@ use crate::script::ScriptConfig;
 extern crate proc_macro;
 
 mod account_component_metadata;
+mod boilerplate;
 mod component_macro;
 mod export_type;
 mod generate;

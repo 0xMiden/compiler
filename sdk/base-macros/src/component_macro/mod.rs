@@ -16,6 +16,7 @@ use syn::{
 
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
+    boilerplate::runtime_boilerplate,
     component_macro::{
         generate_wit::{build_component_wit, write_component_wit_file},
         metadata::get_package_metadata,
@@ -166,8 +167,10 @@ fn expand_component_struct(
     metadata_bytes.resize(padded_len, 0);
 
     let link_section = generate_link_section(&metadata_bytes);
+    let runtime_boilerplate = runtime_boilerplate();
 
     Ok(quote! {
+        #runtime_boilerplate
         #input_struct
         #default_impl
         #link_section
