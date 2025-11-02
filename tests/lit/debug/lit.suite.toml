@@ -1,0 +1,4 @@
+name = "debug"
+patterns = ["*.shtest"]
+
+[format.shtest]

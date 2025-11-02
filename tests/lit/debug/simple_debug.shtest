@@ -1,0 +1,12 @@
+# Test that basic debug info is emitted for a simple function
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && \
+# RUN:   rustc '%S/simple_debug.rs' --crate-type=cdylib \
+# RUN:     --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort \
+# RUN:     -C debuginfo=2 -o \"$TMPDIR/simple_debug.wasm\" && \
+# RUN:   %midenc \"$TMPDIR/simple_debug.wasm\" --entrypoint=add --emit hir --target-dir \"$TMPDIR\" && \
+# RUN:   %filecheck '%s' --input-file \"$TMPDIR/root.hir\" && \
+# RUN:   ls \"$TMPDIR\""
+
+# CHECK-LABEL: builtin.function @add
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg0
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg1

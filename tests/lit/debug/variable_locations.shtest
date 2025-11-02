@@ -1,0 +1,13 @@
+# Test that debug info tracks variables in a loop
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && \
+# RUN:   rustc '%S/variable_locations.rs' --crate-type=cdylib \
+# RUN:     --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort \
+# RUN:     -C debuginfo=2 -o \"$TMPDIR/variable_locations.wasm\" && \
+# RUN:   %midenc \"$TMPDIR/variable_locations.wasm\" --entrypoint=entrypoint --emit hir --target-dir \"$TMPDIR\" && \
+# RUN:   %filecheck '%s' --input-file \"$TMPDIR/root.hir\" && \
+# RUN:   ls \"$TMPDIR\""
+
+# CHECK-LABEL: builtin.function @entrypoint
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg0
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = local1
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = local2

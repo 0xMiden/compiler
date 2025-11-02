@@ -14,6 +14,7 @@ mod abi_transform;
 mod apps;
 mod debug_source_locations;
 mod examples;
+mod debug;
 mod instructions;
 mod intrinsics;
 mod misc;
