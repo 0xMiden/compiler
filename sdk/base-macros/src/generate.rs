@@ -4,23 +4,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use proc_macro2::{Literal, Span};
+use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
     Error, LitStr, Token,
 };
 
-/// Folder within a project that holds bundled WIT dependencies.
-const BUNDLED_WIT_DEPS_DIR: &str = "miden-wit-auto-generated";
 /// File name for the embedded Miden SDK WIT .
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
 /// Embedded Miden SDK WIT source.
-const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
+pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 
 #[derive(Default)]
 struct GenerateArgs {
     inline: Option<LitStr>,
+    with: Option<TokenStream2>,
 }
 
 impl Parse for GenerateArgs {
@@ -32,19 +31,24 @@ impl Parse for GenerateArgs {
             let name = ident.to_string();
             input.parse::<Token![=]>()?;
 
-            match name.as_str() {
-                "inline" => {
-                    if args.inline.is_some() {
-                        return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
-                    }
-                    args.inline = Some(input.parse()?);
+            if name == "inline" {
+                if args.inline.is_some() {
+                    return Err(syn::Error::new(ident.span(), "duplicate `inline` argument"));
                 }
-                _ => {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        format!("unsupported generate! argument `{name}`"),
-                    ));
+                args.inline = Some(input.parse()?);
+            } else if name == "with" {
+                if args.with.is_some() {
+                    return Err(syn::Error::new(ident.span(), "duplicate `with` argument"));
                 }
+                let content;
+                syn::braced!(content in input);
+                let tokens = content.parse::<TokenStream2>()?;
+                args.with = Some(tokens);
+            } else {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("unsupported generate! argument `{name}`"),
+                ));
             }
 
             if input.peek(Token![,]) {
@@ -88,6 +92,8 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 config.paths.iter().map(|path| Literal::string(path)).collect();
 
             let inline_clause = args.inline.as_ref().map(|src| quote! { inline: #src, });
+            let custom_with_entries = args.with.unwrap_or_else(TokenStream2::new);
+
             let inline_world = args
                 .inline
                 .as_ref()
@@ -124,6 +130,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                         // path to use in the generated `export!` macro
                         default_bindings_module: "bindings",
                         with: {
+                            #custom_with_entries
                             "miden:base/core-types@1.0.0": generate,
                             "miden:base/core-types@1.0.0/felt": ::miden::Felt,
                             "miden:base/core-types@1.0.0/word": ::miden::Word,
@@ -147,6 +154,7 @@ mod manifest_paths {
     use toml::Value;
 
     use super::*;
+    use crate::util::bundled_wit_folder;
 
     /// WIT metadata extracted from the consuming crate.
     pub struct ResolvedWit {
@@ -275,28 +283,18 @@ mod manifest_paths {
         let local_wit_root = Path::new(&manifest_dir).join("wit");
         let mut world = None;
 
-        if local_wit_root.exists() {
-            if !options.allow_missing_local_wit {
-                let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
-                let local_root_str = local_root.to_str().ok_or_else(|| {
-                    Error::new(
-                        Span::call_site(),
-                        format!("path '{}' contains invalid UTF-8", local_root.display()),
-                    )
-                })?;
-                if !resolved.iter().any(|existing| existing == local_root_str) {
-                    resolved.push(local_root_str.to_owned());
-                }
-                world = detect_world_name(&local_root)?;
+        if local_wit_root.exists() && !options.allow_missing_local_wit {
+            let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
+            let local_root_str = local_root.to_str().ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!("path '{}' contains invalid UTF-8", local_root.display()),
+                )
+            })?;
+            if !resolved.iter().any(|existing| existing == local_root_str) {
+                resolved.push(local_root_str.to_owned());
             }
-        } else if !options.allow_missing_local_wit {
-            return Err(Error::new(
-                Span::call_site(),
-                format!(
-                    "expected a 'wit' directory with WIT files in '{manifest_dir}', but none was \
-                     found",
-                ),
-            ));
+            world = detect_world_name(&local_root)?;
         }
 
         Ok(ResolvedWit {
@@ -307,24 +305,9 @@ mod manifest_paths {
 
     /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.
     fn ensure_sdk_wit() -> Result<PathBuf, Error> {
-        let out_dir = PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
-            let mut manifest_dir =
-                env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
-            manifest_dir.push_str("/target/");
-            manifest_dir
-        }));
-        let wit_deps_dir = out_dir.join(BUNDLED_WIT_DEPS_DIR);
-        fs::create_dir_all(&wit_deps_dir).map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!(
-                    "failed to create WIT dependencies directory '{}': {err}",
-                    wit_deps_dir.display()
-                ),
-            )
-        })?;
+        let autogenerated_wit_folder = bundled_wit_folder()?;
 
-        let sdk_wit_path = wit_deps_dir.join(super::SDK_WIT_FILE_NAME);
+        let sdk_wit_path = autogenerated_wit_folder.join(super::SDK_WIT_FILE_NAME);
         let sdk_version: &str = env!("CARGO_PKG_VERSION");
         let expected_source = format!(
             "/// NOTE: This file is auto-generated from the Miden SDK.\n/// Version: \
@@ -350,7 +333,7 @@ mod manifest_paths {
             })?;
         }
 
-        Ok(fs::canonicalize(&wit_deps_dir).unwrap_or(wit_deps_dir))
+        Ok(fs::canonicalize(&autogenerated_wit_folder).unwrap_or(autogenerated_wit_folder))
     }
 
     /// Scans the component's `wit` directory to find the default world.

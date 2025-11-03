@@ -2,7 +2,7 @@ builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @p2id {
         private builtin.function @p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt):
-            hir.call v0, v1, v2, v3 #[callee = miden:basic-wallet/basic-wallet@1.0.0/receive-asset] #[signature = (param felt) (param felt) (param felt) (param felt)];
+            hir.call v0, v1, v2, v3 #[callee = miden:basic-wallet/basic-wallet@0.1.0/receive-asset] #[signature = (param felt) (param felt) (param felt) (param felt)];
             builtin.ret ;
         };
 
@@ -1247,7 +1247,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment readonly @1048576 = 0x0073722e65746f6e2f73676e69646e69622f6372732f302e362e302d7379732d657361622d6e6564696d;
+        builtin.segment readonly @1048576 = 0x0073722e65746f6e2f73676e69646e69622f6372732f302e372e302d7379732d657361622d6e6564696d;
 
         builtin.segment @1048620 = 0x0000002200000037000000290010000000000021000000190000002900100000000000010000000100000001;
     };

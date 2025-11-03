@@ -5,6 +5,8 @@ use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent};
 use toml::Value;
 
+use crate::util::generated_wit_folder_at;
+
 const SCRIPT_PACKAGE_VERSION: &str = "1.0.0";
 
 /// Configuration describing the script macro expansion details.
@@ -276,37 +278,40 @@ fn parse_dependency_wit(root: &Path) -> Result<DependencyWit, String> {
         });
     }
 
-    let wit_dir = root.join("wit");
-    if !wit_dir.exists() {
-        return Err(format!("expected a 'wit' directory at '{}'", wit_dir.display()));
-    }
+    let default_wit_dir = root.join("wit");
+    let generated_wit_dir = generated_wit_folder_at(root)?;
+    let wit_dirs = [default_wit_dir, generated_wit_dir];
+    for wit_dir in &wit_dirs {
+        if !wit_dir.exists() {
+            continue;
+        }
+        let mut entries = fs::read_dir(wit_dir)
+            .map_err(|err| format!("failed to read '{}': {err}", wit_dir.display()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| format!("failed to iterate '{}': {err}", wit_dir.display()))?;
 
-    let mut entries = fs::read_dir(&wit_dir)
-        .map_err(|err| format!("failed to read '{}': {err}", wit_dir.display()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("failed to iterate '{}': {err}", wit_dir.display()))?;
+        entries.sort_by_key(|entry| entry.file_name());
 
-    entries.sort_by_key(|entry| entry.file_name());
-
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            if path.file_name().is_some_and(|name| name == "deps") {
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|name| name == "deps") {
+                    continue;
+                }
                 continue;
             }
-            continue;
-        }
 
-        if path.extension().and_then(|ext| ext.to_str()) != Some("wit") {
-            continue;
-        }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("wit") {
+                continue;
+            }
 
-        if let Some(info) = parse_wit_file(&path)? {
-            return Ok(info);
+            if let Some(info) = parse_wit_file(&path)? {
+                return Ok(info);
+            }
         }
     }
 
-    Err(format!("no WIT world definition found in directory '{}'", wit_dir.display()))
+    Err(format!("no WIT world definition found in directories '{wit_dirs:?}'"))
 }
 
 fn parse_wit_file(path: &Path) -> Result<Option<DependencyWit>, String> {

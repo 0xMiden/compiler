@@ -2603,7 +2603,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -2661,7 +2661,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -2670,8 +2670,9 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
+ "heck",
  "miden-objects",
  "proc-macro2",
  "quote",
@@ -2682,7 +2683,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "miden-stdlib-sys",
 ]
@@ -2985,7 +2986,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "miden-stdlib"
@@ -3003,7 +3004,7 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "miden-thiserror"
@@ -3521,7 +3522,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

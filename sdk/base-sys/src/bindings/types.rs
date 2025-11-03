@@ -14,7 +14,7 @@ impl AccountId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Asset {
     pub inner: Word,

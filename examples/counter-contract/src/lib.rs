@@ -22,6 +22,9 @@ use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
 use crate::bindings::exports::miden::counter_contract::counter::Guest;
 
+miden::generate!();
+bindings::export!(CounterContract);
+
 /// Main contract structure for the counter example.
 #[component]
 struct CounterContract {

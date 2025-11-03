@@ -1,0 +1,24 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "component_macros_note"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[package.metadata.component]
+package = "miden:component-macros-note"
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[package.metadata.miden.dependencies]
+"miden:component-macros" = { path = "../component-macros-account" }
+
+[package.metadata.component.target.dependencies]
+"miden:basic-wallet" = { path = "../component-macros-account/target/generated-wit/" }

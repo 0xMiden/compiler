@@ -18,6 +18,9 @@ use miden::{
 
 use crate::bindings::exports::miden::base::authentication_component::Guest;
 
+miden::generate!();
+bindings::export!(AuthComponent);
+
 /// Authentication component storage/layout.
 ///
 /// Public key is expected to be in the slot 0. Matches MASM constant `PUBLIC_KEY_SLOT=0` in
