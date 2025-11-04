@@ -4,17 +4,18 @@ TBD
 
 ## Release Process
 
-### Prerequisites
+### Release of the Miden Compiler
 
-Install `release-plz` CLI tool following the instructions [here](https://release-plz.ieni.dev/docs/usage/installation)
-Install `cargo-semver-checks` CLI tool [here](https://github.com/obi1kenobi/cargo-semver-checks#installation) to use as an extra check in `release-plz` and bump the major versions on semver violations.
+1. Merging to `main` will create a new release PR containing any unreleased changes.
+2. Optional. Change the proposed crate version, CHANGELOG edits.
+3. The release PR gets merged to `main` when we are ready to publish the release.
+4. The crates are published to crates.io, a new git tag is created, as well as a GitHub release
+5. A job is run to pre-build the executable for our supported targets and upload them to the created Github release.
+6. Merge the `main` branch back to the `next` branch.
 
-### Release of the Miden Compiler and Miden SDK crates
+### Release of the Miden SDK crates
 
-The release process for the Miden Compiler and Miden SDK is managed using the `release-plz` tool. The following steps outline the process for creating a new release:
-
-1. Run `release-plz update` in the repo root folder to update the crates versions and generate changelogs.
-2. Create a release PR naming the branch with the `release-plz-` prefix (its important to use this prefix to trigger the crate publishing on CI in step 4).
-3. Review the changes in the release PR, commit edits if needed and merge it into the main branch.
+1. Create a release PR against the `next` branch naming the branch with the `release-plz-` prefix (its important to use this prefix to trigger the crate publishing on CI in the later step).
+2. Manually bump ALL the SDK crate versions and update the `sdk/sdk/CHANGELOG.md`
+3. Review the changes in the release PR,  and merge it into the `next` branch.
 4. The CI will automatically run `release-plz release` after the release PR is merged to publish the new versions to crates.io.
-5. Set a git tag for the published crates to mark the release.
