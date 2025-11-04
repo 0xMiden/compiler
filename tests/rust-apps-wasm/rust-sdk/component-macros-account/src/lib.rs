@@ -1,14 +1,5 @@
 #![no_std]
 
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 use miden::{component, export_type, Asset, Felt, Word};
 
 pub mod my_types {

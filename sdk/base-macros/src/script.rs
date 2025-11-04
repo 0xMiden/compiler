@@ -5,7 +5,7 @@ use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent};
 use toml::Value;
 
-use crate::util::generated_wit_folder_at;
+use crate::{boilerplate::runtime_boilerplate, util::generated_wit_folder_at};
 
 const SCRIPT_PACKAGE_VERSION: &str = "1.0.0";
 
@@ -94,7 +94,11 @@ pub(crate) fn expand(
         }
     };
 
+    let runtime_boilerplate = runtime_boilerplate();
+
     let expanded = quote! {
+        #runtime_boilerplate
+
         #input_fn
 
         ::miden::generate!(inline = #inline_literal);

@@ -7,17 +7,6 @@
 // extern crate alloc;
 // use alloc::vec::Vec;
 
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 use miden::*;
 
 use crate::bindings::miden::counter_contract::counter;
