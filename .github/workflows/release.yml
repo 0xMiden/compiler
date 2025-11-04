@@ -93,7 +93,7 @@ jobs:
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
         env:
           RELEASE_TAG: ${{ steps.midenc-release.outputs.release_tag }}
-          GH_TOKEN: ${{ secrets.MIDEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           mv bin/midenc midenc-${{ matrix.target }}
@@ -119,5 +119,5 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.MIDEN_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
