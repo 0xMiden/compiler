@@ -115,13 +115,13 @@ impl fmt::Display for ProjectTemplate {
 #[derive(Debug, Args)]
 #[clap(disable_version_flag = true)]
 pub struct NewCommand {
-    /// The path for the generated package (the directory name is used for project name)
+    /// The pash for the generated project
     #[clap()]
     pub path: PathBuf,
     /// The template name to use to generate the package
     #[clap(flatten)]
     pub template: Option<ProjectTemplate>,
-    /// The path to the template to use to generate the package
+    /// The path to the template to use to generate the project
     #[clap(long, conflicts_with("template"))]
     pub template_path: Option<PathBuf>,
     /// Use a locally cloned compiler in the generated package
@@ -183,18 +183,19 @@ impl NewCommand {
                 path: Some(template_path.display().to_string()),
                 ..Default::default()
             },
-            None => {
-                let project_kind_str = match self.template.as_ref() {
-                    Some(kind) => kind.to_string(),
-                    None => ProjectTemplate::default().to_string(),
-                };
-                TemplatePath {
+            None => match self.template.as_ref() {
+                Some(project_template) => TemplatePath {
                     git: Some("https://github.com/0xMiden/rust-templates".into()),
                     tag: Some(TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(project_kind_str),
+                    auto_path: Some(project_template.to_string()),
                     ..Default::default()
-                }
-            }
+                },
+                None => TemplatePath {
+                    git: Some("https://github.com/Keinberger/miden-project-environment".into()),
+                    tag: None,
+                    ..Default::default()
+                },
+            },
         };
 
         let destination = self

@@ -132,9 +132,8 @@ fn test_all_templates_and_examples() {
     assert_eq!(p2id3.name, "p2id");
 
     // Test new project templates
-    // empty template means no template option is passing, thus using the default project template (account)
-    let r#default = build_new_project_from_template("");
-    assert!(r#default.is_library());
+    let account = build_new_project_from_template("--account");
+    assert!(account.is_library());
 
     let note = build_new_project_from_template("--note");
     assert!(note.is_program());
