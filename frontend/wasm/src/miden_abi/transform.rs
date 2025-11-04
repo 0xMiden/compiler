@@ -46,7 +46,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     }
                     name if name == Symbol::intern("rpo") => {
                         match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::hashes::rpo::HASH_MEMORY => {
+                            stdlib::crypto::hashes::rpo::HASH_MEMORY
+                            | stdlib::crypto::hashes::rpo::HASH_MEMORY_WORDS => {
                                 Some(TransformStrategy::ReturnViaPointer)
                             }
                             _ => None,

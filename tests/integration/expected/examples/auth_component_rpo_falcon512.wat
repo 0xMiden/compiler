@@ -95,11 +95,14 @@
       local.get 4
       i32.const 2
       i32.shr_u
+      local.tee 10
+      local.get 10
       i32.const 16
+      i32.add
       local.get 4
       i32.const 80
       i32.add
-      call $std::crypto::hashes::rpo::hash_memory
+      call $std::crypto::hashes::rpo::hash_memory_words
       local.get 4
       local.get 4
       i64.load offset=88
@@ -428,7 +431,7 @@
     (func $intrinsics::advice::adv_insert_mem (;14;) (type 9) (param f32 f32 f32 f32 i32 i32)
       unreachable
     )
-    (func $std::crypto::hashes::rpo::hash_memory (;15;) (type 4) (param i32 i32 i32)
+    (func $std::crypto::hashes::rpo::hash_memory_words (;15;) (type 4) (param i32 i32 i32)
       unreachable
     )
     (func $std::crypto::dsa::rpo_falcon512::verify (;16;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)

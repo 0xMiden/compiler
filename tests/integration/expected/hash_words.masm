@@ -85,20 +85,23 @@ export.entrypoint
     exec.::root_ns:root@1.0.0::hash_words::intrinsics::felt::assert_eq
     trace.252
     nop
+    push.2
+    movup.2
+    swap.1
+    u32shr
     push.16
     dup.3
     u32wrapping_add
     push.2
-    movup.2
-    swap.1
-    u32shl
-    push.2
     movup.3
     swap.1
-    u32shr
+    u32shl
+    dup.2
+    u32wrapping_add
+    movup.2
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_words::std::crypto::hashes::rpo::hash_memory
+    exec.::root_ns:root@1.0.0::hash_words::std::crypto::hashes::rpo::hash_memory_words
     trace.252
     nop
     push.24
@@ -488,10 +491,10 @@ proc.intrinsics::felt::assert_eq
     assert_eq
 end
 
-proc.std::crypto::hashes::rpo::hash_memory
+proc.std::crypto::hashes::rpo::hash_memory_words
     trace.240
     nop
-    exec.::std::crypto::hashes::rpo::hash_memory
+    exec.::std::crypto::hashes::rpo::hash_memory_words
     trace.252
     nop
     movup.4
