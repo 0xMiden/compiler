@@ -14,9 +14,3 @@ git_tag_enable = true
 git_tag_name = "{{ version }}"
 git_release_name = "{{ version }}"
 
-# SDK
-[[package]]
-name = "miden"
-git_release_enable = false
-git_tag_enable = true
-git_tag_name = "SDK-v{{ version }}"
