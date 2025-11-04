@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
-      contents: write
+      contents: read
     outputs:
       releases: ${{ steps.publish.outputs.releases }}
       releases_created: ${{ steps.publish.outputs.releases_created }}
@@ -39,7 +39,7 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.MIDEN_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   upload-artifacts:

@@ -18,6 +18,8 @@ jobs:
   publish:
     name: publish any unpublished packages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust
