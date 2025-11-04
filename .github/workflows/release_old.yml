@@ -1,0 +1,34 @@
+# The old release process left for releasing the Miden SDK until it moves to a separate repo.
+#
+# Runs `release-plz release` only after the release PR (starts with `release-plz-`)
+# is merged to the next branch. Publishes any unpublished crates.
+# Does nothing if all crates are already published (i.e. have their versions on crates.io).
+# Does not create/update release PRs.
+#
+# See CONTRIBUTING.md for more details.
+
+name: release-miden-sdk
+
+on:
+  push:
+    branches:
+      - next
+
+jobs:
+  publish:
+    name: publish any unpublished packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Publish
+        uses: release-plz/action@v0.5
+        with:
+          # Only run the `release` command that publishes any unpublished crates.
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
