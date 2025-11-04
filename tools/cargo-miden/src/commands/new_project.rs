@@ -1,11 +1,12 @@
 use std::{
-    fmt,
+    fmt, fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::Context;
 use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
+use toml_edit::{DocumentMut, Item, Value};
 
 /// The tag used in checkout of the new project template.
 ///
@@ -238,6 +239,18 @@ impl NewCommand {
         let _project_path = cargo_generate::generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
+        // Try to add the new crate to workspace Cargo.toml if one exists
+        use path_absolutize::Absolutize;
+        let project_path_abs = self
+            .path
+            .absolutize()
+            .context("Failed to convert project path to absolute path")?
+            .to_path_buf();
+        if let Err(e) = add_to_workspace_if_exists(&project_path_abs) {
+            // Log warning but don't fail the command if workspace update fails
+            eprintln!("Warning: Failed to add crate to workspace: {e}");
+        }
+
         Ok(self.path)
     }
 }
@@ -256,4 +269,102 @@ fn is_inside_git_repo(path: &Path) -> bool {
         }
     }
     false
+}
+
+/// Finds a workspace Cargo.toml by walking up the directory tree from the given path.
+///
+/// Returns the path to the workspace Cargo.toml if found, or None if not found.
+fn find_workspace_cargo_toml(start_path: &Path) -> Option<PathBuf> {
+    // Start from the parent directory of the new project (where it was created)
+    let start = start_path.parent()?;
+
+    // Walk up the directory tree
+    for ancestor in start.ancestors() {
+        let cargo_toml = ancestor.join("Cargo.toml");
+        if cargo_toml.exists() {
+            // Check if it's a workspace by reading and parsing it
+            if let Ok(content) = fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") {
+                    return Some(cargo_toml);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Adds a new crate to the workspace Cargo.toml if one exists.
+///
+/// The member path is relative to the workspace root.
+fn add_to_workspace_if_exists(project_path: &Path) -> anyhow::Result<()> {
+    let workspace_cargo_toml = match find_workspace_cargo_toml(project_path) {
+        Some(path) => path,
+        None => {
+            // No workspace found, nothing to do
+            return Ok(());
+        }
+    };
+
+    // Read the workspace Cargo.toml
+    let content =
+        fs::read_to_string(&workspace_cargo_toml).context("Failed to read workspace Cargo.toml")?;
+
+    // Parse the TOML document
+    let mut doc = content.parse::<DocumentMut>().context("Failed to parse workspace Cargo.toml")?;
+
+    // Get the workspace root directory
+    let workspace_root = workspace_cargo_toml
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Workspace Cargo.toml has no parent directory"))?;
+
+    // Calculate the relative path from workspace root to the new project
+    let member_path = project_path
+        .strip_prefix(workspace_root)
+        .context("Failed to calculate relative path from workspace root to project")?
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Project path contains invalid UTF-8"))?
+        .to_string();
+
+    // Ensure the workspace section exists
+    if !doc.contains_key("workspace") {
+        doc.insert("workspace", Item::Table(toml_edit::Table::new()));
+    }
+
+    let workspace = doc["workspace"]
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("Workspace section is not a table"))?;
+
+    // Get or create the members array
+    let members = if workspace.contains_key("members") {
+        workspace["members"]
+            .as_array_mut()
+            .ok_or_else(|| anyhow::anyhow!("Workspace members is not an array"))?
+    } else {
+        let members_array = toml_edit::Array::new();
+        workspace.insert("members", Item::Value(Value::Array(members_array)));
+        workspace["members"]
+            .as_array_mut()
+            .ok_or_else(|| anyhow::anyhow!("Failed to create members array"))?
+    };
+
+    // Check if the member is already in the list
+    let member_path_str = member_path.as_str();
+    let already_exists = members.iter().any(|item| {
+        if let Some(val) = item.as_str() {
+            val == member_path_str
+        } else {
+            false
+        }
+    });
+
+    if !already_exists {
+        // Add the new member
+        members.push(member_path_str);
+    }
+
+    // Write the updated Cargo.toml back
+    fs::write(&workspace_cargo_toml, doc.to_string())
+        .context("Failed to write updated workspace Cargo.toml")?;
+
+    Ok(())
 }
