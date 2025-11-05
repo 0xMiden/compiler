@@ -1,0 +1,71 @@
+# mod root_ns:root@1.0.0
+
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
+end
+
+# mod root_ns:root@1.0.0::test_rust_e91108ee147c81774f718f1c0531bff5bc1cdc56c047c1e0475e4e94badee2c8
+
+export.entrypoint
+    movup.6
+    movup.6
+    movup.8
+    movup.8
+    movup.6
+    movup.6
+    movup.8
+    movup.8
+    movdn.7
+    movdn.7
+    movdn.7
+    movdn.7
+    trace.240
+    nop
+    exec.::intrinsics::i128::sub
+    trace.252
+    nop
+    push.8
+    dup.5
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    movup.2
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+end
+

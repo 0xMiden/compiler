@@ -1,0 +1,14 @@
+public builtin.function @test_wrapper() {
+^block4:
+    v0 = builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : ptr<byte, u8>
+    v1 = hir.bitcast v0 : ptr<byte, i32>;
+    v2 = hir.load v1 : i32;
+    v3 = arith.constant 9 : i32;
+    v4 = arith.add v2, v3 : i32 #[overflow = wrapping];
+    v5 = builtin.global_symbol @root_ns:root@1.0.0/noname/MyGlobalVal : ptr<byte, u8>
+    v6 = hir.bitcast v5 : ptr<byte, i32>;
+    hir.store v6, v4;
+    cf.br ^block5;
+^block5:
+    builtin.ret ;
+};

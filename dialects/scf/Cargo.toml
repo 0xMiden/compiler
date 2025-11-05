@@ -1,0 +1,30 @@
+[package]
+name = "midenc-dialect-scf"
+description = "Miden IR Structured Control Flow Dialect"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir/std"]
+
+[dependencies]
+log.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-ub.workspace = true
+midenc-hir.workspace = true
+midenc-hir-transform.workspace = true
+bitvec.workspace = true
+
+[dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-expect-test = { path = "../../tools/expect-test" }
+env_logger.workspace = true

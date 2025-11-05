@@ -1,128 +1,68 @@
-use std::path::PathBuf;
+//! `cargo-miden` as a library
 
-use cargo_component::load_metadata;
-use clap::{CommandFactory, Parser};
-use config::CargoArguments;
-use midenc_session::diagnostics::Report;
-use new_project::NewCommand;
+#![deny(warnings)]
+#![deny(missing_docs)]
 
-use crate::run_cargo_command::run_cargo_command;
+use anyhow::Result;
+use clap::Parser;
 
-mod build;
-pub mod config;
-mod new_project;
-mod run_cargo_command;
+mod cli;
+mod commands;
+mod compile_masm;
+mod config;
+mod dependencies;
+mod outputs;
 mod target;
+mod utils;
 
-fn version() -> &'static str {
-    option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
+pub use outputs::{BuildOutput, CommandOutput};
+pub use target::{
+    detect_project_type, detect_target_environment, target_environment_to_project_type,
+};
+
+/// Requested output type for the `build` command.
+pub enum OutputType {
+    /// Return the Wasm component or core Wasm module emitted by Cargo.
+    Wasm,
+    /// Return the compiled Miden package.
+    Masm,
 }
 
-/// The list of commands that are built-in to `cargo-miden`.
-const BUILTIN_COMMANDS: &[&str] = &[
-    "miden", // for indirection via `cargo miden`
-    "new",
-];
-
-const AFTER_HELP: &str = "Unrecognized subcommands will be passed to cargo verbatim
-     and the artifacts will be processed afterwards (e.g. `build` command compiles MASM).
-     \nSee `cargo help` for more information on available cargo commands.";
-
-/// Cargo integration for Miden
-#[derive(Parser)]
-#[clap(
-    bin_name = "cargo",
-    version,
-    propagate_version = true,
-    arg_required_else_help = true,
-    after_help = AFTER_HELP
-)]
-#[command(version = version())]
-enum CargoMiden {
-    /// Cargo integration for Miden
-    #[clap(subcommand, hide = true, after_help = AFTER_HELP)]
-    Miden(Command), // indirection via `cargo miden`
-    #[clap(flatten)]
-    Command(Command),
-}
-
-#[derive(Parser)]
-enum Command {
-    New(NewCommand),
-}
-
-fn detect_subcommand<I, T>(args: I) -> Option<String>
-where
-    I: IntoIterator<Item = T>,
-    T: Into<String> + Clone,
-{
-    let mut iter = args.into_iter().map(Into::into).skip(1).peekable();
-
-    // Skip the first argument if it is `miden` (i.e. `cargo miden`)
-    if let Some(arg) = iter.peek() {
-        if arg == "miden" {
-            iter.next().unwrap();
-        }
-    }
-
-    for arg in iter {
-        // Break out of processing at the first `--`
-        if arg == "--" {
-            break;
-        }
-
-        if !arg.starts_with('-') {
-            return Some(arg);
-        }
-    }
-
-    None
-}
-
-pub fn run<T>(args: T) -> Result<Vec<PathBuf>, Report>
+/// Runs the `cargo-miden` entry point.
+///
+/// The iterator of arguments is expected to mirror the invocation of `cargo miden …`.
+/// The command returns an optional [`CommandOutput`]; commands that only produce side-effects
+/// (such as printing help) will return `Ok(None)`.
+pub fn run<T>(args: T, build_output_type: OutputType) -> Result<Option<CommandOutput>>
 where
     T: Iterator<Item = String>,
 {
-    let args = args.collect::<Vec<_>>();
-    let subcommand = detect_subcommand(args.clone());
+    let collected: Vec<String> = args.collect();
+    let command_tokens = extract_command_tokens(&collected);
 
-    let outputs = match subcommand.as_deref() {
-        // Check for built-in command or no command (shows help)
-        Some(cmd) if BUILTIN_COMMANDS.contains(&cmd) => {
-            match CargoMiden::parse_from(args.clone()) {
-                CargoMiden::Miden(cmd) | CargoMiden::Command(cmd) => match cmd {
-                    Command::New(cmd) => vec![cmd.exec().map_err(Report::msg)?],
-                },
-            }
+    let cli = cli::CargoMidenCli::parse_from(command_tokens);
+
+    match cli.command {
+        cli::CargoMidenCommand::New(cmd) => {
+            let project_path = cmd.exec()?;
+            Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
-
-        // If no subcommand was detected,
-        None => {
-            // Attempt to parse the supported CLI (expected to fail)
-            CargoMiden::parse_from(args);
-
-            // If somehow the CLI parsed correctly despite no subcommand,
-            // print the help instead
-            CargoMiden::command().print_long_help().map_err(Report::msg)?;
-            Vec::new()
+        cli::CargoMidenCommand::Example(cmd) => {
+            let project_path = cmd.exec()?;
+            Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
+        cli::CargoMidenCommand::Build(cmd) => cmd.exec(build_output_type),
+    }
+}
 
-        _ => {
-            // Not a built-in command, run the cargo command
-            let cargo_args =
-                CargoArguments::parse_from(args.clone().into_iter()).map_err(Report::msg)?;
-            let metadata =
-                load_metadata(cargo_args.manifest_path.as_deref()).map_err(Report::msg)?;
-            if metadata.packages.is_empty() {
-                return Err(Report::msg(format!(
-                    "manifest `{path}` contains no package or the workspace has no members",
-                    path = metadata.workspace_root.join("Cargo.toml")
-                )));
-            }
+fn extract_command_tokens(args: &[String]) -> Vec<String> {
+    if args.is_empty() {
+        panic!("expected `cargo miden [COMMAND]`, got empty args");
+    }
 
-            let spawn_args: Vec<_> = args.into_iter().skip(1).collect();
-            run_cargo_command(&metadata, subcommand.as_deref(), &cargo_args, &spawn_args)?
-        }
-    };
-    Ok(outputs)
+    if let Some(idx) = args.iter().position(|arg| arg == "miden") {
+        args.iter().skip(idx).cloned().collect()
+    } else {
+        panic!("expected `cargo miden [COMMAND]`, got {args:?}");
+    }
 }

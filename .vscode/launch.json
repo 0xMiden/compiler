@@ -1,0 +1,218 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_codegen_masm2'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-codegen-masm"],
+        "filter": {
+          "name": "midenc_codegen_masm",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_dialect_hir'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-dialect-hir"],
+        "filter": {
+          "name": "midenc_dialect_hir",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_hir_symbol'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-hir-symbol"],
+        "filter": {
+          "name": "midenc_hir_symbol",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_hir'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-hir"],
+        "filter": {
+          "name": "midenc_hir",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_hir_type'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-hir-type"],
+        "filter": {
+          "name": "midenc_hir_type",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_session'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-session"],
+        "filter": {
+          "name": "midenc_session",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_frontend_wasm2'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-frontend-wasm2"],
+        "filter": {
+          "name": "midenc_frontend_wasm2",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'midenc'",
+      "cargo": {
+        "args": ["build", "--bin=midenc", "--package=midenc"],
+        "filter": {
+          "name": "midenc",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'midenc'",
+      "cargo": {
+        "args": ["test", "--no-run", "--bin=midenc", "--package=midenc"],
+        "filter": {
+          "name": "midenc",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_driver'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-driver"],
+        "filter": {
+          "name": "midenc_driver",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_compile'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-compile"],
+        "filter": {
+          "name": "midenc_compile",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'midenc_debug'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=midenc-debug"],
+        "filter": {
+          "name": "midenc_debug",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'cargo-miden'",
+      "cargo": {
+        "args": ["build", "--bin=cargo-miden", "--package=cargo-miden"],
+        "filter": {
+          "name": "cargo-miden",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'miden_integration_tests'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=miden-integration-tests"],
+        "filter": {
+          "name": "miden_integration_tests",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}

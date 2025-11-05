@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Added
+
+- Added `TypeRepr::BigEndian` to aid in making some existing legacy protocol library types representable in the type system, to be used as a temporary
+work-around until we are able to redefine those types in a standard layout
+
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.1.5...midenc-hir-type-v0.4.0) - 2025-08-15
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.0.7...midenc-hir-type-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- implement pretty-print trait for Symbol/Type
+
+### Other
+- treat warnings as compiler errors,
+- update rust toolchain, clean up deps
+- implement hir dialect ops, flesh out remaining core ir infra
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-type-v0.0.6...midenc-hir-type-v0.0.7) - 2024-09-17
 
 ### Other

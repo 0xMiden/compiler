@@ -1,0 +1,9 @@
+public builtin.function @test_wrapper() {
+^block4:
+    v0 = arith.constant 2 : i64;
+    v1 = arith.constant 1 : i64;
+    v2 = arith.mul v0, v1 : i64 #[overflow = wrapping];
+    cf.br ^block5;
+^block5:
+    builtin.ret ;
+};

@@ -1,6 +1,7 @@
-use std::{collections::BTreeMap, fmt, str::FromStr, sync::Arc};
+use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
+use core::{fmt, str::FromStr};
 
-use cranelift_entity::{entity_impl, EntityRef};
+use crate::define_attr_type;
 
 pub trait IntoBytes {
     fn into_bytes(self) -> Vec<u8>;
@@ -26,15 +27,47 @@ impl IntoBytes for i16 {
 
 /// A handle to a constant
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Constant(u32);
-entity_impl!(Constant, "const");
+pub struct ConstantId(u32);
+impl ConstantId {
+    pub fn new(id: usize) -> Self {
+        assert!(id <= u32::MAX as usize);
+        Self(id as u32)
+    }
+
+    #[inline]
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+impl fmt::Debug for ConstantId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+impl fmt::Display for ConstantId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "const{}", &self.0)
+    }
+}
+
+define_attr_type!(ConstantId);
+
+impl crate::AttrPrinter for ConstantId {
+    fn print(
+        &self,
+        _flags: &crate::OpPrintingFlags,
+        context: &crate::Context,
+    ) -> crate::formatter::Document {
+        let data = context.get_constant(*self);
+        crate::formatter::display(data)
+    }
+}
 
 /// This type represents the raw data of a constant.
 ///
 /// The data is expected to be in little-endian order.
 #[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ConstantData(#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))] Vec<u8>);
+pub struct ConstantData(Vec<u8>);
 impl ConstantData {
     /// Return the number of bytes in the constant.
     pub fn len(&self) -> usize {
@@ -63,8 +96,7 @@ impl ConstantData {
     pub fn zext(mut self, expected_size: usize) -> Self {
         assert!(
             self.len() <= expected_size,
-            "the constant is already larger than {} bytes",
-            expected_size
+            "the constant is already larger than {expected_size} bytes"
         );
         self.0.resize(expected_size, 0);
         self
@@ -145,7 +177,7 @@ impl ConstantData {
 
         let s = s.strip_prefix("0x").unwrap_or(s);
         let len = s.len();
-        if len % 2 != 0 {
+        if !len.is_multiple_of(2) {
             return Err(NOT_EVEN);
         }
         // Parse big-endian
@@ -171,21 +203,22 @@ impl ConstantData {
 
 /// This maintains the storage for constants used within a function
 #[derive(Default)]
-pub struct ConstantPool {
+pub(crate) struct ConstantPool {
     /// This mapping maintains the insertion order as long as Constants are created with
     /// sequentially increasing integers.
     ///
     /// It is important that, by construction, no entry in that list gets removed. If that ever
     /// need to happen, don't forget to update the `Constant` generation scheme.
-    constants: BTreeMap<Constant, Arc<ConstantData>>,
+    constants: BTreeMap<ConstantId, Arc<ConstantData>>,
 
     /// Mapping of hashed `ConstantData` to the index into the other hashmap.
     ///
     /// This allows for deduplication of entries into the `handles_to_values` mapping.
-    cache: BTreeMap<Arc<ConstantData>, Constant>,
+    cache: BTreeMap<Arc<ConstantData>, ConstantId>,
 }
 impl ConstantPool {
     /// Returns true if the pool is empty
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.constants.is_empty()
     }
@@ -196,16 +229,17 @@ impl ConstantPool {
     }
 
     /// Retrieve the constant data as a reference-counted pointer, given a handle.
-    pub fn get(&self, id: Constant) -> Arc<ConstantData> {
+    pub fn get(&self, id: ConstantId) -> Arc<ConstantData> {
         Arc::clone(&self.constants[&id])
     }
 
     /// Retrieve the constant data by reference given a handle.
-    pub fn get_by_ref(&self, id: Constant) -> &ConstantData {
+    pub fn get_by_ref(&self, id: ConstantId) -> &ConstantData {
         self.constants[&id].as_ref()
     }
 
     /// Returns true if this pool contains the given constant data
+    #[allow(unused)]
     pub fn contains(&self, data: &ConstantData) -> bool {
         self.cache.contains_key(data)
     }
@@ -213,25 +247,26 @@ impl ConstantPool {
     /// Insert constant data into the pool, returning a handle for later referencing; when constant
     /// data is inserted that is a duplicate of previous constant data, the existing handle will be
     /// returned.
-    pub fn insert(&mut self, data: ConstantData) -> Constant {
+    pub fn insert(&mut self, data: ConstantData) -> ConstantId {
         if let Some(cst) = self.cache.get(&data) {
             return *cst;
         }
 
         let data = Arc::new(data);
-        let id = Constant::new(self.len());
+        let id = ConstantId::new(self.len());
         self.constants.insert(id, Arc::clone(&data));
         self.cache.insert(data, id);
         id
     }
 
     /// Same as [ConstantPool::insert], but for data already allocated in an [Arc].
-    pub fn insert_arc(&mut self, data: Arc<ConstantData>) -> Constant {
+    #[allow(unused)]
+    pub fn insert_arc(&mut self, data: Arc<ConstantData>) -> ConstantId {
         if let Some(cst) = self.cache.get(data.as_ref()) {
             return *cst;
         }
 
-        let id = Constant::new(self.len());
+        let id = ConstantId::new(self.len());
         self.constants.insert(id, Arc::clone(&data));
         self.cache.insert(data, id);
         id
@@ -239,7 +274,8 @@ impl ConstantPool {
 
     /// Traverse the contents of the pool
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (Constant, Arc<ConstantData>)> + '_ {
+    #[allow(unused)]
+    pub fn iter(&self) -> impl Iterator<Item = (ConstantId, Arc<ConstantData>)> + '_ {
         self.constants.iter().map(|(k, v)| (*k, Arc::clone(v)))
     }
 }

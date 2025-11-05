@@ -1,0 +1,20 @@
+[package]
+name = "counter-contract"
+description = "A simple example of a Miden counter contract using the Account Storage API"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../sdk/sdk" }
+
+# [package.metadata.component]
+# package = "miden:counter-contract"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]

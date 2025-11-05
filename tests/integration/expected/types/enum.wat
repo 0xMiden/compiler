@@ -1,6 +1,15 @@
 (module $test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824.wasm
   (type (;0;) (func (param i32 i32 i32) (result i32)))
   (type (;1;) (func (result i32)))
+  (memory (;0;) 16)
+  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+  (global (;1;) i32 i32.const 1048576)
+  (global (;2;) i32 i32.const 1048576)
+  (export "memory" (memory 0))
+  (export "match_enum" (func $match_enum))
+  (export "__main" (func $__main))
+  (export "__data_end" (global 1))
+  (export "__heap_base" (global 2))
   (func $match_enum (;0;) (type 0) (param i32 i32 i32) (result i32)
     block ;; label = @1
       block ;; label = @2
@@ -40,13 +49,4 @@
     call $match_enum
     i32.add
   )
-  (memory (;0;) 16)
-  (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
-  (global (;1;) i32 i32.const 1048576)
-  (global (;2;) i32 i32.const 1048576)
-  (export "memory" (memory 0))
-  (export "match_enum" (func $match_enum))
-  (export "__main" (func $__main))
-  (export "__data_end" (global 1))
-  (export "__heap_base" (global 2))
 )

@@ -1,7 +1,30 @@
-# mod test_rust_1dc910df9e5ef302ee236233065a2a50427fb4ff2db8591dcc6713f05a95d77a
+# mod root_ns:root@1.0.0
 
-export.entrypoint
-    movdn.3 movdn.3 exec.::intrinsics::i64::gte
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
 end
 
+# mod root_ns:root@1.0.0::test_rust_9edabb66d927b03a3d0e64c65bad79cd5488a5bf59a9059a832f3582c7184d6b
+
+export.entrypoint
+    movdn.3
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::i64::gte
+    trace.252
+    nop
+end
 

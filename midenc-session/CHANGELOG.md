@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-session-v0.1.5...midenc-session-v0.4.0) - 2025-08-15
+
+### Added
+
+- add `project-kind` with `account`, `note-script` and
+- rename note script rollup target into script
+
+### Other
+
+- update VM to `v0.15.0`
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-session-v0.0.7...midenc-session-v0.0.8) - 2025-04-24
+
+### Added
+- implement pass infrastructure
+
+### Fixed
+- return error (instead of panic) when package contain a Program
+
+### Other
+- treat warnings as compiler errors,
+- add some missing log targets
+- update rust toolchain, clean up deps
+- enrich Miden package loading error with the file path
+- rename hir2 crates
+- switch compiler to hir2
+- update to the latest `miden-mast-package` (renamed from
+- update the Miden VM with updated `miden-package` crate
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- fix formatting after rebase
+- finish initial rewrite of backend using hir2
+- [**breaking**] move `Package` to `miden-package` in the VM repo
+- add note script compilation test;
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-session-v0.0.6...midenc-session-v0.0.7) - 2024-09-17
 
 ### Other

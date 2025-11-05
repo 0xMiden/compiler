@@ -1,7 +1,7 @@
 [package]
 name = "miden-sdk-alloc"
 description = "A simple bump allocator for Miden SDK programs"
-version.workspace = true
+version = "0.7.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -1,15 +1,19 @@
 //! Compilation and semantic tests for the whole compiler pipeline
 #![feature(iter_array_chunks)]
 #![feature(debug_closure_helpers)]
-//#![deny(warnings)]
+#![deny(warnings)]
 #![deny(missing_docs)]
 
 mod cargo_proj;
 mod compiler_test;
-mod exec_emulator;
+pub mod testing;
 
-pub use compiler_test::{default_session, CargoTest, CompilerTest, CompilerTestBuilder, RustcTest};
-pub use exec_emulator::execute_emulator;
+pub use self::{
+    compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest},
+    testing::setup::default_session,
+};
 
+#[cfg(test)]
+mod codegen;
 #[cfg(test)]
 mod rust_masm_tests;

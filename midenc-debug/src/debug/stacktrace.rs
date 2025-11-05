@@ -8,9 +8,10 @@ use std::{
     sync::Arc,
 };
 
-use miden_core::{debuginfo::Location, AssemblyOp};
+use miden_core::AssemblyOp;
+use miden_debug_types::Location;
 use miden_processor::{Operation, RowIndex, VmState};
-use midenc_hir::demangle;
+use midenc_hir::demangle::demangle;
 use midenc_session::{
     diagnostics::{SourceFile, SourceSpan},
     Session,
@@ -422,18 +423,18 @@ impl OpDetail {
                 ..
             } => resolved
                 .get_or_init(|| {
-                    let path = Path::new(loc.path.as_ref());
+                    let path = Path::new(loc.uri().as_str());
                     let source_file = if path.exists() {
                         session.source_manager.load_file(path).ok()?
                     } else {
-                        session.source_manager.get_by_path(loc.path.as_ref())?
+                        session.source_manager.get_by_uri(loc.uri())?
                     };
                     let span = SourceSpan::new(source_file.id(), loc.start..loc.end);
                     let file_line_col = source_file.location(span);
                     Some(ResolvedLocation {
                         source_file,
-                        line: file_line_col.line,
-                        col: file_line_col.column,
+                        line: file_line_col.line.to_u32(),
+                        col: file_line_col.column.to_u32(),
                         span,
                     })
                 })
@@ -446,13 +447,14 @@ impl OpDetail {
 #[derive(Debug, Clone)]
 pub struct ResolvedLocation {
     pub source_file: Arc<SourceFile>,
+    // TODO(fabrio): Use LineNumber and ColumnNumber instead of raw `u32`.
     pub line: u32,
     pub col: u32,
     pub span: SourceSpan,
 }
 impl fmt::Display for ResolvedLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}:{}", self.source_file.path().display(), self.line, self.col)
+        write!(f, "{}:{}:{}", self.source_file.uri().as_str(), self.line, self.col)
     }
 }
 
@@ -495,7 +497,7 @@ impl<'a> StackTrace<'a> {
     }
 }
 
-impl<'a> fmt::Display for StackTrace<'a> {
+impl fmt::Display for StackTrace<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use std::fmt::Write;
 

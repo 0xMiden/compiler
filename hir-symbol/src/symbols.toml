@@ -4,14 +4,13 @@ true = { id = 1 }
 empty = { value = "" }
 
 [keywords]
-kernel = {}
+world = {}
+component = {}
 module = {}
+function = {}
+public = {}
+private = {}
 internal = {}
-odr = {}
-external = {}
-extern = {}
-pub = {}
-fn = {}
 cc = {}
 fast = {}
 sret = {}
@@ -22,11 +21,19 @@ ret = {}
 call = {}
 syscall = {}
 br = {}
-condbr = {}
+cond_br = {}
 switch = {}
-test = {}
+if = {}
+while = {}
+index_switch = {}
+yield = {}
+condition = {}
 load = {}
+store = {}
 memcpy = {}
+memset = {}
+memory_size = {}
+memory_grow = {}
 asm = {}
 min = {}
 max = {}
@@ -43,7 +50,6 @@ gt = {}
 gte = {}
 lt = {}
 lte = {}
-store = {}
 inv = {}
 pow2 = {}
 not = {}
@@ -51,14 +57,15 @@ bnot = {}
 popcnt = {}
 is_odd = { value = "is_odd" }
 cast = {}
-ptrtoint = {}
-inttoptr = {}
+ptr_to_int = {}
+int_to_ptr = {}
 neg = {}
 select = {}
 assert = {}
 assertz = {}
 alloca = {}
 unreachable = {}
+poison = {}
 i1 = {}
 i8 = {}
 u8 = {}
@@ -76,15 +83,36 @@ felt = {}
 mut = {}
 as = {}
 id = {}
-global = {}
-symbol = {}
-iadd = {}
-const = {}
-
-[passes]
-inline_blocks = { value = "inline-blocks" }
-split_critical_edges = { value = "split-critical-edges" }
-treeify = { value = "treeify" }
+global_variable = {}
+global_symbol = {}
+segment = {}
+constant = {}
 
 [attributes]
-entrypoint = {}
+inline = {}
+
+[dialects]
+arith = {}
+builtin = {}
+cf = {}
+hir = {}
+scf = {}
+test = {}
+ub = {}
+
+[modules]
+account = {}
+blake3 = {}
+crypto = {}
+debug = {}
+dsa = {}
+felt_module = { value = "felt" }
+hashes = {}
+intrinsics = {}
+advice = {}
+miden = {}
+mem = {}
+note = {}
+rpo_falcon512 = {}
+std = {}
+tx = {}

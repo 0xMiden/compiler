@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(warnings)]
 
 extern crate alloc;
 
@@ -12,12 +13,13 @@ use core::{
 #[cfg(target_family = "wasm")]
 const PAGE_SIZE: usize = 2usize.pow(16);
 
-/// We require all allocations to be minimally word-aligned, i.e. 32 byte alignment
-const MIN_ALIGN: usize = 32;
+/// We require all allocations to be minimally word-aligned, i.e. 16 byte alignment
+const MIN_ALIGN: usize = 16;
 
-/// The linear memory heap must not spill over into the region reserved for procedure
-/// locals, which begins at 2^30 in Miden's address space.
-const HEAP_END: *mut u8 = (2usize.pow(30) / 4) as *mut u8;
+/// The linear memory heap must not spill over into the region reserved for procedure locals, which
+/// begins at 2^30 in Miden's address space. In Rust address space it should be 2^30 * 4 but since
+/// it overflows the usize which is 32-bit on wasm32 we use u32::MAX.
+const HEAP_END: *mut u8 = u32::MAX as *mut u8;
 
 /// A very simple allocator for Miden SDK-based programs.
 ///
@@ -123,7 +125,7 @@ unsafe impl GlobalAlloc for BumpAlloc {
 }
 
 #[cfg(target_family = "wasm")]
-#[link(wasm_import_module = "intrinsics::mem")]
 extern "C" {
+    #[link_name = "intrinsics::mem::heap_base"]
     fn heap_base() -> *mut u8;
 }

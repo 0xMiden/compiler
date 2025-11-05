@@ -6,6 +6,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-macros-v0.1.5...midenc-hir-macros-v0.4.0) - 2025-08-15
+
+### Other
+
+- update operation proc macro documentation
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-macros-v0.0.7...midenc-hir-macros-v0.0.8) - 2025-04-24
+
+### Added
+- implement hir components, global ops, various fixes improvements to cntrol ops
+- implement #[operation] macro
+
+### Fixed
+- *(ir)* expose dialect name in op registration
+- allow to use `GlobalVariableRef` in the `GlobalSymbol` builder
+- restore op type constraint verification, fix `zext` vs `sext` usage
+- temporary disable op constraint verification due to the [#378](https://github.com/0xMiden/compiler/pull/378)
+- broken hir-macro test
+
+### Other
+- treat warnings as compiler errors,
+- update rust toolchain, clean up deps
+- rename hir2 crates
+- *(ir)* support custom op printers, improve printing infra
+- switch compiler to hir2
+- *(ir)* rework handling of entities with parents
+- fix clippy warnings
+- finish initial rewrite of backend using hir2
+- codegen
+- implement a variety of useful apis on regions/blocks/ops/values
+- promote attributes to top level, add ability to clone and hash type-erased attribute values
+- make callables fundamental, move function/module to hir dialect
+- ir redesign
+
 ## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/midenc-hir-macros-v0.0.5...midenc-hir-macros-v0.0.6) - 2024-09-06
 
 ### Other

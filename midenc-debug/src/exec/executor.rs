@@ -1,24 +1,31 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Deref,
     rc::Rc,
+    sync::Arc,
 };
 
 use miden_assembly::Library as CompiledLibrary;
 use miden_core::{Program, StackInputs, Word};
+use miden_debug_types::SourceManagerExt;
+use miden_mast_package::{
+    Dependency, DependencyName, DependencyResolver, LocalResolvedDependency, MastArtifact,
+    MemDependencyResolverByDigest, ResolvedDependency,
+};
 use miden_processor::{
-    AdviceInputs, ContextId, ExecutionError, Felt, MastForest, MemAdviceProvider, Process,
+    AdviceInputs, AdviceProvider, ContextId, ExecutionError, Felt, MastForest, Process,
     ProcessState, RowIndex, StackOutputs, VmState, VmStateIterator,
 };
-use midenc_codegen_masm::{NativePtr, Package};
+use midenc_codegen_masm::{NativePtr, Rodata};
 use midenc_hir::Type;
 use midenc_session::{
     diagnostics::{IntoDiagnostic, Report},
-    Session,
+    LinkLibrary, Session, STDLIB,
 };
 
 use super::{DebugExecutor, DebuggerHost, ExecutionTrace, TraceEvent};
-use crate::{debug::CallStack, felt::PopFromStack, TestFelt};
+use crate::{debug::CallStack, FromMidenRepr, TestFelt};
 
 /// The [Executor] is responsible for executing a program with the Miden VM.
 ///
@@ -29,58 +36,82 @@ use crate::{debug::CallStack, felt::PopFromStack, TestFelt};
 pub struct Executor {
     stack: StackInputs,
     advice: AdviceInputs,
-    libraries: Vec<MastForest>,
+    libraries: Vec<Arc<MastForest>>,
+    dependency_resolver: MemDependencyResolverByDigest,
 }
 impl Executor {
     /// Construct an executor with the given arguments on the operand stack
     pub fn new(args: Vec<Felt>) -> Self {
+        let mut resolver = MemDependencyResolverByDigest::default();
+        resolver.add(*STDLIB.digest(), STDLIB.clone().into());
+        let base_lib = miden_lib::MidenLib::default().as_ref().clone();
+        resolver.add(*base_lib.digest(), Arc::new(base_lib).into());
         Self {
             stack: StackInputs::new(args).expect("invalid stack inputs"),
             advice: AdviceInputs::default(),
             libraries: Default::default(),
+            dependency_resolver: resolver,
         }
     }
 
-    pub fn for_package(
-        package: &Package,
-        args: Vec<Felt>,
+    /// Construct the executor with the given inputs and adds dependencies from the given package
+    pub fn for_package<I>(
+        package: &miden_mast_package::Package,
+        args: I,
         session: &Session,
-    ) -> Result<Self, Report> {
+    ) -> Result<Self, Report>
+    where
+        I: IntoIterator<Item = Felt>,
+    {
         use midenc_hir::formatter::DisplayHex;
         log::debug!(
             "creating executor for package '{}' (digest={})",
             package.name,
-            DisplayHex::new(&package.digest.as_bytes())
+            DisplayHex::new(&package.digest().as_bytes())
         );
+        let mut exec = Self::new(args.into_iter().collect());
+        let dependencies = package.manifest.dependencies();
+        exec.with_dependencies(dependencies)?;
+        log::debug!("executor created");
+        Ok(exec)
+    }
 
-        let mut exec = Self::new(args);
+    /// Adds dependencies to the executor
+    pub fn with_dependencies<'a>(
+        &mut self,
+        dependencies: impl Iterator<Item = &'a Dependency>,
+    ) -> Result<&mut Self, Report> {
+        use midenc_hir::formatter::DisplayHex;
 
-        for link_library in package.manifest.link_libraries.iter() {
-            log::debug!(
-                "loading link library from package manifest: {} (kind = {}, from = {:#?})",
-                link_library.name.as_ref(),
-                link_library.kind,
-                link_library.path.as_ref().map(|p| p.display())
-            );
-            let library = link_library.load(session)?;
-            log::debug!("library loaded succesfully");
-            exec.with_library(&library);
-        }
-
-        for rodata in package.rodata.iter() {
-            log::debug!(
-                "adding rodata segment for offset {} (size {}) to advice map: {}",
-                rodata.start.as_ptr(),
-                rodata.size_in_bytes(),
-                DisplayHex::new(&rodata.digest.as_bytes())
-            );
-            exec.advice
-                .extend_map([(rodata.digest, rodata.to_elements().map_err(Report::msg)?)]);
+        for dep in dependencies {
+            match self.dependency_resolver.resolve(dep) {
+                Some(resolution) => {
+                    log::debug!("dependency {dep:?} resolved to {resolution:?}");
+                    log::debug!("loading library from package dependency: {dep:?}");
+                    match resolution {
+                        ResolvedDependency::Local(LocalResolvedDependency::Library(lib)) => {
+                            let library = lib.as_ref();
+                            self.with_mast_forest(lib.mast_forest().clone());
+                        }
+                        ResolvedDependency::Local(LocalResolvedDependency::Package(pkg)) => {
+                            if let MastArtifact::Library(lib) = &pkg.mast {
+                                self.with_mast_forest(lib.mast_forest().clone());
+                            } else {
+                                Err(Report::msg(format!(
+                                    "expected package {} to contain library",
+                                    pkg.name
+                                )))?;
+                            }
+                        }
+                    }
+                }
+                None => panic!("{dep:?} not found in resolver"),
+            }
         }
 
         log::debug!("executor created");
 
-        Ok(exec)
+        Ok(self)
     }
 
     /// Set the contents of memory for the shadow stack frame of the entrypoint
@@ -95,13 +126,19 @@ impl Executor {
         self
     }
 
+    /// Add a [MastForest] to the execution context
+    pub fn with_mast_forest(&mut self, mast: Arc<MastForest>) -> &mut Self {
+        self.libraries.push(mast);
+        self
+    }
+
     /// Convert this [Executor] into a [DebugExecutor], which captures much more information
     /// about the program being executed, and must be stepped manually.
     pub fn into_debug(mut self, program: &Program, session: &Session) -> DebugExecutor {
         log::debug!("creating debug executor");
 
-        let advice_provider = MemAdviceProvider::from(self.advice);
-        let mut host = DebuggerHost::new(advice_provider);
+        let advice_provider = AdviceProvider::from(self.advice.clone());
+        let mut host = DebuggerHost::new(advice_provider, session.source_manager.clone());
         for lib in core::mem::take(&mut self.libraries) {
             host.load_mast_forest(lib);
         }
@@ -120,14 +157,16 @@ impl Executor {
             assertion_events.borrow_mut().insert(clk, event);
         });
 
-        let mut process = Process::new_debug(program.kernel().clone(), self.stack, host);
-        let root_context = process.ctx();
-        let result = process.execute(program);
-        let mut iter = VmStateIterator::new(process, result.clone());
+        let mut process = Process::new_debug(program.kernel().clone(), self.stack, self.advice);
+        let process_state: ProcessState = (&mut process).into();
+        let root_context = process_state.ctx();
+        let result = process.execute(program, &mut host);
+        let stack_outputs = result.as_ref().map(|so| so.clone()).unwrap_or_default();
+        let mut iter = VmStateIterator::new(process, result);
         let mut callstack = CallStack::new(trace_events);
         DebugExecutor {
             iter,
-            result,
+            stack_outputs,
             contexts: Default::default(),
             root_context,
             current_context: root_context,
@@ -157,6 +196,29 @@ impl Executor {
         while let Some(step) = executor.next() {
             if let Err(err) = step {
                 render_execution_error(err, &executor, session);
+            }
+
+            if log::log_enabled!(target: "executor", log::Level::Trace) {
+                let step = step.unwrap();
+                if let Some(op) = step.op.as_ref() {
+                    if let Some(asmop) = step.asmop.as_ref() {
+                        dbg!(&step.stack);
+                        let source_loc = asmop.as_ref().location().map(|loc| {
+                            let path = std::path::Path::new(loc.uri().path());
+                            let file =
+                                session.diagnostics.source_manager_ref().load_file(path).unwrap();
+                            (file, loc.start)
+                        });
+                        if let Some((source_file, line_start)) = source_loc {
+                            let line_number = source_file.content().line_index(line_start).number();
+                            log::trace!(target: "executor", "in {} (located at {}:{})", asmop.context_name(), source_file.deref().uri().as_str(), &line_number);
+                        } else {
+                            log::trace!(target: "executor", "in {} (no source location available)", asmop.context_name());
+                        }
+                        log::trace!(target: "executor", "  executed `{op:?}` of `{}` (cycle {}/{})", asmop.op(), asmop.cycle_idx(), asmop.num_cycles());
+                        log::trace!(target: "executor", "  stack state: {:#?}", &step.stack);
+                    }
+                }
             }
 
             /*
@@ -273,10 +335,14 @@ impl Executor {
     /// Execute a program, parsing the operand stack outputs as a value of type `T`
     pub fn execute_into<T>(self, program: &Program, session: &Session) -> T
     where
-        T: PopFromStack + PartialEq,
+        T: FromMidenRepr + PartialEq,
     {
         let out = self.execute(program, session);
         out.parse_result().expect("invalid result")
+    }
+
+    pub fn dependency_resolver_mut(&mut self) -> &mut MemDependencyResolverByDigest {
+        &mut self.dependency_resolver
     }
 }
 
@@ -286,7 +352,7 @@ fn render_execution_error(
     execution_state: &DebugExecutor,
     session: &Session,
 ) -> ! {
-    use midenc_hir::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
+    use midenc_session::diagnostics::{miette::miette, reporting::PrintDiagnostic, LabeledSpan};
 
     let stacktrace = execution_state.callstack.stacktrace(&execution_state.recent, session);
 
@@ -294,7 +360,7 @@ fn render_execution_error(
 
     if let Some(last_state) = execution_state.last.as_ref() {
         let stack = last_state.stack.iter().map(|elem| elem.as_int());
-        let stack = midenc_hir::DisplayValues::new(stack);
+        let stack = midenc_hir::formatter::DisplayValues::new(stack);
         let fmp = last_state.fmp.as_int();
         eprintln!(
             "\nLast Known State (at most recent instruction which succeeded):

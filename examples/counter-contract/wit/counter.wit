@@ -1,0 +1,17 @@
+package miden:counter-contract@0.1.0;
+
+use miden:base/core-types@1.0.0;
+
+interface counter {
+    use core-types.{felt};
+
+    /// Returns the current counter value stored in the contract's storage.
+    get-count: func() -> felt;
+    /// Increments the counter value stored in the contract's storage by one
+    //and return the new counter value
+    increment-count: func() -> felt;
+}
+
+world counter-world {
+    export counter;
+}

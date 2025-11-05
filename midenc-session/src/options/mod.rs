@@ -1,9 +1,10 @@
 use alloc::{fmt, str::FromStr, string::String, sync::Arc, vec, vec::Vec};
-use std::path::{Path, PathBuf};
 
+#[cfg(feature = "std")]
+use crate::Path;
 use crate::{
     diagnostics::{DiagnosticsConfig, Emitter},
-    ColorChoice, CompileFlags, LinkLibrary, OutputTypes, ProjectType, TargetEnv,
+    ColorChoice, CompileFlags, LinkLibrary, OutputTypes, PathBuf, ProjectType, TargetEnv,
 };
 
 /// This struct contains all of the configuration options for the compiler
@@ -51,6 +52,8 @@ pub struct Options {
     pub print_ir_after_all: bool,
     /// Print IR to stdout each time the named passes are applied
     pub print_ir_after_pass: Vec<String>,
+    /// Only print the IR if the pass modified the IR structure.
+    pub print_ir_after_modified: bool,
     /// Save intermediate artifacts in memory during compilation
     pub save_temps: bool,
     /// We store any leftover argument matches in the session options for use
@@ -60,11 +63,36 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        let current_dir = std::env::current_dir().expect("could not get working directory");
+        let current_dir = current_dir();
         let target = TargetEnv::default();
         let project_type = ProjectType::default_for_target(target);
         Self::new(None, target, project_type, current_dir, None)
     }
+}
+
+#[cfg(feature = "std")]
+fn current_dir() -> PathBuf {
+    std::env::current_dir().expect("could not get working directory")
+}
+
+#[cfg(not(feature = "std"))]
+fn current_dir() -> PathBuf {
+    PathBuf::from(".")
+}
+
+#[cfg(feature = "std")]
+fn current_sysroot() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(|home| {
+        Path::new(&home)
+            .join(".miden")
+            .join("toolchains")
+            .join(crate::MIDENC_BUILD_VERSION)
+    })
+}
+
+#[cfg(not(feature = "std"))]
+fn current_sysroot() -> Option<PathBuf> {
+    None
 }
 
 impl Options {
@@ -75,14 +103,7 @@ impl Options {
         current_dir: PathBuf,
         sysroot: Option<PathBuf>,
     ) -> Self {
-        let sysroot = sysroot.or_else(|| {
-            std::env::var("HOME").ok().map(|home| {
-                Path::new(&home)
-                    .join(".miden")
-                    .join("toolchains")
-                    .join(crate::MIDENC_BUILD_VERSION)
-            })
-        });
+        let sysroot = sysroot.or_else(current_sysroot);
 
         Self {
             name,
@@ -107,6 +128,7 @@ impl Options {
             print_cfg_after_pass: vec![],
             print_ir_after_all: false,
             print_ir_after_pass: vec![],
+            print_ir_after_modified: false,
             flags: CompileFlags::default(),
         }
     }

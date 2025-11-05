@@ -1,0 +1,16 @@
+[package]
+name = "midenc-expect-test"
+description = "Snapshot testing for Miden compiler"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[dependencies]
+similar = "2"
+once_cell = "1"

@@ -1,24 +1,23 @@
-(component 
-    ;; Modules
-    (module #test_rust_ba1c5a590d707919e2a80d5ac961624d71143891517702d79d0d07e5430ec666
-        ;; Constants
-        (const (id 0) 0x00100000)
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_ff799fd5021c298afc16f98dda4d174c028df9b4ad9e425d365d3c1fb3cef25a {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
+        ^block6(v0: i32):
+            v2 = arith.constant 0 : i32;
+            v3 = arith.sub v2, v0 : i32 #[overflow = wrapping];
+            v4 = arith.sext v3 : i32;
+            builtin.ret v4;
+        };
 
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-        (global (export #gv1) (id 1) (type i32) (const 0))
-        (global (export #gv2) (id 2) (type i32) (const 0))
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-        ;; Functions
-        (func (export #entrypoint) (param i32) (result i32)
-            (block 0 (param v0 i32)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (sub.wrapping v2 v0))
-                (br (block 1 v3)))
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-            (block 1 (param v1 i32)
-                (ret v1))
-        )
-    )
-
-)
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

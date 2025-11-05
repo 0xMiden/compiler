@@ -1,25 +1,41 @@
+#![no_std]
+#![feature(allocator_api)]
+#![feature(coerce_unsized)]
+#![feature(debug_closure_helpers)]
+#![feature(ptr_metadata)]
+#![feature(specialization)]
+#![feature(unsize)]
+// Specialization
+#![allow(incomplete_features)]
+#![deny(warnings)]
+
 extern crate alloc;
+#[cfg(test)]
+extern crate std;
 
-mod control_flow;
-mod data;
-mod def_use;
-pub mod dependency_graph;
-mod dominance;
-mod liveness;
-mod loops;
-pub mod spill;
-mod treegraph;
-mod validation;
+pub mod analyses;
+mod analysis;
+mod anchor;
+mod change_result;
+mod config;
+pub mod dense;
+mod lattice;
+mod solver;
+pub mod sparse;
 
+use self::anchor::LatticeAnchorExt;
 pub use self::{
-    control_flow::{BlockPredecessor, ControlFlowGraph},
-    data::{GlobalVariableAnalysis, GlobalVariableLayout},
-    def_use::{DefUseGraph, Use, User, UserList, Users},
-    dependency_graph::DependencyGraph,
-    dominance::{DominanceFrontier, DominatorTree, DominatorTreePreorder},
-    liveness::LivenessAnalysis,
-    loops::{Loop, LoopAnalysis, LoopLevel},
-    spill::{Reload, ReloadInfo, Spill, SpillAnalysis, SpillInfo},
-    treegraph::{OrderedTreeGraph, TreeGraph},
-    validation::{ModuleValidationAnalysis, Rule},
+    analysis::{
+        AnalysisKind, AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, AnalysisStateInfo,
+        AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, AnalysisStrategy,
+        BuildableAnalysisState, BuildableDataFlowAnalysis, CallControlFlowAction, DataFlowAnalysis,
+        Dense, Revision, Sparse,
+    },
+    anchor::{LatticeAnchor, LatticeAnchorRef},
+    change_result::ChangeResult,
+    config::DataFlowConfig,
+    dense::{DenseBackwardDataFlowAnalysis, DenseForwardDataFlowAnalysis, DenseLattice},
+    lattice::{Lattice, LatticeLike},
+    solver::{AnalysisQueue, DataFlowSolver},
+    sparse::{SparseBackwardDataFlowAnalysis, SparseForwardDataFlowAnalysis, SparseLattice},
 };

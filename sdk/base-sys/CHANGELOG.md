@@ -6,6 +6,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.5...miden-base-sys-v0.4.0) - 2025-08-15
+
+### Added
+
+- add missing and fix existing tx kernel function bindings
+
+### Fixed
+
+- `account::remove_asset` Miden SDK bindings
+- update Miden SDK `AccountId` type and `account::get_id()` for two
+
+### Other
+
+- add doc comments
+- use advice map API in the basic wallet tx script
+- Add the test that executes counter contract, basic wallet and p2id note script on the local node ([#555](https://github.com/0xMiden/compiler/pull/555))
+
+## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.0...miden-base-sys-v0.1.5) - 2025-07-01
+
+### Added
+
+- add Miden SDK `note::get_assets` Rust bindings
+
+### Fixed
+
+- `note` Miden SDK bindings for element-addressable memory in Miden VM #550
+- wasm import module names to be in sync with WIT files (Miden SDK)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.0.7...miden-base-sys-v0.0.8) - 2025-04-24
+
+### Added
+- *(frontend)* Low-level account storage API in Miden SDK
+- *(cargo-miden)* support building Wasm component from a Cargo project
+
+### Fixed
+- include `account` module in `MidenTxKernelLibrary`;
+- fix clippy warnings
+
+### Other
+- treat warnings as compiler errors,
+- make index `u8` in account storage API in Miden SDK,
+- add missing functions in miden::account, miden:note tx kernel stubs
+- optimize codegen for `AccountId::as_felt`;
+- add note script compilation test;
+- [**breaking**] revamp Miden SDK API and expose some modules;
+- remove digest-in-function-name encoding and `MidenAbiImport::digest`,
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/miden-base-sys-v0.0.6...miden-base-sys-v0.0.7) - 2024-09-17
 
 ### Other

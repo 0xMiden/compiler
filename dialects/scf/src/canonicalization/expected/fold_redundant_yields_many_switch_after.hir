@@ -1,0 +1,36 @@
+public builtin.function @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v15 = test.constant 301 : u32;
+    v14 = test.constant 300 : u32;
+    v13 = test.constant 201 : u32;
+    v12 = test.constant 200 : u32;
+    v11 = test.constant 101 : u32;
+    v10 = test.constant 100 : u32;
+    v17 = test.constant 401 : u32;
+    v16 = test.constant 400 : u32;
+    v7 = test.constant 11 : u32;
+    v8 = test.constant 22 : u32;
+    v9 = test.constant 33 : u32;
+    v26, v28 = scf.index_switch v0 : u32, u32 
+    case 1 {
+    ^block1:
+        scf.yield v10, v11;
+    }
+    case 2 {
+    ^block2:
+        scf.yield v12, v13;
+    }
+    case 3 {
+    ^block3:
+        scf.yield v14, v15;
+    }
+    default {
+    ^block4:
+        scf.yield v16, v17;
+    };
+    v18 = test.add v7, v8 : u32 #[overflow = checked];
+    v19 = test.add v18, v26 : u32 #[overflow = checked];
+    v20 = test.add v19, v9 : u32 #[overflow = checked];
+    v21 = test.add v20, v28 : u32 #[overflow = checked];
+    builtin.ret v21;
+};

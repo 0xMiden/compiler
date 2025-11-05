@@ -1,23 +1,21 @@
-(component 
-    ;; Modules
-    (module #test_rust_8de4f7a3511ae02636986e75ade7e321e0708f1826bcbc6aad48f37af323b92d
-        ;; Constants
-        (const (id 0) 0x00100000)
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_e24b176dbd0fa5b54e01370fc307f6f1a06748cd8946e58e7d1469dceadc6d92 {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
+        ^block6(v0: i32, v1: i32):
+            v3 = arith.bor v1, v0 : i32;
+            builtin.ret v3;
+        };
 
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-        (global (export #gv1) (id 1) (type i32) (const 0))
-        (global (export #gv2) (id 2) (type i32) (const 0))
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-        ;; Functions
-        (func (export #entrypoint) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v3 i32) (bor v1 v0))
-                (br (block 1 v3)))
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-            (block 1 (param v2 i32)
-                (ret v2))
-        )
-    )
-
-)
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

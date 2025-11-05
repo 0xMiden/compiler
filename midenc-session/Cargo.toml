@@ -15,23 +15,29 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["dep:termcolor", "dep:parking_lot", "dep:clap"]
-serde = ["dep:serde", "dep:serde_repr", "midenc-hir-symbol/serde"]
+std = [
+    "dep:termcolor",
+    "dep:parking_lot",
+    "dep:clap",
+    "anyhow/std",
+    "miden-assembly/std",
+    "miden-lib/std",
+]
 
 [dependencies]
+anyhow.workspace = true
 clap = { workspace = true, optional = true }
 inventory.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-core.workspace = true
+miden-debug-types.workspace = true
+miden-mast-package.workspace = true
 miden-stdlib.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-hir-macros.workspace = true
-miden-base-sys = { version = "0.0.7", path = "../sdk/base-sys", features = [
-    "masl-lib",
-] }
+miden-lib.workspace = true
 parking_lot = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }
 thiserror.workspace = true
-serde = { workspace = true, optional = true }
-serde_repr = { workspace = true, optional = true }

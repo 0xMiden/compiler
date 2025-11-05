@@ -1,8 +1,12 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    rc::Rc,
+};
 
 use miden_core::Word;
 use miden_processor::{
-    ContextId, ExecutionError, Operation, RowIndex, StackOutputs, VmState, VmStateIterator,
+    ContextId, ExecutionError, MemoryAddress, MemoryError, Operation, RowIndex, StackOutputs,
+    VmState, VmStateIterator,
 };
 
 use super::ExecutionTrace;
@@ -18,7 +22,7 @@ pub struct DebugExecutor {
     /// The underlying [VmStateIterator] being driven
     pub iter: VmStateIterator,
     /// The final outcome of the program being executed
-    pub result: Result<StackOutputs, ExecutionError>,
+    pub stack_outputs: StackOutputs,
     /// The set of contexts allocated during execution so far
     pub contexts: BTreeSet<ContextId>,
     /// The root context
@@ -46,7 +50,7 @@ impl DebugExecutor {
     /// Returns the call frame exited this cycle, if any
     pub fn step(&mut self) -> Result<Option<CallFrame>, ExecutionError> {
         if self.stopped {
-            return self.result.as_ref().map(|_| None).map_err(|err| err.clone());
+            return Ok(None);
         }
         match self.iter.next() {
             Some(Ok(state)) => {
@@ -85,12 +89,25 @@ impl DebugExecutor {
         let last_cycle = self.cycle;
         let trace_len_summary = *self.iter.trace_len_summary();
         let (_, _, _, chiplets, _) = self.iter.into_parts();
-        let outputs = self.result.unwrap_or_default();
+        let chiplets = Rc::new(chiplets);
+
+        let chiplets0 = chiplets.clone();
+        let get_state_at = move |context, clk| chiplets0.memory.get_state_at(context, clk);
+        let chiplets1 = chiplets.clone();
+        let get_word = move |context, addr| chiplets1.memory.get_word(context, addr);
+        let get_value = move |context, addr| chiplets.memory.get_value(context, addr);
+
+        let memory = MemoryChiplet {
+            get_value: Box::new(get_value),
+            get_word: Box::new(get_word),
+            get_state_at: Box::new(get_state_at),
+        };
+
         ExecutionTrace {
             root_context: self.root_context,
             last_cycle: RowIndex::from(last_cycle),
-            chiplets: Chiplets::new(move |context, clk| chiplets.get_mem_state_at(context, clk)),
-            outputs,
+            memory,
+            outputs: self.stack_outputs,
             trace_len_summary,
         }
     }
@@ -112,17 +129,30 @@ impl Iterator for DebugExecutor {
 }
 
 // Dirty, gross, horrible hack until miden_processor::chiplets::Chiplets is exported
-#[allow(clippy::type_complexity)]
-pub struct Chiplets(Box<dyn Fn(ContextId, RowIndex) -> Vec<(u64, Word)>>);
-impl Chiplets {
-    pub fn new<F>(callback: F) -> Self
-    where
-        F: Fn(ContextId, RowIndex) -> Vec<(u64, Word)> + 'static,
-    {
-        Self(Box::new(callback))
+pub struct MemoryChiplet {
+    get_value: Box<dyn Fn(ContextId, u32) -> Option<miden_core::Felt>>,
+    get_word: Box<dyn Fn(ContextId, u32) -> Result<Option<miden_core::Word>, MemoryError>>,
+    #[allow(clippy::type_complexity)]
+    get_state_at: Box<dyn Fn(ContextId, RowIndex) -> Vec<(MemoryAddress, miden_core::Felt)>>,
+}
+
+impl MemoryChiplet {
+    #[inline]
+    pub fn get_value(&self, context: ContextId, addr: u32) -> Option<miden_core::Felt> {
+        (self.get_value)(context, addr)
     }
 
-    pub fn get_mem_state_at(&self, context: ContextId, clk: RowIndex) -> Vec<(u64, Word)> {
-        (self.0)(context, clk)
+    #[inline]
+    pub fn get_word(&self, context: ContextId, addr: u32) -> Result<Option<Word>, MemoryError> {
+        (self.get_word)(context, addr)
+    }
+
+    #[inline]
+    pub fn get_mem_state_at(
+        &self,
+        context: ContextId,
+        clk: RowIndex,
+    ) -> Vec<(MemoryAddress, miden_core::Felt)> {
+        (self.get_state_at)(context, clk)
     }
 }

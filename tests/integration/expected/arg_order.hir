@@ -1,0 +1,117 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @arg_order {
+        public builtin.function @entrypoint(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt) -> felt {
+        ^block4(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt):
+            v10 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v11 = hir.bitcast v10 : ptr<byte, i32>;
+            v12 = hir.load v11 : i32;
+            v15 = arith.constant -32 : i32;
+            v13 = arith.constant 96 : i32;
+            v14 = arith.sub v12, v13 : i32 #[overflow = wrapping];
+            v16 = arith.band v14, v15 : i32;
+            v17 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v18 = hir.bitcast v17 : ptr<byte, i32>;
+            hir.store v18, v16;
+            v20 = arith.constant 44 : u32;
+            v19 = hir.bitcast v16 : u32;
+            v21 = arith.add v19, v20 : u32 #[overflow = checked];
+            v22 = arith.constant 4 : u32;
+            v23 = arith.mod v21, v22 : u32;
+            hir.assertz v23 #[code = 250];
+            v24 = hir.int_to_ptr v21 : ptr<byte, felt>;
+            hir.store v24, v7;
+            v26 = arith.constant 40 : u32;
+            v25 = hir.bitcast v16 : u32;
+            v27 = arith.add v25, v26 : u32 #[overflow = checked];
+            v103 = arith.constant 4 : u32;
+            v29 = arith.mod v27, v103 : u32;
+            hir.assertz v29 #[code = 250];
+            v30 = hir.int_to_ptr v27 : ptr<byte, felt>;
+            hir.store v30, v6;
+            v32 = arith.constant 36 : u32;
+            v31 = hir.bitcast v16 : u32;
+            v33 = arith.add v31, v32 : u32 #[overflow = checked];
+            v102 = arith.constant 4 : u32;
+            v35 = arith.mod v33, v102 : u32;
+            hir.assertz v35 #[code = 250];
+            v36 = hir.int_to_ptr v33 : ptr<byte, felt>;
+            hir.store v36, v5;
+            v38 = arith.constant 32 : u32;
+            v37 = hir.bitcast v16 : u32;
+            v39 = arith.add v37, v38 : u32 #[overflow = checked];
+            v101 = arith.constant 4 : u32;
+            v41 = arith.mod v39, v101 : u32;
+            hir.assertz v41 #[code = 250];
+            v42 = hir.int_to_ptr v39 : ptr<byte, felt>;
+            hir.store v42, v4;
+            v44 = arith.constant 12 : u32;
+            v43 = hir.bitcast v16 : u32;
+            v45 = arith.add v43, v44 : u32 #[overflow = checked];
+            v100 = arith.constant 4 : u32;
+            v47 = arith.mod v45, v100 : u32;
+            hir.assertz v47 #[code = 250];
+            v48 = hir.int_to_ptr v45 : ptr<byte, felt>;
+            hir.store v48, v3;
+            v50 = arith.constant 8 : u32;
+            v49 = hir.bitcast v16 : u32;
+            v51 = arith.add v49, v50 : u32 #[overflow = checked];
+            v99 = arith.constant 4 : u32;
+            v53 = arith.mod v51, v99 : u32;
+            hir.assertz v53 #[code = 250];
+            v54 = hir.int_to_ptr v51 : ptr<byte, felt>;
+            hir.store v54, v2;
+            v98 = arith.constant 4 : u32;
+            v55 = hir.bitcast v16 : u32;
+            v57 = arith.add v55, v98 : u32 #[overflow = checked];
+            v97 = arith.constant 4 : u32;
+            v59 = arith.mod v57, v97 : u32;
+            hir.assertz v59 #[code = 250];
+            v60 = hir.int_to_ptr v57 : ptr<byte, felt>;
+            hir.store v60, v1;
+            v61 = hir.bitcast v16 : u32;
+            v96 = arith.constant 4 : u32;
+            v63 = arith.mod v61, v96 : u32;
+            hir.assertz v63 #[code = 250];
+            v64 = hir.int_to_ptr v61 : ptr<byte, felt>;
+            hir.store v64, v0;
+            v93 = arith.constant 1048480 : felt;
+            v65 = hir.bitcast v16 : felt;
+            hir.assert_eq v65, v93;
+            v92 = arith.constant 1048544 : felt;
+            v68 = arith.constant 64 : i32;
+            v69 = arith.add v16, v68 : i32 #[overflow = wrapping];
+            v70 = hir.bitcast v69 : felt;
+            hir.assert_eq v70, v92;
+            v95 = arith.constant 64 : i32;
+            v74 = arith.add v16, v95 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/arg_order/intrinsic(v16, v74)
+            v76 = arith.constant 64 : u32;
+            v75 = hir.bitcast v16 : u32;
+            v77 = arith.add v75, v76 : u32 #[overflow = checked];
+            v94 = arith.constant 4 : u32;
+            v79 = arith.mod v77, v94 : u32;
+            hir.assertz v79 #[code = 250];
+            v80 = hir.int_to_ptr v77 : ptr<byte, felt>;
+            v81 = hir.load v80 : felt;
+            v82 = builtin.global_symbol @root_ns:root@1.0.0/arg_order/__stack_pointer : ptr<byte, u8>
+            v83 = hir.bitcast v82 : ptr<byte, i32>;
+            hir.store v83, v12;
+            builtin.ret v81;
+        };
+
+        public builtin.function @intrinsic(v84: i32, v85: i32) {
+        ^block6(v84: i32, v85: i32):
+            v105 = arith.constant 1048480 : felt;
+            v86 = hir.bitcast v84 : felt;
+            hir.assert_eq v86, v105;
+            v104 = arith.constant 1048544 : felt;
+            v89 = hir.bitcast v85 : felt;
+            hir.assert_eq v89, v104;
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

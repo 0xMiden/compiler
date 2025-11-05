@@ -1,0 +1,68 @@
+# mod root_ns:root@1.0.0
+
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+end
+
+# mod root_ns:root@1.0.0::fibonacci
+
+export.entrypoint
+    push.0
+    push.1
+    movup.2
+    swap.1
+    push.1
+    while.true
+        push.0
+        push.0
+        dup.3
+        eq
+        neq
+        dup.0
+        if.true
+            movup.2
+            drop
+            push.3735929054
+            dup.0
+        else
+            push.4294967295
+            movup.3
+            u32wrapping_add
+            dup.3
+            dup.3
+            u32wrapping_add
+        end
+        push.3735929054
+        dup.3
+        movup.2
+        swap.5
+        movdn.2
+        cdrop
+        push.1
+        push.0
+        movup.4
+        cdrop
+        push.1
+        u32and
+        swap.1
+        swap.3
+        swap.1
+        if.true
+            movup.3
+            drop
+            push.1
+        else
+            push.0
+        end
+    end
+    drop
+    drop
+    drop
+end
+

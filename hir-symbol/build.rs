@@ -1,3 +1,4 @@
+extern crate hashbrown;
 extern crate inflector;
 extern crate rustc_hash;
 extern crate toml;
@@ -12,8 +13,9 @@ use std::{
 };
 
 use inflector::Inflector;
-use rustc_hash::FxHashSet;
 use toml::{value::Table, Value};
+
+type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 
 #[derive(Debug, Default, Clone)]
 struct Symbol {
@@ -91,7 +93,7 @@ impl Section {
         for (name, value) in table.iter() {
             let mut sym = Symbol::from_value(name, value);
             sym.is_keyword = section.name == "keywords";
-            assert!(section.keys.insert(sym), "duplicate symbol {}", name);
+            assert!(section.keys.insert(sym), "duplicate symbol {name}");
         }
         section
     }

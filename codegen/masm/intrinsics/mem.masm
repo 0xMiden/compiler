@@ -1,94 +1,110 @@
 # The location where we store information about the dynamic heap
-const.HEAP_INFO_ADDR=0x80000000 # (address in words)
+const.HEAP_INFO_ADDR=0x80000000 # 2^31 (address in elements)
+
+# The location of the heap_top value
+const.HEAP_INFO_TOP=HEAP_INFO_ADDR
+
+# The location of the heap_size value
+const.HEAP_INFO_SIZE=HEAP_INFO_ADDR + 1
+
+# The location of the heap_base value
+const.HEAP_INFO_BASE=HEAP_INFO_ADDR + 2
+
+# The location of the MAGIC value
+const.HEAP_INFO_MAGIC=HEAP_INFO_ADDR + 3
+
 # The address beyond which the dynamic heap cannot be allowed to grow
-const.HEAP_END=0x10000000 # 2^30 / 4 (i.e. byte address, not word)
+const.HEAP_END=0x10000000 # 2^30 * 4 (i.e. byte address, not element address)
+
 # The assertion error code used when intrinsics are used without calling heap_init
-const.HEAP_ERR=0x68656170 # b"heap"
-const.NEG1=4294967295 # u32::MAX
+const.HEAP_ERR="rust heap has not been initialized"
+
+# u32::MAX | -1i32
+const.NEG1=4294967295
+
 # The magic bytes used to verify that the heap was properly initialized
 const.MAGIC=0xDEADBEEF
+
+# The size in bytes of each page of memory
 const.PAGE_SIZE=65536
 
 # Checks the HEAP_INFO magic to ensure heap initialization has taken place
 #
 # This consumes the input element.
-proc.verify_heap_magic # [input]
-    u32assert.err=HEAP_ERR
+proc.verify_heap_magic
+    mem_load.HEAP_INFO_MAGIC
     push.MAGIC
     assert_eq.err=HEAP_ERR
 end
 
 # Intrinsic used to initialize the heap globals manipulated by memory intrinsics
 #
-# This must be called before any other heap intrinsics are called. This is checked
-# by each intrinsic
+# This must be called before any other heap intrinsics are called. This is checked by each intrinsic
 export.heap_init # [heap_base]
-    dup.0 push.0 swap.1 push.MAGIC # [MAGIC, heap_base, heap_size, heap_top]
+    dup.0 # [heap_base, heap_base]
+    push.0 # [0, heap_base, heap_base]
+    swap.1 # [heap_base, 0, heap_base]
+    push.MAGIC # [MAGIC, heap_base, heap_size(0), heap_top(heap_base)]
     mem_storew.HEAP_INFO_ADDR
     dropw
 end
 
 # Get the (byte) address where the base of the heap starts
 export.heap_base
-    padw mem_loadw.HEAP_INFO_ADDR
-    exec.verify_heap_magic movdn.2 drop drop
+    exec.verify_heap_magic
+    mem_load.HEAP_INFO_BASE
 end
 
 # Get the (byte) address of the top of the heap
 export.heap_top_unchecked
-    mem_load.HEAP_INFO_ADDR
+    mem_load.HEAP_INFO_TOP
 end
 
 # Get the (byte) address of the top of the heap
 export.heap_top
-    padw mem_loadw.HEAP_INFO_ADDR
-    exec.verify_heap_magic drop drop
+    exec.verify_heap_magic
+    mem_load.HEAP_INFO_TOP
 end
 
 # Intrinsic corresponding to the `memory_size` instruction
 export.memory_size
-    padw mem_loadw.HEAP_INFO_ADDR
-    exec.verify_heap_magic drop swap.1 drop
+    exec.verify_heap_magic
+    mem_load.HEAP_INFO_SIZE
 end
 
 # Intrinsic corresponding to the `memory_grow` instruction
 export.memory_grow # [num_pages]
-    padw mem_loadw.HEAP_INFO_ADDR # [MAGIC, heap_base, heap_size, heap_top, num_pages]
-    dup.0 exec.verify_heap_magic  # [MAGIC, heap_base, heap_size, heap_top, num_pages]
-    swap.3 drop   # [heap_base, heap_size, MAGIC, num_pages]
-    dup.1 movdn.4 # [heap_base, heap_size, MAGIC, num_pages, heap_size]
-    swap.1        # [heap_size, heap_base, MAGIC, num_pages, heap_size]
-    movup.3       # [num_pages, heap_size, heap_base, MAGIC, heap_size]
-    u32overflowing_add # [overflowed, heap_size + num_pages, heap_base, MAGIC, heap_size]
-    if.true # [new_heap_size, heap_base, MAGIC, heap_size]
+    exec.verify_heap_magic
+    mem_load.HEAP_INFO_SIZE # [heap_size, num_pages]
+    dup.0                   # [heap_size, heap_size, num_pages]
+    swap.2                  # [num_pages, heap_size, heap_size]
+    u32overflowing_add      # [overflowed, heap_size + num_pages, heap_size]
+    if.true # [new_heap_size, heap_size]
         # Cannot grow the memory, return -1
-        dropw # []
+        drop drop
         push.NEG1
     else
         # Success, recompute the heap_top, and make sure it doesn't exceed HEAP_END
-        dup.0          # [new_heap_size, new_heap_size, heap_base, MAGIC, heap_size]
-        push.PAGE_SIZE # [PAGE_SIZE, new_heap_size, new_heap_size, heap_base, MAGIC, heap_size]
-        dup.3          # [heap_base, PAGE_SIZE, new_heap_size, new_heap_size, heap_base, MAGIC, heap_size]
-        movdn.2        # [PAGE_SIZE, new_heap_size, heap_base, ..]
-        u32overflowing_madd # [overflow, PAGE_SIZE * new_heap_size + heap_base, ..]
-        if.true        # [new_heap_top, new_heap_size, heap_base, MAGIC, heap_size]
-          # Overflow, drop the changes and return -1
-          dropw drop
-          push.NEG1
-        else
-          # Ensure the new heap_top is <= HEAP_END
-          dup.0 u32lte.HEAP_END
-          if.true
-            # Write updated heap information, and return the old heap size (in pages)
-            swap.2  # [heap_base, new_heap_size, new_heap_top, MAGIC, heap_size]
-            movup.3 # [MAGIC, heap_base, new_heap_size, new_heap_top, heap_size]
-            mem_storew.HEAP_INFO_ADDR
-            dropw
-          else
+        mem_load.HEAP_INFO_BASE   # [heap_base, new_heap_size, heap_size]
+        dup.1                     # [new_heap_size, heap_base, new_heap_size, heap_size]
+        push.PAGE_SIZE            # [PAGE_SIZE, new_heap_size, heap_base, new_heap_size, heap_size]
+        u32overflowing_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
+        if.true  # [new_heap_top, new_heap_size, heap_size]
             # Overflow, drop the changes and return -1
-            dropw drop
+            drop drop drop
             push.NEG1
-          end
+        else     # [new_heap_top, new_heap_size, heap_size]
+            # Ensure the new heap_top is <= HEAP_END
+            dup.0 u32lte.HEAP_END
+            if.true
+                # Write updated heap information, and return the old heap size (in pages)
+                mem_store.HEAP_INFO_TOP   # [new_heap_size, heap_size]
+                mem_store.HEAP_INFO_SIZE  # [heap_size]
+            else
+                # Overflow, drop the changes and return -1
+                drop drop drop
+                push.NEG1
+            end
         end
     end
 end
@@ -119,170 +135,100 @@ export.extract_element # [element_index, w3, w2, w1, w0]
     movup.2 cdrop
 end
 
-# See `load_felt` for safe usage
-proc.load_felt_unchecked # [waddr, index]
-    # prepare the stack to receive the loaded word
-    # [waddr, 0, 0, 0, 0, index]
-    padw movup.4
-    # load the word which contains the desired element
-    mem_loadw  # [w3, w2, w1, w0, index]
-
-    # select the desired element
-    movup.4
-    exec.extract_element
-end
-
 # Load a field element from the given native pointer triplet.
 #
-# A native pointer triplet consists of a word address which contains the
-# start of the data; an element index, which indicates which element of
-# the word the data starts in; and a byte offset, which indicates which
-# byte is the start of the data.
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # A field element must be naturally aligned, i.e. it's byte offset must be zero.
-export.load_felt # [waddr, index, offset]
+export.load_felt # [addr, offset]
     # assert the pointer is felt-aligned, then load
-    movup.2 assertz exec.load_felt_unchecked
+    swap.1 assertz mem_load
 end
 
-# Load a single 32-bit machine word from the given native pointer triplet.
+# Load a single 32-bit machine word from the given native pointer tuple.
 #
-# A native pointer triplet consists of a word address which contains the
-# start of the data; an element index, which indicates which element of
-# the word the data starts in; and a byte offset, which indicates which
-# byte is the start of the data.
-export.load_sw # [waddr, index, offset]
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+export.load_sw # [addr, offset]
     # check for alignment and offset validity
-    dup.2 eq.0
-    dup.3 push.8 u32lt assert # offset must be < 8
+    dup.1 eq.0                # [offset == 0, addr, offset]
+    # offset must be < 4
+    dup.2 push.4 u32lt assert # [offset == 0, addr, offset]
     # if the pointer is naturally aligned..
-    if.true
+    if.true  # [addr, offset]
         # drop the byte offset
-        movup.2 drop
+        swap.1 drop
         # load the element containing the data we want
-        exec.load_felt_unchecked
-    else
-        # check if the load starts in the first element
-        dup.1 eq.0
-        if.true
-            # the load is across both the first and second elements
-            # drop the element index
-            swap.1 drop
-            # load
-            padw movup.4 mem_loadw # [w3, w2, w1, w0, offset]
-            # drop the unused elements
-            drop drop
-            # shift low bits
-            push.32 dup.3 # [offset, 32, w1, w0, offset]
-            u32overflowing_sub assertz # [32 - offset, w1, w0, offset]
-            u32shr        # [lo, w0, offset]
-            # shift high bits left by the offset
-            swap.2        # [offset, w0, lo]
-            u32shl        # [hi, lo]
-            # combine the two halves
-            u32or         # [result]
-        else
-            # check if the load starts in the second element
-            dup.1 eq.1
-            if.true
-                # the load is across both the second and third elements
-                # drop the element idnex
-                swap.1 drop
-                # load
-                padw movup.4 mem_loadw # [w3, w2, w1, w0, offset]
-                # drop the unused elements
-                drop movup.2 drop      # [w2, w1, offset]
-                # shift the low bits
-                push.32 dup.3          # [offset, 32, w2, w1, offset]
-                u32overflowing_sub assertz # [32 - offset, w2, w1, offset]
-                u32shr                 # [lo, w1, offset]
-                # shift high bits left by the offset
-                swap.2                 # [offset, w1, lo]
-                u32shl                 # [hi, lo]
-                # combine the two halves
-                u32or                  # [result]
-            else
-                # check if the load starts in the third element
-                swap.1 eq.2
-                if.true
-                    # the load is across both the third and fourth elements
-                    padw movup.4 mem_loadw    # [w3, w2, w1, w0, offset]
-                    # drop the unused elements
-                    movup.3 movup.3 drop drop # [w3, w2, offset]
-                    # shift the low bits
-                    push.32 dup.3             # [offset, 32, w3, w2, offset]
-                    u32overflowing_sub assertz # [32 - offset, w3, w2, offset]
-                    u32shr                    # [lo, w2, offset]
-                    # shift the high bits left by the offset
-                    swap.2                    # [offset, w2, lo]
-                    u32shl                    # [hi, lo]
-                    # combine the two halves
-                    u32or  # [result]
-                else
-                    # the load crosses a word boundary
-                    # start with the word containing the low bits
-                    dup.0                        # [waddr, waddr, offset]
-                    u32overflowing_add.1 assertz # [waddr + 1, waddr, offset]
-                    # load the low bits
-                    mem_load                   # [w0, waddr, offset]
-                    # shift the low bits
-                    push.32 dup.3              # [offset, 32, w0, waddr, offset]
-                    u32overflowing_sub assertz # [32 - offset, w0, waddr, offset]
-                    u32shr                     # [lo, waddr, offset]
-                    # load the word with the high bits, drop unused elements
-                    swap.1 padw movup.4 mem_loadw movdn.3 drop drop drop # [w3, lo, offset]
-                    # shift high bits
-                    movup.2 u32shl             # [hi, lo]
-                    # combine the two halves
-                    u32or                      # [result]
-                end
-            end
-        end
+        mem_load
+    else     # [addr, offset]
+        # the load crosses an element boundary
+        #
+        # 1. load the first element
+        dup.0 mem_load   # [e0, addr, offset]
+        # 2. load the second element
+        swap.1           # [addr, e0, offset]
+        push.1 u32overflowing_add  # [overflowed, addr + 1, e0, offset]
+        assertz mem_load # [e1, e0, offset]
+        # shift low bits
+        push.32 dup.3 # [offset, 32, e1, e0, offset]
+        u32overflowing_sub assertz # [32 - offset, e1, e0, offset]
+        u32shr        # [lo, e0, offset]
+        # shift high bits left by the offset
+        swap.2        # [offset, e0, lo]
+        u32shl        # [hi, lo]
+        # combine the two halves
+        u32or         # [result]
     end
 end
 
-# This handles emitting code that handles aligning an unaligned double
-# machine-word value which is split across three machine words (field elements).
+# This handles emitting code that handles aligning an unaligned 64-bit value which is split across
+# three elements.
 #
-# To recap:
+# To recap our terminology and memory mapping spec:
 #
-# * A machine word is a 32-bit chunk stored in a single field element
-# * A double word is a pair of 32-bit chunks
-# * A quad word is a quartet of 32-bit chunks (i.e. a Miden "word")
-# * An unaligned double-word requires three 32-bit chunks to represent,
-# since the first chunk does not contain a full 32-bits, so an extra is
-# needed to hold those bits.
+# * A Miden "word" is a quartet of field elements, capable of representing 16 bytes
+# * A machine word is a 32-bit chunk stored in a single field element. The term "machine" here
+#   refers to the fact that the abstract machine presented by the compiler IR is a 32-bit machine,
+#   where the "native" integral type is a 32-bit integer. In typical compiler parlance, a "machine
+#   word" refers to the default integer type of a machine's general purpose registers.
+# * A double word is a pair of 32-bit chunks, i.e. a single 64-bit value.
+# * A quad word is a quartet of 32-bit chunks (and naturally corresponds to a Miden "word")
+# * An unaligned double-word requires three 32-bit chunks to represent, since the first chunk does
+#   not contain a full 32-bits, so an extra is needed to hold those bits.
 #
-# As an example, assume the pointer we are dereferencing is a u64 value,
-# which has 8-byte alignment, and the value is stored 40 bytes from the
-# nearest quad-word-aligned boundary. To load the value, we must fetch
-# the full quad-word from the aligned address, drop the first word, as
-# it is unused, and then recombine the 64 bits we need spread across
-# the remaining three words to obtain the double-word value we actually want.
+# As an example, assume the pointer we are dereferencing is a u64 value, which has 8-byte
+# alignment, and the value is stored 40 bytes from the nearest element address divisible by 4
+# (i.e. Miden word-aligned). To load the value, we must fetch the full Miden word from that
+# address, drop the first element, as it is unused, and then recombine the 64 bits we need spread
+# across the remaining three elements to obtain the double-word value we actually want.
 #
 # The data, on the stack, is shown below:
 #
-# If we visualize which bytes are contained in each 32-bit chunk on the stack,
-# when loaded by `mem_loadw`, we get:
+# If we visualize which bytes are contained in each 32-bit chunk on the stack, when loaded by
+# `mem_loadw`, we get:
 #
 #     [<unused>, 9..=12, 5..=8, 0..=4]
 #
-# These byte indices are relative to the nearest word-aligned address, in the
-# same order as they would occur in a byte-addressable address space. The
-# significance of each byte depends on the value being dereferenced, but Miden
-# is a little-endian machine, so typically the most significant bytes come first
-# (i.e. also commonly referred to as "high" vs "low" bits).
+# These byte indices are relative to the nearest Miden word-aligned address, in the same order as
+# they would occur in a byte-addressable address space. The significance of each byte depends on
+# the value being dereferenced, but Miden is a little-endian machine, so typically the most
+# significant bytes come first (i.e. also commonly referred to as "high" vs "low" bits).
 #
-# If we visualize the layout of the bits of our u64 value spread across the
-# three chunks, we get:
+# If we visualize the layout of the bits of our u64 value spread across the three chunks, we get:
 #
-#     [<unused>, 00000000111111111111111111111111, 111111111111111111111111111111, 11111111111111111111111100000000]
+#     [
+#         <unused>,
+#         00000000111111111111111111111111,
+#         111111111111111111111111111111,
+#         11111111111111111111111100000000
+#     ]
 #
-# As illustrated above, what should be a double-word value is occupying three words.
-# To "realign" the value, i.e. ensure that it is naturally aligned and fits in two
-# words, we have to perform a sequence of shifts and masks to get the bits where
-# they belong. This function performs those steps, with the assumption that the caller
-# has three values on the operand stack representing any unaligned double-word value
+# As illustrated above, what should be a double-word value is occupying three elements. To
+# "realign" the value, i.e. ensure that it is naturally aligned and fits in two elements, we have
+# to perform a sequence of shifts and masks to get the bits where they belong. This function
+# performs those steps, with the assumption that the caller has three values on the operand stack
+# representing any unaligned double-word value
 export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
     # We will refer to the parts of our desired double-word value
     # as two parts, `x_hi` and `x_lo`.
@@ -342,131 +288,59 @@ export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
     swap.1 # [x_hi, x_lo]
 end
 
-# Shift a double-word (64-bit, in two 32-bit chunks) value by the given offset
+# Shift a double-word (64-bit, in two 32-bit chunks) value by the given offset.
+#
 # Returns three 32-bit chunks [chunk_lo, chunk_mid, chunk_hi]
 export.offset_dw # [value_hi, value_lo, offset]
     dup.0
-    dup.3 u32shr # [chunk_hi, value_hi, value_lo, offset]
+    dup.3 u32shl # [chunk_hi, value_hi, value_lo, offset]
+
     movdn.3      # [value_hi, value_lo, offset, chunk_hi]
     push.32 dup.3 u32wrapping_sub # [32 - offset, value_hi, value_lo, offset, chunk_hi]
-    u32shl       # [ chunk_mid_hi, value_lo, offset, chunk_hi]
+    u32shr       # [ chunk_mid_hi, value_lo, offset, chunk_hi]
     dup.1        # [ value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
     dup.3        # [ offset, value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
-    u32shr       # [ chunk_mid_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
+    u32shl       # [ chunk_mid_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
     u32or        # [ chunk_mid, value_lo, offset, chunk_hi]
+
     movdn.2      # [ value_lo, offset, chunk_mid, chunk_hi]
     push.32 movup.2 u32wrapping_sub # [32 - offset, value_lo, offset, chunk_mid, chunk_hi]
-    u32shl       # [ chunk_lo, chunk_mid, chunk_hi]
+    u32shr       # [ chunk_lo, chunk_mid, chunk_hi]
 end
 
-# Load a pair of machine words (32-bit elements) to the operand stack
-export.load_dw # [waddr, index, offset]
+# Load a machine double-word (64-bit value, in two 32-bit chunks) to the operand stack
+export.load_dw # [addr, offset]
     # check for alignment and offset validity
-    dup.2 eq.0
-    dup.3 push.8 u32lt assert # offset must be < 8
-    # convert offset from bytes to bits
-    movup.3 push.8 u32wrapping_mul movdn.3 # [waddr, index, offset, value_hi, value_lo]
+    dup.1 eq.0                # [offset == 0, addr, offset]
+    # offset must be < 4
+    dup.2 push.4 u32lt assert # [offset == 0, addr, offset]
     # if the pointer is naturally aligned..
     if.true
-        # drop byte offset
-        movup.2 drop # [waddr, index]
-        # check which element to start at
-        dup.1 eq.0
-        if.true
-            # drop index
-            swap.1 drop # [waddr]
-            # load first two elements
-            padw movup.4 mem_loadw # [w3, w2, w1, w0]
-            # drop last two elements, and we're done
-            drop drop swap.1       # [w0, w1]
-        else
-          dup.1 eq.1
-          if.true
-              # drop index
-              swap.1 drop # [waddr]
-              # load second and third elements
-              padw movup.4 mem_loadw   # [w3, w2, w1, w0]
-              # drop unused elements, and we're done
-              movup.3 drop drop swap.1 # [w1, w2]
-          else
-              swap.1 eq.2
-              if.true
-                # load third and fourth elements, drop unused, and we're done
-                padw movup.4 mem_loadw           # [w3, w2, w1, w0]
-                movup.3 movup.3 drop drop swap.1 # [w2, w3]
-              else
-                # load first element of next word
-                dup.0 u32overflowing_add.1 assertz # [waddr + 1, waddr]
-                mem_load                           # [w0, waddr]
-                # load fourth element, and we're done
-                swap.1 padw movup.4 mem_loadw      # [w3, w2, w1, w0, lo]
-                movdn.3 drop drop drop             # [hi, lo]
-              end
-          end
-        end
-    else # unaligned; an unaligned double-word spans three elements
-        # check if we start in the first element
-        dup.1 eq.0
-        if.true
-            # memory layout: [<unused>, lo, mid, hi]
-            # drop the index
-            swap.1 drop  # [waddr, offset]
-            # load three elements containing the double-word on the stack
-            padw movup.4 mem_loadw # [w3, w2, w1, w0, offset]
-            drop                   # [w2, w1, w0, offset]
-            # move into stack order (hi bytes first)
-            swap.2                 # [w0, w1, w2, offset]
-            # re-align it, and we're done; realign_dw gets [w0, w1, w2, offset]
-            exec.realign_dw
-        else
-            # check if we start in the second element
-            dup.1 eq.1
-            if.true
-                # memory layout: [lo, mid, hi, <unused>]
-                # drop the index
-                swap.1 drop
-                # load three elements containing the double-word on the stack
-                padw movup.4 mem_loadw # [w3, w2, w1, w0, offset]
-                movup.3 drop           # [w3, w2, w1, offset]
-                # move into stack order
-                swap.2                 # [w1, w2, w3, offset]
-                # re-align it, and we're done; realign_dw gets [w1, w2, w3, offset]
-                exec.realign_dw
-            else
-                # check if we start in the third element
-                swap.1 eq.2 # [waddr, offset]
-                if.true
-                    # memory layout: [mid, hi, ..] [<unused>, <unused>, <unused>, lo]
-                    # load one element from the next word
-                    dup.0 u32overflowing_add.1 assertz # [waddr + 1, waddr, offset]
-                    mem_load            # [chunk_lo, waddr, offset]
-                    # load two elements from the first word
-                    padw movup.5        # [waddr, 0, 0, 0, 0, chunk_lo, offset]
-                    mem_loadw           # [chunk_mid, chunk_hi, ?, ?, chunk_lo, offset]
-                    swap.3 drop         # [chunk_hi, ?, chunk_mid, chunk_lo, offset]
-                    swap.1 drop         # [chunk_hi, chunk_mid, chunk_lo, offset]
-                    # re-align it, and we're done
-                    exec.realign_dw
-                else
-                    # memory layout: [hi, ..], [<unused>, <unused>, lo, mid]
-                    # load the two least-significant elements from the next word first
-                    dup.0 u32overflowing_add.1 assertz # [waddr + 1, waddr, offset]
-                    padw movup.4         # [waddr + 1, 0, 0, 0, 0, waddr, offset]
-                    mem_loadw drop drop  # [lo, mid, waddr, offset]
-                    swap.1 # [mid, lo, waddr, offset]
-                    # load the most significant element from the first word
-                    padw movup.6 # [waddr, 0, 0, 0, 0, mid, lo, offset]
-                    mem_loadw movdn.3 drop drop drop # [hi, mid, lo, offset]
-                    # re-align it, and we're done
-                    exec.realign_dw
-                end
-            end
-        end
+        # drop offset
+        swap.1 drop            # [addr]
+        # load second element
+        dup.0 push.1 u32overflowing_add assertz # [addr + 1, addr]
+        mem_load               # [e1, addr]
+        # load first element
+        swap.1 mem_load        # [e0, e1]
+    else
+        # unaligned; an unaligned double-word spans three elements
+        #
+        # convert offset from bytes to bits
+        swap.1 push.8 u32wrapping_mul swap.1              # [addr, bit_offset]
+
+        # load the three elements containing the double-word on the stack
+        dup.0 push.2 u32overflowing_add assertz mem_load  # [e2, addr, bit_offset]
+        dup.1 push.1 add mem_load                         # [e1, e2, addr, bit_offset]
+        movup.2 mem_load                                  # [e0, e1, e2, bit_offset]
+
+        # re-align it, and we're done
+        exec.realign_dw
     end
 end
 
-# Given an element index, a new element, and a word, in that order, replace the element
-# at the specified index, leaving the modified word on top of the stack
+# Given an element index, a new element, and a word, in that order, replace the element at the
+# specified index, leaving the modified word on top of the stack
 #
 # The element index must be in the range 0..=3.
 export.replace_element # [element_index, value, w3, w2, w1, w0]
@@ -488,325 +362,214 @@ export.replace_element # [element_index, value, w3, w2, w1, w0]
     movdn.3               # [w3', w2', w1', w0']
 end
 
-# See `store_felt` for safe usage
-proc.store_felt_unchecked # [waddr, index, value]
-    # prepare the stack to receive the loaded word
-    # [waddr, 0, 0, 0, 0, waddr, index, value]
-    padw dup.4
-    # load the original word
-    mem_loadw  # [w3, w2, w1, w0, waddr, index, value]
-
-    # rewrite the desired element
-    movup.6 # [value, w3, w2, w1, w0, waddr, index]
-    movup.6 # [index, value, w3, w2, w1, w0, waddr]
-    exec.replace_element # [w3', w2', w1', w0', waddr]
-
-    # store the updated word
-    movup.4 mem_storew
-    dropw
-end
-
-# Store a field element to the given native pointer triplet.
+# Store a field element to the given native pointer tuple.
 #
-# A native pointer triplet consists of a word address which contains the
-# start of the data; an element index, which indicates which element of
-# the word the data starts in; and a byte offset, which indicates which
-# byte is the start of the data.
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # A field element must be naturally aligned, i.e. it's byte offset must be zero.
-export.store_felt # [waddr, index, offset, value]
+export.store_felt # [addr, offset, value]
     # assert the pointer is felt-aligned, then load
-    movup.2 assertz exec.store_felt_unchecked
+    swap.1 assertz mem_store
 end
 
-# Store a single 32-bit machine word from the given native pointer triplet.
+# Store a single 32-bit machine word from the given native pointer tuple.
 #
-# A native pointer triplet consists of a word address which contains the
-# start of the data; an element index, which indicates which element of
-# the word the data starts in; and a byte offset, which indicates which
-# byte is the start of the data.
-export.store_sw # [waddr, index, offset, value]
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+export.store_sw # [addr, offset, value]
     # check for alignment and offset validity
-    dup.2 eq.0
-    dup.3 push.8 u32lt assert # offset must be < 8
+    dup.1 eq.0                # [offset == 0, addr, offset, value]
+    # offset must be < 4
+    dup.2 push.4 u32lt assert
     # if the pointer is naturally aligned..
-    if.true
+    if.true           # [addr, offset, value]
         # drop the byte offset
-        movup.2 drop
-        # load the element containing the data we want
-        exec.store_felt_unchecked
+        swap.1 drop   # [addr, value]
+        # store the element
+        mem_store     # []
     else
-        # check if the store starts in the first element
-        dup.1 eq.0
-        if.true
-            # the store is across both the first and second elements
-            # drop the element index
-            swap.1 drop
-            # load current value
-            padw dup.4 mem_loadw # [w3, w2, w1, w0, waddr, offset, value]
+        # convert offset to bits
+        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value]
 
-            # compute the bit shift
-            push.32 dup.6 sub    # [rshift, w3..w0, waddr, offset, value]
+        # the store is across an element boundary
+        #
+        # load the current value of the two elements involved
+        dup.0 push.1 u32overflowing_add assertz mem_load # [e1, addr, bit_offset, value]
+        dup.1 mem_load    # [e0, e1, addr, bit_offset, value]
 
-            # compute the masks
-            push.4294967295 dup.1 u32shl  # [mask_hi, rshift, w3..w0, waddr, offset, value]
-            dup.0 u32not                  # [mask_lo, mask_hi, rshift, w3, w2, w1, w0, waddr, offset, value]
+        # compute the bit shift
+        push.32 dup.4 sub # [32 - bit_offset, e0, e1, addr, bit_offset, value]
 
-            # manipulate the bits of the two target elements, such that the 32-bit word
-            # we're storing is placed at the correct offset from the start of the memory
-            # cell when viewing the cell as a set of 4 32-bit chunks
-            movup.5 u32and         # [w1_masked, mask_hi, rshift, w3, w2, w0, waddr, offset, value]
-            movup.5 movup.2 u32and # [w0_masked, w1_masked, rshift, w3, w2, waddr, offset, value]
+        # compute the masks
+        push.4294967295 dup.1 u32shr  # [mask_lo, rshift, e0, e1, addr, bit_offset, value]
+        dup.0 u32not                  # [mask_hi, mask_lo, rshift, e0, e1, addr, bit_offset, value]
 
-            # now, we need to shift/mask/split the 32-bit value into two elements, then
-            # combine them with the preserved bits of the original contents of the cell
-            #
-            # first, the contents of w0
-            dup.7 movup.7 u32shr u32or   # [w0', w1_masked, rshift, w3..w2, waddr, value]
-            # then the contents of w1
-            swap.1
-            movup.6 movup.3 u32shl u32or # [w1', w0', w3, w2, waddr]
+        # manipulate the bits of the two target elements, such that the 32-bit word we're storing
+        # is placed at the correct offset from the start of the memory cell when viewing the cell
+        # as a set of 4 32-bit chunks
+        #
+        # First, mask out the bits we're going to overwrite in the two elements we loaded
+        movup.4 u32and         # [e1_masked, mask_lo, rshift, e0, addr, bit_offset, value]
+        movup.3 movup.2 u32and # [e0_masked, e1_masked, rshift, addr, bit_offset, value]
 
-            # ensure word is in order
-            movup.3 movup.3              # [w3, w2, w1', w0', waddr]
+        # now, we need to shift/mask/split the 32-bit value into two elements, then
+        # combine them with the preserved bits of the original contents of the cell
+        #
+        # first, the contents of e0
+        dup.5 movup.5    # [bit_offset, value, e0_masked, e1_masked, rshift, addr, value]
+        u32shl           # [value << bit_offset, e0_masked, e1_masked, rshift, addr, value]
+        u32or            # [e0', e1_masked, rshift, addr, value]
 
-            # finally, write back the updated word, and clean up the operand stack
-            movup.4 mem_storew dropw
-        else
-            # check if the load starts in the second element
-            dup.1 eq.1
-            if.true
-                # the load is across both the second and third elements
-                # drop the element index
-                swap.1 drop
+        # then the contents of w1
+        swap.1           # [e1_masked, e0', rshift, addr, value]
+        movup.4          # [value, e1_masked, e0', rshift, addr]
+        movup.3          # [rshift, value, e1_masked, e0', addr]
+        u32shr           # [value >> rshift, e1_masked, e0', addr]
+        u32or            # [e1', e0', addr]
 
-                # load current value
-                padw dup.4 mem_loadw # [w3, w2, w1, w0, waddr, offset, value]
-
-                # compute the bit shift
-                push.32 dup.6 sub    # [rshift, w3..w0, waddr, offset, value]
-
-                # compute the masks
-                push.4294967295 dup.1 u32shl  # [mask_hi, rshift, w3..w0, waddr, offset, value]
-                dup.0 u32not                  # [mask_lo, mask_hi, rshift, w3, w2, w1, w0, waddr, offset, value]
-
-                # manipulate the bits of the two target elements, such that the 32-bit word
-                # we're storing is placed at the correct offset from the start of the memory
-                # cell when viewing the cell as a set of 4 32-bit chunks
-                movup.4 u32and         # [w2_masked, mask_hi, rshift, w3, w1, w0, waddr, offset, value]
-                movup.4 movup.2 u32and # [w1_masked, w2_masked, rshift, w3, w0, waddr, offset, value]
-
-                # now, we need to shift/mask/split the 32-bit value into two elements, then
-                # combine them with the preserved bits of the original contents of the cell
-                #
-                # first, the contents of w1
-                dup.7 movup.7 u32shr u32or   # [w1', w2_masked, rshift, w3, w0, waddr, value]
-                # then the contents of w2
-                swap.1
-                movup.6 movup.3 u32shl u32or # [w2', w1', w3, w0, waddr]
-
-                # ensure the elements are in order
-                movup.3 swap.3  # [w3, w2', w1', w0, waddr]
-
-                # finally, write back the updated word, and clean up the operand stack
-                movup.4 mem_storew dropw
-            else
-                # check if the load starts in the third element
-                swap.1 eq.2
-                if.true
-                    # the load is across both the third and fourth elements
-                    # load current value
-                    padw dup.4 mem_loadw # [w3, w2, w1, w0, waddr, offset, value]
-
-                    # compute the bit shift
-                    push.32 dup.6 sub    # [rshift, w3..w0, waddr, offset, value]
-
-                    # compute the masks
-                    push.4294967295 dup.1 u32shl  # [mask_hi, rshift, w3..w0, waddr, offset, value]
-                    dup.0 u32not                  # [mask_lo, mask_hi, rshift, w3, w2, w1, w0, waddr, offset, value]
-
-                    # manipulate the bits of the two target elements, such that the 32-bit word
-                    # we're storing is placed at the correct offset from the start of the memory
-                    # cell when viewing the cell as a set of 4 32-bit chunks
-                    movup.3 u32and         # [w3_masked, mask_hi, rshift, w2, w1, w0, waddr, offset, value]
-                    movup.3 movup.2 u32and # [w2_masked, w3_masked, rshift, w1, w0, waddr, offset, value]
-
-                    # now, we need to shift/mask/split the 32-bit value into two elements, then
-                    # combine them with the preserved bits of the original contents of the cell
-                    #
-                    # first, the contents of w2
-                    dup.7 movup.7 u32shr u32or   # [w2', w3_masked, rshift, w1, w0, waddr, value]
-                    # then the contents of w3
-                    swap.1
-                    movup.6 movup.3 u32shl u32or # [w3', w2', w1, w0, waddr]
-
-                    # finally, write back the updated word, and clean up the operand stack
-                    movup.4 mem_storew dropw
-                else
-                    # the load crosses a word boundary, start with the word containing the highest-addressed bits
-
-                    # compute the address for the second word
-                    dup.0  # [waddr, waddr, offset, value]
-                    u32overflowing_add.1 assertz # [waddr + 1, waddr, offset, value]
-
-                    # load the element we need to mix bits with
-                    mem_load  # [w0, waddr, offset, value]
-
-                    # compute the bit shift
-                    push.32 dup.3 sub    # [rshift, w0, waddr, offset, value]
-
-                    # compute the masks
-                    push.4294967295 dup.1 u32shl  # [mask_hi, rshift, w0, waddr, offset, value]
-                    dup.0 u32not                  # [mask_lo, mask_hi, rshift, w0, waddr, offset, value]
-
-                    # mask out the bits of the value that are being overwritten
-                    movup.3 u32and # [w0', mask_hi, rshift, waddr, offset, value]
-
-                    # extract the bits to be stored in this word
-                    dup.5 movup.3 u32shl u32or # [w0'', mask_hi, waddr, offset, value]
-
-                    # store the updated element
-                    dup.2 add.1 # [waddr + 1, w0'', mask_hi, waddr, offset, value]
-                    mem_store # [mask_hi, waddr, offset, value]
-
-                    # next, update the last element of the lowest addressed word
-                    padw dup.5 mem_loadw # [w3, w2, w1, w0, mask_hi, waddr, offset, value]
-
-                    # mask out the bits of the value that are being overwritten
-                    movup.4 u32and # [w3_masked, w2, w1, w0, waddr, offset, value]
-
-                    # extract the bits to be stored in this word and combine them
-                    movup.6 movup.6 u32shr u32or # [w3', w2, w1, w0, waddr]
-
-                    # write updated word
-                    movup.4 mem_storew
-
-                    # clean up operand stack
-                    dropw
-                end
-            end
-        end
+        # finally, write back the updated elements
+        dup.2 add.1 mem_store  # [e0', addr]
+        swap.1 mem_store       # []
     end
 end
 
-# Store a double 32-bit machine word from the given native pointer triplet.
+# Store a 64-bit value, i.e. two 32-bit machine words from the given native pointer tuple.
 #
-# A native pointer triplet consists of a word address which contains the
-# start of the data; an element index, which indicates which element of
-# the word the data starts in; and a byte offset, which indicates which
-# byte is the start of the data.
-export.store_dw # [waddr, index, offset, value_hi, value_lo]
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+export.store_dw # [addr, offset, value_hi, value_lo]
     # check for alignment and offset validity
-    dup.2 eq.0
-    dup.3 push.8 u32lt assert # offset must be < 8
-    # convert offset from bytes to bits
-    movup.3 push.8 u32wrapping_mul movdn.3 # [offset == 0, waddr, index, offset, value_hi, value_lo]
+    dup.1 eq.0   # [offset == 0, addr, offset]
+    # offset must be < 4
+    dup.2 push.4 u32lt assert
     # if the pointer is naturally aligned..
-    if.true
+    if.true  # [addr, offset, value_hi, value_lo]
         # drop byte offset
-        movup.2 drop # [waddr, index, value_hi, value_lo]
-        # check which element to start at
-        dup.1 eq.0
-        if.true
-            # drop index
-            swap.1 drop    # [waddr, value_hi, value_lo]
-            swap.2         # [value_lo, value_hi, waddr]
-            padw dup.6 mem_loadw # [w3, w2, w1, w0, value_lo, value_hi, waddr]
-            swap.2 drop    # [w2, w3, w0, value_lo, value_hi, waddr]
-            swap.2 drop    # [w3, w2, value_lo, value_hi, waddr]
-            movup.4        # [waddr, w3, w2, value_lo, value_hi]
-            mem_storew
-            # cleanup the operand stack
-            dropw
-        else
-            dup.1 eq.1
-            if.true
-                # drop index
-                swap.1 drop      # [waddr, value_hi, value_lo]
-                # store as the second and third elements of the word
-                swap.2           # [value_lo, value_hi, waddr]
-                padw dup.6 mem_loadw # [w3, w2, w1, w0, value_lo, value_hi, waddr]
-                movup.4 swap.2 drop  # [w3, value_lo, w1, w0, value_hi, waddr]
-                movup.4 swap.3 drop  # [w3, value_lo, value_hi, w0, waddr]
-                movup.4 mem_storew
-                # cleanup the operand stack
-                dropw
-            else
-                swap.1 eq.2
-                if.true
-                    # store as the third and fourth elements of the word
-                    swap.2                   # [value_lo, value_hi, waddr]
-                    padw dup.6 mem_loadw     # [w3, w2, w1, w0, value_lo, value_hi, waddr]
-                    movup.5 swap.2 drop      # [w3, value_hi, w1, w0, value_lo, waddr]
-                    drop movup.3             # [value_lo, value_hi, w1, w0, waddr]
-                    movup.4 mem_storew
-                    # cleanup the operand stack
-                    dropw
-                else
-                    # store the first element of the next word
-                    swap.2                             # [value_lo, value_hi, waddr]
-                    dup.2 u32overflowing_add.1 assertz # [waddr + 1, value_lo, value_hi, waddr]
-                    mem_store  # [value_hi, waddr]
-                    # store the fourth element
-                    padw dup.5 mem_loadw  # [w3, w2, w1, w0, value_hi, waddr]
-                    drop movup.3 movup.4  # [waddr, value_hi, w2, w1, w0]
-                    mem_storew dropw
-                end
-            end
-        end
-    else # unaligned; an unaligned double-word spans three elements
-        # [waddr, index, offset, value_hi, value_lo]
-        movup.2 # [offset, waddr, index, value_hi, value_lo]
-        movup.4 # [value_lo, offset, waddr, index, value_hi]
-        movup.4 # [value_hi, value_lo, offset, waddr, index]
-        exec.offset_dw # [chunk_lo, chunk_mid, chunk_hi, waddr, index]
-        movup.4 # [index, chunk_lo, chunk_mid, chunk_hi, waddr]
-        # check if we start in the first element
-        dup.0 eq.0
-        if.true
-            # target memory layout: [0, lo, mid, hi]
-            # drop the index
-            drop                 # [lo, mid, hi, waddr]
-            padw dup.7 mem_loadw # [w3, w2, w1, w0, lo, mid, hi, waddr]
-            movdn.3        # [w2, w1, w0, w3, lo, mid, hi, waddr]
-            drop drop drop # [w3, lo, mid, hi, waddr]
-            movup.4 mem_storew
-            dropw
-        else
-            # check if we start in the second element
-            dup.0 eq.1
-            if.true
-                # target memory layout: [lo, mid, hi, 0]
-                # drop the index
-                drop           # [lo, mid, hi, waddr]
-                padw dup.7 mem_loadw # [w3, w2, w1, w0, lo, mid, hi, waddr]
-                drop drop drop # [w0, lo, mid, hi, waddr]
-                movdn.3        # [lo, mid, hi, w0, waddr]
-                movup.4 mem_storew
-                dropw
-            else
-                # check if we start in the third element
-                eq.2 # [lo, mid, hi, waddr]
-                if.true
-                    # target memory layout: [mid, hi, ..], [..lo]
-                    padw dup.7 mem_loadw # [w3, w2, w1, w0, lo, mid, hi, waddr]
-                    drop drop movup.4 movup.4 # [mid, hi, w1, w0, lo, waddr]
-                    dup.5 mem_storew dropw # [lo, waddr]
-                    swap.1 u32overflowing_add.1 assertz # [waddr + 1, lo]
-                    mem_store
-                else
-                    # target memory layout: [hi, ..], [..lo, mid]
-                    padw dup.7 mem_loadw # [w3, w2, w1, w0, lo, mid, hi, waddr]
-                    drop movup.5 # [hi, w2, w1, w0, lo, mid, waddr]
-                    dup.6 mem_storew dropw # [lo, mid, waddr]
-                    movup.2 u32overflowing_add.1 assertz # [waddr + 1, lo, mid]
-                    dup.0 movdn.3 # [waddr + 1, lo, mid, waddr + 1]
-                    padw movup.4 mem_loadw # [w3, w2, w1, w0, lo, mid, waddr + 1]
-                    movup.5 swap.4 drop # [w3, w2, w1, mid, lo, waddr + 1]
-                    movup.4 swap.3 drop # [w3, w2, lo, mid, waddr + 1]
-                    movup.4 mem_storew dropw
-                end
-            end
-        end
+        swap.1 drop   # [addr, value_hi, value_lo]
+        swap.1 dup.1  # [addr, value_hi, addr, value_lo]
+        mem_store     # [addr, value_lo]
+        push.1 u32overflowing_add assertz # [addr + 1, value_lo]
+        mem_store
+    else     # [addr, offset, value_hi, value_lo]
+        # unaligned; an unaligned double-word spans three elements
+        #
+        # convert offset from bytes to bits
+        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value_hi, value_lo]
+
+        movdn.3        # [bit_offset, value_hi, value_lo, addr]
+        dup.0 movdn.4  # [bit_offset, value_hi, value_lo, addr, bit_offset]
+        movdn.2        # [value_hi, value_lo, bit_offset, addr, bit_offset]
+        exec.offset_dw # [chunk_lo, chunk_mid, chunk_hi, addr, bit_offset]
+
+        # compute the bit shift
+        push.32 movup.5 sub           # [32 - bit_offset, lo, mid, hi, addr]
+
+        # compute the masks
+        push.4294967295 swap.1 u32shr # [mask_hi, lo, mid, hi, addr]
+        dup.0 u32not                  # [mask_lo, mask_hi, lo, mid, hi, addr]
+
+        # combine the bits of the lo and hi chunks with their corresponding elements, so that we
+        # do not overwrite memory that is out of bounds of the actual value being stored.
+        #
+        # 1. load e2 (lo)
+        dup.5 push.2 u32overflowing_add assertz mem_load
+        # 2. mask e2 (lo)
+        u32and                       # [e2_masked, mask_hi, lo, mid, hi, addr]
+        # 3. load e0 (hi)
+        dup.5 mem_load               # [e0, e2_masked, mask_hi, lo, mid, hi, addr]
+        # 4. mask e0 (hi)
+        movup.2 u32and               # [e0_masked, e2_masked, lo, mid, hi, addr]
+        # 5. combine e2 & lo
+        movdn.2 u32or                # [e2', e0_masked, mid, hi, addr]
+        # 6. store e2
+        dup.4 add.2 mem_store        # [e0_masked, mid, hi, addr]
+        # 7. store e1 (mid)
+        swap.1 dup.3 add.1 mem_store # [e0_masked, hi, addr]
+        # 8. combine e0 & hi
+        u32or                        # [e0', addr]
+        # 9. store e0
+        swap.1 mem_store             # []
     end
+end
+
+# Write `count` copies of `value` to memory, starting at `dst`.
+#
+# * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
+# * `value` must be a 32-bit value or smaller
+export.memset_sw # [size, dst, count, value]
+    # prepare to loop until `count` iterations have been performed
+    push.0        # [i, dst, size, count, value]
+    dup.3         # [count, i, dst, size, count, value]
+    push.0 u32gte # [count > 0, i, dst, size, count, value]
+
+    # compute address for next value to be written
+    while.true  # [i, dst, size, count, value]
+        # offset the pointer by the current iteration count * aligned size of value, and trap
+        # if it overflows
+        dup.1  # [dst, i, dst, size, count, value]
+        dup.1  # [i, dst, i, dst, size, count, value]
+        dup.4  # [size, i, dst, i, dst, size, count, value]
+        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value]
+
+        # copy value to top of stack, swap with pointer
+        dup.5     # [value, dst', i, dst, size, count, value]
+        swap.1    # [dst', value, i, dst, size, count, value]
+
+        # convert pointer to native representation
+        u32divmod.4 swap.1  # [dst', dst_offset', value, i, dst, size, count, value]
+
+        # write value to destination
+        exec.store_sw       # [i, dst, size, count, value]
+
+        # increment iteration count, determine whether to continue the loop
+        push.1 u32overflowing_add assertz  # [i++, dst, size, count, value]
+        dup.0     # [i++, i++, dst, size, count, value]
+        dup.4     # [count, i++, i++, dst, size, count, value]
+        u32gte    # [i++ >= count, i++, dst, size, count, value]
+    end
+
+    # cleanup operand stack
+    dropw drop
+end
+
+# Write `count` copies of `value` to memory, starting at `dst`.
+#
+# * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
+# * `value` must be a 64-bit value or smaller
+export.memset_dw # [size, dst, count, value_hi, value_lo]
+    # prepare to loop until `count` iterations have been performed
+    push.0        # [i, dst, size, count, value_hi, value_lo]
+    dup.3         # [count, i, dst, size, count, value_hi, value_lo]
+    push.0 u32gte # [count > 0, i, dst, size, count, value_hi, value_lo]
+
+    # compute address for next value to be written
+    while.true  # [i, dst, size, count, value_hi, value_lo]
+        # offset the pointer by the current iteration count * aligned size of value, and trap
+        # if it overflows
+        dup.1  # [dst, i, dst, size, count, value_hi, value_lo]
+        dup.1  # [i, dst, i, dst, size, count, value_hi, value_lo]
+        dup.4  # [size, i, dst, i, dst, size, count, value_hi, value_lo]
+        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value_hi, value_lo]
+
+        # copy value to top of stack, swap with pointer
+        dup.6     # [value_lo, dst', i, dst, size, count, value_hi, value_lo]
+        dup.6     # [value_hi, value_lo, dst', i, dst, size, count, value_hi, value_lo]
+        movup.2   # [dst', value_hi, value_lo, i, dst, size, count, value_hi, value_lo]
+
+        # convert pointer to native representation
+        u32divmod.4 swap.1  # [dst', dst_offset', value_hi, value_lo, i, dst, size, count, vh, vl]
+
+        # write value to destination
+        exec.store_dw       # [i, dst, size, count, value_hi, value_lo]
+
+        # increment iteration count, determine whether to continue the loop
+        push.1 u32overflowing_add assertz  # [i++, dst, size, count, value_hi, value_lo]
+        dup.0     # [i++, i++, dst, size, count, value_hi, value_lo]
+        dup.4     # [count, i++, i++, dst, size, count, value_hi, value_lo]
+        u32gte    # [i++ >= count, i++, dst, size, count, value_hi, value_lo]
+    end
+
+    # cleanup operand stack
+    dropw drop drop
 end

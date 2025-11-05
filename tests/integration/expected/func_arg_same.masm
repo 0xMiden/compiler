@@ -1,0 +1,30 @@
+# mod root_ns:root@1.0.0
+
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+end
+
+# mod root_ns:root@1.0.0::func_arg_same
+
+export.entrypoint
+    swap.1
+    drop
+    dup.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::func_arg_same::intrinsic
+    trace.252
+    nop
+end
+
+export.intrinsic
+    swap.1
+    drop
+end
+

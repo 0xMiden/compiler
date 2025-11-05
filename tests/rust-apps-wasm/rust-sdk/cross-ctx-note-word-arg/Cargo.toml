@@ -1,0 +1,48 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "cross-ctx-note-word-arg"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
+# and transaction kernel API for the Miden rollup
+miden = { path = "../../../../sdk/sdk" }
+
+[profile.release]
+# optimize the output for size
+opt-level = "z"
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+# Explicitly disable panic infrastructure on Wasm, as
+# there is no proper support for them anyway, and it
+# ensures that panics do not pull in a bunch of standard
+# library code unintentionally
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = true
+trim-paths = ["diagnostics", "object"]
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg" }
+
+[package.metadata.component.target.dependencies]
+"miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg/wit/cross-ctx-account-word.wit" }

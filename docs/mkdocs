@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "${@}"
-
-python3 -m venv target/docs/venv
-source target/docs/venv/bin/activate
-pip3 install -r docs/requirements.txt
-mkdocs "${@}"

@@ -1,4 +1,4 @@
-//! Module for cargo-miden configuration.
+//! Module for cargo-component configuration.
 //!
 //! This implements an argument parser because `clap` is not
 //! designed for parsing unknown or unsupported arguments.
@@ -10,20 +10,22 @@
 //! detect certain arguments, but not error out if the arguments
 //! are otherwise unknown as they will be passed to `cargo` directly.
 //!
-//! This will allow `cargo-miden` to be used as a drop-in
+//! This will allow `cargo-component` to be used as a drop-in
 //! replacement for `cargo` without having to be fully aware of
 //! the many subcommands and options that `cargo` supports.
 //!
 //! What is detected here is the minimal subset of the arguments
-//! that `cargo` supports which are necessary for `cargo-miden`
+//! that `cargo` supports which are necessary for `cargo-component`
 //! to function.
 
 use std::{collections::BTreeMap, fmt, fmt::Display, path::PathBuf, str::FromStr};
 
 use anyhow::{anyhow, bail, Context, Result};
-use cargo_component_core::terminal::{Color, Terminal};
+use cargo_metadata::Metadata;
+use midenc_session::ColorChoice;
 use parse_arg::{iter_short, match_arg};
 use semver::Version;
+use toml_edit::DocumentMut;
 
 /// Represents a cargo package specifier.
 ///
@@ -59,6 +61,23 @@ impl CargoPackageSpec {
                 name: spec,
                 version: None,
             },
+        })
+    }
+
+    /// Loads Cargo.toml in the current directory, attempts to find the matching package from metadata.
+    #[allow(unused)]
+    pub fn find_current_package_spec(metadata: &Metadata) -> Option<Self> {
+        let current_manifest = std::fs::read_to_string("Cargo.toml").ok()?;
+        let document: DocumentMut = current_manifest.parse().ok()?;
+        let name = document["package"]["name"].as_str()?;
+        let version = metadata
+            .packages
+            .iter()
+            .find(|found| found.name == name)
+            .map(|found| found.version.clone());
+        Some(CargoPackageSpec {
+            name: name.to_string(),
+            version,
         })
     }
 }
@@ -340,19 +359,23 @@ impl Args {
 /// Represents known cargo arguments.
 ///
 /// This is a subset of the arguments that cargo supports that
-/// are necessary for cargo-miden to function.
+/// are necessary for cargo-component to function.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CargoArguments {
     /// The --color argument.
-    pub color: Option<Color>,
+    pub color: Option<ColorChoice>,
     /// The (count of) --verbose argument.
     pub verbose: usize,
+    /// The --help argument.
+    pub help: bool,
     /// The --quiet argument.
     pub quiet: bool,
     /// The --target argument.
     pub targets: Vec<String>,
     /// The --manifest-path argument.
     pub manifest_path: Option<PathBuf>,
+    /// The `--message-format`` argument.
+    pub message_format: Option<String>,
     /// The --frozen argument.
     pub frozen: bool,
     /// The --locked argument.
@@ -369,16 +392,19 @@ pub struct CargoArguments {
 
 impl CargoArguments {
     /// Determines if network access is allowed based on the configuration.
+    #[allow(unused)]
     pub fn network_allowed(&self) -> bool {
         !self.frozen && !self.offline
     }
 
     /// Determines if an update to the lock file is allowed based on the configuration.
+    #[allow(unused)]
     pub fn lock_update_allowed(&self) -> bool {
         !self.frozen && !self.locked
     }
 
     /// Parses the arguments from the environment.
+    #[allow(unused)]
     pub fn parse() -> Result<Self> {
         Self::parse_from(std::env::args().skip(1))
     }
@@ -391,6 +417,7 @@ impl CargoArguments {
         let mut args = Args::default()
             .single("--color", "WHEN", Some('c'))
             .single("--manifest-path", "PATH", None)
+            .single("--message-format", "FMT", None)
             .multiple("--package", "SPEC", Some('p'))
             .multiple("--target", "TRIPLE", None)
             .flag("--release", Some('r'))
@@ -400,13 +427,14 @@ impl CargoArguments {
             .flag("--all", None)
             .flag("--workspace", None)
             .counting("--verbose", Some('v'))
-            .flag("--quiet", Some('q'));
+            .flag("--quiet", Some('q'))
+            .flag("--help", Some('h'));
 
         let mut iter = iter.map(Into::into).peekable();
 
-        // Skip the first argument if it is `miden`
+        // Skip the first argument if it is `component`
         if let Some(arg) = iter.peek() {
-            if arg == "miden" {
+            if arg == "component" {
                 iter.next().unwrap();
             }
         }
@@ -426,12 +454,14 @@ impl CargoArguments {
         Ok(Self {
             color: args.get_mut("--color").unwrap().take_single().map(|v| v.parse()).transpose()?,
             verbose: args.get("--verbose").unwrap().count(),
+            help: args.get("--help").unwrap().count() > 0,
             quiet: args.get("--quiet").unwrap().count() > 0,
             manifest_path: args
                 .get_mut("--manifest-path")
                 .unwrap()
                 .take_single()
                 .map(PathBuf::from),
+            message_format: args.get_mut("--message-format").unwrap().take_single(),
             targets: args.get_mut("--target").unwrap().take_multiple(),
             frozen: args.get("--frozen").unwrap().count() > 0,
             locked: args.get("--locked").unwrap().count() > 0,
@@ -447,27 +477,6 @@ impl CargoArguments {
                 .map(CargoPackageSpec::new)
                 .collect::<Result<_>>()?,
         })
-    }
-}
-
-/// Configuration information for cargo-miden.
-///
-/// This is used to configure the behavior of cargo-miden.
-#[derive(Debug)]
-pub struct Config {
-    /// The terminal to use.
-    terminal: Terminal,
-}
-
-impl Config {
-    /// Create a new `Config` with the given terminal.
-    pub fn new(terminal: Terminal) -> Result<Self> {
-        Ok(Self { terminal })
-    }
-
-    /// Gets a reference to the terminal for writing messages.
-    pub fn terminal(&self) -> &Terminal {
-        &self.terminal
     }
 }
 
@@ -690,7 +699,7 @@ mod test {
     fn it_parses_counting_flag() {
         let mut args = Args::default().counting("--flag", Some('f'));
 
-        // Test not the flag
+        // Test not the the flag
         args.parse("--not-flag", &mut empty::<String>()).unwrap();
         let arg = args.get("--flag").unwrap();
         assert_eq!(arg.count(), 0);
@@ -717,15 +726,17 @@ mod test {
     #[test]
     fn it_parses_cargo_arguments() {
         let args: CargoArguments =
-            CargoArguments::parse_from(["miden", "build", "--workspace"].into_iter()).unwrap();
+            CargoArguments::parse_from(["component", "build", "--workspace"].into_iter()).unwrap();
         assert_eq!(
             args,
             CargoArguments {
                 color: None,
                 verbose: 0,
+                help: false,
                 quiet: false,
                 targets: Vec::new(),
                 manifest_path: None,
+                message_format: None,
                 release: false,
                 frozen: false,
                 locked: false,
@@ -737,12 +748,15 @@ mod test {
 
         let args = CargoArguments::parse_from(
             [
-                "miden",
+                "component",
                 "publish",
+                "--help",
                 "-vvv",
                 "--color=auto",
                 "--manifest-path",
                 "Cargo.toml",
+                "--message-format",
+                "json-render-diagnostics",
                 "--release",
                 "--package",
                 "package1",
@@ -763,11 +777,13 @@ mod test {
         assert_eq!(
             args,
             CargoArguments {
-                color: Some(Color::Auto),
+                color: Some(ColorChoice::Auto),
                 verbose: 3,
+                help: true,
                 quiet: true,
                 targets: vec!["foo".to_string(), "bar".to_string()],
                 manifest_path: Some("Cargo.toml".into()),
+                message_format: Some("json-render-diagnostics".into()),
                 release: true,
                 frozen: true,
                 locked: true,

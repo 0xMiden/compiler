@@ -6,6 +6,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.4.0...midenc-hir-v0.4.1) - 2025-09-03
+
+### Fixed
+
+- handle empty dominance frontier at `DominanceFrontier::iterate_all`
+- typo in `find_nearest_common_common_dominator` call
+- infinite loop in `dominated_by_slow_tree_walk`.
+
+### Other
+
+- Add type aliases `Int128` for `SizedInt<128>`.
+- formatting
+
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.1.5...midenc-hir-v0.4.0) - 2025-08-15
+
+### Added
+
+- panic if ops marked with SameOperandsAndResultType have no results
+- panic if ops marked with SameTypeOperands and/or SameOperandsAndResultType do not have operands
+
+### Fixed
+
+- don't panic on no operands when verifying SameTypeOperands[AndResult]
+
+### Other
+
+- Merge pull request #546 from lambdaclass/fabrizioorsi/i404-symbol-table-op-builder
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- remove InvalidOpsWithReturn entirely and replace with test::add
+- replace if statement with assert! when checking result vector size
+- remove out-dated comment
+- apply formatting
+- Typo fixes + enhacements in `SameTypeOperands` verification documentation.
+- Update comment regarding Operation::verify
+- Remove un-used imports
+- Uncomment `#[ignore]` macro in `derived_op_verifier_test()` now that the verifier is enabled
+- Delete op.verification all-together
+- Add a comment explaining why we do an initial verification
+- Add pass manager in test
+- Momentarily verify early
+- Pushing changes to save changes.
+- Verify the parent traits before the operation trait.
+- Remove the additional pattern declaration, leave an optional semi-colon which matches both patterns
+- Remove additional spaces
+- Add documentation to SameOperandsAndResultType and derive macro
+- Update diagnostic description
+- Make it possible to inherit an arbitrary amount of parent traits (comma separated)
+- Remove operand type check from SameOperandsAndResultType
+- Call parent trait verify function before OPTrait verify
+- Add $ParentTrait pattern to verify macro + Add SameTypeOperands as a explicit dependency
+- Implement SameOperandsAndResultType test.
+- Declare the InvalidOpsWithReturn struct and register it on the TestDialect Dialect
+- First implementation for SameOperandsAndResultType validation
+- Enable operands_are_the_same_type validation
+- Use the midenc_hir `test` dialect for ops in the new tests.
+
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.1.0...midenc-hir-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- prevent global variables from overlapping with data segments
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.0.7...midenc-hir-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- *(ir)* provide some useful symbol path helpers
+- *(ir)* allow converting exclusive immutable borrow into a mutable one
+- *(ir)* provide utility pass for printing ir of specific operations
+- *(frontend)* generate `CanonLower` synthetic functions for
+- *(frontend)* generate `CanonLift` synthetic functions for exports
+- add `CallConv::CrossCtx` calling convention for cross-context
+- draft Wasm CM function type flattening, checks for scalar type
+- on Miden CCABI lifting/lowering get import/export function signature from
+- store the imported function type in the component import
+- rewrite the function calls from the imported function (Miden CCABI) to
+- draft lifting function generation in `LiftImportsCrossCtxStage`
+- draft `LiftImportsCrossCtxStage` scaffolding
+- add `ComponentBuilder::load`, `with_exports` to modify
+- implement cross-context Call op, rename IR Exec back to Call
+- restore module and function names of the intrinsics and Miden
+
+### Fixed
+- *(ir)* missing result value for builtin.global_symbol when printed
+- *(ir)* resolve symbol paths without leaf
+- *(ir)* custom printer for global_symbol, add missing traits
+- *(ir)* missed closing paren in function decl signatures
+- *(ir)* would_be_trivially_dead_even_if_terminator
+- build after rebase
+- implement `FunctionBuilderExt::change_branch_destination`
+- a few rebasing issues
+- populate `Linker::allow_missing` with linked library exports
+- refine `Component` imports and exports to reference module imports
+
+### Other
+- treat warnings as compiler errors,
+- update Miden VM to v0.13.2 and uncomment the Miden package
+- *(frontend)* rework handling of symbols in frontend
+- update pre-interned symbols
+- implement MemoryEffectOpInterface for test.constant
+- specify log target during region simplification, pattern rewrites
+- update rust toolchain, clean up deps
+- move `Context::change_branch_destination` to be a method in `BranchOpInterface`
+- use `OpBuilder` in `ComponentBuilder::define_function`
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- update the Miden VM with updated `miden-package` crate
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- normalize use of fxhash-based hash maps
+- replace `CallConv::CrossCtx` with `CanonLift` and `CanonLower`
+- rename `CanonAbiImport::interface_function_ty`
+- switch from passing `Module` to `Component` in the compiler stages
+- rename Call IR op to Exec
+- add note script compilation test;
+- remove digest-in-function-name encoding and `MidenAbiImport::digest`,
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-v0.0.6...midenc-hir-v0.0.7) - 2024-09-17
 
 ### Other

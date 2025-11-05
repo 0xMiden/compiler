@@ -1,0 +1,28 @@
+[package]
+name = "miden-base-macros"
+description = "Provides proc macro support for Miden rollup SDK"
+version = "0.7.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+miden-objects.workspace = true
+semver.workspace = true
+toml.workspace = true
+syn.workspace = true
+heck.workspace = true
+
+[dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+miden-objects = { workspace = true, features = ["std"] }

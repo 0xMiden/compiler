@@ -2,6 +2,7 @@ use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
 use clap::{ColorChoice, Parser};
 use midenc_session::{
+    add_target_link_libraries,
     diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice as MDColorChoice, InputFile, LinkLibrary, Options, ProjectType, Session, TargetEnv,
 };
@@ -44,6 +45,7 @@ pub struct Debugger {
     )]
     pub target: TargetEnv,
     /// Specify the function to call as the entrypoint for the program
+    /// in the format `<module_name>::<function>`
     #[arg(long, help_heading = "Compiler", hide(true))]
     pub entrypoint: Option<String>,
     /// Specify one or more search paths for link libraries requested via `-l`
@@ -69,10 +71,6 @@ pub struct Debugger {
         short = 'l',
         value_name = "[KIND=]NAME",
         value_delimiter = ',',
-        default_value_ifs([
-            ("target", "base", "std"),
-            ("target", "rollup", "std,base"),
-        ]),
         next_line_help(true),
         help_heading = "Linker"
     )]
@@ -123,7 +121,10 @@ impl Debugger {
         let mut options = Options::new(None, self.target, ProjectType::Program, cwd, self.sysroot)
             .with_color(color);
         options.search_paths = self.search_path;
-        options.link_libraries = self.link_libraries;
+
+        let link_libraries = add_target_link_libraries(self.link_libraries, &self.target);
+        options.link_libraries = link_libraries;
+
         options.entrypoint = self.entrypoint;
 
         let target_dir = std::env::temp_dir();

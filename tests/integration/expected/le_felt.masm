@@ -1,7 +1,30 @@
-# mod le_felt
+# mod root_ns:root@1.0.0
 
-export.entrypoint
-    lte push.0 neq
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
 end
 
+# mod root_ns:root@1.0.0::le_felt
+
+export.entrypoint
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::le_felt::intrinsics::felt::le
+    trace.252
+    nop
+    push.0
+    neq
+end
+
+proc.intrinsics::felt::le
+    swap.1
+    lte
+end
 

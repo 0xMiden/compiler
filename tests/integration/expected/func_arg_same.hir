@@ -1,0 +1,18 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @func_arg_same {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
+        ^block4(v0: i32, v1: i32):
+            v3 = hir.exec @root_ns:root@1.0.0/func_arg_same/intrinsic(v0, v0) : i32
+            builtin.ret v3;
+        };
+
+        public builtin.function @intrinsic(v4: i32, v5: i32) -> i32 {
+        ^block6(v4: i32, v5: i32):
+            builtin.ret v4;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

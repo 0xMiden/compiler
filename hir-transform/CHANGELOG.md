@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.4.0...midenc-hir-transform-v0.4.1) - 2025-09-03
+
+### Fixed
+
+- only keep spills that feed a live reload dominated by this spill
+- intra block spills rewrite to process all ops in the block
+
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.1.5...midenc-hir-transform-v0.4.0) - 2025-08-15
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.1.0...midenc-hir-transform-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- delayed registration of scf dialect causes canonicalizations to be skipped
+- release borrowed op in `spill.rs` (to be `borrow_mut()`-ed later)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-transform-v0.0.7...midenc-hir-transform-v0.0.8) - 2025-04-24
+
+### Fixed
+- *(ir)* address a few aliasing violations when full tracing is enabled
+
+### Other
+- treat warnings as compiler errors,
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- normalize use of fxhash-based hash maps
+- rename Call IR op to Exec
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-transform-v0.0.6...midenc-hir-transform-v0.0.7) - 2024-09-17
 
 ### Other

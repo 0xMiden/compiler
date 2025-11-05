@@ -1,10 +1,12 @@
 use alloc::{
-    borrow::ToOwned, boxed::Box, collections::BTreeMap, fmt, format, str::FromStr, string::String,
+    borrow::{Cow, ToOwned},
+    collections::BTreeMap,
+    fmt, format,
+    str::FromStr,
+    string::String,
 };
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+
+use crate::{Path, PathBuf};
 
 /// The type of output to produce for a given [OutputType], when multiple options are available
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -114,9 +116,9 @@ impl OutputFile {
         }
     }
 
-    pub fn filestem(&self) -> Option<&OsStr> {
+    pub fn filestem(&self) -> Option<Cow<'_, str>> {
         match self {
-            Self::Real(ref path) => path.file_stem(),
+            Self::Real(ref path) => path.file_stem().map(|stem| stem.to_string_lossy()),
             Self::Stdout => None,
         }
     }
@@ -301,6 +303,7 @@ impl OutputFiles {
 #[derive(Debug, Clone, Default)]
 pub struct OutputTypes(BTreeMap<OutputType, Option<OutputFile>>);
 impl OutputTypes {
+    #[cfg(feature = "std")]
     pub fn new<I: IntoIterator<Item = OutputTypeSpec>>(entries: I) -> Result<Self, clap::Error> {
         let entries = entries.into_iter();
         let mut map = BTreeMap::default();
@@ -362,18 +365,16 @@ impl OutputTypes {
         self.0.contains_key(key)
     }
 
-    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, OutputType, Option<OutputFile>> {
+    pub fn iter(&self) -> impl Iterator<Item = (&OutputType, &Option<OutputFile>)> + '_ {
         self.0.iter()
     }
 
-    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, OutputType, Option<OutputFile>> {
-        self.0.keys()
+    pub fn keys(&self) -> impl Iterator<Item = OutputType> + '_ {
+        self.0.keys().copied()
     }
 
-    pub fn values(
-        &self,
-    ) -> std::collections::btree_map::Values<'_, OutputType, Option<OutputFile>> {
-        self.0.values()
+    pub fn values(&self) -> impl Iterator<Item = Option<&OutputFile>> {
+        self.0.values().map(|v| v.as_ref())
     }
 
     #[inline(always)]
@@ -422,6 +423,8 @@ pub enum OutputTypeSpec {
         path: Option<OutputFile>,
     },
 }
+
+#[cfg(feature = "std")]
 impl clap::builder::ValueParserFactory for OutputTypeSpec {
     type Parser = OutputTypeParser;
 
@@ -432,13 +435,18 @@ impl clap::builder::ValueParserFactory for OutputTypeSpec {
 
 #[doc(hidden)]
 #[derive(Clone)]
+#[cfg(feature = "std")]
 pub struct OutputTypeParser;
+
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for OutputTypeParser {
     type Value = OutputTypeSpec;
 
     fn possible_values(
         &self,
-    ) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+    ) -> Option<alloc::boxed::Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+        use alloc::boxed::Box;
+
         use clap::builder::PossibleValue;
         Some(Box::new(
             [
@@ -458,7 +466,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
         &self,
         _cmd: &clap::Command,
         _arg: Option<&clap::Arg>,
-        value: &OsStr,
+        value: &std::ffi::OsStr,
     ) -> Result<Self::Value, clap::error::Error> {
         use clap::error::{Error, ErrorKind};
 
@@ -485,12 +493,18 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
     }
 }
 
+#[cfg(feature = "std")]
 trait PathMut {
-    fn with_stem(self, stem: impl AsRef<OsStr>) -> PathBuf;
-    fn with_stem_and_extension(self, stem: impl AsRef<OsStr>, ext: impl AsRef<OsStr>) -> PathBuf;
+    fn with_stem(self, stem: impl AsRef<std::ffi::OsStr>) -> PathBuf;
+    fn with_stem_and_extension(
+        self,
+        stem: impl AsRef<std::ffi::OsStr>,
+        ext: impl AsRef<std::ffi::OsStr>,
+    ) -> PathBuf;
 }
-impl PathMut for &Path {
-    fn with_stem(self, stem: impl AsRef<OsStr>) -> PathBuf {
+#[cfg(feature = "std")]
+impl PathMut for &std::path::Path {
+    fn with_stem(self, stem: impl AsRef<std::ffi::OsStr>) -> std::path::PathBuf {
         let mut path = self.with_file_name(stem);
         if let Some(ext) = self.extension() {
             path.set_extension(ext);
@@ -498,14 +512,19 @@ impl PathMut for &Path {
         path
     }
 
-    fn with_stem_and_extension(self, stem: impl AsRef<OsStr>, ext: impl AsRef<OsStr>) -> PathBuf {
+    fn with_stem_and_extension(
+        self,
+        stem: impl AsRef<std::ffi::OsStr>,
+        ext: impl AsRef<std::ffi::OsStr>,
+    ) -> std::path::PathBuf {
         let mut path = self.with_file_name(stem);
         path.set_extension(ext);
         path
     }
 }
-impl PathMut for PathBuf {
-    fn with_stem(mut self, stem: impl AsRef<OsStr>) -> PathBuf {
+#[cfg(feature = "std")]
+impl PathMut for std::path::PathBuf {
+    fn with_stem(mut self, stem: impl AsRef<std::ffi::OsStr>) -> std::path::PathBuf {
         if let Some(ext) = self.extension() {
             let ext = ext.to_string_lossy().into_owned();
             self.with_stem_and_extension(stem, ext)
@@ -517,9 +536,9 @@ impl PathMut for PathBuf {
 
     fn with_stem_and_extension(
         mut self,
-        stem: impl AsRef<OsStr>,
-        ext: impl AsRef<OsStr>,
-    ) -> PathBuf {
+        stem: impl AsRef<std::ffi::OsStr>,
+        ext: impl AsRef<std::ffi::OsStr>,
+    ) -> std::path::PathBuf {
         self.set_file_name(stem);
         self.set_extension(ext);
         self

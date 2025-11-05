@@ -1,0 +1,26 @@
+[package]
+name = "midenc-benchmark-runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Benchmarks for the Miden compiler"
+publish = false
+
+[[bin]]
+name = "is_prime"
+path = "src/is_prime.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "is_prime_bench"
+harness = false

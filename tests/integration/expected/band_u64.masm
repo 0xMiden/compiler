@@ -1,7 +1,28 @@
-# mod test_rust_4c7e8f3e1741ccb4a5bbbee6f13443e5deb9c528380592d13a046312348bd927
+# mod root_ns:root@1.0.0
 
-export.entrypoint
-    exec.::std::math::u64::and
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
 end
 
+# mod root_ns:root@1.0.0::test_rust_8509e2e84a91835b60f651a4adb33e43024ab7f31520e5ee5b5a97f181859a40
+
+export.entrypoint
+    trace.240
+    nop
+    exec.::std::math::u64::and
+    trace.252
+    nop
+end
 

@@ -4,7 +4,7 @@ The `miden-stdlib-sys` crate provides a `Felt` type that represents field elemen
 
 ## Miden VM instructions
 
-See the full instruction list in the [Miden VM book](https://0xpolygonmiden.github.io/miden-vm/user_docs/assembly/field_operations.html)
+See the full instruction list in the [Miden VM book](https://0xMiden.github.io/miden-vm/user_docs/assembly/field_operations.html)
 
 ### Not yet implemented Miden VM instructions:
 
@@ -26,7 +26,6 @@ Missing in IR:
 Missing in IR:
 - `hash`;
 - `hperm`;
-- `hmerge`;
 - `mtree*`;
 
 ### Events, Tracing

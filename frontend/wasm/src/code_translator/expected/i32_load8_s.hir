@@ -1,0 +1,11 @@
+public builtin.function @test_wrapper() {
+^block4:
+    v0 = arith.constant 1024 : i32;
+    v1 = hir.bitcast v0 : u32;
+    v2 = hir.int_to_ptr v1 : ptr<byte, i8>;
+    v3 = hir.load v2 : i8;
+    v4 = arith.sext v3 : i32;
+    cf.br ^block5;
+^block5:
+    builtin.ret ;
+};

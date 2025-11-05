@@ -1,0 +1,39 @@
+[package]
+name = "midenc-frontend-wasm"
+description = "Wasm frontend for the Miden compiler"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["wasmparser/std", "gimli/std", "midenc-hir-symbol/std"]
+
+[dependencies]
+anyhow.workspace = true
+addr2line = "0.24"
+cranelift-entity.workspace = true
+gimli = { version = "0.31", default-features = false, features = ['read'] }
+indexmap = "2.7"
+log.workspace = true
+miden-core.workspace = true
+midenc-hir.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-ub.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-hir-symbol.workspace = true
+midenc-session.workspace = true
+thiserror.workspace = true
+wasmparser.workspace = true
+
+[dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+wat.workspace = true
+midenc-expect-test = { path = "../../tools/expect-test" }

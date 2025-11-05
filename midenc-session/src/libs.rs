@@ -1,42 +1,45 @@
-use alloc::{borrow::Cow, boxed::Box, format, str::FromStr, string::ToString};
+#![deny(warnings)]
+
+use alloc::{borrow::Cow, format, str::FromStr, sync::Arc, vec::Vec};
+#[cfg(feature = "std")]
+use alloc::{boxed::Box, string::ToString};
 use core::fmt;
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-    sync::LazyLock,
-};
 
-use miden_assembly::{Library as CompiledLibrary, LibraryNamespace};
-use miden_base_sys::masl::tx::MidenTxKernelLibrary;
+pub use miden_assembly_syntax::{
+    Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
+};
+#[cfg(feature = "std")]
+use miden_core::utils::Deserializable;
 use miden_stdlib::StdLibrary;
+use midenc_hir_symbol::sync::LazyLock;
 
+use crate::{diagnostics::Report, PathBuf, Session, TargetEnv};
+#[cfg(feature = "std")]
 use crate::{
-    diagnostics::{IntoDiagnostic, Report, WrapErr},
-    Session,
+    diagnostics::{IntoDiagnostic, WrapErr},
+    Path,
 };
 
-static STDLIB: LazyLock<StdLibrary> = LazyLock::new(StdLibrary::default);
-static BASE: LazyLock<MidenTxKernelLibrary> = LazyLock::new(MidenTxKernelLibrary::default);
+pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
+    LazyLock::new(|| Arc::new(StdLibrary::default().into()));
 
 /// The types of libraries that can be linked against during compilation
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
-)]
-#[repr(u8)]
 pub enum LibraryKind {
     /// A compiled MAST library
     #[default]
     Mast,
     /// A source-form MASM library, using the standard project layout
     Masm,
+    // A Miden package (MASP)
+    Masp,
 }
 impl fmt::Display for LibraryKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Mast => f.write_str("mast"),
             Self::Masm => f.write_str("masm"),
+            Self::Masp => f.write_str("masp"),
         }
     }
 }
@@ -47,6 +50,7 @@ impl FromStr for LibraryKind {
         match s {
             "mast" | "masl" => Ok(Self::Mast),
             "masm" => Ok(Self::Masm),
+            "masp" => Ok(Self::Masp),
             _ => Err(()),
         }
     }
@@ -54,7 +58,6 @@ impl FromStr for LibraryKind {
 
 /// A library requested by the user to be linked against during compilation
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinkLibrary {
     /// The name of the library.
     ///
@@ -64,7 +67,6 @@ pub struct LinkLibrary {
     /// will be the basename of the file specified in the path.
     pub name: Cow<'static, str>,
     /// If specified, the path from which this library should be loaded
-    #[cfg_attr(feature = "serde", serde(default))]
     pub path: Option<PathBuf>,
     /// The kind of library to load.
     ///
@@ -73,6 +75,38 @@ pub struct LinkLibrary {
     pub kind: LibraryKind,
 }
 impl LinkLibrary {
+    /// Construct a LinkLibrary for Miden stdlib
+    pub fn std() -> Self {
+        LinkLibrary {
+            name: "std".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
+    /// Construct a LinkLibrary for Miden base(rollup/tx kernel) library
+    pub fn base() -> Self {
+        LinkLibrary {
+            name: "base".into(),
+            path: None,
+            kind: LibraryKind::Mast,
+        }
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub fn load(&self, _session: &Session) -> Result<CompiledLibrary, Report> {
+        // Handle libraries shipped with the compiler, or via Miden crates
+        match self.name.as_ref() {
+            "std" => Ok((*STDLIB).as_ref().clone()),
+            "base" => Ok(miden_lib::MidenLib::default().as_ref().clone()),
+            name => Err(Report::msg(format!(
+                "link library '{name}' cannot be loaded: compiler was built without standard \
+                 library"
+            ))),
+        }
+    }
+
+    #[cfg(feature = "std")]
     pub fn load(&self, session: &Session) -> Result<CompiledLibrary, Report> {
         if let Some(path) = self.path.as_deref() {
             return self.load_from_path(path, session);
@@ -81,7 +115,7 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => return Ok((*STDLIB).as_ref().clone()),
-            "base" => return Ok((*BASE).as_ref().clone()),
+            "base" => return Ok(miden_lib::MidenLib::default().as_ref().clone()),
             _ => (),
         }
 
@@ -91,15 +125,17 @@ impl LinkLibrary {
         self.load_from_path(&path, session)
     }
 
+    #[cfg(feature = "std")]
     fn load_from_path(&self, path: &Path, session: &Session) -> Result<CompiledLibrary, Report> {
         match self.kind {
             LibraryKind::Masm => {
                 let ns = LibraryNamespace::new(&self.name)
                     .into_diagnostic()
                     .wrap_err_with(|| format!("invalid library namespace '{}'", &self.name))?;
-                let assembler = miden_assembly::Assembler::new(session.source_manager.clone())
-                    .with_debug_mode(true);
-                CompiledLibrary::from_dir(path, ns, assembler)
+
+                miden_assembly::Assembler::new(session.source_manager.clone())
+                    .with_debug_mode(true)
+                    .assemble_library_from_dir(path, ns)
             }
             LibraryKind::Mast => CompiledLibrary::deserialize_from_file(path).map_err(|err| {
                 Report::msg(format!(
@@ -107,9 +143,30 @@ impl LinkLibrary {
                     path.display()
                 ))
             }),
+            LibraryKind::Masp => {
+                let bytes = std::fs::read(path).into_diagnostic()?;
+                let package =
+                    miden_mast_package::Package::read_from_bytes(&bytes).map_err(|e| {
+                        Report::msg(format!(
+                            "failed to load Miden package from {}: {e}",
+                            path.display()
+                        ))
+                    })?;
+                let lib = match package.mast {
+                    miden_mast_package::MastArtifact::Executable(_) => {
+                        return Err(Report::msg(format!(
+                            "Expected Miden package to contain a Library, got Program: '{}'",
+                            path.display()
+                        )))
+                    }
+                    miden_mast_package::MastArtifact::Library(lib) => lib.clone(),
+                };
+                Ok((*lib).clone())
+            }
         }
     }
 
+    #[cfg(feature = "std")]
     fn find(&self, session: &Session) -> Result<PathBuf, Report> {
         use std::fs;
 
@@ -149,6 +206,14 @@ impl LinkLibrary {
                             )));
                         }
                     }
+                    LibraryKind::Masp => {
+                        if !path.is_file() {
+                            return Err(Report::msg(format!(
+                                "unable to load Miden Assembly package from '{}': not a file",
+                                path.display()
+                            )));
+                        }
+                    }
                 }
                 return Ok(path);
             }
@@ -161,6 +226,7 @@ impl LinkLibrary {
     }
 }
 
+#[cfg(feature = "std")]
 impl clap::builder::ValueParserFactory for LinkLibrary {
     type Parser = LinkLibraryParser;
 
@@ -169,9 +235,12 @@ impl clap::builder::ValueParserFactory for LinkLibrary {
     }
 }
 
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct LinkLibraryParser;
+
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for LinkLibraryParser {
     type Value = LinkLibrary;
 
@@ -199,7 +268,7 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
         &self,
         _cmd: &clap::Command,
         _arg: Option<&clap::Arg>,
-        value: &OsStr,
+        value: &std::ffi::OsStr,
     ) -> Result<Self::Value, clap::error::Error> {
         use clap::error::{Error, ErrorKind};
 
@@ -289,4 +358,30 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
             })
         }
     }
+}
+
+/// Add libraries required by the target environment to the list of libraries to link against only
+/// if they are not already present.
+pub fn add_target_link_libraries(
+    link_libraries_in: Vec<LinkLibrary>,
+    target: &TargetEnv,
+) -> Vec<LinkLibrary> {
+    let mut link_libraries_out = link_libraries_in;
+    match target {
+        TargetEnv::Base | TargetEnv::Emu => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+        }
+        TargetEnv::Rollup { .. } => {
+            if !link_libraries_out.iter().any(|ll| ll.name == "std") {
+                link_libraries_out.push(LinkLibrary::std());
+            }
+
+            if !link_libraries_out.iter().any(|ll| ll.name == "base") {
+                link_libraries_out.push(LinkLibrary::base());
+            }
+        }
+    }
+    link_libraries_out
 }

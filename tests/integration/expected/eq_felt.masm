@@ -1,7 +1,28 @@
-# mod eq_felt
+# mod root_ns:root@1.0.0
 
-export.entrypoint
-    swap.1 eq push.1 eq
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
 end
 
+# mod root_ns:root@1.0.0::eq_felt
+
+export.entrypoint
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::eq_felt::intrinsics::felt::eq
+    trace.252
+    nop
+    push.1
+    eq
+end
+
+proc.intrinsics::felt::eq
+    eq
+end
 

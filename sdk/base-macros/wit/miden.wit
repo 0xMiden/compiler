@@ -1,0 +1,175 @@
+package miden:base@1.0.0;
+
+/// Types to be used in tx-kernel interface
+interface core-types {
+    /// Represents base field element in the field using Montgomery representation.
+    /// Internal values represent x * R mod M where R = 2^64 mod M and x in [0, M).
+    /// The backing type is `f64` but the internal values are always integer in the range [0, M).
+    /// Field modulus M = 2^64 - 2^32 + 1
+    record felt {
+        /// We plan to use f32 as the backing type for the field element. It has the size that we need and
+        /// we don't plan to support floating point arithmetic in programs for Miden VM.
+        inner: f32,
+    }
+
+
+    /// A group of four field elements in the Miden base field.
+    // type word = tuple<felt, felt, felt, felt>;
+    record word {
+        inner: tuple<felt, felt, felt, felt>
+    }
+
+    /// A cryptographic digest representing a 256-bit hash value.
+    /// This is a wrapper around `word` which contains 4 field elements.
+    record digest {
+        inner: word
+    }
+
+    /// Unique identifier of an account.
+    ///
+    /// # Layout
+    ///
+    /// An `AccountId` consists of two field elements, where the first is called the prefix and the
+    /// second is called the suffix. It is laid out as follows:
+    ///
+    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
+    /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
+    record account-id {
+    	prefix: felt,
+	suffix: felt
+    }
+
+    /// Creates a new account ID from a field element.
+    //account-id-from-felt: func(felt: felt) -> account-id;
+
+    /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
+    record recipient {
+        inner: word
+    }
+
+    record tag {
+        inner: felt
+    }
+
+    /// A fungible or a non-fungible asset.
+    ///
+    /// All assets are encoded using a single word (4 elements) such that it is easy to determine the
+    /// type of an asset both inside and outside Miden VM. Specifically:
+    ///   Element 1 will be:
+    ///    - ZERO for a fungible asset
+    ///    - non-ZERO for a non-fungible asset
+    ///   The most significant bit will be:
+    ///    - ONE for a fungible asset
+    ///    - ZERO for a non-fungible asset
+    ///
+    /// The above properties guarantee that there can never be a collision between a fungible and a
+    /// non-fungible asset.
+    ///
+    /// The methodology for constructing fungible and non-fungible assets is described below.
+    ///
+    /// # Fungible assets
+    /// The most significant element of a fungible asset is set to the ID of the faucet which issued
+    /// the asset. This guarantees the properties described above (the first bit is ONE).
+    ///
+    /// The least significant element is set to the amount of the asset. This amount cannot be greater
+    /// than 2^63 - 1 and thus requires 63-bits to store.
+    ///
+    /// Elements 1 and 2 are set to ZERO.
+    ///
+    /// It is impossible to find a collision between two fungible assets issued by different faucets as
+    /// the faucet_id is included in the description of the asset and this is guaranteed to be different
+    /// for each faucet as per the faucet creation logic.
+    ///
+    /// # Non-fungible assets
+    /// The 4 elements of non-fungible assets are computed as follows:
+    /// - First the asset data is hashed. This compresses an asset of an arbitrary length to 4 field
+    ///   elements: [d0, d1, d2, d3].
+    /// - d1 is then replaced with the faucet_id which issues the asset: [d0, faucet_id, d2, d3].
+    /// - Lastly, the most significant bit of d3 is set to ZERO.
+    ///
+    /// It is impossible to find a collision between two non-fungible assets issued by different faucets
+    /// as the faucet_id is included in the description of the non-fungible asset and this is guaranteed
+    /// to be different as per the faucet creation logic. Collision resistance for non-fungible assets
+    /// issued by the same faucet is ~2^95.
+    record asset {
+        inner: word
+    }
+
+    /// Account nonce
+    record nonce {
+        inner: felt
+    }
+
+    /// Account hash
+    record account-hash {
+        inner: word
+    }
+
+    /// Block hash
+    record block-hash {
+        inner: word
+    }
+
+    /// Storage value
+    record storage-value {
+        inner: word
+    }
+
+    /// Account storage root
+    record storage-root {
+        inner: word
+    }
+
+    /// Account code root
+    record account-code-root {
+        inner: word
+    }
+
+    /// Commitment to the account vault
+    record vault-commitment {
+        inner: word
+    }
+
+    /// An index of the created note
+    record note-idx {
+        inner: felt
+    }
+
+    record note-type {
+        inner: felt
+    }
+
+    record note-execution-hint {
+        inner: felt
+    }
+
+}
+
+
+/// The note script interface that is expected to be implemented by note scripts.
+interface note-script {
+    use core-types.{word};
+
+    run: func(arg: word);
+}
+
+/// The transaction script interface that is expected to be implemented by transaction scripts.
+interface transaction-script {
+    use core-types.{word};
+
+    run: func(arg: word);
+}
+
+/// The authentication component interface that is expected to export exactly one `auth__*`
+/// function
+interface authentication-component {
+    use core-types.{word};
+
+    auth-procedure: func(arg: word);
+}
+
+world base-world {
+    export core-types;
+    export note-script;
+    export transaction-script;
+}

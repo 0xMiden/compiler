@@ -3,9 +3,11 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{Felt, Word};
+use crate::{
+    felt,
+    intrinsics::{Felt, Word},
+};
 
-#[link(wasm_import_module = "std::mem")]
 extern "C" {
 
     /// Moves an arbitrary number of words from the advice stack to memory.
@@ -18,7 +20,7 @@ extern "C" {
     /// Cycles:
     /// - Even num_words: 48 + 9 * num_words / 2
     /// - Odd num_words: 65 + 9 * round_down(num_words / 2)
-    #[link_name = "pipe_words_to_memory<0x0000000000000000000000000000000000000000000000000000000000000000>"]
+    #[link_name = "std::mem::pipe_words_to_memory"]
     fn extern_pipe_words_to_memory(num_words: Felt, ptr: *mut Felt, out_ptr: *mut Felt);
 
     /// Moves an even number of words from the advice stack to memory.
@@ -33,7 +35,7 @@ extern "C" {
     /// - The value num_words = end_ptr - write_ptr must be positive and even
     ///
     /// Cycles: 10 + 9 * num_words / 2
-    #[link_name = "pipe_double_words_to_memory<0x0000000000000000000000000000000000000000000000000000000000000000>"]
+    #[link_name = "std::mem::pipe_double_words_to_memory"]
     fn extern_pipe_double_words_to_memory(
         c0: Felt,
         c1: Felt,
@@ -51,6 +53,24 @@ extern "C" {
         end_ptr: *mut Felt,
         out_ptr: *mut Felt,
     );
+
+    /// Moves an arbitrary number of words from the advice stack to memory and asserts it matches the commitment.
+    ///
+    /// Input: [num_words, write_ptr, COM, ...]
+    /// Output: [write_ptr', ...]
+    ///
+    /// Cycles:
+    /// - Even num_words: 58 + 9 * (num_words / 2)
+    /// - Odd num_words: 75 + 9 * round_down(num_words / 2)
+    #[link_name = "std::mem::pipe_preimage_to_memory"]
+    pub(crate) fn extern_pipe_preimage_to_memory(
+        num_words: Felt,
+        write_ptr: *mut Felt,
+        com0: Felt,
+        com1: Felt,
+        com2: Felt,
+        com3: Felt,
+    ) -> i32;
 }
 
 /// Reads an arbitrary number of words `num_words` from the advice stack and returns them along with
@@ -96,7 +116,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     let end_ptr = unsafe { write_ptr.add(num_words_in_felts) };
     // Place for returned C, B, A, write_ptr
     let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
-    let zero = Felt::from_u64_unchecked(0);
+    let zero = felt!(0);
     unsafe {
         extern_pipe_double_words_to_memory(
             zero,
@@ -116,7 +136,35 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         let Result { b, .. } = ret_area.assume_init();
-        // B (second) is the hash (see https://github.com/0xPolygonMiden/miden-vm/blob/3a957f7c90176914bda2139f74bff9e5700d59ac/stdlib/asm/crypto/hashes/native.masm#L1-L16 )
+        // B (second) is the hash (see https://github.com/0xMiden/miden-vm/blob/3a957f7c90176914bda2139f74bff9e5700d59ac/stdlib/asm/crypto/hashes/native.masm#L1-L16 )
         (b, buf)
     }
+}
+
+/// Pops an arbitrary number of words from the advice stack and asserts it matches the commitment.
+/// Returns a Vec containing the loaded words.
+#[inline]
+pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
+    // Allocate a Vec with the specified capacity
+    let num_words_usize = num_words.as_u64() as usize;
+    let num_felts = num_words_usize * 4;
+    let mut result: Vec<Felt> = Vec::with_capacity(num_felts);
+
+    let result_miden_ptr = (result.as_mut_ptr() as usize) / 4;
+    unsafe {
+        // Call pipe_preimage_to_memory to load words from advice stack
+        extern_pipe_preimage_to_memory(
+            num_words,
+            result_miden_ptr as *mut Felt,
+            commitment[3],
+            commitment[2],
+            commitment[1],
+            commitment[0],
+        );
+
+        // Set the length of the Vec to match what was loaded
+        result.set_len(num_felts);
+    }
+
+    result
 }

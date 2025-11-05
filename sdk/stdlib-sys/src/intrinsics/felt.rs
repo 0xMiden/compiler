@@ -1,65 +1,65 @@
-#![allow(clippy::transmute_int_to_float)]
-
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[link(wasm_import_module = "miden:stdlib/intrinsics_felt")]
 extern "C" {
-    #[link_name = "from_u64_unchecked"]
+    #[link_name = "intrinsics::felt::from_u64_unchecked"]
     fn extern_from_u64_unchecked(value: u64) -> Felt;
 
-    #[link_name = "as_u64"]
+    #[link_name = "intrinsics::felt::from_u32"]
+    fn extern_from_u32(value: u32) -> Felt;
+
+    #[link_name = "intrinsics::felt::as_u64"]
     fn extern_as_u64(felt: Felt) -> u64;
 
-    #[link_name = "add"]
-    fn extern_add(a: Felt, b: Felt) -> Felt;
-
-    #[link_name = "sub"]
+    #[link_name = "intrinsics::felt::sub"]
     fn extern_sub(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "mul"]
+    #[link_name = "intrinsics::felt::mul"]
     fn extern_mul(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "div"]
+    #[link_name = "intrinsics::felt::div"]
     fn extern_div(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "neg"]
+    #[link_name = "intrinsics::felt::neg"]
     fn extern_neg(a: Felt) -> Felt;
 
-    #[link_name = "inv"]
+    #[link_name = "intrinsics::felt::inv"]
     fn extern_inv(a: Felt) -> Felt;
 
-    #[link_name = "pow2"]
+    #[link_name = "intrinsics::felt::pow2"]
     fn extern_pow2(a: Felt) -> Felt;
 
-    #[link_name = "exp"]
+    #[link_name = "intrinsics::felt::exp"]
     fn extern_exp(a: Felt, b: Felt) -> Felt;
 
-    #[link_name = "eq"]
+    #[link_name = "intrinsics::felt::eq"]
     fn extern_eq(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "gt"]
+    #[link_name = "intrinsics::felt::gt"]
     fn extern_gt(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "lt"]
+    #[link_name = "intrinsics::felt::lt"]
     fn extern_lt(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "ge"]
+    #[link_name = "intrinsics::felt::ge"]
     fn extern_ge(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "le"]
+    #[link_name = "intrinsics::felt::le"]
     fn extern_le(a: Felt, b: Felt) -> i32;
 
-    #[link_name = "is_odd"]
+    #[link_name = "intrinsics::felt::is_odd"]
     fn extern_is_odd(a: Felt) -> i32;
 
-    #[link_name = "assert"]
+    #[link_name = "intrinsics::felt::assert"]
     fn extern_assert(a: Felt);
 
-    #[link_name = "assertz"]
+    #[link_name = "intrinsics::felt::assertz"]
     fn extern_assertz(a: Felt);
 
-    #[link_name = "assert_eq"]
+    #[link_name = "intrinsics::felt::assert_eq"]
     fn extern_assert_eq(a: Felt, b: Felt);
+
+    #[link_name = "intrinsics::felt::add"]
+    fn extern_add(a: Felt, b: Felt) -> Felt;
 }
 
 /// Creates a `Felt` from an integer constant checking that it is within the
@@ -69,8 +69,12 @@ macro_rules! felt {
     // Trigger a compile-time error if the value is not a constant
     ($value:literal) => {{
         const VALUE: u64 = $value as u64;
-        assert!(VALUE <= Felt::M, "Invalid Felt value, must be >= 0 and <= 2^64 - 2^32 + 1");
-        Felt::from_u64_unchecked(VALUE)
+        // assert!(VALUE <= Felt::M, "Invalid Felt value, must be >= 0 and <= 2^64 - 2^32 + 1");
+        // Temporarily switch to `from_u32` to use `bitcast` and avoid checks.
+        // see https://github.com/0xMiden/compiler/issues/361
+        assert!(VALUE <= u32::MAX as u64, "Invalid value, must be >= 0 and <= 2^32");
+        const VALUE_U32: u32 = $value as u32;
+        Felt::from_u32(VALUE_U32)
     }};
 }
 
@@ -80,8 +84,10 @@ pub enum FeltError {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone)]
-pub struct Felt(f32);
+#[derive(Copy, Clone, Debug)]
+pub struct Felt {
+    pub inner: f32,
+}
 
 impl Felt {
     /// Field modulus = 2^64 - 2^32 + 1
@@ -90,6 +96,11 @@ impl Felt {
     #[inline(always)]
     pub fn from_u64_unchecked(value: u64) -> Self {
         unsafe { extern_from_u64_unchecked(value) }
+    }
+
+    #[inline(always)]
+    pub fn from_u32(value: u32) -> Self {
+        unsafe { extern_from_u32(value) }
     }
 
     #[inline(always)]
@@ -141,26 +152,34 @@ impl From<Felt> for u64 {
 
 impl From<u32> for Felt {
     fn from(value: u32) -> Self {
-        Self(unsafe { core::mem::transmute::<u32, f32>(value) })
+        Self {
+            inner: f32::from_bits(value),
+        }
     }
 }
 
 impl From<u16> for Felt {
     fn from(value: u16) -> Self {
-        Self(unsafe { core::mem::transmute::<u32, f32>(value as u32) })
+        Self {
+            inner: f32::from_bits(value as u32),
+        }
     }
 }
 
 impl From<u8> for Felt {
     fn from(value: u8) -> Self {
-        Self(unsafe { core::mem::transmute::<u32, f32>(value as u32) })
+        Self {
+            inner: f32::from_bits(value as u32),
+        }
     }
 }
 
 #[cfg(target_pointer_width = "32")]
 impl From<usize> for Felt {
     fn from(value: usize) -> Self {
-        Self(unsafe { core::mem::transmute(value as u32) })
+        Self {
+            inner: f32::from_bits(value as u32),
+        }
     }
 }
 
@@ -286,7 +305,7 @@ impl Ord for Felt {
     }
 }
 
-/// If `a` == 1, removes it from the stack.  Fails if `a` != 1
+/// Fails if `a` != 1
 #[inline(always)]
 pub fn assert(a: Felt) {
     unsafe {
@@ -294,7 +313,7 @@ pub fn assert(a: Felt) {
     }
 }
 
-/// If `a` == 0, removes it from the stack.  Fails if `a` != 0
+/// Fails if `a` != 0
 #[inline(always)]
 pub fn assertz(a: Felt) {
     unsafe {
@@ -302,7 +321,7 @@ pub fn assertz(a: Felt) {
     }
 }
 
-/// If `a` == `b`, removes them from the stack.  Fails if `a` != `b`
+/// Fails if `a` != `b`
 #[inline(always)]
 pub fn assert_eq(a: Felt, b: Felt) {
     unsafe {

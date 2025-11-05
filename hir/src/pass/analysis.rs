@@ -1,460 +1,706 @@
 use alloc::rc::Rc;
 use core::{
     any::{Any, TypeId},
-    hash::Hash,
+    cell::RefCell,
 };
 
-use midenc_session::Session;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use smallvec::SmallVec;
 
-use crate::diagnostics::Report;
+use super::{PassInstrumentor, PassTarget};
+use crate::{FxHashMap, Op, Operation, OperationRef, Report};
 
-type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
-
-/// A convenient type alias for `Result<T, AnalysisError>`
-pub type AnalysisResult<T> = Result<T, Report>;
-
-#[doc(hidden)]
-pub trait PreservableAnalysis: Any {
-    /// Called to determine if this analysis should be invalidated after a pass is run
-    ///
-    /// By default, all analyses are always invalidated after a pass, unless that pass
-    /// specifically marks an analysis as preserved.
-    ///
-    /// If overridden, implementors must ensure that they use the provided
-    /// [PreservedAnalyses] set to determine if any dependencies were invalidated,
-    /// and return `true` if so.
-    fn is_invalidated(&self, _analyses: &PreservedAnalyses) -> bool {
-        true
-    }
-}
-impl<A: Analysis + Any> PreservableAnalysis for A {
-    fn is_invalidated(&self, analyses: &PreservedAnalyses) -> bool {
-        <A as Analysis>::is_invalidated(self, analyses)
-    }
-}
-
-/// An [Analysis] computes information about some compiler entity, e.g. a module.
+/// The [Analysis] trait is used to define an analysis over some operation.
 ///
-/// Analyses are cached, and associated with a unique key derived from the entity
-/// to which they were applied. These cached analyses can then be queried via the
-/// [AnalysisManager] by requesting a specific concrete [Analysis] type using that
-/// key.
+/// Analyses must be default-constructible, and `Sized + 'static` to support downcasting.
 ///
-/// For example, a module is typically associated with a unique identifier. Thus
-/// to obtain the analysis for a specific module, you would request the specific
-/// analysis using the module id, see [AnalysisManager::get].
-pub trait Analysis: Sized + Any {
-    /// The entity to which this analysis applies
-    type Entity: AnalysisKey;
+/// An analysis, when requested, is first constructed via its `Default` implementation, and then
+/// [Analysis::analyze] is called on the target type in order to compute the analysis results.
+/// The analysis type also acts as storage for the analysis results.
+///
+/// When the IR is changed, analyses are invalidated by default, unless they are specifically
+/// preserved via the [PreservedAnalyses] set. When an analysis is being asked if it should be
+/// invalidated, via [Analysis::invalidate], it has the opportunity to identify if it actually
+/// needs to be invalidated based on what analyses were preserved. If dependent analyses of this
+/// analysis haven't been invalidated, then this analysis may be able preserve itself as well,
+/// and avoid redundant recomputation.
+pub trait Analysis: Default + Any {
+    /// The specific type on which this analysis is performed.
+    ///
+    /// The analysis will only be run when an operation is of this type.
+    type Target: ?Sized + PassTarget;
 
-    /// Analyze `entity`, using the provided [AnalysisManager] to query other
-    /// analyses on which this one depends; and the provided [Session] to
-    /// configure this analysis based on the current compilation session.
+    /// The [TypeId] associated with the concrete underlying [Analysis] implementation
+    ///
+    /// This is automatically implemented for you, but in some cases, such as wrapping an
+    /// analysis in another type, you may want to implement this so that queries against the
+    /// type return the expected [TypeId]
+    #[inline]
+    fn analysis_id(&self) -> TypeId {
+        TypeId::of::<Self>()
+    }
+
+    /// Get a `dyn Any` reference to the underlying [Analysis] implementation
+    ///
+    /// This is automatically implemented for you, but in some cases, such as wrapping an
+    /// analysis in another type, you may want to implement this so that queries against the
+    /// type return the expected [TypeId]
+    #[inline(always)]
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    /// Same as [Analysis::as_any], but used specifically for getting a reference-counted handle,
+    /// rather than a raw reference.
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any> {
+        self as Rc<dyn Any>
+    }
+
+    /// Returns the display name for this analysis
+    ///
+    /// By default this simply returns the name of the concrete implementation type.
+    fn name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+    }
+
+    /// Analyze `op` using the provided [AnalysisManager].
     fn analyze(
-        entity: &Self::Entity,
-        analyses: &mut AnalysisManager,
-        session: &Session,
-    ) -> AnalysisResult<Self>;
+        &mut self,
+        op: &Self::Target,
+        analysis_manager: AnalysisManager,
+    ) -> Result<(), Report>;
 
-    /// Called to determine if this analysis should be invalidated after a pass is run
+    /// Query this analysis for invalidation.
     ///
-    /// By default, all analyses are always invalidated after a pass, unless that pass
-    /// specifically marks an analysis as preserved.
+    /// Given a preserved analysis set, returns true if it should truly be invalidated. This allows
+    /// for more fine-tuned invalidation in cases where an analysis wasn't explicitly marked
+    /// preserved, but may be preserved(or invalidated) based upon other properties such as analyses
+    /// sets.
+    fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) -> bool;
+}
+
+/// A type-erased [Analysis].
+///
+/// This is automatically derived for all [Analysis] implementations, and is the means by which
+/// one can abstract over sets of analyses using dynamic dispatch.
+///
+/// This essentially just delegates to the underlying [Analysis] implementation, but it also handles
+/// converting a raw [OperationRef] to the appropriate target type expected by the underlying
+/// [Analysis].
+pub trait OperationAnalysis {
+    /// The unique type id of this analysis
+    fn analysis_id(&self) -> TypeId;
+
+    /// Used for dynamic casting to the underlying [Analysis] type
+    fn as_any(&self) -> &dyn Any;
+
+    /// Used for dynamic casting to the underlying [Analysis] type
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any>;
+
+    /// The name of this analysis
+    fn name(&self) -> &'static str;
+
+    /// Runs this analysis over `op`.
     ///
-    /// If overridden, implementors must ensure that they use the provided
-    /// [PreservedAnalyses] set to determine if any dependencies were invalidated,
-    /// and return `true` if so.
-    fn is_invalidated(&self, _analyses: &PreservedAnalyses) -> bool {
-        true
+    /// NOTE: This is only ever called once per instantiation of the analysis, but in theory can
+    /// support multiple calls to re-analyze `op`. Each call should reset any internal state to
+    /// ensure that if an analysis is reused in this way, that each analysis gets a clean slate.
+    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager) -> Result<(), Report>;
+
+    /// Query this analysis for invalidation.
+    ///
+    /// Given a preserved analysis set, returns true if it should truly be invalidated. This allows
+    /// for more fine-tuned invalidation in cases where an analysis wasn't explicitly marked
+    /// preserved, but may be preserved(or invalidated) based upon other properties such as analyses
+    /// sets.
+    ///
+    /// Invalidated analyses must be removed from `preserved_analyses`.
+    fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) -> bool;
+}
+
+impl dyn OperationAnalysis {
+    /// Cast an reference-counted handle to this analysis to its concrete implementation type.
+    ///
+    /// Returns `None` if the underlying analysis is not of type `T`
+    #[inline]
+    pub fn downcast<T: 'static>(self: Rc<Self>) -> Option<Rc<T>> {
+        self.as_any_rc().downcast::<T>().ok()
     }
 }
 
-/// The [AnalysisKey] trait is implemented for compiler entities that are targeted
-/// for one or more [Analysis], and have a stable, unique identifier which can be
-/// used to cache the results of each analysis computed for that entity.
-///
-/// You must ensure that the key uniquely identifies the entity to which it applies,
-/// or incorrect analysis results will be returned from the [AnalysisManager]. Note,
-/// however, that it is not necessary to ensure that the key reflect changes to the
-/// underlying entity (see [AnalysisManager::invalidate] for how invalidation is done).
-pub trait AnalysisKey: 'static {
-    /// The type of the unique identifier associated with `Self`
-    type Key: Hash + PartialEq + Eq;
-
-    /// Get the key to associate with the current entity
-    fn key(&self) -> Self::Key;
-}
-
-/// This type is used as a cache key for analyses cached by the [AnalysisManager].
-///
-/// It pairs the [TypeId] of the [Analysis], with the hash of the entity type and
-/// the unique key associated with the specific instance of the entity type to which
-/// the analysis applies. This ensures that for any given analysis/entity combination,
-/// no two cache entries will have the same key unless the analysis key for the entity
-/// matches.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CachedAnalysisKey {
-    ty: TypeId,
-    key: u64,
-}
-impl CachedAnalysisKey {
-    /// Get a new cache key from the given type information and analysis key
-    fn new<A>(key: &<<A as Analysis>::Entity as AnalysisKey>::Key) -> Self
-    where
-        A: Analysis,
-    {
-        let ty = TypeId::of::<A>();
-        let key = Self::entity_key::<<A as Analysis>::Entity>(key);
-        Self { ty, key }
-    }
-
-    fn entity_key<T>(key: &<T as AnalysisKey>::Key) -> u64
-    where
-        T: AnalysisKey,
-    {
-        use core::hash::Hasher;
-
-        let mut hasher = FxHasher::default();
-        let entity_ty = TypeId::of::<T>();
-        entity_ty.hash(&mut hasher);
-        key.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-
-/// [PreservedAnalyses] represents the set of analyses which will be preserved for the next pass.
-///
-/// You may mark an analysis as preserved using [AnalysisManager::mark_preserved].
-#[derive(Default)]
-pub struct PreservedAnalyses {
-    current_entity_key: u64,
-    preserved: FxHashMap<CachedAnalysisKey, Rc<dyn PreservableAnalysis>>,
-}
-impl PreservedAnalyses {
-    fn new(
-        current_entity_key: u64,
-        mut cached: FxHashMap<CachedAnalysisKey, Rc<dyn PreservableAnalysis>>,
-        preserve: FxHashSet<CachedAnalysisKey>,
-    ) -> Self {
-        // Since we know which analyses are definitely preserved,
-        // build the initial preserved analyses set from those.
-        let mut preserved = Self::with_capacity(current_entity_key, preserve.len());
-        for key in preserve.into_iter() {
-            if let Some(analysis) = cached.remove(&key) {
-                preserved.insert(key, analysis);
-            }
-        }
-
-        // Preserve all analyses for other entities
-        let mut worklist = vec![];
-        for (key, analysis) in cached.into_iter() {
-            if key.key != current_entity_key {
-                preserved.insert(key, analysis);
-                continue;
-            }
-            worklist.push((key, analysis));
-        }
-
-        // Ask all remaining analyses if they should indeed be invalidated.
-        //
-        // We iterate to a fixpoint here to ensure that any new preserved analyses
-        // are taken into account by the remaining analyses pending invalidation
-        // when their `is_invalidated` method is called. If those analyses depend
-        // on a newly preserved analysis, they may be able to avoid being invalidated
-        // if they have no other invalidated dependencies.
-        let mut q = vec![];
-        let mut changed = false;
-        loop {
-            while let Some((key, analysis)) = worklist.pop() {
-                if analysis.is_invalidated(&preserved) {
-                    q.push((key, analysis));
-                    continue;
-                } else {
-                    changed = true;
-                    preserved.insert(key, analysis);
-                }
-            }
-            if !changed {
-                break;
-            }
-            changed = false;
-            core::mem::swap(&mut worklist, &mut q);
-        }
-
-        preserved
-    }
-
-    /// Returns true if the analysis associated with the given type and key is preserved
-    pub fn is_preserved<A>(&self) -> bool
-    where
-        A: Analysis,
-    {
-        let ty = TypeId::of::<A>();
-        let key = CachedAnalysisKey {
-            ty,
-            key: self.current_entity_key,
-        };
-        self.preserved.contains_key(&key)
+impl<A> OperationAnalysis for A
+where
+    A: Analysis,
+{
+    #[inline]
+    fn analysis_id(&self) -> TypeId {
+        <A as Analysis>::analysis_id(self)
     }
 
     #[inline]
-    fn insert(&mut self, key: CachedAnalysisKey, analysis: Rc<dyn PreservableAnalysis>) {
-        self.preserved.insert(key, analysis);
+    fn as_any(&self) -> &dyn Any {
+        <A as Analysis>::as_any(self)
     }
 
-    fn with_capacity(current_entity_key: u64, cap: usize) -> Self {
-        use std::collections::HashMap;
+    #[inline]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any> {
+        <A as Analysis>::as_any_rc(self)
+    }
 
-        Self {
-            current_entity_key,
-            preserved: HashMap::with_capacity_and_hasher(cap, BuildFxHasher::default()),
+    #[inline]
+    fn name(&self) -> &'static str {
+        <A as Analysis>::name(self)
+    }
+
+    #[inline]
+    fn analyze(&mut self, op: &OperationRef, am: AnalysisManager) -> Result<(), Report> {
+        let op = <<A as Analysis>::Target as PassTarget>::into_target(op);
+        <A as Analysis>::analyze(self, &op, am)
+    }
+
+    #[inline]
+    fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) -> bool {
+        <A as Analysis>::invalidate(self, preserved_analyses)
+    }
+}
+
+/// Represents a set of analyses that are known to be preserved after a rewrite has been applied.
+#[derive(Default)]
+pub struct PreservedAnalyses {
+    /// The set of preserved analysis type ids
+    preserved: SmallVec<[TypeId; 8]>,
+}
+impl PreservedAnalyses {
+    /// Mark all analyses as preserved.
+    ///
+    /// This is generally only useful when the IR is known not to have changed.
+    pub fn preserve_all(&mut self) {
+        self.insert(AllAnalyses::TYPE_ID);
+    }
+
+    /// Mark the specified [Analysis] type as preserved.
+    pub fn preserve<A: 'static>(&mut self) {
+        self.insert(TypeId::of::<A>());
+    }
+
+    /// Mark a type as preserved using its raw [TypeId].
+    ///
+    /// Typically it is best to use [Self::preserve] instead, but this can be useful in cases
+    /// where you can't express the type in Rust directly.
+    pub fn preserve_raw(&mut self, id: TypeId) {
+        self.insert(id);
+    }
+
+    /// Returns true if the specified type is preserved.
+    ///
+    /// This will return true if all analyses are marked preserved, even if the specified type was
+    /// not explicitly preserved.
+    pub fn is_preserved<A: 'static>(&self) -> bool {
+        self.preserved.contains(&TypeId::of::<A>()) || self.is_all()
+    }
+
+    /// Returns true if the specified [TypeId] is marked preserved.
+    ///
+    /// This will return true if all analyses are marked preserved, even if the specified type was
+    /// not explicitly preserved.
+    pub fn is_preserved_raw(&self, ty: &TypeId) -> bool {
+        self.preserved.contains(ty) || self.is_all()
+    }
+
+    /// Mark a previously preserved type as invalidated.
+    ///
+    /// This will also remove the "all preserved" flag, if it had been set.
+    pub fn unpreserve<A: 'static>(&mut self) {
+        // We must also remove the `all` marker, as we have invalidated one of the analyses
+        self.remove(&AllAnalyses::TYPE_ID);
+        self.remove(&TypeId::of::<A>());
+    }
+
+    /// Mark a previously preserved [TypeId] as invalidated.
+    ///
+    /// This will also remove the "all preserved" flag, if it had been set.
+    pub fn unpreserve_raw(&mut self, ty: &TypeId) {
+        // We must also remove the `all` marker, as we have invalidated one of the analyses
+        self.remove(&AllAnalyses::TYPE_ID);
+        self.remove(ty)
+    }
+
+    /// Returns true if all analyses are preserved
+    pub fn is_all(&self) -> bool {
+        self.preserved.contains(&AllAnalyses::TYPE_ID)
+    }
+
+    /// Returns true if no analyses are being preserved
+    pub fn is_none(&self) -> bool {
+        self.preserved.is_empty()
+    }
+
+    fn insert(&mut self, id: TypeId) {
+        match self.preserved.binary_search_by_key(&id, |probe| *probe) {
+            Ok(index) => self.preserved.insert(index, id),
+            Err(index) => self.preserved.insert(index, id),
+        }
+    }
+
+    fn remove(&mut self, id: &TypeId) {
+        if let Ok(index) = self.preserved.binary_search_by_key(&id, |probe| probe) {
+            self.preserved.remove(index);
         }
     }
 }
 
-/// The [AnalysisManager] is used to query and compute analyses required during compilation.
+/// A marker type that is used to represent all possible [Analysis] types
+pub struct AllAnalyses;
+impl AllAnalyses {
+    const TYPE_ID: TypeId = TypeId::of::<AllAnalyses>();
+}
+
+/// This type wraps all analyses stored in an [AnalysisMap], and handles some of the boilerplate
+/// details around invalidation by intercepting calls to [Analysis::invalidate] and wrapping it
+/// with extra logic. Notably, ensuring that invalidated analyses are removed from the
+/// [PreservedAnalyses] set is handled by this wrapper.
 ///
-/// Each thread gets its own analysis manager, and may query any analysis, as long as the
-/// caller has the key used for caching that analysis (e.g. module identifier).
+/// It is a transparent wrapper around `A`, and otherwise acts as a simple proxy to `A`'s
+/// implementation of the [Analysis] trait.
+#[repr(transparent)]
+struct AnalysisWrapper<A> {
+    analysis: A,
+}
+impl<A: Analysis> AnalysisWrapper<A> {
+    fn new(op: &<A as Analysis>::Target, am: AnalysisManager) -> Result<Self, Report> {
+        let mut analysis = A::default();
+        analysis.analyze(op, am)?;
+
+        Ok(Self { analysis })
+    }
+}
+impl<A: Default> Default for AnalysisWrapper<A> {
+    fn default() -> Self {
+        Self {
+            analysis: Default::default(),
+        }
+    }
+}
+impl<A: Analysis> Analysis for AnalysisWrapper<A> {
+    type Target = <A as Analysis>::Target;
+
+    #[inline]
+    fn analysis_id(&self) -> TypeId {
+        self.analysis.analysis_id()
+    }
+
+    #[inline]
+    fn as_any(&self) -> &dyn Any {
+        self.analysis.as_any()
+    }
+
+    #[inline]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any> {
+        // SAFETY: This transmute is safe because AnalysisWrapper is a transparent wrapper
+        // around A, so a pointer to the former is a pointer to the latter
+        let ptr = Rc::into_raw(self);
+        unsafe { Rc::<A>::from_raw(ptr.cast()) as Rc<dyn Any> }
+    }
+
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.analysis.name()
+    }
+
+    #[inline]
+    fn analyze(&mut self, op: &Self::Target, am: AnalysisManager) -> Result<(), Report> {
+        self.analysis.analyze(op, am)
+    }
+
+    fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) -> bool {
+        let invalidated = self.analysis.invalidate(preserved_analyses);
+        if invalidated {
+            preserved_analyses.unpreserve::<A>();
+        }
+        invalidated
+    }
+}
+
+/// An [AnalysisManager] is the primary entrypoint for performing analysis on a specific operation
+/// instance that it is constructed for.
 ///
-/// To compute an analysis, one must have a reference to the entity on which the analysis
-/// is applied, and request that the analysis be computed.
+/// It is used to manage and cache analyses for the operation, as well as those of child operations,
+/// via nested [AnalysisManager] instances.
 ///
-/// Analyses are cached, and assumed valid until explicitly invalidated. An analysis should
-/// be invalidated any time the underlying entity changes, unless the analysis is known to
-/// be preserved even with those changes.
-#[derive(Default)]
+/// This type is a thin wrapper around a pointer, and is meant to be passed by value. It can be
+/// cheaply cloned.
+#[derive(Clone)]
+#[repr(transparent)]
 pub struct AnalysisManager {
-    /// We store the analysis results as `Rc` so that we can freely hand out references
-    /// to the analysis results without having to concern ourselves with too much lifetime
-    /// management.
-    ///
-    /// Since an [AnalysisManager] is scoped to a single thread, the reference counting
-    /// overhead is essentially irrelevant.
-    cached: FxHashMap<CachedAnalysisKey, Rc<dyn PreservableAnalysis>>,
-    /// The set of analyses to preserve after the current pass is run
-    preserve: FxHashSet<CachedAnalysisKey>,
-    /// The set of entity keys that have had `preserve_none` set
-    preserve_none: FxHashSet<u64>,
-    /// The set of entity keys that have had `preserve_all` set
-    preserve_all: FxHashSet<u64>,
+    analyses: Rc<NestedAnalysisMap>,
 }
 impl AnalysisManager {
-    /// Get a new, empty [AnalysisManager].
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Check if the given analysis has been computed and is in the cache
-    pub fn is_available<A>(&self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key) -> bool
-    where
-        A: Analysis,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        self.cached.contains_key(&key)
-    }
-
-    /// Get a reference to the analysis of the requested type, for the given entity, if available
-    pub fn get<A>(&self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key) -> Option<Rc<A>>
-    where
-        A: Analysis,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        self.cached.get(&key).cloned().map(preservable_analysis_to_concrete)
-    }
-
-    /// Get a reference to the analysis of the requested type, for the given entity, or panics with
-    /// `msg`
-    pub fn expect<A>(&self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key, msg: &str) -> Rc<A>
-    where
-        A: Analysis,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        self.cached.get(&key).cloned().map(preservable_analysis_to_concrete).expect(msg)
-    }
-
-    /// Get a reference to the analysis of the requested type, or the default value, for the given
-    /// entity, if available
-    ///
-    /// If unavailable, and the default value is returned, that value is not cached.
-    pub fn get_or_default<A>(&self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key) -> Rc<A>
-    where
-        A: Analysis + Default,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        self.cached
-            .get(&key)
-            .cloned()
-            .map(preservable_analysis_to_concrete)
-            .unwrap_or_else(|| Rc::new(A::default()))
-    }
-
-    /// Get a reference to the analysis of the requested type, computing it if necessary
-    ///
-    /// If computing the analysis fails, `Err` is returned.
-    pub fn get_or_compute<A>(
-        &mut self,
-        entity: &<A as Analysis>::Entity,
-        session: &Session,
-    ) -> AnalysisResult<Rc<A>>
-    where
-        A: Analysis,
-    {
-        let key = CachedAnalysisKey::new::<A>(&entity.key());
-        if let Some(cached) = self.cached.get(&key).cloned() {
-            return Ok(preservable_analysis_to_concrete(cached));
+    /// Create a new top-level [AnalysisManager] for `op`
+    pub fn new(op: OperationRef, instrumentor: Option<Rc<PassInstrumentor>>) -> Self {
+        Self {
+            analyses: Rc::new(NestedAnalysisMap::new(op, instrumentor)),
         }
-        let analysis = Rc::new(A::analyze(entity, self, session)?);
-        let any = Rc::clone(&analysis);
-        self.cached.insert(key, any);
+    }
+
+    /// Query for a cached analysis on the given parent operation. The analysis may not exist and if
+    /// it does it may be out-of-date.
+    pub fn get_cached_parent_analysis<A>(&self, parent: OperationRef) -> Option<Rc<A>>
+    where
+        A: Analysis,
+    {
+        let mut current_parent = self.analyses.parent();
+        while let Some(parent_am) = current_parent.take() {
+            if parent_am.get_operation() == parent {
+                return parent_am.analyses().get_cached::<A>();
+            }
+            current_parent = parent_am.parent();
+        }
+        None
+    }
+
+    /// Query for the given analysis for the current operation.
+    pub fn get_analysis<A>(&self) -> Result<Rc<A>, Report>
+    where
+        A: Analysis<Target = Operation>,
+    {
+        self.get_analysis_for::<A, Operation>()
+    }
+
+    /// Query for the given analysis for the current operation of a specific derived operation type.
+    ///
+    /// NOTE: This will panic if the current operation is not of type `O`.
+    pub fn get_analysis_for<A, O>(&self) -> Result<Rc<A>, Report>
+    where
+        A: Analysis<Target = O>,
+        O: 'static,
+    {
+        let op = {
+            let analysis_map = self.analyses.analyses.borrow();
+            let cached = analysis_map.get_cached_for::<A, O>();
+            if let Some(cached) = cached {
+                return Ok(cached);
+            }
+            analysis_map.ir
+        };
+
+        // We have to construct the analysis without borrowing the AnalysisMap, otherwise we might
+        // try to re-borrow the map to construct a dependent analysis while holding a mutable ref.
+        let pi = self.pass_instrumentor();
+        let am = self.clone();
+        let ir = <O as PassTarget>::into_target(&op);
+        let analysis = AnalysisMap::compute_analysis_for::<A, O>(pi, &*ir, &op, am)?;
+
+        // Once the analysis is constructed, we can add it to the map
+        self.analyses
+            .analyses
+            .borrow_mut()
+            .analyses
+            .insert(TypeId::of::<A>(), Rc::clone(&analysis) as Rc<dyn OperationAnalysis>);
+
         Ok(analysis)
     }
 
-    /// If an analysis of the requested type has been computed, take ownership of it,
-    /// and return the owned object to the caller.
-    ///
-    /// If there are outstanding references to the cached analysis data, then the data
-    /// will be cloned so that the caller gets an owning reference.
-    ///
-    /// If the analysis has not been computed, returns `None`
-    pub fn take<A>(&mut self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key) -> Option<A>
-    where
-        A: Analysis + Clone,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        let cached = preservable_analysis_to_concrete(self.cached.remove(&key)?);
-        Some(match Rc::try_unwrap(cached) {
-            Ok(analysis) => analysis,
-            Err(cached) => (*cached).clone(),
-        })
-    }
-
-    /// Insert an analysis into the manager with the given key
-    pub fn insert<A>(&mut self, key: <<A as Analysis>::Entity as AnalysisKey>::Key, analysis: A)
+    /// Query for a cached entry of the given analysis on the current operation.
+    pub fn get_cached_analysis<A>(&self) -> Option<Rc<A>>
     where
         A: Analysis,
     {
-        let key = CachedAnalysisKey::new::<A>(&key);
-        self.cached.insert(key, Rc::new(analysis));
+        self.analyses.analyses().get_cached::<A>()
     }
 
-    /// Mark all analyses as invalidated, unless otherwise preserved, forcing recomputation
-    /// of those analyses the next time they are requested.
-    ///
-    /// This clears any preservation markers that were set prior to calling this function,
-    /// e.g. with `mark_preserved`. When this function returns, all analyses are assumed
-    /// to be invalidated the next time this function is called, unless otherwise indicated.
-    pub fn invalidate<T>(&mut self, key: &<T as AnalysisKey>::Key)
+    /// Query for an analysis of a child operation, constructing it if necessary.
+    pub fn get_child_analysis<A>(&self, op: OperationRef) -> Result<Rc<A>, Report>
     where
-        T: AnalysisKey,
+        A: Analysis<Target = Operation>,
     {
-        use std::collections::HashMap;
+        self.clone().nest(op).get_analysis::<A>()
+    }
 
-        let current_entity_key = CachedAnalysisKey::entity_key::<T>(key);
+    /// Query for an analysis of a child operation of a specific derived operation type,
+    /// constructing it if necessary.
+    ///
+    /// NOTE: This will panic if `op` is not of type `O`.
+    pub fn get_child_analysis_for<A, O>(&self, op: &O) -> Result<Rc<A>, Report>
+    where
+        A: Analysis<Target = O>,
+        O: Op,
+    {
+        self.clone().nest(op.as_operation_ref()).get_analysis_for::<A, O>()
+    }
 
-        if self.preserve_none.remove(&current_entity_key) {
-            self.cached.retain(|k, _| k.key != current_entity_key);
-            return;
+    /// Query for a cached analysis of a child operation, or return `None`.
+    pub fn get_cached_child_analysis<A>(&self, child: &OperationRef) -> Option<Rc<A>>
+    where
+        A: Analysis,
+    {
+        assert!(child.borrow().parent_op().unwrap() == self.analyses.get_operation());
+        let child_analyses = self.analyses.child_analyses.borrow();
+        let child_analyses = child_analyses.get(child)?;
+        let child_analyses = child_analyses.analyses.borrow();
+        child_analyses.get_cached::<A>()
+    }
+
+    /// Get an analysis manager for the given operation, which must be a proper descendant of the
+    /// current operation represented by this analysis manager.
+    pub fn nest(&self, op: OperationRef) -> AnalysisManager {
+        let current_op = self.analyses.get_operation();
+        assert!(
+            current_op.borrow().is_proper_ancestor_of(&op.borrow()),
+            "expected valid descendant op"
+        );
+
+        // Check for the base case where the provided operation is immediately nested
+        if current_op == op.borrow().parent_op().expect("expected `op` to have a parent") {
+            return self.nest_immediate(op);
         }
 
-        if self.preserve_all.remove(&current_entity_key) {
-            return;
+        // Otherwise, we need to collect all ancestors up to the current operation
+        let mut ancestors = SmallVec::<[OperationRef; 4]>::default();
+        let mut next_op = op;
+        while next_op != current_op {
+            ancestors.push(next_op);
+            next_op = next_op.borrow().parent_op().unwrap();
         }
 
-        let mut to_preserve = vec![];
-        for key in self.preserve.iter() {
-            if key.key == current_entity_key {
-                to_preserve.push(*key);
+        let mut manager = self.clone();
+        while let Some(op) = ancestors.pop() {
+            manager = manager.nest_immediate(op);
+        }
+        manager
+    }
+
+    fn nest_immediate(&self, op: OperationRef) -> AnalysisManager {
+        use hashbrown::hash_map::Entry;
+
+        assert!(
+            Some(self.analyses.get_operation()) == op.borrow().parent_op(),
+            "expected immediate child operation"
+        );
+        let parent = self.analyses.clone();
+        let mut child_analyses = self.analyses.child_analyses.borrow_mut();
+        match child_analyses.entry(op) {
+            Entry::Vacant(entry) => {
+                let analyses = entry.insert(Rc::new(parent.nest(op)));
+                AnalysisManager {
+                    analyses: Rc::clone(analyses),
+                }
             }
+            Entry::Occupied(entry) => AnalysisManager {
+                analyses: Rc::clone(entry.get()),
+            },
         }
-
-        let mut to_invalidate = vec![];
-        for key in self.cached.keys() {
-            if key.key == current_entity_key {
-                to_invalidate.push(*key);
-            }
-        }
-
-        let mut preserve = FxHashSet::default();
-        for key in to_preserve.into_iter() {
-            preserve.insert(self.preserve.take(&key).unwrap());
-        }
-
-        let mut cached =
-            HashMap::with_capacity_and_hasher(to_invalidate.len(), BuildFxHasher::default());
-        for key in to_invalidate.into_iter() {
-            let (key, value) = self.cached.remove_entry(&key).unwrap();
-            cached.insert(key, value);
-        }
-
-        let preserved = PreservedAnalyses::new(current_entity_key, cached, preserve);
-        self.cached.extend(preserved.preserved);
     }
 
-    /// Mark the given analysis as no longer valid (due to changes to the analyzed entity)
-    ///
-    /// You should invalidate analyses any time you modify the IR for that entity, unless
-    /// you can guarantee that the specific analysis is preserved.
-    pub fn mark_invalid<A>(&mut self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key)
-    where
-        A: Analysis,
-    {
-        let key = CachedAnalysisKey::new::<A>(key);
-        self.preserve.remove(&key);
-        self.cached.remove(&key);
+    /// Invalidate any non preserved analyses.
+    #[inline]
+    pub fn invalidate(&self, preserved_analyses: &mut PreservedAnalyses) {
+        Rc::clone(&self.analyses).invalidate(preserved_analyses)
     }
 
-    /// When called, the current pass is signalling that all analyses should be invalidated
-    /// after it completes, regardless of any other configuration.
-    pub fn mark_none_preserved<T>(&mut self, key: &<T as AnalysisKey>::Key)
-    where
-        T: AnalysisKey,
-    {
-        let preserve_entity_key = CachedAnalysisKey::entity_key::<T>(key);
-        self.preserve_none.insert(preserve_entity_key);
-        self.preserve_all.remove(&preserve_entity_key);
+    /// Clear any held analyses.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.analyses.clear();
     }
 
-    /// When called, the current pass is signalling that all analyses will still be valid
-    /// after it completes, i.e. it makes no modifications that would invalidate an analysis.
-    ///
-    /// Care must be taken when doing this, to ensure that the pass actually does not do
-    /// anything that would invalidate any analysis results, or miscompiles are likely to
-    /// occur.
-    pub fn mark_all_preserved<T>(&mut self, key: &<T as AnalysisKey>::Key)
-    where
-        T: AnalysisKey,
-    {
-        let preserve_entity_key = CachedAnalysisKey::entity_key::<T>(key);
-        self.preserve_all.insert(preserve_entity_key);
-        self.preserve_none.remove(&preserve_entity_key);
-    }
-
-    /// When called, the current pass is signalling that the given analysis identified by `key`,
-    /// will still be valid after it completes.
-    ///
-    /// This should only be called when the caller can guarantee that the analysis is truly
-    /// preserved by the pass, otherwise miscompiles are likely to occur.
-    pub fn mark_preserved<A>(&mut self, key: &<<A as Analysis>::Entity as AnalysisKey>::Key)
-    where
-        A: Analysis,
-    {
-        // If we're preserving everything, or preserving nothing, this is a no-op
-        let key = CachedAnalysisKey::new::<A>(key);
-        if self.preserve_all.contains(&key.key) || self.preserve_none.contains(&key.key) {
-            return;
+    /// Clear any held analyses when the returned guard is dropped.
+    #[inline]
+    pub fn defer_clear(&self) -> ResetAnalysesOnDrop {
+        ResetAnalysesOnDrop {
+            analyses: self.analyses.clone(),
         }
+    }
 
-        self.preserve.insert(key);
+    /// Returns a [PassInstrumentor] for the current operation, if one was installed.
+    #[inline]
+    pub fn pass_instrumentor(&self) -> Option<Rc<PassInstrumentor>> {
+        self.analyses.pass_instrumentor()
     }
 }
 
-fn preservable_analysis_to_concrete<A, T>(pa: Rc<dyn PreservableAnalysis>) -> Rc<A>
-where
-    T: AnalysisKey,
-    A: Analysis<Entity = T>,
-{
-    let any: Rc<dyn Any> = pa;
-    any.downcast::<A>().expect("invalid cached analysis key")
+#[must_use]
+#[doc(hidden)]
+pub struct ResetAnalysesOnDrop {
+    analyses: Rc<NestedAnalysisMap>,
+}
+impl Drop for ResetAnalysesOnDrop {
+    fn drop(&mut self) {
+        self.analyses.clear()
+    }
+}
+
+/// An analysis map that contains a map for the current operation, and a set of maps for any child
+/// operations.
+struct NestedAnalysisMap {
+    parent: Option<Rc<NestedAnalysisMap>>,
+    instrumentor: Option<Rc<PassInstrumentor>>,
+    analyses: RefCell<AnalysisMap>,
+    child_analyses: RefCell<FxHashMap<OperationRef, Rc<NestedAnalysisMap>>>,
+}
+impl NestedAnalysisMap {
+    /// Create a new top-level [NestedAnalysisMap] for `op`, with the given optional pass
+    /// instrumentor.
+    pub fn new(op: OperationRef, instrumentor: Option<Rc<PassInstrumentor>>) -> Self {
+        Self {
+            parent: None,
+            instrumentor,
+            analyses: RefCell::new(AnalysisMap::new(op)),
+            child_analyses: Default::default(),
+        }
+    }
+
+    /// Create a new [NestedAnalysisMap] for `op` nested under `self`.
+    pub fn nest(self: Rc<Self>, op: OperationRef) -> Self {
+        let instrumentor = self.instrumentor.clone();
+        Self {
+            parent: Some(self),
+            instrumentor,
+            analyses: RefCell::new(AnalysisMap::new(op)),
+            child_analyses: Default::default(),
+        }
+    }
+
+    /// Get the parent [NestedAnalysisMap], or `None` if this is a top-level map.
+    pub fn parent(&self) -> Option<Rc<NestedAnalysisMap>> {
+        self.parent.clone()
+    }
+
+    /// Return a [PassInstrumentor] for the current operation, if one was installed.
+    pub fn pass_instrumentor(&self) -> Option<Rc<PassInstrumentor>> {
+        self.instrumentor.clone()
+    }
+
+    /// Get the operation for this analysis map.
+    #[inline]
+    pub fn get_operation(&self) -> OperationRef {
+        self.analyses.borrow().get_operation()
+    }
+
+    fn analyses(&self) -> core::cell::Ref<'_, AnalysisMap> {
+        self.analyses.borrow()
+    }
+
+    /// Invalidate any non preserved analyses.
+    pub fn invalidate(self: Rc<Self>, preserved_analyses: &mut PreservedAnalyses) {
+        // If all analyses were preserved, then there is nothing to do
+        if preserved_analyses.is_all() {
+            return;
+        }
+
+        // Invalidate the analyses for the current operation directly
+        self.analyses.borrow_mut().invalidate(preserved_analyses);
+
+        // If no analyses were preserved, then just simply clear out the child analysis results
+        if preserved_analyses.is_none() {
+            self.child_analyses.borrow_mut().clear();
+        }
+
+        // Otherwise, invalidate each child analysis map
+        let mut to_invalidate = SmallVec::<[Rc<NestedAnalysisMap>; 8]>::from_iter([self]);
+        while let Some(map) = to_invalidate.pop() {
+            map.child_analyses.borrow_mut().retain(|_op, nested_analysis_map| {
+                Rc::clone(nested_analysis_map).invalidate(preserved_analyses);
+                if nested_analysis_map.child_analyses.borrow().is_empty() {
+                    false
+                } else {
+                    to_invalidate.push(Rc::clone(nested_analysis_map));
+                    true
+                }
+            });
+        }
+    }
+
+    pub fn clear(&self) {
+        self.child_analyses.borrow_mut().clear();
+        self.analyses.borrow_mut().clear();
+    }
+}
+
+/// This class represents a cache of analyses for a single operation.
+///
+/// All computation, caching, and invalidation of analyses takes place here.
+struct AnalysisMap {
+    analyses: FxHashMap<TypeId, Rc<dyn OperationAnalysis>>,
+    ir: OperationRef,
+}
+impl AnalysisMap {
+    pub fn new(ir: OperationRef) -> Self {
+        Self {
+            analyses: Default::default(),
+            ir,
+        }
+    }
+
+    /// Get a cached analysis instance if one exists, otherwise return `None`.
+    pub fn get_cached<A>(&self) -> Option<Rc<A>>
+    where
+        A: Analysis,
+    {
+        self.analyses.get(&TypeId::of::<A>()).cloned().and_then(|a| a.downcast::<A>())
+    }
+
+    /// Get a cached analysis instance if one exists, otherwise return `None`.
+    pub fn get_cached_for<A, O>(&self) -> Option<Rc<A>>
+    where
+        A: Analysis<Target = O>,
+        O: 'static,
+    {
+        self.analyses.get(&TypeId::of::<A>()).cloned().and_then(|a| a.downcast::<A>())
+    }
+
+    fn compute_analysis_for<A, O>(
+        pi: Option<Rc<PassInstrumentor>>,
+        ir: &O,
+        op: &OperationRef,
+        am: AnalysisManager,
+    ) -> Result<Rc<A>, Report>
+    where
+        A: Analysis<Target = O>,
+    {
+        let id = TypeId::of::<A>();
+
+        // We don't have a cached analysis for the operation, compute it directly and
+        // add it to the cache.
+        if let Some(pi) = pi.as_deref() {
+            pi.run_before_analysis(core::any::type_name::<A>(), &id, op);
+        }
+
+        let analysis = Self::construct_analysis::<A, O>(am, ir)?;
+
+        if let Some(pi) = pi.as_deref() {
+            pi.run_after_analysis(core::any::type_name::<A>(), &id, op);
+        }
+
+        Ok(analysis.downcast::<A>().unwrap())
+    }
+
+    fn construct_analysis<A, O>(
+        am: AnalysisManager,
+        op: &O,
+    ) -> Result<Rc<dyn OperationAnalysis>, Report>
+    where
+        A: Analysis<Target = O>,
+    {
+        AnalysisWrapper::<A>::new(op, am)
+            .map(|analysis| Rc::new(analysis) as Rc<dyn OperationAnalysis>)
+    }
+
+    /// Returns the operation that this analysis map represents.
+    pub fn get_operation(&self) -> OperationRef {
+        self.ir
+    }
+
+    /// Clear any held analyses.
+    pub fn clear(&mut self) {
+        self.analyses.clear();
+    }
+
+    /// Invalidate any cached analyses based upon the given set of preserved analyses.
+    pub fn invalidate(&mut self, preserved_analyses: &mut PreservedAnalyses) {
+        // Remove any analyses that were invalidated.
+        //
+        // Using `retain`, we preserve the original insertion order, and dependencies always go
+        // before users, so we need only a single pass through.
+        self.analyses.retain(|_, a| !a.invalidate(preserved_analyses));
+    }
 }

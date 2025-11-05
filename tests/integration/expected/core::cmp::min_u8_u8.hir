@@ -1,28 +1,28 @@
-(component 
-    ;; Modules
-    (module #test_rust_3114079be600d0d34a20fede92f64baec1c63ae3845306ba2de322513ab73343
-        ;; Constants
-        (const (id 0) 0x00100000)
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_86004120286ad9607be152901a86f66a999ee9dd70f4520b4ba4d6af29300327 {
+        public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
+        ^block6(v0: i32, v1: i32):
+            v8 = arith.constant 0 : i32;
+            v4 = hir.bitcast v0 : u32;
+            v3 = hir.bitcast v1 : u32;
+            v5 = arith.lt v3, v4 : i1;
+            v6 = arith.zext v5 : u32;
+            v7 = hir.bitcast v6 : i32;
+            v9 = arith.neq v7, v8 : i1;
+            v10 = cf.select v9, v1, v0 : i32;
+            builtin.ret v10;
+        };
 
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-        (global (export #gv1) (id 1) (type i32) (const 0))
-        (global (export #gv2) (id 2) (type i32) (const 0))
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-        ;; Functions
-        (func (export #entrypoint) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v3 u32) (bitcast v0))
-                (let (v4 u32) (bitcast v1))
-                (let (v5 i1) (lt v3 v4))
-                (let (v6 i32) (sext v5))
-                (let (v7 i1) (neq v6 0))
-                (let (v8 i32) (select v7 v0 v1))
-                (br (block 1 v8)))
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
 
-            (block 1 (param v2 i32)
-                (ret v2))
-        )
-    )
-
-)
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

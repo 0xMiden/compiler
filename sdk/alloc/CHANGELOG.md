@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.1.5...miden-sdk-alloc-v0.4.0) - 2025-08-15
+
+### Fixed
+
+- make `HEAP_END` in `BumpAlloc` to be `u32::MAX`
+- HEAP_END to represent the Miden limit in the Rust address space
+
+## [0.1.5](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.1.0...miden-sdk-alloc-v0.1.5) - 2025-07-01
+
+### Fixed
+
+- `BumpAlloc` to make all allocations minimally VM word-aligned (16 bytes)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/miden-sdk-alloc-v0.0.7...miden-sdk-alloc-v0.0.8) - 2025-04-24
+
+### Added
+- *(cargo-miden)* support building Wasm component from a Cargo project
+
+### Other
+- treat warnings as compiler errors,
+
 ## [0.0.6](https://github.com/0xpolygonmiden/compiler/compare/miden-sdk-alloc-v0.0.5...miden-sdk-alloc-v0.0.6) - 2024-09-06
 
 ### Other

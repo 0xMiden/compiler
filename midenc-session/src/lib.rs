@@ -1,14 +1,22 @@
-#![feature(debug_closure_helpers)]
 #![no_std]
+#![feature(debug_closure_helpers)]
+#![feature(specialization)]
+#![feature(slice_split_once)]
+// Specialization
+#![allow(incomplete_features)]
+#![deny(warnings)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
 use alloc::{
     borrow::ToOwned,
+    format,
     string::{String, ToString},
     vec::Vec,
 };
+use core::str::FromStr;
 
 mod color;
 pub mod diagnostics;
@@ -21,11 +29,11 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
+mod path;
 #[cfg(feature = "std")]
 mod statistics;
 
 use alloc::{fmt, sync::Arc};
-use std::path::{Path, PathBuf};
 
 /// The version associated with the current compiler toolchain
 pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
@@ -33,24 +41,28 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
-use clap::ValueEnum;
+pub use miden_assembly;
 use midenc_hir_symbol::Symbol;
 
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, SourceManager},
-    duration::HumanDuration,
-    emit::Emit,
-    flags::{CompileFlag, CompileFlags, FlagAction},
-    inputs::{FileType, InputFile, InputType, InvalidInputError},
-    libs::{LibraryKind, LinkLibrary},
+    emit::{Emit, Writer},
+    flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
+    inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
+    libs::{
+        add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
+        LibraryPathComponent, LinkLibrary, STDLIB,
+    },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
-    statistics::Statistics,
+    path::{Path, PathBuf},
 };
+#[cfg(feature = "std")]
+pub use self::{duration::HumanDuration, emit::EmitExt, statistics::Statistics};
 
 /// The type of project being compiled
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ProjectType {
     /// Compile a Miden program that can be run on the Miden VM
     #[default]
@@ -63,7 +75,7 @@ impl ProjectType {
         match target {
             // We default to compiling a program unless we find later
             // that we do not have an entrypoint.
-            TargetEnv::Base | TargetEnv::Rollup => Self::Program,
+            TargetEnv::Base | TargetEnv::Rollup { .. } => Self::Program,
             // The emulator can run either programs or individual library functions,
             // so we compile as a library and delegate the choice of how to run it
             // to the emulator
@@ -80,7 +92,7 @@ pub struct Session {
     /// Configuration for the current compiler session
     pub options: Options,
     /// The current source manager
-    pub source_manager: Arc<dyn SourceManager>,
+    pub source_manager: Arc<dyn SourceManager + Send + Sync>,
     /// The current diagnostics handler
     pub diagnostics: Arc<DiagnosticsHandler>,
     /// The inputs being compiled
@@ -112,7 +124,7 @@ impl Session {
         target_dir: PathBuf,
         options: Options,
         emitter: Option<Arc<dyn Emitter>>,
-        source_manager: Arc<dyn SourceManager>,
+        source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self
     where
         I: IntoIterator<Item = InputFile>,
@@ -129,14 +141,15 @@ impl Session {
         target_dir: PathBuf,
         options: Options,
         emitter: Option<Arc<dyn Emitter>>,
-        source_manager: Arc<dyn SourceManager>,
+        source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self {
-        log::debug!("creating session for {} inputs:", inputs.len());
-        if log::log_enabled!(log::Level::Debug) {
+        log::debug!(target: "driver", "creating session for {} inputs:", inputs.len());
+        if log::log_enabled!(target: "driver", log::Level::Debug) {
             for input in inputs.iter() {
-                log::debug!(" - {} ({})", input.file_name(), input.file_type());
+                log::debug!(target: "driver", " - {} ({})", input.file_name(), input.file_type());
             }
             log::debug!(
+                target: "driver",
                 " | outputs_dir = {}",
                 output_dir
                     .as_ref()
@@ -144,10 +157,11 @@ impl Session {
                     .unwrap_or("<unset>".to_string())
             );
             log::debug!(
+                target: "driver",
                 " | output_file = {}",
                 output_file.as_ref().map(|of| of.to_string()).unwrap_or("<unset>".to_string())
             );
-            log::debug!(" | target_dir = {}", target_dir.display());
+            log::debug!(target: "driver", " | target_dir = {}", target_dir.display());
         }
         let diagnostics = Arc::new(DiagnosticsHandler::new(
             options.diagnostics,
@@ -160,49 +174,71 @@ impl Session {
             .or_else(|| output_file.as_ref().and_then(|of| of.parent()))
             .map(|path| path.to_path_buf());
 
+        if let Some(output_dir) = output_dir.as_deref() {
+            log::debug!(target: "driver", " | output dir = {}", output_dir.display());
+        } else {
+            log::debug!(target: "driver", " | output dir = <unset>");
+        }
+
+        log::debug!(target: "driver", " | target = {}", &options.target);
+        log::debug!(target: "driver", " | type = {:?}", &options.project_type);
+        if log::log_enabled!(target: "driver", log::Level::Debug) {
+            for lib in options.link_libraries.iter() {
+                if let Some(path) = lib.path.as_deref() {
+                    log::debug!(target: "driver", " | linking {} library '{}' from {}", &lib.kind, &lib.name, path.display());
+                } else {
+                    log::debug!(target: "driver", " | linking {} library '{}'", &lib.kind, &lib.name);
+                }
+            }
+        }
+
         let name = options
             .name
             .clone()
             .or_else(|| {
-                output_file
-                    .as_ref()
-                    .and_then(|of| of.filestem().map(|stem| stem.to_string_lossy().into_owned()))
+                log::debug!(target: "driver", "no name specified, attempting to derive from output file");
+                output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
             })
-            .unwrap_or_else(|| match inputs.first() {
-                Some(InputFile {
-                    file: InputType::Real(ref path),
-                    ..
-                }) => path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .or_else(|| path.extension().and_then(|stem| stem.to_str()))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "invalid input path: '{}' has no file stem or extension",
-                            path.display()
-                        )
-                    })
-                    .to_string(),
-                Some(
-                    input @ InputFile {
-                        file: InputType::Stdin { ref name, .. },
+            .unwrap_or_else(|| {
+                log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
+                match inputs.first() {
+                    Some(InputFile {
+                        file: InputType::Real(ref path),
                         ..
-                    },
-                ) => {
-                    let name = name.as_str();
-                    if matches!(name, "empty" | "stdin") {
-                        options
-                            .current_dir
-                            .file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .unwrap_or(name)
-                            .to_string()
-                    } else {
-                        input.filestem().to_owned()
+                    }) => path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .or_else(|| path.extension().and_then(|stem| stem.to_str()))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "invalid input path: '{}' has no file stem or extension",
+                                path.display()
+                            )
+                        })
+                        .to_string(),
+                    Some(
+                        input @ InputFile {
+                            file: InputType::Stdin { ref name, .. },
+                            ..
+                        },
+                    ) => {
+                        let name = name.as_str();
+                        if matches!(name, "empty" | "stdin") {
+                            log::debug!(target: "driver", "no good input file name to use, using current directory base name");
+                            options
+                                .current_dir
+                                .file_stem()
+                                .and_then(|stem| stem.to_str())
+                                .unwrap_or(name)
+                                .to_string()
+                        } else {
+                            input.filestem().to_owned()
+                        }
                     }
+                    None => "out".to_owned(),
                 }
-                None => "out".to_owned(),
             });
+        log::debug!(target: "driver", "artifact name set to '{name}'");
 
         let output_files = OutputFiles::new(
             name.clone(),
@@ -220,6 +256,7 @@ impl Session {
             diagnostics,
             inputs,
             output_files,
+            #[cfg(feature = "std")]
             statistics: Default::default(),
         }
     }
@@ -254,29 +291,9 @@ impl Session {
         self.options.flags.get_flag_count(name)
     }
 
-    /// Get the value of a specific custom flag
+    /// Get the remaining [ArgMatches] left after parsing the base session configuration
     #[inline]
-    pub fn get_flag_value<T>(&self, name: &str) -> Option<&T>
-    where
-        T: core::any::Any + Clone + Send + Sync + 'static,
-    {
-        self.options.flags.get_flag_value(name)
-    }
-
-    /// Iterate over values of a specific custom flag
-    #[inline]
-    #[cfg(feature = "std")]
-    pub fn get_flag_values<T>(&self, name: &str) -> Option<clap::parser::ValuesRef<'_, T>>
-    where
-        T: core::any::Any + Clone + Send + Sync + 'static,
-    {
-        self.options.flags.get_flag_values(name)
-    }
-
-    /// Get the remaining [clap::ArgMatches] left after parsing the base session configuration
-    #[inline]
-    #[cfg(feature = "std")]
-    pub fn matches(&self) -> &clap::ArgMatches {
+    pub fn matches(&self) -> &ArgMatches {
         self.options.flags.matches()
     }
 
@@ -296,6 +313,16 @@ impl Session {
         out_file
     }
 
+    #[cfg(not(feature = "std"))]
+    fn check_file_is_writeable(&self, file: &Path) {
+        panic!(
+            "Compiler exited with a fatal error: cannot write '{}' - compiler was built without \
+             standard library",
+            file.display()
+        );
+    }
+
+    #[cfg(feature = "std")]
     fn check_file_is_writeable(&self, file: &Path) {
         if let Ok(m) = file.metadata() {
             if m.permissions().readonly() {
@@ -356,7 +383,8 @@ impl Session {
     }
 
     /// Print the given emittable IR to stdout, as produced by a pass with name `pass`
-    pub fn print(&self, ir: impl Emit, pass: &str) -> std::io::Result<()> {
+    #[cfg(feature = "std")]
+    pub fn print(&self, ir: impl Emit, pass: &str) -> anyhow::Result<()> {
         if self.should_print_ir(pass) {
             ir.write_to_stdout(self)?;
         }
@@ -376,7 +404,8 @@ impl Session {
     }
 
     /// Emit an item to stdout/file system depending on the current configuration
-    pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> std::io::Result<()> {
+    #[cfg(feature = "std")]
+    pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> anyhow::Result<()> {
         let output_type = item.output_type(mode);
         if self.should_emit(output_type) {
             let name = item.name().map(|n| n.as_str());
@@ -393,11 +422,15 @@ impl Session {
 
         Ok(())
     }
+
+    #[cfg(not(feature = "std"))]
+    pub fn emit<E: Emit>(&self, _mode: OutputMode, _item: &E) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// This enum describes the different target environments targetable by the compiler
-#[derive(Debug, Copy, Clone, Default)]
-#[cfg_attr(feature = "std", derive(ValueEnum))]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum TargetEnv {
     /// The emulator environment, which has a more restrictive instruction set
     Emu,
@@ -405,14 +438,65 @@ pub enum TargetEnv {
     #[default]
     Base,
     /// The Miden Rollup environment, using the Rollup kernel
-    Rollup,
+    Rollup { target: RollupTarget },
 }
 impl fmt::Display for TargetEnv {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Emu => f.write_str("emu"),
             Self::Base => f.write_str("base"),
-            Self::Rollup => f.write_str("rollup"),
+            Self::Rollup { target } => f.write_str(&format!("rollup:{target}")),
+        }
+    }
+}
+
+impl FromStr for TargetEnv {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "emu" => Ok(Self::Emu),
+            "base" => Ok(Self::Base),
+            "rollup" => Ok(Self::Rollup {
+                target: RollupTarget::default(),
+            }),
+            "rollup:account" => Ok(Self::Rollup {
+                target: RollupTarget::Account,
+            }),
+            "rollup:note-script" => Ok(Self::Rollup {
+                target: RollupTarget::NoteScript,
+            }),
+            "rollup:transaction-script" => Ok(Self::Rollup {
+                target: RollupTarget::TransactionScript,
+            }),
+            "rollup:authentication-component" => Ok(Self::Rollup {
+                target: RollupTarget::AuthComponent,
+            }),
+            _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
+        }
+    }
+}
+
+/// This enum describes the different rollup targets
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub enum RollupTarget {
+    #[default]
+    Account,
+    NoteScript,
+    TransactionScript,
+    /// Authentication `AccountComponent` that has exactly one procedure named `auth__*` that
+    /// accepts a `Word` (authentication arguments) and throws an error in case of a failed
+    /// authentication
+    AuthComponent,
+}
+
+impl fmt::Display for RollupTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Account => f.write_str("account"),
+            Self::NoteScript => f.write_str("note-script"),
+            Self::TransactionScript => f.write_str("transaction-script"),
+            Self::AuthComponent => f.write_str("authentication-component"),
         }
     }
 }

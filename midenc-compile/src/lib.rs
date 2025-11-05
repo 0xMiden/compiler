@@ -1,18 +1,27 @@
+#![no_std]
+#![deny(warnings)]
+
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+
 mod compiler;
 mod stage;
 mod stages;
 
-use std::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
-use either::Either::{self, Left, Right};
-use midenc_codegen_masm::{self as masm, MasmArtifact};
-use midenc_hir::{
-    diagnostics::{miette, Diagnostic, IntoDiagnostic, Report, WrapErr},
-    pass::AnalysisManager,
+pub use midenc_hir::Context;
+use midenc_hir::Op;
+use midenc_session::{
+    diagnostics::{miette, Diagnostic, Report, WrapErr},
+    OutputMode,
 };
-use midenc_session::{OutputMode, Session};
 
-pub use self::compiler::Compiler;
+pub use self::{
+    compiler::Compiler,
+    stages::{CodegenOutput, LinkOutput},
+};
 use self::{stage::Stage, stages::*};
 
 pub type CompilerResult<T> = Result<T, Report>;
@@ -24,94 +33,129 @@ pub type CompilerResult<T> = Result<T, Report>;
 pub struct CompilerStopped;
 
 /// Run the compiler using the provided [Session]
-pub fn compile(session: Rc<Session>) -> CompilerResult<()> {
+pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir::formatter::DisplayHex;
-    let mut analyses = AnalysisManager::new();
+
     log::info!("starting compilation session");
-    match compile_inputs(session.inputs.clone(), &mut analyses, &session)? {
-        Artifact::Assembled(ref mast) => {
+
+    midenc_codegen_masm::register_dialect_hooks(&context);
+
+    let session = context.session();
+    match compile_inputs(session.inputs.clone(), context.clone())? {
+        Artifact::Assembled(ref package) => {
             log::info!(
                 "succesfully assembled mast package '{}' with digest {}",
-                mast.name,
-                DisplayHex::new(&mast.digest.as_bytes())
+                package.name,
+                DisplayHex::new(&package.digest().as_bytes())
             );
             session
-                .emit(OutputMode::Text, mast)
-                .into_diagnostic()
+                .emit(OutputMode::Text, package)
+                .map_err(Report::msg)
                 .wrap_err("failed to pretty print 'mast' artifact")?;
             session
-                .emit(OutputMode::Binary, mast)
-                .into_diagnostic()
+                .emit(OutputMode::Binary, package)
+                .map_err(Report::msg)
                 .wrap_err("failed to serialize 'mast' artifact")
         }
-        Artifact::Linked(_) => {
-            log::debug!("no outputs requested by user: pipeline stopped after linking");
-            Ok(())
-        }
         Artifact::Lowered(_) => {
-            log::debug!("no outputs requested by user: pipeline stopped before linking");
+            log::debug!("no outputs requested by user: pipeline stopped before assembly");
             Ok(())
         }
     }
 }
 
 /// Same as `compile`, but return compiled artifacts to the caller
-pub fn compile_to_memory(session: Rc<Session>) -> CompilerResult<Artifact> {
-    let mut analyses = AnalysisManager::new();
-    compile_inputs(session.inputs.clone(), &mut analyses, &session)
+pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<Artifact> {
+    let inputs = context.session().inputs.clone();
+    compile_inputs(inputs, context)
 }
 
 /// Same as `compile_to_memory`, but allows registering a callback which will be used as an extra
 /// compiler stage immediately after code generation and prior to assembly, if the linker was run.
 pub fn compile_to_memory_with_pre_assembly_stage<F>(
-    session: Rc<Session>,
-    stage: &mut F,
+    context: Rc<Context>,
+    pre_assembly_stage: &mut F,
 ) -> CompilerResult<Artifact>
 where
-    F: FnMut(MasmArtifact, &mut AnalysisManager, &Session) -> CompilerResult<MasmArtifact>,
+    F: FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>,
 {
-    type AssemblyInput = Either<MasmArtifact, masm::ModuleTree>;
-
-    let mut analyses = AnalysisManager::new();
-
-    let mut pre_assembly_stage = move |output: AssemblyInput,
-                                       analysis: &mut AnalysisManager,
-                                       session: &Session| {
-        match output {
-            Left(artifact) => stage(artifact, analysis, session).map(Left),
-            right @ Right(_) => Ok(right),
-        }
-    };
     let mut stages = ParseStage
-        .next(SemanticAnalysisStage)
+        .collect(LinkStage)
         .next_optional(ApplyRewritesStage)
-        .collect(LinkerStage)
         .next(CodegenStage)
         .next(
-            &mut pre_assembly_stage
-                as &mut (dyn FnMut(
-                    AssemblyInput,
-                    &mut AnalysisManager,
-                    &Session,
-                ) -> CompilerResult<AssemblyInput>
+            pre_assembly_stage
+                as &mut (dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>
                           + '_),
         )
         .next(AssembleStage);
 
-    stages.run(session.inputs.clone(), &mut analyses, &session)
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context)
+}
+
+/// Compile the current inputs without lowering to Miden Assembly.
+///
+/// Returns the translated pre-link outputs of the compiler's link stage.
+pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
+    let mut stages = ParseStage.collect(LinkStage).next_optional(ApplyRewritesStage);
+
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context)
+}
+
+/// Compile the current inputs without lowering to Miden Assembly and without any IR transformations.
+///
+/// Returns the translated pre-link outputs of the compiler's link stage.
+pub fn compile_to_unoptimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
+    let mut stages = ParseStage.collect(LinkStage);
+
+    let inputs = context.session().inputs.clone();
+    stages.run(inputs, context)
+}
+
+/// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST.
+///
+/// Returns the compiled artifact, just like `compile_to_memory` would.
+pub fn compile_link_output_to_masm(link_output: LinkOutput) -> CompilerResult<Artifact> {
+    let mut stages = CodegenStage.next(AssembleStage);
+
+    let context = link_output.component.borrow().as_operation().context_rc();
+    stages.run(link_output, context)
+}
+
+/// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST, but with
+/// an provided callback that will be used as an extra compiler stage just prior to assembly.
+///
+/// Returns the compiled artifact, just like `compile_to_memory` would.
+pub fn compile_link_output_to_masm_with_pre_assembly_stage<F>(
+    link_output: LinkOutput,
+    pre_assembly_stage: &mut F,
+) -> CompilerResult<Artifact>
+where
+    F: FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>,
+{
+    let mut stages = CodegenStage
+        .next(
+            pre_assembly_stage
+                as &mut (dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>
+                          + '_),
+        )
+        .next(AssembleStage);
+
+    let context = link_output.component.borrow().as_operation().context_rc();
+    stages.run(link_output, context)
 }
 
 fn compile_inputs(
     inputs: Vec<midenc_session::InputFile>,
-    analyses: &mut AnalysisManager,
-    session: &Session,
+    context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
     let mut stages = ParseStage
-        .next(SemanticAnalysisStage)
+        .collect(LinkStage)
         .next_optional(ApplyRewritesStage)
-        .collect(LinkerStage)
         .next(CodegenStage)
         .next(AssembleStage);
 
-    stages.run(inputs, analyses, session)
+    stages.run(inputs, context)
 }

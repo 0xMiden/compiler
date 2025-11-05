@@ -1,0 +1,26 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "auth-component-rpo-falcon512"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../sdk/sdk" }
+
+[package.metadata.component]
+package = "miden:auth-component-rpo-falcon512"
+
+[package.metadata.miden]
+project-kind = "authentication-component"
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

@@ -1,14 +1,29 @@
-# mod test_rust_57859c51c85389425b294750a9837d618293dd384d0b8582ca4c8bd6789e363e
+# mod root_ns:root@1.0.0
+
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
+end
+
+# mod root_ns:root@1.0.0::test_rust_5693119d28cd4640a4976d9000775e22d586752187efa219aae5739cf37d894a
 
 export.entrypoint
     swap.1
+    trace.240
+    nop
     exec.::intrinsics::i32::is_lt
-    push.0
-    push.0
-    push.4294967294
-    movup.2
-    cdrop
-    u32or
+    trace.252
+    nop
 end
-
 

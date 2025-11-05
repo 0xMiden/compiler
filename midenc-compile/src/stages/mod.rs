@@ -1,13 +1,11 @@
-use either::Either::{self, *};
-use midenc_codegen_masm as masm;
+use alloc::rc::Rc;
+
 use midenc_frontend_wasm as wasm;
-use midenc_hir::{
-    self as hir,
-    parser::ast,
-    pass::{AnalysisManager, ConversionPass, RewritePass},
-};
+use midenc_hir::{dialects::builtin, Context};
+#[cfg(feature = "std")]
+use midenc_session::diagnostics::WrapErr;
 use midenc_session::{
-    diagnostics::{IntoDiagnostic, Report, WrapErr},
+    diagnostics::{IntoDiagnostic, Report},
     OutputMode, Session,
 };
 
@@ -19,13 +17,11 @@ mod codegen;
 mod link;
 mod parse;
 mod rewrite;
-mod sema;
 
 pub use self::{
     assemble::{Artifact, AssembleStage},
-    codegen::CodegenStage,
-    link::{LinkerInput, LinkerOutput, LinkerStage},
+    codegen::{CodegenOutput, CodegenStage},
+    link::{LinkOutput, LinkStage},
     parse::{ParseOutput, ParseStage},
     rewrite::ApplyRewritesStage,
-    sema::SemanticAnalysisStage,
 };

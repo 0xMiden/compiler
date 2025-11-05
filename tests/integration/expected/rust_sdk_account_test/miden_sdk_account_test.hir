@@ -1,1614 +1,2270 @@
-(component 
-    ;; Component Imports
-    (lower ((digest 0x0000000000000000000000000000000000000000000000000000000000000000) (type (func (abi canon)  (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt)))) (#miden::account #add_asset)
-    (lower ((digest 0x0000000000000000000000000000000000000000000000000000000000000000) (type (func (abi canon)  (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt)))) (#miden::account #remove_asset)
-    (lower ((digest 0x0000000000000000000000000000000000000000000000000000000000000000) (type (func (abi canon)  (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (result i32 i32 i32 i32 i32 i32 i32 i32)))) (#std::crypto::hashes::blake3 #hash_2to1)
-    (lower ((digest 0x0000000000000000000000000000000000000000000000000000000000000000) (type (func (abi canon)  (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param i32) (param i32) (result felt felt felt felt felt felt felt felt felt felt felt felt i32)))) (#std::mem #pipe_double_words_to_memory)
-
-    ;; Modules
-    (module #miden_sdk_account_test
-        ;; Constants
-        (const (id 0) 0x00100000)
-
-        ;; Global Variables
-        (global (export #__stack_pointer) (id 0) (type i32) (const 0))
-
-        ;; Functions
-        (func (export #core::alloc::global::GlobalAlloc::alloc_zeroed)
-              (param i32) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32) (param v2 i32)
-                (let (v4 i32) (call #<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc v0 v1 v2))
-                (let (v5 i1) (eq v4 0))
-                (let (v6 i32) (zext v5))
-                (let (v7 i1) (neq v6 0))
-                (condbr v7 (block 2 v4) (block 3)))
-
-            (block 1 (param v3 i32)
-                (ret v3))
-
-            (block 2 (param v13 i32)
-                (br (block 1 v13)))
-
-            (block 3
-                (let (v8 i32) (const.i32 0))
-                (let (v9 u8) (trunc v8))
-                (let (v10 u32) (bitcast v2))
-                (let (v11 u32) (bitcast v4))
-                (let (v12 (ptr u8)) (inttoptr v11))
-                (memset v12 v10 v9)
-                (br (block 2 v4)))
-        )
-
-        (func (export #get_wallet_magic_number) (result felt)
-            (block 0
-                (let (v1 felt) (const.felt 0))
-                (let (v2 felt) (call #miden_base_sys::bindings::tx::get_id))
-                (let (v3 i64) (const.i64 42))
-                (let (v4 felt) (cast v3))
-                (let (v5 felt) (add.unchecked v4 v2))
-                (br (block 1 v5)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #test_add_asset) (result felt)
-            (block 0
-                (let (v1 i32) (const.i32 0))
-                (let (v2 felt) (const.felt 0))
-                (let (v3 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v4 i32) (const.i32 64))
-                (let (v5 i32) (sub.wrapping v3 v4))
-                (let (v6 i32) (const.i32 -32))
-                (let (v7 i32) (band v5 v6))
-                (let (v8 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v8 v7)
-                (let (v9 i64) (const.i64 1))
-                (let (v10 felt) (cast v9))
-                (let (v11 i64) (const.i64 2))
-                (let (v12 felt) (cast v11))
-                (let (v13 i64) (const.i64 3))
-                (let (v14 felt) (cast v13))
-                (let (v15 i64) (const.i64 4))
-                (let (v16 felt) (cast v15))
-                (let (v17 u32) (bitcast v7))
-                (let (v18 u32) (add.checked v17 12))
-                (let (v19 u32) (mod.unchecked v18 4))
-                (assertz 250 v19)
-                (let (v20 (ptr felt)) (inttoptr v18))
-                (store v20 v16)
-                (let (v21 u32) (bitcast v7))
-                (let (v22 u32) (add.checked v21 8))
-                (let (v23 u32) (mod.unchecked v22 4))
-                (assertz 250 v23)
-                (let (v24 (ptr felt)) (inttoptr v22))
-                (store v24 v14)
-                (let (v25 u32) (bitcast v7))
-                (let (v26 u32) (add.checked v25 4))
-                (let (v27 u32) (mod.unchecked v26 4))
-                (assertz 250 v27)
-                (let (v28 (ptr felt)) (inttoptr v26))
-                (store v28 v12)
-                (let (v29 u32) (bitcast v7))
-                (let (v30 u32) (mod.unchecked v29 4))
-                (assertz 250 v30)
-                (let (v31 (ptr felt)) (inttoptr v29))
-                (store v31 v10)
-                (let (v32 i32) (const.i32 32))
-                (let (v33 i32) (add.wrapping v7 v32))
-                (call #miden_base_sys::bindings::tx::add_asset v33 v7)
-                (let (v34 u32) (bitcast v7))
-                (let (v35 u32) (add.checked v34 32))
-                (let (v36 u32) (mod.unchecked v35 4))
-                (assertz 250 v36)
-                (let (v37 (ptr felt)) (inttoptr v35))
-                (let (v38 felt) (load v37))
-                (let (v39 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v39 v3)
-                (br (block 1 v38)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #test_felt_ops_smoke)
-              (param felt) (param felt) (result felt)
-            (block 0 (param v0 felt) (param v1 felt)
-                (let (v3 i64) (const.i64 0))
-                (let (v4 i64) (cast v0))
-                (let (v5 i1) (gt v0 v1))
-                (let (v6 i32) (cast v5))
-                (let (v7 i1) (neq v6 0))
-                (condbr v7 (block 7) (block 8)))
-
-            (block 1 (param v2 felt)
-                (ret v2))
-
-            (block 2
-                (let (v41 felt) (neg v0))
-                (br (block 1 v41)))
-
-            (block 3
-                (assert.eq v1 v0)
-                (let (v39 felt) (cast v4))
-                (let (v40 felt) (add.unchecked v0 v39))
-                (ret v40))
-
-            (block 4
-                (let (v38 felt) (div.unchecked v1 v0))
-                (ret v38))
-
-            (block 5
-                (let (v36 felt) (pow2 v0))
-                (let (v37 felt) (mul.unchecked v36 v1))
-                (ret v37))
-
-            (block 6
-                (let (v34 felt) (exp v0 v1))
-                (let (v35 felt) (sub.unchecked v34 v1))
-                (ret v35))
-
-            (block 7
-                (let (v32 felt) (inv v0))
-                (let (v33 felt) (add.unchecked v32 v1))
-                (ret v33))
-
-            (block 8
-                (let (v8 i1) (lt v1 v0))
-                (let (v9 i32) (cast v8))
-                (let (v10 i1) (neq v9 0))
-                (condbr v10 (block 6) (block 9)))
-
-            (block 9
-                (let (v11 i1) (lte v1 v0))
-                (let (v12 i32) (cast v11))
-                (let (v13 i1) (neq v12 0))
-                (condbr v13 (block 5) (block 10)))
-
-            (block 10
-                (let (v14 i1) (gte v0 v1))
-                (let (v15 i32) (cast v14))
-                (let (v16 i1) (neq v15 0))
-                (condbr v16 (block 4) (block 11)))
-
-            (block 11
-                (let (v17 i1) (eq v0 v1))
-                (let (v18 i32) (cast v17))
-                (let (v19 i32) (const.i32 1))
-                (let (v20 i1) (eq v18 v19))
-                (let (v21 i32) (zext v20))
-                (let (v22 i1) (neq v21 0))
-                (condbr v22 (block 3) (block 12)))
-
-            (block 12
-                (let (v23 i1) (eq v0 v1))
-                (let (v24 i32) (cast v23))
-                (let (v25 i32) (const.i32 1))
-                (let (v26 i1) (neq v24 v25))
-                (let (v27 i32) (zext v26))
-                (let (v28 i1) (neq v27 0))
-                (condbr v28 (block 2) (block 13)))
-
-            (block 13
-                (let (v29 i1) (is_odd v1))
-                (let (v30 i32) (cast v29))
-                (let (v31 i1) (neq v30 0))
-                (condbr v31 (block 14) (block 15)))
-
-            (block 14
-                (assert v0)
-                (ret v1))
-
-            (block 15
-                (assertz v1)
-                (ret v0))
-        )
-
-        (func (export #note_script) (result felt)
-            (block 0
-                (let (v1 i32) (const.i32 0))
-                (let (v2 felt) (const.felt 0))
-                (let (v3 i32) (const.i32 0))
-                (let (v4 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v5 i32) (const.i32 16))
-                (let (v6 i32) (sub.wrapping v4 v5))
-                (let (v7 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v7 v6)
-                (let (v8 i64) (const.i64 0))
-                (let (v9 felt) (cast v8))
-                (let (v10 i32) (const.i32 4))
-                (let (v11 i32) (add.wrapping v6 v10))
-                (call #miden_base_sys::bindings::tx::get_inputs v11)
-                (let (v12 u32) (bitcast v6))
-                (let (v13 u32) (add.checked v12 12))
-                (let (v14 u32) (mod.unchecked v13 4))
-                (assertz 250 v14)
-                (let (v15 (ptr i32)) (inttoptr v13))
-                (let (v16 i32) (load v15))
-                (let (v17 i32) (const.i32 2))
-                (let (v18 u32) (bitcast v17))
-                (let (v19 i32) (shl.wrapping v16 v18))
-                (let (v20 u32) (bitcast v6))
-                (let (v21 u32) (add.checked v20 8))
-                (let (v22 u32) (mod.unchecked v21 4))
-                (assertz 250 v22)
-                (let (v23 (ptr i32)) (inttoptr v21))
-                (let (v24 i32) (load v23))
-                (br (block 2 v19 v6 v9 v24)))
-
-            (block 1 (param v0 felt))
-
-            (block 2
-                    (param v26 i32)
-                    (param v28 i32)
-                    (param v32 felt)
-                    (param v35 i32)
-                (let (v27 i1) (neq v26 0))
-                (condbr v27 (block 4) (block 5)))
-
-            (block 3 (param v25 felt))
-
-            (block 4
-                (let (v33 i32) (const.i32 -4))
-                (let (v34 i32) (add.wrapping v26 v33))
-                (let (v36 u32) (bitcast v35))
-                (let (v37 u32) (mod.unchecked v36 4))
-                (assertz 250 v37)
-                (let (v38 (ptr felt)) (inttoptr v36))
-                (let (v39 felt) (load v38))
-                (let (v40 felt) (add.unchecked v32 v39))
-                (let (v41 i32) (const.i32 4))
-                (let (v42 i32) (add.wrapping v35 v41))
-                (br (block 2 v34 v28 v40 v42)))
-
-            (block 5
-                (let (v29 i32) (const.i32 16))
-                (let (v30 i32) (add.wrapping v28 v29))
-                (let (v31 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v31 v30)
-                (ret v32))
-        )
-
-        (func (export #test_blake3_hash_1to1) (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v4 i32) (const.i32 32))
-                (let (v5 i32) (sub.wrapping v3 v4))
-                (let (v6 i32) (const.i32 -32))
-                (let (v7 i32) (band v5 v6))
-                (let (v8 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v8 v7)
-                (let (v9 u32) (bitcast v1))
-                (let (v10 (ptr i32)) (inttoptr v9))
-                (let (v11 i32) (load v10))
-                (let (v12 u32) (bitcast v1))
-                (let (v13 u32) (add.checked v12 4))
-                (let (v14 (ptr i32)) (inttoptr v13))
-                (let (v15 i32) (load v14))
-                (let (v16 u32) (bitcast v1))
-                (let (v17 u32) (add.checked v16 8))
-                (let (v18 (ptr i32)) (inttoptr v17))
-                (let (v19 i32) (load v18))
-                (let (v20 u32) (bitcast v1))
-                (let (v21 u32) (add.checked v20 12))
-                (let (v22 (ptr i32)) (inttoptr v21))
-                (let (v23 i32) (load v22))
-                (let (v24 u32) (bitcast v1))
-                (let (v25 u32) (add.checked v24 16))
-                (let (v26 (ptr i32)) (inttoptr v25))
-                (let (v27 i32) (load v26))
-                (let (v28 u32) (bitcast v1))
-                (let (v29 u32) (add.checked v28 20))
-                (let (v30 (ptr i32)) (inttoptr v29))
-                (let (v31 i32) (load v30))
-                (let (v32 u32) (bitcast v1))
-                (let (v33 u32) (add.checked v32 24))
-                (let (v34 (ptr i32)) (inttoptr v33))
-                (let (v35 i32) (load v34))
-                (let (v36 u32) (bitcast v1))
-                (let (v37 u32) (add.checked v36 28))
-                (let (v38 (ptr i32)) (inttoptr v37))
-                (let (v39 i32) (load v38))
-                (let [(v40 i32) (v41 i32) (v42 i32) (v43 i32) (v44 i32) (v45 i32) (v46 i32) (v47 i32)] (call (#std::crypto::hashes::blake3 #hash_1to1) v11 v15 v19 v23 v27 v31 v35 v39))
-                (let (v48 u32) (bitcast v7))
-                (let (v49 (ptr i32)) (inttoptr v48))
-                (store v49 v40)
-                (let (v50 u32) (add.checked v48 4))
-                (let (v51 (ptr i32)) (inttoptr v50))
-                (store v51 v41)
-                (let (v52 u32) (add.checked v48 8))
-                (let (v53 (ptr i32)) (inttoptr v52))
-                (store v53 v42)
-                (let (v54 u32) (add.checked v48 12))
-                (let (v55 (ptr i32)) (inttoptr v54))
-                (store v55 v43)
-                (let (v56 u32) (add.checked v48 16))
-                (let (v57 (ptr i32)) (inttoptr v56))
-                (store v57 v44)
-                (let (v58 u32) (add.checked v48 20))
-                (let (v59 (ptr i32)) (inttoptr v58))
-                (store v59 v45)
-                (let (v60 u32) (add.checked v48 24))
-                (let (v61 (ptr i32)) (inttoptr v60))
-                (store v61 v46)
-                (let (v62 u32) (add.checked v48 28))
-                (let (v63 (ptr i32)) (inttoptr v62))
-                (store v63 v47)
-                (let (v64 i32) (const.i32 24))
-                (let (v65 i32) (add.wrapping v0 v64))
-                (let (v66 u32) (bitcast v7))
-                (let (v67 u32) (add.checked v66 24))
-                (let (v68 u32) (mod.unchecked v67 8))
-                (assertz 250 v68)
-                (let (v69 (ptr i64)) (inttoptr v67))
-                (let (v70 i64) (load v69))
-                (let (v71 u32) (bitcast v65))
-                (let (v72 (ptr i64)) (inttoptr v71))
-                (store v72 v70)
-                (let (v73 i32) (const.i32 16))
-                (let (v74 i32) (add.wrapping v0 v73))
-                (let (v75 u32) (bitcast v7))
-                (let (v76 u32) (add.checked v75 16))
-                (let (v77 u32) (mod.unchecked v76 8))
-                (assertz 250 v77)
-                (let (v78 (ptr i64)) (inttoptr v76))
-                (let (v79 i64) (load v78))
-                (let (v80 u32) (bitcast v74))
-                (let (v81 (ptr i64)) (inttoptr v80))
-                (store v81 v79)
-                (let (v82 i32) (const.i32 8))
-                (let (v83 i32) (add.wrapping v0 v82))
-                (let (v84 u32) (bitcast v7))
-                (let (v85 u32) (add.checked v84 8))
-                (let (v86 u32) (mod.unchecked v85 8))
-                (assertz 250 v86)
-                (let (v87 (ptr i64)) (inttoptr v85))
-                (let (v88 i64) (load v87))
-                (let (v89 u32) (bitcast v83))
-                (let (v90 (ptr i64)) (inttoptr v89))
-                (store v90 v88)
-                (let (v91 u32) (bitcast v7))
-                (let (v92 u32) (mod.unchecked v91 8))
-                (assertz 250 v92)
-                (let (v93 (ptr i64)) (inttoptr v91))
-                (let (v94 i64) (load v93))
-                (let (v95 u32) (bitcast v0))
-                (let (v96 (ptr i64)) (inttoptr v95))
-                (store v96 v94)
-                (let (v97 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v97 v3)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_blake3_hash_2to1) (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 u32) (bitcast v1))
-                (let (v3 (ptr i32)) (inttoptr v2))
-                (let (v4 i32) (load v3))
-                (let (v5 u32) (bitcast v1))
-                (let (v6 u32) (add.checked v5 4))
-                (let (v7 (ptr i32)) (inttoptr v6))
-                (let (v8 i32) (load v7))
-                (let (v9 u32) (bitcast v1))
-                (let (v10 u32) (add.checked v9 8))
-                (let (v11 (ptr i32)) (inttoptr v10))
-                (let (v12 i32) (load v11))
-                (let (v13 u32) (bitcast v1))
-                (let (v14 u32) (add.checked v13 12))
-                (let (v15 (ptr i32)) (inttoptr v14))
-                (let (v16 i32) (load v15))
-                (let (v17 u32) (bitcast v1))
-                (let (v18 u32) (add.checked v17 16))
-                (let (v19 (ptr i32)) (inttoptr v18))
-                (let (v20 i32) (load v19))
-                (let (v21 u32) (bitcast v1))
-                (let (v22 u32) (add.checked v21 20))
-                (let (v23 (ptr i32)) (inttoptr v22))
-                (let (v24 i32) (load v23))
-                (let (v25 u32) (bitcast v1))
-                (let (v26 u32) (add.checked v25 24))
-                (let (v27 (ptr i32)) (inttoptr v26))
-                (let (v28 i32) (load v27))
-                (let (v29 u32) (bitcast v1))
-                (let (v30 u32) (add.checked v29 28))
-                (let (v31 (ptr i32)) (inttoptr v30))
-                (let (v32 i32) (load v31))
-                (let (v33 u32) (bitcast v1))
-                (let (v34 u32) (add.checked v33 32))
-                (let (v35 (ptr i32)) (inttoptr v34))
-                (let (v36 i32) (load v35))
-                (let (v37 u32) (bitcast v1))
-                (let (v38 u32) (add.checked v37 36))
-                (let (v39 (ptr i32)) (inttoptr v38))
-                (let (v40 i32) (load v39))
-                (let (v41 u32) (bitcast v1))
-                (let (v42 u32) (add.checked v41 40))
-                (let (v43 (ptr i32)) (inttoptr v42))
-                (let (v44 i32) (load v43))
-                (let (v45 u32) (bitcast v1))
-                (let (v46 u32) (add.checked v45 44))
-                (let (v47 (ptr i32)) (inttoptr v46))
-                (let (v48 i32) (load v47))
-                (let (v49 u32) (bitcast v1))
-                (let (v50 u32) (add.checked v49 48))
-                (let (v51 (ptr i32)) (inttoptr v50))
-                (let (v52 i32) (load v51))
-                (let (v53 u32) (bitcast v1))
-                (let (v54 u32) (add.checked v53 52))
-                (let (v55 (ptr i32)) (inttoptr v54))
-                (let (v56 i32) (load v55))
-                (let (v57 u32) (bitcast v1))
-                (let (v58 u32) (add.checked v57 56))
-                (let (v59 (ptr i32)) (inttoptr v58))
-                (let (v60 i32) (load v59))
-                (let (v61 u32) (bitcast v1))
-                (let (v62 u32) (add.checked v61 60))
-                (let (v63 (ptr i32)) (inttoptr v62))
-                (let (v64 i32) (load v63))
-                (let [(v65 i32) (v66 i32) (v67 i32) (v68 i32) (v69 i32) (v70 i32) (v71 i32) (v72 i32)] (call (#std::crypto::hashes::blake3 #hash_2to1) v4 v8 v12 v16 v20 v24 v28 v32 v36 v40 v44 v48 v52 v56 v60 v64))
-                (let (v73 u32) (bitcast v0))
-                (let (v74 (ptr i32)) (inttoptr v73))
-                (store v74 v65)
-                (let (v75 u32) (add.checked v73 4))
-                (let (v76 (ptr i32)) (inttoptr v75))
-                (store v76 v66)
-                (let (v77 u32) (add.checked v73 8))
-                (let (v78 (ptr i32)) (inttoptr v77))
-                (store v78 v67)
-                (let (v79 u32) (add.checked v73 12))
-                (let (v80 (ptr i32)) (inttoptr v79))
-                (store v80 v68)
-                (let (v81 u32) (add.checked v73 16))
-                (let (v82 (ptr i32)) (inttoptr v81))
-                (store v82 v69)
-                (let (v83 u32) (add.checked v73 20))
-                (let (v84 (ptr i32)) (inttoptr v83))
-                (store v84 v70)
-                (let (v85 u32) (add.checked v73 24))
-                (let (v86 (ptr i32)) (inttoptr v85))
-                (store v86 v71)
-                (let (v87 u32) (add.checked v73 28))
-                (let (v88 (ptr i32)) (inttoptr v87))
-                (store v88 v72)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_rpo_falcon512_verify) (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 u32) (bitcast v0))
-                (let (v3 u32) (mod.unchecked v2 4))
-                (assertz 250 v3)
-                (let (v4 (ptr felt)) (inttoptr v2))
-                (let (v5 felt) (load v4))
-                (let (v6 u32) (bitcast v0))
-                (let (v7 u32) (add.checked v6 4))
-                (let (v8 u32) (mod.unchecked v7 4))
-                (assertz 250 v8)
-                (let (v9 (ptr felt)) (inttoptr v7))
-                (let (v10 felt) (load v9))
-                (let (v11 u32) (bitcast v0))
-                (let (v12 u32) (add.checked v11 8))
-                (let (v13 u32) (mod.unchecked v12 4))
-                (assertz 250 v13)
-                (let (v14 (ptr felt)) (inttoptr v12))
-                (let (v15 felt) (load v14))
-                (let (v16 u32) (bitcast v0))
-                (let (v17 u32) (add.checked v16 12))
-                (let (v18 u32) (mod.unchecked v17 4))
-                (assertz 250 v18)
-                (let (v19 (ptr felt)) (inttoptr v17))
-                (let (v20 felt) (load v19))
-                (let (v21 u32) (bitcast v1))
-                (let (v22 u32) (mod.unchecked v21 4))
-                (assertz 250 v22)
-                (let (v23 (ptr felt)) (inttoptr v21))
-                (let (v24 felt) (load v23))
-                (let (v25 u32) (bitcast v1))
-                (let (v26 u32) (add.checked v25 4))
-                (let (v27 u32) (mod.unchecked v26 4))
-                (assertz 250 v27)
-                (let (v28 (ptr felt)) (inttoptr v26))
-                (let (v29 felt) (load v28))
-                (let (v30 u32) (bitcast v1))
-                (let (v31 u32) (add.checked v30 8))
-                (let (v32 u32) (mod.unchecked v31 4))
-                (assertz 250 v32)
-                (let (v33 (ptr felt)) (inttoptr v31))
-                (let (v34 felt) (load v33))
-                (let (v35 u32) (bitcast v1))
-                (let (v36 u32) (add.checked v35 12))
-                (let (v37 u32) (mod.unchecked v36 4))
-                (assertz 250 v37)
-                (let (v38 (ptr felt)) (inttoptr v36))
-                (let (v39 felt) (load v38))
-                (call (#std::crypto::dsa::rpo_falcon512 #rpo_falcon512_verify) v5 v10 v15 v20 v24 v29 v34 v39)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_pipe_words_to_memory) (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (call #miden_stdlib_sys::stdlib::mem::pipe_words_to_memory v0 v1)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_pipe_double_words_to_memory)
-              (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (call #miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory v0 v1)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_remove_asset) (param i32) (result felt)
-            (block 0 (param v0 i32)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 felt) (const.felt 0))
-                (let (v4 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v5 i32) (const.i32 32))
-                (let (v6 i32) (sub.wrapping v4 v5))
-                (let (v7 i32) (const.i32 -32))
-                (let (v8 i32) (band v6 v7))
-                (let (v9 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v9 v8)
-                (call #miden_base_sys::bindings::tx::remove_asset v8 v0)
-                (let (v10 u32) (bitcast v8))
-                (let (v11 u32) (mod.unchecked v10 4))
-                (assertz 250 v11)
-                (let (v12 (ptr felt)) (inttoptr v10))
-                (let (v13 felt) (load v12))
-                (let (v14 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v14 v4)
-                (br (block 1 v13)))
-
-            (block 1 (param v1 felt)
-                (ret v1))
-        )
-
-        (func (export #test_create_note)
-              (param i32) (param felt) (param felt) (param i32) (result felt)
-            (block 0
-                    (param v0 i32)
-                    (param v1 felt)
-                    (param v2 felt)
-                    (param v3 i32)
-                (let (v5 felt) (call #miden_base_sys::bindings::tx::create_note v0 v1 v2 v3))
-                (br (block 1 v5)))
-
-            (block 1 (param v4 felt)
-                (ret v4))
-        )
-
-        (func (export #__rust_alloc) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v3 i32) (const.i32 1048576))
-                (let (v4 i32) (call #<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc v3 v1 v0))
-                (br (block 1 v4)))
-
-            (block 1 (param v2 i32)
-                (ret v2))
-        )
-
-        (func (export #__rust_alloc_zeroed) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v3 i32) (const.i32 1048576))
-                (let (v4 i32) (call #core::alloc::global::GlobalAlloc::alloc_zeroed v3 v1 v0))
-                (br (block 1 v4)))
-
-            (block 1 (param v2 i32)
-                (ret v2))
-        )
-
-        (func (export #<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc)
-              (param i32) (param i32) (param i32) (result i32)
-            (block 0 (param v0 i32) (param v1 i32) (param v2 i32)
-                (let (v4 i32) (const.i32 0))
-                (let (v5 i32) (const.i32 32))
-                (let (v6 i32) (const.i32 32))
-                (let (v7 u32) (bitcast v1))
-                (let (v8 u32) (bitcast v6))
-                (let (v9 i1) (gt v7 v8))
-                (let (v10 i32) (sext v9))
-                (let (v11 i1) (neq v10 0))
-                (let (v12 i32) (select v11 v1 v5))
-                (let (v13 u32) (popcnt v12))
-                (let (v14 i32) (bitcast v13))
-                (let (v15 i32) (const.i32 1))
-                (let (v16 i1) (neq v14 v15))
-                (let (v17 i32) (zext v16))
-                (let (v18 i1) (neq v17 0))
-                (condbr v18 (block 2) (block 3)))
-
-            (block 1 (param v3 i32))
-
-            (block 2
-                (unreachable))
-
-            (block 3
-                (let (v19 i32) (const.i32 -2147483648))
-                (let (v20 i32) (sub.wrapping v19 v12))
-                (let (v21 u32) (bitcast v20))
-                (let (v22 u32) (bitcast v2))
-                (let (v23 i1) (lt v21 v22))
-                (let (v24 i32) (sext v23))
-                (let (v25 i1) (neq v24 0))
-                (condbr v25 (block 2) (block 4)))
-
-            (block 4
-                (let (v26 i32) (const.i32 0))
-                (let (v27 i32) (add.wrapping v12 v2))
-                (let (v28 i32) (const.i32 -1))
-                (let (v29 i32) (add.wrapping v27 v28))
-                (let (v30 i32) (const.i32 0))
-                (let (v31 i32) (sub.wrapping v30 v12))
-                (let (v32 i32) (band v29 v31))
-                (let (v33 u32) (bitcast v0))
-                (let (v34 u32) (mod.unchecked v33 4))
-                (assertz 250 v34)
-                (let (v35 (ptr i32)) (inttoptr v33))
-                (let (v36 i32) (load v35))
-                (let (v37 i1) (neq v36 0))
-                (condbr v37 (block 5 v0 v32 v12 v26) (block 6)))
-
-            (block 5
-                    (param v49 i32)
-                    (param v55 i32)
-                    (param v65 i32)
-                    (param v68 i32)
-                (let (v48 i32) (const.i32 268435456))
-                (let (v50 u32) (bitcast v49))
-                (let (v51 u32) (mod.unchecked v50 4))
-                (assertz 250 v51)
-                (let (v52 (ptr i32)) (inttoptr v50))
-                (let (v53 i32) (load v52))
-                (let (v54 i32) (sub.wrapping v48 v53))
-                (let (v56 u32) (bitcast v54))
-                (let (v57 u32) (bitcast v55))
-                (let (v58 i1) (lt v56 v57))
-                (let (v59 i32) (sext v58))
-                (let (v60 i1) (neq v59 0))
-                (condbr v60 (block 7 v68) (block 8)))
-
-            (block 6
-                (let (v38 u32) (call (#intrinsics::mem #heap_base)))
-                (let (v39 u32) (memory.size))
-                (let (v40 i32) (const.i32 16))
-                (let (v41 u32) (bitcast v40))
-                (let (v42 u32) (shl.wrapping v39 v41))
-                (let (v43 u32) (add.wrapping v38 v42))
-                (let (v44 i32) (bitcast v43))
-                (let (v45 u32) (bitcast v0))
-                (let (v46 u32) (mod.unchecked v45 4))
-                (assertz 250 v46)
-                (let (v47 (ptr i32)) (inttoptr v45))
-                (store v47 v44)
-                (br (block 5 v0 v32 v12 v26)))
-
-            (block 7 (param v67 i32)
-                (ret v67))
-
-            (block 8
-                (let (v61 i32) (add.wrapping v53 v55))
-                (let (v62 u32) (bitcast v49))
-                (let (v63 u32) (mod.unchecked v62 4))
-                (assertz 250 v63)
-                (let (v64 (ptr i32)) (inttoptr v62))
-                (store v64 v61)
-                (let (v66 i32) (add.wrapping v53 v65))
-                (br (block 7 v66)))
-        )
-
-        (func (export #miden_base_sys::bindings::tx::get_id)
-              (result felt)
-            (block 0
-                (let (v1 felt) (call (#miden::account #get_id)))
-                (br (block 1 v1)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #miden_base_sys::bindings::tx::get_inputs)
-              (param i32)
-            (block 0 (param v0 i32)
-                (let (v1 i32) (const.i32 0))
-                (let (v2 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v3 i32) (const.i32 16))
-                (let (v4 i32) (sub.wrapping v2 v3))
-                (let (v5 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v5 v4)
-                (let (v6 i32) (const.i32 4))
-                (let (v7 i32) (add.wrapping v4 v6))
-                (let (v8 i32) (const.i32 256))
-                (let (v9 i32) (const.i32 0))
-                (call #alloc::raw_vec::RawVec<T,A>::try_allocate_in v7 v8 v9)
-                (let (v10 u32) (bitcast v4))
-                (let (v11 u32) (add.checked v10 8))
-                (let (v12 u32) (mod.unchecked v11 4))
-                (assertz 250 v12)
-                (let (v13 (ptr i32)) (inttoptr v11))
-                (let (v14 i32) (load v13))
-                (let (v15 u32) (bitcast v4))
-                (let (v16 u32) (add.checked v15 4))
-                (let (v17 u32) (mod.unchecked v16 4))
-                (assertz 250 v17)
-                (let (v18 (ptr i32)) (inttoptr v16))
-                (let (v19 i32) (load v18))
-                (let (v20 i32) (const.i32 1))
-                (let (v21 i1) (neq v19 v20))
-                (let (v22 i32) (zext v21))
-                (let (v23 i1) (neq v22 0))
-                (condbr v23 (block 2) (block 3)))
-
-            (block 1
-                (ret))
-
-            (block 2
-                (let (v29 u32) (bitcast v4))
-                (let (v30 u32) (add.checked v29 12))
-                (let (v31 u32) (mod.unchecked v30 4))
-                (assertz 250 v31)
-                (let (v32 (ptr i32)) (inttoptr v30))
-                (let (v33 i32) (load v32))
-                (let (v34 i32) (const.i32 4))
-                (let (v35 u32) (bitcast v33))
-                (let (v36 u32) (bitcast v34))
-                (let (v37 u32) (shr.wrapping v35 v36))
-                (let (v38 i32) (bitcast v37))
-                (let [(v39 i32) (v40 i32)] (call (#miden::note #get_inputs) v38))
-                (let (v41 u32) (bitcast v0))
-                (let (v42 u32) (add.checked v41 8))
-                (let (v43 u32) (mod.unchecked v42 4))
-                (assertz 250 v43)
-                (let (v44 (ptr i32)) (inttoptr v42))
-                (store v44 v39)
-                (let (v45 u32) (bitcast v0))
-                (let (v46 u32) (add.checked v45 4))
-                (let (v47 u32) (mod.unchecked v46 4))
-                (assertz 250 v47)
-                (let (v48 (ptr i32)) (inttoptr v46))
-                (store v48 v33)
-                (let (v49 u32) (bitcast v0))
-                (let (v50 u32) (mod.unchecked v49 4))
-                (assertz 250 v50)
-                (let (v51 (ptr i32)) (inttoptr v49))
-                (store v51 v14)
-                (let (v52 i32) (const.i32 16))
-                (let (v53 i32) (add.wrapping v4 v52))
-                (let (v54 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v54 v53)
-                (br (block 1)))
-
-            (block 3
-                (let (v24 u32) (bitcast v4))
-                (let (v25 u32) (add.checked v24 12))
-                (let (v26 u32) (mod.unchecked v25 4))
-                (assertz 250 v26)
-                (let (v27 (ptr i32)) (inttoptr v25))
-                (let (v28 i32) (load v27))
-                (call #alloc::raw_vec::handle_error v14 v28)
-                (unreachable))
-        )
-
-        (func (export #miden_base_sys::bindings::tx::add_asset)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 u32) (bitcast v1))
-                (let (v3 u32) (mod.unchecked v2 4))
-                (assertz 250 v3)
-                (let (v4 (ptr felt)) (inttoptr v2))
-                (let (v5 felt) (load v4))
-                (let (v6 u32) (bitcast v1))
-                (let (v7 u32) (add.checked v6 4))
-                (let (v8 u32) (mod.unchecked v7 4))
-                (assertz 250 v8)
-                (let (v9 (ptr felt)) (inttoptr v7))
-                (let (v10 felt) (load v9))
-                (let (v11 u32) (bitcast v1))
-                (let (v12 u32) (add.checked v11 8))
-                (let (v13 u32) (mod.unchecked v12 4))
-                (assertz 250 v13)
-                (let (v14 (ptr felt)) (inttoptr v12))
-                (let (v15 felt) (load v14))
-                (let (v16 u32) (bitcast v1))
-                (let (v17 u32) (add.checked v16 12))
-                (let (v18 u32) (mod.unchecked v17 4))
-                (assertz 250 v18)
-                (let (v19 (ptr felt)) (inttoptr v17))
-                (let (v20 felt) (load v19))
-                (let [(v21 felt) (v22 felt) (v23 felt) (v24 felt)] (call (#miden::account #add_asset) v5 v10 v15 v20))
-                (let (v25 u32) (bitcast v0))
-                (let (v26 (ptr felt)) (inttoptr v25))
-                (store v26 v21)
-                (let (v27 u32) (add.checked v25 4))
-                (let (v28 (ptr felt)) (inttoptr v27))
-                (store v28 v22)
-                (let (v29 u32) (add.checked v25 8))
-                (let (v30 (ptr felt)) (inttoptr v29))
-                (store v30 v23)
-                (let (v31 u32) (add.checked v25 12))
-                (let (v32 (ptr felt)) (inttoptr v31))
-                (store v32 v24)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #miden_base_sys::bindings::tx::remove_asset)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 u32) (bitcast v1))
-                (let (v3 u32) (mod.unchecked v2 4))
-                (assertz 250 v3)
-                (let (v4 (ptr felt)) (inttoptr v2))
-                (let (v5 felt) (load v4))
-                (let (v6 u32) (bitcast v1))
-                (let (v7 u32) (add.checked v6 4))
-                (let (v8 u32) (mod.unchecked v7 4))
-                (assertz 250 v8)
-                (let (v9 (ptr felt)) (inttoptr v7))
-                (let (v10 felt) (load v9))
-                (let (v11 u32) (bitcast v1))
-                (let (v12 u32) (add.checked v11 8))
-                (let (v13 u32) (mod.unchecked v12 4))
-                (assertz 250 v13)
-                (let (v14 (ptr felt)) (inttoptr v12))
-                (let (v15 felt) (load v14))
-                (let (v16 u32) (bitcast v1))
-                (let (v17 u32) (add.checked v16 12))
-                (let (v18 u32) (mod.unchecked v17 4))
-                (assertz 250 v18)
-                (let (v19 (ptr felt)) (inttoptr v17))
-                (let (v20 felt) (load v19))
-                (let [(v21 felt) (v22 felt) (v23 felt) (v24 felt)] (call (#miden::account #remove_asset) v5 v10 v15 v20))
-                (let (v25 u32) (bitcast v0))
-                (let (v26 (ptr felt)) (inttoptr v25))
-                (store v26 v21)
-                (let (v27 u32) (add.checked v25 4))
-                (let (v28 (ptr felt)) (inttoptr v27))
-                (store v28 v22)
-                (let (v29 u32) (add.checked v25 8))
-                (let (v30 (ptr felt)) (inttoptr v29))
-                (store v30 v23)
-                (let (v31 u32) (add.checked v25 12))
-                (let (v32 (ptr felt)) (inttoptr v31))
-                (store v32 v24)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #miden_base_sys::bindings::tx::create_note)
-              (param i32) (param felt) (param felt) (param i32) (result felt)
-            (block 0
-                    (param v0 i32)
-                    (param v1 felt)
-                    (param v2 felt)
-                    (param v3 i32)
-                (let (v5 u32) (bitcast v0))
-                (let (v6 u32) (mod.unchecked v5 4))
-                (assertz 250 v6)
-                (let (v7 (ptr felt)) (inttoptr v5))
-                (let (v8 felt) (load v7))
-                (let (v9 u32) (bitcast v0))
-                (let (v10 u32) (add.checked v9 4))
-                (let (v11 u32) (mod.unchecked v10 4))
-                (assertz 250 v11)
-                (let (v12 (ptr felt)) (inttoptr v10))
-                (let (v13 felt) (load v12))
-                (let (v14 u32) (bitcast v0))
-                (let (v15 u32) (add.checked v14 8))
-                (let (v16 u32) (mod.unchecked v15 4))
-                (assertz 250 v16)
-                (let (v17 (ptr felt)) (inttoptr v15))
-                (let (v18 felt) (load v17))
-                (let (v19 u32) (bitcast v0))
-                (let (v20 u32) (add.checked v19 12))
-                (let (v21 u32) (mod.unchecked v20 4))
-                (assertz 250 v21)
-                (let (v22 (ptr felt)) (inttoptr v20))
-                (let (v23 felt) (load v22))
-                (let (v24 u32) (bitcast v3))
-                (let (v25 u32) (mod.unchecked v24 4))
-                (assertz 250 v25)
-                (let (v26 (ptr felt)) (inttoptr v24))
-                (let (v27 felt) (load v26))
-                (let (v28 u32) (bitcast v3))
-                (let (v29 u32) (add.checked v28 4))
-                (let (v30 u32) (mod.unchecked v29 4))
-                (assertz 250 v30)
-                (let (v31 (ptr felt)) (inttoptr v29))
-                (let (v32 felt) (load v31))
-                (let (v33 u32) (bitcast v3))
-                (let (v34 u32) (add.checked v33 8))
-                (let (v35 u32) (mod.unchecked v34 4))
-                (assertz 250 v35)
-                (let (v36 (ptr felt)) (inttoptr v34))
-                (let (v37 felt) (load v36))
-                (let (v38 u32) (bitcast v3))
-                (let (v39 u32) (add.checked v38 12))
-                (let (v40 u32) (mod.unchecked v39 4))
-                (assertz 250 v40)
-                (let (v41 (ptr felt)) (inttoptr v39))
-                (let (v42 felt) (load v41))
-                (let (v43 felt) (call (#miden::tx #create_note) v8 v13 v18 v23 v1 v2 v27 v32 v37 v42))
-                (br (block 1 v43)))
-
-            (block 1 (param v4 felt)
-                (ret v4))
-        )
-
-        (func (export #alloc::vec::Vec<T>::with_capacity)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v4 i32) (const.i32 16))
-                (let (v5 i32) (sub.wrapping v3 v4))
-                (let (v6 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v6 v5)
-                (let (v7 i32) (const.i32 4))
-                (let (v8 i32) (add.wrapping v5 v7))
-                (let (v9 i32) (const.i32 0))
-                (call #alloc::raw_vec::RawVec<T,A>::try_allocate_in v8 v1 v9)
-                (let (v10 u32) (bitcast v5))
-                (let (v11 u32) (add.checked v10 8))
-                (let (v12 u32) (mod.unchecked v11 4))
-                (assertz 250 v12)
-                (let (v13 (ptr i32)) (inttoptr v11))
-                (let (v14 i32) (load v13))
-                (let (v15 u32) (bitcast v5))
-                (let (v16 u32) (add.checked v15 4))
-                (let (v17 u32) (mod.unchecked v16 4))
-                (assertz 250 v17)
-                (let (v18 (ptr i32)) (inttoptr v16))
-                (let (v19 i32) (load v18))
-                (let (v20 i32) (const.i32 1))
-                (let (v21 i1) (neq v19 v20))
-                (let (v22 i32) (zext v21))
-                (let (v23 i1) (neq v22 0))
-                (condbr v23 (block 2) (block 3)))
-
-            (block 1
-                (ret))
-
-            (block 2
-                (let (v29 u32) (bitcast v5))
-                (let (v30 u32) (add.checked v29 12))
-                (let (v31 u32) (mod.unchecked v30 4))
-                (assertz 250 v31)
-                (let (v32 (ptr i32)) (inttoptr v30))
-                (let (v33 i32) (load v32))
-                (let (v34 i32) (const.i32 0))
-                (let (v35 u32) (bitcast v0))
-                (let (v36 u32) (add.checked v35 8))
-                (let (v37 u32) (mod.unchecked v36 4))
-                (assertz 250 v37)
-                (let (v38 (ptr i32)) (inttoptr v36))
-                (store v38 v34)
-                (let (v39 u32) (bitcast v0))
-                (let (v40 u32) (add.checked v39 4))
-                (let (v41 u32) (mod.unchecked v40 4))
-                (assertz 250 v41)
-                (let (v42 (ptr i32)) (inttoptr v40))
-                (store v42 v33)
-                (let (v43 u32) (bitcast v0))
-                (let (v44 u32) (mod.unchecked v43 4))
-                (assertz 250 v44)
-                (let (v45 (ptr i32)) (inttoptr v43))
-                (store v45 v14)
-                (let (v46 i32) (const.i32 16))
-                (let (v47 i32) (add.wrapping v5 v46))
-                (let (v48 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v48 v47)
-                (br (block 1)))
-
-            (block 3
-                (let (v24 u32) (bitcast v5))
-                (let (v25 u32) (add.checked v24 12))
-                (let (v26 u32) (mod.unchecked v25 4))
-                (assertz 250 v26)
-                (let (v27 (ptr i32)) (inttoptr v25))
-                (let (v28 i32) (load v27))
-                (call #alloc::raw_vec::handle_error v14 v28)
-                (unreachable))
-        )
-
-        (func (export #alloc::raw_vec::RawVec<T,A>::try_allocate_in)
-              (param i32) (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32) (param v2 i32)
-                (let (v3 i32) (const.i32 0))
-                (let (v4 i1) (neq v1 0))
-                (condbr v4 (block 3) (block 4)))
-
-            (block 1
-                (ret))
-
-            (block 2 (param v62 i32) (param v64 i32)
-                (let (v65 u32) (bitcast v62))
-                (let (v66 u32) (mod.unchecked v65 4))
-                (assertz 250 v66)
-                (let (v67 (ptr i32)) (inttoptr v65))
-                (store v67 v64)
-                (br (block 1)))
-
-            (block 3
-                (let (v11 i32) (const.i32 536870912))
-                (let (v12 u32) (bitcast v1))
-                (let (v13 u32) (bitcast v11))
-                (let (v14 i1) (lt v12 v13))
-                (let (v15 i32) (sext v14))
-                (let (v16 i1) (neq v15 0))
-                (condbr v16 (block 6) (block 7)))
-
-            (block 4
-                (let (v5 i64) (const.i64 17179869184))
-                (let (v6 u32) (bitcast v0))
-                (let (v7 u32) (add.checked v6 4))
-                (let (v8 u32) (mod.unchecked v7 4))
-                (assertz 250 v8)
-                (let (v9 (ptr i64)) (inttoptr v7))
-                (store v9 v5)
-                (let (v10 i32) (const.i32 0))
-                (br (block 2 v0 v10)))
-
-            (block 5 (param v63 i32)
-                (let (v61 i32) (const.i32 1))
-                (br (block 2 v63 v61)))
-
-            (block 6
-                (let (v22 i32) (const.i32 2))
-                (let (v23 u32) (bitcast v22))
-                (let (v24 i32) (shl.wrapping v1 v23))
-                (let (v25 i1) (neq v2 0))
-                (condbr v25 (block 9) (block 10)))
-
-            (block 7
-                (let (v17 i32) (const.i32 0))
-                (let (v18 u32) (bitcast v0))
-                (let (v19 u32) (add.checked v18 4))
-                (let (v20 u32) (mod.unchecked v19 4))
-                (assertz 250 v20)
-                (let (v21 (ptr i32)) (inttoptr v19))
-                (store v21 v17)
-                (br (block 5 v0)))
-
-            (block 8
-                    (param v36 i32)
-                    (param v40 i32)
-                    (param v45 i32)
-                    (param v51 i32)
-                (let (v37 i1) (eq v36 0))
-                (let (v38 i32) (zext v37))
-                (let (v39 i1) (neq v38 0))
-                (condbr v39 (block 11) (block 12)))
-
-            (block 9
-                (let (v34 i32) (const.i32 4))
-                (let (v35 i32) (call #__rust_alloc_zeroed v24 v34))
-                (br (block 8 v35 v0 v1 v24)))
-
-            (block 10
-                (let (v26 i32) (const.i32 0))
-                (let (v27 u32) (bitcast v26))
-                (let (v28 u32) (add.checked v27 1048580))
-                (let (v29 (ptr u8)) (inttoptr v28))
-                (let (v30 u8) (load v29))
-                (let (v31 i32) (zext v30))
-                (let (v32 i32) (const.i32 4))
-                (let (v33 i32) (call #__rust_alloc v24 v32))
-                (br (block 8 v33 v0 v1 v24)))
-
-            (block 11
-                (let (v52 u32) (bitcast v40))
-                (let (v53 u32) (add.checked v52 8))
-                (let (v54 u32) (mod.unchecked v53 4))
-                (assertz 250 v54)
-                (let (v55 (ptr i32)) (inttoptr v53))
-                (store v55 v51)
-                (let (v56 i32) (const.i32 4))
-                (let (v57 u32) (bitcast v40))
-                (let (v58 u32) (add.checked v57 4))
-                (let (v59 u32) (mod.unchecked v58 4))
-                (assertz 250 v59)
-                (let (v60 (ptr i32)) (inttoptr v58))
-                (store v60 v56)
-                (br (block 5 v40)))
-
-            (block 12
-                (let (v41 u32) (bitcast v40))
-                (let (v42 u32) (add.checked v41 8))
-                (let (v43 u32) (mod.unchecked v42 4))
-                (assertz 250 v43)
-                (let (v44 (ptr i32)) (inttoptr v42))
-                (store v44 v36)
-                (let (v46 u32) (bitcast v40))
-                (let (v47 u32) (add.checked v46 4))
-                (let (v48 u32) (mod.unchecked v47 4))
-                (assertz 250 v48)
-                (let (v49 (ptr i32)) (inttoptr v47))
-                (store v49 v45)
-                (let (v50 i32) (const.i32 0))
-                (br (block 2 v40 v50)))
-        )
-
-        (func (export #miden_stdlib_sys::stdlib::mem::pipe_words_to_memory)
-              (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v4 i32) (const.i32 96))
-                (let (v5 i32) (sub.wrapping v3 v4))
-                (let (v6 i32) (const.i32 -32))
-                (let (v7 i32) (band v5 v6))
-                (let (v8 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v8 v7)
-                (let (v9 i32) (const.i32 20))
-                (let (v10 i32) (add.wrapping v7 v9))
-                (let (v11 i64) (cast v1))
-                (let (v12 i32) (trunc v11))
-                (let (v13 i32) (const.i32 2))
-                (let (v14 u32) (bitcast v13))
-                (let (v15 i32) (shl.wrapping v12 v14))
-                (call #alloc::vec::Vec<T>::with_capacity v10 v15)
-                (let (v16 u32) (bitcast v7))
-                (let (v17 u32) (add.checked v16 24))
-                (let (v18 u32) (mod.unchecked v17 4))
-                (assertz 250 v18)
-                (let (v19 (ptr i32)) (inttoptr v17))
-                (let (v20 i32) (load v19))
-                (let (v21 i32) (const.i32 32))
-                (let (v22 i32) (add.wrapping v7 v21))
-                (let [(v23 felt) (v24 felt) (v25 felt) (v26 felt) (v27 i32)] (call (#std::mem #pipe_words_to_memory) v1 v20))
-                (let (v28 u32) (bitcast v22))
-                (let (v29 (ptr felt)) (inttoptr v28))
-                (store v29 v23)
-                (let (v30 u32) (add.checked v28 4))
-                (let (v31 (ptr felt)) (inttoptr v30))
-                (store v31 v24)
-                (let (v32 u32) (add.checked v28 8))
-                (let (v33 (ptr felt)) (inttoptr v32))
-                (store v33 v25)
-                (let (v34 u32) (add.checked v28 12))
-                (let (v35 (ptr felt)) (inttoptr v34))
-                (store v35 v26)
-                (let (v36 u32) (add.checked v28 16))
-                (let (v37 (ptr i32)) (inttoptr v36))
-                (store v37 v27)
-                (let (v38 i32) (const.i32 24))
-                (let (v39 i32) (add.wrapping v0 v38))
-                (let (v40 u32) (bitcast v7))
-                (let (v41 u32) (add.checked v40 56))
-                (let (v42 u32) (mod.unchecked v41 8))
-                (assertz 250 v42)
-                (let (v43 (ptr i64)) (inttoptr v41))
-                (let (v44 i64) (load v43))
-                (let (v45 u32) (bitcast v39))
-                (let (v46 u32) (mod.unchecked v45 8))
-                (assertz 250 v46)
-                (let (v47 (ptr i64)) (inttoptr v45))
-                (store v47 v44)
-                (let (v48 i32) (const.i32 16))
-                (let (v49 i32) (add.wrapping v0 v48))
-                (let (v50 u32) (bitcast v7))
-                (let (v51 u32) (add.checked v50 48))
-                (let (v52 u32) (mod.unchecked v51 8))
-                (assertz 250 v52)
-                (let (v53 (ptr i64)) (inttoptr v51))
-                (let (v54 i64) (load v53))
-                (let (v55 u32) (bitcast v49))
-                (let (v56 u32) (mod.unchecked v55 8))
-                (assertz 250 v56)
-                (let (v57 (ptr i64)) (inttoptr v55))
-                (store v57 v54)
-                (let (v58 i32) (const.i32 8))
-                (let (v59 i32) (add.wrapping v0 v58))
-                (let (v60 u32) (bitcast v7))
-                (let (v61 u32) (add.checked v60 40))
-                (let (v62 u32) (mod.unchecked v61 8))
-                (assertz 250 v62)
-                (let (v63 (ptr i64)) (inttoptr v61))
-                (let (v64 i64) (load v63))
-                (let (v65 u32) (bitcast v59))
-                (let (v66 u32) (mod.unchecked v65 8))
-                (assertz 250 v66)
-                (let (v67 (ptr i64)) (inttoptr v65))
-                (store v67 v64)
-                (let (v68 u32) (bitcast v7))
-                (let (v69 u32) (add.checked v68 32))
-                (let (v70 u32) (mod.unchecked v69 8))
-                (assertz 250 v70)
-                (let (v71 (ptr i64)) (inttoptr v69))
-                (let (v72 i64) (load v71))
-                (let (v73 u32) (bitcast v0))
-                (let (v74 u32) (mod.unchecked v73 8))
-                (assertz 250 v74)
-                (let (v75 (ptr i64)) (inttoptr v73))
-                (store v75 v72)
-                (let (v76 i32) (const.i32 40))
-                (let (v77 i32) (add.wrapping v0 v76))
-                (let (v78 i32) (const.i32 20))
-                (let (v79 i32) (add.wrapping v7 v78))
-                (let (v80 i32) (const.i32 8))
-                (let (v81 i32) (add.wrapping v79 v80))
-                (let (v82 u32) (bitcast v81))
-                (let (v83 u32) (mod.unchecked v82 4))
-                (assertz 250 v83)
-                (let (v84 (ptr i32)) (inttoptr v82))
-                (let (v85 i32) (load v84))
-                (let (v86 u32) (bitcast v77))
-                (let (v87 u32) (mod.unchecked v86 4))
-                (assertz 250 v87)
-                (let (v88 (ptr i32)) (inttoptr v86))
-                (store v88 v85)
-                (let (v89 u32) (bitcast v7))
-                (let (v90 u32) (add.checked v89 20))
-                (let (v91 u32) (mod.unchecked v90 4))
-                (assertz 250 v91)
-                (let (v92 (ptr i64)) (inttoptr v90))
-                (let (v93 i64) (load v92))
-                (let (v94 u32) (bitcast v0))
-                (let (v95 u32) (add.checked v94 32))
-                (let (v96 u32) (mod.unchecked v95 4))
-                (assertz 250 v96)
-                (let (v97 (ptr i64)) (inttoptr v95))
-                (store v97 v93)
-                (let (v98 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v98 v3)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory)
-              (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (let (v2 i32) (const.i32 0))
-                (let (v3 i32) (global.load i32 (global.symbol #__stack_pointer)))
-                (let (v4 i32) (const.i32 160))
-                (let (v5 i32) (sub.wrapping v3 v4))
-                (let (v6 i32) (const.i32 -32))
-                (let (v7 i32) (band v5 v6))
-                (let (v8 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v8 v7)
-                (let (v9 i32) (const.i32 20))
-                (let (v10 i32) (add.wrapping v7 v9))
-                (let (v11 i64) (cast v1))
-                (let (v12 i32) (trunc v11))
-                (let (v13 i32) (const.i32 2))
-                (let (v14 u32) (bitcast v13))
-                (let (v15 i32) (shl.wrapping v12 v14))
-                (call #alloc::vec::Vec<T>::with_capacity v10 v15)
-                (let (v16 u32) (bitcast v7))
-                (let (v17 u32) (add.checked v16 24))
-                (let (v18 u32) (mod.unchecked v17 4))
-                (assertz 250 v18)
-                (let (v19 (ptr i32)) (inttoptr v17))
-                (let (v20 i32) (load v19))
-                (let (v21 i64) (const.i64 0))
-                (let (v22 felt) (cast v21))
-                (let (v23 i32) (const.i32 4))
-                (let (v24 u32) (bitcast v23))
-                (let (v25 i32) (shl.wrapping v12 v24))
-                (let (v26 i32) (add.wrapping v20 v25))
-                (let (v27 i32) (const.i32 32))
-                (let (v28 i32) (add.wrapping v7 v27))
-                (let [(v29 felt) (v30 felt) (v31 felt) (v32 felt) (v33 felt) (v34 felt) (v35 felt) (v36 felt) (v37 felt) (v38 felt) (v39 felt) (v40 felt) (v41 i32)] (call (#std::mem #pipe_double_words_to_memory) v22 v22 v22 v22 v22 v22 v22 v22 v22 v22 v22 v22 v20 v26))
-                (let (v42 u32) (bitcast v28))
-                (let (v43 (ptr felt)) (inttoptr v42))
-                (store v43 v29)
-                (let (v44 u32) (add.checked v42 4))
-                (let (v45 (ptr felt)) (inttoptr v44))
-                (store v45 v30)
-                (let (v46 u32) (add.checked v42 8))
-                (let (v47 (ptr felt)) (inttoptr v46))
-                (store v47 v31)
-                (let (v48 u32) (add.checked v42 12))
-                (let (v49 (ptr felt)) (inttoptr v48))
-                (store v49 v32)
-                (let (v50 u32) (add.checked v42 16))
-                (let (v51 (ptr felt)) (inttoptr v50))
-                (store v51 v33)
-                (let (v52 u32) (add.checked v42 20))
-                (let (v53 (ptr felt)) (inttoptr v52))
-                (store v53 v34)
-                (let (v54 u32) (add.checked v42 24))
-                (let (v55 (ptr felt)) (inttoptr v54))
-                (store v55 v35)
-                (let (v56 u32) (add.checked v42 28))
-                (let (v57 (ptr felt)) (inttoptr v56))
-                (store v57 v36)
-                (let (v58 u32) (add.checked v42 32))
-                (let (v59 (ptr felt)) (inttoptr v58))
-                (store v59 v37)
-                (let (v60 u32) (add.checked v42 36))
-                (let (v61 (ptr felt)) (inttoptr v60))
-                (store v61 v38)
-                (let (v62 u32) (add.checked v42 40))
-                (let (v63 (ptr felt)) (inttoptr v62))
-                (store v63 v39)
-                (let (v64 u32) (add.checked v42 44))
-                (let (v65 (ptr felt)) (inttoptr v64))
-                (store v65 v40)
-                (let (v66 u32) (add.checked v42 48))
-                (let (v67 (ptr i32)) (inttoptr v66))
-                (store v67 v41)
-                (let (v68 i32) (const.i32 24))
-                (let (v69 i32) (add.wrapping v0 v68))
-                (let (v70 i32) (const.i32 88))
-                (let (v71 i32) (add.wrapping v7 v70))
-                (let (v72 u32) (bitcast v71))
-                (let (v73 u32) (mod.unchecked v72 8))
-                (assertz 250 v73)
-                (let (v74 (ptr i64)) (inttoptr v72))
-                (let (v75 i64) (load v74))
-                (let (v76 u32) (bitcast v69))
-                (let (v77 u32) (mod.unchecked v76 8))
-                (assertz 250 v77)
-                (let (v78 (ptr i64)) (inttoptr v76))
-                (store v78 v75)
-                (let (v79 i32) (const.i32 16))
-                (let (v80 i32) (add.wrapping v0 v79))
-                (let (v81 i32) (const.i32 80))
-                (let (v82 i32) (add.wrapping v7 v81))
-                (let (v83 u32) (bitcast v82))
-                (let (v84 u32) (mod.unchecked v83 8))
-                (assertz 250 v84)
-                (let (v85 (ptr i64)) (inttoptr v83))
-                (let (v86 i64) (load v85))
-                (let (v87 u32) (bitcast v80))
-                (let (v88 u32) (mod.unchecked v87 8))
-                (assertz 250 v88)
-                (let (v89 (ptr i64)) (inttoptr v87))
-                (store v89 v86)
-                (let (v90 i32) (const.i32 8))
-                (let (v91 i32) (add.wrapping v0 v90))
-                (let (v92 i32) (const.i32 32))
-                (let (v93 i32) (add.wrapping v7 v92))
-                (let (v94 i32) (const.i32 40))
-                (let (v95 i32) (add.wrapping v93 v94))
-                (let (v96 u32) (bitcast v95))
-                (let (v97 u32) (mod.unchecked v96 8))
-                (assertz 250 v97)
-                (let (v98 (ptr i64)) (inttoptr v96))
-                (let (v99 i64) (load v98))
-                (let (v100 u32) (bitcast v91))
-                (let (v101 u32) (mod.unchecked v100 8))
-                (assertz 250 v101)
-                (let (v102 (ptr i64)) (inttoptr v100))
-                (store v102 v99)
-                (let (v103 u32) (bitcast v7))
-                (let (v104 u32) (add.checked v103 64))
-                (let (v105 u32) (mod.unchecked v104 8))
-                (assertz 250 v105)
-                (let (v106 (ptr i64)) (inttoptr v104))
-                (let (v107 i64) (load v106))
-                (let (v108 u32) (bitcast v0))
-                (let (v109 u32) (mod.unchecked v108 8))
-                (assertz 250 v109)
-                (let (v110 (ptr i64)) (inttoptr v108))
-                (store v110 v107)
-                (let (v111 i32) (const.i32 40))
-                (let (v112 i32) (add.wrapping v0 v111))
-                (let (v113 i32) (const.i32 20))
-                (let (v114 i32) (add.wrapping v7 v113))
-                (let (v115 i32) (const.i32 8))
-                (let (v116 i32) (add.wrapping v114 v115))
-                (let (v117 u32) (bitcast v116))
-                (let (v118 u32) (mod.unchecked v117 4))
-                (assertz 250 v118)
-                (let (v119 (ptr i32)) (inttoptr v117))
-                (let (v120 i32) (load v119))
-                (let (v121 u32) (bitcast v112))
-                (let (v122 u32) (mod.unchecked v121 4))
-                (assertz 250 v122)
-                (let (v123 (ptr i32)) (inttoptr v121))
-                (store v123 v120)
-                (let (v124 u32) (bitcast v7))
-                (let (v125 u32) (add.checked v124 20))
-                (let (v126 u32) (mod.unchecked v125 4))
-                (assertz 250 v126)
-                (let (v127 (ptr i64)) (inttoptr v125))
-                (let (v128 i64) (load v127))
-                (let (v129 u32) (bitcast v0))
-                (let (v130 u32) (add.checked v129 32))
-                (let (v131 u32) (mod.unchecked v130 4))
-                (assertz 250 v131)
-                (let (v132 (ptr i64)) (inttoptr v130))
-                (store v132 v128)
-                (let (v133 (ptr i32)) (global.symbol #__stack_pointer))
-                (store v133 v3)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #dummy) 
-            (block 0
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #__wasm_call_dtors) 
-            (block 0
-                (call #dummy)
-                (call #dummy)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #alloc::raw_vec::handle_error)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (unreachable))
-
-            (block 1)
-        )
-
-        (func (export #get_wallet_magic_number.command_export) (result felt)
-            (block 0
-                (let (v1 felt) (call #get_wallet_magic_number))
-                (call #__wasm_call_dtors)
-                (br (block 1 v1)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #test_add_asset.command_export) (result felt)
-            (block 0
-                (let (v1 felt) (call #test_add_asset))
-                (call #__wasm_call_dtors)
-                (br (block 1 v1)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #test_felt_ops_smoke.command_export)
-              (param felt) (param felt) (result felt)
-            (block 0 (param v0 felt) (param v1 felt)
-                (let (v3 felt) (call #test_felt_ops_smoke v0 v1))
-                (call #__wasm_call_dtors)
-                (br (block 1 v3)))
-
-            (block 1 (param v2 felt)
-                (ret v2))
-        )
-
-        (func (export #note_script.command_export) (result felt)
-            (block 0
-                (let (v1 felt) (call #note_script))
-                (call #__wasm_call_dtors)
-                (br (block 1 v1)))
-
-            (block 1 (param v0 felt)
-                (ret v0))
-        )
-
-        (func (export #test_blake3_hash_1to1.command_export)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (call #test_blake3_hash_1to1 v0 v1)
-                (call #__wasm_call_dtors)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_blake3_hash_2to1.command_export)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (call #test_blake3_hash_2to1 v0 v1)
-                (call #__wasm_call_dtors)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_rpo_falcon512_verify.command_export)
-              (param i32) (param i32)
-            (block 0 (param v0 i32) (param v1 i32)
-                (call #test_rpo_falcon512_verify v0 v1)
-                (call #__wasm_call_dtors)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_pipe_words_to_memory.command_export)
-              (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (call #test_pipe_words_to_memory v0 v1)
-                (call #__wasm_call_dtors)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_pipe_double_words_to_memory.command_export)
-              (param i32) (param felt)
-            (block 0 (param v0 i32) (param v1 felt)
-                (call #test_pipe_double_words_to_memory v0 v1)
-                (call #__wasm_call_dtors)
-                (br (block 1)))
-
-            (block 1
-                (ret))
-        )
-
-        (func (export #test_remove_asset.command_export)
-              (param i32) (result felt)
-            (block 0 (param v0 i32)
-                (let (v2 felt) (call #test_remove_asset v0))
-                (call #__wasm_call_dtors)
-                (br (block 1 v2)))
-
-            (block 1 (param v1 felt)
-                (ret v1))
-        )
-
-        (func (export #test_create_note.command_export)
-              (param i32) (param felt) (param felt) (param i32) (result felt)
-            (block 0
-                    (param v0 i32)
-                    (param v1 felt)
-                    (param v2 felt)
-                    (param v3 i32)
-                (let (v5 felt) (call #test_create_note v0 v1 v2 v3))
-                (call #__wasm_call_dtors)
-                (br (block 1 v5)))
-
-            (block 1 (param v4 felt)
-                (ret v4))
-        )
-
-        ;; Imports
-        (func (import #intrinsics::mem #heap_base) (result u32))
-        (func (import #miden::account #add_asset)
-              (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt))
-        (func (import #miden::account #get_id) (result felt))
-        (func (import #miden::account #remove_asset)
-              (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt))
-        (func (import #miden::note #get_inputs) (param i32) (result i32 i32))
-        (func (import #miden::tx #create_note)
-              (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt))
-        (func (import #std::crypto::dsa::rpo_falcon512 #rpo_falcon512_verify)
-              (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt))
-        (func (import #std::crypto::hashes::blake3 #hash_1to1)
-              (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (result i32 i32 i32 i32 i32 i32 i32 i32))
-        (func (import #std::crypto::hashes::blake3 #hash_2to1)
-              (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (param i32) (result i32 i32 i32 i32 i32 i32 i32 i32))
-        (func (import #std::mem #pipe_double_words_to_memory)
-              (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param i32) (param i32) (result felt felt felt felt felt felt felt felt felt felt felt felt i32))
-        (func (import #std::mem #pipe_words_to_memory)
-              (param felt) (param i32) (result felt felt felt felt i32))
-    )
-
-)
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @miden_sdk_account_test {
+        builtin.function public @miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32) {
+        ^block3(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32):
+            v9, v10, v11, v12, v13, v14, v15, v16 = hir.exec @std::crypto::hashes::blake3/hash_1to1(v0, v1, v2, v3, v4, v5, v6, v7) : i32, i32, i32, i32, i32, i32, i32, i32
+            v17 = hir.bitcast v8 : u32;
+            v18 = hir.int_to_ptr v17 : (ptr i32);
+            hir.store v18, v9;
+            v19 = hir.constant 4 : u32;
+            v20 = hir.add v17, v19 : u32 #[overflow = checked];
+            v21 = hir.int_to_ptr v20 : (ptr i32);
+            hir.store v21, v10;
+            v22 = hir.constant 8 : u32;
+            v23 = hir.add v17, v22 : u32 #[overflow = checked];
+            v24 = hir.int_to_ptr v23 : (ptr i32);
+            hir.store v24, v11;
+            v25 = hir.constant 12 : u32;
+            v26 = hir.add v17, v25 : u32 #[overflow = checked];
+            v27 = hir.int_to_ptr v26 : (ptr i32);
+            hir.store v27, v12;
+            v28 = hir.constant 16 : u32;
+            v29 = hir.add v17, v28 : u32 #[overflow = checked];
+            v30 = hir.int_to_ptr v29 : (ptr i32);
+            hir.store v30, v13;
+            v31 = hir.constant 20 : u32;
+            v32 = hir.add v17, v31 : u32 #[overflow = checked];
+            v33 = hir.int_to_ptr v32 : (ptr i32);
+            hir.store v33, v14;
+            v34 = hir.constant 24 : u32;
+            v35 = hir.add v17, v34 : u32 #[overflow = checked];
+            v36 = hir.int_to_ptr v35 : (ptr i32);
+            hir.store v36, v15;
+            v37 = hir.constant 28 : u32;
+            v38 = hir.add v17, v37 : u32 #[overflow = checked];
+            v39 = hir.int_to_ptr v38 : (ptr i32);
+            hir.store v39, v16;
+            hir.br ^block5;
+        ^block5:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_2to1(v40: i32, v41: i32, v42: i32, v43: i32, v44: i32, v45: i32, v46: i32, v47: i32, v48: i32, v49: i32, v50: i32, v51: i32, v52: i32, v53: i32, v54: i32, v55: i32, v56: i32) {
+        ^block6(v40: i32, v41: i32, v42: i32, v43: i32, v44: i32, v45: i32, v46: i32, v47: i32, v48: i32, v49: i32, v50: i32, v51: i32, v52: i32, v53: i32, v54: i32, v55: i32, v56: i32):
+            v57, v58, v59, v60, v61, v62, v63, v64 = hir.exec @std::crypto::hashes::blake3/hash_2to1(v40, v41, v42, v43, v44, v45, v46, v47, v48, v49, v50, v51, v52, v53, v54, v55) : i32, i32, i32, i32, i32, i32, i32, i32
+            v65 = hir.bitcast v56 : u32;
+            v66 = hir.int_to_ptr v65 : (ptr i32);
+            hir.store v66, v57;
+            v67 = hir.constant 4 : u32;
+            v68 = hir.add v65, v67 : u32 #[overflow = checked];
+            v69 = hir.int_to_ptr v68 : (ptr i32);
+            hir.store v69, v58;
+            v70 = hir.constant 8 : u32;
+            v71 = hir.add v65, v70 : u32 #[overflow = checked];
+            v72 = hir.int_to_ptr v71 : (ptr i32);
+            hir.store v72, v59;
+            v73 = hir.constant 12 : u32;
+            v74 = hir.add v65, v73 : u32 #[overflow = checked];
+            v75 = hir.int_to_ptr v74 : (ptr i32);
+            hir.store v75, v60;
+            v76 = hir.constant 16 : u32;
+            v77 = hir.add v65, v76 : u32 #[overflow = checked];
+            v78 = hir.int_to_ptr v77 : (ptr i32);
+            hir.store v78, v61;
+            v79 = hir.constant 20 : u32;
+            v80 = hir.add v65, v79 : u32 #[overflow = checked];
+            v81 = hir.int_to_ptr v80 : (ptr i32);
+            hir.store v81, v62;
+            v82 = hir.constant 24 : u32;
+            v83 = hir.add v65, v82 : u32 #[overflow = checked];
+            v84 = hir.int_to_ptr v83 : (ptr i32);
+            hir.store v84, v63;
+            v85 = hir.constant 28 : u32;
+            v86 = hir.add v65, v85 : u32 #[overflow = checked];
+            v87 = hir.int_to_ptr v86 : (ptr i32);
+            hir.store v87, v64;
+            hir.br ^block7;
+        ^block7:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::crypto::dsa::extern_rpo_falcon512_verify(v88: felt, v89: felt, v90: felt, v91: felt, v92: felt, v93: felt, v94: felt, v95: felt) {
+        ^block8(v88: felt, v89: felt, v90: felt, v91: felt, v92: felt, v93: felt, v94: felt, v95: felt):
+            hir.exec @std::crypto::dsa::rpo_falcon/rpo_falcon512_verify(v88, v89, v90, v91, v92, v93, v94, v95)
+            hir.br ^block10;
+        ^block10:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::extern_account_get_id() -> felt {
+        ^block12:
+            v96 = hir.exec @miden::account/get_id() : felt
+            hir.br ^block14(v96);
+        ^block14(v97: felt):
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::extern_account_add_asset(v98: felt, v99: felt, v100: felt, v101: felt, v102: i32) {
+        ^block15(v98: felt, v99: felt, v100: felt, v101: felt, v102: i32):
+            v103, v104, v105, v106 = hir.exec @miden::account/add_asset(v98, v99, v100, v101) : felt, felt, felt, felt
+            v107 = hir.bitcast v102 : u32;
+            v108 = hir.int_to_ptr v107 : (ptr felt);
+            hir.store v108, v103;
+            v109 = hir.constant 4 : u32;
+            v110 = hir.add v107, v109 : u32 #[overflow = checked];
+            v111 = hir.int_to_ptr v110 : (ptr felt);
+            hir.store v111, v104;
+            v112 = hir.constant 8 : u32;
+            v113 = hir.add v107, v112 : u32 #[overflow = checked];
+            v114 = hir.int_to_ptr v113 : (ptr felt);
+            hir.store v114, v105;
+            v115 = hir.constant 12 : u32;
+            v116 = hir.add v107, v115 : u32 #[overflow = checked];
+            v117 = hir.int_to_ptr v116 : (ptr felt);
+            hir.store v117, v106;
+            hir.br ^block16;
+        ^block16:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::extern_account_remove_asset(v118: felt, v119: felt, v120: felt, v121: felt, v122: i32) {
+        ^block17(v118: felt, v119: felt, v120: felt, v121: felt, v122: i32):
+            v123, v124, v125, v126 = hir.exec @miden::account/remove_asset(v118, v119, v120, v121) : felt, felt, felt, felt
+            v127 = hir.bitcast v122 : u32;
+            v128 = hir.int_to_ptr v127 : (ptr felt);
+            hir.store v128, v123;
+            v129 = hir.constant 4 : u32;
+            v130 = hir.add v127, v129 : u32 #[overflow = checked];
+            v131 = hir.int_to_ptr v130 : (ptr felt);
+            hir.store v131, v124;
+            v132 = hir.constant 8 : u32;
+            v133 = hir.add v127, v132 : u32 #[overflow = checked];
+            v134 = hir.int_to_ptr v133 : (ptr felt);
+            hir.store v134, v125;
+            v135 = hir.constant 12 : u32;
+            v136 = hir.add v127, v135 : u32 #[overflow = checked];
+            v137 = hir.int_to_ptr v136 : (ptr felt);
+            hir.store v137, v126;
+            hir.br ^block18;
+        ^block18:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::note::extern_note_get_inputs(v138: i32) -> i32 {
+        ^block19(v138: i32):
+            v139, v140 = hir.exec @miden::note/get_inputs(v138) : i32, i32
+            hir.br ^block21(v139);
+        ^block21(v141: i32):
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::tx::extern_tx_create_note(v142: felt, v143: felt, v144: felt, v145: felt, v146: felt, v147: felt, v148: felt, v149: felt, v150: felt, v151: felt) -> felt {
+        ^block22(v142: felt, v143: felt, v144: felt, v145: felt, v146: felt, v147: felt, v148: felt, v149: felt, v150: felt, v151: felt):
+            v152 = hir.exec @miden::tx/create_note(v142, v143, v144, v145, v146, v147, v148, v149, v150, v151) : felt
+            hir.br ^block24(v152);
+        ^block24(v153: felt):
+            hir.ret ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::mem::extern_pipe_words_to_memory(v154: felt, v155: i32, v156: i32) {
+        ^block25(v154: felt, v155: i32, v156: i32):
+            v157, v158, v159, v160, v161 = hir.exec @std::mem/pipe_words_to_memory(v154, v155) : felt, felt, felt, felt, i32
+            v162 = hir.bitcast v156 : u32;
+            v163 = hir.int_to_ptr v162 : (ptr felt);
+            hir.store v163, v157;
+            v164 = hir.constant 4 : u32;
+            v165 = hir.add v162, v164 : u32 #[overflow = checked];
+            v166 = hir.int_to_ptr v165 : (ptr felt);
+            hir.store v166, v158;
+            v167 = hir.constant 8 : u32;
+            v168 = hir.add v162, v167 : u32 #[overflow = checked];
+            v169 = hir.int_to_ptr v168 : (ptr felt);
+            hir.store v169, v159;
+            v170 = hir.constant 12 : u32;
+            v171 = hir.add v162, v170 : u32 #[overflow = checked];
+            v172 = hir.int_to_ptr v171 : (ptr felt);
+            hir.store v172, v160;
+            v173 = hir.constant 16 : u32;
+            v174 = hir.add v162, v173 : u32 #[overflow = checked];
+            v175 = hir.int_to_ptr v174 : (ptr i32);
+            hir.store v175, v161;
+            hir.br ^block27;
+        ^block27:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::mem::extern_pipe_double_words_to_memory(v176: felt, v177: felt, v178: felt, v179: felt, v180: felt, v181: felt, v182: felt, v183: felt, v184: felt, v185: felt, v186: felt, v187: felt, v188: i32, v189: i32, v190: i32) {
+        ^block28(v176: felt, v177: felt, v178: felt, v179: felt, v180: felt, v181: felt, v182: felt, v183: felt, v184: felt, v185: felt, v186: felt, v187: felt, v188: i32, v189: i32, v190: i32):
+            v191, v192, v193, v194, v195, v196, v197, v198, v199, v200, v201, v202, v203 = hir.exec @std::mem/pipe_double_words_to_memory(v176, v177, v178, v179, v180, v181, v182, v183, v184, v185, v186, v187, v188, v189) : felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, i32
+            v204 = hir.bitcast v190 : u32;
+            v205 = hir.int_to_ptr v204 : (ptr felt);
+            hir.store v205, v191;
+            v206 = hir.constant 4 : u32;
+            v207 = hir.add v204, v206 : u32 #[overflow = checked];
+            v208 = hir.int_to_ptr v207 : (ptr felt);
+            hir.store v208, v192;
+            v209 = hir.constant 8 : u32;
+            v210 = hir.add v204, v209 : u32 #[overflow = checked];
+            v211 = hir.int_to_ptr v210 : (ptr felt);
+            hir.store v211, v193;
+            v212 = hir.constant 12 : u32;
+            v213 = hir.add v204, v212 : u32 #[overflow = checked];
+            v214 = hir.int_to_ptr v213 : (ptr felt);
+            hir.store v214, v194;
+            v215 = hir.constant 16 : u32;
+            v216 = hir.add v204, v215 : u32 #[overflow = checked];
+            v217 = hir.int_to_ptr v216 : (ptr felt);
+            hir.store v217, v195;
+            v218 = hir.constant 20 : u32;
+            v219 = hir.add v204, v218 : u32 #[overflow = checked];
+            v220 = hir.int_to_ptr v219 : (ptr felt);
+            hir.store v220, v196;
+            v221 = hir.constant 24 : u32;
+            v222 = hir.add v204, v221 : u32 #[overflow = checked];
+            v223 = hir.int_to_ptr v222 : (ptr felt);
+            hir.store v223, v197;
+            v224 = hir.constant 28 : u32;
+            v225 = hir.add v204, v224 : u32 #[overflow = checked];
+            v226 = hir.int_to_ptr v225 : (ptr felt);
+            hir.store v226, v198;
+            v227 = hir.constant 32 : u32;
+            v228 = hir.add v204, v227 : u32 #[overflow = checked];
+            v229 = hir.int_to_ptr v228 : (ptr felt);
+            hir.store v229, v199;
+            v230 = hir.constant 36 : u32;
+            v231 = hir.add v204, v230 : u32 #[overflow = checked];
+            v232 = hir.int_to_ptr v231 : (ptr felt);
+            hir.store v232, v200;
+            v233 = hir.constant 40 : u32;
+            v234 = hir.add v204, v233 : u32 #[overflow = checked];
+            v235 = hir.int_to_ptr v234 : (ptr felt);
+            hir.store v235, v201;
+            v236 = hir.constant 44 : u32;
+            v237 = hir.add v204, v236 : u32 #[overflow = checked];
+            v238 = hir.int_to_ptr v237 : (ptr felt);
+            hir.store v238, v202;
+            v239 = hir.constant 48 : u32;
+            v240 = hir.add v204, v239 : u32 #[overflow = checked];
+            v241 = hir.int_to_ptr v240 : (ptr i32);
+            hir.store v241, v203;
+            hir.br ^block29;
+        ^block29:
+            hir.ret ;
+        };
+
+        builtin.function public @<<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop::Drop>::drop(v242: i32) {
+        ^block31(v242: i32):
+            v243 = hir.constant 0 : i32;
+            v244 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v245 = hir.bitcast v244 : (ptr i32);
+            v246 = hir.load v245 : i32;
+            v247 = hir.constant 16 : i32;
+            v248 = hir.sub v246, v247 : i32 #[overflow = wrapping];
+            v249 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v250 = hir.bitcast v249 : (ptr i32);
+            hir.store v250, v248;
+            v251 = hir.bitcast v242 : u32;
+            v252 = hir.constant 4 : u32;
+            v253 = hir.mod v251, v252 : u32;
+            hir.assertz v253 #[code = 250];
+            v254 = hir.int_to_ptr v251 : (ptr i32);
+            v255 = hir.load v254 : i32;
+            v256 = hir.bitcast v255 : u32;
+            v257 = hir.constant 4 : u32;
+            v258 = hir.mod v256, v257 : u32;
+            hir.assertz v258 #[code = 250];
+            v259 = hir.int_to_ptr v256 : (ptr i32);
+            v260 = hir.load v259 : i32;
+            v261 = hir.bitcast v248 : u32;
+            v262 = hir.constant 12 : u32;
+            v263 = hir.add v261, v262 : u32 #[overflow = checked];
+            v264 = hir.constant 4 : u32;
+            v265 = hir.mod v263, v264 : u32;
+            hir.assertz v265 #[code = 250];
+            v266 = hir.int_to_ptr v263 : (ptr i32);
+            hir.store v266, v260;
+            v267 = hir.bitcast v255 : u32;
+            v268 = hir.constant 8 : u32;
+            v269 = hir.add v267, v268 : u32 #[overflow = checked];
+            v270 = hir.constant 4 : u32;
+            v271 = hir.mod v269, v270 : u32;
+            hir.assertz v271 #[code = 250];
+            v272 = hir.int_to_ptr v269 : (ptr i32);
+            v273 = hir.load v272 : i32;
+            v274 = hir.bitcast v248 : u32;
+            v275 = hir.constant 8 : u32;
+            v276 = hir.add v274, v275 : u32 #[overflow = checked];
+            v277 = hir.constant 4 : u32;
+            v278 = hir.mod v276, v277 : u32;
+            hir.assertz v278 #[code = 250];
+            v279 = hir.int_to_ptr v276 : (ptr i32);
+            hir.store v279, v273;
+            v280 = hir.constant 8 : i32;
+            v281 = hir.add v248, v280 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop(v281)
+            v282 = hir.constant 16 : i32;
+            v283 = hir.add v248, v282 : i32 #[overflow = wrapping];
+            v284 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v285 = hir.bitcast v284 : (ptr i32);
+            hir.store v285, v283;
+            hir.br ^block32;
+        ^block32:
+            hir.ret ;
+        };
+
+        builtin.function public @<alloc::raw_vec::RawVec<T,A> as core::ops::drop::Drop>::drop(v286: i32) {
+        ^block33(v286: i32):
+            v287 = hir.constant 4 : i32;
+            v288 = hir.constant 4 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::RawVecInner<A>::deallocate(v286, v287, v288)
+            hir.br ^block34;
+        ^block34:
+            hir.ret ;
+        };
+
+        builtin.function public @core::alloc::global::GlobalAlloc::alloc_zeroed(v289: i32, v290: i32, v291: i32) -> i32 {
+        ^block35(v289: i32, v290: i32, v291: i32):
+            v293 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v289, v290, v291) : i32
+            v294 = hir.constant 0 : i32;
+            v295 = hir.eq v293, v294 : i1;
+            v296 = hir.zext v295 : u32;
+            v297 = hir.bitcast v296 : i32;
+            v298 = hir.constant 0 : i32;
+            v299 = hir.neq v297, v298 : i1;
+            hir.cond_br v299 ^block37(v293), ^block38;
+        ^block36(v292: i32):
+            hir.ret v292;
+        ^block37(v305: i32):
+            hir.br ^block36(v305);
+        ^block38:
+            v300 = hir.constant 0 : i32;
+            v301 = hir.trunc v300 : u8;
+            v302 = hir.bitcast v291 : u32;
+            v303 = hir.bitcast v293 : u32;
+            v304 = hir.int_to_ptr v303 : (ptr u8);
+            hir.mem_set v304, v302, v301;
+            hir.br ^block37(v293);
+        };
+
+        builtin.function public @<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop(v306: i32) {
+        ^block39(v306: i32):
+            v307 = hir.constant 0 : i32;
+            v308 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v309 = hir.bitcast v308 : (ptr i32);
+            v310 = hir.load v309 : i32;
+            v311 = hir.constant 16 : i32;
+            v312 = hir.sub v310, v311 : i32 #[overflow = wrapping];
+            v313 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v314 = hir.bitcast v313 : (ptr i32);
+            hir.store v314, v312;
+            v315 = hir.bitcast v312 : u32;
+            v316 = hir.constant 12 : u32;
+            v317 = hir.add v315, v316 : u32 #[overflow = checked];
+            v318 = hir.constant 4 : u32;
+            v319 = hir.mod v317, v318 : u32;
+            hir.assertz v319 #[code = 250];
+            v320 = hir.int_to_ptr v317 : (ptr i32);
+            hir.store v320, v306;
+            v321 = hir.constant 12 : i32;
+            v322 = hir.add v312, v321 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop::Drop>::drop(v322)
+            v323 = hir.constant 16 : i32;
+            v324 = hir.add v312, v323 : i32 #[overflow = wrapping];
+            v325 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v326 = hir.bitcast v325 : (ptr i32);
+            hir.store v326, v324;
+            hir.br ^block40;
+        ^block40:
+            hir.ret ;
+        };
+
+        builtin.function public @get_wallet_magic_number() -> felt {
+        ^block41:
+            v328 = hir.constant 0 : felt;
+            v329 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::get_id() : felt
+            v330 = hir.constant 42 : i32;
+            v331 = hir.bitcast v330 : felt;
+            v332 = hir.add v331, v329 : felt #[overflow = unchecked];
+            hir.br ^block42(v332);
+        ^block42(v327: felt):
+            hir.ret v327;
+        };
+
+        builtin.function public @test_add_asset() -> felt {
+        ^block43:
+            v334 = hir.constant 0 : i32;
+            v335 = hir.constant 0 : felt;
+            v336 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v337 = hir.bitcast v336 : (ptr i32);
+            v338 = hir.load v337 : i32;
+            v339 = hir.constant 64 : i32;
+            v340 = hir.sub v338, v339 : i32 #[overflow = wrapping];
+            v341 = hir.constant -32 : i32;
+            v342 = hir.band v340, v341 : i32;
+            v343 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v344 = hir.bitcast v343 : (ptr i32);
+            hir.store v344, v342;
+            v345 = hir.constant 1 : i32;
+            v346 = hir.bitcast v345 : felt;
+            v347 = hir.constant 2 : i32;
+            v348 = hir.bitcast v347 : felt;
+            v349 = hir.constant 3 : i32;
+            v350 = hir.bitcast v349 : felt;
+            v351 = hir.constant 4 : i32;
+            v352 = hir.bitcast v351 : felt;
+            v353 = hir.bitcast v342 : u32;
+            v354 = hir.constant 12 : u32;
+            v355 = hir.add v353, v354 : u32 #[overflow = checked];
+            v356 = hir.constant 4 : u32;
+            v357 = hir.mod v355, v356 : u32;
+            hir.assertz v357 #[code = 250];
+            v358 = hir.int_to_ptr v355 : (ptr felt);
+            hir.store v358, v352;
+            v359 = hir.bitcast v342 : u32;
+            v360 = hir.constant 8 : u32;
+            v361 = hir.add v359, v360 : u32 #[overflow = checked];
+            v362 = hir.constant 4 : u32;
+            v363 = hir.mod v361, v362 : u32;
+            hir.assertz v363 #[code = 250];
+            v364 = hir.int_to_ptr v361 : (ptr felt);
+            hir.store v364, v350;
+            v365 = hir.bitcast v342 : u32;
+            v366 = hir.constant 4 : u32;
+            v367 = hir.add v365, v366 : u32 #[overflow = checked];
+            v368 = hir.constant 4 : u32;
+            v369 = hir.mod v367, v368 : u32;
+            hir.assertz v369 #[code = 250];
+            v370 = hir.int_to_ptr v367 : (ptr felt);
+            hir.store v370, v348;
+            v371 = hir.bitcast v342 : u32;
+            v372 = hir.constant 4 : u32;
+            v373 = hir.mod v371, v372 : u32;
+            hir.assertz v373 #[code = 250];
+            v374 = hir.int_to_ptr v371 : (ptr felt);
+            hir.store v374, v346;
+            v375 = hir.constant 32 : i32;
+            v376 = hir.add v342, v375 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::add_asset(v376, v342)
+            v377 = hir.bitcast v342 : u32;
+            v378 = hir.constant 32 : u32;
+            v379 = hir.add v377, v378 : u32 #[overflow = checked];
+            v380 = hir.constant 4 : u32;
+            v381 = hir.mod v379, v380 : u32;
+            hir.assertz v381 #[code = 250];
+            v382 = hir.int_to_ptr v379 : (ptr felt);
+            v383 = hir.load v382 : felt;
+            v384 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v385 = hir.bitcast v384 : (ptr i32);
+            hir.store v385, v338;
+            hir.br ^block44(v383);
+        ^block44(v333: felt):
+            hir.ret v333;
+        };
+
+        builtin.function public @test_felt_ops_smoke(v386: felt, v387: felt) -> felt {
+        ^block45(v386: felt, v387: felt):
+            v389 = hir.constant 0 : i64;
+            v390 = hir.cast v386 : i64;
+            v391 = hir.gt v386, v387 : i1;
+            v392 = hir.cast v391 : i32;
+            v393 = hir.constant 0 : i32;
+            v394 = hir.neq v392, v393 : i1;
+            hir.cond_br v394 ^block52, ^block53;
+        ^block46(v388: felt):
+            hir.ret v388;
+        ^block47:
+            v436 = hir.neg v386 : felt;
+            hir.br ^block46(v436);
+        ^block48:
+            hir.assert_eq v386, v387;
+            v434 = hir.cast v390 : felt;
+            v435 = hir.add v386, v434 : felt #[overflow = unchecked];
+            hir.ret v435;
+        ^block49:
+            v433 = hir.div v387, v386 : felt;
+            hir.ret v433;
+        ^block50:
+            v431 = hir.pow_2 v386 : felt;
+            v432 = hir.mul v431, v387 : felt #[overflow = unchecked];
+            hir.ret v432;
+        ^block51:
+            v429 = hir.exp v386, v387 : felt;
+            v430 = hir.sub v429, v387 : felt #[overflow = unchecked];
+            hir.ret v430;
+        ^block52:
+            v427 = hir.inv v386 : felt;
+            v428 = hir.add v427, v387 : felt #[overflow = unchecked];
+            hir.ret v428;
+        ^block53:
+            v395 = hir.lt v387, v386 : i1;
+            v396 = hir.cast v395 : i32;
+            v397 = hir.constant 0 : i32;
+            v398 = hir.neq v396, v397 : i1;
+            hir.cond_br v398 ^block51, ^block54;
+        ^block54:
+            v399 = hir.lte v387, v386 : i1;
+            v400 = hir.cast v399 : i32;
+            v401 = hir.constant 0 : i32;
+            v402 = hir.neq v400, v401 : i1;
+            hir.cond_br v402 ^block50, ^block55;
+        ^block55:
+            v403 = hir.gte v386, v387 : i1;
+            v404 = hir.cast v403 : i32;
+            v405 = hir.constant 0 : i32;
+            v406 = hir.neq v404, v405 : i1;
+            hir.cond_br v406 ^block49, ^block56;
+        ^block56:
+            v407 = hir.eq v386, v387 : i1;
+            v408 = hir.cast v407 : i32;
+            v409 = hir.constant 1 : i32;
+            v410 = hir.eq v408, v409 : i1;
+            v411 = hir.zext v410 : u32;
+            v412 = hir.bitcast v411 : i32;
+            v413 = hir.constant 0 : i32;
+            v414 = hir.neq v412, v413 : i1;
+            hir.cond_br v414 ^block48, ^block57;
+        ^block57:
+            v415 = hir.eq v386, v387 : i1;
+            v416 = hir.cast v415 : i32;
+            v417 = hir.constant 1 : i32;
+            v418 = hir.neq v416, v417 : i1;
+            v419 = hir.zext v418 : u32;
+            v420 = hir.bitcast v419 : i32;
+            v421 = hir.constant 0 : i32;
+            v422 = hir.neq v420, v421 : i1;
+            hir.cond_br v422 ^block47, ^block58;
+        ^block58:
+            v423 = hir.is_odd v387 : i1;
+            v424 = hir.cast v423 : i32;
+            v425 = hir.constant 0 : i32;
+            v426 = hir.neq v424, v425 : i1;
+            hir.cond_br v426 ^block59, ^block60;
+        ^block59:
+            hir.assert v386 #[code = 0];
+            hir.ret v387;
+        ^block60:
+            hir.assertz v387 #[code = 0];
+            hir.ret v386;
+        };
+
+        builtin.function public @note_script() -> felt {
+        ^block61:
+            v438 = hir.constant 0 : i32;
+            v439 = hir.constant 0 : felt;
+            v440 = hir.constant 0 : i32;
+            v441 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v442 = hir.bitcast v441 : (ptr i32);
+            v443 = hir.load v442 : i32;
+            v444 = hir.constant 16 : i32;
+            v445 = hir.sub v443, v444 : i32 #[overflow = wrapping];
+            v446 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v447 = hir.bitcast v446 : (ptr i32);
+            hir.store v447, v445;
+            v448 = hir.constant 0 : i64;
+            v449 = hir.cast v448 : felt;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::note::get_inputs(v445)
+            v450 = hir.bitcast v445 : u32;
+            v451 = hir.constant 4 : u32;
+            v452 = hir.mod v450, v451 : u32;
+            hir.assertz v452 #[code = 250];
+            v453 = hir.int_to_ptr v450 : (ptr i32);
+            v454 = hir.load v453 : i32;
+            v455 = hir.bitcast v445 : u32;
+            v456 = hir.constant 4 : u32;
+            v457 = hir.add v455, v456 : u32 #[overflow = checked];
+            v458 = hir.constant 4 : u32;
+            v459 = hir.mod v457, v458 : u32;
+            hir.assertz v459 #[code = 250];
+            v460 = hir.int_to_ptr v457 : (ptr i32);
+            v461 = hir.load v460 : i32;
+            v462 = hir.bitcast v445 : u32;
+            v463 = hir.constant 8 : u32;
+            v464 = hir.add v462, v463 : u32 #[overflow = checked];
+            v465 = hir.constant 4 : u32;
+            v466 = hir.mod v464, v465 : u32;
+            hir.assertz v466 #[code = 250];
+            v467 = hir.int_to_ptr v464 : (ptr i32);
+            v468 = hir.load v467 : i32;
+            v469 = hir.constant 2 : i32;
+            v470 = hir.bitcast v469 : u32;
+            v471 = hir.shl v468, v470 : i32;
+            v472 = hir.add v461, v471 : i32 #[overflow = wrapping];
+            v473 = hir.bitcast v445 : u32;
+            v474 = hir.constant 12 : u32;
+            v475 = hir.add v473, v474 : u32 #[overflow = checked];
+            v476 = hir.constant 4 : u32;
+            v477 = hir.mod v475, v476 : u32;
+            hir.assertz v477 #[code = 250];
+            v478 = hir.int_to_ptr v475 : (ptr i32);
+            hir.store v478, v472;
+            v479 = hir.bitcast v445 : u32;
+            v480 = hir.constant 8 : u32;
+            v481 = hir.add v479, v480 : u32 #[overflow = checked];
+            v482 = hir.constant 4 : u32;
+            v483 = hir.mod v481, v482 : u32;
+            hir.assertz v483 #[code = 250];
+            v484 = hir.int_to_ptr v481 : (ptr i32);
+            hir.store v484, v454;
+            v485 = hir.bitcast v445 : u32;
+            v486 = hir.constant 4 : u32;
+            v487 = hir.mod v485, v486 : u32;
+            hir.assertz v487 #[code = 250];
+            v488 = hir.int_to_ptr v485 : (ptr i32);
+            hir.store v488, v461;
+            hir.br ^block63(v471, v445, v472, v449, v461);
+        ^block62(v437: felt):
+
+        ^block63(v490: i32, v493: i32, v494: i32, v505: felt, v508: i32):
+            v491 = hir.constant 0 : i32;
+            v492 = hir.neq v490, v491 : i1;
+            hir.cond_br v492 ^block65, ^block66;
+        ^block64(v489: felt):
+
+        ^block65:
+            v506 = hir.constant -4 : i32;
+            v507 = hir.add v490, v506 : i32 #[overflow = wrapping];
+            v509 = hir.bitcast v508 : u32;
+            v510 = hir.constant 4 : u32;
+            v511 = hir.mod v509, v510 : u32;
+            hir.assertz v511 #[code = 250];
+            v512 = hir.int_to_ptr v509 : (ptr felt);
+            v513 = hir.load v512 : felt;
+            v514 = hir.add v505, v513 : felt #[overflow = unchecked];
+            v515 = hir.constant 4 : i32;
+            v516 = hir.add v508, v515 : i32 #[overflow = wrapping];
+            hir.br ^block63(v507, v493, v494, v514, v516);
+        ^block66:
+            v495 = hir.bitcast v493 : u32;
+            v496 = hir.constant 4 : u32;
+            v497 = hir.add v495, v496 : u32 #[overflow = checked];
+            v498 = hir.constant 4 : u32;
+            v499 = hir.mod v497, v498 : u32;
+            hir.assertz v499 #[code = 250];
+            v500 = hir.int_to_ptr v497 : (ptr i32);
+            hir.store v500, v494;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop(v493)
+            v501 = hir.constant 16 : i32;
+            v502 = hir.add v493, v501 : i32 #[overflow = wrapping];
+            v503 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v504 = hir.bitcast v503 : (ptr i32);
+            hir.store v504, v502;
+            hir.ret v505;
+        };
+
+        builtin.function public @test_blake3_hash_1to1(v517: i32, v518: i32) {
+        ^block67(v517: i32, v518: i32):
+            v519 = hir.constant 0 : i32;
+            v520 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v521 = hir.bitcast v520 : (ptr i32);
+            v522 = hir.load v521 : i32;
+            v523 = hir.constant 32 : i32;
+            v524 = hir.sub v522, v523 : i32 #[overflow = wrapping];
+            v525 = hir.constant -32 : i32;
+            v526 = hir.band v524, v525 : i32;
+            v527 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v528 = hir.bitcast v527 : (ptr i32);
+            hir.store v528, v526;
+            v529 = hir.bitcast v518 : u32;
+            v530 = hir.int_to_ptr v529 : (ptr i32);
+            v531 = hir.load v530 : i32;
+            v532 = hir.bitcast v518 : u32;
+            v533 = hir.constant 4 : u32;
+            v534 = hir.add v532, v533 : u32 #[overflow = checked];
+            v535 = hir.int_to_ptr v534 : (ptr i32);
+            v536 = hir.load v535 : i32;
+            v537 = hir.bitcast v518 : u32;
+            v538 = hir.constant 8 : u32;
+            v539 = hir.add v537, v538 : u32 #[overflow = checked];
+            v540 = hir.int_to_ptr v539 : (ptr i32);
+            v541 = hir.load v540 : i32;
+            v542 = hir.bitcast v518 : u32;
+            v543 = hir.constant 12 : u32;
+            v544 = hir.add v542, v543 : u32 #[overflow = checked];
+            v545 = hir.int_to_ptr v544 : (ptr i32);
+            v546 = hir.load v545 : i32;
+            v547 = hir.bitcast v518 : u32;
+            v548 = hir.constant 16 : u32;
+            v549 = hir.add v547, v548 : u32 #[overflow = checked];
+            v550 = hir.int_to_ptr v549 : (ptr i32);
+            v551 = hir.load v550 : i32;
+            v552 = hir.bitcast v518 : u32;
+            v553 = hir.constant 20 : u32;
+            v554 = hir.add v552, v553 : u32 #[overflow = checked];
+            v555 = hir.int_to_ptr v554 : (ptr i32);
+            v556 = hir.load v555 : i32;
+            v557 = hir.bitcast v518 : u32;
+            v558 = hir.constant 24 : u32;
+            v559 = hir.add v557, v558 : u32 #[overflow = checked];
+            v560 = hir.int_to_ptr v559 : (ptr i32);
+            v561 = hir.load v560 : i32;
+            v562 = hir.bitcast v518 : u32;
+            v563 = hir.constant 28 : u32;
+            v564 = hir.add v562, v563 : u32 #[overflow = checked];
+            v565 = hir.int_to_ptr v564 : (ptr i32);
+            v566 = hir.load v565 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_1to1(v531, v536, v541, v546, v551, v556, v561, v566, v526)
+            v567 = hir.constant 24 : i32;
+            v568 = hir.add v517, v567 : i32 #[overflow = wrapping];
+            v569 = hir.bitcast v526 : u32;
+            v570 = hir.constant 24 : u32;
+            v571 = hir.add v569, v570 : u32 #[overflow = checked];
+            v572 = hir.constant 8 : u32;
+            v573 = hir.mod v571, v572 : u32;
+            hir.assertz v573 #[code = 250];
+            v574 = hir.int_to_ptr v571 : (ptr i64);
+            v575 = hir.load v574 : i64;
+            v576 = hir.bitcast v568 : u32;
+            v577 = hir.int_to_ptr v576 : (ptr i64);
+            hir.store v577, v575;
+            v578 = hir.constant 16 : i32;
+            v579 = hir.add v517, v578 : i32 #[overflow = wrapping];
+            v580 = hir.bitcast v526 : u32;
+            v581 = hir.constant 16 : u32;
+            v582 = hir.add v580, v581 : u32 #[overflow = checked];
+            v583 = hir.constant 8 : u32;
+            v584 = hir.mod v582, v583 : u32;
+            hir.assertz v584 #[code = 250];
+            v585 = hir.int_to_ptr v582 : (ptr i64);
+            v586 = hir.load v585 : i64;
+            v587 = hir.bitcast v579 : u32;
+            v588 = hir.int_to_ptr v587 : (ptr i64);
+            hir.store v588, v586;
+            v589 = hir.constant 8 : i32;
+            v590 = hir.add v517, v589 : i32 #[overflow = wrapping];
+            v591 = hir.bitcast v526 : u32;
+            v592 = hir.constant 8 : u32;
+            v593 = hir.add v591, v592 : u32 #[overflow = checked];
+            v594 = hir.constant 8 : u32;
+            v595 = hir.mod v593, v594 : u32;
+            hir.assertz v595 #[code = 250];
+            v596 = hir.int_to_ptr v593 : (ptr i64);
+            v597 = hir.load v596 : i64;
+            v598 = hir.bitcast v590 : u32;
+            v599 = hir.int_to_ptr v598 : (ptr i64);
+            hir.store v599, v597;
+            v600 = hir.bitcast v526 : u32;
+            v601 = hir.constant 8 : u32;
+            v602 = hir.mod v600, v601 : u32;
+            hir.assertz v602 #[code = 250];
+            v603 = hir.int_to_ptr v600 : (ptr i64);
+            v604 = hir.load v603 : i64;
+            v605 = hir.bitcast v517 : u32;
+            v606 = hir.int_to_ptr v605 : (ptr i64);
+            hir.store v606, v604;
+            v607 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v608 = hir.bitcast v607 : (ptr i32);
+            hir.store v608, v522;
+            hir.br ^block68;
+        ^block68:
+            hir.ret ;
+        };
+
+        builtin.function public @test_blake3_hash_2to1(v609: i32, v610: i32) {
+        ^block69(v609: i32, v610: i32):
+            v611 = hir.bitcast v610 : u32;
+            v612 = hir.int_to_ptr v611 : (ptr i32);
+            v613 = hir.load v612 : i32;
+            v614 = hir.bitcast v610 : u32;
+            v615 = hir.constant 4 : u32;
+            v616 = hir.add v614, v615 : u32 #[overflow = checked];
+            v617 = hir.int_to_ptr v616 : (ptr i32);
+            v618 = hir.load v617 : i32;
+            v619 = hir.bitcast v610 : u32;
+            v620 = hir.constant 8 : u32;
+            v621 = hir.add v619, v620 : u32 #[overflow = checked];
+            v622 = hir.int_to_ptr v621 : (ptr i32);
+            v623 = hir.load v622 : i32;
+            v624 = hir.bitcast v610 : u32;
+            v625 = hir.constant 12 : u32;
+            v626 = hir.add v624, v625 : u32 #[overflow = checked];
+            v627 = hir.int_to_ptr v626 : (ptr i32);
+            v628 = hir.load v627 : i32;
+            v629 = hir.bitcast v610 : u32;
+            v630 = hir.constant 16 : u32;
+            v631 = hir.add v629, v630 : u32 #[overflow = checked];
+            v632 = hir.int_to_ptr v631 : (ptr i32);
+            v633 = hir.load v632 : i32;
+            v634 = hir.bitcast v610 : u32;
+            v635 = hir.constant 20 : u32;
+            v636 = hir.add v634, v635 : u32 #[overflow = checked];
+            v637 = hir.int_to_ptr v636 : (ptr i32);
+            v638 = hir.load v637 : i32;
+            v639 = hir.bitcast v610 : u32;
+            v640 = hir.constant 24 : u32;
+            v641 = hir.add v639, v640 : u32 #[overflow = checked];
+            v642 = hir.int_to_ptr v641 : (ptr i32);
+            v643 = hir.load v642 : i32;
+            v644 = hir.bitcast v610 : u32;
+            v645 = hir.constant 28 : u32;
+            v646 = hir.add v644, v645 : u32 #[overflow = checked];
+            v647 = hir.int_to_ptr v646 : (ptr i32);
+            v648 = hir.load v647 : i32;
+            v649 = hir.bitcast v610 : u32;
+            v650 = hir.constant 32 : u32;
+            v651 = hir.add v649, v650 : u32 #[overflow = checked];
+            v652 = hir.int_to_ptr v651 : (ptr i32);
+            v653 = hir.load v652 : i32;
+            v654 = hir.bitcast v610 : u32;
+            v655 = hir.constant 36 : u32;
+            v656 = hir.add v654, v655 : u32 #[overflow = checked];
+            v657 = hir.int_to_ptr v656 : (ptr i32);
+            v658 = hir.load v657 : i32;
+            v659 = hir.bitcast v610 : u32;
+            v660 = hir.constant 40 : u32;
+            v661 = hir.add v659, v660 : u32 #[overflow = checked];
+            v662 = hir.int_to_ptr v661 : (ptr i32);
+            v663 = hir.load v662 : i32;
+            v664 = hir.bitcast v610 : u32;
+            v665 = hir.constant 44 : u32;
+            v666 = hir.add v664, v665 : u32 #[overflow = checked];
+            v667 = hir.int_to_ptr v666 : (ptr i32);
+            v668 = hir.load v667 : i32;
+            v669 = hir.bitcast v610 : u32;
+            v670 = hir.constant 48 : u32;
+            v671 = hir.add v669, v670 : u32 #[overflow = checked];
+            v672 = hir.int_to_ptr v671 : (ptr i32);
+            v673 = hir.load v672 : i32;
+            v674 = hir.bitcast v610 : u32;
+            v675 = hir.constant 52 : u32;
+            v676 = hir.add v674, v675 : u32 #[overflow = checked];
+            v677 = hir.int_to_ptr v676 : (ptr i32);
+            v678 = hir.load v677 : i32;
+            v679 = hir.bitcast v610 : u32;
+            v680 = hir.constant 56 : u32;
+            v681 = hir.add v679, v680 : u32 #[overflow = checked];
+            v682 = hir.int_to_ptr v681 : (ptr i32);
+            v683 = hir.load v682 : i32;
+            v684 = hir.bitcast v610 : u32;
+            v685 = hir.constant 60 : u32;
+            v686 = hir.add v684, v685 : u32 #[overflow = checked];
+            v687 = hir.int_to_ptr v686 : (ptr i32);
+            v688 = hir.load v687 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::crypto::hashes::extern_blake3_hash_2to1(v613, v618, v623, v628, v633, v638, v643, v648, v653, v658, v663, v668, v673, v678, v683, v688, v609)
+            hir.br ^block70;
+        ^block70:
+            hir.ret ;
+        };
+
+        builtin.function public @test_rpo_falcon512_verify(v689: i32, v690: i32) {
+        ^block71(v689: i32, v690: i32):
+            v691 = hir.bitcast v689 : u32;
+            v692 = hir.constant 4 : u32;
+            v693 = hir.mod v691, v692 : u32;
+            hir.assertz v693 #[code = 250];
+            v694 = hir.int_to_ptr v691 : (ptr felt);
+            v695 = hir.load v694 : felt;
+            v696 = hir.bitcast v689 : u32;
+            v697 = hir.constant 4 : u32;
+            v698 = hir.add v696, v697 : u32 #[overflow = checked];
+            v699 = hir.constant 4 : u32;
+            v700 = hir.mod v698, v699 : u32;
+            hir.assertz v700 #[code = 250];
+            v701 = hir.int_to_ptr v698 : (ptr felt);
+            v702 = hir.load v701 : felt;
+            v703 = hir.bitcast v689 : u32;
+            v704 = hir.constant 8 : u32;
+            v705 = hir.add v703, v704 : u32 #[overflow = checked];
+            v706 = hir.constant 4 : u32;
+            v707 = hir.mod v705, v706 : u32;
+            hir.assertz v707 #[code = 250];
+            v708 = hir.int_to_ptr v705 : (ptr felt);
+            v709 = hir.load v708 : felt;
+            v710 = hir.bitcast v689 : u32;
+            v711 = hir.constant 12 : u32;
+            v712 = hir.add v710, v711 : u32 #[overflow = checked];
+            v713 = hir.constant 4 : u32;
+            v714 = hir.mod v712, v713 : u32;
+            hir.assertz v714 #[code = 250];
+            v715 = hir.int_to_ptr v712 : (ptr felt);
+            v716 = hir.load v715 : felt;
+            v717 = hir.bitcast v690 : u32;
+            v718 = hir.constant 4 : u32;
+            v719 = hir.mod v717, v718 : u32;
+            hir.assertz v719 #[code = 250];
+            v720 = hir.int_to_ptr v717 : (ptr felt);
+            v721 = hir.load v720 : felt;
+            v722 = hir.bitcast v690 : u32;
+            v723 = hir.constant 4 : u32;
+            v724 = hir.add v722, v723 : u32 #[overflow = checked];
+            v725 = hir.constant 4 : u32;
+            v726 = hir.mod v724, v725 : u32;
+            hir.assertz v726 #[code = 250];
+            v727 = hir.int_to_ptr v724 : (ptr felt);
+            v728 = hir.load v727 : felt;
+            v729 = hir.bitcast v690 : u32;
+            v730 = hir.constant 8 : u32;
+            v731 = hir.add v729, v730 : u32 #[overflow = checked];
+            v732 = hir.constant 4 : u32;
+            v733 = hir.mod v731, v732 : u32;
+            hir.assertz v733 #[code = 250];
+            v734 = hir.int_to_ptr v731 : (ptr felt);
+            v735 = hir.load v734 : felt;
+            v736 = hir.bitcast v690 : u32;
+            v737 = hir.constant 12 : u32;
+            v738 = hir.add v736, v737 : u32 #[overflow = checked];
+            v739 = hir.constant 4 : u32;
+            v740 = hir.mod v738, v739 : u32;
+            hir.assertz v740 #[code = 250];
+            v741 = hir.int_to_ptr v738 : (ptr felt);
+            v742 = hir.load v741 : felt;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::crypto::dsa::extern_rpo_falcon512_verify(v695, v702, v709, v716, v721, v728, v735, v742)
+            hir.br ^block72;
+        ^block72:
+            hir.ret ;
+        };
+
+        builtin.function public @test_pipe_words_to_memory(v743: i32, v744: felt) {
+        ^block73(v743: i32, v744: felt):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::mem::pipe_words_to_memory(v743, v744)
+            hir.br ^block74;
+        ^block74:
+            hir.ret ;
+        };
+
+        builtin.function public @test_pipe_double_words_to_memory(v745: i32, v746: felt) {
+        ^block75(v745: i32, v746: felt):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory(v745, v746)
+            hir.br ^block76;
+        ^block76:
+            hir.ret ;
+        };
+
+        builtin.function public @test_remove_asset(v747: i32) -> felt {
+        ^block77(v747: i32):
+            v749 = hir.constant 0 : i32;
+            v750 = hir.constant 0 : felt;
+            v751 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v752 = hir.bitcast v751 : (ptr i32);
+            v753 = hir.load v752 : i32;
+            v754 = hir.constant 32 : i32;
+            v755 = hir.sub v753, v754 : i32 #[overflow = wrapping];
+            v756 = hir.constant -32 : i32;
+            v757 = hir.band v755, v756 : i32;
+            v758 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v759 = hir.bitcast v758 : (ptr i32);
+            hir.store v759, v757;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::remove_asset(v757, v747)
+            v760 = hir.bitcast v757 : u32;
+            v761 = hir.constant 4 : u32;
+            v762 = hir.mod v760, v761 : u32;
+            hir.assertz v762 #[code = 250];
+            v763 = hir.int_to_ptr v760 : (ptr felt);
+            v764 = hir.load v763 : felt;
+            v765 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v766 = hir.bitcast v765 : (ptr i32);
+            hir.store v766, v753;
+            hir.br ^block78(v764);
+        ^block78(v748: felt):
+            hir.ret v748;
+        };
+
+        builtin.function public @test_create_note(v767: i32, v768: felt, v769: felt, v770: i32) -> felt {
+        ^block79(v767: i32, v768: felt, v769: felt, v770: i32):
+            v772 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::tx::create_note(v767, v768, v769, v770) : felt
+            hir.br ^block80(v772);
+        ^block80(v771: felt):
+            hir.ret v771;
+        };
+
+        builtin.function public @__rust_alloc(v773: i32, v774: i32) -> i32 {
+        ^block81(v773: i32, v774: i32):
+            v776 = hir.constant 1048704 : i32;
+            v777 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v776, v774, v773) : i32
+            hir.br ^block82(v777);
+        ^block82(v775: i32):
+            hir.ret v775;
+        };
+
+        builtin.function public @__rust_dealloc(v778: i32, v779: i32, v780: i32) {
+        ^block83(v778: i32, v779: i32, v780: i32):
+            hir.br ^block84;
+        ^block84:
+            hir.ret ;
+        };
+
+        builtin.function public @__rust_alloc_zeroed(v781: i32, v782: i32) -> i32 {
+        ^block85(v781: i32, v782: i32):
+            v784 = hir.constant 1048704 : i32;
+            v785 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/core::alloc::global::GlobalAlloc::alloc_zeroed(v784, v782, v781) : i32
+            hir.br ^block86(v785);
+        ^block86(v783: i32):
+            hir.ret v783;
+        };
+
+        builtin.function public @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v786: i32, v787: i32, v788: i32) -> i32 {
+        ^block87(v786: i32, v787: i32, v788: i32):
+            v790 = hir.constant 0 : i32;
+            v791 = hir.constant 32 : i32;
+            v792 = hir.constant 32 : i32;
+            v793 = hir.bitcast v787 : u32;
+            v794 = hir.bitcast v792 : u32;
+            v795 = hir.gt v793, v794 : i1;
+            v796 = hir.zext v795 : u32;
+            v797 = hir.bitcast v796 : i32;
+            v798 = hir.constant 0 : i32;
+            v799 = hir.neq v797, v798 : i1;
+            v800 = hir.select v799, v787, v791 : i32;
+            v801 = hir.popcnt v800 : u32;
+            v802 = hir.bitcast v801 : i32;
+            v803 = hir.constant 1 : i32;
+            v804 = hir.neq v802, v803 : i1;
+            v805 = hir.zext v804 : u32;
+            v806 = hir.bitcast v805 : i32;
+            v807 = hir.constant 0 : i32;
+            v808 = hir.neq v806, v807 : i1;
+            hir.cond_br v808 ^block89, ^block90;
+        ^block88(v789: i32):
+
+        ^block89:
+            hir.unreachable ;
+        ^block90:
+            v809 = hir.constant -2147483648 : i32;
+            v810 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/core::ptr::alignment::Alignment::max(v787, v800) : i32
+            v811 = hir.sub v809, v810 : i32 #[overflow = wrapping];
+            v812 = hir.bitcast v811 : u32;
+            v813 = hir.bitcast v788 : u32;
+            v814 = hir.lt v812, v813 : i1;
+            v815 = hir.zext v814 : u32;
+            v816 = hir.bitcast v815 : i32;
+            v817 = hir.constant 0 : i32;
+            v818 = hir.neq v816, v817 : i1;
+            hir.cond_br v818 ^block89, ^block91;
+        ^block91:
+            v819 = hir.constant 0 : i32;
+            v820 = hir.add v788, v810 : i32 #[overflow = wrapping];
+            v821 = hir.constant -1 : i32;
+            v822 = hir.add v820, v821 : i32 #[overflow = wrapping];
+            v823 = hir.constant 0 : i32;
+            v824 = hir.sub v823, v810 : i32 #[overflow = wrapping];
+            v825 = hir.band v822, v824 : i32;
+            v826 = hir.bitcast v786 : u32;
+            v827 = hir.constant 4 : u32;
+            v828 = hir.mod v826, v827 : u32;
+            hir.assertz v828 #[code = 250];
+            v829 = hir.int_to_ptr v826 : (ptr i32);
+            v830 = hir.load v829 : i32;
+            v831 = hir.constant 0 : i32;
+            v832 = hir.neq v830, v831 : i1;
+            hir.cond_br v832 ^block92(v786, v825, v810, v819), ^block93;
+        ^block92(v845: i32, v852: i32, v865: i32, v868: i32):
+            v844 = hir.constant 268435456 : i32;
+            v846 = hir.bitcast v845 : u32;
+            v847 = hir.constant 4 : u32;
+            v848 = hir.mod v846, v847 : u32;
+            hir.assertz v848 #[code = 250];
+            v849 = hir.int_to_ptr v846 : (ptr i32);
+            v850 = hir.load v849 : i32;
+            v851 = hir.sub v844, v850 : i32 #[overflow = wrapping];
+            v853 = hir.bitcast v851 : u32;
+            v854 = hir.bitcast v852 : u32;
+            v855 = hir.lt v853, v854 : i1;
+            v856 = hir.zext v855 : u32;
+            v857 = hir.bitcast v856 : i32;
+            v858 = hir.constant 0 : i32;
+            v859 = hir.neq v857, v858 : i1;
+            hir.cond_br v859 ^block94(v868), ^block95;
+        ^block93:
+            v833 = hir.exec @intrinsics::mem/heap_base() : i32
+            v834 = hir.mem_size  : u32;
+            v835 = hir.constant 16 : i32;
+            v836 = hir.bitcast v835 : u32;
+            v837 = hir.shl v834, v836 : u32;
+            v838 = hir.bitcast v837 : i32;
+            v839 = hir.add v833, v838 : i32 #[overflow = wrapping];
+            v840 = hir.bitcast v786 : u32;
+            v841 = hir.constant 4 : u32;
+            v842 = hir.mod v840, v841 : u32;
+            hir.assertz v842 #[code = 250];
+            v843 = hir.int_to_ptr v840 : (ptr i32);
+            hir.store v843, v839;
+            hir.br ^block92(v786, v825, v810, v819);
+        ^block94(v867: i32):
+            hir.ret v867;
+        ^block95:
+            v860 = hir.add v850, v852 : i32 #[overflow = wrapping];
+            v861 = hir.bitcast v845 : u32;
+            v862 = hir.constant 4 : u32;
+            v863 = hir.mod v861, v862 : u32;
+            hir.assertz v863 #[code = 250];
+            v864 = hir.int_to_ptr v861 : (ptr i32);
+            hir.store v864, v860;
+            v866 = hir.add v850, v865 : i32 #[overflow = wrapping];
+            hir.br ^block94(v866);
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::get_id() -> felt {
+        ^block96:
+            v870 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::extern_account_get_id() : felt
+            hir.br ^block97(v870);
+        ^block97(v869: felt):
+            hir.ret v869;
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::add_asset(v871: i32, v872: i32) {
+        ^block98(v871: i32, v872: i32):
+            v873 = hir.bitcast v872 : u32;
+            v874 = hir.constant 4 : u32;
+            v875 = hir.mod v873, v874 : u32;
+            hir.assertz v875 #[code = 250];
+            v876 = hir.int_to_ptr v873 : (ptr felt);
+            v877 = hir.load v876 : felt;
+            v878 = hir.bitcast v872 : u32;
+            v879 = hir.constant 4 : u32;
+            v880 = hir.add v878, v879 : u32 #[overflow = checked];
+            v881 = hir.constant 4 : u32;
+            v882 = hir.mod v880, v881 : u32;
+            hir.assertz v882 #[code = 250];
+            v883 = hir.int_to_ptr v880 : (ptr felt);
+            v884 = hir.load v883 : felt;
+            v885 = hir.bitcast v872 : u32;
+            v886 = hir.constant 8 : u32;
+            v887 = hir.add v885, v886 : u32 #[overflow = checked];
+            v888 = hir.constant 4 : u32;
+            v889 = hir.mod v887, v888 : u32;
+            hir.assertz v889 #[code = 250];
+            v890 = hir.int_to_ptr v887 : (ptr felt);
+            v891 = hir.load v890 : felt;
+            v892 = hir.bitcast v872 : u32;
+            v893 = hir.constant 12 : u32;
+            v894 = hir.add v892, v893 : u32 #[overflow = checked];
+            v895 = hir.constant 4 : u32;
+            v896 = hir.mod v894, v895 : u32;
+            hir.assertz v896 #[code = 250];
+            v897 = hir.int_to_ptr v894 : (ptr felt);
+            v898 = hir.load v897 : felt;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::extern_account_add_asset(v877, v884, v891, v898, v871)
+            hir.br ^block99;
+        ^block99:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::account::remove_asset(v899: i32, v900: i32) {
+        ^block100(v899: i32, v900: i32):
+            v901 = hir.bitcast v900 : u32;
+            v902 = hir.constant 4 : u32;
+            v903 = hir.mod v901, v902 : u32;
+            hir.assertz v903 #[code = 250];
+            v904 = hir.int_to_ptr v901 : (ptr felt);
+            v905 = hir.load v904 : felt;
+            v906 = hir.bitcast v900 : u32;
+            v907 = hir.constant 4 : u32;
+            v908 = hir.add v906, v907 : u32 #[overflow = checked];
+            v909 = hir.constant 4 : u32;
+            v910 = hir.mod v908, v909 : u32;
+            hir.assertz v910 #[code = 250];
+            v911 = hir.int_to_ptr v908 : (ptr felt);
+            v912 = hir.load v911 : felt;
+            v913 = hir.bitcast v900 : u32;
+            v914 = hir.constant 8 : u32;
+            v915 = hir.add v913, v914 : u32 #[overflow = checked];
+            v916 = hir.constant 4 : u32;
+            v917 = hir.mod v915, v916 : u32;
+            hir.assertz v917 #[code = 250];
+            v918 = hir.int_to_ptr v915 : (ptr felt);
+            v919 = hir.load v918 : felt;
+            v920 = hir.bitcast v900 : u32;
+            v921 = hir.constant 12 : u32;
+            v922 = hir.add v920, v921 : u32 #[overflow = checked];
+            v923 = hir.constant 4 : u32;
+            v924 = hir.mod v922, v923 : u32;
+            hir.assertz v924 #[code = 250];
+            v925 = hir.int_to_ptr v922 : (ptr felt);
+            v926 = hir.load v925 : felt;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::account::extern_account_remove_asset(v905, v912, v919, v926, v899)
+            hir.br ^block101;
+        ^block101:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::note::get_inputs(v927: i32) {
+        ^block102(v927: i32):
+            v928 = hir.constant 0 : i32;
+            v929 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v930 = hir.bitcast v929 : (ptr i32);
+            v931 = hir.load v930 : i32;
+            v932 = hir.constant 16 : i32;
+            v933 = hir.sub v931, v932 : i32 #[overflow = wrapping];
+            v934 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v935 = hir.bitcast v934 : (ptr i32);
+            hir.store v935, v933;
+            v936 = hir.constant 4 : i32;
+            v937 = hir.add v933, v936 : i32 #[overflow = wrapping];
+            v938 = hir.constant 256 : i32;
+            v939 = hir.constant 0 : i32;
+            v940 = hir.constant 4 : i32;
+            v941 = hir.constant 4 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::RawVecInner<A>::try_allocate_in(v937, v938, v939, v940, v941)
+            v942 = hir.bitcast v933 : u32;
+            v943 = hir.constant 8 : u32;
+            v944 = hir.add v942, v943 : u32 #[overflow = checked];
+            v945 = hir.constant 4 : u32;
+            v946 = hir.mod v944, v945 : u32;
+            hir.assertz v946 #[code = 250];
+            v947 = hir.int_to_ptr v944 : (ptr i32);
+            v948 = hir.load v947 : i32;
+            v949 = hir.bitcast v933 : u32;
+            v950 = hir.constant 4 : u32;
+            v951 = hir.add v949, v950 : u32 #[overflow = checked];
+            v952 = hir.constant 4 : u32;
+            v953 = hir.mod v951, v952 : u32;
+            hir.assertz v953 #[code = 250];
+            v954 = hir.int_to_ptr v951 : (ptr i32);
+            v955 = hir.load v954 : i32;
+            v956 = hir.constant 1 : i32;
+            v957 = hir.neq v955, v956 : i1;
+            v958 = hir.zext v957 : u32;
+            v959 = hir.bitcast v958 : i32;
+            v960 = hir.constant 0 : i32;
+            v961 = hir.neq v959, v960 : i1;
+            hir.cond_br v961 ^block104, ^block105;
+        ^block103:
+            hir.ret ;
+        ^block104:
+            v970 = hir.bitcast v933 : u32;
+            v971 = hir.constant 12 : u32;
+            v972 = hir.add v970, v971 : u32 #[overflow = checked];
+            v973 = hir.constant 4 : u32;
+            v974 = hir.mod v972, v973 : u32;
+            hir.assertz v974 #[code = 250];
+            v975 = hir.int_to_ptr v972 : (ptr i32);
+            v976 = hir.load v975 : i32;
+            v977 = hir.constant 4 : i32;
+            v978 = hir.bitcast v976 : u32;
+            v979 = hir.bitcast v977 : u32;
+            v980 = hir.shr v978, v979 : u32;
+            v981 = hir.bitcast v980 : i32;
+            v982 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::note::extern_note_get_inputs(v981) : i32
+            v983 = hir.bitcast v927 : u32;
+            v984 = hir.constant 8 : u32;
+            v985 = hir.add v983, v984 : u32 #[overflow = checked];
+            v986 = hir.constant 4 : u32;
+            v987 = hir.mod v985, v986 : u32;
+            hir.assertz v987 #[code = 250];
+            v988 = hir.int_to_ptr v985 : (ptr i32);
+            hir.store v988, v982;
+            v989 = hir.bitcast v927 : u32;
+            v990 = hir.constant 4 : u32;
+            v991 = hir.add v989, v990 : u32 #[overflow = checked];
+            v992 = hir.constant 4 : u32;
+            v993 = hir.mod v991, v992 : u32;
+            hir.assertz v993 #[code = 250];
+            v994 = hir.int_to_ptr v991 : (ptr i32);
+            hir.store v994, v976;
+            v995 = hir.bitcast v927 : u32;
+            v996 = hir.constant 4 : u32;
+            v997 = hir.mod v995, v996 : u32;
+            hir.assertz v997 #[code = 250];
+            v998 = hir.int_to_ptr v995 : (ptr i32);
+            hir.store v998, v948;
+            v999 = hir.constant 16 : i32;
+            v1000 = hir.add v933, v999 : i32 #[overflow = wrapping];
+            v1001 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1002 = hir.bitcast v1001 : (ptr i32);
+            hir.store v1002, v1000;
+            hir.br ^block103;
+        ^block105:
+            v962 = hir.bitcast v933 : u32;
+            v963 = hir.constant 12 : u32;
+            v964 = hir.add v962, v963 : u32 #[overflow = checked];
+            v965 = hir.constant 4 : u32;
+            v966 = hir.mod v964, v965 : u32;
+            hir.assertz v966 #[code = 250];
+            v967 = hir.int_to_ptr v964 : (ptr i32);
+            v968 = hir.load v967 : i32;
+            v969 = hir.constant 1048616 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::handle_error(v948, v968, v969)
+            hir.unreachable ;
+        };
+
+        builtin.function public @miden_base_sys::bindings::tx::create_note(v1003: i32, v1004: felt, v1005: felt, v1006: i32) -> felt {
+        ^block106(v1003: i32, v1004: felt, v1005: felt, v1006: i32):
+            v1008 = hir.bitcast v1003 : u32;
+            v1009 = hir.constant 4 : u32;
+            v1010 = hir.mod v1008, v1009 : u32;
+            hir.assertz v1010 #[code = 250];
+            v1011 = hir.int_to_ptr v1008 : (ptr felt);
+            v1012 = hir.load v1011 : felt;
+            v1013 = hir.bitcast v1003 : u32;
+            v1014 = hir.constant 4 : u32;
+            v1015 = hir.add v1013, v1014 : u32 #[overflow = checked];
+            v1016 = hir.constant 4 : u32;
+            v1017 = hir.mod v1015, v1016 : u32;
+            hir.assertz v1017 #[code = 250];
+            v1018 = hir.int_to_ptr v1015 : (ptr felt);
+            v1019 = hir.load v1018 : felt;
+            v1020 = hir.bitcast v1003 : u32;
+            v1021 = hir.constant 8 : u32;
+            v1022 = hir.add v1020, v1021 : u32 #[overflow = checked];
+            v1023 = hir.constant 4 : u32;
+            v1024 = hir.mod v1022, v1023 : u32;
+            hir.assertz v1024 #[code = 250];
+            v1025 = hir.int_to_ptr v1022 : (ptr felt);
+            v1026 = hir.load v1025 : felt;
+            v1027 = hir.bitcast v1003 : u32;
+            v1028 = hir.constant 12 : u32;
+            v1029 = hir.add v1027, v1028 : u32 #[overflow = checked];
+            v1030 = hir.constant 4 : u32;
+            v1031 = hir.mod v1029, v1030 : u32;
+            hir.assertz v1031 #[code = 250];
+            v1032 = hir.int_to_ptr v1029 : (ptr felt);
+            v1033 = hir.load v1032 : felt;
+            v1034 = hir.bitcast v1006 : u32;
+            v1035 = hir.constant 4 : u32;
+            v1036 = hir.mod v1034, v1035 : u32;
+            hir.assertz v1036 #[code = 250];
+            v1037 = hir.int_to_ptr v1034 : (ptr felt);
+            v1038 = hir.load v1037 : felt;
+            v1039 = hir.bitcast v1006 : u32;
+            v1040 = hir.constant 4 : u32;
+            v1041 = hir.add v1039, v1040 : u32 #[overflow = checked];
+            v1042 = hir.constant 4 : u32;
+            v1043 = hir.mod v1041, v1042 : u32;
+            hir.assertz v1043 #[code = 250];
+            v1044 = hir.int_to_ptr v1041 : (ptr felt);
+            v1045 = hir.load v1044 : felt;
+            v1046 = hir.bitcast v1006 : u32;
+            v1047 = hir.constant 8 : u32;
+            v1048 = hir.add v1046, v1047 : u32 #[overflow = checked];
+            v1049 = hir.constant 4 : u32;
+            v1050 = hir.mod v1048, v1049 : u32;
+            hir.assertz v1050 #[code = 250];
+            v1051 = hir.int_to_ptr v1048 : (ptr felt);
+            v1052 = hir.load v1051 : felt;
+            v1053 = hir.bitcast v1006 : u32;
+            v1054 = hir.constant 12 : u32;
+            v1055 = hir.add v1053, v1054 : u32 #[overflow = checked];
+            v1056 = hir.constant 4 : u32;
+            v1057 = hir.mod v1055, v1056 : u32;
+            hir.assertz v1057 #[code = 250];
+            v1058 = hir.int_to_ptr v1055 : (ptr felt);
+            v1059 = hir.load v1058 : felt;
+            v1060 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_base_sys::bindings::tx::extern_tx_create_note(v1012, v1019, v1026, v1033, v1004, v1005, v1038, v1045, v1052, v1059) : felt
+            hir.br ^block107(v1060);
+        ^block107(v1007: felt):
+            hir.ret v1007;
+        };
+
+        builtin.function public @alloc::vec::Vec<T>::with_capacity(v1061: i32, v1062: i32, v1063: i32) {
+        ^block108(v1061: i32, v1062: i32, v1063: i32):
+            v1064 = hir.constant 0 : i32;
+            v1065 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1066 = hir.bitcast v1065 : (ptr i32);
+            v1067 = hir.load v1066 : i32;
+            v1068 = hir.constant 16 : i32;
+            v1069 = hir.sub v1067, v1068 : i32 #[overflow = wrapping];
+            v1070 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1071 = hir.bitcast v1070 : (ptr i32);
+            hir.store v1071, v1069;
+            v1072 = hir.constant 4 : i32;
+            v1073 = hir.add v1069, v1072 : i32 #[overflow = wrapping];
+            v1074 = hir.constant 0 : i32;
+            v1075 = hir.constant 4 : i32;
+            v1076 = hir.constant 4 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::RawVecInner<A>::try_allocate_in(v1073, v1062, v1074, v1075, v1076)
+            v1077 = hir.bitcast v1069 : u32;
+            v1078 = hir.constant 8 : u32;
+            v1079 = hir.add v1077, v1078 : u32 #[overflow = checked];
+            v1080 = hir.constant 4 : u32;
+            v1081 = hir.mod v1079, v1080 : u32;
+            hir.assertz v1081 #[code = 250];
+            v1082 = hir.int_to_ptr v1079 : (ptr i32);
+            v1083 = hir.load v1082 : i32;
+            v1084 = hir.bitcast v1069 : u32;
+            v1085 = hir.constant 4 : u32;
+            v1086 = hir.add v1084, v1085 : u32 #[overflow = checked];
+            v1087 = hir.constant 4 : u32;
+            v1088 = hir.mod v1086, v1087 : u32;
+            hir.assertz v1088 #[code = 250];
+            v1089 = hir.int_to_ptr v1086 : (ptr i32);
+            v1090 = hir.load v1089 : i32;
+            v1091 = hir.constant 1 : i32;
+            v1092 = hir.neq v1090, v1091 : i1;
+            v1093 = hir.zext v1092 : u32;
+            v1094 = hir.bitcast v1093 : i32;
+            v1095 = hir.constant 0 : i32;
+            v1096 = hir.neq v1094, v1095 : i1;
+            hir.cond_br v1096 ^block110, ^block111;
+        ^block109:
+            hir.ret ;
+        ^block110:
+            v1104 = hir.bitcast v1069 : u32;
+            v1105 = hir.constant 12 : u32;
+            v1106 = hir.add v1104, v1105 : u32 #[overflow = checked];
+            v1107 = hir.constant 4 : u32;
+            v1108 = hir.mod v1106, v1107 : u32;
+            hir.assertz v1108 #[code = 250];
+            v1109 = hir.int_to_ptr v1106 : (ptr i32);
+            v1110 = hir.load v1109 : i32;
+            v1111 = hir.constant 0 : i32;
+            v1112 = hir.bitcast v1061 : u32;
+            v1113 = hir.constant 8 : u32;
+            v1114 = hir.add v1112, v1113 : u32 #[overflow = checked];
+            v1115 = hir.constant 4 : u32;
+            v1116 = hir.mod v1114, v1115 : u32;
+            hir.assertz v1116 #[code = 250];
+            v1117 = hir.int_to_ptr v1114 : (ptr i32);
+            hir.store v1117, v1111;
+            v1118 = hir.bitcast v1061 : u32;
+            v1119 = hir.constant 4 : u32;
+            v1120 = hir.add v1118, v1119 : u32 #[overflow = checked];
+            v1121 = hir.constant 4 : u32;
+            v1122 = hir.mod v1120, v1121 : u32;
+            hir.assertz v1122 #[code = 250];
+            v1123 = hir.int_to_ptr v1120 : (ptr i32);
+            hir.store v1123, v1110;
+            v1124 = hir.bitcast v1061 : u32;
+            v1125 = hir.constant 4 : u32;
+            v1126 = hir.mod v1124, v1125 : u32;
+            hir.assertz v1126 #[code = 250];
+            v1127 = hir.int_to_ptr v1124 : (ptr i32);
+            hir.store v1127, v1083;
+            v1128 = hir.constant 16 : i32;
+            v1129 = hir.add v1069, v1128 : i32 #[overflow = wrapping];
+            v1130 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1131 = hir.bitcast v1130 : (ptr i32);
+            hir.store v1131, v1129;
+            hir.br ^block109;
+        ^block111:
+            v1097 = hir.bitcast v1069 : u32;
+            v1098 = hir.constant 12 : u32;
+            v1099 = hir.add v1097, v1098 : u32 #[overflow = checked];
+            v1100 = hir.constant 4 : u32;
+            v1101 = hir.mod v1099, v1100 : u32;
+            hir.assertz v1101 #[code = 250];
+            v1102 = hir.int_to_ptr v1099 : (ptr i32);
+            v1103 = hir.load v1102 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::handle_error(v1083, v1103, v1063)
+            hir.unreachable ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::mem::pipe_words_to_memory(v1132: i32, v1133: felt) {
+        ^block112(v1132: i32, v1133: felt):
+            v1134 = hir.constant 0 : i32;
+            v1135 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1136 = hir.bitcast v1135 : (ptr i32);
+            v1137 = hir.load v1136 : i32;
+            v1138 = hir.constant 96 : i32;
+            v1139 = hir.sub v1137, v1138 : i32 #[overflow = wrapping];
+            v1140 = hir.constant -32 : i32;
+            v1141 = hir.band v1139, v1140 : i32;
+            v1142 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1143 = hir.bitcast v1142 : (ptr i32);
+            hir.store v1143, v1141;
+            v1144 = hir.constant 20 : i32;
+            v1145 = hir.add v1141, v1144 : i32 #[overflow = wrapping];
+            v1146 = hir.cast v1133 : i64;
+            v1147 = hir.trunc v1146 : i32;
+            v1148 = hir.constant 2 : i32;
+            v1149 = hir.bitcast v1148 : u32;
+            v1150 = hir.shl v1147, v1149 : i32;
+            v1151 = hir.constant 1048672 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::vec::Vec<T>::with_capacity(v1145, v1150, v1151)
+            v1152 = hir.bitcast v1141 : u32;
+            v1153 = hir.constant 24 : u32;
+            v1154 = hir.add v1152, v1153 : u32 #[overflow = checked];
+            v1155 = hir.constant 4 : u32;
+            v1156 = hir.mod v1154, v1155 : u32;
+            hir.assertz v1156 #[code = 250];
+            v1157 = hir.int_to_ptr v1154 : (ptr i32);
+            v1158 = hir.load v1157 : i32;
+            v1159 = hir.constant 32 : i32;
+            v1160 = hir.add v1141, v1159 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::mem::extern_pipe_words_to_memory(v1133, v1158, v1160)
+            v1161 = hir.constant 24 : i32;
+            v1162 = hir.add v1132, v1161 : i32 #[overflow = wrapping];
+            v1163 = hir.bitcast v1141 : u32;
+            v1164 = hir.constant 56 : u32;
+            v1165 = hir.add v1163, v1164 : u32 #[overflow = checked];
+            v1166 = hir.constant 8 : u32;
+            v1167 = hir.mod v1165, v1166 : u32;
+            hir.assertz v1167 #[code = 250];
+            v1168 = hir.int_to_ptr v1165 : (ptr i64);
+            v1169 = hir.load v1168 : i64;
+            v1170 = hir.bitcast v1162 : u32;
+            v1171 = hir.constant 8 : u32;
+            v1172 = hir.mod v1170, v1171 : u32;
+            hir.assertz v1172 #[code = 250];
+            v1173 = hir.int_to_ptr v1170 : (ptr i64);
+            hir.store v1173, v1169;
+            v1174 = hir.constant 16 : i32;
+            v1175 = hir.add v1132, v1174 : i32 #[overflow = wrapping];
+            v1176 = hir.bitcast v1141 : u32;
+            v1177 = hir.constant 48 : u32;
+            v1178 = hir.add v1176, v1177 : u32 #[overflow = checked];
+            v1179 = hir.constant 8 : u32;
+            v1180 = hir.mod v1178, v1179 : u32;
+            hir.assertz v1180 #[code = 250];
+            v1181 = hir.int_to_ptr v1178 : (ptr i64);
+            v1182 = hir.load v1181 : i64;
+            v1183 = hir.bitcast v1175 : u32;
+            v1184 = hir.constant 8 : u32;
+            v1185 = hir.mod v1183, v1184 : u32;
+            hir.assertz v1185 #[code = 250];
+            v1186 = hir.int_to_ptr v1183 : (ptr i64);
+            hir.store v1186, v1182;
+            v1187 = hir.constant 8 : i32;
+            v1188 = hir.add v1132, v1187 : i32 #[overflow = wrapping];
+            v1189 = hir.bitcast v1141 : u32;
+            v1190 = hir.constant 40 : u32;
+            v1191 = hir.add v1189, v1190 : u32 #[overflow = checked];
+            v1192 = hir.constant 8 : u32;
+            v1193 = hir.mod v1191, v1192 : u32;
+            hir.assertz v1193 #[code = 250];
+            v1194 = hir.int_to_ptr v1191 : (ptr i64);
+            v1195 = hir.load v1194 : i64;
+            v1196 = hir.bitcast v1188 : u32;
+            v1197 = hir.constant 8 : u32;
+            v1198 = hir.mod v1196, v1197 : u32;
+            hir.assertz v1198 #[code = 250];
+            v1199 = hir.int_to_ptr v1196 : (ptr i64);
+            hir.store v1199, v1195;
+            v1200 = hir.bitcast v1141 : u32;
+            v1201 = hir.constant 32 : u32;
+            v1202 = hir.add v1200, v1201 : u32 #[overflow = checked];
+            v1203 = hir.constant 8 : u32;
+            v1204 = hir.mod v1202, v1203 : u32;
+            hir.assertz v1204 #[code = 250];
+            v1205 = hir.int_to_ptr v1202 : (ptr i64);
+            v1206 = hir.load v1205 : i64;
+            v1207 = hir.bitcast v1132 : u32;
+            v1208 = hir.constant 8 : u32;
+            v1209 = hir.mod v1207, v1208 : u32;
+            hir.assertz v1209 #[code = 250];
+            v1210 = hir.int_to_ptr v1207 : (ptr i64);
+            hir.store v1210, v1206;
+            v1211 = hir.constant 40 : i32;
+            v1212 = hir.add v1132, v1211 : i32 #[overflow = wrapping];
+            v1213 = hir.constant 20 : i32;
+            v1214 = hir.add v1141, v1213 : i32 #[overflow = wrapping];
+            v1215 = hir.constant 8 : i32;
+            v1216 = hir.add v1214, v1215 : i32 #[overflow = wrapping];
+            v1217 = hir.bitcast v1216 : u32;
+            v1218 = hir.constant 4 : u32;
+            v1219 = hir.mod v1217, v1218 : u32;
+            hir.assertz v1219 #[code = 250];
+            v1220 = hir.int_to_ptr v1217 : (ptr i32);
+            v1221 = hir.load v1220 : i32;
+            v1222 = hir.bitcast v1212 : u32;
+            v1223 = hir.constant 4 : u32;
+            v1224 = hir.mod v1222, v1223 : u32;
+            hir.assertz v1224 #[code = 250];
+            v1225 = hir.int_to_ptr v1222 : (ptr i32);
+            hir.store v1225, v1221;
+            v1226 = hir.bitcast v1141 : u32;
+            v1227 = hir.constant 20 : u32;
+            v1228 = hir.add v1226, v1227 : u32 #[overflow = checked];
+            v1229 = hir.constant 4 : u32;
+            v1230 = hir.mod v1228, v1229 : u32;
+            hir.assertz v1230 #[code = 250];
+            v1231 = hir.int_to_ptr v1228 : (ptr i64);
+            v1232 = hir.load v1231 : i64;
+            v1233 = hir.bitcast v1132 : u32;
+            v1234 = hir.constant 32 : u32;
+            v1235 = hir.add v1233, v1234 : u32 #[overflow = checked];
+            v1236 = hir.constant 4 : u32;
+            v1237 = hir.mod v1235, v1236 : u32;
+            hir.assertz v1237 #[code = 250];
+            v1238 = hir.int_to_ptr v1235 : (ptr i64);
+            hir.store v1238, v1232;
+            v1239 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1240 = hir.bitcast v1239 : (ptr i32);
+            hir.store v1240, v1137;
+            hir.br ^block113;
+        ^block113:
+            hir.ret ;
+        };
+
+        builtin.function public @miden_stdlib_sys::stdlib::mem::pipe_double_words_to_memory(v1241: i32, v1242: felt) {
+        ^block114(v1241: i32, v1242: felt):
+            v1243 = hir.constant 0 : i32;
+            v1244 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1245 = hir.bitcast v1244 : (ptr i32);
+            v1246 = hir.load v1245 : i32;
+            v1247 = hir.constant 160 : i32;
+            v1248 = hir.sub v1246, v1247 : i32 #[overflow = wrapping];
+            v1249 = hir.constant -32 : i32;
+            v1250 = hir.band v1248, v1249 : i32;
+            v1251 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1252 = hir.bitcast v1251 : (ptr i32);
+            hir.store v1252, v1250;
+            v1253 = hir.constant 20 : i32;
+            v1254 = hir.add v1250, v1253 : i32 #[overflow = wrapping];
+            v1255 = hir.cast v1242 : i64;
+            v1256 = hir.trunc v1255 : i32;
+            v1257 = hir.constant 2 : i32;
+            v1258 = hir.bitcast v1257 : u32;
+            v1259 = hir.shl v1256, v1258 : i32;
+            v1260 = hir.constant 1048688 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::vec::Vec<T>::with_capacity(v1254, v1259, v1260)
+            v1261 = hir.bitcast v1250 : u32;
+            v1262 = hir.constant 24 : u32;
+            v1263 = hir.add v1261, v1262 : u32 #[overflow = checked];
+            v1264 = hir.constant 4 : u32;
+            v1265 = hir.mod v1263, v1264 : u32;
+            hir.assertz v1265 #[code = 250];
+            v1266 = hir.int_to_ptr v1263 : (ptr i32);
+            v1267 = hir.load v1266 : i32;
+            v1268 = hir.constant 0 : i32;
+            v1269 = hir.bitcast v1268 : felt;
+            v1270 = hir.constant 4 : i32;
+            v1271 = hir.bitcast v1270 : u32;
+            v1272 = hir.shl v1256, v1271 : i32;
+            v1273 = hir.add v1267, v1272 : i32 #[overflow = wrapping];
+            v1274 = hir.constant 32 : i32;
+            v1275 = hir.add v1250, v1274 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/miden_stdlib_sys::stdlib::mem::extern_pipe_double_words_to_memory(v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1269, v1267, v1273, v1275)
+            v1276 = hir.constant 24 : i32;
+            v1277 = hir.add v1241, v1276 : i32 #[overflow = wrapping];
+            v1278 = hir.constant 88 : i32;
+            v1279 = hir.add v1250, v1278 : i32 #[overflow = wrapping];
+            v1280 = hir.bitcast v1279 : u32;
+            v1281 = hir.constant 8 : u32;
+            v1282 = hir.mod v1280, v1281 : u32;
+            hir.assertz v1282 #[code = 250];
+            v1283 = hir.int_to_ptr v1280 : (ptr i64);
+            v1284 = hir.load v1283 : i64;
+            v1285 = hir.bitcast v1277 : u32;
+            v1286 = hir.constant 8 : u32;
+            v1287 = hir.mod v1285, v1286 : u32;
+            hir.assertz v1287 #[code = 250];
+            v1288 = hir.int_to_ptr v1285 : (ptr i64);
+            hir.store v1288, v1284;
+            v1289 = hir.constant 16 : i32;
+            v1290 = hir.add v1241, v1289 : i32 #[overflow = wrapping];
+            v1291 = hir.constant 80 : i32;
+            v1292 = hir.add v1250, v1291 : i32 #[overflow = wrapping];
+            v1293 = hir.bitcast v1292 : u32;
+            v1294 = hir.constant 8 : u32;
+            v1295 = hir.mod v1293, v1294 : u32;
+            hir.assertz v1295 #[code = 250];
+            v1296 = hir.int_to_ptr v1293 : (ptr i64);
+            v1297 = hir.load v1296 : i64;
+            v1298 = hir.bitcast v1290 : u32;
+            v1299 = hir.constant 8 : u32;
+            v1300 = hir.mod v1298, v1299 : u32;
+            hir.assertz v1300 #[code = 250];
+            v1301 = hir.int_to_ptr v1298 : (ptr i64);
+            hir.store v1301, v1297;
+            v1302 = hir.constant 8 : i32;
+            v1303 = hir.add v1241, v1302 : i32 #[overflow = wrapping];
+            v1304 = hir.constant 32 : i32;
+            v1305 = hir.add v1250, v1304 : i32 #[overflow = wrapping];
+            v1306 = hir.constant 40 : i32;
+            v1307 = hir.add v1305, v1306 : i32 #[overflow = wrapping];
+            v1308 = hir.bitcast v1307 : u32;
+            v1309 = hir.constant 8 : u32;
+            v1310 = hir.mod v1308, v1309 : u32;
+            hir.assertz v1310 #[code = 250];
+            v1311 = hir.int_to_ptr v1308 : (ptr i64);
+            v1312 = hir.load v1311 : i64;
+            v1313 = hir.bitcast v1303 : u32;
+            v1314 = hir.constant 8 : u32;
+            v1315 = hir.mod v1313, v1314 : u32;
+            hir.assertz v1315 #[code = 250];
+            v1316 = hir.int_to_ptr v1313 : (ptr i64);
+            hir.store v1316, v1312;
+            v1317 = hir.bitcast v1250 : u32;
+            v1318 = hir.constant 64 : u32;
+            v1319 = hir.add v1317, v1318 : u32 #[overflow = checked];
+            v1320 = hir.constant 8 : u32;
+            v1321 = hir.mod v1319, v1320 : u32;
+            hir.assertz v1321 #[code = 250];
+            v1322 = hir.int_to_ptr v1319 : (ptr i64);
+            v1323 = hir.load v1322 : i64;
+            v1324 = hir.bitcast v1241 : u32;
+            v1325 = hir.constant 8 : u32;
+            v1326 = hir.mod v1324, v1325 : u32;
+            hir.assertz v1326 #[code = 250];
+            v1327 = hir.int_to_ptr v1324 : (ptr i64);
+            hir.store v1327, v1323;
+            v1328 = hir.constant 40 : i32;
+            v1329 = hir.add v1241, v1328 : i32 #[overflow = wrapping];
+            v1330 = hir.constant 20 : i32;
+            v1331 = hir.add v1250, v1330 : i32 #[overflow = wrapping];
+            v1332 = hir.constant 8 : i32;
+            v1333 = hir.add v1331, v1332 : i32 #[overflow = wrapping];
+            v1334 = hir.bitcast v1333 : u32;
+            v1335 = hir.constant 4 : u32;
+            v1336 = hir.mod v1334, v1335 : u32;
+            hir.assertz v1336 #[code = 250];
+            v1337 = hir.int_to_ptr v1334 : (ptr i32);
+            v1338 = hir.load v1337 : i32;
+            v1339 = hir.bitcast v1329 : u32;
+            v1340 = hir.constant 4 : u32;
+            v1341 = hir.mod v1339, v1340 : u32;
+            hir.assertz v1341 #[code = 250];
+            v1342 = hir.int_to_ptr v1339 : (ptr i32);
+            hir.store v1342, v1338;
+            v1343 = hir.bitcast v1250 : u32;
+            v1344 = hir.constant 20 : u32;
+            v1345 = hir.add v1343, v1344 : u32 #[overflow = checked];
+            v1346 = hir.constant 4 : u32;
+            v1347 = hir.mod v1345, v1346 : u32;
+            hir.assertz v1347 #[code = 250];
+            v1348 = hir.int_to_ptr v1345 : (ptr i64);
+            v1349 = hir.load v1348 : i64;
+            v1350 = hir.bitcast v1241 : u32;
+            v1351 = hir.constant 32 : u32;
+            v1352 = hir.add v1350, v1351 : u32 #[overflow = checked];
+            v1353 = hir.constant 4 : u32;
+            v1354 = hir.mod v1352, v1353 : u32;
+            hir.assertz v1354 #[code = 250];
+            v1355 = hir.int_to_ptr v1352 : (ptr i64);
+            hir.store v1355, v1349;
+            v1356 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1357 = hir.bitcast v1356 : (ptr i32);
+            hir.store v1357, v1246;
+            hir.br ^block115;
+        ^block115:
+            hir.ret ;
+        };
+
+        builtin.function public @dummy() {
+        ^block116:
+            hir.br ^block117;
+        ^block117:
+            hir.ret ;
+        };
+
+        builtin.function public @__wasm_call_dtors() {
+        ^block118:
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/dummy()
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/dummy()
+            hir.br ^block119;
+        ^block119:
+            hir.ret ;
+        };
+
+        builtin.function public @alloc::raw_vec::RawVecInner<A>::deallocate(v1358: i32, v1359: i32, v1360: i32) {
+        ^block120(v1358: i32, v1359: i32, v1360: i32):
+            v1361 = hir.constant 0 : i32;
+            v1362 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1363 = hir.bitcast v1362 : (ptr i32);
+            v1364 = hir.load v1363 : i32;
+            v1365 = hir.constant 16 : i32;
+            v1366 = hir.sub v1364, v1365 : i32 #[overflow = wrapping];
+            v1367 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1368 = hir.bitcast v1367 : (ptr i32);
+            hir.store v1368, v1366;
+            v1369 = hir.constant 4 : i32;
+            v1370 = hir.add v1366, v1369 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::raw_vec::RawVecInner<A>::current_memory(v1370, v1358, v1359, v1360)
+            v1371 = hir.bitcast v1366 : u32;
+            v1372 = hir.constant 8 : u32;
+            v1373 = hir.add v1371, v1372 : u32 #[overflow = checked];
+            v1374 = hir.constant 4 : u32;
+            v1375 = hir.mod v1373, v1374 : u32;
+            hir.assertz v1375 #[code = 250];
+            v1376 = hir.int_to_ptr v1373 : (ptr i32);
+            v1377 = hir.load v1376 : i32;
+            v1378 = hir.constant 0 : i32;
+            v1379 = hir.eq v1377, v1378 : i1;
+            v1380 = hir.zext v1379 : u32;
+            v1381 = hir.bitcast v1380 : i32;
+            v1382 = hir.constant 0 : i32;
+            v1383 = hir.neq v1381, v1382 : i1;
+            hir.cond_br v1383 ^block122(v1366), ^block123;
+        ^block121:
+            hir.ret ;
+        ^block122(v1398: i32):
+            v1399 = hir.constant 16 : i32;
+            v1400 = hir.add v1398, v1399 : i32 #[overflow = wrapping];
+            v1401 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1402 = hir.bitcast v1401 : (ptr i32);
+            hir.store v1402, v1400;
+            hir.br ^block121;
+        ^block123:
+            v1384 = hir.bitcast v1366 : u32;
+            v1385 = hir.constant 4 : u32;
+            v1386 = hir.add v1384, v1385 : u32 #[overflow = checked];
+            v1387 = hir.constant 4 : u32;
+            v1388 = hir.mod v1386, v1387 : u32;
+            hir.assertz v1388 #[code = 250];
+            v1389 = hir.int_to_ptr v1386 : (ptr i32);
+            v1390 = hir.load v1389 : i32;
+            v1391 = hir.bitcast v1366 : u32;
+            v1392 = hir.constant 12 : u32;
+            v1393 = hir.add v1391, v1392 : u32 #[overflow = checked];
+            v1394 = hir.constant 4 : u32;
+            v1395 = hir.mod v1393, v1394 : u32;
+            hir.assertz v1395 #[code = 250];
+            v1396 = hir.int_to_ptr v1393 : (ptr i32);
+            v1397 = hir.load v1396 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v1390, v1377, v1397)
+            hir.br ^block122(v1366);
+        };
+
+        builtin.function public @alloc::raw_vec::RawVecInner<A>::try_allocate_in(v1403: i32, v1404: i32, v1405: i32, v1406: i32, v1407: i32) {
+        ^block124(v1403: i32, v1404: i32, v1405: i32, v1406: i32, v1407: i32):
+            v1408 = hir.constant 0 : i32;
+            v1409 = hir.constant 0 : i64;
+            v1410 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1411 = hir.bitcast v1410 : (ptr i32);
+            v1412 = hir.load v1411 : i32;
+            v1413 = hir.constant 16 : i32;
+            v1414 = hir.sub v1412, v1413 : i32 #[overflow = wrapping];
+            v1415 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1416 = hir.bitcast v1415 : (ptr i32);
+            hir.store v1416, v1414;
+            v1417 = hir.add v1406, v1407 : i32 #[overflow = wrapping];
+            v1418 = hir.constant -1 : i32;
+            v1419 = hir.add v1417, v1418 : i32 #[overflow = wrapping];
+            v1420 = hir.constant 0 : i32;
+            v1421 = hir.sub v1420, v1406 : i32 #[overflow = wrapping];
+            v1422 = hir.band v1419, v1421 : i32;
+            v1423 = hir.bitcast v1422 : u32;
+            v1424 = hir.zext v1423 : u64;
+            v1425 = hir.bitcast v1424 : i64;
+            v1426 = hir.bitcast v1404 : u32;
+            v1427 = hir.zext v1426 : u64;
+            v1428 = hir.bitcast v1427 : i64;
+            v1429 = hir.mul v1425, v1428 : i64 #[overflow = wrapping];
+            v1430 = hir.constant 32 : i64;
+            v1431 = hir.bitcast v1429 : u64;
+            v1432 = hir.cast v1430 : u32;
+            v1433 = hir.shr v1431, v1432 : u64;
+            v1434 = hir.bitcast v1433 : i64;
+            v1435 = hir.trunc v1434 : i32;
+            v1436 = hir.constant 0 : i32;
+            v1437 = hir.neq v1435, v1436 : i1;
+            hir.cond_br v1437 ^block128(v1403, v1414), ^block129;
+        ^block125:
+            hir.ret ;
+        ^block126(v1527: i32, v1528: i32, v1533: i32):
+            v1529 = hir.bitcast v1527 : u32;
+            v1530 = hir.constant 4 : u32;
+            v1531 = hir.mod v1529, v1530 : u32;
+            hir.assertz v1531 #[code = 250];
+            v1532 = hir.int_to_ptr v1529 : (ptr i32);
+            hir.store v1532, v1528;
+            v1536 = hir.constant 16 : i32;
+            v1537 = hir.add v1533, v1536 : i32 #[overflow = wrapping];
+            v1538 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1539 = hir.bitcast v1538 : (ptr i32);
+            hir.store v1539, v1537;
+            hir.br ^block125;
+        ^block127:
+            v1513 = hir.bitcast v1488 : u32;
+            v1514 = hir.constant 8 : u32;
+            v1515 = hir.add v1513, v1514 : u32 #[overflow = checked];
+            v1516 = hir.constant 4 : u32;
+            v1517 = hir.mod v1515, v1516 : u32;
+            hir.assertz v1517 #[code = 250];
+            v1518 = hir.int_to_ptr v1515 : (ptr i32);
+            hir.store v1518, v1512;
+            v1520 = hir.bitcast v1488 : u32;
+            v1521 = hir.constant 4 : u32;
+            v1522 = hir.add v1520, v1521 : u32 #[overflow = checked];
+            v1523 = hir.constant 4 : u32;
+            v1524 = hir.mod v1522, v1523 : u32;
+            hir.assertz v1524 #[code = 250];
+            v1525 = hir.int_to_ptr v1522 : (ptr i32);
+            hir.store v1525, v1519;
+            v1526 = hir.constant 1 : i32;
+            hir.br ^block126(v1488, v1526, v1534);
+        ^block128(v1503: i32, v1535: i32):
+            v1504 = hir.constant 0 : i32;
+            v1505 = hir.bitcast v1503 : u32;
+            v1506 = hir.constant 4 : u32;
+            v1507 = hir.add v1505, v1506 : u32 #[overflow = checked];
+            v1508 = hir.constant 4 : u32;
+            v1509 = hir.mod v1507, v1508 : u32;
+            hir.assertz v1509 #[code = 250];
+            v1510 = hir.int_to_ptr v1507 : (ptr i32);
+            hir.store v1510, v1504;
+            v1511 = hir.constant 1 : i32;
+            hir.br ^block126(v1503, v1511, v1535);
+        ^block129:
+            v1438 = hir.constant -2147483648 : i32;
+            v1439 = hir.sub v1438, v1406 : i32 #[overflow = wrapping];
+            v1440 = hir.trunc v1429 : i32;
+            v1441 = hir.bitcast v1439 : u32;
+            v1442 = hir.bitcast v1440 : u32;
+            v1443 = hir.lt v1441, v1442 : i1;
+            v1444 = hir.zext v1443 : u32;
+            v1445 = hir.bitcast v1444 : i32;
+            v1446 = hir.constant 0 : i32;
+            v1447 = hir.neq v1445, v1446 : i1;
+            hir.cond_br v1447 ^block128(v1403, v1414), ^block130;
+        ^block130:
+            v1448 = hir.constant 0 : i32;
+            v1449 = hir.neq v1440, v1448 : i1;
+            hir.cond_br v1449 ^block131, ^block132;
+        ^block131:
+            v1464 = hir.constant 0 : i32;
+            v1465 = hir.neq v1405, v1464 : i1;
+            hir.cond_br v1465 ^block134, ^block135;
+        ^block132:
+            v1450 = hir.bitcast v1403 : u32;
+            v1451 = hir.constant 8 : u32;
+            v1452 = hir.add v1450, v1451 : u32 #[overflow = checked];
+            v1453 = hir.constant 4 : u32;
+            v1454 = hir.mod v1452, v1453 : u32;
+            hir.assertz v1454 #[code = 250];
+            v1455 = hir.int_to_ptr v1452 : (ptr i32);
+            hir.store v1455, v1406;
+            v1456 = hir.constant 0 : i32;
+            v1457 = hir.constant 0 : i32;
+            v1458 = hir.bitcast v1403 : u32;
+            v1459 = hir.constant 4 : u32;
+            v1460 = hir.add v1458, v1459 : u32 #[overflow = checked];
+            v1461 = hir.constant 4 : u32;
+            v1462 = hir.mod v1460, v1461 : u32;
+            hir.assertz v1462 #[code = 250];
+            v1463 = hir.int_to_ptr v1460 : (ptr i32);
+            hir.store v1463, v1457;
+            hir.br ^block126(v1403, v1456, v1414);
+        ^block133(v1481: i32, v1488: i32, v1495: i32, v1512: i32, v1519: i32, v1534: i32):
+            v1482 = hir.constant 0 : i32;
+            v1483 = hir.eq v1481, v1482 : i1;
+            v1484 = hir.zext v1483 : u32;
+            v1485 = hir.bitcast v1484 : i32;
+            v1486 = hir.constant 0 : i32;
+            v1487 = hir.neq v1485, v1486 : i1;
+            hir.cond_br v1487 ^block127, ^block136;
+        ^block134:
+            v1475 = hir.constant 1 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::alloc::Global::alloc_impl(v1414, v1406, v1440, v1475)
+            v1476 = hir.bitcast v1414 : u32;
+            v1477 = hir.constant 4 : u32;
+            v1478 = hir.mod v1476, v1477 : u32;
+            hir.assertz v1478 #[code = 250];
+            v1479 = hir.int_to_ptr v1476 : (ptr i32);
+            v1480 = hir.load v1479 : i32;
+            hir.br ^block133(v1480, v1403, v1404, v1440, v1406, v1414);
+        ^block135:
+            v1466 = hir.constant 8 : i32;
+            v1467 = hir.add v1414, v1466 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/<alloc::alloc::Global as core::alloc::Allocator>::allocate(v1467, v1406, v1440)
+            v1468 = hir.bitcast v1414 : u32;
+            v1469 = hir.constant 8 : u32;
+            v1470 = hir.add v1468, v1469 : u32 #[overflow = checked];
+            v1471 = hir.constant 4 : u32;
+            v1472 = hir.mod v1470, v1471 : u32;
+            hir.assertz v1472 #[code = 250];
+            v1473 = hir.int_to_ptr v1470 : (ptr i32);
+            v1474 = hir.load v1473 : i32;
+            hir.br ^block133(v1474, v1403, v1404, v1440, v1406, v1414);
+        ^block136:
+            v1489 = hir.bitcast v1488 : u32;
+            v1490 = hir.constant 8 : u32;
+            v1491 = hir.add v1489, v1490 : u32 #[overflow = checked];
+            v1492 = hir.constant 4 : u32;
+            v1493 = hir.mod v1491, v1492 : u32;
+            hir.assertz v1493 #[code = 250];
+            v1494 = hir.int_to_ptr v1491 : (ptr i32);
+            hir.store v1494, v1481;
+            v1496 = hir.bitcast v1488 : u32;
+            v1497 = hir.constant 4 : u32;
+            v1498 = hir.add v1496, v1497 : u32 #[overflow = checked];
+            v1499 = hir.constant 4 : u32;
+            v1500 = hir.mod v1498, v1499 : u32;
+            hir.assertz v1500 #[code = 250];
+            v1501 = hir.int_to_ptr v1498 : (ptr i32);
+            hir.store v1501, v1495;
+            v1502 = hir.constant 0 : i32;
+            hir.br ^block126(v1488, v1502, v1534);
+        };
+
+        builtin.function public @<alloc::alloc::Global as core::alloc::Allocator>::allocate(v1540: i32, v1541: i32, v1542: i32) {
+        ^block137(v1540: i32, v1541: i32, v1542: i32):
+            v1543 = hir.constant 0 : i32;
+            v1544 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1545 = hir.bitcast v1544 : (ptr i32);
+            v1546 = hir.load v1545 : i32;
+            v1547 = hir.constant 16 : i32;
+            v1548 = hir.sub v1546, v1547 : i32 #[overflow = wrapping];
+            v1549 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1550 = hir.bitcast v1549 : (ptr i32);
+            hir.store v1550, v1548;
+            v1551 = hir.constant 8 : i32;
+            v1552 = hir.add v1548, v1551 : i32 #[overflow = wrapping];
+            v1553 = hir.constant 0 : i32;
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/alloc::alloc::Global::alloc_impl(v1552, v1541, v1542, v1553)
+            v1554 = hir.bitcast v1548 : u32;
+            v1555 = hir.constant 12 : u32;
+            v1556 = hir.add v1554, v1555 : u32 #[overflow = checked];
+            v1557 = hir.constant 4 : u32;
+            v1558 = hir.mod v1556, v1557 : u32;
+            hir.assertz v1558 #[code = 250];
+            v1559 = hir.int_to_ptr v1556 : (ptr i32);
+            v1560 = hir.load v1559 : i32;
+            v1561 = hir.bitcast v1548 : u32;
+            v1562 = hir.constant 8 : u32;
+            v1563 = hir.add v1561, v1562 : u32 #[overflow = checked];
+            v1564 = hir.constant 4 : u32;
+            v1565 = hir.mod v1563, v1564 : u32;
+            hir.assertz v1565 #[code = 250];
+            v1566 = hir.int_to_ptr v1563 : (ptr i32);
+            v1567 = hir.load v1566 : i32;
+            v1568 = hir.bitcast v1540 : u32;
+            v1569 = hir.constant 4 : u32;
+            v1570 = hir.mod v1568, v1569 : u32;
+            hir.assertz v1570 #[code = 250];
+            v1571 = hir.int_to_ptr v1568 : (ptr i32);
+            hir.store v1571, v1567;
+            v1572 = hir.bitcast v1540 : u32;
+            v1573 = hir.constant 4 : u32;
+            v1574 = hir.add v1572, v1573 : u32 #[overflow = checked];
+            v1575 = hir.constant 4 : u32;
+            v1576 = hir.mod v1574, v1575 : u32;
+            hir.assertz v1576 #[code = 250];
+            v1577 = hir.int_to_ptr v1574 : (ptr i32);
+            hir.store v1577, v1560;
+            v1578 = hir.constant 16 : i32;
+            v1579 = hir.add v1548, v1578 : i32 #[overflow = wrapping];
+            v1580 = builtin.global_symbol  : (ptr u8) #[offset = 0] #[symbol = root_ns:root@1.0.0/miden_sdk_account_test/__stack_pointer];
+            v1581 = hir.bitcast v1580 : (ptr i32);
+            hir.store v1581, v1579;
+            hir.br ^block138;
+        ^block138:
+            hir.ret ;
+        };
+
+        builtin.function public @alloc::alloc::Global::alloc_impl(v1582: i32, v1583: i32, v1584: i32, v1585: i32) {
+        ^block139(v1582: i32, v1583: i32, v1584: i32, v1585: i32):
+            v1586 = hir.constant 0 : i32;
+            v1587 = hir.eq v1584, v1586 : i1;
+            v1588 = hir.zext v1587 : u32;
+            v1589 = hir.bitcast v1588 : i32;
+            v1590 = hir.constant 0 : i32;
+            v1591 = hir.neq v1589, v1590 : i1;
+            hir.cond_br v1591 ^block141(v1582, v1584, v1583), ^block142;
+        ^block140:
+            hir.ret ;
+        ^block141(v1603: i32, v1604: i32, v1611: i32):
+            v1605 = hir.bitcast v1603 : u32;
+            v1606 = hir.constant 4 : u32;
+            v1607 = hir.add v1605, v1606 : u32 #[overflow = checked];
+            v1608 = hir.constant 4 : u32;
+            v1609 = hir.mod v1607, v1608 : u32;
+            hir.assertz v1609 #[code = 250];
+            v1610 = hir.int_to_ptr v1607 : (ptr i32);
+            hir.store v1610, v1604;
+            v1612 = hir.bitcast v1603 : u32;
+            v1613 = hir.constant 4 : u32;
+            v1614 = hir.mod v1612, v1613 : u32;
+            hir.assertz v1614 #[code = 250];
+            v1615 = hir.int_to_ptr v1612 : (ptr i32);
+            hir.store v1615, v1611;
+            hir.br ^block140;
+        ^block142:
+            v1592 = hir.constant 0 : i32;
+            v1593 = hir.bitcast v1592 : u32;
+            v1594 = hir.constant 1048708 : u32;
+            v1595 = hir.add v1593, v1594 : u32 #[overflow = checked];
+            v1596 = hir.int_to_ptr v1595 : (ptr u8);
+            v1597 = hir.load v1596 : u8;
+            v1598 = hir.zext v1597 : u32;
+            v1599 = hir.constant 0 : i32;
+            v1600 = hir.neq v1585, v1599 : i1;
+            hir.cond_br v1600 ^block143, ^block144;
+        ^block143:
+            v1602 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__rust_alloc_zeroed(v1584, v1583) : i32
+            hir.br ^block141(v1582, v1584, v1602);
+        ^block144:
+            v1601 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__rust_alloc(v1584, v1583) : i32
+            hir.br ^block141(v1582, v1584, v1601);
+        };
+
+        builtin.function public @alloc::raw_vec::RawVecInner<A>::current_memory(v1616: i32, v1617: i32, v1618: i32, v1619: i32) {
+        ^block145(v1616: i32, v1617: i32, v1618: i32, v1619: i32):
+            v1620 = hir.constant 0 : i32;
+            v1621 = hir.constant 0 : i32;
+            v1622 = hir.constant 4 : i32;
+            v1623 = hir.constant 0 : i32;
+            v1624 = hir.eq v1619, v1623 : i1;
+            v1625 = hir.zext v1624 : u32;
+            v1626 = hir.bitcast v1625 : i32;
+            v1627 = hir.constant 0 : i32;
+            v1628 = hir.neq v1626, v1627 : i1;
+            hir.cond_br v1628 ^block147(v1616, v1622, v1621), ^block148;
+        ^block146:
+            hir.ret ;
+        ^block147(v1659: i32, v1660: i32, v1662: i32):
+            v1661 = hir.add v1659, v1660 : i32 #[overflow = wrapping];
+            v1663 = hir.bitcast v1661 : u32;
+            v1664 = hir.constant 4 : u32;
+            v1665 = hir.mod v1663, v1664 : u32;
+            hir.assertz v1665 #[code = 250];
+            v1666 = hir.int_to_ptr v1663 : (ptr i32);
+            hir.store v1666, v1662;
+            hir.br ^block146;
+        ^block148:
+            v1629 = hir.bitcast v1617 : u32;
+            v1630 = hir.constant 4 : u32;
+            v1631 = hir.mod v1629, v1630 : u32;
+            hir.assertz v1631 #[code = 250];
+            v1632 = hir.int_to_ptr v1629 : (ptr i32);
+            v1633 = hir.load v1632 : i32;
+            v1634 = hir.constant 0 : i32;
+            v1635 = hir.eq v1633, v1634 : i1;
+            v1636 = hir.zext v1635 : u32;
+            v1637 = hir.bitcast v1636 : i32;
+            v1638 = hir.constant 0 : i32;
+            v1639 = hir.neq v1637, v1638 : i1;
+            hir.cond_br v1639 ^block147(v1616, v1622, v1621), ^block149;
+        ^block149:
+            v1640 = hir.bitcast v1616 : u32;
+            v1641 = hir.constant 4 : u32;
+            v1642 = hir.add v1640, v1641 : u32 #[overflow = checked];
+            v1643 = hir.constant 4 : u32;
+            v1644 = hir.mod v1642, v1643 : u32;
+            hir.assertz v1644 #[code = 250];
+            v1645 = hir.int_to_ptr v1642 : (ptr i32);
+            hir.store v1645, v1618;
+            v1646 = hir.bitcast v1617 : u32;
+            v1647 = hir.constant 4 : u32;
+            v1648 = hir.add v1646, v1647 : u32 #[overflow = checked];
+            v1649 = hir.constant 4 : u32;
+            v1650 = hir.mod v1648, v1649 : u32;
+            hir.assertz v1650 #[code = 250];
+            v1651 = hir.int_to_ptr v1648 : (ptr i32);
+            v1652 = hir.load v1651 : i32;
+            v1653 = hir.bitcast v1616 : u32;
+            v1654 = hir.constant 4 : u32;
+            v1655 = hir.mod v1653, v1654 : u32;
+            hir.assertz v1655 #[code = 250];
+            v1656 = hir.int_to_ptr v1653 : (ptr i32);
+            hir.store v1656, v1652;
+            v1657 = hir.mul v1633, v1619 : i32 #[overflow = wrapping];
+            v1658 = hir.constant 8 : i32;
+            hir.br ^block147(v1616, v1658, v1657);
+        };
+
+        builtin.function public @<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v1667: i32, v1668: i32, v1669: i32) {
+        ^block150(v1667: i32, v1668: i32, v1669: i32):
+            v1670 = hir.constant 0 : i32;
+            v1671 = hir.eq v1669, v1670 : i1;
+            v1672 = hir.zext v1671 : u32;
+            v1673 = hir.bitcast v1672 : i32;
+            v1674 = hir.constant 0 : i32;
+            v1675 = hir.neq v1673, v1674 : i1;
+            hir.cond_br v1675 ^block152, ^block153;
+        ^block151:
+            hir.ret ;
+        ^block152:
+            hir.br ^block151;
+        ^block153:
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__rust_dealloc(v1667, v1669, v1668)
+            hir.br ^block152;
+        };
+
+        builtin.function public @alloc::raw_vec::handle_error(v1676: i32, v1677: i32, v1678: i32) {
+        ^block154(v1676: i32, v1677: i32, v1678: i32):
+            hir.unreachable ;
+        ^block155:
+
+        };
+
+        builtin.function public @core::ptr::alignment::Alignment::max(v1679: i32, v1680: i32) -> i32 {
+        ^block156(v1679: i32, v1680: i32):
+            v1682 = hir.bitcast v1679 : u32;
+            v1683 = hir.bitcast v1680 : u32;
+            v1684 = hir.gt v1682, v1683 : i1;
+            v1685 = hir.zext v1684 : u32;
+            v1686 = hir.bitcast v1685 : i32;
+            v1687 = hir.constant 0 : i32;
+            v1688 = hir.neq v1686, v1687 : i1;
+            v1689 = hir.select v1688, v1679, v1680 : i32;
+            hir.br ^block157(v1689);
+        ^block157(v1681: i32):
+            hir.ret v1681;
+        };
+
+        builtin.function public @get_wallet_magic_number.command_export() -> felt {
+        ^block158:
+            v1691 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/get_wallet_magic_number() : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block159(v1691);
+        ^block159(v1690: felt):
+            hir.ret v1690;
+        };
+
+        builtin.function public @test_add_asset.command_export() -> felt {
+        ^block160:
+            v1693 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_add_asset() : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block161(v1693);
+        ^block161(v1692: felt):
+            hir.ret v1692;
+        };
+
+        builtin.function public @test_felt_ops_smoke.command_export(v1694: felt, v1695: felt) -> felt {
+        ^block162(v1694: felt, v1695: felt):
+            v1697 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_felt_ops_smoke(v1694, v1695) : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block163(v1697);
+        ^block163(v1696: felt):
+            hir.ret v1696;
+        };
+
+        builtin.function public @note_script.command_export() -> felt {
+        ^block164:
+            v1699 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/note_script() : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block165(v1699);
+        ^block165(v1698: felt):
+            hir.ret v1698;
+        };
+
+        builtin.function public @test_blake3_hash_1to1.command_export(v1700: i32, v1701: i32) {
+        ^block166(v1700: i32, v1701: i32):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_blake3_hash_1to1(v1700, v1701)
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block167;
+        ^block167:
+            hir.ret ;
+        };
+
+        builtin.function public @test_blake3_hash_2to1.command_export(v1702: i32, v1703: i32) {
+        ^block168(v1702: i32, v1703: i32):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_blake3_hash_2to1(v1702, v1703)
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block169;
+        ^block169:
+            hir.ret ;
+        };
+
+        builtin.function public @test_rpo_falcon512_verify.command_export(v1704: i32, v1705: i32) {
+        ^block170(v1704: i32, v1705: i32):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_rpo_falcon512_verify(v1704, v1705)
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block171;
+        ^block171:
+            hir.ret ;
+        };
+
+        builtin.function public @test_pipe_words_to_memory.command_export(v1706: i32, v1707: felt) {
+        ^block172(v1706: i32, v1707: felt):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_pipe_words_to_memory(v1706, v1707)
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block173;
+        ^block173:
+            hir.ret ;
+        };
+
+        builtin.function public @test_pipe_double_words_to_memory.command_export(v1708: i32, v1709: felt) {
+        ^block174(v1708: i32, v1709: felt):
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_pipe_double_words_to_memory(v1708, v1709)
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block175;
+        ^block175:
+            hir.ret ;
+        };
+
+        builtin.function public @test_remove_asset.command_export(v1710: i32) -> felt {
+        ^block176(v1710: i32):
+            v1712 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_remove_asset(v1710) : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block177(v1712);
+        ^block177(v1711: felt):
+            hir.ret v1711;
+        };
+
+        builtin.function public @test_create_note.command_export(v1713: i32, v1714: felt, v1715: felt, v1716: i32) -> felt {
+        ^block178(v1713: i32, v1714: felt, v1715: felt, v1716: i32):
+            v1718 = hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/test_create_note(v1713, v1714, v1715, v1716) : felt
+            hir.exec @root_ns:root@1.0.0/miden_sdk_account_test/__wasm_call_dtors()
+            hir.br ^block179(v1718);
+        ^block179(v1717: felt):
+            hir.ret v1717;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            hir.ret_imm 1048576;
+        };
+
+        builtin.segment readonly @1048576 = 0x0000001e000000610000002600100038000000220000004a0000002600100038000073722e6d656d2f62696c6474732f6372732f7379732d62696c6474732f6b64732f2e2e2f2e2e000000210000001100000027001000000073722e65746f6e2f73676e69646e69622f6372732f7379732d657361622f6b64732f2e2e2f2e2e;
+    };
+};

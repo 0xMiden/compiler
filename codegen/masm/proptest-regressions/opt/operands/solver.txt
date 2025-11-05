@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f58e010ebf51b7e447de3e17299e1830c018c9fb6025f3d84ee1e794b6af1251 # shrinks to problem = ProblemInputs { stack: [0 => Operand { word: [I32], operand: Value(v2) }, 1 => Operand { word: [I32], operand: Value(v3) }, 2 => Operand { word: [I32], operand: Value(v1) }, 3 => Operand { word: [I32], operand: Value(v0) }, 4 => Operand { word: [I32], operand: Value(v4) }, 5 => Operand { word: [I32], operand: Value(v5) }, 6 => Operand { word: [I32], operand: Value(v6) }], expected: [v0, v1, v2], constraints: [Move, Move, Move] }
+cc 40325158803f2ab1561bddb9d1daa3d53a8beaf6ab0782579e3d7d762f15bca6 # shrinks to problem = ProblemInputs { stack: [0 => Operand { word: [I32], operand: Value(v4) }, 1 => Operand { word: [I32], operand: Value(v2) }, 2 => Operand { word: [I32], operand: Value(v3) }, 3 => Operand { word: [I32], operand: Value(v0) }, 4 => Operand { word: [I32], operand: Value(v1) }], expected: [v0, v1, v2, v3], constraints: [Move, Move, Move, Move] }
+cc 55e7169c0fec43312f12c0092c701f7a4321a30f09d4ace9bb4607554ac0278b # shrinks to problem = ProblemInputs { stack: [0 => Operand { word: [I32], operand: Value(v4) }, 1 => Operand { word: [I32], operand: Value(v3) }, 2 => Operand { word: [I32], operand: Value(v0) }, 3 => Operand { word: [I32], operand: Value(v1) }, 4 => Operand { word: [I32], operand: Value(v2) }], expected: [v0, v1], constraints: [Move, Copy] }
+cc e72332cb8544f2079eeb6e02bdc65edbf06d85c804d6450a23df8cb964d44dde # shrinks to problem = ProblemInputs { stack: [0 => Operand { word: [I32], operand: Value(v2) }, 1 => Operand { word: [I32], operand: Value(v0) }, 2 => Operand { word: [I32], operand: Value(v3) }, 3 => Operand { word: [I32], operand: Value(v1) }], expected: [v0, v1], constraints: [Move, Move] }

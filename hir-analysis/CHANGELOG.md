@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.4.0...midenc-hir-analysis-v0.4.1) - 2025-09-03
+
+### Other
+
+- switch to `expect_file!` in spills tests
+- increase stack pressure in the `spills_loop_nest` test and make it spill
+- move `tests` module in spill analysis into a separate file
+- rewrite spill analysis tests, add logging
+
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.1.5...midenc-hir-analysis-v0.4.0) - 2025-08-15
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.0.7...midenc-hir-analysis-v0.0.8) - 2025-04-24
+
+### Added
+- implement cross-context Call op, rename IR Exec back to Call
+
+### Fixed
+- *(codegen)* incomplete global/data segment lowering
+
+### Other
+- treat warnings as compiler errors,
+- update rust toolchain, clean up deps
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- normalize use of fxhash-based hash maps
+- rename Call IR op to Exec
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-hir-analysis-v0.0.6...midenc-hir-analysis-v0.0.7) - 2024-09-17
 
 ### Other

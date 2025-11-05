@@ -1,10 +1,5 @@
-(module $test_rust_62f08a4fd4cafb7db864c24731da8dab986b2b5c2d54b53e960972953f553406.wasm
+(module $test_rust_41457a077e1338454c33613079552cd2abe9d4fd50975cf8d2d8d9ee664dfbb6.wasm
   (type (;0;) (func (param i32 i32) (result i32)))
-  (func $entrypoint (;0;) (type 0) (param i32 i32) (result i32)
-    local.get 1
-    local.get 0
-    i32.and
-  )
   (memory (;0;) 16)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (global (;1;) i32 i32.const 1048576)
@@ -13,4 +8,9 @@
   (export "entrypoint" (func $entrypoint))
   (export "__data_end" (global 1))
   (export "__heap_base" (global 2))
+  (func $entrypoint (;0;) (type 0) (param i32 i32) (result i32)
+    local.get 1
+    local.get 0
+    i32.and
+  )
 )

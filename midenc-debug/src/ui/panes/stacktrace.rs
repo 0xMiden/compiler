@@ -87,7 +87,7 @@ impl Pane for StackTracePane {
             parts.push(name);
             if let Some(resolved) = frame.last_resolved(&state.session) {
                 parts.push(Span::styled(" in ", Color::DarkGray));
-                let path = resolved.source_file.path();
+                let path = std::path::Path::new(resolved.source_file.as_ref().uri().as_str());
                 let path = path
                     .strip_prefix(state.session.options.current_dir.as_path())
                     .ok()

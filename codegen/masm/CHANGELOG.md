@@ -6,6 +6,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.4.0...midenc-codegen-masm-v0.4.1) - 2025-09-03
+
+### Fixed
+
+- reverse only non-intrinsic modules when assembling a Program
+- use `Assembler::add_module` for intrinsics when assembling a `Library`
+- remove intrinsics exports from compiled MASM library #637
+
+### Other
+
+- Add 128-bit wide arithmetic support to the compiler.
+- Fix bug with argument scheduler for binary ops.
+
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.5...midenc-codegen-masm-v0.4.0) - 2025-08-15
+
+### Added
+
+- implement advice map API in Miden SDK
+- add `crypto::hmerge()` in Miden SDK (`hmerge` VM intruction);
+
+### Fixed
+
+- add an extra memory page after the data segments to accommodate for
+- start `Linker::reserved_memory_pages` on the next page after rustc
+- *(codegen)* missing result renaming in ptrtoint lowering
+- two-operand optimized stack scheduling when only one value is on the stack #606
+- fix the manual two-operand ops stack scheduling, remove `BinaryOp` gate
+- do binary stack scheduling optimizations only for the binary ops (implementing
+- `Rodata::bytes_to_elements()` check if `into_remainder()` returns
+
+### Other
+
+- rename `io` to `advice`, export modules in stdlib SDK
+- Add the test that executes counter contract, basic wallet and p2id note script on the local node ([#555](https://github.com/0xMiden/compiler/pull/555))
+- make `DEFAULT_RESERVATION` include the extra page to
+- add comments with stack state in `heap_init`
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+- clean up
+- simplify `test_arg_order` test and move it to `misc` module
+- `hmerge` intrinsic to accept digests as a pointer and load
+- make `bytes_to_elements` infallible
+
+## [0.1.5](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.1.0...midenc-codegen-masm-v0.1.5) - 2025-07-01
+
+### Added
+
+- small integers in `struct` support in result in cross-context calls
+
+### Fixed
+
+- add immediate pointer to `OpEmitter::load_small`
+- call `truncate_stack` before returning from a `call`-able procedure
+- mask calculation in `trunc_int32` function (128 -> 255 for u8);
+
+### Other
+
+- Merge pull request #572 from 0xMiden/greenhat/i560-init-account-note
+- add `store_small_imm` function doc and assert
+- don't delegate in `store_small_imm` to `store_word_imm`,
+- add comments
+- remove redundant `store` tests
+- reduce stack manipulation in `store_small`
+- assert that type to be loaded and the pointee type have the
+- use `NativePtr::is_word_aligned`
+- remove `expect-test` in favor of `midenc-expect-test`
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.0.7...midenc-codegen-masm-v0.0.8) - 2025-04-24
+
+### Added
+- *(types)* clean up hir-type for use outside the compiler
+- *(codegen)* migrate to element-addressable vm
+- implement cross-context Call op, rename IR Exec back to Call
+
+### Fixed
+- *(codegen)* incorrect conversion of u64 literal to miden repr
+- *(codegen)* incomplete global/data segment lowering
+- *(codegen)* lowering of builtin.global_symbol
+- *(codegen)* bitcasts should allow pointer-to-pointer casts
+- [#406](https://github.com/0xMiden/compiler/pull/406) order the program modules with intrinsics being the first when passed
+- relax the module name validation in ConvertHirToMasm to support the Wasm CM naming
+- skip the assembler registration for the already registered module
+- recover Wasm CM interfaces as module names in exports after
+- skip registering already registered modules in Assembler
+- fallback to `LibraryPath` unchecked ctor (Wasm CM styles names)
+- sort module imports and functions in PrettyPrint impl to stabilize
+
+### Other
+- treat warnings as compiler errors,
+- update expected masm code
+- update Miden VM to v0.13.2 and uncomment the Miden package
+- *(codegen)* improve tracing/debug output in a few places
+- update rust toolchain, clean up deps
+- rename hir2 crates
+- remove old contents of hir, hir-analysis, hir-transform
+- switch from recognizing intrinsics module by name(substring)
+- update to the latest `miden-mast-package` (renamed from
+- update the Miden VM with updated `miden-package` crate
+- update rust toolchain to 1-16 nightly @ 1.86.0
+- normalize use of fxhash-based hash maps
+- rename Call IR op to Exec
+- switch to `Package` without rodata,
+- [**breaking**] move `Package` to `miden-package` in the VM repo
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-codegen-masm-v0.0.6...midenc-codegen-masm-v0.0.7) - 2024-09-17
 
 ### Other

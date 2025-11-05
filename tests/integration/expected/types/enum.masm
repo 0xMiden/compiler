@@ -1,0 +1,79 @@
+# mod root_ns:root@1.0.0
+
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
+end
+
+# mod root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824
+
+export.match_enum
+    push.255
+    movup.3
+    u32and
+    dup.0
+    push.2147483648
+    u32lte
+    assert
+    dup.0
+    push.2
+    u32lte
+    if.true
+        eq.1
+        if.true
+            swap.1
+            u32wrapping_sub
+        else
+            trace.240
+            nop
+            exec.::intrinsics::i32::wrapping_mul
+            trace.252
+            nop
+        end
+    else
+        drop
+        u32wrapping_add
+    end
+end
+
+export.__main
+    push.0
+    push.5
+    push.3
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824::match_enum
+    trace.252
+    nop
+    push.1
+    push.5
+    push.3
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824::match_enum
+    trace.252
+    nop
+    push.2
+    push.5
+    push.3
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824::match_enum
+    trace.252
+    nop
+    movdn.2
+    u32wrapping_add
+    u32wrapping_add
+end
+

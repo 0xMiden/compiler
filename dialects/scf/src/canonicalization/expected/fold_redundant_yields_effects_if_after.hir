@@ -1,0 +1,15 @@
+public builtin.function @test(v0: u32, v1: ptr<byte, u32>) -> u32 {
+^block0(v0: u32, v1: ptr<byte, u32>):
+    v3 = test.constant 11 : u32;
+    v4 = test.constant 0 : u32;
+    v5 = test.eq v0, v4 : i1;
+    scf.if v5{
+    ^block1:
+        scf.yield ;
+    } else {
+    ^block2:
+        test.store v1, v3;
+        scf.yield ;
+    };
+    builtin.ret v3;
+};

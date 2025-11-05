@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-v0.1.5...midenc-v0.4.0) - 2025-08-15
+
+### Other
+
+- update Rust toolchain nightly-2025-07-20 (1.90.0-nightly)
+
+## [0.0.8](https://github.com/0xMiden/compiler/compare/midenc-v0.0.7...midenc-v0.0.8) - 2025-04-24
+
+### Other
+- update Cargo.lock dependencies
+
 ## [0.0.7](https://github.com/0xPolygonMiden/compiler/compare/midenc-v0.0.6...midenc-v0.0.7) - 2024-09-17
 
 ### Other

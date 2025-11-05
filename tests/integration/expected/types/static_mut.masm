@@ -1,106 +1,144 @@
-# mod test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4
+# mod root_ns:root@1.0.0
 
-export."__main"
-    exec.global_var_update
-    push.0
-    push.4294967287
+proc.init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.[11434542961250426374,12905227908764935604,12374698099726530180,495727412639301595]
+    adv.push_mapval
+    push.262144
+    push.1
+    trace.240
+    exec.::std::mem::pipe_preimage_to_memory
+    trace.252
+    drop
+    push.1048576
+    u32assert
+    mem_store.278536
     push.1048585
-    dup.1
-    swap.1
-    u32wrapping_add
-    dup.0
-    u32mod.16
-    dup.0
-    u32mod.4
-    swap.1
-    u32div.4
-    movup.2
-    u32div.16
-    exec.::intrinsics::mem::load_sw
-    push.128
-    u32and
-    movup.2
-    u32wrapping_add
-    push.1
-    movup.2
-    swap.1
-    u32wrapping_add
-    dup.0
-    neq.0
-    push.1
-    while.true
-        if.true
-            push.1048585
-            dup.1
-            swap.1
-            u32wrapping_add
-            dup.0
-            u32mod.16
-            dup.0
-            u32mod.4
-            swap.1
-            u32div.4
-            movup.2
-            u32div.16
-            exec.::intrinsics::mem::load_sw
-            push.128
-            u32and
-            movup.2
-            u32wrapping_add
-            push.1
-            movup.2
-            swap.1
-            u32wrapping_add
-            dup.0
-            neq.0
-            push.1
-        else
-            drop push.255 u32and push.0
-        end
-    end
+    u32assert
+    mem_store.278537
+    push.1048592
+    u32assert
+    mem_store.278538
 end
 
+# mod root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4
 
 export.global_var_update
+    push.1048577
     push.0
-    add.1048577
+    add
     u32assert
-    dup.0
-    u32mod.16
-    dup.0
-    u32mod.4
+    u32divmod.4
     swap.1
-    u32div.4
-    movup.2
-    u32div.16
-    exec.::intrinsics::mem::load_sw
-    push.128
+    swap.1
+    dup.1
+    mem_load
+    swap.1
+    push.8
+    u32wrapping_mul
+    u32shr
+    swap.1
+    drop
+    push.255
     u32and
     push.1
-    u32wrapping_add
-    push.128
-    u32and
-    push.0
-    add.1048576
-    u32assert
-    dup.0
-    u32mod.16
-    dup.0
-    u32mod.4
     swap.1
-    u32div.4
-    movup.2
-    u32div.16
-    dup.2
-    dup.2
-    dup.2
-    exec.::intrinsics::mem::load_sw
-    push.4294967040
+    u32wrapping_add
+    push.255
     u32and
-    movup.5
+    push.1048576
+    push.0
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.255
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
     u32or
-    movdn.4
-    exec.::intrinsics::mem::store_sw
+    swap.1
+    mem_store
 end
 
+export.__main
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4::global_var_update
+    trace.252
+    nop
+    push.0
+    push.4294967287
+    push.1
+    while.true
+        push.1048585
+        dup.1
+        u32wrapping_add
+        u32divmod.4
+        swap.1
+        swap.1
+        dup.1
+        mem_load
+        swap.1
+        push.8
+        u32wrapping_mul
+        u32shr
+        swap.1
+        drop
+        push.255
+        u32and
+        movup.2
+        u32wrapping_add
+        push.1
+        movup.2
+        u32wrapping_add
+        push.0
+        dup.1
+        neq
+        push.3735929054
+        dup.1
+        dup.4
+        swap.1
+        cdrop
+        push.3735929054
+        dup.2
+        swap.1
+        swap.2
+        swap.4
+        swap.1
+        cdrop
+        push.0
+        push.1
+        movup.3
+        cdrop
+        push.1
+        u32and
+        if.true
+            movup.2
+            drop
+            push.1
+        else
+            push.0
+        end
+    end
+    drop
+    drop
+    push.255
+    u32and
+end
 

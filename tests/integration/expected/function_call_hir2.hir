@@ -1,0 +1,19 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @function_call_hir2 {
+        public builtin.function @add(v0: i32, v1: i32) -> i32 {
+        ^block4(v0: i32, v1: i32):
+            v3 = arith.add v1, v0 : i32 #[overflow = wrapping];
+            builtin.ret v3;
+        };
+
+        public builtin.function @entrypoint(v4: i32, v5: i32) -> i32 {
+        ^block6(v4: i32, v5: i32):
+            v7 = hir.exec @root_ns:root@1.0.0/function_call_hir2/add(v4, v5) : i32
+            builtin.ret v7;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};
