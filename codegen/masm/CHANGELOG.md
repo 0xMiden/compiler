@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.4.1...midenc-codegen-masm-v0.5.0) - 2025-11-05
+
+### Fixed
+
+- support --test-harness with no/multiple initializers
+- incorrect lowering of >= 128-bit bnot ([#725](https://github.com/0xMiden/compiler/pull/725))
+- move data segments merging to the codegen, preserving `readonly` attribute in IR #634
+
+### Other
+
+- Merge pull request #701 from 0xMiden/chore/docusaurus-migration-new
+- Fix codegen for `cf.select` of 64bit values.
+- Merge pull request #713 from radik878/chore/remove-petgraph-midenc-codegen-masm-447
+- *(deps)* update to no-std compatible petgraph
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next
+- *(README)* add docs section explainer
+- Merge pull request #678 from 0xMiden/greenhat/i534-auth-rpo-falcon
+- Merge pull request #666 from 0xMiden/greenhat/i660-auth-proc
+- Merge branch 'next' into fabrizioorsi/update-vm-0.17
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.4.0...midenc-codegen-masm-v0.4.1) - 2025-09-03
 
 ### Fixed

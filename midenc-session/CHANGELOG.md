@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-session-v0.4.1...midenc-session-v0.5.0) - 2025-11-05
+
+### Added
+
+- add `RollupTarget::AuthComponent`
+
+### Other
+
+- Revert "Merge pull request #700 from 0xMiden/revert-docs-merge"
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- *(README)* add docs section explainer
+- Merge pull request #666 from 0xMiden/greenhat/i660-auth-proc
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/midenc-session-v0.1.5...midenc-session-v0.4.0) - 2025-08-15
 
 ### Added
