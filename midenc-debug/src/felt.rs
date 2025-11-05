@@ -68,7 +68,7 @@ pub trait ToMidenRepr {
     /// Push this value on the given operand stack using [Self::to_felts] representation
     fn push_to_operand_stack(&self, stack: &mut Vec<RawFelt>) {
         let felts = self.to_felts();
-        for felt in felts.into_iter().rev() {
+        for felt in felts.into_iter() {
             stack.push(felt);
         }
     }
@@ -400,7 +400,7 @@ impl ToMidenRepr for u64 {
         let bytes = self.to_be_bytes();
         let hi = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let lo = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        smallvec![RawFelt::new(hi as u64), RawFelt::new(lo as u64)]
+        smallvec![RawFelt::new(lo as u64), RawFelt::new(hi as u64)]
     }
 }
 
@@ -466,9 +466,7 @@ impl ToMidenRepr for u128 {
         let lo_l =
             RawFelt::new(u32::from_be_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as u64);
 
-        // The 64-bit limbs are little endian, (lo, hi), but the 32-bit limbs of those 64-bit
-        // values are big endian, (lo_h, lo_l) and (hi_h, hi_l).
-        smallvec![lo_h, lo_l, hi_h, hi_l]
+        smallvec![hi_l, hi_h, lo_l, lo_h]
     }
 }
 

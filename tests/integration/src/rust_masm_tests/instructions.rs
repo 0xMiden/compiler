@@ -87,13 +87,6 @@ macro_rules! test_wide_bin_op {
                     let rs_out = a $op b;
                     dbg!(&rs_out);
 
-                    // Moves the little-endian 32bit limbs [A, B, C, D] to [D, C, B, A].
-                    let rs_out = ((rs_out >> 32) & 0xffffffff_00000000_00000000)
-                        | ((rs_out & 0xffffffff_00000000_00000000) << 32)
-                        | ((rs_out & 0xffffffff_00000000) >> 32)
-                        | ((rs_out & 0xffffffff) << 32);
-                    let rs_out_bytes = rs_out.to_le_bytes();
-
                     // Write the operation result to 20 * PAGE_SIZE.
                     let out_addr = 20u32 * 65536;
 
@@ -104,11 +97,14 @@ macro_rules! test_wide_bin_op {
                     dbg!(&args);
 
                     eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
-                        let vm_out: [u8; 16] =
+                        let vm_out_bytes: [u8; 16] =
                             trace.read_from_rust_memory(out_addr).expect("output was not written");
-                        dbg!(&vm_out);
+                        dbg!(&vm_out_bytes);
+
+                        let rs_out_bytes = rs_out.to_le_bytes();
                         dbg!(&rs_out_bytes);
-                        prop_assert_eq!(&rs_out_bytes, &vm_out, "VM output mismatch");
+
+                        prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
                         Ok(())
                     })?;
 
@@ -252,6 +248,9 @@ test_int_op!(add, +, i8, 0..=i8::MAX/2, 0..=i8::MAX/2);
 //
 // const WK1234: i128 = 79228162551157825753847955460000;
 // const WC1234: i128 = 7922816255115782575384795546000;
+//
+// const WK1234H: i128 = 0x00001000_00002000_00003000_00004000;
+// const WC1234H: i128 = 0x00000100_00000200_00000300_00000400;
 //
 // test_wide_bin_op!(xxx, x, i128, i128, WK1234..=WK1234, WC1234..=WC1234);
 

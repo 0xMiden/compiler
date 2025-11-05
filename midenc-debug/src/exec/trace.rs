@@ -193,13 +193,13 @@ impl ExecutionTrace {
             2 => {
                 let lo = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
                 let hi = self.read_memory_element_in_context(ptr.addr + 1, ctx, clk)?;
-                Some(T::from_felts(&[lo, hi]))
+                Some(T::from_felts(&[hi, lo]))
             }
             3 => {
                 let lo_l = self.read_memory_element_in_context(ptr.addr, ctx, clk)?;
                 let lo_h = self.read_memory_element_in_context(ptr.addr + 1, ctx, clk)?;
                 let hi_l = self.read_memory_element_in_context(ptr.addr + 2, ctx, clk)?;
-                Some(T::from_felts(&[lo_l, lo_h, hi_l]))
+                Some(T::from_felts(&[hi_l, lo_h, lo_l]))
             }
             n => {
                 assert_ne!(n, 0);
