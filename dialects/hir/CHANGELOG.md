@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-dialect-hir-v0.4.1...midenc-dialect-hir-v0.5.0) - 2025-11-05
+
+### Other
+
+- Merge pull request #701 from 0xMiden/chore/docusaurus-migration-new
+- *(deps)* clean up unused/yanked/vulnerable deps
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-dialect-hir-v0.4.0...midenc-dialect-hir-v0.4.1) - 2025-09-03
 
 ### Fixed

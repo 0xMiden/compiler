@@ -6,6 +6,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.4.1...cargo-miden-v0.5.0) - 2025-11-05
+
+### Added
+
+- remove explicit `miden.wit` dependency and use the one bundled with Miden SDK
+- convert all the `miden-base` functions to use .rlib stub library
+- convert stdlib functions to use .rlib stub library
+- convert the rest of the `intrinsics` to use .rlib stub library
+- convert all `intrinsics::felt` to use .rlib stub library
+- convert `add` felt intrinsic to use stub library instead of WIT interface
+- convert `hmerge` intrinsic to use stub function instead of WIT interface
+- lower function stub to MASM procedure call
+- try rlib stub for `miden::account::add_asset`
+
+### Fixed
+
+- `cargo-miden` picks the correct package from cargo metadata
+- account for generated WIT in `cargo miden example`
+- fix the build after merging #666 and #678 without rebasing
+- `cargo miden new` should skip `git init` if already in a git repo
+- update new project templates tag to v0.15.0
+
+### Other
+
+- use v0.22.0 git tag for new project templates (SDK v0.7)
+- Merge pull request #741 from 0xMiden/greenhat/i737-revamp-new
+- Merge pull request #744 from 0xMiden/greenhat/i734-hide-panic-handler-and-allo-boilerplate
+- update new project templates git tag to v0.20.0
+- Merge pull request #701 from 0xMiden/chore/docusaurus-migration-new
+- Merge pull request #721 from 0xMiden/greenhat/cargo-miden-cleanup
+- *(cargo-miden)* remove `Color` in favor of `midenc::session::ColorChoice`
+- delete commented out non_component.rs
+- unify core Wasm and component build process,
+- bump Miden SDK version to v0.6.0 and publish it
+- `cargo-miden` to handle only it's own commands (new, build, example)
+- update the git tag for new project templates
+- clean up miden.wit materialization code
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next
+- *(README)* add docs section explainer
+- Merge pull request #666 from 0xMiden/greenhat/i660-auth-proc
+- [**breaking**] version Miden SDK crates separately and set to v0.5.0
+- remove function skip list for `wit-bindgen` since we're not doing WIT imports anymore #341
+- extract abs path, remove redundant `RUSTFLAGS` `debuginfo` option,
+- split and move the rlib stub library compilation and linking from
+- move the miden-stdlib-sys stubs into the crate's build.rs
+- move the miden-base-sys stubs into the crate's build.rs
+- move .rlib stub library compilation closer to rustc flags
+- remove all the low-level Miden SDK WIT interface handling
+- split .rlib stub library further into submodules
+- don't hard-code file names of the .rlib stub library
+- extract rlib stub compilation into the separate module
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.4.0...cargo-miden-v0.4.1) - 2025-09-03
 
 ### Added

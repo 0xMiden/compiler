@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.4.1...midenc-hir-analysis-v0.5.0) - 2025-11-05
+
+### Fixed
+
+- in `[dev-dependencies]` specify our crates with `path` only.
+
+### Other
+
+- Merge pull request #701 from 0xMiden/chore/docusaurus-migration-new
+- *(deps)* clean up unused/yanked/vulnerable deps
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- *(README)* add docs section explainer
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-hir-analysis-v0.4.0...midenc-hir-analysis-v0.4.1) - 2025-09-03
 
 ### Other
