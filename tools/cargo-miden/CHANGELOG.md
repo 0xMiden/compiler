@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - remove explicit `miden.wit` dependency and use the one bundled with Miden SDK
-- convert all the miden-base functions to use .rlib stub library
+- convert all the `miden-base` functions to use .rlib stub library
 - convert stdlib functions to use .rlib stub library
 - convert the rest of the `intrinsics` to use .rlib stub library
 - convert all `intrinsics::felt` to use .rlib stub library
