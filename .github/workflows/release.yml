@@ -115,9 +115,35 @@ jobs:
       - *checkout
       - *install-rust
       - name: Create release PR
+        id: release-pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Trigger CI for release PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prOutputRaw = process.env.RELEASE_PLZ_PR;
+            if (!prOutputRaw) {
+              core.info('release-plz did not create or update a release PR; skipping CI trigger.');
+              return;
+            }
+            const releasePr = JSON.parse(prOutputRaw);
+            if (!releasePr?.head_branch) {
+              core.info('release-plz PR output missing head branch; skipping CI trigger.');
+              return;
+            }
+            const headRef = releasePr.head_branch;
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              ref: headRef,
+            });
+            core.info(`Triggered CI workflow for ${headRef}.`);
+        env:
+          RELEASE_PLZ_PR: ${{ steps.release-pr.outputs.pr }}
