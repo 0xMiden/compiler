@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
-      contents: read
+      contents: write
     outputs:
       releases: ${{ steps.publish.outputs.releases }}
       releases_created: ${{ steps.publish.outputs.releases_created }}
