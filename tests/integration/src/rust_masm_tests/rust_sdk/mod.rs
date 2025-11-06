@@ -20,6 +20,7 @@ use crate::{
 };
 
 mod macros;
+mod stdlib;
 
 fn executor_with_std(args: Vec<Felt>) -> Executor {
     let mut exec = Executor::new(args);

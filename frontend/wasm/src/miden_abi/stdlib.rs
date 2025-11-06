@@ -11,6 +11,7 @@ pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
     static TYPES: LazyLock<ModuleFunctionTypeMap> = LazyLock::new(|| {
         let mut m: ModuleFunctionTypeMap = Default::default();
         m.extend(crypto::hashes::blake3::signatures());
+        m.extend(crypto::hashes::sha256::signatures());
         m.extend(crypto::hashes::rpo::signatures());
         m.extend(crypto::dsa::rpo_falcon512::signatures());
         m.extend(mem::signatures());
