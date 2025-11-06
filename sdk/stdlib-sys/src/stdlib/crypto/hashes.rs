@@ -196,7 +196,28 @@ pub fn blake3_hash_2to1(input: [u8; 64]) -> [u8; 32] {
 /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
 #[inline]
 pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
-    hash_1to1(input, extern_sha256_hash_1to1)
+    use crate::intrinsics::WordAligned;
+
+    let swapped_words = {
+        let mut be_bytes = input;
+        for chunk in be_bytes.chunks_exact_mut(4) {
+            chunk.reverse();
+        }
+        unsafe { core::mem::transmute::<[u8; 32], [u32; 8]>(be_bytes) }
+    };
+
+    let [w0, w1, w2, w3, w4, w5, w6, w7] = swapped_words;
+
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
+        let ptr = ret_area.as_mut_ptr() as *mut u8;
+        extern_sha256_hash_1to1(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
+        let mut output = ret_area.assume_init().into_inner();
+        for chunk in output.chunks_exact_mut(4) {
+            chunk.reverse();
+        }
+        output
+    }
 }
 
 /// Hashes a 64-byte input to a 32-byte output using the SHA256 hash function.
