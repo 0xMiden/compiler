@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3](https://github.com/0xMiden/compiler/compare/midenc-hir-type-v0.4.2...midenc-hir-type-v0.4.3) - 2025-11-05
+
+### Other
+
+- Revert "Merge pull request #700 from 0xMiden/revert-docs-merge"
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- *(README)* add docs section explainer
+
 ## [0.4.2]
 
 ### Added

@@ -3,12 +3,16 @@ pr_branch_prefix = "release-plz-"
 # Only publish when the release PR is merged
 # https://release-plz.dev/docs/config#the-release_always-field
 release_always = false
-# Skip GitHub releases and git tags by default, individual crates can opt in
+# Skip GitHub releases and git tags by default, individual crates can opt in.
+# We don't want release-plz creating tags for every published crate.
 git_release_enable = false
 git_tag_enable = false
 
 [[package]]
-name = "midenc"
+# The version bumps from any compiler crate should bubble up and bump the
+# `cargo-miden` version. Plus, any change to `cargo-miden` alone also calls for
+# the compiler release.
+name = "cargo-miden"
 git_release_enable = true
 git_tag_enable = true
 git_tag_name = "{{ version }}"

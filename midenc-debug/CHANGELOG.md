@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.4.1...midenc-debug-v0.5.0) - 2025-11-05
+
+### Added
+
+- remove advice_map iteration from `load_mast_forest` function
+- update `DebuggerHost`
+- fix bytes_from_words_test
+- update tests in debug
+- update executor.rs
+- update source_code.rs
+- update executor.rs
+- use new `Uri` struct for paths
+- update uses of `LineNumber` and `ColumnNumber`
+
+### Fixed
+
+- apply cargo clippy changes
+- update VM's MAX_CYCLES
+
+### Other
+
+- Revert "Merge pull request #700 from 0xMiden/revert-docs-merge"
+- Revert "Merge pull request #692 from 0xMiden/chore/docusaurus-migration-next"
+- *(README)* add docs section explainer
+- replace uses of felt array with Word::new
+- replace miden_processor::Digest in favor of miden_core::Word
+- update host.rs
+- replace AdviceProvides with MemAdviceProvider
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-debug-v0.4.0...midenc-debug-v0.4.1) - 2025-09-03
 
 ### Other
