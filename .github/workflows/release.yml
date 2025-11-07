@@ -19,6 +19,8 @@ jobs:
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
       contents: write
+    env:
+      CARGO_TARGET_DIR: /tmp/cargo-target
     outputs:
       releases: ${{ steps.publish.outputs.releases }}
       releases_created: ${{ steps.publish.outputs.releases_created }}
