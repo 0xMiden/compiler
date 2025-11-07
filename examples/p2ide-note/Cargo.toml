@@ -27,7 +27,7 @@ project-kind = "note-script"
 
 
 [package.metadata.component.target.dependencies]
-"miden:basic-wallet" = { path = "../basic-wallet/wit/basic-wallet.wit" }
+"miden:basic-wallet" = { path = "../basic-wallet/target/generated-wit/" }
 
 [profile.release]
 trim-paths = ["diagnostics", "object"]

@@ -7,17 +7,6 @@
 // extern crate alloc;
 // use alloc::vec::Vec;
 
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 use miden::*;
 
 use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
@@ -42,14 +31,15 @@ fn reclaim_assets(consuming_account: AccountId) {
 #[note_script]
 fn run(_arg: Word) {
     let inputs = note::get_inputs();
+    
+    // make sure the number of inputs is 4
+    assert_eq(inputs.len().into(), felt!(4));
+    
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
     
     let timelock_height = inputs[2];
     let reclaim_height = inputs[3];
-
-    // make sure the number of inputs is 4
-    assert_eq(inputs.len().into(), Felt::from(4u32));
 
     // get block number
     let block_number = tx::get_block_number();
