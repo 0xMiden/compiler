@@ -200,6 +200,10 @@ pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
 
     let swapped_words = {
         let mut be_bytes = input;
+        // The SHA-2 family is specified over big-endian 32-bit words. The Miden ABI mirrors that
+        // spec, so each lane we pass across the boundary must be encoded as a big-endian word.
+        // Our public Rust API uses `[u8; 32]` in native little-endian order, so we convert the bytes
+        // here before calling into the ABI.
         for chunk in be_bytes.chunks_exact_mut(4) {
             chunk.reverse();
         }
@@ -213,6 +217,8 @@ pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
         let ptr = ret_area.as_mut_ptr() as *mut u8;
         extern_sha256_hash_1to1(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
         let mut output = ret_area.assume_init().into_inner();
+        // The extern returns the digest as big-endian words as well; flip each lane so callers see
+        // the conventional Rust `[u8; 32]` ordering.
         for chunk in output.chunks_exact_mut(4) {
             chunk.reverse();
         }
@@ -223,7 +229,33 @@ pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
 /// Hashes a 64-byte input to a 32-byte output using the SHA256 hash function.
 #[inline]
 pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
-    hash_2to1(input, extern_sha256_hash_2to1)
+    use crate::intrinsics::WordAligned;
+
+    let swapped_words = {
+        let mut be_bytes = input;
+        // Same story as `sha256_hash_1to1`: adjust the byte layout so the ABI receives big-endian
+        // 32-bit words.
+        for chunk in be_bytes.chunks_exact_mut(4) {
+            chunk.reverse();
+        }
+        unsafe { core::mem::transmute::<[u8; 64], [u32; 16]>(be_bytes) }
+    };
+
+    let [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15] = swapped_words;
+
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
+        let ptr = ret_area.as_mut_ptr() as *mut u8;
+        extern_sha256_hash_2to1(
+            w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, ptr,
+        );
+        let mut output = ret_area.assume_init().into_inner();
+        // Restore the little-endian byte layout expected by Rust callers.
+        for chunk in output.chunks_exact_mut(4) {
+            chunk.reverse();
+        }
+        output
+    }
 }
 
 /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
