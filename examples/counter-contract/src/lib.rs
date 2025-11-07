@@ -6,21 +6,12 @@
 //
 // extern crate alloc;
 
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Define a panic handler as required by the `no_std` environment
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    // For now, just loop indefinitely
-    loop {}
-}
-
 use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 
 use crate::bindings::exports::miden::counter_contract::counter::Guest;
+
+miden::generate!();
+bindings::export!(CounterContract);
 
 /// Main contract structure for the counter example.
 #[component]

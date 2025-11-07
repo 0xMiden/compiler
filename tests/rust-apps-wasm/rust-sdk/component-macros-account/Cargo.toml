@@ -1,0 +1,25 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "component_macros_account"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[package.metadata.component]
+package = "miden:component-macros-account"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

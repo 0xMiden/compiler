@@ -2,21 +2,15 @@
 
 extern crate alloc;
 
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 use miden::{
     account, component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value,
     ValueAccess, Word,
 };
 
 use crate::bindings::exports::miden::base::authentication_component::Guest;
+
+miden::generate!();
+bindings::export!(AuthComponent);
 
 /// Authentication component storage/layout.
 ///

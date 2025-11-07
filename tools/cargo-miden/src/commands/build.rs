@@ -40,17 +40,6 @@ impl BuildCommand {
         let cargo_args = CargoArguments::parse_from(invocation.clone().into_iter())?;
         let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
 
-        if is_workspace_root_context(&metadata, cargo_args.manifest_path.as_deref())
-            && cargo_args.packages.is_empty()
-            && !cargo_args.workspace
-        {
-            bail!(
-                "You're running `cargo miden` from a Cargo workspace root. Building the entire \
-                 workspace is not supported yet. Build a single member instead, for example:\n  - \
-                 cd <member>/ && cargo miden build --release"
-            );
-        }
-
         let mut packages =
             load_component_metadata(&metadata, cargo_args.packages.iter(), cargo_args.workspace)?;
 
@@ -61,16 +50,16 @@ impl BuildCommand {
             );
         }
 
-        let root_package = determine_root_package(&metadata, &cargo_args)?;
+        let cargo_package = determine_cargo_package(&metadata, &cargo_args)?;
 
-        let target_env = target::detect_target_environment(root_package)?;
+        let target_env = target::detect_target_environment(cargo_package)?;
         let project_type = target::target_environment_to_project_type(target_env);
 
-        if !packages.iter().any(|p| p.package.id == root_package.id) {
-            packages.push(PackageComponentMetadata::new(root_package)?);
+        if !packages.iter().any(|p| p.package.id == cargo_package.id) {
+            packages.push(PackageComponentMetadata::new(cargo_package)?);
         }
 
-        let dependency_packages_paths = process_miden_dependencies(root_package, &cargo_args)?;
+        let dependency_packages_paths = process_miden_dependencies(cargo_package, &cargo_args)?;
 
         let mut spawn_args: Vec<_> = invocation.clone();
         spawn_args.extend_from_slice(
@@ -273,71 +262,49 @@ pub fn spawn_cargo(
     Ok(artifacts)
 }
 
-fn determine_root_package<'a>(
+fn determine_cargo_package<'a>(
     metadata: &'a cargo_metadata::Metadata,
     cargo_args: &CargoArguments,
 ) -> Result<&'a cargo_metadata::Package> {
-    Ok(match metadata.root_package() {
-        Some(pkg) => pkg,
-        None => {
-            if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
-                let mp_utf8 = camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
-                    anyhow::anyhow!("manifest path is not valid UTF-8: {}", manifest_path.display())
-                })?;
-                let mp_abs = mp_utf8
-                    .as_std_path()
-                    .absolutize()
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "failed to absolutize manifest path {}: {e}",
-                            manifest_path.display()
-                        )
-                    })?
-                    .into_owned();
-                metadata
-                    .packages
-                    .iter()
-                    .find(|p| p.manifest_path.as_std_path() == mp_abs.as_path())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "unable to determine root package: manifest `{}` does not match any \
-                             workspace package",
-                            manifest_path.display()
-                        )
-                    })?
-            } else {
-                let cwd = std::env::current_dir()?;
-                metadata
-                    .packages
-                    .iter()
-                    .find(|p| {
-                        p.manifest_path.parent().map(|d| d.as_std_path()) == Some(cwd.as_path())
-                    })
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "unable to determine root package from workspace; run inside a member \
-                             directory or pass `-p <name>` / `--manifest-path <path>`"
-                        )
-                    })?
-            }
-        }
-    })
-}
-
-/// Returns true if the current invocation context points at a Cargo workspace root
-/// (i.e. the manifest contains only a `[workspace]` without a `[package]`).
-fn is_workspace_root_context(metadata: &Metadata, manifest_path: Option<&Path>) -> bool {
-    if metadata.root_package().is_some() {
-        return false;
-    }
-    let ws_root = metadata.workspace_root.as_std_path();
-    if let Some(path) = manifest_path {
-        return path == ws_root.join("Cargo.toml");
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        return cwd == ws_root;
-    }
-    false
+    let package = if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
+        let mp_utf8 = camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
+            anyhow::anyhow!("manifest path is not valid UTF-8: {}", manifest_path.display())
+        })?;
+        let mp_abs = mp_utf8
+            .as_std_path()
+            .absolutize()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to absolutize manifest path {}: {e}",
+                    manifest_path.display()
+                )
+            })?
+            .into_owned();
+        metadata
+            .packages
+            .iter()
+            .find(|p| p.manifest_path.as_std_path() == mp_abs.as_path())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unable to determine package: manifest `{}` does not match any workspace \
+                     package",
+                    manifest_path.display()
+                )
+            })?
+    } else {
+        let cwd = std::env::current_dir()?;
+        metadata
+            .packages
+            .iter()
+            .find(|p| p.manifest_path.parent().map(|d| d.as_std_path()) == Some(cwd.as_path()))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unable to determine package; run inside a member directory or pass `-p \
+                     <name>` / `--manifest-path <path>`"
+                )
+            })?
+    };
+    Ok(package)
 }
 
 /// Produces the `midenc` CLI flags implied by the detected target environment and project type.

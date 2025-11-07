@@ -15,7 +15,7 @@ proc.init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[3381010058520693154,2832039521069948988,13489445374398770274,13043446024457248376]
+    push.[6451311627802649628,13408805836566352167,15533908529537497744,16330195584285026872]
     adv.push_mapval
     push.262144
     push.7
@@ -36,7 +36,7 @@ end
 proc.basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
     trace.240
     nop
-    call.::miden:basic-wallet/basic-wallet@1.0.0::move-asset-to-note
+    call.::miden:basic-wallet/basic-wallet@0.1.0::move-asset-to-note
     trace.252
     nop
 end

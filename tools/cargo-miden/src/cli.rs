@@ -19,7 +19,7 @@ pub struct CargoMidenCli {
 /// Subcommands supported by `cargo-miden`.
 #[derive(Debug, Subcommand)]
 pub enum CargoMidenCommand {
-    /// Create a new Miden project from a template.
+    /// Create a new Miden project (default) or a contract from a template (see Options).
     New(NewCommand),
     /// Compile the current crate to Miden package.
     Build(BuildCommand),

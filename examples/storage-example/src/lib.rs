@@ -6,20 +6,12 @@
 //
 // extern crate alloc;
 
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
 
 use crate::bindings::exports::miden::storage_example::*;
+
+miden::generate!();
+bindings::export!(MyAccount);
 
 #[component]
 struct MyAccount {

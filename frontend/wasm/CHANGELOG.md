@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.4.1...midenc-frontend-wasm-v0.5.0) - 2025-11-05
+
+### Added
+
+- add `note::` `get_sender`, `get_script_root`, `get_serial_number` and `account::get_balance` bindings in the Miden SDK
+- migrate RPO Falcon512 auth component to miden-base v0.11
+- convert all `intrinsics::felt` to use .rlib stub library
+- convert `add` felt intrinsic to use stub library instead of WIT interface
+- convert `hmerge` intrinsic to use stub function instead of WIT interface
+- lower function stub to MASM procedure call
+
+### Fixed
+
+- move data segments merging to the codegen, preserving `readonly` attribute in IR #634
+
+### Other
+
+- use `hash_memory_words` under the hood of SDK `hash_words`
+- draft `enum` support in WIT generation
+- Merge pull request #701 from 0xMiden/chore/docusaurus-migration-new
+- Add a bitcast back to signed integer after a translating a `load` then `zext`.
+- make arguments and result in `adv_push_mapvaln` to be `Felt`
+- Merge pull request #678 from 0xMiden/greenhat/i534-auth-rpo-falcon
+- Merge pull request #666 from 0xMiden/greenhat/i660-auth-proc
+- Merge branch 'next' into fabrizioorsi/update-vm-0.17
+- add error handling in module_translation_state.rs
+- remove unused code
+- clean commented code and clarify comments
+- ensure that a stub function body has only `unreachable` op;
+- remove all the low-level Miden SDK WIT interface handling
+
 ## [0.4.1](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.4.0...midenc-frontend-wasm-v0.4.1) - 2025-09-03
 
 ### Other

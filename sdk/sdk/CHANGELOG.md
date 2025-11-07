@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0]
+### BREAKING
+- WIT interface generation in `#[component]` macro on `impl <ACCOUNT_TYPE>`. The `#[export_type]` macro is required for any type in exported function signature.
+- Generate global allocator and panic handler in `#[component]`, `#[note_script]` and `#[tx_script]` macros;
+
 ## [0.6.0]
 
 ### BREAKING

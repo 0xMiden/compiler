@@ -182,6 +182,22 @@ args = [
     "midenc",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
+    "@@split(CARGO_MAKE_TASK_ARGS, )",
+]
+
+[tasks.cargo-miden]
+category = "Build"
+description = "Builds cargo-miden and installs it to the bin folder"
+command = "cargo"
+args = [
+    "-Z",
+    "unstable-options",
+    "build",
+    "-p",
+    "cargo-miden",
+    "--artifact-dir",
+    "${MIDENC_BIN_DIR}",
+    "@@split(CARGO_MAKE_TASK_ARGS, )",
 ]
 
 [tasks.build]

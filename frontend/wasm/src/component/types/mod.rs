@@ -1773,7 +1773,8 @@ pub fn interface_type_to_ir(
                 .map(|f| interface_type_to_ir(&f.ty, component_types));
             midenc_hir::Type::from(midenc_hir::StructType::new(tys))
         }
-        InterfaceType::Variant(_) => todo!(),
+        // TODO: This is a stub to make `enum` in WIT generation work. Use proper type when ready.
+        InterfaceType::Variant(_) => midenc_hir::Type::U32,
         InterfaceType::List(idx) => {
             let element_ty =
                 interface_type_to_ir(&component_types.lists[*idx].element, component_types);

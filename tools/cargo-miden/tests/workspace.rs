@@ -126,7 +126,7 @@ fn build_from_workspace_root_is_rejected() {
         .expect_err("expected workspace root build to be rejected");
     let msg = err.to_string();
     assert!(
-        msg.contains("workspace root") && msg.contains("Build a single member"),
+        msg.contains("unable to determine package") && msg.contains("member"),
         "unexpected error message: {msg}"
     );
 

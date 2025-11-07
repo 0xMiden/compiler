@@ -2,7 +2,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
     builtin.module public @basic_wallet_tx_script {
         private builtin.function @basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt):
-            hir.call v0, v1, v2, v3, v4 #[callee = miden:basic-wallet/basic-wallet@1.0.0/move-asset-to-note] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt)];
+            hir.call v0, v1, v2, v3, v4 #[callee = miden:basic-wallet/basic-wallet@0.1.0/move-asset-to-note] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt)];
             builtin.ret ;
         };
 
@@ -1259,9 +1259,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret_imm 0;
         };
 
-        builtin.segment readonly @1048576 = 0x0073722e62696c2f6372730073722e6d656d2f62696c6474732f6372732f302e362e302d7379732d62696c6474732d6e6564696d;
+        builtin.segment readonly @1048576 = 0x0073722e62696c2f6372730073722e6d656d2f62696c6474732f6372732f302e372e302d7379732d62696c6474732d6e6564696d;
 
-        builtin.segment @1048628 = 0x00000021000000330000000a0010002900000025000000300000000a0010002900000021000000970000002800100000000000010000000100000001;
+        builtin.segment @1048628 = 0x00000021000000280000000a0010002900000025000000250000000a0010002900000021000000970000002800100000000000010000000100000001;
     };
 
     public builtin.function @run(v905: felt, v906: felt, v907: felt, v908: felt) {
