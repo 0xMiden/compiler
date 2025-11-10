@@ -123,3 +123,5 @@ rpo_falcon512 = {}
 std = {}
 tx = {}
 rpo = {}
+collections = {}
+smt = {}

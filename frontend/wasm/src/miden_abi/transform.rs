@@ -76,6 +76,18 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 },
                 _ => None,
             },
+            symbols::Collections => {
+                let submodule = components.next()?.as_symbol_name();
+                if submodule == symbols::Smt {
+                    return match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        stdlib::collections::smt::GET | stdlib::collections::smt::SET => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    };
+                }
+                None
+            }
             _ => None,
         },
         symbols::Miden => match components.next()?.as_symbol_name() {
