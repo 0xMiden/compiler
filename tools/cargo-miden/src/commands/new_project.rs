@@ -191,7 +191,7 @@ impl NewCommand {
                     ..Default::default()
                 },
                 None => TemplatePath {
-                    git: Some("https://github.com/Keinberger/miden-project-environment".into()),
+                    git: Some("https://github.com/0xMiden/project-template".into()),
                     tag: None,
                     ..Default::default()
                 },
