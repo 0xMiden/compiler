@@ -144,7 +144,6 @@ midenc-hir-eval = { version = "0.5.0", path = "eval" }
 midenc-hir-macros = { version = "0.5.0", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.5.0", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.5.0", path = "hir-transform" }
-midenc-hir-type = { version = "0.4.3" }
 midenc-frontend-wasm = { version = "0.5.0", path = "frontend/wasm" }
 midenc-compile = { version = "0.5.0", path = "midenc-compile" }
 midenc-driver = { version = "0.5.0", path = "midenc-driver" }
