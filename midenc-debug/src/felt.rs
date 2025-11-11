@@ -1028,9 +1028,14 @@ mod tests {
         let decoded = <[u8; 8] as FromMidenRepr>::from_words(&encoded);
         assert_eq!(decoded, bytes);
 
+        // Bytes are converted to felts first, 4 bytes at a time, in little-endian order, then
+        // pushed to the stack.
         let mut stack = Vec::default();
         bytes.push_to_operand_stack(&mut stack);
         let popped = <[u8; 8] as FromMidenRepr>::pop_from_stack(&mut stack);
+
+        // The popped felts are in big-endian order, then converted to bytes.
+        let bytes = [4, 5, 6, 7, 0, 1, 2, 3];
         assert_eq!(popped, bytes);
     }
 
