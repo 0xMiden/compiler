@@ -129,7 +129,12 @@ fn prepare_template(template_path: &TemplatePath) -> Result<TemplateSource> {
 
 fn clone_repository(repo: &str, template_path: &TemplatePath, destination: &Path) -> Result<()> {
     let mut command = Command::new("git");
-    command.arg("clone").arg("--depth").arg("1").arg("--quiet");
+    command
+        .arg("clone")
+        .arg("--single-branch")
+        .arg("--depth")
+        .arg("1")
+        .arg("--quiet");
 
     if let Some(branch) = template_path.branch.as_ref() {
         command.arg("--branch").arg(branch);
