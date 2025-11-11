@@ -22,10 +22,10 @@ builtin.component miden:base/authentication-component@1.0.0 {
             hir.store v16, v14;
             hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/wit_bindgen::rt::run_ctors_once()
             v17 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_block_number() : felt
-            v18 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::account::incr_nonce() : felt
+            v18 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::native_account::incr_nonce() : felt
             v19 = arith.constant 80 : i32;
             v20 = arith.add v14, v19 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::account::compute_delta_commitment(v20)
+            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::native_account::compute_delta_commitment(v20)
             v22 = arith.constant 88 : u32;
             v21 = hir.bitcast v14 : u32;
             v23 = arith.add v21, v22 : u32 #[overflow = checked];
@@ -190,7 +190,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v154 = arith.add v14, v153 : i32 #[overflow = wrapping];
             v814 = arith.constant 0 : i32;
             v747, v748, v749, v750, v751, v752, v753, v754, v755, v756, v757, v758 = scf.while v814, v14, v154, v152, v145, v138, v131 : i32, i32, i32, felt, felt, felt, felt, i32, felt, felt, felt, felt {
-            ^block85(v759: i32, v760: i32, v761: i32, v762: felt, v763: felt, v764: felt, v765: felt):
+            ^block86(v759: i32, v760: i32, v761: i32, v762: felt, v763: felt, v764: felt, v765: felt):
                 v812 = arith.constant 0 : i32;
                 v813 = arith.constant 32 : i32;
                 v157 = arith.eq v759, v813 : i1;
@@ -198,7 +198,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v159 = hir.bitcast v158 : i32;
                 v161 = arith.neq v159, v812 : i1;
                 v738, v739 = scf.if v161 : i32, i32 {
-                ^block84:
+                ^block85:
                     v661 = ub.poison i32 : i32;
                     scf.yield v661, v661;
                 } else {
@@ -228,7 +228,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v728 = arith.trunc v746 : i1;
                 scf.condition v728, v738, v740, v739, v741, v742, v743, v744, v760, v762, v763, v764, v765;
             } do {
-            ^block86(v766: i32, v767: i32, v768: i32, v769: felt, v770: felt, v771: felt, v772: felt, v773: i32, v774: felt, v775: felt, v776: felt, v777: felt):
+            ^block87(v766: i32, v767: i32, v768: i32, v769: felt, v770: felt, v771: felt, v772: felt, v773: i32, v774: felt, v775: felt, v776: felt, v777: felt):
                 scf.yield v766, v767, v768, v769, v770, v771, v772;
             };
             v172 = arith.constant 108 : u32;
@@ -271,7 +271,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v202 = hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v798) : felt
             v797 = arith.constant 80 : i32;
             v204 = arith.add v754, v797 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::account::get_item(v202, v204)
+            hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden::active_account::get_item(v202, v204)
             v796 = arith.constant 88 : u32;
             v205 = hir.bitcast v754 : u32;
             v207 = arith.add v205, v796 : u32 #[overflow = checked];
@@ -506,7 +506,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v378 = hir.bitcast v377 : i32;
                 v380 = arith.neq v378, v888 : i1;
                 v882, v883, v884 = scf.if v380 : i32, i32, i32 {
-                ^block95:
+                ^block96:
                     v860 = ub.poison i32 : i32;
                     scf.yield v860, v860, v860;
                 } else {
@@ -537,7 +537,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v876 = arith.trunc v886 : i1;
                 scf.condition v876, v882, v883, v884;
             } do {
-            ^block94(v873: i32, v874: i32, v875: i32):
+            ^block95(v873: i32, v874: i32, v875: i32):
                 scf.yield v873, v874, v875;
             };
             builtin.ret ;
@@ -633,7 +633,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
             v474 = arith.add v450, v473 : i32 #[overflow = wrapping];
             v444 = arith.constant 0 : i32;
             v950, v951, v952, v953, v954, v955 = scf.while v444, v450, v474, v442 : i32, i32, i32, i32, i32, i32 {
-            ^block103(v956: i32, v957: i32, v958: i32, v959: i32):
+            ^block104(v956: i32, v957: i32, v958: i32, v959: i32):
                 v978 = arith.constant 0 : i32;
                 v477 = arith.constant 8 : i32;
                 v478 = arith.eq v956, v477 : i1;
@@ -641,7 +641,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v480 = hir.bitcast v479 : i32;
                 v482 = arith.neq v480, v978 : i1;
                 v944, v945 = scf.if v482 : i32, i32 {
-                ^block102:
+                ^block103:
                     v904 = ub.poison i32 : i32;
                     scf.yield v904, v904;
                 } else {
@@ -687,7 +687,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
                 v937 = arith.trunc v949 : i1;
                 scf.condition v937, v944, v946, v945, v947, v957, v959;
             } do {
-            ^block104(v960: i32, v961: i32, v962: i32, v963: i32, v964: i32, v965: i32):
+            ^block105(v960: i32, v961: i32, v962: i32, v963: i32, v964: i32, v965: i32):
                 scf.yield v960, v961, v962, v963;
             };
             v971 = arith.constant 8 : u32;
@@ -772,9 +772,9 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::compute_delta_commitment(v576: i32) {
+        private builtin.function @miden::native_account::compute_delta_commitment(v576: i32) {
         ^block61(v576: i32):
-            v577, v578, v579, v580 = hir.exec @miden/account/compute_delta_commitment() : felt, felt, felt, felt
+            v577, v578, v579, v580 = hir.exec @miden/native_account/compute_delta_commitment() : felt, felt, felt, felt
             v581 = hir.bitcast v576 : u32;
             v582 = hir.int_to_ptr v581 : ptr<byte, felt>;
             hir.store v582, v577;
@@ -793,9 +793,9 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::get_item(v592: felt, v593: i32) {
+        private builtin.function @miden::active_account::get_item(v592: felt, v593: i32) {
         ^block65(v592: felt, v593: i32):
-            v594, v595, v596, v597 = hir.exec @miden/account/get_item(v592) : felt, felt, felt, felt
+            v594, v595, v596, v597 = hir.exec @miden/active_account/get_item(v592) : felt, felt, felt, felt
             v598 = hir.bitcast v593 : u32;
             v599 = hir.int_to_ptr v598 : ptr<byte, felt>;
             hir.store v599, v594;
@@ -814,20 +814,20 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::incr_nonce() -> felt {
-        ^block67:
-            v609 = hir.exec @miden/account/incr_nonce() : felt
+        private builtin.function @miden::native_account::incr_nonce() -> felt {
+        ^block68:
+            v609 = hir.exec @miden/native_account/incr_nonce() : felt
             builtin.ret v609;
         };
 
         private builtin.function @miden::tx::get_block_number() -> felt {
-        ^block69:
+        ^block70:
             v611 = hir.exec @miden/tx/get_block_number() : felt
             builtin.ret v611;
         };
 
         private builtin.function @miden::tx::get_input_notes_commitment(v613: i32) {
-        ^block72(v613: i32):
+        ^block73(v613: i32):
             v614, v615, v616, v617 = hir.exec @miden/tx/get_input_notes_commitment() : felt, felt, felt, felt
             v618 = hir.bitcast v613 : u32;
             v619 = hir.int_to_ptr v618 : ptr<byte, felt>;
@@ -848,7 +848,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
         };
 
         private builtin.function @miden::tx::get_output_notes_commitment(v629: i32) {
-        ^block74(v629: i32):
+        ^block75(v629: i32):
             v630, v631, v632, v633 = hir.exec @miden/tx/get_output_notes_commitment() : felt, felt, felt, felt
             v634 = hir.bitcast v629 : u32;
             v635 = hir.int_to_ptr v634 : ptr<byte, felt>;
@@ -880,7 +880,7 @@ builtin.component miden:base/authentication-component@1.0.0 {
     };
 
     public builtin.function @auth__procedure(v645: felt, v646: felt, v647: felt, v648: felt) {
-    ^block76(v645: felt, v646: felt, v647: felt, v648: felt):
+    ^block77(v645: felt, v646: felt, v647: felt, v648: felt):
         hir.exec @miden:base/authentication-component@1.0.0/auth_component_rpo_falcon512/miden:base/authentication-component@1.0.0#auth-procedure(v645, v646, v647, v648)
         builtin.ret ;
     };

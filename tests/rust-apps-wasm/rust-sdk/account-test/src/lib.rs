@@ -54,7 +54,7 @@ impl Note {
     #[no_mangle]
     pub fn note_script() -> Felt {
         let mut sum = Felt::new(0).unwrap();
-        for input in miden::note::get_inputs() {
+        for input in miden::active_note::get_inputs() {
             sum = sum + input;
         }
         sum
@@ -98,6 +98,8 @@ pub fn test_create_note(
     tag: Tag,
     note_type: NoteType,
     recipient: Recipient,
-) -> NoteId {
-    miden::tx::create_note(asset, tag, note_type, recipient)
+) -> NoteIdx {
+    let note_idx = miden::output_note::create(tag, Felt::ZERO, note_type, Felt::ZERO, recipient);
+    miden::output_note::add_asset(asset, note_idx);
+    note_idx
 }

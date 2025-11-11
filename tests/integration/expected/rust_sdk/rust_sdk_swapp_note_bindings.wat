@@ -77,7 +77,7 @@
       local.get 4
       i32.const 8
       i32.add
-      call $miden_base_sys::bindings::note::get_sender
+      call $miden_base_sys::bindings::active_note::get_sender
       local.get 4
       f32.load offset=12
       local.set 5
@@ -87,11 +87,11 @@
       local.get 4
       i32.const 16
       i32.add
-      call $miden_base_sys::bindings::note::get_script_root
+      call $miden_base_sys::bindings::active_note::get_script_root
       local.get 4
       i32.const 32
       i32.add
-      call $miden_base_sys::bindings::note::get_serial_number
+      call $miden_base_sys::bindings::active_note::get_serial_number
       local.get 6
       local.get 5
       call $miden_base_sys::bindings::account::get_balance
@@ -162,9 +162,9 @@
     (func $miden_base_sys::bindings::account::get_balance (;5;) (type 3) (param f32 f32) (result f32)
       local.get 0
       local.get 1
-      call $miden::account::get_balance
+      call $miden::active_account::get_balance
     )
-    (func $miden_base_sys::bindings::note::get_sender (;6;) (type 4) (param i32)
+    (func $miden_base_sys::bindings::active_note::get_sender (;6;) (type 4) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -174,7 +174,7 @@
       local.get 1
       i32.const 8
       i32.add
-      call $miden::note::get_sender
+      call $miden::active_note::get_sender
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -184,7 +184,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_script_root (;7;) (type 4) (param i32)
+    (func $miden_base_sys::bindings::active_note::get_script_root (;7;) (type 4) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -192,7 +192,7 @@
       local.tee 1
       global.set $__stack_pointer
       local.get 1
-      call $miden::note::get_script_root
+      call $miden::active_note::get_script_root
       local.get 1
       local.get 1
       i64.load offset=8
@@ -211,7 +211,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_serial_number (;8;) (type 4) (param i32)
+    (func $miden_base_sys::bindings::active_note::get_serial_number (;8;) (type 4) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -219,7 +219,7 @@
       local.tee 1
       global.set $__stack_pointer
       local.get 1
-      call $miden::note::get_serial_number
+      call $miden::active_note::get_serial_number
       local.get 1
       local.get 1
       i64.load offset=8
@@ -299,16 +299,16 @@
     (func $intrinsics::felt::eq (;10;) (type 6) (param f32 f32) (result i32)
       unreachable
     )
-    (func $miden::account::get_balance (;11;) (type 3) (param f32 f32) (result f32)
+    (func $miden::active_account::get_balance (;11;) (type 3) (param f32 f32) (result f32)
       unreachable
     )
-    (func $miden::note::get_sender (;12;) (type 4) (param i32)
+    (func $miden::active_note::get_sender (;12;) (type 4) (param i32)
       unreachable
     )
-    (func $miden::note::get_script_root (;13;) (type 4) (param i32)
+    (func $miden::active_note::get_script_root (;13;) (type 4) (param i32)
       unreachable
     )
-    (func $miden::note::get_serial_number (;14;) (type 4) (param i32)
+    (func $miden::active_note::get_serial_number (;14;) (type 4) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

@@ -25,10 +25,10 @@ fn sdk() {
 
 #[test]
 fn sdk_basic_wallet() {
-    let interface_tx = InterfaceIdent::from_full_ident("miden:base/tx@1.0.0");
+    let interface_output_note = InterfaceIdent::from_full_ident("miden:base/output-note@1.0.0");
     let create_note_ident = InterfaceFunctionIdent {
-        interface: interface_tx,
-        function: Symbol::intern("create-note"),
+        interface: interface_output_note,
+        function: Symbol::intern("create"),
     };
     let interface_account = InterfaceIdent::from_full_ident("miden:base/account@1.0.0");
     let add_asset_ident = InterfaceFunctionIdent {
@@ -39,8 +39,18 @@ fn sdk_basic_wallet() {
         interface: interface_account,
         function: Symbol::intern("remove-asset"),
     };
-    let expected_imports: HashSet<InterfaceFunctionIdent> =
-        [create_note_ident, remove_asset_ident, add_asset_ident].into_iter().collect();
+    let output_note_add_asset_ident = InterfaceFunctionIdent {
+        interface: interface_output_note,
+        function: Symbol::intern("add-asset"),
+    };
+    let expected_imports: HashSet<InterfaceFunctionIdent> = [
+        create_note_ident,
+        remove_asset_ident,
+        add_asset_ident,
+        output_note_add_asset_ident,
+    ]
+    .into_iter()
+    .collect();
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_source_cargo_component("../rust-apps-wasm/wit-sdk/basic-wallet", config);

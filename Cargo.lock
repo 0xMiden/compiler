@@ -3174,6 +3174,7 @@ dependencies = [
  "miden-assembly",
  "miden-core",
  "miden-debug",
+ "miden-lib",
  "miden-mast-package",
  "miden-objects",
  "miden-processor",

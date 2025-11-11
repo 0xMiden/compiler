@@ -47,7 +47,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             hir.assertz v35 #[code = 250];
             v36 = hir.int_to_ptr v33 : ptr<byte, felt>;
             v37 = hir.load v36 : felt;
-            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden::account::get_map_item(v11, v18, v25, v32, v37, v7)
+            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden::active_account::get_map_item(v11, v18, v25, v32, v37, v7)
             v495 = arith.constant 8 : u32;
             v38 = hir.bitcast v7 : u32;
             v40 = arith.add v38, v495 : u32 #[overflow = checked];
@@ -264,7 +264,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             v204 = hir.load v203 : felt;
             v517 = arith.constant 64 : i32;
             v206 = arith.add v128, v517 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden::account::set_map_item(v176, v138, v136, v134, v132, v183, v190, v197, v204, v206)
+            hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden::native_account::set_map_item(v176, v138, v136, v134, v132, v183, v190, v197, v204, v206)
             v208 = arith.constant 72 : u32;
             v207 = hir.bitcast v128 : u32;
             v209 = arith.add v207, v208 : u32 #[overflow = checked];
@@ -428,7 +428,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             v331 = arith.add v307, v330 : i32 #[overflow = wrapping];
             v301 = arith.constant 0 : i32;
             v589, v590, v591, v592, v593, v594 = scf.while v301, v307, v331, v299 : i32, i32, i32, i32, i32, i32 {
-            ^block51(v595: i32, v596: i32, v597: i32, v598: i32):
+            ^block52(v595: i32, v596: i32, v597: i32, v598: i32):
                 v617 = arith.constant 0 : i32;
                 v334 = arith.constant 8 : i32;
                 v335 = arith.eq v595, v334 : i1;
@@ -436,7 +436,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
                 v337 = hir.bitcast v336 : i32;
                 v339 = arith.neq v337, v617 : i1;
                 v583, v584 = scf.if v339 : i32, i32 {
-                ^block50:
+                ^block51:
                     v543 = ub.poison i32 : i32;
                     scf.yield v543, v543;
                 } else {
@@ -482,7 +482,7 @@ builtin.component miden:counter-contract/counter@0.1.0 {
                 v576 = arith.trunc v588 : i1;
                 scf.condition v576, v583, v585, v584, v586, v596, v598;
             } do {
-            ^block52(v599: i32, v600: i32, v601: i32, v602: i32, v603: i32, v604: i32):
+            ^block53(v599: i32, v600: i32, v601: i32, v602: i32, v603: i32, v604: i32):
                 scf.yield v599, v600, v601, v602;
             };
             v610 = arith.constant 8 : u32;
@@ -569,9 +569,9 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret v424;
         };
 
-        private builtin.function @miden::account::get_map_item(v426: felt, v427: felt, v428: felt, v429: felt, v430: felt, v431: i32) {
+        private builtin.function @miden::active_account::get_map_item(v426: felt, v427: felt, v428: felt, v429: felt, v430: felt, v431: i32) {
         ^block33(v426: felt, v427: felt, v428: felt, v429: felt, v430: felt, v431: i32):
-            v432, v433, v434, v435 = hir.exec @miden/account/get_map_item(v426, v427, v428, v429, v430) : felt, felt, felt, felt
+            v432, v433, v434, v435 = hir.exec @miden/active_account/get_map_item(v426, v427, v428, v429, v430) : felt, felt, felt, felt
             v436 = hir.bitcast v431 : u32;
             v437 = hir.int_to_ptr v436 : ptr<byte, felt>;
             hir.store v437, v432;
@@ -590,9 +590,9 @@ builtin.component miden:counter-contract/counter@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::set_map_item(v447: felt, v448: felt, v449: felt, v450: felt, v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: i32) {
+        private builtin.function @miden::native_account::set_map_item(v447: felt, v448: felt, v449: felt, v450: felt, v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: i32) {
         ^block37(v447: felt, v448: felt, v449: felt, v450: felt, v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: i32):
-            v457, v458, v459, v460, v461, v462, v463, v464 = hir.exec @miden/account/set_map_item(v447, v448, v449, v450, v451, v452, v453, v454, v455) : felt, felt, felt, felt, felt, felt, felt, felt
+            v457, v458, v459, v460, v461, v462, v463, v464 = hir.exec @miden/native_account/set_map_item(v447, v448, v449, v450, v451, v452, v453, v454, v455) : felt, felt, felt, felt, felt, felt, felt, felt
             v465 = hir.bitcast v456 : u32;
             v466 = hir.int_to_ptr v465 : ptr<byte, felt>;
             hir.store v466, v457;
@@ -639,13 +639,13 @@ builtin.component miden:counter-contract/counter@0.1.0 {
     };
 
     public builtin.function @get-count() -> felt {
-    ^block39:
+    ^block40:
         v488 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden:counter-contract/counter@0.1.0#get-count() : felt
         builtin.ret v488;
     };
 
     public builtin.function @increment-count() -> felt {
-    ^block41:
+    ^block42:
         v489 = hir.exec @miden:counter-contract/counter@0.1.0/counter_contract/miden:counter-contract/counter@0.1.0#increment-count() : felt
         builtin.ret v489;
     };

@@ -33,7 +33,7 @@ impl Guest for AuthComponent {
         // translated from MASM at
         // https://github.com/0xMiden/miden-base/blob/e4912663276ab8eebb24b84d318417cb4ea0bba3/crates/miden-lib/asm/account_components/no_auth.masm?plain=1
         let init_comm = account::get_initial_commitment();
-        let curr_comm = account::compute_current_commitment();
+        let curr_comm = account::compute_commitment();
         // check if the account state has changed by comparing initial and final commitments
         if curr_comm != init_comm {
             // if the account has been updated, increment the nonce

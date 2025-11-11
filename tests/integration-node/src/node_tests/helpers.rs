@@ -98,7 +98,7 @@ pub async fn create_account_with_component(
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
     let account_component_metadata = package.sections.iter().find_map(|s| {
-        if &s.id == &SectionId::ACCOUNT_COMPONENT_METADATA {
+        if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
             Some(s.data.borrow())
         } else {
             None

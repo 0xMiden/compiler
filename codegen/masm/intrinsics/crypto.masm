@@ -15,7 +15,7 @@ export.hmerge
     div
     padw
     movup.4
-    mem_loadw
+    mem_loadw_be
     # Stack: [a3, a2, a1, a0, digests_ptr, result_ptr, ...]
 
     # Load second digest (B) from digests_ptr + 16 (4 felts * 4 bytes)
@@ -26,7 +26,7 @@ export.hmerge
     div
     padw
     movup.4
-    mem_loadw
+    mem_loadw_be
     # Stack: [b3, b2, b1, b0, a3, a2, a1, a0, result_ptr, ...]
 
     # The hmerge instruction expects [B, A] on the stack, which we already have
@@ -40,7 +40,7 @@ export.hmerge
     push.4
     div
     # Stack: [result_ptr/4, r0, r1, r2, r3, ...]
-    mem_storew
+    mem_storew_be
     # Stack: [r0, r1, r2, r3, ...]
 
     # Clean up

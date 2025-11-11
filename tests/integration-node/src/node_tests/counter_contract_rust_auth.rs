@@ -6,14 +6,16 @@
 
 use miden_client::{
     account::StorageMap,
-    auth::AuthSecretKey,
+    auth::{AuthSecretKey, PublicKeyCommitment},
     keystore::FilesystemKeyStore,
     transaction::{OutputNote, TransactionRequestBuilder},
     utils::Deserializable,
     Client, DebugMode, Word,
 };
+use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement};
 use miden_mast_package::SectionId;
+use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use rand::{rngs::StdRng, RngCore};
 
 use super::helpers::*;
@@ -48,7 +50,7 @@ async fn create_counter_account_with_rust_rpo_auth(
     component_package: std::sync::Arc<miden_mast_package::Package>,
     auth_component_package: std::sync::Arc<miden_mast_package::Package>,
     keystore: std::sync::Arc<FilesystemKeyStore<StdRng>>,
-) -> Result<(miden_client::account::Account, Word), miden_client::ClientError> {
+) -> Result<miden_client::account::Account, miden_client::ClientError> {
     use std::collections::BTreeSet;
 
     use miden_objects::account::{
@@ -85,8 +87,8 @@ async fn create_counter_account_with_rust_rpo_auth(
     };
 
     // Build the Rust-compiled auth component with public key commitment in slot 0
-    let key_pair = miden_client::crypto::SecretKey::with_rng(client.rng());
-    let pk_commitment = miden_objects::Word::from(key_pair.public_key());
+    let key_pair = SecretKey::with_rng(client.rng());
+    let pk_commitment: Word = PublicKeyCommitment::from(key_pair.public_key()).into();
     let mut auth_component = AccountComponent::new(
         auth_component_package.unwrap_library().as_ref().clone(),
         vec![StorageSlot::Value(pk_commitment)],
@@ -100,7 +102,7 @@ async fn create_counter_account_with_rust_rpo_auth(
 
     let _ = client.sync_state().await?;
 
-    let (account, seed) = AccountBuilder::new(init_seed)
+    let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(auth_component)
@@ -109,11 +111,11 @@ async fn create_counter_account_with_rust_rpo_auth(
         .build()
         .unwrap();
 
-    client.add_account(&account, Some(seed), false).await?;
+    client.add_account(&account, false).await?;
 
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
 
-    Ok((account, seed))
+    Ok(account)
 }
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
@@ -138,7 +140,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
             .await
             .expect("Failed to setup test infrastructure");
 
-        let (counter_account, counter_seed) = create_counter_account_with_rust_rpo_auth(
+        let counter_account = create_counter_account_with_rust_rpo_auth(
             &mut client,
             contract_package.clone(),
             rpo_auth_package.clone(),
@@ -173,28 +175,32 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
             .own_output_notes(vec![OutputNote::Full(own_note.clone())])
             .build()
             .unwrap();
-        let ok_tx = client
-            .new_transaction(counter_account.id(), own_request)
+        let tx_result = client
+            .execute_transaction(counter_account.id(), own_request.clone())
             .await
             .expect("authorized client should be able to create a note");
-        assert_eq!(ok_tx.executed_transaction().output_notes().num_notes(), 1);
-        assert_eq!(ok_tx.executed_transaction().output_notes().get_note(0).id(), own_note.id());
-        client.submit_transaction(ok_tx).await.unwrap();
+        assert_eq!(tx_result.executed_transaction().output_notes().num_notes(), 1);
+        assert_eq!(tx_result.executed_transaction().output_notes().get_note(0).id(), own_note.id());
+
+        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
+        let submission_height = client
+            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
+            .await
+            .unwrap();
+        client.apply_transaction(&tx_result, submission_height).await.unwrap();
 
         // Create a separate client with its own empty keystore (no key for counter account)
         let attacker_dir = temp_dir::TempDir::with_prefix("attacker_client_")
             .expect("Failed to create temp directory");
         let rpc_url = node_handle.rpc_url().to_string();
         let endpoint = miden_client::rpc::Endpoint::try_from(rpc_url.as_str()).unwrap();
-        let rpc_api =
-            std::sync::Arc::new(miden_client::rpc::TonicRpcClient::new(&endpoint, 10_000));
-        let attacker_store_path =
-            attacker_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
+        let rpc_api = std::sync::Arc::new(miden_client::rpc::GrpcClient::new(&endpoint, 10_000));
+        let attacker_store_path = attacker_dir.path().join("store.sqlite3");
         let attacker_keystore_path = attacker_dir.path().join("keystore");
 
         let mut attacker_client = miden_client::builder::ClientBuilder::new()
             .rpc(rpc_api)
-            .sqlite_store(&attacker_store_path)
+            .sqlite_store(attacker_store_path.clone())
             .filesystem_keystore(attacker_keystore_path.to_str().unwrap())
             .in_debug_mode(DebugMode::Enabled)
             .build()
@@ -204,7 +210,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         // The attacker needs the account record locally to attempt building a tx
         // Reuse the same account object; seed is not needed for reading/state queries
         attacker_client
-            .add_account(&counter_account, Some(counter_seed), false)
+            .add_account(&counter_account, false)
             .await
             .expect("failed to add account to attacker client");
 
@@ -222,7 +228,8 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
             .build()
             .unwrap();
 
-        let result = attacker_client.new_transaction(counter_account.id(), forged_request).await;
+        let result =
+            attacker_client.execute_transaction(counter_account.id(), forged_request).await;
 
         assert!(
             result.is_err(),

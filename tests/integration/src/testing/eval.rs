@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use miden_core::{Felt, FieldElement};
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
+use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
 use midenc_compile::LinkOutput;
-use midenc_session::Session;
+use midenc_session::{Session, STDLIB};
 use proptest::test_runner::TestCaseError;
 
 use super::*;
@@ -102,7 +105,17 @@ where
     // Push the number of initializers on the advice stack
     advice_stack.push(Felt::new(num_initializers));
 
-    let mut exec = Executor::for_package(package, args.to_vec())
+    let mut exec = Executor::new(args.to_vec());
+
+    // Register the standard library so dependencies can be resolved at runtime.
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+
+    exec.with_dependencies(package.manifest.dependencies())
         .map_err(|err| TestCaseError::fail(format_report(err)))?;
 
     // Reverse the stack contents, so that the correct order is preserved after MemAdviceProvider

@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account/foo@1.0.0
 
-export.process-felt
+@callconv("canon-lift")
+pub proc process-felt(felt) -> felt
     exec.::miden:cross-ctx-account/foo@1.0.0::init
     trace.240
     nop
@@ -10,7 +11,7 @@ export.process-felt
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -33,15 +34,22 @@ end
 
 # mod miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.cross_ctx_account::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc cross_ctx_account::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:cross-ctx-account/foo@1.0.0#process-felt
+@callconv("C")
+proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     push.1114148
     u32divmod.4
     swap.1
@@ -107,7 +115,10 @@ proc.miden:cross-ctx-account/foo@1.0.0#process-felt
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1
@@ -178,15 +189,18 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.intrinsics::felt::add
+@callconv("C")
+proc intrinsics::felt::add(felt, felt) -> felt
     add
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::as_u64
+@callconv("C")
+proc intrinsics::felt::as_u64(felt) -> [u32; 2]
     u32split
 end
 
