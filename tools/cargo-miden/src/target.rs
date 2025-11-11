@@ -49,9 +49,8 @@ pub fn detect_target_environment(root_pkg: &Package) -> Result<TargetEnv> {
             target: RollupTarget::AuthComponent,
         }),
         _ => bail!(
-            "Invalid value '{}' for 'project-kind' in [package.metadata.miden]. Must be one of: \
-             'account', 'note-script', or 'transaction-script'",
-            kind_str
+            "Invalid value '{kind_str}' for 'project-kind' in [package.metadata.miden]. Must be \
+             one of: 'account', 'note-script', or 'transaction-script'"
         ),
     }
 }

@@ -150,7 +150,7 @@ fn clone_repository(repo: &str, template_path: &TemplatePath, destination: &Path
         .status()
         .with_context(|| format!("Failed to clone template repository '{repo}'"))?;
     if !status.success() {
-        bail!("`git clone {repo}` exited with {}", status);
+        bail!("`git clone {repo}` exited with {status}");
     }
 
     if let Some(rev) = template_path.rev.as_ref() {
@@ -165,7 +165,7 @@ fn clone_repository(repo: &str, template_path: &TemplatePath, destination: &Path
             .with_context(|| format!("Failed to checkout revision '{rev}'"))?;
 
         if !status.success() {
-            bail!("`git checkout {rev}` exited with {}", status);
+            bail!("`git checkout {rev}` exited with {status}");
         }
     }
 
@@ -321,7 +321,7 @@ fn initialise_git_repo(project_dir: &Path) -> Result<()> {
         .context("Failed to execute `git init`")?;
 
     if !status.success() {
-        bail!("`git init` exited with {}", status);
+        bail!("`git init` exited with {status}");
     }
 
     Ok(())
