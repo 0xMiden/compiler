@@ -7,7 +7,8 @@
 //! the calls appropriately. They are not part of the crate sources.
 
 mod account;
-mod note;
+mod active_note;
+mod output_note;
 mod tx;
 
 // No panic handler here; the stubs are packaged as a single object into a

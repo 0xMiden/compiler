@@ -97,8 +97,7 @@ impl ToMasmComponent for builtin::Component {
         let rodata = data_segments_to_rodata(&link_info)?;
 
         let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
-            todo!()
-            //Some(miden_lib::transaction::TransactionKernel::kernel())
+            Some(miden_lib::transaction::TransactionKernel::kernel())
         } else {
             None
         };

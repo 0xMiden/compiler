@@ -11,7 +11,7 @@ use super::{process::kill_process, sync::read_pid, COORD_DIR};
 // the compatible miden-node version. Both should typically use the same major.minor version.
 
 /// The exact miden-node version that is compatible with the miden-client version used in tests
-const MIDEN_NODE_VERSION: &str = "0.11.1";
+const MIDEN_NODE_VERSION: &str = "0.12.0";
 
 /// Manages the lifecycle of a local Miden node instance
 pub struct LocalMidenNode;

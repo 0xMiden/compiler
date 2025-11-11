@@ -765,7 +765,7 @@ mod tests {
             assert_eq!(ops.len(), 7);
             assert_eq!(&ops[0], &push!(1u32));
             assert_eq!(&ops[1], &push!(2u32));
-            assert_eq!(&ops[2], &push!(3u32));
+            assert_eq!(&ops[2], &push!(3u8));
             assert_eq!(&ops[3], &push!(Felt::ZERO));
             assert_eq!(&ops[4], &push!(Felt::ONE));
             assert_eq!(&ops[5], &push!(Felt::new(u32::MAX as u64)));

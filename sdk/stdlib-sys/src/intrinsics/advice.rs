@@ -20,7 +20,7 @@ pub fn adv_push_mapvaln(key: Word) -> Felt {
 
 extern "C" {
     /// Emits an event to request a Falcon signature for the provided message/public key.
-    /// This maps to a single MASM instruction: `emit.131087`.
+    /// This maps to the MASM instruction: `emit.AUTH_REQUEST_EVENT`.
     #[link_name = "intrinsics::advice::emit_falcon_sig_to_stack"]
     fn extern_emit_falcon_sig_to_stack(
         msg0: Felt,

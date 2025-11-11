@@ -43,7 +43,7 @@
       i32.const 0
       call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
       local.get 9
-      call $miden::account::get_item
+      call $miden::active_account::get_item
       local.get 9
       local.get 9
       i64.load offset=8
@@ -116,7 +116,7 @@
         local.get 9
         i32.const 48
         i32.add
-        call $miden::account::set_map_item
+        call $miden::native_account::set_map_item
         local.get 9
         local.get 9
         i64.load offset=56
@@ -170,7 +170,7 @@
       local.get 4
       i32.const 16
       i32.add
-      call $miden::account::get_map_item
+      call $miden::active_account::get_map_item
       local.get 4
       local.get 4
       i64.load offset=24
@@ -305,17 +305,17 @@
     (func $intrinsics::felt::eq (;9;) (type 6) (param f32 f32) (result i32)
       unreachable
     )
-    (func $miden::account::get_item (;10;) (type 7) (param f32 i32)
+    (func $miden::active_account::get_item (;10;) (type 7) (param f32 i32)
       unreachable
     )
-    (func $miden::account::get_map_item (;11;) (type 8) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::active_account::get_map_item (;11;) (type 8) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::account::set_map_item (;12;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::native_account::set_map_item (;12;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\01\1basset_qty_map\01\11test map\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\00\1basset_qty_map\01\11test map\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export 0 "felt" (type (;1;)))
   (alias export 0 "word" (type (;2;)))

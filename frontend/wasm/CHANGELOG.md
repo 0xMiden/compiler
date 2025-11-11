@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `tx:add_asset_to_note` Miden SDK bindings
+- `output_note:add_asset` Miden SDK bindings
 - #631 Aligned data segments overlap the `BumpAlloc` instance
 - update Miden SDK `AccountId` type and `account::get_id()` for two
 

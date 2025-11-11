@@ -115,7 +115,7 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => return Ok((*STDLIB).as_ref().clone()),
-            "base" => todo!(), /*return Ok(miden_lib::MidenLib::default().as_ref().clone()),*/
+            "base" => return Ok(miden_lib::MidenLib::default().as_ref().clone()),
             _ => (),
         }
 

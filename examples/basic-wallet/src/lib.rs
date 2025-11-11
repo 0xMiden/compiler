@@ -6,7 +6,7 @@
 //
 // extern crate alloc;
 
-use miden::{account, component, tx, Asset, NoteIdx};
+use miden::{account, component, output_note, Asset, NoteIdx};
 
 #[component]
 struct MyAccount;
@@ -33,6 +33,6 @@ impl MyAccount {
     /// * `note_idx` - The index of the note to receive the asset
     pub fn move_asset_to_note(&self, asset: Asset, note_idx: NoteIdx) {
         let asset = account::remove_asset(asset);
-        tx::add_asset_to_note(asset, note_idx);
+        output_note::add_asset(asset, note_idx);
     }
 }

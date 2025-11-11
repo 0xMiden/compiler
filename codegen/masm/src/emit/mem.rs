@@ -283,16 +283,9 @@ impl OpEmitter<'_> {
         if ptr.is_word_aligned() {
             self.emit_all(
                 [
-                    // [w3, w2, w1, w0]
-                    masm::Instruction::PadW,
-                    masm::Instruction::MemLoadWImm(ptr.addr.into()),
-                    // Swap the element order to lowest-address-first
-                    // [w2, w1, w0, w3]
-                    masm::Instruction::MovDn3,
-                    // [w1, w0, w2, w3]
-                    masm::Instruction::MovDn2,
                     // [w0, w1, w2, w3]
-                    masm::Instruction::Swap1,
+                    masm::Instruction::PadW,
+                    masm::Instruction::MemLoadWLeImm(ptr.addr.into()),
                     masm::Instruction::U32AssertW,
                 ],
                 span,
@@ -836,15 +829,8 @@ impl OpEmitter<'_> {
                 [
                     // Stack: [a, b, c, d]
                     masm::Instruction::U32AssertW,
-                    // Swap to highest-address-first order
-                    // [d, b, c, a]
-                    masm::Instruction::Swap3,
-                    // [c, d, b, a]
-                    masm::Instruction::MovUp2,
-                    // [d, c, b, a]
-                    masm::Instruction::Swap1,
                     // Write to heap
-                    masm::Instruction::MemStoreWImm(ptr.addr.into()),
+                    masm::Instruction::MemStoreWLeImm(ptr.addr.into()),
                     masm::Instruction::DropW,
                 ],
                 span,

@@ -1,6 +1,7 @@
 # mod miden:base/note-script@1.0.0
 
-export.run
+@callconv("canon-lift")
+pub proc run(felt, felt, felt, felt)
     exec.::miden:base/note-script@1.0.0::init
     trace.240
     nop
@@ -10,7 +11,7 @@ export.run
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -33,7 +34,25 @@ end
 
 # mod miden:base/note-script@1.0.0::cross_ctx_note_word_arg
 
-proc.cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
+@callconv("C")
+proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> felt
     trace.240
     nop
     call.::miden:cross-ctx-account-word-arg/foo@1.0.0::process-word
@@ -41,15 +60,22 @@ proc.cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::
     nop
 end
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:base/note-script@1.0.0#run
+@callconv("C")
+proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
     drop
     drop
@@ -196,7 +222,10 @@ proc.miden:base/note-script@1.0.0#run
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1
@@ -267,11 +296,13 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::assert_eq
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
 end
 

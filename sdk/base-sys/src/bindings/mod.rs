@@ -9,7 +9,8 @@
 //! - In MASM procedures: These are pushed/popped from the stack in reverse order [e3, e2, e1, e0]
 
 pub mod account;
-pub mod note;
+pub mod active_note;
+pub mod output_note;
 pub mod storage;
 pub mod tx;
 mod types;

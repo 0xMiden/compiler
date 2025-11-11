@@ -26,12 +26,13 @@ end
 
 #! Emits an event to request a Falcon signature loaded to the advice stack
 #! MSG and PK are expected to be on the operand stack.
+#! Emits the canonical `miden::auth::request` event introduced in node/client 0.12.
 #!
 #! Inputs:  [msg3, msg2, msg1, msg0, pk3, pk2, pk1, pk0, ...]
 #! Outputs: [...]
+const.AUTH_REQUEST_EVENT=event("miden::auth::request")
 export.emit_falcon_sig_to_stack
-    # 131087 == FALCON_SIG_TO_STACK from miden contracts
-    emit.131087
+    emit.AUTH_REQUEST_EVENT
     dropw dropw
 end
 

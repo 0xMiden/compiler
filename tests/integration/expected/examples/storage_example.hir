@@ -23,7 +23,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen::rt::run_ctors_once()
             v9 = arith.constant 0 : i32;
             v19 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v9) : felt
-            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::account::get_item(v19, v15)
+            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::active_account::get_item(v19, v15)
             v21 = arith.constant 8 : u32;
             v20 = hir.bitcast v15 : u32;
             v22 = arith.add v20, v21 : u32 #[overflow = checked];
@@ -99,7 +99,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v80 = hir.bitcast v79 : i32;
             v82 = arith.neq v80, v540 : i1;
             scf.if v82{
-            ^block51:
+            ^block52:
                 scf.yield ;
             } else {
             ^block12:
@@ -111,7 +111,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                 v87 = hir.bitcast v86 : i32;
                 v89 = arith.neq v87, v538 : i1;
                 scf.if v89{
-                ^block50:
+                ^block51:
                     scf.yield ;
                 } else {
                 ^block13:
@@ -123,7 +123,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                     v94 = hir.bitcast v93 : i32;
                     v96 = arith.neq v94, v536 : i1;
                     scf.if v96{
-                    ^block49:
+                    ^block50:
                         scf.yield ;
                     } else {
                     ^block14:
@@ -135,7 +135,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                         v101 = hir.bitcast v100 : i32;
                         v103 = arith.neq v101, v534 : i1;
                         scf.if v103{
-                        ^block48:
+                        ^block49:
                             scf.yield ;
                         } else {
                         ^block15:
@@ -178,7 +178,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                             v135 = hir.load v134 : felt;
                             v528 = arith.constant 48 : i32;
                             v137 = arith.add v15, v528 : i32 #[overflow = wrapping];
-                            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::account::set_map_item(v107, v7, v6, v5, v4, v114, v121, v128, v135, v137)
+                            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::native_account::set_map_item(v107, v7, v6, v5, v4, v114, v121, v128, v135, v137)
                             v527 = arith.constant 56 : u32;
                             v138 = hir.bitcast v15 : u32;
                             v140 = arith.add v138, v527 : u32 #[overflow = checked];
@@ -282,7 +282,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v215 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v214) : felt
             v216 = arith.constant 16 : i32;
             v217 = arith.add v211, v216 : i32 #[overflow = wrapping];
-            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::account::get_map_item(v215, v204, v203, v202, v201, v217)
+            hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::active_account::get_map_item(v215, v204, v203, v202, v201, v217)
             v219 = arith.constant 24 : u32;
             v218 = hir.bitcast v211 : u32;
             v220 = arith.add v218, v219 : u32 #[overflow = checked];
@@ -415,7 +415,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v317 = arith.add v293, v316 : i32 #[overflow = wrapping];
             v287 = arith.constant 0 : i32;
             v610, v611, v612, v613, v614, v615 = scf.while v287, v293, v317, v285 : i32, i32, i32, i32, i32, i32 {
-            ^block64(v616: i32, v617: i32, v618: i32, v619: i32):
+            ^block65(v616: i32, v617: i32, v618: i32, v619: i32):
                 v638 = arith.constant 0 : i32;
                 v320 = arith.constant 8 : i32;
                 v321 = arith.eq v616, v320 : i1;
@@ -423,7 +423,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                 v323 = hir.bitcast v322 : i32;
                 v325 = arith.neq v323, v638 : i1;
                 v604, v605 = scf.if v325 : i32, i32 {
-                ^block63:
+                ^block64:
                     v564 = ub.poison i32 : i32;
                     scf.yield v564, v564;
                 } else {
@@ -469,7 +469,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
                 v597 = arith.trunc v609 : i1;
                 scf.condition v597, v604, v606, v605, v607, v617, v619;
             } do {
-            ^block65(v620: i32, v621: i32, v622: i32, v623: i32, v624: i32, v625: i32):
+            ^block66(v620: i32, v621: i32, v622: i32, v623: i32, v624: i32, v625: i32):
                 scf.yield v620, v621, v622, v623;
             };
             v631 = arith.constant 8 : u32;
@@ -557,9 +557,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret v411;
         };
 
-        private builtin.function @miden::account::get_item(v413: felt, v414: i32) {
+        private builtin.function @miden::active_account::get_item(v413: felt, v414: i32) {
         ^block36(v413: felt, v414: i32):
-            v415, v416, v417, v418 = hir.exec @miden/account/get_item(v413) : felt, felt, felt, felt
+            v415, v416, v417, v418 = hir.exec @miden/active_account/get_item(v413) : felt, felt, felt, felt
             v419 = hir.bitcast v414 : u32;
             v420 = hir.int_to_ptr v419 : ptr<byte, felt>;
             hir.store v420, v415;
@@ -578,9 +578,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::get_map_item(v430: felt, v431: felt, v432: felt, v433: felt, v434: felt, v435: i32) {
+        private builtin.function @miden::active_account::get_map_item(v430: felt, v431: felt, v432: felt, v433: felt, v434: felt, v435: i32) {
         ^block40(v430: felt, v431: felt, v432: felt, v433: felt, v434: felt, v435: i32):
-            v436, v437, v438, v439 = hir.exec @miden/account/get_map_item(v430, v431, v432, v433, v434) : felt, felt, felt, felt
+            v436, v437, v438, v439 = hir.exec @miden/active_account/get_map_item(v430, v431, v432, v433, v434) : felt, felt, felt, felt
             v440 = hir.bitcast v435 : u32;
             v441 = hir.int_to_ptr v440 : ptr<byte, felt>;
             hir.store v441, v436;
@@ -599,9 +599,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::account::set_map_item(v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: felt, v457: felt, v458: felt, v459: felt, v460: i32) {
+        private builtin.function @miden::native_account::set_map_item(v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: felt, v457: felt, v458: felt, v459: felt, v460: i32) {
         ^block42(v451: felt, v452: felt, v453: felt, v454: felt, v455: felt, v456: felt, v457: felt, v458: felt, v459: felt, v460: i32):
-            v461, v462, v463, v464, v465, v466, v467, v468 = hir.exec @miden/account/set_map_item(v451, v452, v453, v454, v455, v456, v457, v458, v459) : felt, felt, felt, felt, felt, felt, felt, felt
+            v461, v462, v463, v464, v465, v466, v467, v468 = hir.exec @miden/native_account/set_map_item(v451, v452, v453, v454, v455, v456, v457, v458, v459) : felt, felt, felt, felt, felt, felt, felt, felt
             v469 = hir.bitcast v460 : u32;
             v470 = hir.int_to_ptr v469 : ptr<byte, felt>;
             hir.store v470, v461;
@@ -648,13 +648,13 @@ builtin.component miden:storage-example/foo@1.0.0 {
     };
 
     public builtin.function @set-asset-qty(v492: felt, v493: felt, v494: felt, v495: felt, v496: felt, v497: felt, v498: felt, v499: felt, v500: felt) {
-    ^block44(v492: felt, v493: felt, v494: felt, v495: felt, v496: felt, v497: felt, v498: felt, v499: felt, v500: felt):
+    ^block45(v492: felt, v493: felt, v494: felt, v495: felt, v496: felt, v497: felt, v498: felt, v499: felt, v500: felt):
         hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden:storage-example/foo@1.0.0#set-asset-qty(v492, v493, v494, v495, v496, v497, v498, v499, v500)
         builtin.ret ;
     };
 
     public builtin.function @get-asset-qty(v501: felt, v502: felt, v503: felt, v504: felt) -> felt {
-    ^block46(v501: felt, v502: felt, v503: felt, v504: felt):
+    ^block47(v501: felt, v502: felt, v503: felt, v504: felt):
         v505 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden:storage-example/foo@1.0.0#get-asset-qty(v501, v502, v503, v504) : felt
         builtin.ret v505;
     };

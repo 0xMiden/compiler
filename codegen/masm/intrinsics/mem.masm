@@ -45,7 +45,7 @@ export.heap_init # [heap_base]
     push.0 # [0, heap_base, heap_base]
     swap.1 # [heap_base, 0, heap_base]
     push.MAGIC # [MAGIC, heap_base, heap_size(0), heap_top(heap_base)]
-    mem_storew.HEAP_INFO_ADDR
+    mem_storew_be.HEAP_INFO_ADDR
     dropw
 end
 

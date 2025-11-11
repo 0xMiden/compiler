@@ -1,6 +1,7 @@
 # mod miden:base/authentication-component@1.0.0
 
-export.auth__procedure
+@callconv("canon-lift")
+pub proc auth__procedure(felt, felt, felt, felt)
     exec.::miden:base/authentication-component@1.0.0::init
     trace.240
     nop
@@ -10,7 +11,7 @@ export.auth__procedure
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -33,15 +34,27 @@ end
 
 # mod miden:base/authentication-component@1.0.0::auth_component_no_auth
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.auth_component_no_auth::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc auth_component_no_auth::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:base/authentication-component@1.0.0#auth-procedure
+@callconv("C")
+proc miden:base/authentication-component@1.0.0#auth-procedure(
+    felt,
+    felt,
+    felt,
+    felt
+)
     drop
     drop
     drop
@@ -76,7 +89,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::account::get_initial_commitment
+    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::active_account::get_initial_commitment
     trace.252
     nop
     push.40
@@ -161,7 +174,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::account::compute_current_commitment
+    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::active_account::compute_commitment
     trace.252
     nop
     push.40
@@ -461,7 +474,7 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
         drop
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::account::incr_nonce
+        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::native_account::incr_nonce
         trace.252
         nop
         drop
@@ -480,7 +493,10 @@ proc.miden:base/authentication-component@1.0.0#auth-procedure
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1
@@ -551,7 +567,11 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.miden_stdlib_sys::intrinsics::word::Word::reverse
+@callconv("C")
+proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+    i32,
+    i32
+)
     push.1114144
     u32divmod.4
     swap.1
@@ -812,14 +832,16 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
 end
 
-proc.intrinsics::felt::eq
+@callconv("C")
+proc intrinsics::felt::eq(felt, felt) -> i32
     eq
 end
 
-proc.miden::account::get_initial_commitment
+@callconv("C")
+proc miden::active_account::get_initial_commitment(i32)
     trace.240
     nop
-    exec.::miden::account::get_initial_commitment
+    exec.::miden::active_account::get_initial_commitment
     trace.252
     nop
     movup.4
@@ -871,10 +893,11 @@ proc.miden::account::get_initial_commitment
     nop
 end
 
-proc.miden::account::compute_current_commitment
+@callconv("C")
+proc miden::active_account::compute_commitment(i32)
     trace.240
     nop
-    exec.::miden::account::compute_current_commitment
+    exec.::miden::active_account::compute_commitment
     trace.252
     nop
     movup.4
@@ -926,10 +949,13 @@ proc.miden::account::compute_current_commitment
     nop
 end
 
-proc.miden::account::incr_nonce
+@callconv("C")
+proc miden::native_account::incr_nonce(
+
+) -> felt
     trace.240
     nop
-    exec.::miden::account::incr_nonce
+    exec.::miden::native_account::incr_nonce
     trace.252
     nop
 end

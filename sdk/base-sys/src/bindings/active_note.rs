@@ -7,15 +7,15 @@ use super::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
 extern "C" {
-    #[link_name = "miden::note::get_inputs"]
+    #[link_name = "miden::active_note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::note::get_assets"]
+    #[link_name = "miden::active_note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::note::get_sender"]
+    #[link_name = "miden::active_note::get_sender"]
     pub fn extern_note_get_sender(ptr: *mut AccountId);
-    #[link_name = "miden::note::get_script_root"]
+    #[link_name = "miden::active_note::get_script_root"]
     pub fn extern_note_get_script_root(ptr: *mut Word);
-    #[link_name = "miden::note::get_serial_number"]
+    #[link_name = "miden::active_note::get_serial_number"]
     pub fn extern_note_get_serial_number(ptr: *mut Word);
 }
 

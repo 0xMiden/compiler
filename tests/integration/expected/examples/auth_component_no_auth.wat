@@ -36,7 +36,7 @@
       local.get 4
       i32.const 32
       i32.add
-      call $miden::account::get_initial_commitment
+      call $miden::active_account::get_initial_commitment
       local.get 4
       local.get 4
       i64.load offset=40
@@ -53,7 +53,7 @@
       local.get 4
       i32.const 32
       i32.add
-      call $miden::account::compute_current_commitment
+      call $miden::active_account::compute_commitment
       local.get 4
       local.get 4
       i64.load offset=40
@@ -104,7 +104,7 @@
           i32.eq
           br_if 1 (;@1;)
         end
-        call $miden::account::incr_nonce
+        call $miden::native_account::incr_nonce
         drop
       end
       local.get 4
@@ -191,13 +191,13 @@
     (func $intrinsics::felt::eq (;5;) (type 3) (param f32 f32) (result i32)
       unreachable
     )
-    (func $miden::account::get_initial_commitment (;6;) (type 4) (param i32)
+    (func $miden::active_account::get_initial_commitment (;6;) (type 4) (param i32)
       unreachable
     )
-    (func $miden::account::compute_current_commitment (;7;) (type 4) (param i32)
+    (func $miden::active_account::compute_commitment (;7;) (type 4) (param i32)
       unreachable
     )
-    (func $miden::account::incr_nonce (;8;) (type 5) (result f32)
+    (func $miden::native_account::incr_nonce (;8;) (type 5) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
