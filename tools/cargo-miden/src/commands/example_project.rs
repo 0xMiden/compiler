@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use crate::template::{generate, GenerateArgs, TemplatePath};
 use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
-use crate::utils::compiler_path;
+use crate::{
+    template::{generate, GenerateArgs, TemplatePath},
+    utils::compiler_path,
+};
 
 /// Paired project mappings for examples that create multiple related projects
 const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")];

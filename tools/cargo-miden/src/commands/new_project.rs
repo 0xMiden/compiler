@@ -4,8 +4,9 @@ use std::{
 };
 
 use anyhow::Context;
-use crate::template::{generate, GenerateArgs, TemplatePath};
 use clap::Args;
+
+use crate::template::{generate, GenerateArgs, TemplatePath};
 
 /// The tag used in checkout of the new project template.
 ///
@@ -232,7 +233,6 @@ impl NewCommand {
             force_git_init: should_git_init,
             verbose: true,
             define,
-            ..Default::default()
         };
         let _project_path = generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;

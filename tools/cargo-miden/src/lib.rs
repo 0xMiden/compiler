@@ -12,8 +12,8 @@ mod compile_masm;
 mod config;
 mod dependencies;
 mod outputs;
-mod template;
 mod target;
+mod template;
 mod utils;
 
 pub use outputs::{BuildOutput, CommandOutput};
