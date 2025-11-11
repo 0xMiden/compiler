@@ -54,10 +54,7 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     };
 
     if !source_root.exists() {
-        bail!(
-            "Template directory '{}' does not exist",
-            source_root.display()
-        );
+        bail!("Template directory '{}' does not exist", source_root.display());
     }
 
     if source_root.join("template").is_dir() {
@@ -71,10 +68,7 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
         .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("current directory is accessible"));
     fs::create_dir_all(&destination_root).with_context(|| {
-        format!(
-            "Failed to create destination directory '{}'",
-            destination_root.display()
-        )
+        format!("Failed to create destination directory '{}'", destination_root.display())
     })?;
 
     let project_dir = destination_root.join(&project_name);
@@ -97,11 +91,7 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     }
 
     if args.verbose {
-        log::info!(
-            "Generated project '{}' in '{}'",
-            project_name,
-            project_dir.display()
-        );
+        log::info!("Generated project '{}' in '{}'", project_name, project_dir.display());
     }
 
     println!("Created project {}", project_dir.display());
@@ -180,10 +170,7 @@ fn clone_repository(repo: &str, template_path: &TemplatePath, destination: &Path
 fn prepare_destination(project_dir: &Path, force: bool) -> Result<()> {
     if project_dir.exists() {
         if !project_dir.is_dir() {
-            bail!(
-                "Destination '{}' exists and is not a directory",
-                project_dir.display()
-            );
+            bail!("Destination '{}' exists and is not a directory", project_dir.display());
         }
 
         if !force && !is_empty_directory(project_dir)? {
@@ -194,10 +181,7 @@ fn prepare_destination(project_dir: &Path, force: bool) -> Result<()> {
         }
     } else {
         fs::create_dir_all(project_dir).with_context(|| {
-            format!(
-                "Failed to create project directory '{}'",
-                project_dir.display()
-            )
+            format!("Failed to create project directory '{}'", project_dir.display())
         })?;
     }
 
@@ -224,16 +208,11 @@ fn build_variable_map(crate_name: String, define: &[String]) -> Result<Object> {
 
 fn parse_define(input: &str) -> Result<(String, String)> {
     let mut parts = input.splitn(2, '=');
-    let key = parts
-        .next()
-        .context("Invalid define argument: missing key")?
-        .trim();
+    let key = parts.next().context("Invalid define argument: missing key")?.trim();
     if key.is_empty() {
         bail!("Invalid define argument: key must not be empty");
     }
-    let value = parts
-        .next()
-        .context("Invalid define argument: missing value")?;
+    let value = parts.next().context("Invalid define argument: missing value")?;
     Ok((key.to_string(), value.to_string()))
 }
 
@@ -289,51 +268,39 @@ fn render_template(
     Ok(())
 }
 
-fn render_file(source: &Path, destination: &Path, parser: &Parser, variables: &Object) -> Result<()> {
-    let bytes = fs::read(source).with_context(|| {
-        format!(
-            "Failed to read template file '{}'",
-            source.display()
-        )
-    })?;
+fn render_file(
+    source: &Path,
+    destination: &Path,
+    parser: &Parser,
+    variables: &Object,
+) -> Result<()> {
+    let bytes = fs::read(source)
+        .with_context(|| format!("Failed to read template file '{}'", source.display()))?;
 
     match std::str::from_utf8(&bytes) {
         Ok(content) => {
             let template = parser
                 .parse(content)
                 .with_context(|| format!("Failed to parse template '{}'", source.display()))?;
-            let rendered = template.render(variables).with_context(|| {
-                format!(
-                    "Failed to render template '{}'",
-                    source.display()
-                )
-            })?;
+            let rendered = template
+                .render(variables)
+                .with_context(|| format!("Failed to render template '{}'", source.display()))?;
             fs::write(destination, rendered).with_context(|| {
-                format!(
-                    "Failed to write rendered file '{}'",
-                    destination.display()
-                )
+                format!("Failed to write rendered file '{}'", destination.display())
             })?;
         }
         Err(_) => {
             // Binary data - copy verbatim.
             fs::write(destination, &bytes).with_context(|| {
-                format!(
-                    "Failed to write binary file '{}'",
-                    destination.display()
-                )
+                format!("Failed to write binary file '{}'", destination.display())
             })?;
         }
     }
 
     // Preserve executable bit when present.
     let metadata = fs::metadata(source)?;
-    fs::set_permissions(destination, metadata.permissions()).with_context(|| {
-        format!(
-            "Failed to set permissions on '{}'",
-            destination.display()
-        )
-    })?;
+    fs::set_permissions(destination, metadata.permissions())
+        .with_context(|| format!("Failed to set permissions on '{}'", destination.display()))?;
 
     Ok(())
 }
@@ -368,10 +335,7 @@ fn load_template_config(template_root: &Path) -> Result<TemplateConfig> {
     }
 
     let contents = fs::read_to_string(&config_path).with_context(|| {
-        format!(
-            "Failed to read template configuration '{}'",
-            config_path.display()
-        )
+        format!("Failed to read template configuration '{}'", config_path.display())
     })?;
 
     let document: DocumentMut = contents
@@ -403,16 +367,12 @@ fn should_ignore(relative_path: &Path, config: &TemplateConfig) -> bool {
 
 fn sanitize_crate_name(name: &str) -> String {
     let mut result = String::with_capacity(name.len());
-    for (idx, ch) in name.chars().enumerate() {
+    for ch in name.chars() {
         match ch {
             'a'..='z' | '0'..='9' => result.push(ch),
             'A'..='Z' => result.push(ch.to_ascii_lowercase()),
             '-' | ' ' | '.' => {
-                if idx != 0 {
-                    result.push('_');
-                } else {
-                    result.push('_');
-                }
+                result.push('_');
             }
             '_' => result.push('_'),
             _ => result.push('_'),
@@ -429,10 +389,12 @@ fn sanitize_crate_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use anyhow::Result;
     use std::fs;
+
+    use anyhow::Result;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn crate_name_is_sanitized() {
