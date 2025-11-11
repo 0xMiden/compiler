@@ -2223,7 +2223,7 @@ dependencies = [
  "miden-core",
  "miden-debug-types",
  "miden-utils-diagnostics",
- "midenc-hir-type 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midenc-hir-type",
  "proptest",
  "regex",
  "rustc_version 0.4.1",
@@ -2951,7 +2951,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
- "midenc-hir-type 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midenc-hir-type",
  "midenc-session",
  "pretty_assertions",
  "rustc-demangle",
@@ -3025,17 +3025,6 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-session",
-]
-
-[[package]]
-name = "midenc-hir-type"
-version = "0.4.3"
-dependencies = [
- "miden-formatting",
- "serde",
- "serde_repr",
- "smallvec",
- "thiserror 2.0.17",
 ]
 
 [[package]]
