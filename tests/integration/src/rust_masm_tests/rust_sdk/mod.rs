@@ -4,9 +4,9 @@ use miden_core::{
     utils::{Deserializable, Serializable},
     Felt, FieldElement, Word,
 };
+use miden_debug::Executor;
 use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
-use midenc_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
@@ -170,7 +170,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
         .add(account_package.digest(), account_package.into());
     let dependencies = package.manifest.dependencies();
     exec.with_dependencies(dependencies).unwrap();
-    let trace = exec.execute(&program, &test.session);
+    let trace = exec.execute(&program, test.session.source_manager.clone());
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies()).unwrap();
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }
 
 #[test]
@@ -297,5 +297,5 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies()).unwrap();
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }

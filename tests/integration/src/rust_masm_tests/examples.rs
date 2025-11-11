@@ -38,7 +38,7 @@ fn storage_example() {
         .unwrap();
     let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
-        .as_toml()
+        .to_toml()
         .unwrap();
     expect![[r#"
         name = "storage-example"
@@ -252,7 +252,7 @@ fn counter_contract() {
         .unwrap();
     let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
-        .as_toml()
+        .to_toml()
         .unwrap();
     expect![[r#"
         name = "counter-contract"

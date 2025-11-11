@@ -93,12 +93,8 @@ pub fn test_basic_wallet_p2id_local() {
             .build()
             .unwrap();
 
-        let mint_tx_result =
-            client.new_transaction(faucet_account.id(), mint_request).await.unwrap();
-        let mint_tx_id = mint_tx_result.executed_transaction().id();
-        eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
-
-        client.submit_transaction(mint_tx_result).await.unwrap();
+        let mint_tx_id =
+            client.submit_new_transaction(faucet_account.id(), mint_request).await.unwrap();
         eprintln!("Submitted mint transaction. Tx ID: {mint_tx_id:?}");
 
         eprintln!("\n=== Step 2: Alice attempts to consume mint note ===");
@@ -108,13 +104,11 @@ pub fn test_basic_wallet_p2id_local() {
             .build()
             .unwrap();
 
-        let consume_tx = client
-            .new_transaction(alice_account.id(), consume_request)
+        let _consume_tx_id = client
+            .submit_new_transaction(alice_account.id(), consume_request)
             .await
             .map_err(|e| format!("{e:?}"))
             .unwrap();
-
-        client.submit_transaction(consume_tx).await.unwrap();
 
         eprintln!("\n=== Checking Alice's account has the minted asset ===");
 
@@ -169,11 +163,9 @@ pub fn test_basic_wallet_p2id_local() {
             .build()
             .unwrap();
 
-        let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
-        let consume_tx_id = consume_tx.executed_transaction().id();
+        let consume_tx_id =
+            client.submit_new_transaction(bob_account.id(), consume_request).await.unwrap();
         eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
-
-        client.submit_transaction(consume_tx).await.unwrap();
 
         eprintln!("\n=== Step 6: Checking Bob's account has the transferred asset ===");
 

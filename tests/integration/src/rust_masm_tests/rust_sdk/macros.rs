@@ -40,5 +40,5 @@ fn component_macros_account_and_note() {
         .add(account_package.digest(), account_package.into());
     let dependencies = note_package.manifest.dependencies();
     exec.with_dependencies(dependencies).unwrap();
-    exec.execute(&program, &note.session);
+    exec.execute(&program, note.session.source_manager.clone());
 }

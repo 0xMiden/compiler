@@ -1,6 +1,6 @@
 //! Common helper functions for node tests
 
-use std::{borrow::Borrow, collections::BTreeSet, sync::Arc};
+use std::{borrow::Borrow, collections::BTreeSet, path::Path, sync::Arc};
 
 use miden_client::{
     account::{
@@ -8,19 +8,20 @@ use miden_client::{
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
     },
     asset::{FungibleAsset, TokenSymbol},
-    auth::AuthSecretKey,
+    auth::{AuthSecretKey, PublicKeyCommitment},
     builder::ClientBuilder,
-    crypto::{FeltRng, RpoRandomCoin, SecretKey},
+    crypto::{rpo_falcon512::SecretKey, FeltRng, RpoRandomCoin},
     keystore::FilesystemKeyStore,
     note::{
         Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
         NoteType,
     },
-    rpc::{Endpoint, TonicRpcClient},
+    rpc::{Endpoint, GrpcClient},
     transaction::{TransactionRequestBuilder, TransactionScript},
     utils::Deserializable,
     Client, ClientError,
 };
+use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement, Word};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::{Package, SectionId};
@@ -50,7 +51,7 @@ pub async fn setup_test_infrastructure(
     // Initialize RPC connection
     let endpoint = Endpoint::try_from(rpc_url.as_str()).expect("Failed to create endpoint");
     let timeout_ms = 10_000;
-    let rpc_api = Arc::new(TonicRpcClient::new(&endpoint, timeout_ms));
+    let rpc_api = Arc::new(GrpcClient::new(&endpoint, timeout_ms));
 
     // Initialize keystore
     let keystore_path = temp_dir.path().join("keystore");
@@ -60,7 +61,7 @@ pub async fn setup_test_infrastructure(
     let store_path = temp_dir.path().join("store.sqlite3").to_str().unwrap().to_string();
     let builder = ClientBuilder::new()
         .rpc(rpc_api)
-        .sqlite_store(&store_path)
+        .sqlite_store(Path::new(&store_path).to_path_buf())
         .filesystem_keystore(keystore_path.to_str().unwrap())
         .in_debug_mode(miden_client::DebugMode::Enabled);
     let client = builder.build().await?;
@@ -135,7 +136,9 @@ pub async fn create_account_with_component(
     let mut builder = AccountBuilder::new(init_seed)
         .account_type(config.account_type)
         .storage_mode(config.storage_mode)
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()));
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(
+            key_pair.public_key().to_commitment(),
+        )));
 
     if config.with_basic_wallet {
         builder = builder.with_component(BasicWallet);
@@ -143,11 +146,11 @@ pub async fn create_account_with_component(
 
     builder = builder.with_component(account_component);
 
-    let (account, seed) = builder.build().unwrap_or_else(|e| {
+    let account = builder.build().unwrap_or_else(|e| {
         eprintln!("failed to build account with custom auth component: {e}");
         panic!("failed to build account with custom auth component")
     });
-    client.add_account(&account, Some(seed), false).await?;
+    client.add_account(&account, false).await?;
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
 
     Ok(account)
@@ -172,11 +175,13 @@ pub async fn create_basic_wallet_account(
     let builder = AccountBuilder::new(init_seed)
         .account_type(config.account_type)
         .storage_mode(config.storage_mode)
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(
+            key_pair.public_key().to_commitment(),
+        )))
         .with_component(BasicWallet);
 
-    let (account, seed) = builder.build().unwrap();
-    client.add_account(&account, Some(seed), false).await?;
+    let account = builder.build().unwrap();
+    client.add_account(&account, false).await?;
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
 
     Ok(account)
@@ -190,28 +195,31 @@ pub async fn create_account_with_component_and_auth_package(
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
     // Build the main account component from its template metadata
-    let account_component = match component_package.account_component_metadata_bytes.as_deref() {
-        None => panic!("no account component metadata present"),
-        Some(bytes) => {
-            let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let template = AccountComponentTemplate::new(
-                metadata,
-                component_package.unwrap_library().as_ref().clone(),
-            );
+    let account_component_metadata_section = component_package
+        .sections
+        .iter()
+        .find(|s| s.id == SectionId::ACCOUNT_COMPONENT_METADATA)
+        .expect("no account component metadata found");
+    let account_component = {
+        let bytes = account_component_metadata_section.data.as_ref();
+        let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
+        let template = AccountComponentTemplate::new(
+            metadata,
+            component_package.unwrap_library().as_ref().clone(),
+        );
 
-            let component =
-                AccountComponent::new(template.library().clone(), config.storage_slots.clone())
-                    .unwrap();
+        let component =
+            AccountComponent::new(template.library().clone(), config.storage_slots.clone())
+                .unwrap();
 
-            // Use supported types from config if provided, otherwise default to RegularAccountUpdatableCode
-            let supported_types = if let Some(types) = &config.supported_types {
-                BTreeSet::from_iter(types.iter().cloned())
-            } else {
-                BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode])
-            };
+        // Use supported types from config if provided, otherwise default to RegularAccountUpdatableCode
+        let supported_types = if let Some(types) = &config.supported_types {
+            BTreeSet::from_iter(types.iter().cloned())
+        } else {
+            BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode])
+        };
 
-            component.with_supported_types(supported_types)
-        }
+        component.with_supported_types(supported_types)
     };
 
     // Build the authentication component from the compiled library (no storage)
@@ -245,8 +253,8 @@ pub async fn create_account_with_component_and_auth_package(
 
     builder = builder.with_component(account_component);
 
-    let (account, seed) = builder.build().unwrap();
-    client.add_account(&account, Some(seed), false).await?;
+    let account = builder.build().unwrap();
+    client.add_account(&account, false).await?;
     // No keystore key needed for no-auth auth component
 
     Ok(account)
@@ -268,11 +276,13 @@ pub async fn create_fungible_faucet_account(
     let builder = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(
+            key_pair.public_key().to_commitment(),
+        )))
         .with_component(BasicFungibleFaucet::new(token_symbol, decimals, max_supply).unwrap());
 
-    let (account, seed) = builder.build().unwrap();
-    client.add_account(&account, Some(seed), false).await?;
+    let account = builder.build().unwrap();
+    client.add_account(&account, false).await?;
     keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
 
     Ok(account)
@@ -497,10 +507,7 @@ pub async fn send_asset_to_account(
         .build()
         .unwrap();
 
-    let tx = client.new_transaction(sender_account_id, tx_request).await?;
-    let tx_id = tx.executed_transaction().id();
-
-    client.submit_transaction(tx).await?;
+    let tx_id = client.submit_new_transaction(sender_account_id, tx_request).await?;
 
     // Create the Note that the recipient will consume
     let assets = miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap();
