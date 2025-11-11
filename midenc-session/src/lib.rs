@@ -472,7 +472,7 @@ impl FromStr for TargetEnv {
             "rollup:authentication-component" => Ok(Self::Rollup {
                 target: RollupTarget::AuthComponent,
             }),
-            _ => Err(anyhow::anyhow!("invalid target environment: {}", s)),
+            _ => Err(anyhow::anyhow!("invalid target environment: {s}")),
         }
     }
 }

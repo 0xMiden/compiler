@@ -68,8 +68,8 @@ impl ExampleCommand {
         // Check if directory already exists
         if project_path.exists() {
             return Err(anyhow::anyhow!(
-                "Directory '{}' already exists. Please remove it or choose a different location.",
-                project_name
+                "Directory '{project_name}' already exists. Please remove it or choose a \
+                 different location."
             ));
         }
 
