@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use cargo_generate::{GenerateArgs, TemplatePath};
+use crate::template::{generate, GenerateArgs, TemplatePath};
 use clap::Args;
 
 /// The tag used in checkout of the new project template.
@@ -134,7 +134,6 @@ pub struct NewCommand {
     #[clap(long, hide(true))]
     pub compiler_branch: Option<String>,
 }
-
 use crate::utils::set_default_test_compiler;
 
 impl NewCommand {
@@ -235,7 +234,7 @@ impl NewCommand {
             define,
             ..Default::default()
         };
-        let _project_path = cargo_generate::generate(generate_args)
+        let _project_path = generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
         Ok(self.path)

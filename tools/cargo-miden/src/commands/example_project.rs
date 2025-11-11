@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use cargo_generate::{GenerateArgs, TemplatePath};
+use crate::template::{generate, GenerateArgs, TemplatePath};
 use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
@@ -89,7 +89,7 @@ impl ExampleCommand {
             verbose: true,
             ..Default::default()
         };
-        cargo_generate::generate(generate_args)
+        generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
         // Process the Cargo.toml to update dependencies and WIT paths
@@ -137,7 +137,7 @@ impl ExampleCommand {
                 ..Default::default()
             };
 
-            cargo_generate::generate(generate_args)
+            generate(generate_args)
                 .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);
@@ -201,7 +201,7 @@ impl ExampleCommand {
                 ..Default::default()
             };
 
-            cargo_generate::generate(generate_args)
+            generate(generate_args)
                 .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);
