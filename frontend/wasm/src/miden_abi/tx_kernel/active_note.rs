@@ -6,11 +6,11 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::note";
+pub const MODULE_ID: &str = "miden::active_note";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Miden),
-    SymbolNameComponent::Component(symbols::Note),
+    SymbolNameComponent::Component(symbols::ActiveNote),
 ];
 
 pub const GET_INPUTS: &str = "get_inputs";

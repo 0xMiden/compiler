@@ -35,8 +35,7 @@ fn run(arg: Word) {
     let note_type = input[NOTE_TYPE_INDEX];
     let execution_hint = input[EXECUTION_HINT_INDEX];
     let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
-    let note_idx =
-        tx::create_note(tag.into(), aux, note_type.into(), execution_hint, recipient.into());
+    let note_idx = output_note::create(tag.into(), aux, note_type.into(), execution_hint, recipient.into());
     let asset: [Felt; 4] = input[ASSET_START..ASSET_END].try_into().unwrap();
     basic_wallet::move_asset_to_note(asset.into(), note_idx);
 }

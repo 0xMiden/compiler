@@ -357,7 +357,7 @@ impl MasmComponent {
     }
 
     fn emit_test_harness(&self, block: &mut masm::Block) {
-        use masm::{Instruction as Inst, IntValue, Op};
+        use masm::{Instruction as Inst, IntValue, Op, PushValue};
         use miden_core::{Felt, FieldElement};
 
         let span = SourceSpan::default();
@@ -373,7 +373,7 @@ impl MasmComponent {
         // => [inits, inits]
         block.push(Op::Inst(Span::new(span, Inst::Dup0)));
         // => [inits > 0, inits]
-        block.push(Op::Inst(Span::new(span, Inst::Push(IntValue::U8(0).into()))));
+        block.push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
         block.push(Op::Inst(Span::new(span, Inst::Gt)));
 
         // Step 3: Loop until `inits == 0`
@@ -412,7 +412,8 @@ impl MasmComponent {
         // => [inits', inits']
         loop_body.push(Op::Inst(Span::new(span, Inst::Dup0)));
         // => [inits' > 0, inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::Push(IntValue::U8(0).into()))));
+        loop_body
+            .push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
         loop_body.push(Op::Inst(Span::new(span, Inst::Gt)));
 
         // Step 4: Enter (or skip) loop

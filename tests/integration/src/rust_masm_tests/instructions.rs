@@ -1,5 +1,5 @@
 use miden_core::{Felt, FieldElement, Word};
-use midenc_debug::ToMidenRepr;
+use miden_debug::ToMidenRepr;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::SmallVec;
@@ -442,7 +442,7 @@ fn test_hmerge() {
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     let config = proptest::test_runner::Config::with_cases(16);
     let res = TestRunner::new(config).run(
-        &any::<([midenc_debug::Felt; 4], [midenc_debug::Felt; 4])>(),
+        &any::<([miden_debug::Felt; 4], [miden_debug::Felt; 4])>(),
         move |(felts_in1, felts_in2)| {
             let raw_felts_in1: [Felt; 4] = [
                 felts_in1[0].into(),
@@ -460,11 +460,11 @@ fn test_hmerge() {
             let digests_in =
                 [miden_core::Word::from(raw_felts_in1), miden_core::Word::from(raw_felts_in2)];
             let digest_out = miden_core::crypto::hash::Rpo256::merge(&digests_in);
-            let felts_out: [midenc_debug::Felt; 4] = [
-                midenc_debug::Felt(digest_out[0]),
-                midenc_debug::Felt(digest_out[1]),
-                midenc_debug::Felt(digest_out[2]),
-                midenc_debug::Felt(digest_out[3]),
+            let felts_out: [miden_debug::Felt; 4] = [
+                miden_debug::Felt(digest_out[0]),
+                miden_debug::Felt(digest_out[1]),
+                miden_debug::Felt(digest_out[2]),
+                miden_debug::Felt(digest_out[3]),
             ];
 
             let args = [

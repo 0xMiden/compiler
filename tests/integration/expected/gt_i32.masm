@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -18,7 +18,8 @@ end
 
 # mod root_ns:root@1.0.0::test_rust_9d2e8775109dcfc1c935f1f5d3649375cc140aedefb7659a7c1d3720c82086ec
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(i32, i32) -> i32
     swap.1
     trace.240
     nop

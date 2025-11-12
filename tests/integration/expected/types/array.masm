@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -26,7 +26,8 @@ end
 
 # mod root_ns:root@1.0.0::test_rust_d63291a98b435c53f58385d5782fb46f0b0b78bee8e860843e7223106d66f7d6
 
-export.sum_arr
+@callconv("C")
+pub proc sum_arr(i32, i32) -> i32
     push.0
     push.0
     dup.3
@@ -101,7 +102,10 @@ export.sum_arr
     end
 end
 
-export.__main
+@callconv("C")
+pub proc __main(
+
+) -> i32
     push.5
     push.1048576
     trace.240

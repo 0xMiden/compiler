@@ -288,7 +288,10 @@ stack on exit from 'after': {:#?}
         emitter.stack = stack_on_loop_exit;
 
         // Always enter loop on first iteration
-        emitter.emit_op(masm::Op::Inst(Span::new(span, masm::Instruction::PushU8(1))));
+        emitter.emit_op(masm::Op::Inst(Span::new(
+            span,
+            masm::Instruction::Push(masm::Immediate::Value(Span::new(span, 1u8.into()))),
+        )));
         emitter.emit_op(masm::Op::While {
             span,
             body: loop_body,
@@ -465,7 +468,7 @@ impl HirLowering for ub::Unreachable {
         // always fails to guarantee this, i.e. assert(false)
         let span = self.span();
         let mut op_emitter = emitter.emitter();
-        op_emitter.emit(masm::Instruction::PushU32(0), span);
+        op_emitter.emit_push(0u32, span);
         op_emitter.emit(masm::Instruction::Assert, span);
 
         Ok(())

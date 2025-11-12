@@ -27,12 +27,10 @@ impl OpEmitter<'_> {
             Type::I128 | Type::U128 => {
                 self.emit_all(
                     [
-                        masm::Instruction::PushWord(WordValue([
-                            Felt::ZERO,
-                            Felt::ZERO,
-                            Felt::ZERO,
-                            Felt::ONE,
-                        ])),
+                        masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
+                            span,
+                            WordValue([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]).into(),
+                        ))),
                         masm::Instruction::AssertEqw,
                     ],
                     span,
@@ -70,7 +68,10 @@ impl OpEmitter<'_> {
             Type::U128 | Type::I128 => {
                 self.emit_all(
                     [
-                        masm::Instruction::PushWord(WordValue([Felt::ZERO; 4])),
+                        masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
+                            span,
+                            WordValue([Felt::ZERO; 4]).into(),
+                        ))),
                         masm::Instruction::AssertEqw,
                     ],
                     span,

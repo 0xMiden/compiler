@@ -184,7 +184,10 @@ impl MasmComponentBuilder<'_> {
 
             // Heap metadata initialization
             let heap_base = self.component.heap_base;
-            self.init_body.push(masm::Op::Inst(Span::new(span, Inst::PushU32(heap_base))));
+            self.init_body.push(masm::Op::Inst(Span::new(
+                span,
+                Inst::Push(masm::Immediate::Value(Span::unknown(heap_base.into()))),
+            )));
             let heap_init = masm::ProcedureName::new("heap_init").unwrap();
             let memory_intrinsics = masm::LibraryPath::new("intrinsics::mem").unwrap();
             self.init_body.push(Op::Inst(Span::new(
@@ -332,17 +335,26 @@ impl MasmComponentBuilder<'_> {
             let word = rodata.digest.as_elements();
             let word_value = [word[0], word[1], word[2], word[3]];
 
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::PushWord(WordValue(word_value)))));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::Push(masm::Immediate::Value(Span::unknown(WordValue(word_value).into()))),
+            )));
             // Move rodata from the advice map, using the commitment as key, to the advice stack
             self.init_body
                 .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
             // write_ptr
             assert!(rodata.start.is_word_aligned(), "rodata segments must be word-aligned");
-            self.init_body.push(Op::Inst(Span::new(span, Inst::PushU32(rodata.start.addr))));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::Push(masm::Immediate::Value(Span::unknown(rodata.start.addr.into()))),
+            )));
             // num_words
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::PushU32(rodata.size_in_words() as u32))));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::Push(masm::Immediate::Value(Span::unknown(
+                    (rodata.size_in_words() as u32).into(),
+                ))),
+            )));
             // [num_words, write_ptr, COM, ..] -> [write_ptr']
             self.init_body.push(Op::Inst(Span::new(
                 span,
@@ -477,6 +489,7 @@ impl MasmModuleBuilder<'_> {
 struct MasmFunctionBuilder {
     span: midenc_hir::SourceSpan,
     name: masm::ProcedureName,
+    signature: masm::FunctionType,
     visibility: masm::Visibility,
     num_locals: u16,
 }
@@ -511,9 +524,19 @@ impl MasmFunctionBuilder {
                 .into_report()
         })?;
 
+        let sig = function.signature();
+        let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();
+        let results = sig
+            .results
+            .iter()
+            .map(|result| masm::TypeExpr::from(result.ty.clone()))
+            .collect();
+        let signature = masm::FunctionType::new(sig.cc, args, results);
+
         Ok(Self {
             span: function.span(),
             name,
+            signature,
             visibility,
             num_locals,
         })
@@ -590,12 +613,13 @@ impl MasmFunctionBuilder {
         let Self {
             span,
             name,
+            signature,
             visibility,
             num_locals,
         } = self;
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
-
+        procedure.set_signature(signature);
         procedure.extend_invoked(invoked);
 
         Ok(procedure)

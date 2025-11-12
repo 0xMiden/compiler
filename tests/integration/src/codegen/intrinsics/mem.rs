@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use midenc_debug::ToMidenRepr;
+use miden_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{

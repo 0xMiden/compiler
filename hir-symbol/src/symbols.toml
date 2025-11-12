@@ -102,6 +102,10 @@ ub = {}
 
 [modules]
 account = {}
+native_account = {}
+active_account = {}
+active_note = {}
+input_note = {}
 blake3 = {}
 crypto = {}
 debug = {}
@@ -113,6 +117,7 @@ advice = {}
 miden = {}
 mem = {}
 note = {}
+output_note = {}
 rpo_falcon512 = {}
 std = {}
 tx = {}

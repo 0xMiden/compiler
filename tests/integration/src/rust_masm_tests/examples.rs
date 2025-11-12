@@ -1,14 +1,16 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
 
 use miden_core::utils::{Deserializable, Serializable};
-use miden_mast_package::Package;
+use miden_debug::{Executor, ToMidenRepr};
+use miden_lib::MidenLib;
+use miden_mast_package::{Package, SectionId};
 use miden_objects::account::AccountComponentMetadata;
-use midenc_debug::{Executor, ToMidenRepr};
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
 };
+use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
@@ -24,11 +26,21 @@ fn storage_example() {
     test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
     test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
     let package = test.compiled_package();
-    let account_component_metadata_bytes =
-        package.as_ref().account_component_metadata_bytes.clone().unwrap();
-    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+    let account_component_metadata_bytes = package
+        .as_ref()
+        .sections
+        .iter()
+        .find_map(|s| {
+            if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+                Some(s.data.borrow())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
-        .as_toml()
+        .to_toml()
         .unwrap();
     expect![[r#"
         name = "storage-example"
@@ -49,6 +61,19 @@ fn storage_example() {
         values = []
     "#]]
     .assert_eq(&toml);
+}
+
+fn executor_with_std(package: &Package, args: Vec<Felt>) -> Result<Executor, TestCaseError> {
+    let mut exec = Executor::new(args);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+    exec.with_dependencies(package.manifest.dependencies())
+        .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    Ok(exec)
 }
 
 #[test]
@@ -75,10 +100,9 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
-                .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let exec = executor_with_std(&package, vec![Felt::new(a as u64)])?;
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out, output);
             Ok(())
@@ -118,10 +142,10 @@ fn collatz() {
     TestRunner::new(Config::with_cases(4))
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
-            let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
-                .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let args = a.to_felts().to_vec();
+            let exec = executor_with_std(&package, args)?;
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out, output);
             Ok(())
@@ -198,10 +222,10 @@ fn is_prime() {
             };
             prop_assert_eq!(rust_out as i32, result);
 
-            let args = a.to_felts();
-            let exec = Executor::for_package(&package, args, &test.session)
-                .map_err(|err| TestCaseError::fail(err.to_string()))?;
-            let output: u32 = exec.execute_into(&package.unwrap_program(), &test.session);
+            let args = a.to_felts().to_vec();
+            let exec = executor_with_std(&package, args)?;
+            let output: u32 =
+                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out as u32, output);
             Ok(())
@@ -225,11 +249,21 @@ fn counter_contract() {
     test_release.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
     test_release.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
     let package = test_release.compiled_package();
-    let account_component_metadata_bytes =
-        package.as_ref().account_component_metadata_bytes.clone().unwrap();
-    let toml = AccountComponentMetadata::read_from_bytes(&account_component_metadata_bytes)
+    let account_component_metadata_bytes = package
+        .as_ref()
+        .sections
+        .iter()
+        .find_map(|s| {
+            if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+                Some(s.data.borrow())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let toml = AccountComponentMetadata::read_from_bytes(account_component_metadata_bytes)
         .unwrap()
-        .as_toml()
+        .to_toml()
         .unwrap();
     expect![[r#"
         name = "counter-contract"
