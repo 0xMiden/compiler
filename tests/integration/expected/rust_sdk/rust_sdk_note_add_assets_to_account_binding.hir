@@ -1,0 +1,76 @@
+builtin.component miden:base/note-script@1.0.0 {
+    builtin.module public @rust_sdk_note_add_assets_to_account_binding {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @rust_sdk_note_add_assets_to_account_binding::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        private builtin.function @miden:base/note-script@1.0.0#run(v0: felt, v1: felt, v2: felt, v3: felt) {
+        ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
+            hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/wit_bindgen::rt::run_ctors_once()
+            hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/miden::active_note::add_assets_to_account()
+            builtin.ret ;
+        };
+
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
+        ^block11:
+            v5 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v6 = hir.bitcast v5 : ptr<byte, i32>;
+            v7 = hir.load v6 : i32;
+            v8 = arith.constant 1048584 : i32;
+            v9 = arith.add v7, v8 : i32 #[overflow = wrapping];
+            v10 = hir.bitcast v9 : u32;
+            v11 = hir.int_to_ptr v10 : ptr<byte, u8>;
+            v12 = hir.load v11 : u8;
+            v4 = arith.constant 0 : i32;
+            v13 = arith.zext v12 : u32;
+            v14 = hir.bitcast v13 : i32;
+            v16 = arith.neq v14, v4 : i1;
+            scf.if v16{
+            ^block13:
+                scf.yield ;
+            } else {
+            ^block14:
+                v17 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v18 = hir.bitcast v17 : ptr<byte, i32>;
+                v19 = hir.load v18 : i32;
+                hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__wasm_call_ctors()
+                v32 = arith.constant 1 : u8;
+                v34 = arith.constant 1048584 : i32;
+                v21 = arith.add v19, v34 : i32 #[overflow = wrapping];
+                v25 = hir.bitcast v21 : u32;
+                v26 = hir.int_to_ptr v25 : ptr<byte, u8>;
+                hir.store v26, v32;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::active_note::add_assets_to_account() {
+        ^block15:
+            hir.exec @miden/active_note/add_assets_to_account()
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x0000000100000001;
+    };
+
+    public builtin.function @run(v27: felt, v28: felt, v29: felt, v30: felt) {
+    ^block19(v27: felt, v28: felt, v29: felt, v30: felt):
+        hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/miden:base/note-script@1.0.0#run(v27, v28, v29, v30)
+        builtin.ret ;
+    };
+};

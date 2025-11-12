@@ -16,7 +16,7 @@ proc init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[12978692904443896846,474008017171175642,1341726231212769058,17601533792714095233]
+    push.[14053965066302455976,5462514524604701753,12455741123103170362,7752163708621042617]
     adv.push_mapval
     push.262144
     push.6
@@ -302,7 +302,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::account::get_id
+        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::active_account::get_id
         trace.252
         nop
         push.12
@@ -944,6 +944,105 @@ proc intrinsics::mem::heap_base(
 end
 
 @callconv("C")
+proc alloc::vec::Vec<T>::with_capacity(i32, i32)
+    push.1114208
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114208
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.16
+    push.8
+    dup.2
+    u32wrapping_add
+    dup.1
+    movup.3
+    swap.5
+    movdn.3
+    swap.2
+    swap.1
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
+    trace.252
+    nop
+    push.8
+    dup.2
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    push.8
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.0
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    movup.2
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114208
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     i32,
     i32,
@@ -1118,7 +1217,9 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::account::get_id(i32)
+proc miden_base_sys::bindings::active_account::get_id(
+    i32
+)
     push.1114208
     u32divmod.4
     swap.1
@@ -1373,37 +1474,16 @@ proc miden_base_sys::bindings::active_note::get_assets(
     nop
     push.1048656
     u32wrapping_add
-    push.16
-    push.8
-    dup.3
-    u32wrapping_add
-    dup.1
-    swap.2
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
     push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
+    dup.2
+    u32wrapping_add
     trace.240
     nop
-    exec.::intrinsics::mem::load_sw
+    exec.::miden:base/note-script@1.0.0::p2id::alloc::vec::Vec<T>::with_capacity
     trace.252
     nop
-    push.12
-    dup.2
+    push.8
+    dup.1
     add
     u32assert
     push.4
@@ -1420,7 +1500,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     trace.252
     nop
     push.2
-    dup.1
+    swap.1
     swap.1
     u32shr
     trace.240
@@ -1429,9 +1509,8 @@ proc miden_base_sys::bindings::active_note::get_assets(
     trace.252
     nop
     push.8
-    dup.5
-    add
-    u32assert
+    dup.3
+    u32wrapping_add
     push.4
     dup.1
     swap.1
@@ -1446,7 +1525,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     trace.252
     nop
     push.4
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -1459,10 +1538,10 @@ proc miden_base_sys::bindings::active_note::get_assets(
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    movup.2
+    movup.3
     push.4
     dup.1
     swap.1
@@ -1473,7 +1552,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::intrinsics::mem::store_dw
     trace.252
     nop
     push.16

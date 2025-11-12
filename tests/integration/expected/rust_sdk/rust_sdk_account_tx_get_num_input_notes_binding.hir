@@ -1,0 +1,82 @@
+builtin.component miden:base/transaction-script@1.0.0 {
+    builtin.module public @rust_sdk_account_tx_get_num_input_notes_binding {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @rust_sdk_account_tx_get_num_input_notes_binding::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        private builtin.function @miden:base/transaction-script@1.0.0#run(v0: felt, v1: felt, v2: felt, v3: felt) {
+        ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/wit_bindgen::rt::run_ctors_once()
+            v4 = hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/miden_base_sys::bindings::tx::get_num_input_notes() : felt
+            builtin.ret ;
+        };
+
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
+        ^block11:
+            v6 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v7 = hir.bitcast v6 : ptr<byte, i32>;
+            v8 = hir.load v7 : i32;
+            v9 = arith.constant 1048584 : i32;
+            v10 = arith.add v8, v9 : i32 #[overflow = wrapping];
+            v11 = hir.bitcast v10 : u32;
+            v12 = hir.int_to_ptr v11 : ptr<byte, u8>;
+            v13 = hir.load v12 : u8;
+            v5 = arith.constant 0 : i32;
+            v14 = arith.zext v13 : u32;
+            v15 = hir.bitcast v14 : i32;
+            v17 = arith.neq v15, v5 : i1;
+            scf.if v17{
+            ^block13:
+                scf.yield ;
+            } else {
+            ^block14:
+                v18 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v19 = hir.bitcast v18 : ptr<byte, i32>;
+                v20 = hir.load v19 : i32;
+                hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/__wasm_call_ctors()
+                v37 = arith.constant 1 : u8;
+                v39 = arith.constant 1048584 : i32;
+                v22 = arith.add v20, v39 : i32 #[overflow = wrapping];
+                v26 = hir.bitcast v22 : u32;
+                v27 = hir.int_to_ptr v26 : ptr<byte, u8>;
+                hir.store v27, v37;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        private builtin.function @miden_base_sys::bindings::tx::get_num_input_notes() -> felt {
+        ^block15:
+            v29 = hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/miden::tx::get_num_input_notes() : felt
+            builtin.ret v29;
+        };
+
+        private builtin.function @miden::tx::get_num_input_notes() -> felt {
+        ^block17:
+            v30 = hir.exec @miden/tx/get_num_input_notes() : felt
+            builtin.ret v30;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x0000000100000001;
+    };
+
+    public builtin.function @run(v32: felt, v33: felt, v34: felt, v35: felt) {
+    ^block21(v32: felt, v33: felt, v34: felt, v35: felt):
+        hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_input_notes_binding/miden:base/transaction-script@1.0.0#run(v32, v33, v34, v35)
+        builtin.ret ;
+    };
+};

@@ -772,52 +772,52 @@ builtin.component miden:base/authentication-component@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::native_account::compute_delta_commitment(v576: i32) {
-        ^block61(v576: i32):
-            v577, v578, v579, v580 = hir.exec @miden/native_account/compute_delta_commitment() : felt, felt, felt, felt
-            v581 = hir.bitcast v576 : u32;
-            v582 = hir.int_to_ptr v581 : ptr<byte, felt>;
-            hir.store v582, v577;
-            v583 = arith.constant 4 : u32;
-            v584 = arith.add v581, v583 : u32 #[overflow = checked];
-            v585 = hir.int_to_ptr v584 : ptr<byte, felt>;
-            hir.store v585, v578;
-            v586 = arith.constant 8 : u32;
-            v587 = arith.add v581, v586 : u32 #[overflow = checked];
-            v588 = hir.int_to_ptr v587 : ptr<byte, felt>;
-            hir.store v588, v579;
-            v589 = arith.constant 12 : u32;
-            v590 = arith.add v581, v589 : u32 #[overflow = checked];
-            v591 = hir.int_to_ptr v590 : ptr<byte, felt>;
-            hir.store v591, v580;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden::active_account::get_item(v592: felt, v593: i32) {
-        ^block65(v592: felt, v593: i32):
-            v594, v595, v596, v597 = hir.exec @miden/active_account/get_item(v592) : felt, felt, felt, felt
-            v598 = hir.bitcast v593 : u32;
-            v599 = hir.int_to_ptr v598 : ptr<byte, felt>;
-            hir.store v599, v594;
-            v600 = arith.constant 4 : u32;
-            v601 = arith.add v598, v600 : u32 #[overflow = checked];
-            v602 = hir.int_to_ptr v601 : ptr<byte, felt>;
-            hir.store v602, v595;
-            v603 = arith.constant 8 : u32;
-            v604 = arith.add v598, v603 : u32 #[overflow = checked];
-            v605 = hir.int_to_ptr v604 : ptr<byte, felt>;
-            hir.store v605, v596;
-            v606 = arith.constant 12 : u32;
-            v607 = arith.add v598, v606 : u32 #[overflow = checked];
-            v608 = hir.int_to_ptr v607 : ptr<byte, felt>;
-            hir.store v608, v597;
+        private builtin.function @miden::active_account::get_item(v576: felt, v577: i32) {
+        ^block61(v576: felt, v577: i32):
+            v578, v579, v580, v581 = hir.exec @miden/active_account/get_item(v576) : felt, felt, felt, felt
+            v582 = hir.bitcast v577 : u32;
+            v583 = hir.int_to_ptr v582 : ptr<byte, felt>;
+            hir.store v583, v578;
+            v584 = arith.constant 4 : u32;
+            v585 = arith.add v582, v584 : u32 #[overflow = checked];
+            v586 = hir.int_to_ptr v585 : ptr<byte, felt>;
+            hir.store v586, v579;
+            v587 = arith.constant 8 : u32;
+            v588 = arith.add v582, v587 : u32 #[overflow = checked];
+            v589 = hir.int_to_ptr v588 : ptr<byte, felt>;
+            hir.store v589, v580;
+            v590 = arith.constant 12 : u32;
+            v591 = arith.add v582, v590 : u32 #[overflow = checked];
+            v592 = hir.int_to_ptr v591 : ptr<byte, felt>;
+            hir.store v592, v581;
             builtin.ret ;
         };
 
         private builtin.function @miden::native_account::incr_nonce() -> felt {
-        ^block68:
-            v609 = hir.exec @miden/native_account/incr_nonce() : felt
-            builtin.ret v609;
+        ^block65:
+            v593 = hir.exec @miden/native_account/incr_nonce() : felt
+            builtin.ret v593;
+        };
+
+        private builtin.function @miden::native_account::compute_delta_commitment(v595: i32) {
+        ^block68(v595: i32):
+            v596, v597, v598, v599 = hir.exec @miden/native_account/compute_delta_commitment() : felt, felt, felt, felt
+            v600 = hir.bitcast v595 : u32;
+            v601 = hir.int_to_ptr v600 : ptr<byte, felt>;
+            hir.store v601, v596;
+            v602 = arith.constant 4 : u32;
+            v603 = arith.add v600, v602 : u32 #[overflow = checked];
+            v604 = hir.int_to_ptr v603 : ptr<byte, felt>;
+            hir.store v604, v597;
+            v605 = arith.constant 8 : u32;
+            v606 = arith.add v600, v605 : u32 #[overflow = checked];
+            v607 = hir.int_to_ptr v606 : ptr<byte, felt>;
+            hir.store v607, v598;
+            v608 = arith.constant 12 : u32;
+            v609 = arith.add v600, v608 : u32 #[overflow = checked];
+            v610 = hir.int_to_ptr v609 : ptr<byte, felt>;
+            hir.store v610, v599;
+            builtin.ret ;
         };
 
         private builtin.function @miden::tx::get_block_number() -> felt {

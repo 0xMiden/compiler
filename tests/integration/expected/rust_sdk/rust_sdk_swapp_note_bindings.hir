@@ -161,7 +161,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v115 = arith.constant 32 : i32;
             v116 = arith.add v94, v115 : i32 #[overflow = wrapping];
             hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden_base_sys::bindings::active_note::get_serial_number(v116)
-            v117 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden_base_sys::bindings::account::get_balance(v112, v105) : felt
+            v117 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden_base_sys::bindings::active_account::get_balance(v112, v105) : felt
             v118 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/intrinsics::felt::eq(v112, v112) : i32
             v88 = arith.constant 0 : i32;
             v119 = arith.constant 1 : i32;
@@ -295,7 +295,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden_base_sys::bindings::account::get_balance(v188: felt, v189: felt) -> felt {
+        private builtin.function @miden_base_sys::bindings::active_account::get_balance(v188: felt, v189: felt) -> felt {
         ^block27(v188: felt, v189: felt):
             v191 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::active_account::get_balance(v188, v189) : felt
             builtin.ret v191;
