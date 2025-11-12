@@ -22,7 +22,7 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
 miden::generate!();
 bindings::export!(AuthComponent);
 
-use miden::{account, *};
+use miden::{active_account, native_account, *};
 
 use crate::bindings::exports::miden::base::authentication_component::Guest;
 
@@ -32,12 +32,12 @@ impl Guest for AuthComponent {
     fn auth_procedure(_arg: Word) {
         // translated from MASM at
         // https://github.com/0xMiden/miden-base/blob/e4912663276ab8eebb24b84d318417cb4ea0bba3/crates/miden-lib/asm/account_components/no_auth.masm?plain=1
-        let init_comm = account::get_initial_commitment();
-        let curr_comm = account::compute_commitment();
+        let init_comm = active_account::get_initial_commitment();
+        let curr_comm = active_account::compute_commitment();
         // check if the account state has changed by comparing initial and final commitments
         if curr_comm != init_comm {
             // if the account has been updated, increment the nonce
-            account::incr_nonce();
+            native_account::incr_nonce();
         }
     }
 }

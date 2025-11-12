@@ -134,7 +134,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v85 = hir.load v84 : felt;
                 v86 = arith.constant 8 : i32;
                 v87 = arith.add v54, v86 : i32 #[overflow = wrapping];
-                hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::account::get_id(v87)
+                hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_account::get_id(v87)
                 v89 = arith.constant 12 : u32;
                 v88 = hir.bitcast v54 : u32;
                 v90 = arith.add v88, v89 : u32 #[overflow = checked];
@@ -607,7 +607,7 @@ builtin.component miden:base/note-script@1.0.0 {
             ub.unreachable ;
         };
 
-        private builtin.function @miden_base_sys::bindings::account::get_id(v413: i32) {
+        private builtin.function @miden_base_sys::bindings::active_account::get_id(v413: i32) {
         ^block56(v413: i32):
             v415 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v416 = hir.bitcast v415 : ptr<byte, i32>;

@@ -54,7 +54,7 @@
       i32.const 16
       i32.add
       local.get 4
-      call $miden_base_sys::bindings::account::add_asset
+      call $miden_base_sys::bindings::native_account::add_asset
       local.get 4
       i32.const 32
       i32.add
@@ -84,7 +84,7 @@
       i32.const 16
       i32.add
       local.get 5
-      call $miden_base_sys::bindings::account::remove_asset
+      call $miden_base_sys::bindings::native_account::remove_asset
       local.get 5
       i32.const 16
       i32.add
@@ -113,7 +113,7 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::add_asset (;5;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::native_account::add_asset (;5;) (type 3) (param i32 i32)
       local.get 1
       f32.load offset=12
       local.get 1
@@ -125,7 +125,7 @@
       local.get 0
       call $miden::native_account::add_asset
     )
-    (func $miden_base_sys::bindings::account::remove_asset (;6;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::native_account::remove_asset (;6;) (type 3) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -230,13 +230,13 @@
       i64.load align=4
       i64.store
     )
-    (func $miden::native_account::add_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::output_note::add_asset (;9;) (type 2) (param f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $miden::native_account::remove_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::native_account::add_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::output_note::add_asset (;11;) (type 2) (param f32 f32 f32 f32 f32)
+    (func $miden::native_account::remove_asset (;11;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

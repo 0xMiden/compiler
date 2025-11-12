@@ -302,7 +302,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::account::get_id
+        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::active_account::get_id
         trace.252
         nop
         push.12
@@ -1217,7 +1217,9 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::account::get_id(i32)
+proc miden_base_sys::bindings::active_account::get_id(
+    i32
+)
     push.1114208
     u32divmod.4
     swap.1

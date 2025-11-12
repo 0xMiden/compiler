@@ -166,7 +166,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0#receive-asset(felt, felt, felt, felt)
     swap.1
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::account::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::add_asset
     trace.252
     nop
     push.32
@@ -294,7 +294,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note(
     swap.1
     trace.240
     nop
-    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::account::remove_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::remove_asset
     trace.252
     nop
     push.16
@@ -394,7 +394,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::account::add_asset(
+proc miden_base_sys::bindings::native_account::add_asset(
     i32,
     i32
 )
@@ -473,7 +473,7 @@ proc miden_base_sys::bindings::account::add_asset(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::account::remove_asset(
+proc miden_base_sys::bindings::native_account::remove_asset(
     i32,
     i32
 )
@@ -1003,6 +1003,15 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
 end
 
 @callconv("C")
+proc miden::output_note::add_asset(felt, felt, felt, felt, felt)
+    trace.240
+    nop
+    exec.::miden::output_note::add_asset
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden::native_account::add_asset(felt, felt, felt, felt, i32)
     trace.240
     nop
@@ -1110,15 +1119,6 @@ proc miden::native_account::remove_asset(felt, felt, felt, felt, i32)
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc miden::output_note::add_asset(felt, felt, felt, felt, felt)
-    trace.240
-    nop
-    exec.::miden::output_note::add_asset
     trace.252
     nop
 end

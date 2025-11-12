@@ -94,7 +94,7 @@
       call $miden_base_sys::bindings::active_note::get_serial_number
       local.get 6
       local.get 5
-      call $miden_base_sys::bindings::account::get_balance
+      call $miden_base_sys::bindings::active_account::get_balance
       local.set 7
       block ;; label = @1
         local.get 6
@@ -159,7 +159,7 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::get_balance (;5;) (type 3) (param f32 f32) (result f32)
+    (func $miden_base_sys::bindings::active_account::get_balance (;5;) (type 3) (param f32 f32) (result f32)
       local.get 0
       local.get 1
       call $miden::active_account::get_balance

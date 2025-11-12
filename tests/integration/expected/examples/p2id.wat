@@ -103,7 +103,7 @@
         local.get 4
         i32.const 8
         i32.add
-        call $miden_base_sys::bindings::account::get_id
+        call $miden_base_sys::bindings::active_account::get_id
         local.get 4
         f32.load offset=12
         local.set 8
@@ -354,7 +354,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::account::get_id (;13;) (type 8) (param i32)
+    (func $miden_base_sys::bindings::active_account::get_id (;13;) (type 8) (param i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
