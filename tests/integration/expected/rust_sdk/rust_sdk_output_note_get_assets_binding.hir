@@ -10,7 +10,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             v3 = builtin.global_symbol @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v4 = hir.bitcast v3 : ptr<byte, i32>;
             v5 = hir.load v4 : i32;
-            v6 = arith.constant 1048676 : i32;
+            v6 = arith.constant 1048652 : i32;
             v7 = arith.add v5, v6 : i32 #[overflow = wrapping];
             v8 = hir.exec @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v7, v1, v0) : i32
             builtin.ret v8;
@@ -26,7 +26,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             v15 = builtin.global_symbol @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v16 = hir.bitcast v15 : ptr<byte, i32>;
             v17 = hir.load v16 : i32;
-            v18 = arith.constant 1048676 : i32;
+            v18 = arith.constant 1048652 : i32;
             v19 = arith.add v17, v18 : i32 #[overflow = wrapping];
             v20 = hir.exec @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v19, v13, v12) : i32
             v668 = arith.constant 0 : i32;
@@ -115,7 +115,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             v70 = builtin.global_symbol @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v71 = hir.bitcast v70 : ptr<byte, i32>;
             v72 = hir.load v71 : i32;
-            v73 = arith.constant 1048680 : i32;
+            v73 = arith.constant 1048656 : i32;
             v74 = arith.add v72, v73 : i32 #[overflow = wrapping];
             v75 = hir.bitcast v74 : u32;
             v76 = hir.int_to_ptr v75 : ptr<byte, u8>;
@@ -134,7 +134,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
                 v84 = hir.load v83 : i32;
                 hir.exec @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/__wasm_call_ctors()
                 v673 = arith.constant 1 : u8;
-                v675 = arith.constant 1048680 : i32;
+                v675 = arith.constant 1048656 : i32;
                 v86 = arith.add v84, v675 : i32 #[overflow = wrapping];
                 v90 = hir.bitcast v86 : u32;
                 v91 = hir.int_to_ptr v90 : ptr<byte, u8>;
@@ -407,7 +407,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             v287 = builtin.global_symbol @miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1/rust_sdk_output_note_get_assets_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v288 = hir.bitcast v287 : ptr<byte, i32>;
             v289 = hir.load v288 : i32;
-            v290 = arith.constant 1048660 : i32;
+            v290 = arith.constant 1048636 : i32;
             v291 = arith.add v289, v290 : i32 #[overflow = wrapping];
             v285 = arith.constant 4 : i32;
             v286 = arith.add v282, v285 : i32 #[overflow = wrapping];
@@ -945,9 +945,9 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             builtin.ret_imm 0;
         };
 
-        builtin.segment readonly @1048576 = 0x0073722e65746f6e5f74757074756f2f73676e69646e69622f6372732f7379732d657361622f6b64732f3272656c69706d6f632f6e6564696d2f6372732f6e656572672f73726573552f;
+        builtin.segment readonly @1048576 = 0x0073722e65746f6e5f74757074756f2f73676e69646e69622f6372732f302e372e302d7379732d657361622d6e6564696d;
 
-        builtin.segment @1048652 = 0x000000220000006500000049001000000000000100000001;
+        builtin.segment @1048628 = 0x000000220000006500000030001000000000000100000001;
     };
 
     public builtin.function @binding() -> felt {

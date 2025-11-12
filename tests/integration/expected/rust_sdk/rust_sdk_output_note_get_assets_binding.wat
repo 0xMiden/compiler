@@ -29,7 +29,7 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $__rustc::__rust_alloc (;1;) (type 1) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048676
+      i32.const 1048652
       i32.add
       local.get 1
       local.get 0
@@ -39,7 +39,7 @@
     (func $__rustc::__rust_alloc_zeroed (;3;) (type 1) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048676
+        i32.const 1048652
         i32.add
         local.get 1
         local.get 0
@@ -95,7 +95,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048680
+        i32.const 1048656
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -103,7 +103,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048680
+        i32.const 1048656
         i32.add
         i32.const 1
         i32.store8
@@ -266,7 +266,7 @@
       i32.const 4
       i32.add
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048660
+      i32.const 1048636
       i32.add
       call $alloc::vec::Vec<T>::with_capacity
       local.get 0
@@ -551,8 +551,8 @@
     (func $miden::output_note::get_assets (;22;) (type 11) (param i32 f32) (result i32)
       unreachable
     )
-    (data $.rodata (;0;) (i32.const 1048576) "/Users/green/src/miden/compiler2/sdk/base-sys/src/bindings/output_note.rs\00")
-    (data $.data (;1;) (i32.const 1048652) "\01\00\00\00\01\00\00\00\00\00\10\00I\00\00\00e\00\00\00\22\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/output_note.rs\00")
+    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\00\00\10\000\00\00\00e\00\00\00\22\00\00\00")
     (@custom "rodata,miden_account" (after data) "Orust_sdk_output_note_get_assets_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export 0 "felt" (type (;1;)))

@@ -22,6 +22,8 @@ impl TestOutputNote {{
     let component_package = format!("miden:{}", name.replace('_', "-"));
     let cargo_toml = format!(
         r#"
+cargo-features = ["trim-paths"]
+
 [package]
 name = "{name}"
 version = "0.0.1"
@@ -42,9 +44,10 @@ project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
 
 [profile.release]
-opt-level = "z"
-panic = "abort"
-debug = false
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]
 "#,
         name = name,
         sdk_path = sdk_path.display(),
