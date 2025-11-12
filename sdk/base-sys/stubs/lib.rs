@@ -7,7 +7,10 @@
 //! the calls appropriately. They are not part of the crate sources.
 
 mod account;
+mod asset;
 mod active_note;
+mod faucet;
+mod input_note;
 mod output_note;
 mod tx;
 
