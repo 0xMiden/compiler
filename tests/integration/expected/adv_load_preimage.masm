@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -20,7 +20,8 @@ end
 
 # mod root_ns:root@1.0.0::adv_load_preimage
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(i32, felt, felt, felt, felt)
     push.1114176
     u32divmod.4
     swap.1
@@ -475,7 +476,8 @@ export.entrypoint
     end
 end
 
-proc.__rustc::__rust_alloc
+@callconv("C")
+proc __rustc::__rust_alloc(i32, i32) -> i32
     push.1048636
     movup.2
     swap.1
@@ -486,7 +488,8 @@ proc.__rustc::__rust_alloc
     nop
 end
 
-proc.__rustc::__rust_alloc_zeroed
+@callconv("C")
+proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     push.1048636
     dup.1
     swap.2
@@ -561,11 +564,19 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+@callconv("C")
+proc __rustc::__rust_no_alloc_shim_is_unstable_v2(
+
+)
     nop
 end
 
-proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+@callconv("C")
+proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
+    i32,
+    i32,
+    i32
+) -> i32
     push.16
     push.0
     push.16
@@ -740,7 +751,10 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
-proc.intrinsics::mem::heap_base
+@callconv("C")
+proc intrinsics::mem::heap_base(
+
+) -> i32
     trace.240
     nop
     exec.::intrinsics::mem::heap_base
@@ -748,7 +762,8 @@ proc.intrinsics::mem::heap_base
     nop
 end
 
-proc.intrinsics::felt::from_u64_unchecked
+@callconv("C")
+proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
     push.1
@@ -763,19 +778,23 @@ proc.intrinsics::felt::from_u64_unchecked
     add
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::as_u64
+@callconv("C")
+proc intrinsics::felt::as_u64(felt) -> [u32; 2]
     u32split
 end
 
-proc.intrinsics::felt::assert_eq
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
 end
 
-proc.intrinsics::advice::adv_push_mapvaln
+@callconv("C")
+proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
     trace.240
     nop
     exec.::intrinsics::advice::adv_push_mapvaln
@@ -783,7 +802,8 @@ proc.intrinsics::advice::adv_push_mapvaln
     nop
 end
 
-proc.std::mem::pipe_preimage_to_memory
+@callconv("C")
+proc std::mem::pipe_preimage_to_memory(felt, i32, felt, felt, felt, felt) -> i32
     trace.240
     nop
     exec.::std::mem::pipe_preimage_to_memory
@@ -791,7 +811,14 @@ proc.std::mem::pipe_preimage_to_memory
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.1114176
     u32divmod.4
     swap.1
@@ -1197,7 +1224,12 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+    i32,
+    i32,
+    i32
+)
     push.1114176
     u32divmod.4
     swap.1
@@ -1311,7 +1343,13 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     nop
 end
 
-proc.alloc::alloc::Global::alloc_impl
+@callconv("C")
+proc alloc::alloc::Global::alloc_impl(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4
@@ -1383,7 +1421,8 @@ proc.alloc::alloc::Global::alloc_impl
     nop
 end
 
-proc.alloc::raw_vec::handle_error
+@callconv("C")
+proc alloc::raw_vec::handle_error(i32, i32, i32)
     drop
     drop
     drop
@@ -1391,7 +1430,8 @@ proc.alloc::raw_vec::handle_error
     assert
 end
 
-proc.core::ptr::alignment::Alignment::max
+@callconv("C")
+proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
     push.0
     dup.2
     dup.2

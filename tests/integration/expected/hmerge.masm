@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -12,7 +12,8 @@ end
 
 # mod root_ns:root@1.0.0::hmerge
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt) -> felt
     push.1114112
     u32divmod.4
     swap.1
@@ -221,7 +222,8 @@ export.entrypoint
     nop
 end
 
-proc.intrinsics::crypto::hmerge
+@callconv("C")
+proc intrinsics::crypto::hmerge(i32, i32)
     trace.240
     nop
     exec.::intrinsics::crypto::hmerge

@@ -61,7 +61,7 @@ impl AccountComponentMetadataBuilder {
                 StorageValueName::new(name).expect("well formed storage value name");
             match type_name.as_str() {
                 "StorageMap" => {
-                    let mut map_repr = MapRepresentation::new(vec![], storage_value_name);
+                    let mut map_repr = MapRepresentation::new_value(vec![], storage_value_name);
                     if let Some(description) = description {
                         map_repr = map_repr.with_description(description);
                     }

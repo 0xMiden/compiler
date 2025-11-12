@@ -40,12 +40,12 @@
       call $wit_bindgen::rt::run_ctors_once
       call $miden_base_sys::bindings::tx::get_block_number
       local.set 5
-      call $miden::account::incr_nonce
+      call $miden::native_account::incr_nonce
       local.set 6
       local.get 4
       i32.const 80
       i32.add
-      call $miden::account::compute_delta_commitment
+      call $miden::native_account::compute_delta_commitment
       local.get 4
       local.get 4
       i64.load offset=88
@@ -180,7 +180,7 @@
       local.get 4
       i32.const 80
       i32.add
-      call $miden::account::get_item
+      call $miden::active_account::get_item
       local.get 4
       local.get 4
       i64.load offset=88
@@ -437,13 +437,13 @@
     (func $std::crypto::dsa::rpo_falcon512::verify (;16;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $miden::account::compute_delta_commitment (;17;) (type 3) (param i32)
+    (func $miden::native_account::compute_delta_commitment (;17;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::account::get_item (;18;) (type 10) (param f32 i32)
+    (func $miden::active_account::get_item (;18;) (type 10) (param f32 i32)
       unreachable
     )
-    (func $miden::account::incr_nonce (;19;) (type 2) (result f32)
+    (func $miden::native_account::incr_nonce (;19;) (type 2) (result f32)
       unreachable
     )
     (func $miden::tx::get_block_number (;20;) (type 2) (result f32)

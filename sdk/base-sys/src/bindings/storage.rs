@@ -4,10 +4,10 @@ use super::StorageCommitmentRoot;
 
 #[allow(improper_ctypes)]
 extern "C" {
-    #[link_name = "miden::account::get_item"]
+    #[link_name = "miden::active_account::get_item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);
 
-    #[link_name = "miden::account::set_item"]
+    #[link_name = "miden::native_account::set_item"]
     pub fn extern_set_storage_item(
         index: Felt,
         v0: Felt,
@@ -17,7 +17,7 @@ extern "C" {
         ptr: *mut (StorageCommitmentRoot, Word),
     );
 
-    #[link_name = "miden::account::get_map_item"]
+    #[link_name = "miden::active_account::get_map_item"]
     pub fn extern_get_storage_map_item(
         index: Felt,
         k0: Felt,
@@ -27,7 +27,7 @@ extern "C" {
         ptr: *mut Word,
     );
 
-    #[link_name = "miden::account::set_map_item"]
+    #[link_name = "miden::native_account::set_map_item"]
     pub fn extern_set_storage_map_item(
         index: Felt,
         k0: Felt,

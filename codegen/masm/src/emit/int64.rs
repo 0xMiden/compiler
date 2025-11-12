@@ -37,12 +37,11 @@ impl OpEmitter<'_> {
                 masm::Instruction::Assertz,
                 // Check that the remaining bits fit in range
                 masm::Instruction::Dup0,
-                masm::Instruction::PushFelt(Felt::new(2u64.pow(n) - 1)),
-                masm::Instruction::U32Lte,
-                masm::Instruction::Assert,
             ],
             span,
         );
+        self.emit_push(Felt::new(2u64.pow(n) - 1), span);
+        self.emit_all([masm::Instruction::U32Lte, masm::Instruction::Assert], span);
     }
 
     /// Convert an i64 value to a signed N-bit integer, where N <= 32
@@ -87,12 +86,12 @@ impl OpEmitter<'_> {
         let value_bits = (2u64.pow(n - 1) - 1) as u32;
         // [sign_bits, is_unsigned, x_lo]
         self.const_mask_u32(!value_bits, span);
+        // [sign_bits, sign_bits, ..]
+        self.emit(masm::Instruction::Dup0, span);
+        // [0, sign_bits, sign_bits, is_unsigned, x_lo]
+        self.emit_push(0u32, span);
         self.emit_all(
             [
-                // [sign_bits, sign_bits, ..]
-                masm::Instruction::Dup0,
-                // [0, sign_bits, sign_bits, is_unsigned, x_lo]
-                masm::Instruction::PushU32(0),
                 // [is_unsigned, 0, sign_bits, sign_bits, x_lo]
                 masm::Instruction::MovUp3,
                 // [expected_sign_bits, sign_bits, x_lo]
@@ -555,15 +554,9 @@ impl OpEmitter<'_> {
     pub fn mul_imm_i64(&mut self, imm: i64, overflow: Overflow, span: SourceSpan) {
         match imm {
             0 => {
-                self.emit_all(
-                    [
-                        masm::Instruction::Drop,
-                        masm::Instruction::Drop,
-                        masm::Instruction::PushU32(0),
-                        masm::Instruction::PushU32(0),
-                    ],
-                    span,
-                );
+                self.emit_all([masm::Instruction::Drop, masm::Instruction::Drop], span);
+                self.emit_push(0u32, span);
+                self.emit_push(0u32, span);
             }
             1 => (),
             imm => match overflow {
@@ -721,7 +714,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, if the operand or result are not valid i64, execution traps.
     pub fn shr_imm_i64(&mut self, imm: u32, span: SourceSpan) {
         assert!(imm < 63, "invalid shift value: must be < 63, got {imm}");
-        self.emit(masm::Instruction::PushU32(imm), span);
+        self.emit_push(imm, span);
         self.raw_exec("intrinsics::i64::checked_shr", span);
     }
 
@@ -763,10 +756,16 @@ pub fn to_raw_parts(value: u64) -> (u32, u32) {
 pub fn from_raw_parts(lo: u32, hi: u32, block: &mut Vec<masm::Op>, span: SourceSpan) {
     block.push(masm::Op::Inst(Span::new(
         span,
-        masm::Instruction::PushFelt(Felt::new(lo as u64)),
+        masm::Instruction::Push(masm::Immediate::Value(Span::new(
+            span,
+            Felt::new(lo as u64).into(),
+        ))),
     )));
     block.push(masm::Op::Inst(Span::new(
         span,
-        masm::Instruction::PushFelt(Felt::new(hi as u64)),
+        masm::Instruction::Push(masm::Immediate::Value(Span::new(
+            span,
+            Felt::new(hi as u64).into(),
+        ))),
     )));
 }

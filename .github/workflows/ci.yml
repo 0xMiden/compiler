@@ -226,7 +226,9 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'package(miden-integration-node-tests)'
+          # Run sequentially as a workaround until
+          # https://github.com/0xMiden/compiler/issues/766 is resolved
+          cargo make test -E 'package(miden-integration-node-tests)' --test-threads 1
 
   cargo_publish_dry_run:
     name: cargo publish dry run

@@ -259,7 +259,7 @@
           local.get 4
           i32.const 64
           i32.add
-          call $miden_base_sys::bindings::tx::create_note
+          call $miden_base_sys::bindings::output_note::create
           local.set 0
           local.get 4
           local.get 4
@@ -431,7 +431,7 @@
     (func $intrinsics::mem::heap_base (;12;) (type 7) (result i32)
       unreachable
     )
-    (func $miden_base_sys::bindings::tx::create_note (;13;) (type 8) (param f32 f32 f32 f32 i32) (result f32)
+    (func $miden_base_sys::bindings::output_note::create (;13;) (type 8) (param f32 f32 f32 f32 i32) (result f32)
       local.get 0
       local.get 1
       local.get 2
@@ -444,7 +444,7 @@
       f32.load offset=4
       local.get 4
       f32.load
-      call $miden::tx::create_note
+      call $miden::output_note::create
     )
     (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;14;) (type 9) (param i32 i32)
       local.get 0
@@ -734,11 +734,11 @@
       i32.gt_u
       select
     )
-    (func $miden::tx::create_note (;30;) (type 17) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden::output_note::create (;30;) (type 17) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.7.0/src/stdlib/mem.rs\00src/lib.rs\00")
-    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\00%\00\00\00%\00\00\00)\00\10\00\0a\00\00\00(\00\00\00!\00\00\00")
+    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\00%\00\00\00%\00\00\00)\00\10\00\0a\00\00\00'\00\00\00!\00\00\00")
   )
   (alias export 0 "word" (type (;4;)))
   (alias export 1 "move-asset-to-note" (func (;0;)))

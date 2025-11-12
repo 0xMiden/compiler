@@ -4,24 +4,24 @@ use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
 extern "C" {
-    #[link_name = "miden::account::get_id"]
+    #[link_name = "miden::active_account::get_id"]
     pub fn extern_account_get_id(ptr: *mut AccountId);
-    #[link_name = "miden::account::remove_asset"]
+    #[link_name = "miden::native_account::remove_asset"]
     pub fn extern_account_remove_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
-    #[link_name = "miden::account::get_nonce"]
+    #[link_name = "miden::active_account::get_nonce"]
     pub fn extern_account_get_nonce() -> Felt;
-    #[link_name = "miden::account::incr_nonce"]
+    #[link_name = "miden::native_account::incr_nonce"]
     pub fn extern_account_incr_nonce() -> Felt;
-    #[link_name = "miden::account::get_initial_commitment"]
+    #[link_name = "miden::active_account::get_initial_commitment"]
     pub fn extern_account_get_initial_commitment(ptr: *mut Word);
-    #[link_name = "miden::account::compute_current_commitment"]
-    pub fn extern_account_compute_current_commitment(ptr: *mut Word);
-    #[link_name = "miden::account::compute_delta_commitment"]
+    #[link_name = "miden::active_account::compute_commitment"]
+    pub fn extern_account_compute_commitment(ptr: *mut Word);
+    #[link_name = "miden::native_account::compute_delta_commitment"]
     pub fn extern_account_compute_delta_commitment(ptr: *mut Word);
     // Resolved via stub rlib at core Wasm link time
-    #[link_name = "miden::account::add_asset"]
+    #[link_name = "miden::native_account::add_asset"]
     pub fn extern_account_add_asset(_: Felt, _: Felt, _: Felt, _: Felt, ptr: *mut Asset);
-    #[link_name = "miden::account::get_balance"]
+    #[link_name = "miden::active_account::get_balance"]
     pub fn extern_account_get_balance(faucet_id_prefix: Felt, faucet_id_suffix: Felt) -> Felt;
 }
 
@@ -106,10 +106,10 @@ pub fn get_initial_commitment() -> Word {
 
 /// Computes and returns the commitment of the current account data.
 #[inline]
-pub fn compute_current_commitment() -> Word {
+pub fn compute_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_account_compute_current_commitment(ret_area.as_mut_ptr());
+        extern_account_compute_commitment(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
 }

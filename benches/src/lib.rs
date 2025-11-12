@@ -109,7 +109,7 @@ impl BenchmarkRunner {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("cargo miden build failed: {}", stderr));
+            return Err(anyhow::anyhow!("cargo miden build failed: {stderr}"));
         }
 
         let compile_time = compile_start.elapsed();
@@ -158,7 +158,7 @@ stack = [{}]"#,
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("midenc run failed: {}", stderr));
+            return Err(anyhow::anyhow!("midenc run failed: {stderr}"));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);

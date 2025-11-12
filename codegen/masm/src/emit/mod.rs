@@ -219,6 +219,17 @@ impl<'a> OpEmitter<'a> {
         self.current_block.push(Op::Inst(Span::new(span, inst)));
     }
 
+    /// Emit a `push` instruction of `value` to the current block
+    #[inline]
+    pub fn emit_push(
+        &mut self,
+        value: impl Into<miden_assembly_syntax::parser::PushValue>,
+        span: SourceSpan,
+    ) {
+        let inst = masm::Instruction::Push(masm::Immediate::Value(Span::new(span, value.into())));
+        self.current_block.push(Op::Inst(Span::new(span, inst)));
+    }
+
     /// Emit `n` copies of `op` to the current block
     #[inline(always)]
     pub fn emit_n(&mut self, count: usize, inst: masm::Instruction, span: SourceSpan) {
@@ -275,18 +286,18 @@ impl<'a> OpEmitter<'a> {
     #[inline]
     pub fn push_immediate(&mut self, imm: Immediate, span: SourceSpan) {
         match imm {
-            Immediate::I1(i) => self.emit(masm::Instruction::PushU8(i as u8), span),
-            Immediate::I8(i) => self.emit(masm::Instruction::PushU8(i as u8), span),
-            Immediate::U8(i) => self.emit(masm::Instruction::PushU8(i), span),
-            Immediate::U16(i) => self.emit(masm::Instruction::PushU32(i as u32), span),
-            Immediate::I16(i) => self.emit(masm::Instruction::PushU32(i as u16 as u32), span),
-            Immediate::U32(i) => self.emit(masm::Instruction::PushU32(i), span),
-            Immediate::I32(i) => self.emit(masm::Instruction::PushU32(i as u32), span),
+            Immediate::I1(i) => self.emit_push(i as u8, span),
+            Immediate::I8(i) => self.emit_push(i as u8, span),
+            Immediate::U8(i) => self.emit_push(i, span),
+            Immediate::U16(i) => self.emit_push(i, span),
+            Immediate::I16(i) => self.emit_push(i as u16, span),
+            Immediate::U32(i) => self.emit_push(i, span),
+            Immediate::I32(i) => self.emit_push(i as u32, span),
             Immediate::U64(i) => self.push_u64(i, span),
             Immediate::I64(i) => self.push_i64(i, span),
             Immediate::U128(i) => self.push_u128(i, span),
             Immediate::I128(i) => self.push_i128(i, span),
-            Immediate::Felt(i) => self.emit(masm::Instruction::PushFelt(i), span),
+            Immediate::Felt(i) => self.emit_push(i, span),
             Immediate::F64(_) => unimplemented!("floating-point immediates are not supported"),
         }
     }
@@ -720,6 +731,14 @@ mod tests {
     use super::*;
     use crate::masm::{self, Op};
 
+    macro_rules! push {
+        ($x:expr) => {
+            Op::Inst(Span::unknown(masm::Instruction::Push(masm::Immediate::Value(Span::unknown(
+                miden_assembly_syntax::parser::PushValue::from($x),
+            )))))
+        };
+    }
+
     #[test]
     fn op_emitter_stack_manipulation_test() {
         let mut block = Vec::default();
@@ -744,22 +763,13 @@ mod tests {
         {
             let ops = emitter.current_block();
             assert_eq!(ops.len(), 7);
-            assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::PushU32(1))));
-            assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::PushU32(2))));
-            assert_eq!(&ops[2], &Op::Inst(Span::new(span, masm::Instruction::PushU8(3))));
-            assert_eq!(
-                &ops[3],
-                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::ZERO)))
-            );
-            assert_eq!(&ops[4], &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::ONE))));
-            assert_eq!(
-                &ops[5],
-                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(u32::MAX as u64))))
-            );
-            assert_eq!(
-                &ops[6],
-                &Op::Inst(Span::new(span, masm::Instruction::PushFelt(Felt::new(3))))
-            );
+            assert_eq!(&ops[0], &push!(1u32));
+            assert_eq!(&ops[1], &push!(2u32));
+            assert_eq!(&ops[2], &push!(3u8));
+            assert_eq!(&ops[3], &push!(Felt::ZERO));
+            assert_eq!(&ops[4], &push!(Felt::ONE));
+            assert_eq!(&ops[5], &push!(Felt::new(u32::MAX as u64)));
+            assert_eq!(&ops[6], &push!(Felt::new(3)));
         }
 
         assert_eq!(emitter.stack()[0], five);

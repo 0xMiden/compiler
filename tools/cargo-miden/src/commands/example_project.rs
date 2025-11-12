@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use cargo_generate::{GenerateArgs, TemplatePath};
 use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
-use crate::utils::compiler_path;
+use crate::{
+    template::{generate, GenerateArgs, TemplatePath},
+    utils::compiler_path,
+};
 
 /// Paired project mappings for examples that create multiple related projects
 const PAIRED_PROJECTS: &[(&str, &str)] = &[("counter-contract", "counter-note")];
@@ -66,8 +68,8 @@ impl ExampleCommand {
         // Check if directory already exists
         if project_path.exists() {
             return Err(anyhow::anyhow!(
-                "Directory '{}' already exists. Please remove it or choose a different location.",
-                project_name
+                "Directory '{project_name}' already exists. Please remove it or choose a \
+                 different location."
             ));
         }
 
@@ -89,7 +91,7 @@ impl ExampleCommand {
             verbose: true,
             ..Default::default()
         };
-        cargo_generate::generate(generate_args)
+        generate(generate_args)
             .context("Failed to scaffold new Miden project from the template")?;
 
         // Process the Cargo.toml to update dependencies and WIT paths
@@ -137,7 +139,7 @@ impl ExampleCommand {
                 ..Default::default()
             };
 
-            cargo_generate::generate(generate_args)
+            generate(generate_args)
                 .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);
@@ -201,7 +203,7 @@ impl ExampleCommand {
                 ..Default::default()
             };
 
-            cargo_generate::generate(generate_args)
+            generate(generate_args)
                 .context(format!("Failed to scaffold {project_name} project"))?;
 
             let project_path = main_dir.join(project_name);

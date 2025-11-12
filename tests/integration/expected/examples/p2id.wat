@@ -44,7 +44,7 @@
     (func $__wasm_call_ctors (;1;) (type 1))
     (func $__rustc::__rust_alloc (;2;) (type 2) (param i32 i32) (result i32)
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048664
+      i32.const 1048672
       i32.add
       local.get 1
       local.get 0
@@ -54,7 +54,7 @@
     (func $__rustc::__rust_alloc_zeroed (;4;) (type 2) (param i32 i32) (result i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048664
+        i32.const 1048672
         i32.add
         local.get 1
         local.get 0
@@ -84,7 +84,7 @@
       local.get 4
       i32.const 16
       i32.add
-      call $miden_base_sys::bindings::note::get_inputs
+      call $miden_base_sys::bindings::active_note::get_inputs
       block ;; label = @1
         block ;; label = @2
           local.get 4
@@ -122,7 +122,7 @@
         local.get 4
         i32.const 28
         i32.add
-        call $miden_base_sys::bindings::note::get_assets
+        call $miden_base_sys::bindings::active_note::get_assets
         local.get 4
         i32.load offset=36
         i32.const 4
@@ -193,7 +193,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048668
+        i32.const 1048676
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -201,7 +201,7 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048668
+        i32.const 1048676
         i32.add
         i32.const 1
         i32.store8
@@ -335,7 +335,7 @@
       local.get 1
       i32.const 8
       i32.add
-      call $miden::account::get_id
+      call $miden::active_account::get_id
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -345,7 +345,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_inputs (;13;) (type 7) (param i32)
+    (func $miden_base_sys::bindings::active_note::get_inputs (;13;) (type 7) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -358,7 +358,7 @@
       i32.const 4
       i32.const 4
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048632
+      i32.const 1048640
       i32.add
       call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
       local.get 1
@@ -370,7 +370,7 @@
       local.tee 3
       i32.const 2
       i32.shr_u
-      call $miden::note::get_inputs
+      call $miden::active_note::get_inputs
       i32.store offset=8
       local.get 0
       local.get 3
@@ -383,7 +383,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::note::get_assets (;14;) (type 7) (param i32)
+    (func $miden_base_sys::bindings::active_note::get_assets (;14;) (type 7) (param i32)
       (local i32 i32 i32)
       global.get $__stack_pointer
       i32.const 16
@@ -396,7 +396,7 @@
       i32.const 16
       i32.const 16
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048648
+      i32.const 1048656
       i32.add
       call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
       local.get 1
@@ -408,7 +408,7 @@
       local.tee 3
       i32.const 2
       i32.shr_u
-      call $miden::note::get_assets
+      call $miden::active_note::get_assets
       i32.store offset=8
       local.get 0
       local.get 3
@@ -681,17 +681,17 @@
       i32.gt_u
       select
     )
-    (func $miden::account::get_id (;24;) (type 7) (param i32)
+    (func $miden::active_account::get_id (;24;) (type 7) (param i32)
       unreachable
     )
-    (func $miden::note::get_inputs (;25;) (type 10) (param i32) (result i32)
+    (func $miden::active_note::get_inputs (;25;) (type 10) (param i32) (result i32)
       unreachable
     )
-    (func $miden::note::get_assets (;26;) (type 10) (param i32) (result i32)
+    (func $miden::active_note::get_assets (;26;) (type 10) (param i32) (result i32)
       unreachable
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/note.rs\00")
-    (data $.data (;1;) (i32.const 1048620) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00)\00\00\00\19\00\00\00!\00\00\00\00\00\10\00)\00\00\007\00\00\00\22\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/active_note.rs\00")
+    (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\000\00\00\00\19\00\00\00!\00\00\00\00\00\10\000\00\00\007\00\00\00\22\00\00\00")
   )
   (alias export 0 "word" (type (;3;)))
   (alias export 1 "receive-asset" (func (;0;)))

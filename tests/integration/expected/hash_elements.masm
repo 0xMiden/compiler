@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -12,7 +12,8 @@ end
 
 # mod root_ns:root@1.0.0::hash_elements
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(i32) -> felt
     push.1114112
     u32divmod.4
     swap.1
@@ -235,13 +236,18 @@ export.entrypoint
     nop
 end
 
-proc.__rustc::__rust_dealloc
+@callconv("C")
+proc __rustc::__rust_dealloc(i32, i32, i32)
     drop
     drop
     drop
 end
 
-proc.miden_stdlib_sys::intrinsics::word::Word::reverse
+@callconv("C")
+proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+    i32,
+    i32
+)
     push.1114112
     u32divmod.4
     swap.1
@@ -502,15 +508,18 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::assert_eq
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
 end
 
-proc.std::crypto::hashes::rpo::hash_memory
+@callconv("C")
+proc std::crypto::hashes::rpo::hash_memory(i32, i32, i32)
     trace.240
     nop
     exec.::std::crypto::hashes::rpo::hash_memory
@@ -565,7 +574,8 @@ proc.std::crypto::hashes::rpo::hash_memory
     nop
 end
 
-proc.std::crypto::hashes::rpo::hash_memory_words
+@callconv("C")
+proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
     trace.240
     nop
     exec.::std::crypto::hashes::rpo::hash_memory_words
@@ -620,7 +630,12 @@ proc.std::crypto::hashes::rpo::hash_memory_words
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::deallocate
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::deallocate(
+    i32,
+    i32,
+    i32
+)
     push.1114112
     u32divmod.4
     swap.1
@@ -732,7 +747,13 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::current_memory
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::current_memory(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.5
@@ -858,7 +879,12 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4

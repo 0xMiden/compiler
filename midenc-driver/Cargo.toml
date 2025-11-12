@@ -14,9 +14,7 @@ readme.workspace = true
 edition.workspace = true
 
 [features]
-default = ["all"]
-all = ["std", "debug"]
-debug = ["dep:midenc-debug"]
+default = ["std"]
 std = ["alloc", "log/std", "clap/color"]
 alloc = ["clap/help", "clap/usage", "clap/error-context", "clap/suggestions"]
 
@@ -26,5 +24,4 @@ log.workspace = true
 midenc-hir.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
-midenc-debug = { workspace = true, optional = true }
 thiserror.workspace = true

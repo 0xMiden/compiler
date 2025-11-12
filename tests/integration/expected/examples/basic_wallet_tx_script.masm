@@ -1,6 +1,7 @@
 # mod miden:base/transaction-script@1.0.0
 
-export.run
+@callconv("canon-lift")
+pub proc run(felt, felt, felt, felt)
     exec.::miden:base/transaction-script@1.0.0::init
     trace.240
     nop
@@ -10,12 +11,12 @@ export.run
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[6451311627802649628,13408805836566352167,15533908529537497744,16330195584285026872]
+    push.[18126909968619574227,17760723618876885851,16026017854059965402,12528080323114809843]
     adv.push_mapval
     push.262144
     push.7
@@ -33,7 +34,14 @@ end
 
 # mod miden:base/transaction-script@1.0.0::basic_wallet_tx_script
 
-proc.basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
+@callconv("C")
+proc basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+)
     trace.240
     nop
     call.::miden:basic-wallet/basic-wallet@0.1.0::move-asset-to-note
@@ -41,11 +49,19 @@ proc.basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_a
     nop
 end
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.core::slice::index::slice_end_index_len_fail
+@callconv("C")
+proc core::slice::index::slice_end_index_len_fail(
+    i32,
+    i32,
+    i32
+)
     trace.240
     nop
     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
@@ -55,7 +71,14 @@ proc.core::slice::index::slice_end_index_len_fail
     assert
 end
 
-proc.<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+@callconv("C")
+proc <alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.8
     dup.2
     add
@@ -159,7 +182,8 @@ proc.<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
     end
 end
 
-proc.__rustc::__rust_alloc
+@callconv("C")
+proc __rustc::__rust_alloc(i32, i32) -> i32
     push.1114244
     u32divmod.4
     swap.1
@@ -179,13 +203,15 @@ proc.__rustc::__rust_alloc
     nop
 end
 
-proc.__rustc::__rust_dealloc
+@callconv("C")
+proc __rustc::__rust_dealloc(i32, i32, i32)
     drop
     drop
     drop
 end
 
-proc.__rustc::__rust_alloc_zeroed
+@callconv("C")
+proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     push.1114244
     u32divmod.4
     swap.1
@@ -269,11 +295,15 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-proc.basic_wallet_tx_script::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc basic_wallet_tx_script::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:base/transaction-script@1.0.0#run
+@callconv("C")
+proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     push.1114240
     u32divmod.4
     swap.1
@@ -802,7 +832,7 @@ proc.miden:base/transaction-script@1.0.0#run
                 movdn.5
                 trace.240
                 nop
-                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::tx::create_note
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden_base_sys::bindings::output_note::create
                 trace.252
                 nop
                 push.1048672
@@ -1058,11 +1088,17 @@ proc.miden:base/transaction-script@1.0.0#run
     end
 end
 
-proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+@callconv("C")
+proc __rustc::__rust_no_alloc_shim_is_unstable_v2(
+
+)
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114244
     u32divmod.4
     swap.1
@@ -1133,7 +1169,12 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+@callconv("C")
+proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
+    i32,
+    i32,
+    i32
+) -> i32
     push.16
     push.0
     push.16
@@ -1308,7 +1349,10 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
-proc.intrinsics::mem::heap_base
+@callconv("C")
+proc intrinsics::mem::heap_base(
+
+) -> i32
     trace.240
     nop
     exec.::intrinsics::mem::heap_base
@@ -1316,7 +1360,14 @@ proc.intrinsics::mem::heap_base
     nop
 end
 
-proc.miden_base_sys::bindings::tx::create_note
+@callconv("C")
+proc miden_base_sys::bindings::output_note::create(
+    felt,
+    felt,
+    felt,
+    felt,
+    i32
+) -> felt
     push.12
     dup.5
     add
@@ -1392,12 +1443,16 @@ proc.miden_base_sys::bindings::tx::create_note
     swap.4
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden::tx::create_note
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::miden::output_note::create
     trace.252
     nop
 end
 
-proc.<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+@callconv("C")
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+    i32,
+    i32
+)
     push.8
     dup.2
     add
@@ -1462,7 +1517,8 @@ proc.<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     nop
 end
 
-proc.intrinsics::felt::from_u64_unchecked
+@callconv("C")
+proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
     push.1
@@ -1477,19 +1533,23 @@ proc.intrinsics::felt::from_u64_unchecked
     add
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::as_u64
+@callconv("C")
+proc intrinsics::felt::as_u64(felt) -> [u32; 2]
     u32split
 end
 
-proc.intrinsics::felt::assert_eq
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
 end
 
-proc.intrinsics::advice::adv_push_mapvaln
+@callconv("C")
+proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
     trace.240
     nop
     exec.::intrinsics::advice::adv_push_mapvaln
@@ -1497,7 +1557,8 @@ proc.intrinsics::advice::adv_push_mapvaln
     nop
 end
 
-proc.std::mem::pipe_preimage_to_memory
+@callconv("C")
+proc std::mem::pipe_preimage_to_memory(felt, i32, felt, felt, felt, felt) -> i32
     trace.240
     nop
     exec.::std::mem::pipe_preimage_to_memory
@@ -1505,7 +1566,12 @@ proc.std::mem::pipe_preimage_to_memory
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::deallocate
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::deallocate(
+    i32,
+    i32,
+    i32
+)
     push.1114240
     u32divmod.4
     swap.1
@@ -1617,7 +1683,14 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.1114240
     u32divmod.4
     swap.1
@@ -2023,7 +2096,12 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+    i32,
+    i32,
+    i32
+)
     push.1114240
     u32divmod.4
     swap.1
@@ -2137,7 +2215,13 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     nop
 end
 
-proc.alloc::alloc::Global::alloc_impl
+@callconv("C")
+proc alloc::alloc::Global::alloc_impl(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4
@@ -2209,7 +2293,13 @@ proc.alloc::alloc::Global::alloc_impl
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::current_memory
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::current_memory(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.5
@@ -2335,7 +2425,12 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4
@@ -2356,7 +2451,8 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
     end
 end
 
-proc.alloc::raw_vec::handle_error
+@callconv("C")
+proc alloc::raw_vec::handle_error(i32, i32, i32)
     drop
     drop
     drop
@@ -2364,7 +2460,12 @@ proc.alloc::raw_vec::handle_error
     assert
 end
 
-proc.core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
+@callconv("C")
+proc core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime(
+    i32,
+    i32,
+    i32
+)
     drop
     drop
     drop
@@ -2372,7 +2473,8 @@ proc.core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runt
     assert
 end
 
-proc.core::ptr::alignment::Alignment::max
+@callconv("C")
+proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
     push.0
     dup.2
     dup.2
@@ -2382,10 +2484,20 @@ proc.core::ptr::alignment::Alignment::max
     cdrop
 end
 
-proc.miden::tx::create_note
+@callconv("C")
+proc miden::output_note::create(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> felt
     trace.240
     nop
-    exec.::miden::tx::create_note
+    exec.::miden::output_note::create
     trace.252
     nop
 end

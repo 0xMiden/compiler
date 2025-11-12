@@ -299,7 +299,7 @@ impl OpEmitter<'_> {
             (Type::I32, Type::I64 | Type::I128) => self.sext_int32(dst_bits, span),
             (Type::I32, Type::U64) => {
                 self.assert_i32(span);
-                self.emit(masm::Instruction::PushU32(0), span);
+                self.emit_push(0u32, span);
             }
             (Type::I32, Type::U32) => {
                 self.assert_i32(span);
@@ -322,19 +322,13 @@ impl OpEmitter<'_> {
             (Type::I16, Type::U8 | Type::I1) => self.int32_to_int(dst_bits, span),
             (Type::I16, Type::I8) => self.int32_to_int(dst_bits, span),
             (Type::I8, Type::I1) => {
-                self.emit_all(
-                    [
-                        // Assert that input is either 0 or 1
-                        //
-                        // NOTE: The comparison here is unsigned, so the sign
-                        // bit being set will make the i8 larger than 0 or 1
-                        masm::Instruction::Dup0,
-                        masm::Instruction::PushU32(2),
-                        masm::Instruction::Lt,
-                        masm::Instruction::Assert,
-                    ],
-                    span,
-                );
+                // Assert that input is either 0 or 1
+                //
+                // NOTE: The comparison here is unsigned, so the sign
+                // bit being set will make the i8 larger than 0 or 1
+                self.emit(masm::Instruction::Dup0, span);
+                self.emit_push(2u32, span);
+                self.emit_all([masm::Instruction::Lt, masm::Instruction::Assert], span);
             }
             // i1
             (Type::I1, _) => self.zext_smallint(src_bits, dst_bits, span),
@@ -419,9 +413,9 @@ impl OpEmitter<'_> {
                 self.clz(span);
                 let bits = ty.size_in_bits();
                 // ilog2 is bits - clz - 1
+                self.emit_push(bits as u8, span);
                 self.emit_all(
                     [
-                        masm::Instruction::PushU8(bits as u8),
                         masm::Instruction::Swap1,
                         masm::Instruction::Sub,
                         masm::Instruction::U32OverflowingSubImm(1.into()),
@@ -448,7 +442,8 @@ impl OpEmitter<'_> {
             Type::I1 => {
                 // 2^0 == 1
                 let _ = self.stack.pop();
-                self.emit_all([masm::Instruction::Drop, masm::Instruction::PushU8(0)], span);
+                self.emit(masm::Instruction::Drop, span);
+                self.emit_push(0u8, span);
                 self.push(Type::U32);
             }
             ty if !ty.is_integer() => {
@@ -542,15 +537,15 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::clz", span); // [lo_clz, hi_clz]
+                                                            // Add the low bit leading zeros to those of the high bits, if the high
+                                                            // bits are all zeros; otherwise return only the
+                                                            // high bit count
+                self.emit_push(0u32, span); // [0, lo_clz, hi_clz]
+                self.emit(masm::Instruction::Dup2, span); // [hi_clz, 0, lo_clz, hi_clz]
+                self.emit_push(Felt::new(32), span);
                 self.emit_all(
                     [
-                        // Add the low bit leading zeros to those of the high bits, if the high
-                        // bits are all zeros; otherwise return only the
-                        // high bit count
-                        masm::Instruction::PushU32(0), // [0, lo_clz, hi_clz]
-                        masm::Instruction::Dup2,       // [hi_clz, 0, lo_clz, hi_clz]
-                        masm::Instruction::PushFelt(Felt::new(32)),
-                        masm::Instruction::Lt, // [hi_clz < 32, 0, lo_clz, hi_clz]
+                        masm::Instruction::Lt,    // [hi_clz < 32, 0, lo_clz, hi_clz]
                         masm::Instruction::CDrop, // [hi_clz < 32 ? 0 : lo_clz, hi_clz]
                         masm::Instruction::Add,
                     ],
@@ -626,14 +621,14 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::clo", span); // [lo_clo, hi_clo]
+                                                            // Add the low bit leading ones to those of the high bits, if the high bits
+                                                            // are all one; otherwise return only the high bit count
+                self.emit_push(0u32, span); // [0, lo_clo, hi_clo]
+                self.emit(masm::Instruction::Dup2, span); // [hi_clo, 0, lo_clo, hi_clo]
+                self.emit_push(Felt::new(32), span);
                 self.emit_all(
                     [
-                        // Add the low bit leading ones to those of the high bits, if the high bits
-                        // are all one; otherwise return only the high bit count
-                        masm::Instruction::PushU32(0), // [0, lo_clo, hi_clo]
-                        masm::Instruction::Dup2,       // [hi_clo, 0, lo_clo, hi_clo]
-                        masm::Instruction::PushFelt(Felt::new(32)),
-                        masm::Instruction::Lt, // [hi_clo < 32, 0, lo_clo, hi_clo]
+                        masm::Instruction::Lt,    // [hi_clo < 32, 0, lo_clo, hi_clo]
                         masm::Instruction::CDrop, // [hi_clo < 32 ? 0 : lo_clo, hi_clo]
                         masm::Instruction::Add,
                     ],
@@ -649,10 +644,11 @@ impl OpEmitter<'_> {
                 // MASM u32clo instruction for values of (i|u)16 type, so to get
                 // the correct count, we need to bitwise-OR in a 16 bits of leading
                 // ones, then subtract that from the final count.
+                //
+                // OR in the leading 16 ones
+                self.emit_push(u32::MAX << 16, span);
                 self.emit_all(
                     [
-                        // OR in the leading 16 ones
-                        masm::Instruction::PushU32(u32::MAX << 16),
                         masm::Instruction::U32Or,
                         // Obtain the count
                         masm::Instruction::U32Clo,
@@ -667,10 +663,11 @@ impl OpEmitter<'_> {
                 // MASM u32clo instruction for values of (i|u)8 type, so as with the
                 // 16-bit values, we need to bitwise-OR in 24 bits of leading ones,
                 // then subtract them from the final count.
+                //
+                // OR in the leading 24 ones
+                self.emit_push(u32::MAX << 8, span);
                 self.emit_all(
                     [
-                        // OR in the leading 24 ones
-                        masm::Instruction::PushU32(u32::MAX << 8),
                         masm::Instruction::U32Or,
                         // Obtain the count
                         masm::Instruction::U32Clo,
@@ -716,16 +713,16 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::ctz", span); // [lo_ctz, hi_ctz]
+                                                            // Add the high bit trailing zeros to those of the low bits, if the low
+                                                            // bits are all zero; otherwise return only the low
+                                                            // bit count
+                self.emit(masm::Instruction::Swap1, span);
+                self.emit_push(0u32, span); // [0, hi_ctz, lo_ctz]
+                self.emit(masm::Instruction::Dup2, span); // [lo_ctz, 0, hi_ctz, lo_ctz]
+                self.emit_push(Felt::new(32), span);
                 self.emit_all(
                     [
-                        // Add the high bit trailing zeros to those of the low bits, if the low
-                        // bits are all zero; otherwise return only the low
-                        // bit count
-                        masm::Instruction::Swap1,
-                        masm::Instruction::PushU32(0), // [0, hi_ctz, lo_ctz]
-                        masm::Instruction::Dup2,       // [lo_ctz, 0, hi_ctz, lo_ctz]
-                        masm::Instruction::PushFelt(Felt::new(32)),
-                        masm::Instruction::Lt, // [lo_ctz < 32, 0, hi_ctz, lo_ctz]
+                        masm::Instruction::Lt,    // [lo_ctz < 32, 0, hi_ctz, lo_ctz]
                         masm::Instruction::CDrop, // [lo_ctz < 32 ? 0 : hi_ctz, lo_ctz]
                         masm::Instruction::Add,
                     ],
@@ -736,17 +733,18 @@ impl OpEmitter<'_> {
             Type::I32 | Type::U32 => self.emit(masm::Instruction::U32Ctz, span),
             Type::I16 | Type::U16 => {
                 // Clamp the total number of trailing zeros to 16
+
+                // Obtain the count
+                self.emit(masm::Instruction::U32Ctz, span);
+                // Clamp to 16
+                //   operand_stack: [16, ctz]
+                self.emit_push(16u8, span);
+                //   operand_stack: [ctz, 16, ctz]
+                self.emit(masm::Instruction::Dup1, span);
+                //   operand_stack: [ctz >= 16, 16, ctz]
+                self.emit_push(Felt::new(16), span);
                 self.emit_all(
                     [
-                        // Obtain the count
-                        masm::Instruction::U32Ctz,
-                        // Clamp to 16
-                        //   operand_stack: [16, ctz]
-                        masm::Instruction::PushU8(16),
-                        //   operand_stack: [ctz, 16, ctz]
-                        masm::Instruction::Dup1,
-                        //   operand_stack: [ctz >= 16, 16, ctz]
-                        masm::Instruction::PushFelt(Felt::new(16)),
                         masm::Instruction::Gte,
                         //   operand_stack: [actual_ctz]
                         masm::Instruction::CDrop,
@@ -756,17 +754,18 @@ impl OpEmitter<'_> {
             }
             Type::I8 | Type::U8 => {
                 // Clamp the total number of trailing zeros to 8
+
+                // Obtain the count
+                self.emit(masm::Instruction::U32Ctz, span);
+                // Clamp to 8
+                //   operand_stack: [8, ctz]
+                self.emit_push(8u8, span);
+                //   operand_stack: [ctz, 8, ctz]
+                self.emit(masm::Instruction::Dup1, span);
+                //   operand_stack: [ctz >= 8, 8, ctz]
+                self.emit_push(Felt::new(8), span);
                 self.emit_all(
                     [
-                        // Obtain the count
-                        masm::Instruction::U32Ctz,
-                        // Clamp to 8
-                        //   operand_stack: [8, ctz]
-                        masm::Instruction::PushU8(8),
-                        //   operand_stack: [ctz, 8, ctz]
-                        masm::Instruction::Dup1,
-                        //   operand_stack: [ctz >= 8, 8, ctz]
-                        masm::Instruction::PushFelt(Felt::new(8)),
                         masm::Instruction::Gte,
                         //   operand_stack: [actual_ctz]
                         masm::Instruction::CDrop,
@@ -810,15 +809,15 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::cto", span); // [lo_cto, hi_cto]
+                                                            // Add the high bit trailing ones to those of the low bits, if the low bits
+                                                            // are all one; otherwise return only the low bit count
+                self.emit(masm::Instruction::Swap1, span);
+                self.emit_push(0u32, span); // [0, hi_cto, lo_cto]
+                self.emit(masm::Instruction::Dup2, span); // [lo_cto, 0, hi_cto, lo_cto]
+                self.emit_push(Felt::new(32), span);
                 self.emit_all(
                     [
-                        // Add the high bit trailing ones to those of the low bits, if the low bits
-                        // are all one; otherwise return only the low bit count
-                        masm::Instruction::Swap1,
-                        masm::Instruction::PushU32(0), // [0, hi_cto, lo_cto]
-                        masm::Instruction::Dup2,       // [lo_cto, 0, hi_cto, lo_cto]
-                        masm::Instruction::PushFelt(Felt::new(32)),
-                        masm::Instruction::Lt, // [lo_cto < 32, 0, hi_cto, lo_cto]
+                        masm::Instruction::Lt,    // [lo_cto < 32, 0, hi_cto, lo_cto]
                         masm::Instruction::CDrop, // [lo_cto < 32 ? 0 : hi_cto, lo_cto]
                         masm::Instruction::Add,
                     ],

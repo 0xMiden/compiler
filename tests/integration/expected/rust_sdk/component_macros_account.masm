@@ -1,6 +1,20 @@
 # mod miden:component-macros-account/component-macros-account@0.1.0
 
-export.test-custom-types
+@callconv("canon-lift")
+pub proc test-custom-types(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> (felt, felt)
     exec.::miden:component-macros-account/component-macros-account@0.1.0::init
     trace.240
     nop
@@ -35,7 +49,21 @@ export.test-custom-types
     exec.::std::sys::truncate_stack
 end
 
-export.test-custom-types2
+@callconv("canon-lift")
+pub proc test-custom-types2(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> (felt, felt)
     exec.::miden:component-macros-account/component-macros-account@0.1.0::init
     trace.240
     nop
@@ -70,7 +98,7 @@ export.test-custom-types2
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -93,15 +121,35 @@ end
 
 # mod miden:component-macros-account/component-macros-account@0.1.0::component_macros_account
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.component_macros_account::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc component_macros_account::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:component-macros-account/component-macros-account@0.1.0#test-custom-types
+@callconv("C")
+proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-types(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> i32
     swap.1
     drop
     swap.1
@@ -174,7 +222,21 @@ proc.miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
 end
 
-proc.miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2
+@callconv("C")
+proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+) -> i32
     movup.2
     drop
     movup.2
@@ -247,7 +309,10 @@ proc.miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1

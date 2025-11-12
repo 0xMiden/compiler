@@ -1,4 +1,4 @@
-use alloc::{string::ToString, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{Dependency, MastArtifact, Package, PackageExport};
@@ -82,6 +82,7 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
                     name,
                     digest,
                     signature,
+                    attributes: Default::default(),
                 });
             }
         }
@@ -92,10 +93,22 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
 
+    let sections = match account_component_metadata_bytes {
+        Some(bytes) => {
+            vec![miden_mast_package::Section::new(
+                miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
+                bytes,
+            )]
+        }
+        None => vec![],
+    };
+
     miden_mast_package::Package {
         name,
+        version: None,
+        description: None,
         mast,
         manifest,
-        account_component_metadata_bytes,
+        sections,
     }
 }

@@ -23,7 +23,7 @@ pub mod masm {
     pub use miden_assembly_syntax::{
         ast::*,
         debuginfo::{SourceSpan, Span, Spanned},
-        parser::IntValue,
+        parser::{IntValue, PushValue},
         KernelLibrary, Library, LibraryNamespace, LibraryPath,
     };
 }

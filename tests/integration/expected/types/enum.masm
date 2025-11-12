@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -18,7 +18,8 @@ end
 
 # mod root_ns:root@1.0.0::test_rust_f0bb65319ffababec660ada9dd2dd5f137503f60cf9c37332d6f7e171f275824
 
-export.match_enum
+@callconv("C")
+pub proc match_enum(i32, i32, i32) -> i32
     push.255
     movup.3
     u32and
@@ -47,7 +48,10 @@ export.match_enum
     end
 end
 
-export.__main
+@callconv("C")
+pub proc __main(
+
+) -> i32
     push.0
     push.5
     push.3

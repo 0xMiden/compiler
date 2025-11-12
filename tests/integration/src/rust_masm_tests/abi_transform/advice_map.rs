@@ -1,13 +1,14 @@
 use core::panic;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use miden_core::{utils::group_slice_elements, FieldElement, StarkField};
+use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
+use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
-use midenc_debug::{Executor, FromMidenRepr, TestFelt, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
-use midenc_session::Emit;
+use midenc_session::{Emit, STDLIB};
 use proptest::{
     arbitrary::any,
     prelude::TestCaseError,
@@ -87,10 +88,17 @@ fn test_adv_load_preimage() {
         Felt::new(out_addr as u64),
     ];
 
-    let mut exec = Executor::for_package(&package, args.to_vec(), &test.session)
-        .expect("Failed to create executor");
+    let mut exec = Executor::new(args.to_vec());
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("Failed to register dependencies");
     exec.with_advice_inputs(AdviceInputs::default().with_map(advice_map));
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)
