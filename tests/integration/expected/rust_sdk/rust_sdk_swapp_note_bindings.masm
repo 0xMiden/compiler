@@ -337,7 +337,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     dup.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::account::get_balance
+    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_account::get_balance
     trace.252
     nop
     swap.1
@@ -538,7 +538,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::account::get_balance(
+proc miden_base_sys::bindings::active_account::get_balance(
     felt,
     felt
 ) -> felt
