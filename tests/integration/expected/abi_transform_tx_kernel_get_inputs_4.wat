@@ -615,5 +615,5 @@
     end
     local.get 2
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/active_note.rs\00\00\00\00\00\00\10\000\00\00\00\19\00\00\00!\00\00\00\01\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/active_note.rs\00\00\00\00\00\00\10\000\00\00\00\1f\00\00\00!\00\00\00\01\00\00\00")
 )

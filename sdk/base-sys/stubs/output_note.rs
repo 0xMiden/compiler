@@ -1,3 +1,5 @@
+use core::ffi::c_void;
+
 /// Output note interface stubs
 #[export_name = "miden::output_note::create"]
 pub extern "C" fn output_note_create_plain(
@@ -21,5 +23,28 @@ pub extern "C" fn output_note_add_asset_plain(
     _a3: f32,
     _note_idx: f32,
 ) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::output_note::get_assets_info"]
+pub extern "C" fn output_note_get_assets_info_plain(_note_index: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::output_note::get_assets"]
+pub extern "C" fn output_note_get_assets_plain(
+    _dest_ptr: *mut c_void,
+    _note_index: f32,
+) -> usize {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::output_note::get_recipient"]
+pub extern "C" fn output_note_get_recipient_plain(_note_index: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[export_name = "miden::output_note::get_metadata"]
+pub extern "C" fn output_note_get_metadata_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }

@@ -2,7 +2,7 @@
 //! A linker stub is detected as a function whose body consists solely of a
 //! single `unreachable` instruction (plus the implicit `end`). The stub
 //! function name is expected to be a fully-qualified MASM function path like
-//! `miden::account::add_asset` and is used to locate the MASM callee.
+//! `miden::native_account::add_asset` and is used to locate the MASM callee.
 
 use core::str::FromStr;
 use std::cell::RefCell;

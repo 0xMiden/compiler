@@ -437,13 +437,13 @@
     (func $std::crypto::dsa::rpo_falcon512::verify (;16;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $miden::native_account::compute_delta_commitment (;17;) (type 3) (param i32)
+    (func $miden::active_account::get_item (;17;) (type 10) (param f32 i32)
       unreachable
     )
-    (func $miden::active_account::get_item (;18;) (type 10) (param f32 i32)
+    (func $miden::native_account::incr_nonce (;18;) (type 2) (result f32)
       unreachable
     )
-    (func $miden::native_account::incr_nonce (;19;) (type 2) (result f32)
+    (func $miden::native_account::compute_delta_commitment (;19;) (type 3) (param i32)
       unreachable
     )
     (func $miden::tx::get_block_number (;20;) (type 2) (result f32)
