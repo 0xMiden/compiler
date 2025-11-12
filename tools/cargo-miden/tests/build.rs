@@ -433,3 +433,74 @@ fn build_new_project_from_template(template: &str) -> Package {
     fs::remove_dir_all(new_project_path).unwrap();
     package
 }
+
+#[test]
+fn new_project_integration_tests_pass() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .is_test(true)
+        .format_timestamp(None)
+        .try_init();
+    env::set_var("TEST", "1");
+
+    let restore_dir = env::current_dir().unwrap();
+    let temp_dir = env::temp_dir().join(format!(
+        "cargo_miden_integration_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+    fs::create_dir_all(&temp_dir).unwrap();
+    env::set_current_dir(&temp_dir).unwrap();
+
+    let project_name = format!(
+        "integration_project_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros()
+    );
+    let args = new_project_args(&project_name, "");
+
+    let output = run(args.into_iter(), OutputType::Masm)
+        .expect("Failed to create project with `cargo miden new`")
+        .expect("'cargo miden new' should return Some(CommandOutput)");
+    let project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
+            project_path.canonicalize().unwrap()
+        }
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
+    };
+    assert!(project_path.exists());
+
+    let integration_dir = project_path.join("integration");
+    assert!(
+        integration_dir.exists(),
+        "expected integration workspace at {}",
+        integration_dir.display()
+    );
+
+    let output = std::process::Command::new("cargo")
+        .arg("test")
+        .current_dir(&integration_dir)
+        .output()
+        .expect("failed to spawn `cargo test` inside integration directory");
+    if !output.status.success() {
+        panic!(
+            "`cargo test` failed in {} with status {:?}\nstdout:\n{}\nstderr:\n{}",
+            integration_dir.display(),
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(&project_path).unwrap();
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+}
