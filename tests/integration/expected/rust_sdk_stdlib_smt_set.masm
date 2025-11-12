@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -12,7 +12,11 @@ end
 
 # mod root_ns:root@1.0.0::rust_sdk_stdlib_smt_set
 
-proc.<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
+    i32,
+    i32
+) -> i32
     dup.0
     push.4
     dup.1
@@ -204,7 +208,21 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
     end
 end
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+)
     push.1114112
     u32divmod.4
     swap.1
@@ -663,7 +681,11 @@ export.entrypoint
     end
 end
 
-proc.miden_stdlib_sys::intrinsics::word::Word::reverse
+@callconv("C")
+proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+    i32,
+    i32
+)
     push.1114112
     u32divmod.4
     swap.1
@@ -924,7 +946,8 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
 end
 
-proc.intrinsics::felt::from_u64_unchecked
+@callconv("C")
+proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
     push.1
@@ -939,11 +962,27 @@ proc.intrinsics::felt::from_u64_unchecked
     add
 end
 
-proc.intrinsics::felt::eq
+@callconv("C")
+proc intrinsics::felt::eq(felt, felt) -> i32
     eq
 end
 
-proc.std::collections::smt::set
+@callconv("C")
+proc std::collections::smt::set(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    i32
+)
     trace.240
     nop
     exec.::std::collections::smt::set

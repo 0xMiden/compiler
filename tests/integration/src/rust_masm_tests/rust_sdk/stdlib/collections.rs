@@ -1,11 +1,15 @@
+use std::sync::Arc;
+
 use miden_core::{
     crypto::merkle::{MerkleStore, Smt},
     Felt, FieldElement, Word,
 };
+use miden_debug::Executor;
+use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
-use midenc_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_session::STDLIB;
 
 use crate::CompilerTest;
 
@@ -45,6 +49,17 @@ fn push_word_args(args: &mut Vec<Felt>, word: Word) {
     args.push(c);
     args.push(b);
     args.push(a);
+}
+
+fn executor_with_std(args: Vec<Felt>) -> Executor {
+    let mut exec = Executor::new(args);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+    exec
 }
 
 #[test]
@@ -112,11 +127,12 @@ fn test_smt_get_binding() {
     push_word_args(&mut args, root);
     push_word_args(&mut args, key);
 
-    let mut exec = Executor::for_package(&package, args.clone(), &test.session)
-        .expect("executor creation failed");
+    let mut exec = executor_with_std(args.clone());
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("failed to add package dependencies");
     exec.with_advice_inputs(advice_inputs);
 
-    exec.execute(&package.unwrap_program(), &test.session);
+    exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }
 
 #[test]
@@ -128,7 +144,8 @@ fn test_smt_set_binding() {
     let root = smt.root();
 
     let mut expected_smt = smt.clone();
-    let expected_old_value = expected_smt.insert(key, new_value);
+    let expected_old_value =
+        expected_smt.insert(key, new_value).expect("inserting into SMT should succeed");
     let expected_new_root = expected_smt.root();
 
     let expected_old_u64 = word_to_u64s(expected_old_value);
@@ -202,9 +219,10 @@ fn test_smt_set_binding() {
     push_word_args(&mut args, key);
     push_word_args(&mut args, new_value);
 
-    let mut exec = Executor::for_package(&package, args.clone(), &test.session)
-        .expect("executor creation failed");
+    let mut exec = executor_with_std(args.clone());
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("failed to add package dependencies");
     exec.with_advice_inputs(advice_inputs);
 
-    exec.execute(&package.unwrap_program(), &test.session);
+    exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }
