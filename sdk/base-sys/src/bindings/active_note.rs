@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset};
+use super::{AccountId, Asset, Recipient};
 
 #[allow(improper_ctypes)]
 extern "C" {
@@ -13,10 +13,16 @@ extern "C" {
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
     #[link_name = "miden::active_note::get_sender"]
     pub fn extern_note_get_sender(ptr: *mut AccountId);
+    #[link_name = "miden::active_note::get_recipient"]
+    pub fn extern_note_get_recipient(ptr: *mut Recipient);
     #[link_name = "miden::active_note::get_script_root"]
     pub fn extern_note_get_script_root(ptr: *mut Word);
     #[link_name = "miden::active_note::get_serial_number"]
     pub fn extern_note_get_serial_number(ptr: *mut Word);
+    #[link_name = "miden::active_note::get_metadata"]
+    pub fn extern_note_get_metadata(ptr: *mut Word);
+    #[link_name = "miden::active_note::add_assets_to_account"]
+    pub fn extern_note_add_assets_to_account();
 }
 
 /// Get the inputs of the currently executing note.
@@ -72,6 +78,17 @@ pub fn get_sender() -> AccountId {
     }
 }
 
+/// Returns the recipient of the note that is currently executing.
+pub fn get_recipient() -> Recipient {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        extern_note_get_recipient(ret_area.as_mut_ptr());
+        let mut recipient = ret_area.assume_init();
+        recipient.inner = recipient.inner.reverse();
+        recipient
+    }
+}
+
 /// Returns the script root of the currently executing note.
 pub fn get_script_root() -> Word {
     unsafe {
@@ -88,4 +105,19 @@ pub fn get_serial_number() -> Word {
         extern_note_get_serial_number(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
+}
+
+/// Returns the metadata of the note that is currently executing.
+pub fn get_metadata() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_note_get_metadata(ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
+    }
+}
+
+/// Moves all assets from the active note into the active account vault.
+#[inline]
+pub fn add_assets_to_account() {
+    unsafe { extern_note_add_assets_to_account() }
 }

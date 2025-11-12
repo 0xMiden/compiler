@@ -19,6 +19,7 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
 };
 
+mod base;
 mod macros;
 
 fn executor_with_std(args: Vec<Felt>) -> Executor {
