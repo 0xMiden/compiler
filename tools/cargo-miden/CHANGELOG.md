@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/0xMiden/compiler/compare/0.5.0...0.5.1) - 2025-11-13
+
+### Other
+
+- more clippy
+- add `--single-branch` when cloning a template git repo
+- more formatting and clippy
+- clippy and formatting
+- migrate to 0.19
+- update default project template repo URL
+
 ## [0.5.0](https://github.com/0xMiden/compiler/compare/cargo-miden-v0.4.1...cargo-miden-v0.5.0) - 2025-11-05
 
 ### Added

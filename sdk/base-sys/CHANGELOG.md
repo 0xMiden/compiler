@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.7.0...miden-base-sys-v0.8.0) - 2025-11-13
+
+### Added
+
+- add `miden-base` MASM bindings for `account`, `tx`, `faucet`,
+
+### Other
+
+- [**breaking**] split `account` into `active_account` and `native_account` in the SDK
+- migrate to 0.19
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-base-sys-v0.1.5...miden-base-sys-v0.4.0) - 2025-08-15
 
 ### Added

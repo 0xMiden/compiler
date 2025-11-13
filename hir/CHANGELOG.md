@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.5.0...midenc-hir-v0.5.1) - 2025-11-13
+
+### Fixed
+
+- remove midenc-hir-type from workspace deps
+
 ## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.4.1...midenc-hir-v0.5.0) - 2025-11-05
 
 ### Fixed

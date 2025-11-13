@@ -1,7 +1,7 @@
 [package]
 name = "miden-base"
 description = "Miden rollup Rust SDK"
-version = "0.7.0"
+version = "0.7.1"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -12,9 +12,9 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-miden-base-sys = { version = "0.7.0", path = "../base-sys" }
-miden-stdlib-sys = { version = "0.7.0", path = "../stdlib-sys" }
-miden-base-macros = { version = "0.7.0", path = "../base-macros" }
+miden-base-sys = { version = "0.8.0", path = "../base-sys" }
+miden-stdlib-sys = { version = "0.7.1", path = "../stdlib-sys" }
+miden-base-macros = { version = "0.7.1", path = "../base-macros" }
 
 [features]
 default = []

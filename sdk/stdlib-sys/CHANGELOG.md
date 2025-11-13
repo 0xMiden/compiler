@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.7.0...miden-stdlib-sys-v0.7.1) - 2025-11-13
+
+### Added
+
+- add stdlib `std::collections::smt` bindings to the SDK
+- add stdlib `hash_2to1` for SHA256 and Blake3 to SDK bindings
+- fix `sha256::hash_1to1` bindings (big-endian),
+
+### Other
+
+- migrate to 0.19
+
 ## [0.4.0](https://github.com/0xMiden/compiler/compare/miden-stdlib-sys-v0.1.5...miden-stdlib-sys-v0.4.0) - 2025-08-15
 
 ### Added

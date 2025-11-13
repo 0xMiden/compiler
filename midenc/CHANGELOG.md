@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-v0.5.0...midenc-v0.5.1) - 2025-11-13
+
+### Other
+
+- split out midenc-debug into separate repo, simplify driver
+
 ## [0.5.0](https://github.com/0xMiden/compiler/compare/0.4.1...0.5.0) - 2025-11-05
 
 ### Other
