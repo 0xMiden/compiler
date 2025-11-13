@@ -67,7 +67,8 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
             .flatten()
             .collect(),
         Type::Array(array_ty) => {
-            vec![AbiParam::new(array_ty.element_type().clone()); array_ty.len()]
+            let element_abi_ty = flatten_type(array_ty.element_type())?;
+            std::iter::repeat_n(element_abi_ty, array_ty.len()).flatten().collect()
         }
         Type::List(elem_ty) => vec![
             // pointer to the list element type
@@ -75,6 +76,45 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
             // length of the list
             AbiParam::new(Type::I32),
         ],
+        // XXX: DISABLED UNTIL WE HAVE `midenc_hir::Type::Enum` sorted out.
+        //
+        // Type::Enum(enum_ty) => {
+        //     let mut abi_tys = flatten_type(enum_ty.discriminant_ty())?;
+        //     assert!(abi_tys.len() == 1);
+        //
+        //     for opt_variant_ty in enum_ty.variants() {
+        //         let Some(variant_ty) = opt_variant_ty else {
+        //             continue;
+        //         };
+        //
+        //         for (idx, variant_abi_ty) in flatten_type(variant_ty)?.into_iter().enumerate() {
+        //             assert!(
+        //                 variant_abi_ty.ty == Type::I32
+        //                     || variant_abi_ty.ty == Type::I64
+        //                     || variant_abi_ty.ty == Type::Felt
+        //             );
+        //
+        //             if idx + 1 >= abi_tys.len() {
+        //                 abi_tys.push(variant_abi_ty)
+        //             } else {
+        //                 // This is the 'join()' part from the docs.  We don't have 'f32' though,
+        //                 // but we do have 'Felt'.  Here we basically give the largest type
+        //                 // precedence; `I64` >> `Felt` >> `I32`.  We also discard any existing ABI
+        //                 // purpose or extension properties.
+        //                 let cur_ty = &abi_tys[idx + 1];
+        //                 if cur_ty.ty != variant_abi_ty.ty {
+        //                     abi_tys[idx + 1] = match (&cur_ty.ty, &variant_abi_ty.ty) {
+        //                         (Type::I64, _) | (_, Type::I64) => AbiParam::new(Type::I64),
+        //                         (Type::Felt, _) | (_, Type::Felt) => AbiParam::new(Type::Felt),
+        //                         _ => AbiParam::new(Type::I32),
+        //                     };
+        //                 }
+        //             }
+        //         }
+        //     }
+        //
+        //     abi_tys
+        // }
         Type::Unknown | Type::Never | Type::Ptr(_) | Type::Function(_) => {
             return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }

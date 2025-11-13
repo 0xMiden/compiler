@@ -1,0 +1,23 @@
+[package]
+name = "cm_types_script"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
+# and transaction kernel API for the Miden rollup
+miden = { path = "../../../../sdk/sdk" }
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[package.metadata.miden.dependencies]
+"miden:cm-types" = { path = "../cm-types" }
+
+[package.metadata.component.target.dependencies]
+"miden:cm-types" = { path = "../cm-types/wit/interface.wit" }

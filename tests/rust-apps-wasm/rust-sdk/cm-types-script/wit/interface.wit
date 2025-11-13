@@ -1,0 +1,6 @@
+package miden:cm-types-script@0.1.0;
+
+world cm-types-world {
+    import miden:cm-types/cm-types@0.1.0;
+    export miden:base/note-script@1.0.0;
+}

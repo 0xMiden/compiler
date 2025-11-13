@@ -96,7 +96,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.assertz v63 #[code = 250];
             v64 = hir.int_to_ptr v61 : ptr<byte, i32>;
             v65 = hir.load v64 : i32;
-            v66 = hir.cast v65 : u32;
+            v66 = hir.bitcast v65 : u32;
             v956 = scf.index_switch v66 : u32 
             case 0 {
             ^block119:

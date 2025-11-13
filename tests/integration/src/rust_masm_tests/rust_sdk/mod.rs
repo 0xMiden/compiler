@@ -316,3 +316,41 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }
+
+#[test]
+fn component_model_types() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cm-types",
+        config.clone(),
+        [],
+    );
+
+    let artifact_name = test.artifact_name().to_string();
+    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.masm")]);
+
+    let cm_types_package = test.compiled_package();
+
+    let builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/cm-types-script",
+        config,
+        [],
+    );
+
+    let mut test = builder.build();
+    let artifact_name = test.artifact_name().to_string();
+    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.masm")]);
+
+    let cm_types_script_package = test.compiled_package();
+    let program = cm_types_script_package.unwrap_program();
+    let mut exec = Executor::new(vec![]);
+    exec.dependency_resolver_mut()
+        .add(cm_types_package.digest(), cm_types_package.into());
+    let dependencies = cm_types_script_package.manifest.dependencies();
+    exec.with_dependencies(dependencies).unwrap();
+    let _trace = exec.execute(&program, test.session.source_manager.clone());
+}

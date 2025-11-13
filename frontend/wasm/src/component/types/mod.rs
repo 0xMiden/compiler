@@ -1390,7 +1390,7 @@ pub struct TypeEnum {
 /// Shape of an "option" interface type.
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub struct TypeOption {
-    /// The `T` in `Result<T, E>`
+    /// The `T` in `Option<T>`
     pub ty: InterfaceType,
     /// Byte information about this type in the canonical ABI.
     pub abi: CanonicalAbiInfo,
@@ -1773,8 +1773,6 @@ pub fn interface_type_to_ir(
                 .map(|f| interface_type_to_ir(&f.ty, component_types));
             midenc_hir::Type::from(midenc_hir::StructType::new(tys))
         }
-        // TODO: This is a stub to make `enum` in WIT generation work. Use proper type when ready.
-        InterfaceType::Variant(_) => midenc_hir::Type::U32,
         InterfaceType::List(idx) => {
             let element_ty =
                 interface_type_to_ir(&component_types.lists[*idx].element, component_types);
@@ -1787,10 +1785,62 @@ pub fn interface_type_to_ir(
                 .map(|t| interface_type_to_ir(t, component_types));
             midenc_hir::Type::from(midenc_hir::StructType::new(tys))
         }
-        InterfaceType::Flags(_) => todo!(),
-        InterfaceType::Enum(_) => todo!(),
-        InterfaceType::Option(_) => todo!(),
-        InterfaceType::Result(_) => todo!(),
+        InterfaceType::Flags(_) => midenc_hir::Type::I32,
+
+        // XXX: THESE ARE ALL DISABLED UNTIL WE HAVE `midenc_hir::Type::Enum` sorted out.
+        //
+        // Enum, Option and Result are all specialisations of Variant.
+        // InterfaceType::Enum(enum_idx) => {
+        //     let enum_info = &component_types.enums[*enum_idx];
+        //
+        //     midenc_hir::Type::from(midenc_hir::EnumType::new(
+        //         std::iter::repeat_n(None, enum_info.names.len()),
+        //         enum_info.info.size.into(),
+        //         enum_info.info.payload_offset32,
+        //     ))
+        // }
+        // InterfaceType::Option(option_idx) => {
+        //     let option_info = &component_types.options[*option_idx];
+        //
+        //     let some_ty = interface_type_to_ir(&option_info.ty, component_types);
+        //
+        //     midenc_hir::Type::from(midenc_hir::EnumType::new(
+        //         [None, Some(some_ty)],
+        //         option_info.info.size.into(),
+        //         option_info.info.payload_offset32,
+        //     ))
+        // }
+        // InterfaceType::Result(result_idx) => {
+        //     let result_info = &component_types.results[*result_idx];
+        //
+        //     let variant_tys = [result_info.ok, result_info.err]
+        //         .map(|opt_ty| opt_ty.as_ref().map(|ty| interface_type_to_ir(ty, component_types)));
+        //
+        //     midenc_hir::Type::from(midenc_hir::EnumType::new(
+        //         variant_tys,
+        //         result_info.info.size.into(),
+        //         result_info.info.payload_offset32,
+        //     ))
+        // }
+        // InterfaceType::Variant(variant_idx) => {
+        //     let variant_info = &component_types.variants[*variant_idx];
+        //
+        //     let variant_tys = variant_info
+        //         .cases
+        //         .iter()
+        //         .map(|case| case.ty.as_ref().map(|ty| interface_type_to_ir(ty, component_types)));
+        //
+        //     midenc_hir::Type::from(midenc_hir::EnumType::new(
+        //         variant_tys,
+        //         variant_info.info.size.into(),
+        //         variant_info.info.payload_offset32,
+        //     ))
+        // }
+        InterfaceType::Enum(_enum_idx) => todo!("MIDENC_HIR::TYPE::ENUM TBD"),
+        InterfaceType::Option(_option_idx) => todo!("MIDENC_HIR::TYPE::ENUM TBD"),
+        InterfaceType::Result(_result_idx) => todo!("MIDENC_HIR::TYPE::ENUM TBD"),
+        InterfaceType::Variant(_variant_idx) => todo!("MIDENC_HIR::TYPE::ENUM TBD"),
+
         InterfaceType::Own(_) => todo!(),
         InterfaceType::Borrow(_) => todo!(),
     }

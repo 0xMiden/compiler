@@ -232,10 +232,6 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     dup.0
-    push.2147483648
-    u32lte
-    assert
-    dup.0
     push.1
     u32lte
     if.true

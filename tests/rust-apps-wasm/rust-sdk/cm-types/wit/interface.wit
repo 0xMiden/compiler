@@ -1,0 +1,40 @@
+package miden:cm-types@0.1.0;
+
+use miden:base/core-types@1.0.0;
+
+interface cm-types {
+    use core-types.{felt, asset};
+
+    //enum the-enum {
+    //    variant-a,
+    //    variant-b,
+    //    variant-c,
+    //}
+
+    //flags the-flags {
+    //    flag-a,
+    //    flag-b,
+    //    flag-c,
+    //}
+
+    //record the-record {
+    //    rec-flags: the-flags,
+    //    optional-enum: option<the-enum>,
+    //}
+
+    //func-enum: func(e: the-enum) -> the-enum;
+    //func-flags: func(f: the-flags) -> the-flags;
+    //func-record: func(r: the-record) -> the-record;
+    //func-option: func(o: option<the-record>) -> option<the-enum>;
+
+    //func-tuple: func(t: tuple<the-enum, u64>) -> tuple<u64, the-record>;
+    func-list: func(l: list<u8>) -> list<u16>;
+
+    //func-result-small: func(r: result<u64, u32>) -> result<u16, u8>;
+    //func-result-enum: func(e: the-enum) -> result<the-enum, bool>;
+    //func-result-large: func(r: result<tuple<u64, u32>, the-record>) -> result<tuple<u64, u64, u64>>;
+}
+
+world cm-types-world {
+    export cm-types;
+}

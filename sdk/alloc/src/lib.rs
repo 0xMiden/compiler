@@ -129,3 +129,13 @@ extern "C" {
     #[link_name = "intrinsics::mem::heap_base"]
     fn heap_base() -> *mut u8;
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cabi_realloc(
+    _old_ptr: *mut u8,
+    _old_len: usize,
+    _align: usize,
+    _new_len: usize,
+) -> *mut u8 {
+    unsafe { core::hint::unreachable_unchecked() }
+}

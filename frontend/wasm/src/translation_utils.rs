@@ -66,6 +66,17 @@ impl From<DiscriminantSize> for usize {
     }
 }
 
+impl From<DiscriminantSize> for Type {
+    /// Size of the discriminant as the smallest corresponding integer `Type`.
+    fn from(size: DiscriminantSize) -> Type {
+        match size {
+            DiscriminantSize::Size1 => Type::U8,
+            DiscriminantSize::Size2 => Type::U16,
+            DiscriminantSize::Size4 => Type::U32,
+        }
+    }
+}
+
 /// Represents the number of bytes required to store a flags value in the component model
 pub enum FlagsSize {
     /// There are no flags
@@ -128,6 +139,7 @@ pub fn emit_zero<B: ?Sized + Builder>(
         | Type::Array(..)
         | Type::List(_)
         | Type::Function(_)
+        //| Type::Enum(_)
         | Type::Unknown
         | Type::Never => {
             unsupported_diag!(diagnostics, "cannot emit zero value for type: {:?}", ty);
