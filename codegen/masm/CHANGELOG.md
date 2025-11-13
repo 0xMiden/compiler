@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.5.0...midenc-codegen-masm-v0.5.1) - 2025-11-13
+
+### Other
+
+- migrate to 0.19
+- update vm to 0.18
+
 ## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.4.1...midenc-codegen-masm-v0.5.0) - 2025-11-05
 
 ### Fixed
