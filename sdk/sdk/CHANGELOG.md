@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- updated the following local packages: miden-stdlib-sys, miden-base-sys, miden-base
+- Updated the following local packages: miden-stdlib-sys, miden-base-sys, miden-base.
 
 ## [0.7.0]
 ### BREAKING
