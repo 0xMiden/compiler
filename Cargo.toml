@@ -188,6 +188,67 @@ opt-level = 3
 [profile.test.package.rand_chacha]
 opt-level = 3
 
+# Speed up the test profile (proving times)
+# ============================================================
+# The test package itself needs optimization
+[profile.test.package.miden-integration-node-tests]
+opt-level = 3
+
+# Core Miden packages
+[profile.test.package.miden-processor]
+opt-level = 3
+
+[profile.test.package.miden-prover]
+opt-level = 3
+
+[profile.test.package.winter-prover]
+opt-level = 3
+
+[profile.test.package.miden-client]
+opt-level = 3
+
+[profile.test.package.miden-lib]
+opt-level = 3
+
+[profile.test.package.miden-tx]
+opt-level = 3
+
+# Additional crypto and math-heavy dependencies
+[profile.test.package.miden-crypto]
+opt-level = 3
+
+[profile.test.package.winter-crypto]
+opt-level = 3
+
+[profile.test.package.winter-air]
+opt-level = 3
+
+[profile.test.package.winter-math]
+opt-level = 3
+
+[profile.test.package.miden-objects]
+opt-level = 3
+
+[profile.test.package.miden-core]
+opt-level = 3
+
+[profile.test.package.miden-assembly]
+opt-level = 3
+
+[profile.test.package.miden-stdlib]
+opt-level = 3
+
+# Compiler packages that might be used in tests
+[profile.test.package.midenc-frontend-wasm]
+opt-level = 3
+
+[profile.test.package.midenc-session]
+opt-level = 3
+
+[profile.test.package.midenc-debug]
+opt-level = 3
+# ============================================================
+
 [profile.dev.package.dissimilar]
 opt-level = 3
 
