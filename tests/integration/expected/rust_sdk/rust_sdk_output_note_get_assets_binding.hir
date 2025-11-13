@@ -945,7 +945,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-
             builtin.ret_imm 0;
         };
 
-        builtin.segment readonly @1048576 = 0x0073722e65746f6e5f74757074756f2f73676e69646e69622f6372732f302e372e302d7379732d657361622d6e6564696d;
+        builtin.segment readonly @1048576 = 0x0073722e65746f6e5f74757074756f2f73676e69646e69622f6372732f302e382e302d7379732d657361622d6e6564696d;
 
         builtin.segment @1048628 = 0x000000220000006500000030001000000000000100000001;
     };

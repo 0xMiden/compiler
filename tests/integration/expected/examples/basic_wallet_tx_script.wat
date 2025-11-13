@@ -737,7 +737,7 @@
     (func $miden::output_note::create (;30;) (type 17) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.7.0/src/stdlib/mem.rs\00src/lib.rs\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.7.1/src/stdlib/mem.rs\00src/lib.rs\00")
     (data $.data (;1;) (i32.const 1048628) "\01\00\00\00\01\00\00\00\01\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00)\00\10\00\0a\00\00\00%\00\00\00%\00\00\00)\00\10\00\0a\00\00\00'\00\00\00!\00\00\00")
   )
   (alias export 0 "word" (type (;4;)))

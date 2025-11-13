@@ -551,7 +551,7 @@
     (func $miden::input_note::get_assets (;22;) (type 11) (param i32 f32) (result i32)
       unreachable
     )
-    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/input_note.rs\00")
+    (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.8.0/src/bindings/input_note.rs\00")
     (data $.data (;1;) (i32.const 1048624) "\01\00\00\00\01\00\00\00\00\00\10\00/\00\00\00?\00\00\00\22\00\00\00")
     (@custom "rodata,miden_account" (after data) "Mrust_sdk_input_note_get_assets_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
