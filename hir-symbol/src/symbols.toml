@@ -102,7 +102,13 @@ ub = {}
 
 [modules]
 account = {}
+native_account = {}
+active_account = {}
+active_note = {}
+input_note = {}
+asset = {}
 blake3 = {}
+sha256 = {}
 crypto = {}
 debug = {}
 dsa = {}
@@ -113,6 +119,11 @@ advice = {}
 miden = {}
 mem = {}
 note = {}
+output_note = {}
+faucet = {}
 rpo_falcon512 = {}
 std = {}
 tx = {}
+rpo = {}
+collections = {}
+smt = {}

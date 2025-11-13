@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use miden::{
-    account, component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value,
+    component, felt, hash_words, intrinsics::advice::adv_insert, native_account, tx, Felt, Value,
     ValueAccess, Word,
 };
 
@@ -30,10 +30,10 @@ struct AuthComponent {
 impl Guest for AuthComponent {
     fn auth_procedure(_arg: Word) {
         let ref_block_num = tx::get_block_number();
-        let final_nonce = account::incr_nonce();
+        let final_nonce = native_account::incr_nonce();
 
         // Gather tx summary parts
-        let acct_delta_commit = account::compute_delta_commitment();
+        let acct_delta_commit = native_account::compute_delta_commitment();
         let input_notes_commit = tx::get_input_notes_commitment();
         let output_notes_commit = tx::get_output_notes_commitment();
 

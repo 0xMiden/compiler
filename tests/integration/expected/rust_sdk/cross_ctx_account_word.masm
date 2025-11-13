@@ -1,6 +1,7 @@
 # mod miden:cross-ctx-account-word/foo@1.0.0
 
-export.process-word
+@callconv("canon-lift")
+pub proc process-word(felt, felt, felt, felt) -> (felt, felt, felt, felt)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -62,7 +63,13 @@ export.process-word
     exec.::std::sys::truncate_stack
 end
 
-export.process-another-word
+@callconv("canon-lift")
+pub proc process-another-word(
+    felt,
+    felt,
+    felt,
+    felt
+) -> (felt, felt, felt, felt)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -124,7 +131,8 @@ export.process-another-word
     exec.::std::sys::truncate_stack
 end
 
-export.process-felt
+@callconv("canon-lift")
+pub proc process-felt(felt) -> felt
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -134,7 +142,8 @@ export.process-felt
     exec.::std::sys::truncate_stack
 end
 
-export.process-pair
+@callconv("canon-lift")
+pub proc process-pair(felt, felt) -> (felt, felt)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -169,7 +178,8 @@ export.process-pair
     exec.::std::sys::truncate_stack
 end
 
-export.process-triple
+@callconv("canon-lift")
+pub proc process-triple(felt, felt, felt) -> (felt, felt, felt)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -216,7 +226,16 @@ export.process-triple
     exec.::std::sys::truncate_stack
 end
 
-export.process-mixed
+@callconv("canon-lift")
+pub proc process-mixed(
+    [u32; 2],
+    felt,
+    i32,
+    felt,
+    i32,
+    i32,
+    i32
+) -> ([u32; 2], felt, i32, felt, i32, i32, i32)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -327,7 +346,8 @@ export.process-mixed
     exec.::std::sys::truncate_stack
 end
 
-export.process-nested
+@callconv("canon-lift")
+pub proc process-nested(felt, felt, felt) -> (felt, felt, felt)
     exec.::miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
@@ -377,7 +397,7 @@ export.process-nested
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -400,15 +420,27 @@ end
 
 # mod miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.cross_ctx_account_word::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc cross_ctx_account_word::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-word
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
+    felt,
+    felt,
+    felt,
+    felt
+) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -546,7 +578,13 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-word
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
+    felt,
+    felt,
+    felt,
+    felt
+) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -684,7 +722,8 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-another-word
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-felt
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-felt(felt) -> felt
     trace.240
     nop
     exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
@@ -704,7 +743,8 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-felt
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-pair
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-pair(felt, felt) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -780,7 +820,12 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-pair
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-triple
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-triple(
+    felt,
+    felt,
+    felt
+) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -887,7 +932,16 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-triple
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
+    [u32; 2],
+    felt,
+    i32,
+    felt,
+    i32,
+    i32,
+    i32
+) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -1112,7 +1166,12 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-mixed
     nop
 end
 
-proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
+@callconv("C")
+proc miden:cross-ctx-account-word/foo@1.0.0#process-nested(
+    felt,
+    felt,
+    felt
+) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -1219,7 +1278,10 @@ proc.miden:cross-ctx-account-word/foo@1.0.0#process-nested
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1
@@ -1290,11 +1352,13 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.intrinsics::felt::add
+@callconv("C")
+proc intrinsics::felt::add(felt, felt) -> felt
     add
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

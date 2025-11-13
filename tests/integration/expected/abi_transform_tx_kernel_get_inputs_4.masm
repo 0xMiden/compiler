@@ -1,27 +1,30 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[1401399710535556876,5110350579171046467,11284637462410625470,4413703774666677263]
+    push.[4557231304381646024,333629999424525359,2740222180108318868,7644147313808679059]
     adv.push_mapval
     push.262144
-    push.4
+    push.5
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
     u32assert
-    mem_store.278544
+    mem_store.278552
 end
 
 # mod root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4
 
-export.entrypoint
-    push.1114176
+@callconv("C")
+pub proc entrypoint(
+
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -31,7 +34,7 @@ export.entrypoint
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -46,7 +49,7 @@ export.entrypoint
     u32wrapping_add
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden_base_sys::bindings::note::get_inputs
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden_base_sys::bindings::active_note::get_inputs
     trace.252
     nop
     push.12
@@ -273,7 +276,7 @@ export.entrypoint
                     push.16
                     movup.2
                     u32wrapping_add
-                    push.1114176
+                    push.1114208
                     u32divmod.4
                     swap.1
                     trace.240
@@ -299,8 +302,9 @@ export.entrypoint
     end
 end
 
-proc.__rustc::__rust_alloc
-    push.1048640
+@callconv("C")
+proc __rustc::__rust_alloc(i32, i32) -> i32
+    push.1048648
     movup.2
     swap.1
     trace.240
@@ -310,14 +314,16 @@ proc.__rustc::__rust_alloc
     nop
 end
 
-proc.__rustc::__rust_dealloc
+@callconv("C")
+proc __rustc::__rust_dealloc(i32, i32, i32)
     drop
     drop
     drop
 end
 
-proc.__rustc::__rust_realloc
-    push.1048640
+@callconv("C")
+proc __rustc::__rust_realloc(i32, i32, i32, i32) -> i32
+    push.1048648
     dup.4
     swap.2
     swap.4
@@ -419,8 +425,9 @@ proc.__rustc::__rust_realloc
     end
 end
 
-proc.__rustc::__rust_alloc_zeroed
-    push.1048640
+@callconv("C")
+proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
+    push.1048648
     dup.1
     swap.2
     swap.3
@@ -494,11 +501,19 @@ proc.__rustc::__rust_alloc_zeroed
     end
 end
 
-proc.__rustc::__rust_no_alloc_shim_is_unstable_v2
+@callconv("C")
+proc __rustc::__rust_no_alloc_shim_is_unstable_v2(
+
+)
     nop
 end
 
-proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+@callconv("C")
+proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
+    i32,
+    i32,
+    i32
+) -> i32
     push.16
     push.0
     push.16
@@ -673,7 +688,10 @@ proc.<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     end
 end
 
-proc.intrinsics::mem::heap_base
+@callconv("C")
+proc intrinsics::mem::heap_base(
+
+) -> i32
     trace.240
     nop
     exec.::intrinsics::mem::heap_base
@@ -681,8 +699,14 @@ proc.intrinsics::mem::heap_base
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
-    push.1114176
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -692,7 +716,7 @@ proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -810,7 +834,7 @@ proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
         nop
         push.16
         u32wrapping_add
-        push.1114176
+        push.1114208
         u32divmod.4
         swap.1
         trace.240
@@ -849,8 +873,11 @@ proc.alloc::raw_vec::RawVecInner<A>::with_capacity_in
     end
 end
 
-proc.miden_base_sys::bindings::note::get_inputs
-    push.1114176
+@callconv("C")
+proc miden_base_sys::bindings::active_note::get_inputs(
+    i32
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -860,7 +887,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -870,7 +897,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.1048620
+    push.1048628
     push.4
     push.8
     dup.3
@@ -923,7 +950,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     u32shr
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden::note::get_inputs
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden::active_note::get_inputs
     trace.252
     nop
     push.8
@@ -976,7 +1003,7 @@ proc.miden_base_sys::bindings::note::get_inputs
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -986,20 +1013,30 @@ proc.miden_base_sys::bindings::note::get_inputs
     nop
 end
 
-proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from(
+    i32
+) -> felt
     nop
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::assert_eq
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::deallocate
-    push.1114176
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::deallocate(
+    i32,
+    i32,
+    i32
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1009,7 +1046,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -1100,7 +1137,7 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     end
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1110,8 +1147,15 @@ proc.alloc::raw_vec::RawVecInner<A>::deallocate
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
-    push.1114176
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1121,7 +1165,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -1506,7 +1550,7 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1516,8 +1560,13 @@ proc.alloc::raw_vec::RawVecInner<A>::try_allocate_in
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
-    push.1114176
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+    i32,
+    i32,
+    i32
+)
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1527,7 +1576,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114208
     dup.1
     swap.1
     u32divmod.4
@@ -1620,7 +1669,7 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114208
     u32divmod.4
     swap.1
     trace.240
@@ -1630,7 +1679,13 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::allocate
     nop
 end
 
-proc.alloc::alloc::Global::alloc_impl
+@callconv("C")
+proc alloc::alloc::Global::alloc_impl(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4
@@ -1702,7 +1757,13 @@ proc.alloc::alloc::Global::alloc_impl
     nop
 end
 
-proc.alloc::raw_vec::RawVecInner<A>::current_memory
+@callconv("C")
+proc alloc::raw_vec::RawVecInner<A>::current_memory(
+    i32,
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.5
@@ -1828,7 +1889,12 @@ proc.alloc::raw_vec::RawVecInner<A>::current_memory
     nop
 end
 
-proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+    i32,
+    i32,
+    i32
+)
     push.0
     push.0
     dup.4
@@ -1849,7 +1915,8 @@ proc.<alloc::alloc::Global as core::alloc::Allocator>::deallocate
     end
 end
 
-proc.alloc::raw_vec::handle_error
+@callconv("C")
+proc alloc::raw_vec::handle_error(i32, i32, i32)
     drop
     drop
     drop
@@ -1857,7 +1924,8 @@ proc.alloc::raw_vec::handle_error
     assert
 end
 
-proc.core::ptr::alignment::Alignment::max
+@callconv("C")
+proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
     push.0
     dup.2
     dup.2
@@ -1867,17 +1935,19 @@ proc.core::ptr::alignment::Alignment::max
     cdrop
 end
 
-proc.miden::note::get_inputs
+@callconv("C")
+proc miden::active_note::get_inputs(i32) -> i32
     trace.240
     nop
-    exec.::miden::note::get_inputs
+    exec.::miden::active_note::get_inputs
     trace.252
     nop
     swap.1
     drop
 end
 
-export.cabi_realloc
+@callconv("C")
+pub proc cabi_realloc(i32, i32, i32, i32) -> i32
     trace.240
     nop
     exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::cabi_realloc_wit_bindgen_0_46_0
@@ -1885,7 +1955,8 @@ export.cabi_realloc
     nop
 end
 
-proc.alloc::alloc::alloc
+@callconv("C")
+proc alloc::alloc::alloc(i32, i32) -> i32
     trace.240
     nop
     exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_no_alloc_shim_is_unstable_v2
@@ -1899,7 +1970,8 @@ proc.alloc::alloc::alloc
     nop
 end
 
-export.cabi_realloc_wit_bindgen_0_46_0
+@callconv("C")
+pub proc cabi_realloc_wit_bindgen_0_46_0(i32, i32, i32, i32) -> i32
     trace.240
     nop
     exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::wit_bindgen::rt::cabi_realloc
@@ -1907,7 +1979,13 @@ export.cabi_realloc_wit_bindgen_0_46_0
     nop
 end
 
-proc.wit_bindgen::rt::cabi_realloc
+@callconv("C")
+proc wit_bindgen::rt::cabi_realloc(
+    i32,
+    i32,
+    i32,
+    i32
+) -> i32
     push.0
     dup.2
     neq
@@ -1988,15 +2066,15 @@ proc.wit_bindgen::rt::cabi_realloc
     end
 end
 
-# mod miden::note
+# mod miden::active_note
 
-export.get_inputs
+pub proc get_inputs
     push.4294967295
     push.1
     push.2
     push.3
     dup.4
-    mem_storew
+    mem_storew_be
     dropw
     push.4
 end

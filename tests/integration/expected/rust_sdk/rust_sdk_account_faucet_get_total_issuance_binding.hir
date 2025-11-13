@@ -1,0 +1,76 @@
+builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1 {
+    builtin.module public @rust_sdk_account_faucet_get_total_issuance_binding {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @rust_sdk_account_faucet_get_total_issuance_binding::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        private builtin.function @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding() -> felt {
+        ^block9:
+            hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/wit_bindgen::rt::run_ctors_once()
+            v1 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden::faucet::get_total_issuance() : felt
+            builtin.ret v1;
+        };
+
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
+        ^block11:
+            v3 = builtin.global_symbol @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v4 = hir.bitcast v3 : ptr<byte, i32>;
+            v5 = hir.load v4 : i32;
+            v6 = arith.constant 1048584 : i32;
+            v7 = arith.add v5, v6 : i32 #[overflow = wrapping];
+            v8 = hir.bitcast v7 : u32;
+            v9 = hir.int_to_ptr v8 : ptr<byte, u8>;
+            v10 = hir.load v9 : u8;
+            v2 = arith.constant 0 : i32;
+            v11 = arith.zext v10 : u32;
+            v12 = hir.bitcast v11 : i32;
+            v14 = arith.neq v12, v2 : i1;
+            scf.if v14{
+            ^block13:
+                scf.yield ;
+            } else {
+            ^block14:
+                v15 = builtin.global_symbol @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v16 = hir.bitcast v15 : ptr<byte, i32>;
+                v17 = hir.load v16 : i32;
+                hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/__wasm_call_ctors()
+                v29 = arith.constant 1 : u8;
+                v31 = arith.constant 1048584 : i32;
+                v19 = arith.add v17, v31 : i32 #[overflow = wrapping];
+                v23 = hir.bitcast v19 : u32;
+                v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
+                hir.store v24, v29;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::faucet::get_total_issuance() -> felt {
+        ^block15:
+            v25 = hir.exec @miden/faucet/get_total_issuance() : felt
+            builtin.ret v25;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x0000000100000001;
+    };
+
+    public builtin.function @binding() -> felt {
+    ^block19:
+        v27 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding() : felt
+        builtin.ret v27;
+    };
+};

@@ -279,7 +279,7 @@ impl Emit for miden_assembly::Library {
         struct LibraryTextFormatter<'a>(&'a miden_assembly::Library);
         impl miden_core::prettier::PrettyPrint for LibraryTextFormatter<'_> {
             fn render(&self) -> miden_core::prettier::Document {
-                use miden_core::prettier::*;
+                use miden_core::{mast::MastNodeExt, prettier::*};
 
                 let mast_forest = self.0.mast_forest();
                 let mut library_doc = Document::Empty;

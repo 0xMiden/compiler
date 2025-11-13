@@ -13,15 +13,15 @@ use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
 
 #[note_script]
 fn run(_arg: Word) {
-    let inputs = note::get_inputs();
+    let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
 
     let target_account = AccountId::from(target_account_id_prefix, target_account_id_suffix);
-    let current_account = account::get_id();
+    let current_account = active_account::get_id();
     assert_eq!(current_account, target_account);
 
-    let assets = note::get_assets();
+    let assets = active_note::get_assets();
     for asset in assets {
         receive_asset(asset);
     }

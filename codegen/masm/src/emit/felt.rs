@@ -44,14 +44,9 @@ impl OpEmitter<'_> {
     /// `[a, ..] => [0, 0, a_hi, a_lo]`
     #[inline]
     pub fn felt_to_i128(&mut self, span: SourceSpan) {
-        self.emit_all(
-            [
-                masm::Instruction::U32Split,
-                masm::Instruction::PushFelt(ZERO),
-                masm::Instruction::PushFelt(ZERO),
-            ],
-            span,
-        );
+        self.emit(masm::Instruction::U32Split, span);
+        self.emit_push(ZERO, span);
+        self.emit_push(ZERO, span);
     }
 
     /// Convert a field element to u64 by zero-extension.

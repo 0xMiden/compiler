@@ -117,7 +117,7 @@ pub fn test_counter_contract_no_auth_local() {
             .unwrap();
 
         let tx_result = client
-            .new_transaction(sender_account.id(), note_request)
+            .execute_transaction(sender_account.id(), note_request)
             .await
             .map_err(|e| {
                 eprintln!("Transaction creation error: {e}");
@@ -129,7 +129,12 @@ pub fn test_counter_contract_no_auth_local() {
         let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
         assert_eq!(executed_tx_output_note.id(), counter_note.id());
         let create_note_tx_id = executed_transaction.id();
-        client.submit_transaction(tx_result).await.unwrap();
+        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
+        let submission_height = client
+            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
+            .await
+            .unwrap();
+        client.apply_transaction(&tx_result, submission_height).await.unwrap();
         eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
         // Consume the note with the counter account
@@ -139,7 +144,7 @@ pub fn test_counter_contract_no_auth_local() {
             .unwrap();
 
         let tx_result = client
-            .new_transaction(counter_account.id(), consume_request)
+            .execute_transaction(counter_account.id(), consume_request)
             .await
             .map_err(|e| {
                 eprintln!("Note consumption transaction error: {e}");
@@ -151,7 +156,12 @@ pub fn test_counter_contract_no_auth_local() {
             &tx_result.executed_transaction().id()
         );
 
-        client.submit_transaction(tx_result).await.unwrap();
+        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
+        let submission_height = client
+            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
+            .await
+            .unwrap();
+        client.apply_transaction(&tx_result, submission_height).await.unwrap();
 
         let sync_result = client.sync_state().await.unwrap();
         eprintln!("Synced to block: {}", sync_result.block_num);

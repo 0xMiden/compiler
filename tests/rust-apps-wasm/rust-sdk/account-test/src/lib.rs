@@ -10,7 +10,7 @@ pub struct Account;
 impl Account {
     #[no_mangle]
     pub fn get_wallet_magic_number() -> Felt {
-        let acc_id = miden::account::get_id();
+        let acc_id = miden::active_account::get_id();
         let magic = felt!(42);
         magic + acc_id.into()
     }
@@ -18,7 +18,7 @@ impl Account {
     #[no_mangle]
     pub fn test_add_asset() -> Felt {
         let asset_in = Asset::new([felt!(1), felt!(2), felt!(3), felt!(4)]);
-        let asset_out = miden::account::add_asset(asset_in);
+        let asset_out = miden::native_account::add_asset(asset_in);
         asset_out.as_word()[0]
     }
 
@@ -54,7 +54,7 @@ impl Note {
     #[no_mangle]
     pub fn note_script() -> Felt {
         let mut sum = Felt::new(0).unwrap();
-        for input in miden::note::get_inputs() {
+        for input in miden::active_note::get_inputs() {
             sum = sum + input;
         }
         sum
@@ -88,7 +88,7 @@ pub fn test_pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
 
 #[no_mangle]
 pub fn test_remove_asset(asset: Asset) -> Felt {
-    let asset_out = miden::account::remove_asset(asset);
+    let asset_out = miden::native_account::remove_asset(asset);
     asset_out.as_word()[0]
 }
 
@@ -98,6 +98,8 @@ pub fn test_create_note(
     tag: Tag,
     note_type: NoteType,
     recipient: Recipient,
-) -> NoteId {
-    miden::tx::create_note(asset, tag, note_type, recipient)
+) -> NoteIdx {
+    let note_idx = miden::output_note::create(tag, Felt::ZERO, note_type, Felt::ZERO, recipient);
+    miden::output_note::add_asset(asset, note_idx);
+    note_idx
 }

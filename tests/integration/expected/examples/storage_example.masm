@@ -1,6 +1,7 @@
 # mod miden:storage-example/foo@1.0.0
 
-export.set-asset-qty
+@callconv("canon-lift")
+pub proc set-asset-qty(felt, felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::miden:storage-example/foo@1.0.0::init
     trace.240
     nop
@@ -10,7 +11,8 @@ export.set-asset-qty
     exec.::std::sys::truncate_stack
 end
 
-export.get-asset-qty
+@callconv("canon-lift")
+pub proc get-asset-qty(felt, felt, felt, felt) -> felt
     exec.::miden:storage-example/foo@1.0.0::init
     trace.240
     nop
@@ -20,7 +22,7 @@ export.get-asset-qty
     exec.::std::sys::truncate_stack
 end
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -43,15 +45,32 @@ end
 
 # mod miden:storage-example/foo@1.0.0::storage_example
 
-proc.__wasm_call_ctors
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
     nop
 end
 
-proc.storage_example::bindings::__link_custom_section_describing_imports
+@callconv("C")
+proc storage_example::bindings::__link_custom_section_describing_imports(
+
+)
     nop
 end
 
-proc.miden:storage-example/foo@1.0.0#set-asset-qty
+@callconv("C")
+proc miden:storage-example/foo@1.0.0#set-asset-qty(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt
+)
     push.1114144
     u32divmod.4
     swap.1
@@ -87,7 +106,7 @@ proc.miden:storage-example/foo@1.0.0#set-asset-qty
     swap.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::account::get_item
+    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_item
     trace.252
     nop
     push.8
@@ -408,7 +427,7 @@ proc.miden:storage-example/foo@1.0.0#set-asset-qty
                     swap.5
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::account::set_map_item
+                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::native_account::set_map_item
                     trace.252
                     nop
                     push.56
@@ -582,7 +601,13 @@ proc.miden:storage-example/foo@1.0.0#set-asset-qty
     nop
 end
 
-proc.miden:storage-example/foo@1.0.0#get-asset-qty
+@callconv("C")
+proc miden:storage-example/foo@1.0.0#get-asset-qty(
+    felt,
+    felt,
+    felt,
+    felt
+) -> felt
     push.1114144
     u32divmod.4
     swap.1
@@ -626,7 +651,7 @@ proc.miden:storage-example/foo@1.0.0#get-asset-qty
     swap.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::account::get_map_item
+    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_map_item
     trace.252
     nop
     push.24
@@ -736,7 +761,10 @@ proc.miden:storage-example/foo@1.0.0#get-asset-qty
     nop
 end
 
-proc.wit_bindgen::rt::run_ctors_once
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
     push.1114148
     u32divmod.4
     swap.1
@@ -807,12 +835,19 @@ proc.wit_bindgen::rt::run_ctors_once
     end
 end
 
-proc.<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
+    i32
+) -> felt
     push.255
     u32and
 end
 
-proc.miden_stdlib_sys::intrinsics::word::Word::reverse
+@callconv("C")
+proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+    i32,
+    i32
+)
     push.1114144
     u32divmod.4
     swap.1
@@ -1073,7 +1108,11 @@ proc.miden_stdlib_sys::intrinsics::word::Word::reverse
     nop
 end
 
-proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from(
+    i32,
+    felt
+)
     push.0
     trace.240
     nop
@@ -1161,18 +1200,21 @@ proc.<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     nop
 end
 
-proc.intrinsics::felt::from_u32
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 
-proc.intrinsics::felt::eq
+@callconv("C")
+proc intrinsics::felt::eq(felt, felt) -> i32
     eq
 end
 
-proc.miden::account::get_item
+@callconv("C")
+proc miden::active_account::get_item(felt, i32)
     trace.240
     nop
-    exec.::miden::account::get_item
+    exec.::miden::active_account::get_item
     trace.252
     nop
     movup.4
@@ -1224,10 +1266,11 @@ proc.miden::account::get_item
     nop
 end
 
-proc.miden::account::get_map_item
+@callconv("C")
+proc miden::active_account::get_map_item(felt, felt, felt, felt, felt, i32)
     trace.240
     nop
-    exec.::miden::account::get_map_item
+    exec.::miden::active_account::get_map_item
     trace.252
     nop
     movup.4
@@ -1279,10 +1322,22 @@ proc.miden::account::get_map_item
     nop
 end
 
-proc.miden::account::set_map_item
+@callconv("C")
+proc miden::native_account::set_map_item(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    i32
+)
     trace.240
     nop
-    exec.::miden::account::set_map_item
+    exec.::miden::native_account::set_map_item
     trace.252
     nop
     movup.8

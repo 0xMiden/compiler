@@ -4,10 +4,13 @@ use super::StorageCommitmentRoot;
 
 #[allow(improper_ctypes)]
 extern "C" {
-    #[link_name = "miden::account::get_item"]
+    #[link_name = "miden::active_account::get_item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);
 
-    #[link_name = "miden::account::set_item"]
+    #[link_name = "miden::active_account::get_initial_item"]
+    pub fn extern_get_initial_storage_item(index: Felt, ptr: *mut Word);
+
+    #[link_name = "miden::native_account::set_item"]
     pub fn extern_set_storage_item(
         index: Felt,
         v0: Felt,
@@ -17,7 +20,7 @@ extern "C" {
         ptr: *mut (StorageCommitmentRoot, Word),
     );
 
-    #[link_name = "miden::account::get_map_item"]
+    #[link_name = "miden::active_account::get_map_item"]
     pub fn extern_get_storage_map_item(
         index: Felt,
         k0: Felt,
@@ -27,7 +30,17 @@ extern "C" {
         ptr: *mut Word,
     );
 
-    #[link_name = "miden::account::set_map_item"]
+    #[link_name = "miden::active_account::get_initial_map_item"]
+    pub fn extern_get_initial_storage_map_item(
+        index: Felt,
+        k0: Felt,
+        k1: Felt,
+        k2: Felt,
+        k3: Felt,
+        ptr: *mut Word,
+    );
+
+    #[link_name = "miden::native_account::set_map_item"]
     pub fn extern_set_storage_map_item(
         index: Felt,
         k0: Felt,
@@ -60,6 +73,16 @@ pub fn get_item(index: u8) -> Word {
         extern_get_storage_item(index.into(), ret_area.as_mut_ptr());
         let word = ret_area.assume_init();
         word.reverse()
+    }
+}
+
+/// Gets the initial value of an item from the account storage.
+#[inline]
+pub fn get_initial_item(index: u8) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_get_initial_storage_item(index.into(), ret_area.as_mut_ptr());
+        ret_area.assume_init().reverse()
     }
 }
 
@@ -111,6 +134,23 @@ pub fn get_map_item(index: u8, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_get_storage_map_item(
+            index.into(),
+            key[3],
+            key[2],
+            key[1],
+            key[0],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init().reverse()
+    }
+}
+
+/// Gets the initial value from a storage map.
+#[inline]
+pub fn get_initial_map_item(index: u8, key: &Word) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_get_initial_storage_map_item(
             index.into(),
             key[3],
             key[2],

@@ -16,4 +16,4 @@ edition.workspace = true
 [dependencies]
 env_logger.workspace = true
 human-panic = "2.0"
-midenc-driver = { workspace = true, features = ["all"] }
+midenc-driver = { workspace = true, features = ["std"] }

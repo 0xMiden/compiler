@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -18,7 +18,8 @@ end
 
 # mod root_ns:root@1.0.0::test_rust_db478c28ad80aa271563ad7738787d5589cd21f31f7c92248f7f1de9cb727546
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     movup.6
     movup.6
     movup.8

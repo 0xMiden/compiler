@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -26,7 +26,10 @@ end
 
 # mod root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4
 
-export.global_var_update
+@callconv("C")
+pub proc global_var_update(
+
+)
     push.1048577
     push.0
     add
@@ -76,7 +79,10 @@ export.global_var_update
     mem_store
 end
 
-export.__main
+@callconv("C")
+pub proc __main(
+
+) -> i32
     trace.240
     nop
     exec.::root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4::global_var_update

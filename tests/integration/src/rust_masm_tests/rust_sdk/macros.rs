@@ -35,10 +35,10 @@ fn component_macros_account_and_note() {
     let note_package = note.compiled_package();
     let program = note_package.unwrap_program();
 
-    let mut exec = Executor::new(vec![]);
+    let mut exec = executor_with_std(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    let dependencies = note_package.manifest.dependencies();
-    exec.with_dependencies(dependencies).unwrap();
-    exec.execute(&program, &note.session);
+    exec.with_dependencies(note_package.manifest.dependencies())
+        .expect("failed to add package dependencies");
+    exec.execute(&program, note.session.source_manager.clone());
 }

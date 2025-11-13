@@ -12,7 +12,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.store v8, v6;
             v9 = arith.constant 8 : i32;
             v10 = arith.add v6, v9 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::account::get_id(v10)
+            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden_base_sys::bindings::active_account::get_id(v10)
             v12 = arith.constant 8 : u32;
             v11 = hir.bitcast v6 : u32;
             v13 = arith.add v11, v12 : u32 #[overflow = checked];
@@ -219,7 +219,7 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v144;
         };
 
-        private builtin.function @miden_base_sys::bindings::account::get_id(v146: i32) {
+        private builtin.function @miden_base_sys::bindings::active_account::get_id(v146: i32) {
         ^block28(v146: i32):
             v148 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/__stack_pointer : ptr<byte, u8>
             v149 = hir.bitcast v148 : ptr<byte, i32>;
@@ -231,7 +231,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.store v154, v152;
             v155 = arith.constant 8 : i32;
             v156 = arith.add v152, v155 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden::account::get_id(v156)
+            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_id/miden::active_account::get_id(v156)
             v158 = arith.constant 8 : u32;
             v157 = hir.bitcast v152 : u32;
             v159 = arith.add v157, v158 : u32 #[overflow = checked];
@@ -267,9 +267,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v182;
         };
 
-        private builtin.function @miden::account::get_id(v183: i32) {
+        private builtin.function @miden::active_account::get_id(v183: i32) {
         ^block32(v183: i32):
-            v184, v185 = hir.exec @miden/account/get_id() : felt, felt
+            v184, v185 = hir.exec @miden/active_account/get_id() : felt, felt
             v186 = hir.bitcast v183 : u32;
             v187 = hir.int_to_ptr v186 : ptr<byte, felt>;
             hir.store v187, v184;

@@ -23,7 +23,7 @@
     local.get 1
     i32.const 8
     i32.add
-    call $miden_base_sys::bindings::account::get_id
+    call $miden_base_sys::bindings::active_account::get_id
     local.get 0
     local.get 1
     i64.load offset=8
@@ -142,7 +142,7 @@
   (func $intrinsics::mem::heap_base (;5;) (type 5) (result i32)
     unreachable
   )
-  (func $miden_base_sys::bindings::account::get_id (;6;) (type 0) (param i32)
+  (func $miden_base_sys::bindings::active_account::get_id (;6;) (type 0) (param i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -152,7 +152,7 @@
     local.get 1
     i32.const 8
     i32.add
-    call $miden::account::get_id
+    call $miden::active_account::get_id
     local.get 0
     local.get 1
     i64.load offset=8 align=4
@@ -170,7 +170,7 @@
     i32.gt_u
     select
   )
-  (func $miden::account::get_id (;8;) (type 0) (param i32)
+  (func $miden::active_account::get_id (;8;) (type 0) (param i32)
     unreachable
   )
   (func $cabi_realloc (;9;) (type 2) (param i32 i32 i32 i32) (result i32)

@@ -1,6 +1,6 @@
 # mod root_ns:root@1.0.0
 
-proc.init
+proc init
     push.1179648
     trace.240
     exec.::intrinsics::mem::heap_init
@@ -12,7 +12,8 @@ end
 
 # mod root_ns:root@1.0.0::div_felt
 
-export.entrypoint
+@callconv("C")
+pub proc entrypoint(felt, felt) -> felt
     trace.240
     nop
     exec.::root_ns:root@1.0.0::div_felt::intrinsics::felt::div
@@ -20,7 +21,8 @@ export.entrypoint
     nop
 end
 
-proc.intrinsics::felt::div
+@callconv("C")
+proc intrinsics::felt::div(felt, felt) -> felt
     swap.1
     div
 end

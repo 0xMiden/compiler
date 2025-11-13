@@ -12,7 +12,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.store v7, v5;
             v8 = arith.constant 4 : i32;
             v9 = arith.add v5, v8 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/miden_base_sys::bindings::note::get_inputs(v9)
+            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/miden_base_sys::bindings::active_note::get_inputs(v9)
             v11 = arith.constant 12 : u32;
             v10 = hir.bitcast v5 : u32;
             v12 = arith.add v10, v11 : u32 #[overflow = checked];
@@ -154,7 +154,7 @@ builtin.component root_ns:root@1.0.0 {
 
         private builtin.function @__rustc::__rust_alloc(v95: i32, v96: i32) -> i32 {
         ^block11(v95: i32, v96: i32):
-            v98 = arith.constant 1048640 : i32;
+            v98 = arith.constant 1048648 : i32;
             v99 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v98, v96, v95) : i32
             builtin.ret v99;
         };
@@ -166,7 +166,7 @@ builtin.component root_ns:root@1.0.0 {
 
         private builtin.function @__rustc::__rust_realloc(v103: i32, v104: i32, v105: i32, v106: i32) -> i32 {
         ^block15(v103: i32, v104: i32, v105: i32, v106: i32):
-            v108 = arith.constant 1048640 : i32;
+            v108 = arith.constant 1048648 : i32;
             v109 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v108, v105, v106) : i32
             v775 = arith.constant 0 : i32;
             v110 = arith.constant 0 : i32;
@@ -213,7 +213,7 @@ builtin.component root_ns:root@1.0.0 {
 
         private builtin.function @__rustc::__rust_alloc_zeroed(v136: i32, v137: i32) -> i32 {
         ^block20(v136: i32, v137: i32):
-            v139 = arith.constant 1048640 : i32;
+            v139 = arith.constant 1048648 : i32;
             v140 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v139, v137, v136) : i32
             v784 = arith.constant 0 : i32;
             v141 = arith.constant 0 : i32;
@@ -459,7 +459,7 @@ builtin.component root_ns:root@1.0.0 {
             ub.unreachable ;
         };
 
-        private builtin.function @miden_base_sys::bindings::note::get_inputs(v305: i32) {
+        private builtin.function @miden_base_sys::bindings::active_note::get_inputs(v305: i32) {
         ^block44(v305: i32):
             v307 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/__stack_pointer : ptr<byte, u8>
             v308 = hir.bitcast v307 : ptr<byte, i32>;
@@ -469,7 +469,7 @@ builtin.component root_ns:root@1.0.0 {
             v312 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/__stack_pointer : ptr<byte, u8>
             v313 = hir.bitcast v312 : ptr<byte, i32>;
             hir.store v313, v311;
-            v318 = arith.constant 1048620 : i32;
+            v318 = arith.constant 1048628 : i32;
             v316 = arith.constant 4 : i32;
             v314 = arith.constant 8 : i32;
             v315 = arith.add v311, v314 : i32 #[overflow = wrapping];
@@ -494,7 +494,7 @@ builtin.component root_ns:root@1.0.0 {
             v334 = hir.bitcast v332 : u32;
             v336 = arith.shr v334, v838 : u32;
             v337 = hir.bitcast v336 : i32;
-            v338 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/miden::note::get_inputs(v337) : i32
+            v338 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/miden::active_note::get_inputs(v337) : i32
             v844 = arith.constant 8 : u32;
             v339 = hir.bitcast v305 : u32;
             v341 = arith.add v339, v844 : u32 #[overflow = checked];
@@ -1013,9 +1013,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v691;
         };
 
-        private builtin.function @miden::note::get_inputs(v692: i32) -> i32 {
+        private builtin.function @miden::active_note::get_inputs(v692: i32) -> i32 {
         ^block91(v692: i32):
-            v693, v694 = hir.exec @miden/note/get_inputs(v692) : i32, i32
+            v693, v694 = hir.exec @miden/active_note/get_inputs(v692) : i32, i32
             builtin.ret v693;
         };
 
@@ -1102,6 +1102,6 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret_imm 1048576;
         };
 
-        builtin.segment readonly @1048576 = 0x000000010000002100000019000000290010000000000073722e65746f6e2f73676e69646e69622f6372732f302e372e302d7379732d657361622d6e6564696d;
+        builtin.segment readonly @1048576 = 0x00000001000000210000001f00000030001000000000000073722e65746f6e5f6576697463612f73676e69646e69622f6372732f302e372e302d7379732d657361622d6e6564696d;
     };
 };

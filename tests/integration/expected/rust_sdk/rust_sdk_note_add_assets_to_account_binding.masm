@@ -1,0 +1,153 @@
+# mod miden:base/note-script@1.0.0
+
+@callconv("canon-lift")
+pub proc run(felt, felt, felt, felt)
+    exec.::miden:base/note-script@1.0.0::init
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden:base/note-script@1.0.0#run
+    trace.252
+    nop
+    exec.::std::sys::truncate_stack
+end
+
+proc init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.[7028007876379170725,18060021366771303825,13412364500725888848,14178532912296021363]
+    adv.push_mapval
+    push.262144
+    push.1
+    trace.240
+    exec.::std::mem::pipe_preimage_to_memory
+    trace.252
+    drop
+    push.1048576
+    u32assert
+    mem_store.278536
+    push.0
+    u32assert
+    mem_store.278537
+end
+
+# mod miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding
+
+@callconv("C")
+proc __wasm_call_ctors(
+
+)
+    nop
+end
+
+@callconv("C")
+proc rust_sdk_note_add_assets_to_account_binding::bindings::__link_custom_section_describing_imports(
+
+)
+    nop
+end
+
+@callconv("C")
+proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
+    drop
+    drop
+    drop
+    drop
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::wit_bindgen::rt::run_ctors_once
+    trace.252
+    nop
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden::active_note::add_assets_to_account
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc wit_bindgen::rt::run_ctors_once(
+
+)
+    push.1114148
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1048584
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    swap.1
+    dup.1
+    mem_load
+    swap.1
+    push.8
+    u32wrapping_mul
+    u32shr
+    swap.1
+    drop
+    push.255
+    u32and
+    push.0
+    swap.1
+    neq
+    if.true
+        nop
+    else
+        push.1114148
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__wasm_call_ctors
+        trace.252
+        nop
+        push.1
+        push.1048584
+        movup.2
+        u32wrapping_add
+        u32divmod.4
+        swap.1
+        dup.0
+        mem_load
+        dup.2
+        push.8
+        u32wrapping_mul
+        push.255
+        swap.1
+        u32shl
+        u32not
+        swap.1
+        u32and
+        movup.3
+        movup.3
+        push.8
+        u32wrapping_mul
+        u32shl
+        u32or
+        swap.1
+        mem_store
+    end
+end
+
+@callconv("C")
+proc miden::active_note::add_assets_to_account(
+
+)
+    trace.240
+    nop
+    exec.::miden::active_note::add_assets_to_account
+    trace.252
+    nop
+end
+

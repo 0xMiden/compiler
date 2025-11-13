@@ -33,7 +33,7 @@ impl OpEmitter<'_> {
         assert_valid_integer_size!(n, 1, 32);
         match n {
             // i1 is never signed
-            1 => self.emit(masm::Instruction::PushU32(0), span),
+            1 => self.emit_push(0u32, span),
             n => self.is_const_flag_set_u32(1 << (n - 1), span),
         }
     }
@@ -70,13 +70,13 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn int_to_u64(&mut self, n: u32, span: SourceSpan) {
         self.assert_unsigned_smallint(n, span);
-        self.emit(masm::Instruction::PushU32(0), span);
+        self.emit_push(0u32, span);
     }
 
     /// Convert an unsigned N-bit integer to u64
     #[inline(always)]
     pub fn uint_to_u64(&mut self, _: u32, span: SourceSpan) {
-        self.emit(masm::Instruction::PushU32(0), span);
+        self.emit_push(0u32, span);
     }
 
     /// Convert a signed N-bit integer to i128
@@ -89,7 +89,9 @@ impl OpEmitter<'_> {
     #[inline(always)]
     pub fn uint_to_i128(&mut self, _n: u32, span: SourceSpan) {
         // zero-extend to i128
-        self.emit_n(3, masm::Instruction::PushU32(0), span);
+        for _ in 0..3 {
+            self.emit_push(0u32, span);
+        }
     }
 
     /// Sign-extend the N-bit value on the stack to M-bits, where M is >= N and <= 256.
@@ -317,17 +319,17 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Unchecked => (),
             Overflow::Checked => self.int32_to_uint(n, span),
-            Overflow::Wrapping => self.emit_all(
-                [masm::Instruction::PushU32(2u32.pow(n)), masm::Instruction::U32Mod],
-                span,
-            ),
+            Overflow::Wrapping => {
+                self.emit_push(2u32.pow(n), span);
+                self.emit(masm::Instruction::U32Mod, span);
+            }
             Overflow::Overflowing => {
                 self.try_int32_to_uint(n, span);
+                // move result to top, and wrap it at 2^n
+                self.emit(masm::Instruction::Swap1, span);
+                self.emit_push(2u32.pow(n), span);
                 self.emit_all(
                     [
-                        // move result to top, and wrap it at 2^n
-                        masm::Instruction::Swap1,
-                        masm::Instruction::PushU32(2u32.pow(n)),
                         masm::Instruction::U32Mod,
                         // move is_valid flag to top, and invert it
                         masm::Instruction::Swap1,

@@ -4,12 +4,14 @@ use miden_core::{
     utils::{Deserializable, Serializable},
     Felt, FieldElement, Word,
 };
+use miden_debug::Executor;
+use miden_lib::MidenLib;
 use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
-use midenc_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
+use midenc_session::STDLIB;
 
 use crate::{
     cargo_proj::project,
@@ -17,7 +19,20 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
 };
 
+mod base;
 mod macros;
+mod stdlib;
+
+fn executor_with_std(args: Vec<Felt>) -> Executor {
+    let mut exec = Executor::new(args);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+    exec
+}
 
 #[test]
 #[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
@@ -84,10 +99,10 @@ use miden::*;
 
 #[note_script]
 fn run(_arg: Word) {
-    let sender = note::get_sender();
-    let script_root = note::get_script_root();
-    let serial_number = note::get_serial_number();
-    let balance = account::get_balance(sender);
+    let sender = active_note::get_sender();
+    let script_root = active_note::get_script_root();
+    let serial_number = active_note::get_serial_number();
+    let balance = active_account::get_balance(sender);
 
     assert_eq!(sender.prefix, sender.prefix);
     assert_eq!(sender.suffix, sender.suffix);
@@ -165,12 +180,12 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.masm")]);
     let package = test.compiled_package();
     let program = package.unwrap_program();
-    let mut exec = Executor::new(vec![]);
+    let mut exec = executor_with_std(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    let dependencies = package.manifest.dependencies();
-    exec.with_dependencies(dependencies).unwrap();
-    let trace = exec.execute(&program, &test.session);
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("failed to add package dependencies");
+    let trace = exec.execute(&program, test.session.source_manager.clone());
 }
 
 #[test]
@@ -222,11 +237,12 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.hir")]);
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.masm")]);
     let package = test.compiled_package();
-    let mut exec = Executor::new(vec![]);
+    let mut exec = executor_with_std(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    exec.with_dependencies(package.manifest.dependencies()).unwrap();
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("failed to add package dependencies");
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }
 
 #[test]
@@ -293,9 +309,10 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     )]);
     let package = test.compiled_package();
     assert!(package.is_program());
-    let mut exec = Executor::new(vec![]);
+    let mut exec = executor_with_std(vec![]);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
-    exec.with_dependencies(package.manifest.dependencies()).unwrap();
-    let trace = exec.execute(&package.unwrap_program(), &test.session);
+    exec.with_dependencies(package.manifest.dependencies())
+        .expect("failed to add package dependencies");
+    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
 }

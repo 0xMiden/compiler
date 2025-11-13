@@ -18,9 +18,8 @@
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (param f32 f32 f32 f32 f32)))
     (type (;3;) (func (param i32 i32)))
-    (type (;4;) (func (param i32 i32 f32)))
+    (type (;4;) (func (param i32 f32)))
     (type (;5;) (func (param f32 f32 f32 f32 i32)))
-    (type (;6;) (func (param f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -55,7 +54,7 @@
       i32.const 16
       i32.add
       local.get 4
-      call $miden_base_sys::bindings::account::add_asset
+      call $miden_base_sys::bindings::native_account::add_asset
       local.get 4
       i32.const 32
       i32.add
@@ -64,7 +63,7 @@
     (func $miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note (;3;) (type 2) (param f32 f32 f32 f32 f32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 64
+      i32.const 32
       i32.sub
       local.tee 5
       global.set $__stack_pointer
@@ -85,17 +84,14 @@
       i32.const 16
       i32.add
       local.get 5
-      call $miden_base_sys::bindings::account::remove_asset
-      local.get 5
-      i32.const 32
-      i32.add
+      call $miden_base_sys::bindings::native_account::remove_asset
       local.get 5
       i32.const 16
       i32.add
       local.get 4
-      call $miden_base_sys::bindings::tx::add_asset_to_note
+      call $miden_base_sys::bindings::output_note::add_asset
       local.get 5
-      i32.const 64
+      i32.const 32
       i32.add
       global.set $__stack_pointer
     )
@@ -117,7 +113,7 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::account::add_asset (;5;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::native_account::add_asset (;5;) (type 3) (param i32 i32)
       local.get 1
       f32.load offset=12
       local.get 1
@@ -127,9 +123,9 @@
       local.get 1
       f32.load
       local.get 0
-      call $miden::account::add_asset
+      call $miden::native_account::add_asset
     )
-    (func $miden_base_sys::bindings::account::remove_asset (;6;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::native_account::remove_asset (;6;) (type 3) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 32
@@ -145,7 +141,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::account::remove_asset
+      call $miden::native_account::remove_asset
       local.get 2
       local.get 2
       i64.load offset=8
@@ -164,47 +160,17 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::tx::add_asset_to_note (;7;) (type 4) (param i32 i32 f32)
-      (local i32)
-      global.get $__stack_pointer
-      i32.const 48
-      i32.sub
-      local.tee 3
-      global.set $__stack_pointer
-      local.get 1
+    (func $miden_base_sys::bindings::output_note::add_asset (;7;) (type 4) (param i32 f32)
+      local.get 0
       f32.load offset=12
-      local.get 1
+      local.get 0
       f32.load offset=8
-      local.get 1
+      local.get 0
       f32.load offset=4
-      local.get 1
+      local.get 0
       f32.load
-      local.get 2
-      local.get 3
-      call $miden::tx::add_asset_to_note
-      local.get 3
-      local.get 3
-      i64.load offset=8
-      i64.store offset=40
-      local.get 3
-      local.get 3
-      i64.load
-      i64.store offset=32
-      local.get 3
-      f32.load offset=16
-      local.set 2
-      local.get 0
-      local.get 3
-      i32.const 32
-      i32.add
-      call $miden_stdlib_sys::intrinsics::word::Word::reverse
-      local.get 0
-      local.get 2
-      f32.store offset=16
-      local.get 3
-      i32.const 48
-      i32.add
-      global.set $__stack_pointer
+      local.get 1
+      call $miden::output_note::add_asset
     )
     (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;8;) (type 3) (param i32 i32)
       (local i32 i32 i32 f32)
@@ -264,13 +230,13 @@
       i64.load align=4
       i64.store
     )
-    (func $miden::account::add_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::output_note::add_asset (;9;) (type 2) (param f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $miden::account::remove_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::native_account::add_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::tx::add_asset_to_note (;11;) (type 6) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::native_account::remove_asset (;11;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

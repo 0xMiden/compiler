@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use midenc_debug::Executor;
+use miden_debug::Executor;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;

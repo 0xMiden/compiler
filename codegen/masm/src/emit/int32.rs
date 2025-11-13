@@ -19,7 +19,8 @@ impl OpEmitter<'_> {
     /// `[a, ..] => [a & mask, ..]`
     #[inline]
     pub fn const_mask_u32(&mut self, mask: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(mask), masm::Instruction::U32And], span);
+        self.emit_push(mask, span);
+        self.emit(masm::Instruction::U32And, span);
     }
 
     /// Emits code to apply a 32-bit mask, `mask`, to a u32 value, `input`.
@@ -182,15 +183,9 @@ impl OpEmitter<'_> {
             self.emit(movup_from_offset(n as usize), span);
             self.select_int32(a, b, span);
         } else {
-            self.emit_all(
-                [
-                    masm::Instruction::PushU32(b),
-                    masm::Instruction::PushU32(a),
-                    movup_from_offset(n as usize + 2),
-                    masm::Instruction::CDrop,
-                ],
-                span,
-            );
+            self.emit_push(b, span);
+            self.emit_push(a, span);
+            self.emit_all([movup_from_offset(n as usize + 2), masm::Instruction::CDrop], span);
         }
     }
 
@@ -209,15 +204,9 @@ impl OpEmitter<'_> {
             self.emit(dup_from_offset(n as usize), span);
             self.select_int32(a, b, span);
         } else {
-            self.emit_all(
-                [
-                    masm::Instruction::PushU32(b),
-                    masm::Instruction::PushU32(a),
-                    dup_from_offset(n as usize + 2),
-                    masm::Instruction::CDrop,
-                ],
-                span,
-            );
+            self.emit_push(b, span);
+            self.emit_push(a, span);
+            self.emit_all([dup_from_offset(n as usize + 2), masm::Instruction::CDrop], span);
         }
     }
 
@@ -227,15 +216,9 @@ impl OpEmitter<'_> {
     ///
     /// `[c, a, b, ..] => [d, ..] where d is c == 1 ? a : b`
     pub fn select_int32(&mut self, a: u32, b: u32, span: SourceSpan) {
-        self.emit_all(
-            [
-                masm::Instruction::PushU32(b),
-                masm::Instruction::PushU32(a),
-                masm::Instruction::MovUp2,
-                masm::Instruction::CDrop,
-            ],
-            span,
-        );
+        self.emit_push(b, span);
+        self.emit_push(a, span);
+        self.emit_all([masm::Instruction::MovUp2, masm::Instruction::CDrop], span);
     }
 
     /// Convert an i32/u32 value on the stack to a signed N-bit integer value
@@ -304,18 +287,13 @@ impl OpEmitter<'_> {
         // Mask the value and ensure that the unused bits above the N-bit range are 0
         let reserved = 32 - n;
         let mask = (2u32.pow(reserved) - 1) << n;
-        self.emit_all(
-            [
-                // Copy the input
-                masm::Instruction::Dup1,
-                // Apply the mask
-                masm::Instruction::PushU32(mask),
-                masm::Instruction::U32And,
-                // Assert the masked value is all 0s
-                masm::Instruction::Assertz,
-            ],
-            span,
-        );
+        // Copy the input
+        self.emit(masm::Instruction::Dup1, span);
+        // Apply the mask
+        self.emit_push(mask, span);
+        self.emit(masm::Instruction::U32And, span);
+        // Assert the masked value is all 0s
+        self.emit(masm::Instruction::Assertz, span);
     }
 
     /// Convert an i32/u32 value on the stack to an unsigned N-bit integer value
@@ -326,18 +304,13 @@ impl OpEmitter<'_> {
         // Mask the value and ensure that the unused bits above the N-bit range are 0
         let reserved = 32 - n;
         let mask = (2u32.pow(reserved) - 1) << n;
-        self.emit_all(
-            [
-                // Copy the input
-                masm::Instruction::Dup1,
-                // Apply the mask
-                masm::Instruction::PushU32(mask),
-                masm::Instruction::U32And,
-                // Assert the masked value is all 0s
-                masm::Instruction::EqImm(Felt::ZERO.into()),
-            ],
-            span,
-        );
+        // Copy the input
+        self.emit(masm::Instruction::Dup1, span);
+        // Apply the mask
+        self.emit_push(mask, span);
+        self.emit(masm::Instruction::U32And, span);
+        // Assert the masked value is all 0s
+        self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
     }
 
     /// Emit code to truncate a 32-bit value on top of the operand stack, to N bits, where N is <=
@@ -373,7 +346,14 @@ impl OpEmitter<'_> {
         let num_bits = n % 32;
         let num_elements = (n / 32) + (num_bits > 0) as u32;
         let needed = num_elements - 1;
-        self.emit_n(needed as usize, masm::Instruction::PushU32(0), span);
+        self.emit_n(
+            needed as usize,
+            masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
+                span,
+                Felt::ZERO.into(),
+            ))),
+            span,
+        );
     }
 
     /// Emit code to sign-extend a signed 32-bit value to N bits, where N <= 128
@@ -415,13 +395,13 @@ impl OpEmitter<'_> {
     /// Push a u32 value on the stack
     #[inline(always)]
     pub fn push_u32(&mut self, i: u32, span: SourceSpan) {
-        self.emit(masm::Instruction::PushU32(i), span);
+        self.emit_push(i, span);
     }
 
     /// Push a i32 value on the stack
     #[inline(always)]
     pub fn push_i32(&mut self, i: i32, span: SourceSpan) {
-        self.emit(masm::Instruction::PushU32(i as u32), span);
+        self.emit_push(i as u32, span);
     }
 
     /// This is the inverse operation of the Miden VM `u32split` instruction.
@@ -517,11 +497,11 @@ impl OpEmitter<'_> {
                 self.add_imm_u32(imm as u32, overflow, span)
             }
             Overflow::Checked => {
-                self.emit(masm::Instruction::PushU32(imm as u32), span);
+                self.emit_push(imm as u32, span);
                 self.raw_exec("intrinsics::i32::checked_add", span);
             }
             Overflow::Overflowing => {
-                self.emit(masm::Instruction::PushU32(imm as u32), span);
+                self.emit_push(imm as u32, span);
                 self.raw_exec("intrinsics::i32::overflowing_add", span);
             }
         }
@@ -600,11 +580,11 @@ impl OpEmitter<'_> {
                 self.sub_imm_u32(imm as u32, overflow, span)
             }
             Overflow::Checked => {
-                self.emit(masm::Instruction::PushU32(imm as u32), span);
+                self.emit_push(imm as u32, span);
                 self.raw_exec("intrinsics::i32::checked_sub", span);
             }
             Overflow::Overflowing => {
-                self.emit(masm::Instruction::PushU32(imm as u32), span);
+                self.emit_push(imm as u32, span);
                 self.raw_exec("intrinsics::i32::overflowing_sub", span);
             }
         }
@@ -653,7 +633,8 @@ impl OpEmitter<'_> {
     pub fn mul_imm_u32(&mut self, imm: u32, overflow: Overflow, span: SourceSpan) {
         match imm {
             0 => {
-                self.emit_all([masm::Instruction::Drop, masm::Instruction::PushU32(0)], span);
+                self.emit(masm::Instruction::Drop, span);
+                self.emit_push(0u32, span);
             }
             1 => (),
             imm => {
@@ -694,20 +675,21 @@ impl OpEmitter<'_> {
     pub fn mul_imm_i32(&mut self, imm: i32, overflow: Overflow, span: SourceSpan) {
         match imm {
             0 => {
-                self.emit_all([masm::Instruction::Drop, masm::Instruction::PushU32(0)], span);
+                self.emit(masm::Instruction::Drop, span);
+                self.emit_push(0u32, span);
             }
             1 => (),
             imm => match overflow {
                 Overflow::Unchecked | Overflow::Wrapping => {
-                    self.emit(masm::Instruction::PushU32(imm as u32), span);
+                    self.emit_push(imm as u32, span);
                     self.raw_exec("intrinsics::i32::wrapping_mul", span);
                 }
                 Overflow::Checked => {
-                    self.emit(masm::Instruction::PushU32(imm as u32), span);
+                    self.emit_push(imm as u32, span);
                     self.raw_exec("intrinsics::i32::checked_mul", span)
                 }
                 Overflow::Overflowing => {
-                    self.emit(masm::Instruction::PushU32(imm as u32), span);
+                    self.emit_push(imm as u32, span);
                     self.raw_exec("intrinsics::i32::overflowing_mul", span);
                 }
             },
@@ -748,7 +730,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the operand or result are not valid i32, execution traps.
     pub fn checked_div_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
-        self.emit(masm::Instruction::PushU32(imm as u32), span);
+        self.emit_push(imm as u32, span);
         self.raw_exec("intrinsics::i32::checked_div", span);
     }
 
@@ -848,7 +830,8 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operand or result are not valid u32, execution traps.
     pub fn band_imm_u32(&mut self, imm: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(imm), masm::Instruction::U32And], span);
+        self.emit_push(imm, span);
+        self.emit(masm::Instruction::U32And, span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a | b`
@@ -862,7 +845,8 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operand or result are not valid u32, execution traps.
     pub fn bor_imm_u32(&mut self, imm: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(imm), masm::Instruction::U32Or], span);
+        self.emit_push(imm, span);
+        self.emit(masm::Instruction::U32Or, span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a ^ b`
@@ -876,7 +860,8 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operand or result are not valid u32, execution traps.
     pub fn bxor_imm_u32(&mut self, imm: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(imm), masm::Instruction::U32Xor], span);
+        self.emit_push(imm, span);
+        self.emit(masm::Instruction::U32Xor, span);
     }
 
     /// Pops a u32 value off the stack, `a`, and performs `!a`
@@ -934,7 +919,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, if the operand or result are not valid i32, execution traps.
     pub fn shr_imm_i32(&mut self, imm: u32, span: SourceSpan) {
         assert!(imm < 32, "invalid shift value: must be < 32, got {imm}");
-        self.emit(masm::Instruction::PushU32(imm), span);
+        self.emit_push(imm, span);
         self.raw_exec("intrinsics::i32::checked_shr", span);
     }
 
@@ -993,14 +978,15 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operand or result are not valid u32, execution traps.
     pub fn min_imm_u32(&mut self, imm: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(imm), masm::Instruction::U32Min], span);
+        self.emit_push(imm, span);
+        self.emit(masm::Instruction::U32Min, span);
     }
 
     /// Pops a i32 value off the stack, `a`, and puts the result of `min(a, imm)` on the stack
     ///
     /// This operation is checked, if the operand or result are not valid i32, execution traps.
     pub fn min_imm_i32(&mut self, imm: i32, span: SourceSpan) {
-        self.emit(masm::Instruction::PushU32(imm as u32), span);
+        self.emit_push(imm as u32, span);
         self.raw_exec("intrinsics::i32::min", span);
     }
 
@@ -1024,14 +1010,15 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operand or result are not valid u32, execution traps.
     pub fn max_imm_u32(&mut self, imm: u32, span: SourceSpan) {
-        self.emit_all([masm::Instruction::PushU32(imm), masm::Instruction::U32Max], span);
+        self.emit_push(imm, span);
+        self.emit(masm::Instruction::U32Max, span);
     }
 
     /// Pops a i32 value off the stack, `a`, and puts the result of `max(a, imm)` on the stack
     ///
     /// This operation is checked, if the operand or result are not valid i32, execution traps.
     pub fn max_imm_i32(&mut self, imm: i32, span: SourceSpan) {
-        self.emit(masm::Instruction::PushU32(imm as u32), span);
+        self.emit_push(imm as u32, span);
         self.raw_exec("intrinsics::i32::max", span);
     }
 }

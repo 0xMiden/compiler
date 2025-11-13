@@ -29,7 +29,7 @@
     local.get 0
     i32.const 4
     i32.add
-    call $miden_base_sys::bindings::note::get_inputs
+    call $miden_base_sys::bindings::active_note::get_inputs
     local.get 0
     i32.load offset=12
     local.tee 1
@@ -90,7 +90,7 @@
     unreachable
   )
   (func $__rustc::__rust_alloc (;1;) (type 1) (param i32 i32) (result i32)
-    i32.const 1048640
+    i32.const 1048648
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -98,7 +98,7 @@
   (func $__rustc::__rust_dealloc (;2;) (type 2) (param i32 i32 i32))
   (func $__rustc::__rust_realloc (;3;) (type 3) (param i32 i32 i32 i32) (result i32)
     block ;; label = @1
-      i32.const 1048640
+      i32.const 1048648
       local.get 2
       local.get 3
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -123,7 +123,7 @@
   )
   (func $__rustc::__rust_alloc_zeroed (;4;) (type 1) (param i32 i32) (result i32)
     block ;; label = @1
-      i32.const 1048640
+      i32.const 1048648
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -261,7 +261,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $miden_base_sys::bindings::note::get_inputs (;9;) (type 7) (param i32)
+  (func $miden_base_sys::bindings::active_note::get_inputs (;9;) (type 7) (param i32)
     (local i32 i32 i32)
     global.get $__stack_pointer
     i32.const 16
@@ -273,7 +273,7 @@
     i32.add
     i32.const 4
     i32.const 4
-    i32.const 1048620
+    i32.const 1048628
     call $alloc::raw_vec::RawVecInner<A>::with_capacity_in
     local.get 1
     i32.load offset=8
@@ -284,7 +284,7 @@
     local.tee 3
     i32.const 2
     i32.shr_u
-    call $miden::note::get_inputs
+    call $miden::active_note::get_inputs
     i32.store offset=8
     local.get 0
     local.get 3
@@ -564,7 +564,7 @@
     i32.gt_u
     select
   )
-  (func $miden::note::get_inputs (;21;) (type 11) (param i32) (result i32)
+  (func $miden::active_note::get_inputs (;21;) (type 11) (param i32) (result i32)
     unreachable
   )
   (func $cabi_realloc (;22;) (type 3) (param i32 i32 i32 i32) (result i32)
@@ -615,5 +615,5 @@
     end
     local.get 2
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/note.rs\00\00\00\00\00\10\00)\00\00\00\19\00\00\00!\00\00\00\01\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "miden-base-sys-0.7.0/src/bindings/active_note.rs\00\00\00\00\00\00\10\000\00\00\00\1f\00\00\00!\00\00\00\01\00\00\00")
 )
