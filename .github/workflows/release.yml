@@ -110,6 +110,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
