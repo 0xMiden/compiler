@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-miden"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "cargo-generate",
@@ -2783,7 +2783,7 @@ dependencies = [
 
 [[package]]
 name = "miden-integration-node-tests"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "fs2",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "miden-integration-tests"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3081,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "midenc"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "env_logger",
  "human-panic",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-benchmark-runner"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3099,7 +3099,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-codegen-masm"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "env_logger",
  "inventory",
@@ -3129,7 +3129,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-compile"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "inventory",
@@ -3149,7 +3149,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-debug"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "crossterm",
@@ -3179,7 +3179,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-arith"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "midenc-hir",
  "paste",
@@ -3187,7 +3187,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-cf"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "log",
  "midenc-dialect-arith",
@@ -3196,7 +3196,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-hir"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "env_logger",
  "log",
@@ -3210,7 +3210,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-scf"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bitvec",
  "env_logger",
@@ -3225,14 +3225,14 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-ub"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "midenc-hir",
 ]
 
 [[package]]
 name = "midenc-driver"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "log",
@@ -3245,7 +3245,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-expect-test"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "once_cell",
  "similar",
@@ -3253,7 +3253,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -3277,7 +3277,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "bitflags 2.9.1",
@@ -3305,7 +3305,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-analysis"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bitvec",
  "blink-alloc",
@@ -3320,7 +3320,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-eval"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "log",
  "miden-thiserror",
@@ -3335,7 +3335,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-macros"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "Inflector",
  "darling",
@@ -3346,7 +3346,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-symbol"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "Inflector",
  "compact_str 0.9.0",
@@ -3362,7 +3362,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-transform"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "log",
  "midenc-hir",
@@ -3394,7 +3394,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-session"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
