@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-hir-symbol-v0.5.0...midenc-hir-symbol-v0.5.1) - 2025-11-13
+
+### Added
+
+- add stdlib `std::collections::smt` bindings to the SDK
+- fix `sha256::hash_1to1` bindings (big-endian),
+
+### Other
+
+- Merge pull request #753 from 0xMiden/greenhat/i159-base-bindings
+- migrate to 0.19
+
 ## [0.5.0](https://github.com/0xMiden/compiler/compare/midenc-hir-symbol-v0.4.1...midenc-hir-symbol-v0.5.0) - 2025-11-05
 
 ### Added
