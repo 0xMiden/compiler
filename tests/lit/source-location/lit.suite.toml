@@ -1,0 +1,5 @@
+name = "source-location"
+patterns = ["*.wat"]
+working_dir = "../../../"
+
+[format.shtest]

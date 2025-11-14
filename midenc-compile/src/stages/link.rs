@@ -1,4 +1,4 @@
-use alloc::{borrow::ToOwned, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::ToString, sync::Arc, vec::Vec};
 
 use midenc_frontend_wasm::FrontendOutput;
 use midenc_hir::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
@@ -6,7 +6,7 @@ use midenc_hir::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
 use midenc_session::Path;
 use midenc_session::{
     diagnostics::{Severity, Spanned},
-    InputType, ProjectType,
+    InputType, OutputMode, OutputType, ProjectType,
 };
 
 use super::*;
@@ -133,6 +133,7 @@ impl Stage for LinkStage {
             InputType::Stdin { name, input } => {
                 let config = wasm::WasmTranslationConfig {
                     source_name: name.file_stem().unwrap().to_owned().into(),
+                    trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
                     world: Some(world),
                     ..Default::default()
                 };
@@ -150,6 +151,22 @@ impl Stage for LinkStage {
         };
 
         link_output.link_libraries_from(context.session())?;
+
+        // Emit HIR if requested
+        let session = context.session();
+        if session.should_emit(OutputType::Hir) {
+            use midenc_hir::{Op, OpPrinter, OpPrintingFlags};
+            let flags = OpPrintingFlags {
+                print_entry_block_headers: true,
+                print_intrinsic_attributes: false,
+                print_source_locations: session.options.print_hir_source_locations,
+            };
+            let op = link_output.component.borrow();
+            let hir_context = op.as_operation().context();
+            let doc = op.as_operation().print(&flags, hir_context);
+            let hir_str = doc.to_string();
+            session.emit(OutputMode::Text, &hir_str).into_diagnostic()?;
+        }
 
         if context.session().parse_only() {
             log::debug!("stopping compiler early (parse-only=true)");
@@ -181,8 +198,10 @@ fn parse_hir_from_wasm_file(
     let mut bytes = Vec::with_capacity(1024);
     file.read_to_end(&mut bytes).into_diagnostic()?;
     let file_name = path.file_stem().unwrap().to_str().unwrap().to_owned();
+
     let config = wasm::WasmTranslationConfig {
         source_name: file_name.into(),
+        trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
         world: Some(world),
         ..Default::default()
     };

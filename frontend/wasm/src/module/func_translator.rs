@@ -69,6 +69,7 @@ impl FuncTranslator {
         addr2line: &addr2line::Context<DwarfReader<'_>>,
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
+        config: &crate::WasmTranslationConfig,
     ) -> WasmResult<()> {
         let context = func.borrow().as_operation().context_rc();
         let mut op_builder = midenc_hir::OpBuilder::new(context)
@@ -110,6 +111,7 @@ impl FuncTranslator {
             addr2line,
             session,
             func_validator,
+            config,
         )?;
 
         builder.finalize();
@@ -198,6 +200,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     addr2line: &addr2line::Context<DwarfReader<'_>>,
     session: &Session,
     func_validator: &mut FuncValidator<impl WasmModuleResources>,
+    config: &crate::WasmTranslationConfig,
 ) -> WasmResult<()> {
     // The control stack is initialized with a single block representing the whole function.
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
@@ -216,15 +219,59 @@ fn parse_function_body<B: ?Sized + Builder>(
         if let Some(loc) = addr2line.find_location(offset).into_diagnostic()? {
             if let Some(file) = loc.file {
                 let path = std::path::Path::new(file);
-                let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                if path.exists() {
-                    let source_file = session.source_manager.load_file(&path).into_diagnostic()?;
+
+                // Resolve relative paths to absolute paths
+                let resolved_path = if path.is_relative() {
+                    // Strategy 1: Try trim_path_prefixes
+                    if let Some(resolved) = config.trim_path_prefixes.iter().find_map(|prefix| {
+                        let candidate = prefix.join(path);
+                        if candidate.exists() {
+                            // Canonicalize to get absolute path
+                            candidate.canonicalize().ok()
+                        } else {
+                            None
+                        }
+                    }) {
+                        Some(resolved)
+                    }
+                    // Strategy 2: Try session.options.current_dir as fallback
+                    else {
+                        let current_dir_candidate = session.options.current_dir.join(path);
+                        if current_dir_candidate.exists() {
+                            current_dir_candidate.canonicalize().ok()
+                        } else {
+                            None
+                        }
+                    }
+                } else {
+                    // Path is absolute, but verify it exists and canonicalize it
+                    if path.exists() {
+                        path.canonicalize().ok()
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(absolute_path) = resolved_path {
+                    debug_assert!(
+                        absolute_path.is_absolute(),
+                        "resolved path should be absolute: {}",
+                        absolute_path.display()
+                    );
+                    log::debug!(target: "module-parser",
+                        "resolved source path '{}' -> '{}'",
+                        file,
+                        absolute_path.display()
+                    );
+                    let source_file =
+                        session.source_manager.load_file(&absolute_path).into_diagnostic()?;
                     let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
                     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
                     span = source_file.line_column_to_span(line, column).unwrap_or_default();
                 } else {
                     log::debug!(target: "module-parser",
-                        "failed to locate span for instruction at offset {offset} in function {func_name}"
+                        "failed to resolve source path '{file}' for instruction at offset \
+                         {offset} in function {func_name}"
                     );
                 }
             }

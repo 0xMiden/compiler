@@ -348,6 +348,29 @@ pub struct UnstableOptions {
         arg(long, default_value_t = false, help_heading = "Passes")
     )]
     pub print_ir_after_modified: bool,
+    /// Print source location information in HIR output
+    ///
+    /// When enabled, HIR output will include #loc() annotations showing the source file,
+    /// line, and column for each operation.
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "print-hir-source-locations",
+            default_value_t = false,
+            help_heading = "Printers"
+        )
+    )]
+    pub print_hir_source_locations: bool,
+    /// Specify path prefixes to try when resolving relative paths from DWARF debug info
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "trim-path-prefix",
+            value_name = "PATH",
+            help_heading = "Debugging"
+        )
+    )]
+    pub trim_path_prefixes: Vec<PathBuf>,
 }
 
 impl CodegenOptions {
@@ -516,6 +539,8 @@ impl Compiler {
         options.print_ir_after_all = unstable.print_ir_after_all;
         options.print_ir_after_pass = unstable.print_ir_after_pass;
         options.print_ir_after_modified = unstable.print_ir_after_modified;
+        options.print_hir_source_locations = unstable.print_hir_source_locations;
+        options.trim_path_prefixes = unstable.trim_path_prefixes;
 
         // Establish --target-dir
         let target_dir = if self.target_dir.is_absolute() {
