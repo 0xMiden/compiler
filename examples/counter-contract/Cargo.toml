@@ -12,8 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = { path = "../../sdk/sdk" }
 
-# [package.metadata.component]
-# package = "miden:counter-contract"
+[package.metadata.component]
+package = "miden:counter-contract"
 
 [package.metadata.miden]
 project-kind = "account"
