@@ -277,12 +277,8 @@ pub fn test_basic_wallet_p2ide_local() {
             .build()
             .unwrap();
 
-        let mint_tx_result =
-            client.new_transaction(faucet_account.id(), mint_request).await.unwrap();
-        let mint_tx_id = mint_tx_result.executed_transaction().id();
-        eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
-
-        client.submit_transaction(mint_tx_result).await.unwrap();
+        let mint_tx_id =
+            client.submit_new_transaction(faucet_account.id(), mint_request).await.unwrap();
         eprintln!("Submitted mint transaction. Tx ID: {mint_tx_id:?}");
 
         // Step 3: Alice consumes the p2id note
@@ -293,13 +289,11 @@ pub fn test_basic_wallet_p2ide_local() {
             .build()
             .unwrap();
 
-        let consume_tx = client
-            .new_transaction(alice_account.id(), consume_request)
+        let _consume_tx_id = client
+            .submit_new_transaction(alice_account.id(), consume_request)
             .await
             .map_err(|e| format!("{e:?}"))
             .unwrap();
-
-        client.submit_transaction(consume_tx).await.unwrap();
 
         eprintln!("\n=== Checking Alice's account has the minted asset ===");
 
@@ -360,12 +354,10 @@ pub fn test_basic_wallet_p2ide_local() {
             .build()
             .unwrap();
 
-        let transfer_tx_result =
-            client.new_transaction(alice_account.id(), transfer_request).await.unwrap();
-        let alice_tx_id = transfer_tx_result.executed_transaction().id();
-        eprintln!("Alice created p2ide transaction. Tx ID: {alice_tx_id:?}");
-
-        client.submit_transaction(transfer_tx_result).await.unwrap();
+        let alice_tx_id = client
+            .submit_new_transaction(alice_account.id(), transfer_request)
+            .await
+            .unwrap();
         eprintln!("Submitted p2ide transaction. Tx ID: {alice_tx_id:?}");
 
         // Step 5: Bob consumes the p2ide note
@@ -376,11 +368,9 @@ pub fn test_basic_wallet_p2ide_local() {
             .build()
             .unwrap();
 
-        let consume_tx = client.new_transaction(bob_account.id(), consume_request).await.unwrap();
-        let consume_tx_id = consume_tx.executed_transaction().id();
+        let consume_tx_id =
+            client.submit_new_transaction(bob_account.id(), consume_request).await.unwrap();
         eprintln!("Bob created consume transaction. Tx ID: {consume_tx_id:?}");
-
-        client.submit_transaction(consume_tx).await.unwrap();
 
         eprintln!("\n=== Checking Bob's account has the transferred asset ===");
 
@@ -490,12 +480,8 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             .build()
             .unwrap();
 
-        let mint_tx_result =
-            client.new_transaction(faucet_account.id(), mint_request).await.unwrap();
-        let mint_tx_id = mint_tx_result.executed_transaction().id();
-        eprintln!("Created mint transaction. Tx ID: {mint_tx_id:?}");
-
-        client.submit_transaction(mint_tx_result).await.unwrap();
+        let mint_tx_id =
+            client.submit_new_transaction(faucet_account.id(), mint_request).await.unwrap();
         eprintln!("Submitted mint transaction. Tx ID: {mint_tx_id:?}");
 
         // Step 3: Alice consumes the p2id note
@@ -506,13 +492,11 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             .build()
             .unwrap();
 
-        let consume_tx = client
-            .new_transaction(alice_account.id(), consume_request)
+        let _consume_tx_id = client
+            .submit_new_transaction(alice_account.id(), consume_request)
             .await
             .map_err(|e| format!("{e:?}"))
             .unwrap();
-
-        client.submit_transaction(consume_tx).await.unwrap();
 
         eprintln!("\n=== Checking Alice's account has the minted asset ===");
 
@@ -575,12 +559,10 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             .build()
             .unwrap();
 
-        let transfer_tx_result =
-            client.new_transaction(alice_account.id(), transfer_request).await.unwrap();
-        let alice_tx_id = transfer_tx_result.executed_transaction().id();
-        eprintln!("Alice created p2ide transaction. Tx ID: {alice_tx_id:?}");
-
-        client.submit_transaction(transfer_tx_result).await.unwrap();
+        let alice_tx_id = client
+            .submit_new_transaction(alice_account.id(), transfer_request)
+            .await
+            .unwrap();
         eprintln!("Submitted p2ide transaction. Tx ID: {alice_tx_id:?}");
 
         // Step 5: Alice reclaims the note (exercises the reclaim branch)
@@ -591,11 +573,11 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             .build()
             .unwrap();
 
-        let reclaim_tx = client.new_transaction(alice_account.id(), reclaim_request).await.unwrap();
-        let reclaim_tx_id = reclaim_tx.executed_transaction().id();
+        let reclaim_tx_id = client
+            .submit_new_transaction(alice_account.id(), reclaim_request)
+            .await
+            .unwrap();
         eprintln!("Alice created reclaim transaction. Tx ID: {reclaim_tx_id:?}");
-
-        client.submit_transaction(reclaim_tx).await.unwrap();
 
         eprintln!("\n=== Checking Alice's account has reclaimed the asset ===");
 
