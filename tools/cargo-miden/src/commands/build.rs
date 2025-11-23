@@ -87,9 +87,13 @@ impl BuildCommand {
             spawn_args.push(format!("{key}={value}"));
         }
 
-        let extra_rust_flags = String::from(
-            "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args=--fatal-warnings",
-        );
+        // Enable memcopy and 128-bit arithmetic ops
+        let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+        // Enable errors on missing stub functions
+        extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        extra_rust_flags.push_str(" -Zlocation-detail=none");
         let maybe_old_rustflags = match std::env::var("RUSTFLAGS") {
             Ok(current) if !current.is_empty() => {
                 std::env::set_var("RUSTFLAGS", format!("{current} {extra_rust_flags}"));

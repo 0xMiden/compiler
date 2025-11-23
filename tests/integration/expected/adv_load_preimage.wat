@@ -127,20 +127,20 @@
       local.get 9
       local.get 5
       i32.load offset=12
-      i32.const 1048620
+      i32.const 1048588
       call $alloc::raw_vec::handle_error
     end
     unreachable
   )
   (func $__rustc::__rust_alloc (;1;) (type 1) (param i32 i32) (result i32)
-    i32.const 1048636
+    i32.const 1048604
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
   (func $__rustc::__rust_alloc_zeroed (;2;) (type 1) (param i32 i32) (result i32)
     block ;; label = @1
-      i32.const 1048636
+      i32.const 1048604
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -432,5 +432,5 @@
     i32.gt_u
     select
   )
-  (data $.rodata (;0;) (i32.const 1048576) "miden-stdlib-sys-0.7.1/src/stdlib/mem.rs\00\00\00\00\00\00\10\00(\00\00\00\97\00\00\00!\00\00\00")
+  (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
 )

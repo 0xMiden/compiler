@@ -66,7 +66,7 @@ builtin.component root_ns:root@1.0.0 {
                 hir.assertz v153 #[code = 250];
                 v154 = hir.int_to_ptr v151 : ptr<byte, i32>;
                 v155 = hir.load v154 : i32;
-                v156 = arith.constant 1048620 : i32;
+                v156 = arith.constant 1048588 : i32;
                 hir.exec @root_ns:root@1.0.0/adv_load_preimage/alloc::raw_vec::handle_error(v46, v155, v156)
                 v516 = arith.constant 0 : u32;
                 scf.yield v516;
@@ -213,14 +213,14 @@ builtin.component root_ns:root@1.0.0 {
 
         private builtin.function @__rustc::__rust_alloc(v157: i32, v158: i32) -> i32 {
         ^block12(v157: i32, v158: i32):
-            v160 = arith.constant 1048636 : i32;
+            v160 = arith.constant 1048604 : i32;
             v161 = hir.exec @root_ns:root@1.0.0/adv_load_preimage/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v160, v158, v157) : i32
             builtin.ret v161;
         };
 
         private builtin.function @__rustc::__rust_alloc_zeroed(v162: i32, v163: i32) -> i32 {
         ^block14(v162: i32, v163: i32):
-            v165 = arith.constant 1048636 : i32;
+            v165 = arith.constant 1048604 : i32;
             v166 = hir.exec @root_ns:root@1.0.0/adv_load_preimage/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v165, v163, v162) : i32
             v566 = arith.constant 0 : i32;
             v167 = arith.constant 0 : i32;
@@ -745,6 +745,6 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret_imm 1048576;
         };
 
-        builtin.segment readonly @1048576 = 0x000000210000009700000028001000000000000073722e6d656d2f62696c6474732f6372732f312e372e302d7379732d62696c6474732d6e6564696d;
+        builtin.segment readonly @1048576 = 0x00000000000000000000000a0010000000003e64657463616465723c;
     };
 };

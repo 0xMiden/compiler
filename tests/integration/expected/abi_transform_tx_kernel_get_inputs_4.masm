@@ -5,17 +5,17 @@ proc init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[1554473420111659168,832244429625754668,5418308924757320907,17702588667154917010]
+    push.[13303268137284580667,14000914427208839465,16230032807968224336,7923152364088757166]
     adv.push_mapval
     push.262144
-    push.5
+    push.2
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
     u32assert
-    mem_store.278552
+    mem_store.278536
 end
 
 # mod root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4
@@ -24,7 +24,7 @@ end
 pub proc entrypoint(
 
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -34,7 +34,7 @@ pub proc entrypoint(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -276,7 +276,7 @@ pub proc entrypoint(
                     push.16
                     movup.2
                     u32wrapping_add
-                    push.1114208
+                    push.1114144
                     u32divmod.4
                     swap.1
                     trace.240
@@ -304,7 +304,7 @@ end
 
 @callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
-    push.1048648
+    push.1048608
     movup.2
     swap.1
     trace.240
@@ -323,7 +323,7 @@ end
 
 @callconv("C")
 proc __rustc::__rust_realloc(i32, i32, i32, i32) -> i32
-    push.1048648
+    push.1048608
     dup.4
     swap.2
     swap.4
@@ -427,7 +427,7 @@ end
 
 @callconv("C")
 proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
-    push.1048648
+    push.1048608
     dup.1
     swap.2
     swap.3
@@ -703,10 +703,9 @@ end
 proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     i32,
     i32,
-    i32,
     i32
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -716,7 +715,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -782,8 +781,6 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     neq
     neq
     if.true
-        movup.3
-        drop
         push.12
         dup.2
         add
@@ -834,7 +831,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
         nop
         push.16
         u32wrapping_add
-        push.1114208
+        push.1114144
         u32divmod.4
         swap.1
         trace.240
@@ -862,7 +859,8 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        swap.1
+        push.1048588
+        swap.2
         trace.240
         nop
         exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::alloc::raw_vec::handle_error
@@ -877,7 +875,7 @@ end
 proc miden_base_sys::bindings::active_note::get_inputs(
     i32
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -887,7 +885,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -897,10 +895,9 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.1048628
     push.4
     push.8
-    dup.3
+    dup.2
     u32wrapping_add
     dup.1
     swap.2
@@ -1003,7 +1000,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     nop
     push.16
     u32wrapping_add
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1036,7 +1033,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     i32,
     i32
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1046,7 +1043,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1137,7 +1134,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     end
     push.16
     u32wrapping_add
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1155,7 +1152,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
     i32,
     i32
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1165,7 +1162,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1550,7 +1547,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
     nop
     push.16
     u32wrapping_add
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1566,7 +1563,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     i32,
     i32
 )
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1576,7 +1573,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     nop
     push.16
     u32wrapping_sub
-    push.1114208
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1669,7 +1666,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     nop
     push.16
     u32wrapping_add
-    push.1114208
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
