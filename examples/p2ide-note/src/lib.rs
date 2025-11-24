@@ -12,14 +12,14 @@ use miden::*;
 use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
 
 fn consume_assets() {
-    let assets = note::get_assets();
+    let assets = active_note::get_assets();
     for asset in assets {
         receive_asset(asset);
     }
 }
 
 fn reclaim_assets(consuming_account: AccountId) {
-    let creator_account = note::get_sender();
+    let creator_account = active_note::get_sender();
 
     if consuming_account == creator_account {
         consume_assets();
@@ -30,14 +30,14 @@ fn reclaim_assets(consuming_account: AccountId) {
 
 #[note_script]
 fn run(_arg: Word) {
-    let inputs = note::get_inputs();
-    
+    let inputs = active_note::get_inputs();
+
     // make sure the number of inputs is 4
-    assert_eq(inputs.len().into(), felt!(4));
-    
+    assert_eq((inputs.len() as u32).into(), felt!(4));
+
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
-    
+
     let timelock_height = inputs[2];
     let reclaim_height = inputs[3];
 
@@ -46,7 +46,7 @@ fn run(_arg: Word) {
     assert!(block_number >= timelock_height);
 
     // get consuming account id
-    let consuming_account_id = account::get_id();
+    let consuming_account_id = active_account::get_id();
 
     // target account id
     let target_account_id = AccountId::from(target_account_id_prefix, target_account_id_suffix);
