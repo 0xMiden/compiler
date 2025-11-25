@@ -27,7 +27,8 @@ package = "miden:counter-note"
 "miden:counter-contract" = { path = "../counter-contract" }
 
 [package.metadata.component.target.dependencies]
-"miden:counter-contract" = { path = "../counter-contract/wit/counter.wit" }
+"miden:counter-account" = { path = "../counter-contract/target/generated-wit/" }
+
 
 [profile.release]
 trim-paths = ["diagnostics", "object"]

@@ -19,7 +19,7 @@
       (export (;1;) "increment-count" (func (type 2)))
     )
   )
-  (import "miden:counter-contract/counter@0.1.0" (instance (;1;) (type 2)))
+  (import "miden:counter-contract/counter-contract@0.1.0" (instance (;1;) (type 2)))
   (core module (;0;)
     (type (;0;) (func (result f32)))
     (type (;1;) (func))
@@ -27,8 +27,8 @@
     (type (;3;) (func (param f32 f32) (result f32)))
     (type (;4;) (func (param i32) (result f32)))
     (type (;5;) (func (param f32 f32)))
-    (import "miden:counter-contract/counter@0.1.0" "get-count" (func $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0 (;0;) (type 0)))
-    (import "miden:counter-contract/counter@0.1.0" "increment-count" (func $counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0 (;1;) (type 0)))
+    (import "miden:counter-contract/counter-contract@0.1.0" "get-count" (func $counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0 (;0;) (type 0)))
+    (import "miden:counter-contract/counter-contract@0.1.0" "increment-count" (func $counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0 (;1;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -41,16 +41,16 @@
     (func $miden:base/note-script@1.0.0#run (;4;) (type 2) (param f32 f32 f32 f32)
       (local f32)
       call $wit_bindgen::rt::run_ctors_once
-      call $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
+      call $counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
       local.set 4
-      call $counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0
+      call $counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0
       drop
       local.get 4
       i32.const 1
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::add
       local.set 4
-      call $counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
+      call $counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
       local.get 4
       call $intrinsics::felt::assert_eq
     )
@@ -93,7 +93,7 @@
     (export "increment-count" (func 1))
   )
   (core instance (;1;) (instantiate 0
-      (with "miden:counter-contract/counter@0.1.0" (instance 0))
+      (with "miden:counter-contract/counter-contract@0.1.0" (instance 0))
     )
   )
   (alias core export 1 "memory" (core memory (;0;)))

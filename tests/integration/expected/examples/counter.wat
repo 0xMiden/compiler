@@ -20,8 +20,8 @@
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
     (global $GOT.data.internal.__memory_base (;1;) i32 i32.const 0)
     (export "memory" (memory 0))
-    (export "miden:counter-contract/counter@0.1.0#get-count" (func $miden:counter-contract/counter@0.1.0#get-count))
-    (export "miden:counter-contract/counter@0.1.0#increment-count" (func $miden:counter-contract/counter@0.1.0#increment-count))
+    (export "miden:counter-contract/counter-contract@0.1.0#get-count" (func $miden:counter-contract/counter-contract@0.1.0#get-count))
+    (export "miden:counter-contract/counter-contract@0.1.0#increment-count" (func $miden:counter-contract/counter-contract@0.1.0#increment-count))
     (elem (;0;) (i32.const 1) func $counter_contract::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $miden_base_sys::bindings::storage::get_map_item (;1;) (type 1) (param i32 i32)
@@ -62,7 +62,7 @@
       global.set $__stack_pointer
     )
     (func $counter_contract::bindings::__link_custom_section_describing_imports (;2;) (type 0))
-    (func $miden:counter-contract/counter@0.1.0#get-count (;3;) (type 2) (result f32)
+    (func $miden:counter-contract/counter-contract@0.1.0#get-count (;3;) (type 2) (result f32)
       (local i32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 32
@@ -106,7 +106,7 @@
       global.set $__stack_pointer
       local.get 1
     )
-    (func $miden:counter-contract/counter@0.1.0#increment-count (;4;) (type 2) (result f32)
+    (func $miden:counter-contract/counter-contract@0.1.0#increment-count (;4;) (type 2) (result f32)
       (local i32 f32 f32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 128
@@ -333,9 +333,9 @@
   (core instance (;0;) (instantiate 0))
   (alias core export 0 "memory" (core memory (;0;)))
   (type (;2;) (func (result 1)))
-  (alias core export 0 "miden:counter-contract/counter@0.1.0#get-count" (core func (;0;)))
+  (alias core export 0 "miden:counter-contract/counter-contract@0.1.0#get-count" (core func (;0;)))
   (func (;0;) (type 2) (canon lift (core func 0)))
-  (alias core export 0 "miden:counter-contract/counter@0.1.0#increment-count" (core func (;1;)))
+  (alias core export 0 "miden:counter-contract/counter-contract@0.1.0#increment-count" (core func (;1;)))
   (func (;1;) (type 2) (canon lift (core func 1)))
   (alias export 0 "felt" (type (;3;)))
   (component (;0;)
@@ -357,5 +357,5 @@
       (with "import-type-felt0" (type 1))
     )
   )
-  (export (;2;) "miden:counter-contract/counter@0.1.0" (instance 1))
+  (export (;2;) "miden:counter-contract/counter-contract@0.1.0" (instance 1))
 )

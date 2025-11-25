@@ -35,23 +35,23 @@ end
 # mod miden:base/note-script@1.0.0::counter_note
 
 @callconv("C")
-proc counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0(
+proc counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0(
 
 ) -> felt
     trace.240
     nop
-    call.::miden:counter-contract/counter@0.1.0::get-count
+    call.::miden:counter-contract/counter-contract@0.1.0::get-count
     trace.252
     nop
 end
 
 @callconv("C")
-proc counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0(
+proc counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0(
 
 ) -> felt
     trace.240
     nop
-    call.::miden:counter-contract/counter@0.1.0::increment-count
+    call.::miden:counter-contract/counter-contract@0.1.0::increment-count
     trace.252
     nop
 end
@@ -83,12 +83,12 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
+    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0
+    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0
     trace.252
     nop
     drop
@@ -106,7 +106,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0
+    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
     trace.252
     nop
     trace.240
