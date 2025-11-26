@@ -162,6 +162,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
     }
 }
 
+/// Generates WIT bindings using `wit-bindgen` directly instead of the `generate!` macro.
 fn generate_bindings(
     args: &GenerateArgs,
     config: &manifest_paths::ResolvedWit,
@@ -183,7 +184,7 @@ fn generate_bindings(
         default_bindings_module: Some("bindings".to_string()),
         ..Opts::default()
     };
-    apply_with_entries(&mut opts, &args.with_entries);
+    push_custom_with_entries(&mut opts, &args.with_entries);
     push_default_with_entries(&mut opts);
 
     let mut generated_files = wit_bindgen_core::Files::default();
@@ -219,6 +220,12 @@ fn generate_bindings(
     Ok(tokens)
 }
 
+/// Post-processes wit-bindgen output to inject wrapper structs for imported interfaces.
+///
+/// This transforms the raw bindings by walking all modules and injecting a wrapper struct
+/// with methods that delegate to the generated free functions. This provides a more
+/// ergonomic API (e.g., `BasicWallet::default().receive_asset(asset)` instead of
+/// `basic_wallet::receive_asset(asset)`).
 fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2> {
     let mut file: File = syn::parse2(tokens)?;
     transform_modules(&mut file.items, &mut Vec::new())?;
@@ -288,11 +295,12 @@ fn load_wit_sources(
     })
 }
 
-/// Applies user-provided `with` entries to the wit-bindgen options.
-fn apply_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
+/// Pushes user-provided `with` entries to the wit-bindgen options.
+fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
     opts.with.extend(entries.iter().cloned());
 }
 
+/// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
     opts.with
         .push(("miden:base/core-types@1.0.0".to_string(), WithOption::Generate));
@@ -310,6 +318,9 @@ fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
 }
 
+/// Recursively walks all modules and injects wrapper structs where appropriate.
+///
+/// The `path` parameter tracks the current module path for naming and call generation.
 fn transform_modules(items: &mut [Item], path: &mut Vec<syn::Ident>) -> syn::Result<()> {
     for item in items.iter_mut() {
         if let Item::Mod(module) = item {
@@ -386,6 +397,7 @@ fn maybe_inject_struct_wrapper(items: &mut Vec<Item>, path: &[syn::Ident]) -> sy
     Ok(())
 }
 
+/// Builds a wrapper method that delegates to the original free function.
 fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Result<ImplItemFn> {
     let mut sig = func.sig.clone();
     sig.inputs.insert(0, parse_quote!(&self));
@@ -413,6 +425,10 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
     })
 }
 
+/// Extracts argument identifiers from a function signature.
+///
+/// Returns an error if the function contains a receiver (`self`) or uses
+/// unsupported argument patterns (e.g., destructuring patterns).
 fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
     func.sig
         .inputs
@@ -425,13 +441,17 @@ fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
                 Pat::Ident(pat_ident) => Ok(pat_ident.ident.clone()),
                 other => Err(Error::new(
                     other.span(),
-                    "unsupported argument pattern in generated function",
+                    format!(
+                        "unsupported argument pattern `{}` in generated function",
+                        quote!(#other)
+                    ),
                 )),
             },
         })
         .collect()
 }
 
+/// Generates tokens for calling the original free function from the wrapper method.
 fn wrapper_call_tokens(
     module_path: &[syn::Ident],
     fn_ident: &syn::Ident,
@@ -439,13 +459,18 @@ fn wrapper_call_tokens(
 ) -> TokenStream2 {
     let mut path_tokens = quote! { crate::bindings };
     for ident in module_path {
-        let current = ident.clone();
-        path_tokens = quote! { #path_tokens :: #current };
+        path_tokens = quote! { #path_tokens :: #ident };
     }
 
     quote! { #path_tokens :: #fn_ident(#(#args),*) }
 }
 
+/// Determines whether a wrapper struct should be generated for the given module path.
+///
+/// Returns `false` for:
+/// - Empty paths
+/// - `exports` modules (these are user-implemented exports, not imports)
+/// - Modules starting with underscore (internal/private modules)
 fn should_generate_struct(path: &[syn::Ident]) -> bool {
     if path.is_empty() {
         return false;
@@ -461,12 +486,16 @@ fn should_generate_struct(path: &[syn::Ident]) -> bool {
     !last.starts_with('_')
 }
 
+/// Determines whether a function should have a wrapper method generated.
+///
+/// Returns `true` for public, safe functions that don't start with underscore.
 fn is_target_function(func: &ItemFn) -> bool {
     matches!(func.vis, syn::Visibility::Public(_))
         && func.sig.unsafety.is_none()
         && !func.sig.ident.to_string().starts_with('_')
 }
 
+/// Formats a module path as a `::` separated string for use in documentation.
 fn format_module_path(path: &[syn::Ident]) -> String {
     path.iter().map(|ident| ident.to_string()).collect::<Vec<_>>().join("::")
 }
@@ -815,7 +844,7 @@ mod tests {
     #[test]
     fn test_is_target_function_public() {
         let func: ItemFn = syn::parse_quote! {
-            pub fn receive_asset(asset: Asset) {}
+            pub fn receive_asset(asset: u64) {}
         };
         assert!(is_target_function(&func));
     }
@@ -883,8 +912,8 @@ mod tests {
             mod miden {
                 mod basic_wallet {
                     mod basic_wallet {
-                        pub fn receive_asset(asset: Asset) {}
-                        pub fn send_asset(asset: Asset) {}
+                        pub fn receive_asset(asset: u64) {}
+                        pub fn send_asset(asset: u64) {}
                     }
                 }
             }
@@ -985,7 +1014,7 @@ mod tests {
     #[test]
     fn test_build_wrapper_method_signature() {
         let func: ItemFn = syn::parse_quote! {
-            pub fn receive_asset(asset: Asset) {}
+            pub fn receive_asset(asset: u64) {}
         };
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),

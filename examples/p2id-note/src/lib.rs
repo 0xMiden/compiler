@@ -21,8 +21,9 @@ fn run(_arg: Word) {
     let current_account = active_account::get_id();
     assert_eq!(current_account, target_account);
 
+    let wallet = BasicWallet::default();
     let assets = active_note::get_assets();
     for asset in assets {
-        BasicWallet::default().receive_asset(asset);
+        wallet.receive_asset(asset);
     }
 }
