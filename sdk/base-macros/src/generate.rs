@@ -336,12 +336,16 @@ fn transform_modules(items: &mut [Item], path: &mut Vec<syn::Ident>) -> syn::Res
     Ok(())
 }
 
-/// Injects a wrapper struct and impl block for public functions in a module.
+/// Injects a wrapper struct and impl block for public functions in a leaf module.
+///
+/// A leaf module is one that contains no nested modules. Only leaf modules get wrapper
+/// structs generated, as non-leaf modules typically represent namespace hierarchy rather
+/// than concrete interfaces.
 ///
 /// Note: We need `&mut Vec<Item>` here (not `&mut [Item]`) because we push new items
 /// (the struct and impl block) to the vector.
 fn maybe_inject_struct_wrapper(items: &mut Vec<Item>, path: &[syn::Ident]) -> syn::Result<()> {
-    if !should_generate_struct(path) {
+    if !should_generate_struct(path, items) {
         return Ok(());
     }
 
@@ -465,13 +469,14 @@ fn wrapper_call_tokens(
     quote! { #path_tokens :: #fn_ident(#(#args),*) }
 }
 
-/// Determines whether a wrapper struct should be generated for the given module path.
+/// Determines whether a wrapper struct should be generated for the given module.
 ///
 /// Returns `false` for:
 /// - Empty paths
 /// - `exports` modules (these are user-implemented exports, not imports)
 /// - Modules starting with underscore (internal/private modules)
-fn should_generate_struct(path: &[syn::Ident]) -> bool {
+/// - Non-leaf modules (modules that contain nested modules)
+fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> bool {
     if path.is_empty() {
         return false;
     }
@@ -483,7 +488,11 @@ fn should_generate_struct(path: &[syn::Ident]) -> bool {
         return false;
     }
     let last = path.last().unwrap().to_string();
-    !last.starts_with('_')
+    if last.starts_with('_') {
+        return false;
+    }
+    // Only generate for leaf modules (no nested modules)
+    !items.iter().any(|item| matches!(item, Item::Mod(_)))
 }
 
 /// Determines whether a function should have a wrapper method generated.
@@ -802,43 +811,59 @@ mod tests {
 
     #[test]
     fn test_should_generate_struct_empty_path() {
-        assert!(!should_generate_struct(&[]));
+        let empty_items: Vec<Item> = vec![];
+        assert!(!should_generate_struct(&[], &empty_items));
     }
 
     #[test]
     fn test_should_generate_struct_exports_excluded() {
+        let empty_items: Vec<Item> = vec![];
         let path = vec![syn::Ident::new("exports", Span::call_site())];
-        assert!(!should_generate_struct(&path));
+        assert!(!should_generate_struct(&path, &empty_items));
 
         let path = vec![
             syn::Ident::new("exports", Span::call_site()),
             syn::Ident::new("foo", Span::call_site()),
         ];
-        assert!(!should_generate_struct(&path));
+        assert!(!should_generate_struct(&path, &empty_items));
     }
 
     #[test]
     fn test_should_generate_struct_underscore_excluded() {
+        let empty_items: Vec<Item> = vec![];
         let path = vec![syn::Ident::new("_private", Span::call_site())];
-        assert!(!should_generate_struct(&path));
+        assert!(!should_generate_struct(&path, &empty_items));
 
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),
             syn::Ident::new("_internal", Span::call_site()),
         ];
-        assert!(!should_generate_struct(&path));
+        assert!(!should_generate_struct(&path, &empty_items));
     }
 
     #[test]
-    fn test_should_generate_struct_valid_paths() {
+    fn test_should_generate_struct_valid_leaf_modules() {
+        let empty_items: Vec<Item> = vec![];
         let path = vec![syn::Ident::new("miden", Span::call_site())];
-        assert!(should_generate_struct(&path));
+        assert!(should_generate_struct(&path, &empty_items));
 
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),
             syn::Ident::new("basic_wallet", Span::call_site()),
         ];
-        assert!(should_generate_struct(&path));
+        assert!(should_generate_struct(&path, &empty_items));
+    }
+
+    #[test]
+    fn test_should_generate_struct_non_leaf_excluded() {
+        let path = vec![syn::Ident::new("miden", Span::call_site())];
+        // Items containing a nested module
+        let items_with_mod: Vec<Item> = vec![syn::parse_quote! { mod nested {} }];
+        assert!(!should_generate_struct(&path, &items_with_mod));
+
+        // Items with only functions (leaf module) should be allowed
+        let items_with_fn: Vec<Item> = vec![syn::parse_quote! { pub fn foo() {} }];
+        assert!(should_generate_struct(&path, &items_with_fn));
     }
 
     #[test]
