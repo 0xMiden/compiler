@@ -12,7 +12,7 @@ use miden::*;
 use crate::bindings::miden::basic_wallet::basic_wallet::BasicWallet;
 
 #[note_script]
-fn run(_arg: Word) {
+fn run(_arg: Word, account: BasicWallet) {
     let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
@@ -21,9 +21,8 @@ fn run(_arg: Word) {
     let current_account = active_account::get_id();
     assert_eq!(current_account, target_account);
 
-    let wallet = BasicWallet::default();
     let assets = active_note::get_assets();
     for asset in assets {
-        wallet.receive_asset(asset);
+        account.receive_asset(asset);
     }
 }
