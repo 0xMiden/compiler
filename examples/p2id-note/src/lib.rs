@@ -9,7 +9,7 @@
 
 use miden::*;
 
-use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
+use crate::bindings::miden::basic_wallet::basic_wallet::BasicWallet;
 
 #[note_script]
 fn run(_arg: Word) {
@@ -23,6 +23,6 @@ fn run(_arg: Word) {
 
     let assets = active_note::get_assets();
     for asset in assets {
-        receive_asset(asset);
+        BasicWallet::default().receive_asset(asset);
     }
 }
