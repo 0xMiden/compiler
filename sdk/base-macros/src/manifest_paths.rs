@@ -10,7 +10,7 @@ use proc_macro2::Span;
 use syn::Error;
 use toml::Value;
 
-use crate::util::bundled_wit_folder;
+use crate::util::{bundled_wit_folder, strip_line_comment};
 
 /// File name for the embedded Miden SDK WIT.
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
@@ -254,7 +254,7 @@ fn parse_package_and_world(path: &Path) -> Result<Option<(String, String)>, Erro
 /// Returns the package identifier from a WIT source string, if present.
 fn extract_package_name(contents: &str) -> Option<String> {
     for line in contents.lines() {
-        let trimmed = strip_comment(line).trim_start();
+        let trimmed = strip_line_comment(line).trim_start();
         if let Some(rest) = trimmed.strip_prefix("package ") {
             let mut token = rest.trim();
             if let Some(idx) = token.find(';') {
@@ -270,10 +270,10 @@ fn extract_package_name(contents: &str) -> Option<String> {
     None
 }
 
-/// Returns the first world identifier from a WIT source string, if present.
+/// Extracts the first world identifier from a WIT source string.
 pub(crate) fn extract_world_name(contents: &str) -> Option<String> {
     for line in contents.lines() {
-        let trimmed = strip_comment(line).trim_start();
+        let trimmed = strip_line_comment(line).trim_start();
         if let Some(rest) = trimmed.strip_prefix("world ") {
             let mut name = String::new();
             for ch in rest.trim().chars() {
@@ -289,12 +289,4 @@ pub(crate) fn extract_world_name(contents: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Strips line comments starting with `//` from the provided source line.
-fn strip_comment(line: &str) -> &str {
-    match line.split_once("//") {
-        Some((before, _)) => before,
-        None => line,
-    }
 }

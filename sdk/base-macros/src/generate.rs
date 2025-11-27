@@ -245,14 +245,15 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
     Ok(file.into_token_stream())
 }
 
-/// Result of loading WIT sources.
+/// Result of loading and parsing WIT sources from file paths and optional inline content.
 struct LoadedWitSources {
-    /// The resolved WIT definitions.
+    /// The resolved WIT definitions containing all types, interfaces, and worlds.
     resolve: Resolve,
-    /// Package IDs to use for world selection.
+    /// Package IDs to use for world selection. When inline source is provided, this contains
+    /// only the inline package; otherwise it contains all packages from file paths.
     packages: Vec<PackageId>,
-    /// File paths that were read to include a dummy `include_bytes!` so rustc knows that we depend
-    /// on the contents of those files.
+    /// File paths that were read during WIT parsing. Used to generate dummy `include_bytes!`
+    /// calls so rustc knows to recompile when these files change.
     files_read: Vec<PathBuf>,
 }
 
@@ -819,5 +820,134 @@ mod tests {
 
         // Return type should be preserved
         assert!(matches!(method.sig.output, ReturnType::Type(_, _)));
+    }
+
+    #[test]
+    fn test_augment_generated_bindings_adds_account_struct() {
+        let src = r#"
+            mod miden {
+                mod basic_wallet {
+                    mod basic_wallet {
+                        pub fn receive_asset(asset: u64) {}
+                        pub fn send_asset(to: u32, amount: u64) -> bool { true }
+                    }
+                }
+            }
+        "#;
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens).unwrap();
+        let result_str = result.to_string();
+
+        // Should contain the Account struct
+        assert!(result_str.contains("struct Account"));
+        assert!(result_str.contains("impl Account"));
+
+        // Should contain wrapper methods
+        assert!(result_str.contains("fn receive_asset"));
+        assert!(result_str.contains("fn send_asset"));
+
+        // Methods should have &self parameter
+        assert!(result_str.contains("& self"));
+    }
+
+    #[test]
+    fn test_augment_generated_bindings_empty_input() {
+        let src = "";
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens).unwrap();
+        let result_str = result.to_string();
+
+        // Should not add Account struct when there are no methods
+        assert!(!result_str.contains("struct Account"));
+    }
+
+    #[test]
+    fn test_augment_generated_bindings_exports_only() {
+        let src = r#"
+            mod exports {
+                mod my_component {
+                    pub fn exported_fn() {}
+                }
+            }
+        "#;
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens).unwrap();
+        let result_str = result.to_string();
+
+        // Should not add Account struct for exports-only bindings
+        assert!(!result_str.contains("struct Account"));
+    }
+
+    #[test]
+    fn test_augment_generated_bindings_preserves_original_modules() {
+        let src = r#"
+            mod miden {
+                mod wallet {
+                    pub fn get_balance() -> u64 { 0 }
+                }
+            }
+        "#;
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens).unwrap();
+        let result_str = result.to_string();
+
+        // Original module structure should be preserved
+        assert!(result_str.contains("mod miden"));
+        assert!(result_str.contains("mod wallet"));
+        assert!(result_str.contains("fn get_balance"));
+    }
+
+    #[test]
+    fn test_wrapper_call_tokens_generates_correct_path() {
+        let path = vec![
+            syn::Ident::new("miden", Span::call_site()),
+            syn::Ident::new("basic_wallet", Span::call_site()),
+        ];
+        let fn_ident = syn::Ident::new("receive_asset", Span::call_site());
+        let args = vec![syn::Ident::new("asset", Span::call_site())];
+
+        let tokens = wrapper_call_tokens(&path, &fn_ident, &args);
+        let result = tokens.to_string();
+
+        assert!(result.contains("crate :: bindings :: miden :: basic_wallet :: receive_asset"));
+        assert!(result.contains("asset"));
+    }
+
+    #[test]
+    fn test_parse_with_entry_generate() {
+        let input: TokenStream2 = quote! { "miden:foo/bar": generate };
+        let parsed = syn::parse2::<GenerateArgs>(quote! { with = { #input } }).unwrap();
+
+        assert_eq!(parsed.with_entries.len(), 1);
+        assert_eq!(parsed.with_entries[0].0, "miden:foo/bar");
+        assert!(matches!(parsed.with_entries[0].1, WithOption::Generate));
+    }
+
+    #[test]
+    fn test_parse_with_entry_path() {
+        let input: TokenStream2 = quote! { "miden:foo/bar": ::my::custom::Type };
+        let parsed = syn::parse2::<GenerateArgs>(quote! { with = { #input } }).unwrap();
+
+        assert_eq!(parsed.with_entries.len(), 1);
+        assert_eq!(parsed.with_entries[0].0, "miden:foo/bar");
+        match &parsed.with_entries[0].1 {
+            WithOption::Path(p) => assert_eq!(p, "::my::custom::Type"),
+            _ => panic!("expected Path variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_with_entries() {
+        let parsed = syn::parse2::<GenerateArgs>(quote! {
+            with = {
+                "miden:a/b": generate,
+                "miden:c/d": ::foo::Bar
+            }
+        })
+        .unwrap();
+
+        assert_eq!(parsed.with_entries.len(), 2);
+        assert_eq!(parsed.with_entries[0].0, "miden:a/b");
+        assert_eq!(parsed.with_entries[1].0, "miden:c/d");
     }
 }

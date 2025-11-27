@@ -5,7 +5,10 @@ use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent};
 use toml::Value;
 
-use crate::{boilerplate::runtime_boilerplate, util::generated_wit_folder_at};
+use crate::{
+    boilerplate::runtime_boilerplate,
+    util::{generated_wit_folder_at, strip_line_comment},
+};
 
 const SCRIPT_PACKAGE_VERSION: &str = "1.0.0";
 
@@ -359,7 +362,7 @@ fn parse_wit_file(path: &Path) -> Result<Option<DependencyWit>, String> {
 
 fn extract_package_identifier(contents: &str) -> Option<(String, Option<String>)> {
     for line in contents.lines() {
-        let trimmed = strip_comment(line).trim_start();
+        let trimmed = strip_line_comment(line).trim_start();
         if let Some(rest) = trimmed.strip_prefix("package ") {
             let token = rest.trim_end_matches(';').trim();
             if let Some((name, version)) = token.split_once('@') {
@@ -375,7 +378,7 @@ fn extract_world_exports(contents: &str) -> Vec<String> {
     let mut exports = Vec::new();
 
     for line in contents.lines() {
-        let trimmed = strip_comment(line).trim();
+        let trimmed = strip_line_comment(line).trim();
         if let Some(rest) = trimmed.strip_prefix("export ") {
             let rest = rest.trim_end_matches(';').trim();
             let interface = match rest.split_once(':') {
@@ -389,11 +392,4 @@ fn extract_world_exports(contents: &str) -> Vec<String> {
     }
 
     exports
-}
-
-fn strip_comment(line: &str) -> &str {
-    match line.split_once("//") {
-        Some((before, _)) => before,
-        None => line,
-    }
 }
