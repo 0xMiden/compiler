@@ -2,7 +2,7 @@ use std::{env, fs, path::Path};
 
 use proc_macro2::{Literal, Span};
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent, Type};
+use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent};
 use toml::Value;
 
 use crate::{boilerplate::runtime_boilerplate, util::generated_wit_folder_at};
@@ -44,10 +44,11 @@ pub(crate) fn expand(
             .into();
     }
 
-    // Parse function arguments, separating the first trait-required argument from
-    // additional "injected" arguments that will be instantiated by the macro.
-    let parsed_args = match parse_fn_args(&input_fn) {
-        Ok(args) => args,
+    // Parse the optional second parameter (injected wrapper struct).
+    // The trait requires `fn run(arg: Word)`, so if the user declares a second parameter,
+    // it will be instantiated via `Default::default()` and passed to the user's function.
+    let injected_param = match parse_injected_param(&input_fn) {
+        Ok(param) => param,
         Err(err) => return err.into_compile_error().into(),
     };
 
@@ -57,11 +58,6 @@ pub(crate) fn expand(
     };
     let inline_literal = Literal::string(&inline_wit);
     let struct_ident = quote::format_ident!("Struct");
-
-    let fn_output = &input_fn.sig.output;
-
-    // Build the call to the user's run function with all arguments
-    let call = build_run_call(fn_ident, &parsed_args);
 
     let export_path: syn::Path = match syn::parse_str(config.guest_trait_path) {
         Ok(path) => path,
@@ -77,11 +73,14 @@ pub(crate) fn expand(
 
     let runtime_boilerplate = runtime_boilerplate();
 
-    // Generate the trait's fn signature (only includes the first arg if present)
-    let trait_fn_inputs = &parsed_args.trait_fn_inputs;
-
-    // Generate instantiation statements for injected wrapper structs
-    let instantiations = &parsed_args.instantiations;
+    // Generate the call to the user's function, with optional injected parameter
+    let (instantiation, call) = match &injected_param {
+        Some((ident, ty)) => (
+            quote! { let #ident = <#ty as ::core::default::Default>::default(); },
+            quote! { #fn_ident(arg, #ident) },
+        ),
+        None => (quote! {}, quote! { #fn_ident(arg) }),
+    };
 
     let expanded = quote! {
         #runtime_boilerplate
@@ -95,8 +94,8 @@ pub(crate) fn expand(
         pub struct #struct_ident;
 
         impl #export_path for #struct_ident {
-            fn run(#trait_fn_inputs) #fn_output {
-                #(#instantiations)*
+            fn run(arg: ::miden::Word) {
+                #instantiation
                 #call;
             }
         }
@@ -105,82 +104,34 @@ pub(crate) fn expand(
     expanded.into()
 }
 
-/// Parsed function arguments separated into trait-required and injected arguments.
-struct ParsedFnArgs {
-    /// The first argument (if any) that matches the trait signature (e.g., `arg: Word`).
-    /// This is used in the generated trait impl signature.
-    trait_fn_inputs: proc_macro2::TokenStream,
-    /// Instantiation statements for injected wrapper structs.
-    /// Each statement is like `let wallet = Type::default();`
-    instantiations: Vec<proc_macro2::TokenStream>,
-    /// All argument identifiers in order, for calling the user's function.
-    all_arg_idents: Vec<syn::Ident>,
-}
-
-/// Parses function arguments, separating the first trait-required argument from
-/// additional "injected" arguments whose types will be instantiated via `Default`.
-fn parse_fn_args(input_fn: &ItemFn) -> syn::Result<ParsedFnArgs> {
-    let mut trait_fn_inputs = proc_macro2::TokenStream::new();
-    let mut instantiations = Vec::new();
-    let mut all_arg_idents = Vec::new();
-
-    for (idx, arg) in input_fn.sig.inputs.iter().enumerate() {
-        match arg {
-            FnArg::Typed(pat_type) => {
-                let ident = match pat_type.pat.as_ref() {
-                    Pat::Ident(PatIdent { ident, .. }) => ident.clone(),
-                    other => {
-                        return Err(syn::Error::new(
-                            other.span(),
-                            "function arguments must be simple identifiers",
-                        ));
-                    }
-                };
-
-                all_arg_idents.push(ident.clone());
-
-                if idx == 0 {
-                    // First argument is the trait-required argument (e.g., `arg: Word`)
-                    trait_fn_inputs = quote! { #pat_type };
-                } else {
-                    // Additional arguments are injected wrapper structs
-                    let ty = &pat_type.ty;
-                    let instantiation = build_instantiation(&ident, ty);
-                    instantiations.push(instantiation);
-                }
-            }
-            FnArg::Receiver(receiver) => {
-                return Err(syn::Error::new(receiver.span(), "unexpected receiver argument"));
-            }
-        }
-    }
-
-    Ok(ParsedFnArgs {
-        trait_fn_inputs,
-        instantiations,
-        all_arg_idents,
-    })
-}
-
-/// Builds an instantiation statement for an injected wrapper struct.
+/// Parses the optional injected parameter from the user's `fn run` signature.
 ///
-/// The type path is converted to use `crate::bindings::` prefix to reference
-/// the generated bindings module.
-fn build_instantiation(ident: &syn::Ident, ty: &Type) -> proc_macro2::TokenStream {
-    // For now, we just call Default::default() on the type as-is.
-    // The user is expected to use the full path or import the type.
-    quote! {
-        let #ident = <#ty as ::core::default::Default>::default();
-    }
-}
+/// The trait requires `fn run(arg: Word)`. If the user declares a second parameter,
+/// it is treated as an "injected" wrapper struct that will be instantiated via
+/// `Default::default()` and passed to the user's function.
+///
+/// Returns `Some((ident, type))` if a second parameter exists, `None` otherwise.
+fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, syn::Type)>> {
+    let Some(second_arg) = input_fn.sig.inputs.iter().nth(1) else {
+        return Ok(None);
+    };
 
-/// Builds the call expression to the user's run function with all arguments.
-fn build_run_call(fn_ident: &syn::Ident, parsed_args: &ParsedFnArgs) -> proc_macro2::TokenStream {
-    let args = &parsed_args.all_arg_idents;
-    if args.is_empty() {
-        quote! { #fn_ident() }
-    } else {
-        quote! { #fn_ident(#(#args),*) }
+    match second_arg {
+        FnArg::Typed(pat_type) => {
+            let ident = match pat_type.pat.as_ref() {
+                Pat::Ident(PatIdent { ident, .. }) => ident.clone(),
+                other => {
+                    return Err(syn::Error::new(
+                        other.span(),
+                        "function arguments must be simple identifiers",
+                    ));
+                }
+            };
+            Ok(Some((ident, (*pat_type.ty).clone())))
+        }
+        FnArg::Receiver(receiver) => {
+            Err(syn::Error::new(receiver.span(), "unexpected receiver argument"))
+        }
     }
 }
 
