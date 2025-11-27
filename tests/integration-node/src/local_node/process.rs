@@ -2,7 +2,6 @@
 
 use std::{
     fs::{self, File},
-    io::BufRead,
     net::TcpStream,
     process::{Command, Stdio},
     thread,
@@ -95,7 +94,13 @@ pub async fn start_shared_node() -> Result<u32> {
     }
 
     // Start the node process
-    let mut child = Command::new("miden-node")
+    // Use Stdio::null() for stdout/stderr to avoid buffer blocking issues.
+    // When pipes are used, the child process can block if the pipe buffer fills up
+    // and the reading end doesn't consume data fast enough. Using inherit() also
+    // causes issues with nextest's parallel test execution.
+    //
+    // For debugging, users can run the node manually with RUST_LOG=debug.
+    let child = Command::new("miden-node")
         .args([
             "bundled",
             "start",
@@ -106,36 +111,12 @@ pub async fn start_shared_node() -> Result<u32> {
             "--block.interval",
             "1sec",
         ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .context("Failed to start miden-node process")?;
 
     let pid = child.id();
-
-    // Capture output for debugging
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let stderr = child.stderr.take().expect("Failed to capture stderr");
-
-    // Check if node output logging is enabled
-    let enable_node_output = std::env::var("MIDEN_NODE_OUTPUT").unwrap_or_default() == "1";
-
-    // Spawn threads to read output
-    thread::spawn(move || {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if enable_node_output {
-                eprintln!("[shared node stdout] {line}");
-            }
-        }
-    });
-
-    thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            eprintln!("[shared node stderr] {line}");
-        }
-    });
 
     // Detach the child process so it continues running after we exit
     drop(child);
