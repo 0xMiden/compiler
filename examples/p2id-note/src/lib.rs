@@ -9,10 +9,10 @@
 
 use miden::*;
 
-use crate::bindings::miden::basic_wallet::basic_wallet::BasicWallet;
+use crate::bindings::Account;
 
 #[note_script]
-fn run(_arg: Word, account: BasicWallet) {
+fn run(_arg: Word, account: Account) {
     let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];

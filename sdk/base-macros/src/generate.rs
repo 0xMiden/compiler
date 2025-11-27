@@ -1,14 +1,14 @@
 use std::{env, fs, path::PathBuf};
 
-use heck::ToUpperCamelCase;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     spanned::Spanned,
+    visit_mut::VisitMut,
     Attribute, Error, File, FnArg, ImplItem, ImplItemFn, Item, ItemFn, ItemImpl, ItemStruct,
-    LitStr, Pat, ReturnType, Token,
+    LitStr, Pat, ReturnType, Token, TypePath,
 };
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup};
 use wit_bindgen_rust::{Opts, WithOption};
@@ -215,13 +215,33 @@ fn generate_bindings(
 
 /// Post-processes wit-bindgen output to inject wrapper structs for imported interfaces.
 ///
-/// This transforms the raw bindings by walking all modules and injecting a wrapper struct
-/// with methods that delegate to the generated free functions. This provides a more
-/// ergonomic API (e.g., `BasicWallet::default().receive_asset(asset)` instead of
-/// `basic_wallet::receive_asset(asset)`).
+/// This transforms the raw bindings by walking all modules and injecting an `Account` wrapper
+/// struct at the bindings root level. The struct has methods that delegate to the generated
+/// free functions in leaf modules. This provides a more ergonomic API
+/// (e.g., `Account::default().receive_asset(asset)` instead of
+/// `miden::basic_wallet::basic_wallet::receive_asset(asset)`).
 fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2> {
     let mut file: File = syn::parse2(tokens)?;
-    transform_modules(&mut file.items, &mut Vec::new())?;
+    let mut collected_methods = Vec::new();
+    collect_wrapper_methods(&file.items, &mut Vec::new(), &mut collected_methods)?;
+
+    if !collected_methods.is_empty() {
+        let struct_ident = syn::Ident::new("Account", Span::call_site());
+        let struct_item: ItemStruct = parse_quote! {
+            /// Wrapper struct providing methods that delegate to imported interface functions.
+            #[derive(Clone, Copy, Default)]
+            pub struct #struct_ident;
+        };
+
+        let mut impl_item: ItemImpl = parse_quote! {
+            impl #struct_ident {}
+        };
+        impl_item.items.extend(collected_methods.into_iter().map(ImplItem::Fn));
+
+        file.items.push(Item::Struct(struct_item));
+        file.items.push(Item::Impl(impl_item));
+    }
+
     Ok(file.into_token_stream())
 }
 
@@ -311,16 +331,21 @@ fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
 }
 
-/// Recursively walks all modules and injects wrapper structs where appropriate.
+/// Recursively walks all modules and collects wrapper methods from leaf modules.
 ///
-/// The `path` parameter tracks the current module path for naming and call generation.
-fn transform_modules(items: &mut [Item], path: &mut Vec<syn::Ident>) -> syn::Result<()> {
-    for item in items.iter_mut() {
+/// The `path` parameter tracks the current module path for generating correct call paths.
+/// Collected methods are appended to `methods_out` and will be placed in the root `Account` struct.
+fn collect_wrapper_methods(
+    items: &[Item],
+    path: &mut Vec<syn::Ident>,
+    methods_out: &mut Vec<ImplItemFn>,
+) -> syn::Result<()> {
+    for item in items.iter() {
         if let Item::Mod(module) = item {
             path.push(module.ident.clone());
-            if let Some((_, ref mut content)) = module.content {
-                transform_modules(content, path)?;
-                maybe_inject_struct_wrapper(content, path)?;
+            if let Some((_, ref content)) = module.content {
+                collect_wrapper_methods(content, path, methods_out)?;
+                collect_methods_from_module(content, path, methods_out)?;
             }
             path.pop();
         }
@@ -329,75 +354,45 @@ fn transform_modules(items: &mut [Item], path: &mut Vec<syn::Ident>) -> syn::Res
     Ok(())
 }
 
-/// Injects a wrapper struct and impl block for public functions in a leaf module.
+/// Collects wrapper methods from a leaf module's public functions.
 ///
-/// A leaf module is one that contains no nested modules. Only leaf modules get wrapper
-/// structs generated, as non-leaf modules typically represent namespace hierarchy rather
-/// than concrete interfaces.
-///
-/// Note: We need `&mut Vec<Item>` here (not `&mut [Item]`) because we push new items
-/// (the struct and impl block) to the vector.
-fn maybe_inject_struct_wrapper(items: &mut Vec<Item>, path: &[syn::Ident]) -> syn::Result<()> {
+/// A leaf module is one that contains no nested modules. Only leaf modules contribute
+/// methods, as non-leaf modules typically represent namespace hierarchy rather than
+/// concrete interfaces.
+fn collect_methods_from_module(
+    items: &[Item],
+    path: &[syn::Ident],
+    methods_out: &mut Vec<ImplItemFn>,
+) -> syn::Result<()> {
     if !should_generate_struct(path, items) {
         return Ok(());
     }
 
-    let functions: Vec<ItemFn> = items
+    let functions: Vec<&ItemFn> = items
         .iter()
         .filter_map(|item| match item {
-            Item::Fn(func) if is_target_function(func) => Some(func.clone()),
+            Item::Fn(func) if is_target_function(func) => Some(func),
             _ => None,
         })
         .collect();
 
-    if functions.is_empty() {
-        return Ok(());
-    }
-
-    let module_ident =
-        path.last().ok_or_else(|| Error::new(Span::call_site(), "empty module path"))?;
-    let struct_ident =
-        syn::Ident::new(&module_ident.to_string().to_upper_camel_case(), module_ident.span());
-
-    if items
-        .iter()
-        .any(|item| matches!(item, Item::Struct(existing) if existing.ident == struct_ident))
-    {
-        return Ok(());
-    }
-
-    let struct_doc =
-        format!("Wrapper for functions defined in module `{}`.", format_module_path(path));
-    let struct_item: ItemStruct = parse_quote! {
-        #[doc = #struct_doc]
-        #[derive(Clone, Copy, Default)]
-        pub struct #struct_ident;
-    };
-
-    let mut methods = Vec::new();
     for func in functions {
-        methods.push(build_wrapper_method(&func, path)?);
+        methods_out.push(build_wrapper_method(func, path)?);
     }
-
-    if methods.is_empty() {
-        return Ok(());
-    }
-
-    let mut impl_item: ItemImpl = parse_quote! {
-        impl #struct_ident {}
-    };
-    impl_item.items.extend(methods.into_iter().map(ImplItem::Fn));
-
-    items.push(Item::Struct(struct_item));
-    items.push(Item::Impl(impl_item));
 
     Ok(())
 }
 
 /// Builds a wrapper method that delegates to the original free function.
+///
+/// Type paths in the signature are qualified with the module path prefix so they
+/// resolve correctly when the method is placed at the bindings root level.
 fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Result<ImplItemFn> {
     let mut sig = func.sig.clone();
     sig.inputs.insert(0, parse_quote!(&self));
+
+    // Qualify type paths in the signature so they resolve from the bindings root
+    qualify_signature_types(&mut sig, module_path);
 
     let arg_idents = collect_arg_idents(func)?;
     let call_expr = wrapper_call_tokens(module_path, &sig.ident, &arg_idents);
@@ -420,6 +415,87 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
         sig,
         block,
     })
+}
+
+/// Qualifies type paths in a function signature with the module path prefix.
+///
+/// This transforms simple type names (e.g., `StructA`) into fully qualified paths
+/// (e.g., `miden::component::component::StructA`) so they resolve correctly when
+/// the method is placed at the bindings root level.
+fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident]) {
+    struct TypeQualifier<'a> {
+        module_path: &'a [syn::Ident],
+    }
+
+    impl VisitMut for TypeQualifier<'_> {
+        fn visit_type_path_mut(&mut self, type_path: &mut TypePath) {
+            // Only qualify paths that:
+            // 1. Don't already have a leading colon (not absolute like `::foo`)
+            // 2. Are simple single-segment paths (like `StructA`, not `foo::Bar`)
+            // 3. Don't start with common primitive/std type names
+            if type_path.qself.is_none()
+                && type_path.path.leading_colon.is_none()
+                && type_path.path.segments.len() == 1
+            {
+                let first_segment = &type_path.path.segments[0].ident;
+                let name = first_segment.to_string();
+
+                // Skip primitive types and common std types
+                if is_primitive_or_std_type(&name) {
+                    return;
+                }
+
+                // Build the qualified path: module_path::TypeName
+                let mut new_segments = syn::punctuated::Punctuated::new();
+                for ident in self.module_path {
+                    new_segments.push(syn::PathSegment {
+                        ident: ident.clone(),
+                        arguments: syn::PathArguments::None,
+                    });
+                }
+                // Add the original type segment (preserving generics)
+                new_segments.push(type_path.path.segments[0].clone());
+
+                type_path.path.segments = new_segments;
+            }
+
+            // Continue visiting nested types (e.g., generics)
+            syn::visit_mut::visit_type_path_mut(self, type_path);
+        }
+    }
+
+    let mut qualifier = TypeQualifier { module_path };
+    qualifier.visit_signature_mut(sig);
+}
+
+/// Returns true if the name is a primitive type or common std type that shouldn't be qualified.
+fn is_primitive_or_std_type(name: &str) -> bool {
+    matches!(
+        name,
+        "bool"
+            | "char"
+            | "str"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "f32"
+            | "f64"
+            | "String"
+            | "Vec"
+            | "Option"
+            | "Result"
+            | "Box"
+            | "Self"
+    )
 }
 
 /// Extracts argument identifiers from a function signature.
@@ -634,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_modules_injects_struct() {
+    fn test_collect_wrapper_methods_from_leaf_module() {
         let src = r#"
             mod miden {
                 mod basic_wallet {
@@ -645,48 +721,21 @@ mod tests {
                 }
             }
         "#;
-        let mut file = parse_file(src);
-        transform_modules(&mut file.items, &mut Vec::new()).unwrap();
+        let file = parse_file(src);
+        let mut methods = Vec::new();
+        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
 
-        // Check that the innermost module now contains a struct and impl
-        let miden_mod = match &file.items[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let basic_wallet_outer = match &miden_mod.content.as_ref().unwrap().1[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let basic_wallet_inner = match &basic_wallet_outer.content.as_ref().unwrap().1[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let inner_items = &basic_wallet_inner.content.as_ref().unwrap().1;
+        // Should have collected 2 methods from the leaf module
+        assert_eq!(methods.len(), 2);
 
-        // Should have: 2 functions + 1 struct + 1 impl = 4 items
-        assert_eq!(inner_items.len(), 4);
-
-        // Check struct exists and has correct name
-        let struct_item = inner_items.iter().find_map(|item| match item {
-            Item::Struct(s) => Some(s),
-            _ => None,
-        });
-        assert!(struct_item.is_some());
-        assert_eq!(struct_item.unwrap().ident.to_string(), "BasicWallet");
-
-        // Check impl exists
-        let impl_item = inner_items.iter().find_map(|item| match item {
-            Item::Impl(i) => Some(i),
-            _ => None,
-        });
-        assert!(impl_item.is_some());
-        let impl_block = impl_item.unwrap();
-        // Should have 2 methods
-        assert_eq!(impl_block.items.len(), 2);
+        // Check method names
+        let method_names: Vec<_> = methods.iter().map(|m| m.sig.ident.to_string()).collect();
+        assert!(method_names.contains(&"receive_asset".to_string()));
+        assert!(method_names.contains(&"send_asset".to_string()));
     }
 
     #[test]
-    fn test_transform_modules_skips_exports() {
+    fn test_collect_wrapper_methods_skips_exports() {
         let src = r#"
             mod exports {
                 mod my_component {
@@ -694,48 +743,48 @@ mod tests {
                 }
             }
         "#;
-        let mut file = parse_file(src);
-        transform_modules(&mut file.items, &mut Vec::new()).unwrap();
+        let file = parse_file(src);
+        let mut methods = Vec::new();
+        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
 
-        // exports module should not have any struct injected
-        let exports_mod = match &file.items[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let my_component = match &exports_mod.content.as_ref().unwrap().1[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let items = &my_component.content.as_ref().unwrap().1;
-
-        // Should only have the original function, no struct added
-        assert_eq!(items.len(), 1);
-        assert!(matches!(items[0], Item::Fn(_)));
+        // exports module should not contribute any methods
+        assert!(methods.is_empty());
     }
 
     #[test]
-    fn test_transform_modules_skips_empty_modules() {
+    fn test_collect_wrapper_methods_skips_empty_modules() {
         let src = r#"
             mod miden {
                 mod empty_module {
                 }
             }
         "#;
-        let mut file = parse_file(src);
-        transform_modules(&mut file.items, &mut Vec::new()).unwrap();
+        let file = parse_file(src);
+        let mut methods = Vec::new();
+        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
 
-        let miden_mod = match &file.items[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let empty_module = match &miden_mod.content.as_ref().unwrap().1[0] {
-            Item::Mod(m) => m,
-            _ => panic!("expected mod"),
-        };
-        let items = &empty_module.content.as_ref().unwrap().1;
+        // No methods should be collected from empty module
+        assert!(methods.is_empty());
+    }
 
-        // Should remain empty
-        assert!(items.is_empty());
+    #[test]
+    fn test_qualify_signature_types() {
+        let func: ItemFn = syn::parse_quote! {
+            pub fn test_fn(a: StructA, b: u64) -> StructB {}
+        };
+        let path = vec![
+            syn::Ident::new("miden", Span::call_site()),
+            syn::Ident::new("component", Span::call_site()),
+        ];
+        let method = build_wrapper_method(&func, &path).unwrap();
+
+        // Check that the types are qualified
+        let sig_str = method.sig.to_token_stream().to_string();
+        assert!(sig_str.contains("miden :: component :: StructA"));
+        assert!(sig_str.contains("miden :: component :: StructB"));
+        // Primitives should not be qualified
+        assert!(sig_str.contains("u64"));
+        assert!(!sig_str.contains("miden :: component :: u64"));
     }
 
     #[test]
