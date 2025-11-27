@@ -585,7 +585,7 @@ mod tests {
 
     /// Helper to parse Rust source into a syn::File.
     fn parse_file(src: &str) -> File {
-        syn::parse_str(src).expect("failed to parse test source")
+        syn::parse_str(src).unwrap_or_else(|e| panic!("failed to parse test source: {e}\n{src}"))
     }
 
     #[test]

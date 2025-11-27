@@ -113,8 +113,17 @@ pub(crate) fn expand(
 /// it is treated as an "injected" wrapper struct that will be instantiated via
 /// `Default::default()` and passed to the user's function.
 ///
+/// Only up to 2 parameters are supported: `(arg: Word)` or `(arg: Word, account: Account)`.
+///
 /// Returns `Some((ident, type))` if a second parameter exists, `None` otherwise.
 fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, syn::Type)>> {
+    if input_fn.sig.inputs.len() > 2 {
+        return Err(syn::Error::new(
+            input_fn.sig.span(),
+            "fn run accepts at most 2 parameters: (arg: Word) or (arg: Word, account: Account)",
+        ));
+    }
+
     let Some(second_arg) = input_fn.sig.inputs.iter().nth(1) else {
         return Ok(None);
     };
