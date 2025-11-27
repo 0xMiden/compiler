@@ -156,19 +156,22 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 }
 
 /// Generates WIT bindings using `wit-bindgen` directly instead of the `generate!` macro.
+///
+/// The `world` parameter specifies which world to generate bindings for. This should already
+/// be resolved by the caller (either from inline WIT or from the local wit/ directory).
+/// If `None`, wit-bindgen will attempt to select a default world from the loaded packages.
 fn generate_bindings(
     args: &GenerateArgs,
     config: &manifest_paths::ResolvedWit,
-    world_override: Option<&str>,
+    world: Option<&str>,
 ) -> Result<TokenStream2, Error> {
     let inline_src = args.inline.as_ref().map(|src| src.value());
     let inline_ref = inline_src.as_deref();
     let wit_sources = load_wit_sources(&config.paths, inline_ref)?;
 
-    let world_spec = world_override.or(config.world.as_deref());
-    let world = wit_sources
+    let world_id = wit_sources
         .resolve
-        .select_world(&wit_sources.packages, world_spec)
+        .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
 
     let mut opts = Opts {
@@ -183,7 +186,7 @@ fn generate_bindings(
     let mut generated_files = wit_bindgen_core::Files::default();
     let mut generator = opts.build();
     generator
-        .generate(&wit_sources.resolve, world, &mut generated_files)
+        .generate(&wit_sources.resolve, world_id, &mut generated_files)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
 
     let (_, src_bytes) = generated_files
@@ -949,5 +952,95 @@ mod tests {
         assert_eq!(parsed.with_entries.len(), 2);
         assert_eq!(parsed.with_entries[0].0, "miden:a/b");
         assert_eq!(parsed.with_entries[1].0, "miden:c/d");
+    }
+
+    /// Integration test verifying that `augment_generated_bindings` produces valid Rust code.
+    ///
+    /// This test simulates realistic wit-bindgen output with custom types, multiple methods,
+    /// and verifies the augmented output parses as valid Rust and contains the expected
+    /// wrapper struct with properly qualified type paths.
+    #[test]
+    fn test_augment_generated_bindings_integration() {
+        // Simulate more realistic wit-bindgen output with types and multiple leaf modules
+        let src = r#"
+            mod miden {
+                mod basic_wallet {
+                    mod basic_wallet {
+                        pub struct AssetInfo {
+                            pub amount: u64,
+                        }
+
+                        pub fn receive_asset(asset: AssetInfo) {}
+                        pub fn move_asset_to_note(asset: AssetInfo, note_idx: u32) -> bool { true }
+                        fn _internal_helper() {}  // Should be skipped (underscore prefix)
+                    }
+                }
+                mod other_component {
+                    mod other_component {
+                        pub fn do_something(value: u64) -> u64 { value }
+                    }
+                }
+            }
+            mod exports {
+                mod my_export {
+                    pub fn exported_fn() {}  // Should be skipped (exports module)
+                }
+            }
+        "#;
+
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens).unwrap();
+
+        // Verify the output parses as valid Rust
+        let parsed: File =
+            syn::parse2(result.clone()).expect("augmented bindings should be valid Rust syntax");
+
+        // Find the Account struct and impl
+        let has_account_struct = parsed
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Struct(s) if s.ident == "Account"));
+        let has_account_impl = parsed.items.iter().any(|item| {
+            matches!(item, Item::Impl(i) if i.self_ty.to_token_stream().to_string() == "Account")
+        });
+
+        assert!(has_account_struct, "should generate Account struct");
+        assert!(has_account_impl, "should generate Account impl");
+
+        // Find the impl block and verify methods
+        let impl_block = parsed
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Impl(i) if i.self_ty.to_token_stream().to_string() == "Account" => Some(i),
+                _ => None,
+            })
+            .expect("Account impl should exist");
+
+        let method_names: Vec<String> = impl_block
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ImplItem::Fn(f) => Some(f.sig.ident.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        // Should include methods from both leaf modules
+        assert!(method_names.contains(&"receive_asset".to_string()));
+        assert!(method_names.contains(&"move_asset_to_note".to_string()));
+        assert!(method_names.contains(&"do_something".to_string()));
+
+        // Should NOT include internal helper or exported functions
+        assert!(!method_names.contains(&"_internal_helper".to_string()));
+        assert!(!method_names.contains(&"exported_fn".to_string()));
+
+        // Verify type qualification in the result string
+        let result_str = result.to_string();
+        // AssetInfo should be qualified with its module path
+        assert!(
+            result_str.contains("miden :: basic_wallet :: basic_wallet :: AssetInfo"),
+            "custom types should be qualified with module path"
+        );
     }
 }
