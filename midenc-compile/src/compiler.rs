@@ -271,6 +271,21 @@ pub struct Compiler {
         )
     )]
     pub unstable: Vec<String>,
+
+    // The following options are primarily used by `cargo miden build` to pass through
+    // familiar Cargo options. They are hidden from `midenc --help` output.
+    /// Build in release mode (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    pub release: bool,
+    /// Path to Cargo.toml (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, value_name = "PATH", hide = true))]
+    pub manifest_path: Option<PathBuf>,
+    /// Build all packages in the workspace (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    pub workspace: bool,
+    /// Package(s) to build (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, value_name = "SPEC", hide = true))]
+    pub package: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -435,6 +450,28 @@ NOTE: When specifying these options, strip the leading '--'",
 }
 
 impl Compiler {
+    /// Parse compiler options from command-line arguments.
+    ///
+    /// Returns the parsed options or an error if parsing failed.
+    /// This is used by `cargo miden build` to parse all arguments into `Compiler`
+    /// options before selectively forwarding them to `cargo build` and `midenc`.
+    #[cfg(feature = "std")]
+    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let argv = [OsString::from("midenc")]
+            .into_iter()
+            .chain(iter.into_iter().map(|arg| arg.into()));
+        let command = <Self as clap::CommandFactory>::command();
+        let command = midenc_session::flags::register_flags(command);
+        let mut matches = command.try_get_matches_from(argv)?;
+
+        <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
+            .map_err(format_error::<Self>)
+    }
+
     /// Construct a [Compiler] programatically
     #[cfg(feature = "std")]
     pub fn new_session<I, A, S>(inputs: I, emitter: Option<Arc<dyn Emitter>>, argv: A) -> Session
