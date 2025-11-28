@@ -44,7 +44,7 @@ impl BuildCommand {
         })?;
 
         // Extract cargo-specific options from parsed Compiler struct
-        let cargo_opts = CargoOptions::from_compiler(&compiler_opts);
+        let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
 
         let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
 
@@ -171,25 +171,22 @@ pub struct CargoOptions {
 
 impl CargoOptions {
     /// Extract cargo-specific options from a Compiler struct.
-    fn from_compiler(compiler: &Compiler) -> Self {
+    fn from_compiler(compiler: &Compiler) -> Result<Self> {
         let packages = compiler
             .package
             .iter()
-            .filter_map(|s| match CargoPackageSpec::new(s.clone()) {
-                Ok(spec) => Some(spec),
-                Err(e) => {
-                    log::warn!("ignoring invalid package spec '{s}': {e}");
-                    None
-                }
+            .map(|s| {
+                CargoPackageSpec::new(s.clone())
+                    .with_context(|| format!("invalid package spec '{s}'"))
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
 
-        Self {
+        Ok(Self {
             release: compiler.release,
             manifest_path: compiler.manifest_path.clone(),
             workspace: compiler.workspace,
             packages,
-        }
+        })
     }
 }
 
