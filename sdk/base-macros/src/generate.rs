@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
@@ -226,10 +226,30 @@ fn generate_bindings(
 /// free functions in leaf modules. This provides a more ergonomic API
 /// (e.g., `Account::default().receive_asset(asset)` instead of
 /// `miden::basic_wallet::basic_wallet::receive_asset(asset)`).
+///
+/// ## Leaf Module Selection
+///
+/// Only "leaf" modules (those containing no nested modules) contribute methods to the
+/// wrapper struct. This is because wit-bindgen generates a module hierarchy where:
+/// - Non-leaf modules represent WIT package namespaces (e.g., `miden::basic_wallet`)
+/// - Leaf modules represent actual WIT interfaces with callable functions
+///
+/// For example, given the module structure:
+/// ```text
+/// miden/
+///   basic_wallet/
+///     basic_wallet/     <- leaf module, methods collected here
+///       receive_asset()
+///       send_asset()
+/// ```
+/// Only functions from `miden::basic_wallet::basic_wallet` are wrapped.
 fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2> {
     let mut file: File = syn::parse2(tokens)?;
     let mut collected_methods = Vec::new();
     collect_wrapper_methods(&file.items, &mut Vec::new(), &mut collected_methods)?;
+
+    // Check for method name collisions across different interfaces
+    check_method_name_collisions(&collected_methods)?;
 
     if !collected_methods.is_empty() {
         let struct_ident = syn::Ident::new(WRAPPER_STRUCT_NAME, Span::call_site());
@@ -242,7 +262,9 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
         let mut impl_item: ItemImpl = parse_quote! {
             impl #struct_ident {}
         };
-        impl_item.items.extend(collected_methods.into_iter().map(ImplItem::Fn));
+        impl_item
+            .items
+            .extend(collected_methods.into_iter().map(|cm| ImplItem::Fn(cm.method)));
 
         file.items.push(Item::Struct(struct_item));
         file.items.push(Item::Impl(impl_item));
@@ -338,6 +360,13 @@ fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
 }
 
+/// A collected wrapper method along with its source module path.
+struct CollectedMethod {
+    method: ImplItemFn,
+    /// The module path where this method originated (e.g., "miden::basic_wallet::basic_wallet").
+    source_path: String,
+}
+
 /// Recursively walks all modules and collects wrapper methods from leaf modules.
 ///
 /// The `path` parameter tracks the current module path for generating correct call paths.
@@ -345,7 +374,7 @@ fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
 fn collect_wrapper_methods(
     items: &[Item],
     path: &mut Vec<syn::Ident>,
-    methods_out: &mut Vec<ImplItemFn>,
+    methods_out: &mut Vec<CollectedMethod>,
 ) -> syn::Result<()> {
     for item in items.iter() {
         if let Item::Mod(module) = item {
@@ -369,7 +398,7 @@ fn collect_wrapper_methods(
 fn collect_methods_from_module(
     items: &[Item],
     path: &[syn::Ident],
-    methods_out: &mut Vec<ImplItemFn>,
+    methods_out: &mut Vec<CollectedMethod>,
 ) -> syn::Result<()> {
     if !should_generate_struct(path, items) {
         return Ok(());
@@ -383,8 +412,12 @@ fn collect_methods_from_module(
         })
         .collect();
 
+    let source_path = format_module_path(path);
     for func in functions {
-        methods_out.push(build_wrapper_method(func, path)?);
+        methods_out.push(CollectedMethod {
+            method: build_wrapper_method(func, path)?,
+            source_path: source_path.clone(),
+        });
     }
 
     Ok(())
@@ -588,6 +621,35 @@ fn format_module_path(path: &[syn::Ident]) -> String {
     path.iter().map(|ident| ident.to_string()).collect::<Vec<_>>().join("::")
 }
 
+/// Checks for method name collisions across collected wrapper methods.
+///
+/// If multiple imported interfaces define functions with the same name, they would all be
+/// added to the `Account` struct, causing a compilation error. This function detects such
+/// collisions early and provides a clear error message indicating which interfaces conflict.
+fn check_method_name_collisions(methods: &[CollectedMethod]) -> syn::Result<()> {
+    let mut seen: HashMap<String, &str> = HashMap::new();
+
+    for collected in methods {
+        let method_name = collected.method.sig.ident.to_string();
+
+        if let Some(existing_path) = seen.get(&method_name) {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "method name collision in generated `{WRAPPER_STRUCT_NAME}` struct: \
+                     `{method_name}` is defined in both `{existing_path}` and `{}`. Consider \
+                     using the original module paths directly instead of the wrapper struct.",
+                    collected.source_path
+                ),
+            ));
+        }
+
+        seen.insert(method_name, &collected.source_path);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -739,7 +801,7 @@ mod tests {
         assert_eq!(methods.len(), 2);
 
         // Check method names
-        let method_names: Vec<_> = methods.iter().map(|m| m.sig.ident.to_string()).collect();
+        let method_names: Vec<_> = methods.iter().map(|m| m.method.sig.ident.to_string()).collect();
         assert!(method_names.contains(&"receive_asset".to_string()));
         assert!(method_names.contains(&"send_asset".to_string()));
     }
@@ -1048,5 +1110,58 @@ mod tests {
             result_str.contains("miden :: basic_wallet :: basic_wallet :: AssetInfo"),
             "custom types should be qualified with module path"
         );
+    }
+
+    #[test]
+    fn test_method_name_collision_detected() {
+        // Two different interfaces with the same function name
+        let src = r#"
+            mod miden {
+                mod interface_a {
+                    mod interface_a {
+                        pub fn transfer(amount: u64) {}
+                    }
+                }
+                mod interface_b {
+                    mod interface_b {
+                        pub fn transfer(value: u32) {}
+                    }
+                }
+            }
+        "#;
+
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens);
+
+        assert!(result.is_err(), "should detect method name collision");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("method name collision"),
+            "error should mention collision: {err_msg}"
+        );
+        assert!(err_msg.contains("transfer"), "error should mention the colliding method name");
+    }
+
+    #[test]
+    fn test_no_collision_different_names() {
+        let src = r#"
+            mod miden {
+                mod interface_a {
+                    mod interface_a {
+                        pub fn transfer_a(amount: u64) {}
+                    }
+                }
+                mod interface_b {
+                    mod interface_b {
+                        pub fn transfer_b(value: u32) {}
+                    }
+                }
+            }
+        "#;
+
+        let tokens: TokenStream2 = src.parse().unwrap();
+        let result = augment_generated_bindings(tokens);
+
+        assert!(result.is_ok(), "should not detect collision for different method names");
     }
 }
