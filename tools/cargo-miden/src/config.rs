@@ -1,29 +1,9 @@
-//! Module for cargo-component configuration.
-//!
-//! This implements an argument parser because `clap` is not
-//! designed for parsing unknown or unsupported arguments.
-//!
-//! See https://github.com/clap-rs/clap/issues/1404 for some
-//! discussion around this issue.
-//!
-//! To properly "wrap" `cargo` commands, we need to be able to
-//! detect certain arguments, but not error out if the arguments
-//! are otherwise unknown as they will be passed to `cargo` directly.
-//!
-//! This will allow `cargo-component` to be used as a drop-in
-//! replacement for `cargo` without having to be fully aware of
-//! the many subcommands and options that `cargo` supports.
-//!
-//! What is detected here is the minimal subset of the arguments
-//! that `cargo` supports which are necessary for `cargo-component`
-//! to function.
+//! Cargo package specification types for `cargo-miden`.
 
 use std::{fmt, str::FromStr};
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::Metadata;
 use semver::Version;
-use toml_edit::DocumentMut;
 
 /// Represents a cargo package specifier.
 ///
@@ -59,23 +39,6 @@ impl CargoPackageSpec {
                 name: spec,
                 version: None,
             },
-        })
-    }
-
-    /// Loads Cargo.toml in the current directory, attempts to find the matching package from metadata.
-    #[allow(unused)]
-    pub fn find_current_package_spec(metadata: &Metadata) -> Option<Self> {
-        let current_manifest = std::fs::read_to_string("Cargo.toml").ok()?;
-        let document: DocumentMut = current_manifest.parse().ok()?;
-        let name = document["package"]["name"].as_str()?;
-        let version = metadata
-            .packages
-            .iter()
-            .find(|found| found.name == name)
-            .map(|found| found.version.clone());
-        Some(CargoPackageSpec {
-            name: name.to_string(),
-            version,
         })
     }
 }

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use std::{env, fs};
 
 use cargo_miden::{run, OutputType};
@@ -363,7 +361,7 @@ fn build_new_project_from_template(template: &str) -> Package {
         if expected_new_project_dir.exists() {
             fs::remove_dir_all(expected_new_project_dir).unwrap();
         }
-        let output = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        let _ = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
             .expect("Failed to create new add-contract dependency project")
             .expect("'cargo miden new' should return Some(CommandOutput)");
     }

@@ -40,7 +40,7 @@ impl BuildCommand {
         // This gives us a structured representation of all options.
         let compiler_opts = Compiler::try_parse_from(&self.args).map_err(|e| {
             // Render the clap error with full formatting (colors, suggestions, etc.)
-            anyhow::anyhow!("{}", e.render())
+            anyhow::anyhow!("failed to parse 'cargo miden build' arguments: {}", e.render())
         })?;
 
         // Extract cargo-specific options from parsed Compiler struct
@@ -310,7 +310,7 @@ fn run_cargo(wasi: &str, spawn_args: &[String]) -> Result<Vec<PathBuf>> {
     Ok(outputs)
 }
 
-pub fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
+fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
     log::debug!("spawning command {cmd:?}");
 
     let mut child = cmd
