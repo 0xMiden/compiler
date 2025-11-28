@@ -117,11 +117,41 @@ pub(crate) fn expand(
 ///
 /// Returns `Some((ident, type))` if a second parameter exists, `None` otherwise.
 fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, syn::Type)>> {
+    if input_fn.sig.inputs.is_empty() {
+        return Err(syn::Error::new(
+            input_fn.sig.span(),
+            "fn run requires at least one parameter: (arg: Word) or (arg: Word, account: Account)",
+        ));
+    }
+
     if input_fn.sig.inputs.len() > 2 {
         return Err(syn::Error::new(
             input_fn.sig.span(),
             "fn run accepts at most 2 parameters: (arg: Word) or (arg: Word, account: Account)",
         ));
+    }
+
+    // Validate the first parameter is `arg: Word`
+    let first_arg = input_fn.sig.inputs.first().unwrap();
+    match first_arg {
+        FnArg::Typed(pat_type) => {
+            if !matches!(pat_type.pat.as_ref(), Pat::Ident(_)) {
+                return Err(syn::Error::new(
+                    pat_type.pat.span(),
+                    "first parameter must be a simple identifier (e.g., `arg: Word`)",
+                ));
+            }
+            // Check that the type is `Word`
+            if !is_word_type(&pat_type.ty) {
+                return Err(syn::Error::new(
+                    pat_type.ty.span(),
+                    "first parameter must have type `Word` (e.g., `arg: Word`)",
+                ));
+            }
+        }
+        FnArg::Receiver(receiver) => {
+            return Err(syn::Error::new(receiver.span(), "unexpected receiver argument"));
+        }
     }
 
     let Some(second_arg) = input_fn.sig.inputs.iter().nth(1) else {
@@ -145,6 +175,18 @@ fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, sy
             Err(syn::Error::new(receiver.span(), "unexpected receiver argument"))
         }
     }
+}
+
+/// Checks if a type is `Word` (handles both `Word` and `miden::Word` paths).
+fn is_word_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
+    }
+    let last_segment = type_path.path.segments.last();
+    last_segment.is_some_and(|seg| seg.ident == "Word" && seg.arguments.is_empty())
 }
 
 fn build_script_wit(

@@ -15,6 +15,9 @@ use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::manifest_paths;
 
+/// Name of the wrapper struct generated to aggregate imported interface methods.
+const WRAPPER_STRUCT_NAME: &str = "Account";
+
 #[derive(Default)]
 struct GenerateArgs {
     inline: Option<LitStr>,
@@ -229,7 +232,7 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
     collect_wrapper_methods(&file.items, &mut Vec::new(), &mut collected_methods)?;
 
     if !collected_methods.is_empty() {
-        let struct_ident = syn::Ident::new("Account", Span::call_site());
+        let struct_ident = syn::Ident::new(WRAPPER_STRUCT_NAME, Span::call_site());
         let struct_item: ItemStruct = parse_quote! {
             /// Wrapper struct providing methods that delegate to imported interface functions.
             #[derive(Clone, Copy, Default)]
@@ -404,7 +407,6 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
     let method_doc = format!("Calls `{}` from `{}`.", sig.ident, format_module_path(module_path));
     let doc_attr: Attribute = parse_quote!(#[doc = #method_doc]);
     let inline_attr: Attribute = parse_quote!(#[inline(always)]);
-    let allow_unused_attr: Attribute = parse_quote!(#[allow(unused_variables)]);
 
     let body_tokens = match &sig.output {
         ReturnType::Default => quote!({ #call_expr; }),
@@ -413,7 +415,7 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
     let block = syn::parse2(body_tokens)?;
 
     Ok(ImplItemFn {
-        attrs: vec![doc_attr, inline_attr, allow_unused_attr],
+        attrs: vec![doc_attr, inline_attr],
         vis: func.vis.clone(),
         defaultness: None,
         sig,
@@ -473,6 +475,11 @@ fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident])
 }
 
 /// Returns true if the name is a primitive type or common std type that shouldn't be qualified.
+///
+/// This list covers Rust primitives and common standard library types. WIT-generated bindings
+/// only use a subset of these (primitives, String, Vec, Option, Result), but we include
+/// additional common types for safety. Types like `Rc`, `Arc`, `RefCell` are not used by
+/// wit-bindgen and are intentionally omitted.
 fn is_primitive_or_std_type(name: &str) -> bool {
     matches!(
         name,
@@ -497,7 +504,6 @@ fn is_primitive_or_std_type(name: &str) -> bool {
             | "Vec"
             | "Option"
             | "Result"
-            | "Box"
             | "Self"
     )
 }
