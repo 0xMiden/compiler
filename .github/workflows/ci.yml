@@ -30,6 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -59,6 +64,11 @@ jobs:
     if: ${{ always() }}
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -85,6 +95,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -117,6 +132,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -152,6 +172,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -182,6 +207,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -211,6 +241,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -240,6 +275,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -268,6 +308,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -296,6 +341,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -322,6 +372,11 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - name: Remove unused tools in the runner image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
       - name: Install Rust
         run: |
           rustup update --no-self-update
