@@ -9,27 +9,30 @@
 
 use miden::*;
 
-use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
+use crate::bindings::Account;
 
-fn consume_assets() {
+fn consume_assets(account: &Account) {
     let assets = active_note::get_assets();
     for asset in assets {
-        receive_asset(asset);
+        // TODO: `receieve_asset` should require `account` to be &mut
+        // Only when account is Wasm CM resource? Otherwise its a bunch of free functions
+        // (WIT interface has no notion of borrowing)
+        account.receive_asset(asset);
     }
 }
 
-fn reclaim_assets(consuming_account: AccountId) {
+fn reclaim_assets(account: &Account, consuming_account: AccountId) {
     let creator_account = active_note::get_sender();
 
     if consuming_account == creator_account {
-        consume_assets();
+        consume_assets(account);
     } else {
         panic!();
     }
 }
 
 #[note_script]
-fn run(_arg: Word) {
+fn run(_arg: Word, account: Account) {
     let inputs = active_note::get_inputs();
 
     // make sure the number of inputs is 4
@@ -46,16 +49,16 @@ fn run(_arg: Word) {
     assert!(block_number >= timelock_height);
 
     // get consuming account id
-    let consuming_account_id = active_account::get_id();
+    let consuming_account_id = account.get_id();
 
     // target account id
     let target_account_id = AccountId::from(target_account_id_prefix, target_account_id_suffix);
 
     let is_target = target_account_id == consuming_account_id;
     if is_target {
-        consume_assets();
+        consume_assets(&account);
     } else {
         assert!(reclaim_height >= block_number);
-        reclaim_assets(consuming_account_id);
+        reclaim_assets(&account, consuming_account_id);
     }
 }
