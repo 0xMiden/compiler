@@ -127,7 +127,7 @@ pub trait NativeAccount {
     /// - The fungible asset is not found in the vault.
     /// - The amount of the fungible asset in the vault is less than the amount to be removed.
     /// - The non-fungible asset is not found in the vault.
-    fn remove_asset(&self, asset: Asset) -> Asset {
+    fn remove_asset(&mut self, asset: Asset) -> Asset {
         remove_asset(asset)
     }
 
