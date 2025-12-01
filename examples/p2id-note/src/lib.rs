@@ -12,7 +12,7 @@ use miden::*;
 use crate::bindings::Account;
 
 #[note_script]
-fn run(_arg: Word, account: Account) {
+fn run(_arg: Word, account: &mut Account) {
     let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];

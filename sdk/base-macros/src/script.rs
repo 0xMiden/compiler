@@ -79,8 +79,8 @@ pub(crate) fn expand(
     // Generate the call to the user's function, with optional injected parameter
     let (instantiation, call, trait_impl) = match &injected_param {
         Some((ident, ty)) => (
-            quote! { let #ident = <#ty as ::core::default::Default>::default(); },
-            quote! { #fn_ident(arg, #ident) },
+            quote! { let mut #ident = <#ty as ::core::default::Default>::default(); },
+            quote! { #fn_ident(arg, &mut #ident) },
             // Implement ActiveAccount for the injected type so users can call account.get_id(), etc.
             quote! {
                 impl ::miden::active_account::ActiveAccount for #ty {}
@@ -179,11 +179,23 @@ fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, sy
                     ));
                 }
             };
-            Ok(Some((ident, (*pat_type.ty).clone())))
+            // Extract the underlying type from `&mut T` if present
+            let ty = extract_inner_type(&pat_type.ty);
+            Ok(Some((ident, ty)))
         }
         FnArg::Receiver(receiver) => {
             Err(syn::Error::new(receiver.span(), "unexpected receiver argument"))
         }
+    }
+}
+
+/// Extracts the inner type from `&mut T` or `&T`, returning `T`.
+/// If the type is not a reference, returns a clone of the original type.
+fn extract_inner_type(ty: &syn::Type) -> syn::Type {
+    if let syn::Type::Reference(type_ref) = ty {
+        (*type_ref.elem).clone()
+    } else {
+        ty.clone()
     }
 }
 

@@ -11,7 +11,7 @@ use miden::*;
 
 use crate::bindings::Account;
 
-fn consume_assets(account: &Account) {
+fn consume_assets(account: &mut Account) {
     let assets = active_note::get_assets();
     for asset in assets {
         // TODO: `receieve_asset` should require `account` to be &mut
@@ -21,7 +21,7 @@ fn consume_assets(account: &Account) {
     }
 }
 
-fn reclaim_assets(account: &Account, consuming_account: AccountId) {
+fn reclaim_assets(account: &mut Account, consuming_account: AccountId) {
     let creator_account = active_note::get_sender();
 
     if consuming_account == creator_account {
@@ -32,7 +32,7 @@ fn reclaim_assets(account: &Account, consuming_account: AccountId) {
 }
 
 #[note_script]
-fn run(_arg: Word, account: Account) {
+fn run(_arg: Word, account: &mut Account) {
     let inputs = active_note::get_inputs();
 
     // make sure the number of inputs is 4
@@ -56,9 +56,9 @@ fn run(_arg: Word, account: Account) {
 
     let is_target = target_account_id == consuming_account_id;
     if is_target {
-        consume_assets(&account);
+        consume_assets(account);
     } else {
         assert!(reclaim_height >= block_number);
-        reclaim_assets(&account, consuming_account_id);
+        reclaim_assets(account, consuming_account_id);
     }
 }
