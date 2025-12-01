@@ -173,6 +173,8 @@ fn expand_component_struct(
         #runtime_boilerplate
         #input_struct
         #default_impl
+        impl ::miden::native_account::NativeAccount for #struct_name {}
+        impl ::miden::active_account::ActiveAccount for #struct_name {}
         #link_section
     })
 }
@@ -284,6 +286,11 @@ fn expand_component_impl(
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
+        // Bring account traits into scope so users can call `self.add_asset()`, etc.
+        #[allow(unused_imports)]
+        use ::miden::native_account::NativeAccount as _;
+        #[allow(unused_imports)]
+        use ::miden::active_account::ActiveAccount as _;
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*

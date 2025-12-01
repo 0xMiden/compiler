@@ -187,3 +187,88 @@ pub fn has_procedure(proc_root: Word) -> bool {
             != Felt::from_u32(0)
     }
 }
+
+/// Trait that provides active account operations for components.
+///
+/// This trait is automatically implemented for types marked with the `#[component]` macro.
+pub trait ActiveAccount {
+    /// Returns the account ID of the active account.
+    fn get_id(&self) -> AccountId {
+        get_id()
+    }
+
+    /// Returns the nonce of the active account.
+    fn get_nonce(&self) -> Felt {
+        get_nonce()
+    }
+
+    /// Returns the active account commitment at the beginning of the transaction.
+    fn get_initial_commitment(&self) -> Word {
+        get_initial_commitment()
+    }
+
+    /// Computes and returns the commitment of the current account data.
+    fn compute_commitment(&self) -> Word {
+        compute_commitment()
+    }
+
+    /// Returns the code commitment of the active account.
+    fn get_code_commitment(&self) -> Word {
+        get_code_commitment()
+    }
+
+    /// Returns the initial storage commitment of the active account.
+    fn get_initial_storage_commitment(&self) -> Word {
+        get_initial_storage_commitment()
+    }
+
+    /// Computes the latest storage commitment of the active account.
+    fn compute_storage_commitment(&self) -> Word {
+        compute_storage_commitment()
+    }
+
+    /// Returns the balance of the fungible asset identified by `faucet_id`.
+    ///
+    /// # Panics
+    ///
+    /// Propagates kernel errors if the referenced asset is non-fungible or the
+    /// account vault invariants are violated.
+    fn get_balance(&self, faucet_id: AccountId) -> Felt {
+        get_balance(faucet_id)
+    }
+
+    /// Returns the initial balance of the fungible asset identified by `faucet_id`.
+    fn get_initial_balance(&self, faucet_id: AccountId) -> Felt {
+        get_initial_balance(faucet_id)
+    }
+
+    /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
+    fn has_non_fungible_asset(&self, asset: Asset) -> bool {
+        has_non_fungible_asset(asset)
+    }
+
+    /// Returns the vault root of the active account at the beginning of the transaction.
+    fn get_initial_vault_root(&self) -> Word {
+        get_initial_vault_root()
+    }
+
+    /// Returns the current vault root of the active account.
+    fn get_vault_root(&self) -> Word {
+        get_vault_root()
+    }
+
+    /// Returns the number of procedures exported by the active account.
+    fn get_num_procedures(&self) -> Felt {
+        get_num_procedures()
+    }
+
+    /// Returns the procedure root for the procedure at `index`.
+    fn get_procedure_root(&self, index: u8) -> Word {
+        get_procedure_root(index)
+    }
+
+    /// Returns `true` if the procedure identified by `proc_root` exists on the active account.
+    fn has_procedure(&self, proc_root: Word) -> bool {
+        has_procedure(proc_root)
+    }
+}

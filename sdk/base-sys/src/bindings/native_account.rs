@@ -106,3 +106,43 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
         ) != Felt::from_u32(0)
     }
 }
+
+/// Trait that provides native account operations for components.
+///
+/// This trait is automatically implemented for types marked with the `#[component]` macro.
+pub trait NativeAccount {
+    /// Add the specified asset to the vault.
+    ///
+    /// Returns the final asset in the account vault defined as follows: If `asset` is
+    /// a non-fungible asset, then returns the same as `asset`. If `asset` is a
+    /// fungible asset, then returns the total fungible asset in the account
+    /// vault after `asset` was added to it.
+    fn add_asset(&mut self, asset: Asset) -> Asset {
+        add_asset(asset)
+    }
+
+    /// Remove the specified asset from the vault.
+    ///
+    /// Panics:
+    /// - The fungible asset is not found in the vault.
+    /// - The amount of the fungible asset in the vault is less than the amount to be removed.
+    /// - The non-fungible asset is not found in the vault.
+    fn remove_asset(&self, asset: Asset) -> Asset {
+        remove_asset(asset)
+    }
+
+    /// Increments the account nonce by one and returns the new nonce.
+    fn incr_nonce(&mut self) -> Felt {
+        incr_nonce()
+    }
+
+    /// Computes and returns the commitment to the native account's delta for this transaction.
+    fn compute_delta_commitment(&self) -> Word {
+        compute_delta_commitment()
+    }
+
+    /// Returns `true` if the procedure identified by `proc_root` was called during the transaction.
+    fn was_procedure_called(&self, proc_root: Word) -> bool {
+        was_procedure_called(proc_root)
+    }
+}
