@@ -429,7 +429,9 @@ fn collect_methods_from_module(
 /// resolve correctly when the method is placed at the bindings root level.
 fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Result<ImplItemFn> {
     let mut sig = func.sig.clone();
-    sig.inputs.insert(0, parse_quote!(&self));
+    // Make every method `&mut self` as a temporary workaround until
+    // https://github.com/0xMiden/compiler/issues/802 is resolved
+    sig.inputs.insert(0, parse_quote!(&mut self));
 
     // Qualify type paths in the signature so they resolve from the bindings root
     qualify_signature_types(&mut sig, module_path);
@@ -870,9 +872,11 @@ mod tests {
         ];
         let method = build_wrapper_method(&func, &path).unwrap();
 
-        // Method should have &self as first parameter
+        // Method should have &mut self as first parameter
         assert_eq!(method.sig.inputs.len(), 2);
-        assert!(matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_))));
+        assert!(
+            matches!(method.sig.inputs.first(), Some(FnArg::Receiver(r)) if r.mutability.is_some())
+        );
 
         // Should be public
         assert!(matches!(method.vis, syn::Visibility::Public(_)));
@@ -917,8 +921,8 @@ mod tests {
         assert!(result_str.contains("fn receive_asset"));
         assert!(result_str.contains("fn send_asset"));
 
-        // Methods should have &self parameter
-        assert!(result_str.contains("& self"));
+        // Methods should have &mut self parameter
+        assert!(result_str.contains("& mut self"));
     }
 
     #[test]
