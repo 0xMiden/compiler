@@ -309,9 +309,12 @@ fn load_wit_sources(
             manifest_dir.join(path_buf)
         };
         let normalized = fs::canonicalize(&absolute).unwrap_or(absolute);
-        let (pkg, sources) = resolve
-            .push_path(normalized.clone())
-            .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
+        let (pkg, sources) = resolve.push_path(normalized.clone()).map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!("failed to load WIT from '{}': {err}", normalized.display()),
+            )
+        })?;
         packages.push(pkg);
         files.extend(sources.paths().map(|p| p.to_owned()));
     }

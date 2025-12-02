@@ -368,7 +368,7 @@ fn auth_component_no_auth() {
     // dbg!(&exports);
     assert!(
         lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
-        "expected one of the exports to contain and function '{expected_function}'"
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads
@@ -397,15 +397,9 @@ fn auth_component_rpo_falcon512() {
     let lib = auth_comp_package.unwrap_library();
     let expected_function = "auth__procedure";
 
-    let exports = lib
-        .exports()
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
-        .collect::<Vec<_>>();
-    dbg!(&exports);
-
     assert!(
         lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
-        "expected one of the exports to contain  function '{expected_function}'"
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads
