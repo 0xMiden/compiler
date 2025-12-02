@@ -20,6 +20,40 @@ repository = "https://example.com/test"
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
 }
 
+/// Creates a minimal Cargo workspace at `root` without members array.
+fn write_workspace_root_no_members(root: &Path) {
+    let ws_toml = r#"[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Miden Contributors"]
+license = "MIT"
+repository = "https://example.com/test"
+"#;
+    fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
+}
+
+/// Creates a minimal Cargo workspace at `root` with existing members.
+fn write_workspace_root_with_members(root: &Path, members: &[&str]) {
+    let members_str = members.iter().map(|m| format!("\"{m}\"")).collect::<Vec<_>>().join(", ");
+    let ws_toml = format!(
+        r#"[workspace]
+resolver = "2"
+members = [{members_str}]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Miden Contributors"]
+license = "MIT"
+repository = "https://example.com/test"
+"#
+    );
+    fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
+}
+
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
     let template = if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
         &format!("--template-path={templates_path}/{}", template.trim_start_matches("--"))
@@ -128,6 +162,172 @@ fn build_from_workspace_root_is_rejected() {
     assert!(
         msg.contains("unable to determine package") && msg.contains("member"),
         "unexpected error message: {msg}"
+    );
+
+    // cleanup
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(ws_root).unwrap();
+}
+
+#[test]
+fn new_project_auto_adds_to_workspace() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .is_test(true)
+        .format_timestamp(None)
+        .try_init();
+    env::set_var("TEST", "1");
+
+    // create temp workspace root
+    let restore_dir = env::current_dir().unwrap();
+    let ws_root = env::temp_dir().join(format!(
+        "cargo_miden_ws_auto_add_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    if ws_root.exists() {
+        fs::remove_dir_all(&ws_root).unwrap();
+    }
+    fs::create_dir_all(&ws_root).unwrap();
+    env::set_current_dir(&ws_root).unwrap();
+
+    // write workspace manifest without members
+    write_workspace_root_no_members(&ws_root);
+
+    // create a new project inside the workspace
+    let project_name = "new_member";
+    let output = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        .expect("cargo miden new failed")
+        .expect("expected NewCommandOutput");
+    let project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => project_path,
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
+    };
+    assert!(project_path.ends_with(project_name));
+
+    // verify that the project was added to workspace Cargo.toml
+    let workspace_toml_path = ws_root.join("Cargo.toml");
+    let workspace_content =
+        fs::read_to_string(&workspace_toml_path).expect("Failed to read workspace Cargo.toml");
+    assert!(
+        workspace_content.contains(&format!("\"{project_name}\"")),
+        "Workspace Cargo.toml should contain the new project in members array. \
+         Content:\n{workspace_content}"
+    );
+    assert!(
+        workspace_content.contains("members ="),
+        "Workspace Cargo.toml should have members array. Content:\n{workspace_content}"
+    );
+
+    // cleanup
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(ws_root).unwrap();
+}
+
+#[test]
+fn new_project_auto_adds_to_workspace_with_existing_members() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .is_test(true)
+        .format_timestamp(None)
+        .try_init();
+    env::set_var("TEST", "1");
+
+    // create temp workspace root
+    let restore_dir = env::current_dir().unwrap();
+    let ws_root = env::temp_dir().join(format!(
+        "cargo_miden_ws_auto_add_existing_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    if ws_root.exists() {
+        fs::remove_dir_all(&ws_root).unwrap();
+    }
+    fs::create_dir_all(&ws_root).unwrap();
+    env::set_current_dir(&ws_root).unwrap();
+
+    // write workspace manifest with existing members
+    let existing_member = "existing_member";
+    write_workspace_root_with_members(&ws_root, &[existing_member]);
+
+    // create a new project inside the workspace
+    let project_name = "new_member";
+    let output = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        .expect("cargo miden new failed")
+        .expect("expected NewCommandOutput");
+    let project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => project_path,
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
+    };
+    assert!(project_path.ends_with(project_name));
+
+    // verify that both the existing member and new project are in workspace Cargo.toml
+    let workspace_toml_path = ws_root.join("Cargo.toml");
+    let workspace_content =
+        fs::read_to_string(&workspace_toml_path).expect("Failed to read workspace Cargo.toml");
+    assert!(
+        workspace_content.contains(&format!("\"{existing_member}\"")),
+        "Workspace Cargo.toml should still contain existing member. Content:\n{workspace_content}"
+    );
+    assert!(
+        workspace_content.contains(&format!("\"{project_name}\"")),
+        "Workspace Cargo.toml should contain the new project in members array. \
+         Content:\n{workspace_content}"
+    );
+
+    // cleanup
+    env::set_current_dir(restore_dir).unwrap();
+    fs::remove_dir_all(ws_root).unwrap();
+}
+
+#[test]
+fn new_project_does_not_duplicate_existing_member() {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .is_test(true)
+        .format_timestamp(None)
+        .try_init();
+    env::set_var("TEST", "1");
+
+    // create temp workspace root
+    let restore_dir = env::current_dir().unwrap();
+    let ws_root = env::temp_dir().join(format!(
+        "cargo_miden_ws_no_dup_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    if ws_root.exists() {
+        fs::remove_dir_all(&ws_root).unwrap();
+    }
+    fs::create_dir_all(&ws_root).unwrap();
+    env::set_current_dir(&ws_root).unwrap();
+
+    // write workspace manifest with the project already as a member
+    let project_name = "existing_project";
+    write_workspace_root_with_members(&ws_root, &[project_name]);
+
+    // create the project (it's already in members)
+    let output = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        .expect("cargo miden new failed")
+        .expect("expected NewCommandOutput");
+    let project_path = match output {
+        cargo_miden::CommandOutput::NewCommandOutput { project_path } => project_path,
+        other => panic!("Expected NewCommandOutput, got {other:?}"),
+    };
+    assert!(project_path.ends_with(project_name));
+
+    // verify that the project appears only once in workspace Cargo.toml
+    let workspace_toml_path = ws_root.join("Cargo.toml");
+    let workspace_content =
+        fs::read_to_string(&workspace_toml_path).expect("Failed to read workspace Cargo.toml");
+    let member_count = workspace_content.matches(&format!("\"{project_name}\"")).count();
+    assert_eq!(
+        member_count, 1,
+        "Project should appear exactly once in members array. Found {member_count} times. \
+         Content:\n{workspace_content}"
     );
 
     // cleanup
