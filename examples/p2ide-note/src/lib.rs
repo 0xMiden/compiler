@@ -14,9 +14,6 @@ use crate::bindings::Account;
 fn consume_assets(account: &mut Account) {
     let assets = active_note::get_assets();
     for asset in assets {
-        // TODO: `receieve_asset` should require `account` to be &mut
-        // Only when account is Wasm CM resource? Otherwise its a bunch of free functions
-        // (WIT interface has no notion of borrowing)
         account.receive_asset(asset);
     }
 }

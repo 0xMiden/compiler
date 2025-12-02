@@ -76,12 +76,13 @@ pub(crate) fn expand(
 
     let runtime_boilerplate = runtime_boilerplate();
 
-    // Generate the call to the user's function, with optional injected parameter
+    // Generate the call to the user's function, with optional injected parameter.
+    // Note: `Account` generated from account components in scripts only implements `ActiveAccount`.
+    // `NativeAccount` exposes functions that can be called only by account code.
     let (instantiation, call, trait_impl) = match &injected_param {
         Some((ident, ty)) => (
             quote! { let mut #ident = <#ty as ::core::default::Default>::default(); },
             quote! { #fn_ident(arg, &mut #ident) },
-            // Implement ActiveAccount for the injected type so users can call account.get_id(), etc.
             quote! {
                 impl ::miden::active_account::ActiveAccount for #ty {}
             },
@@ -154,7 +155,7 @@ fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, sy
                 ));
             }
             // Check that the type is `Word`
-            if !is_word_type(&pat_type.ty) {
+            if !is_type_named(&pat_type.ty, "Word") {
                 return Err(syn::Error::new(
                     pat_type.ty.span(),
                     "first parameter must have type `Word` (e.g., `arg: Word`)",
@@ -205,7 +206,7 @@ fn expect_mut_account_type(ty: &syn::Type) -> syn::Result<syn::Type> {
             "second parameter must be typed as `account: &mut Account`",
         ));
     }
-    if !is_account_type(&type_ref.elem) {
+    if !is_type_named(&type_ref.elem, "Account") {
         return Err(syn::Error::new(
             ty.span(),
             "second parameter must be typed as `account: &mut Account`",
@@ -214,28 +215,20 @@ fn expect_mut_account_type(ty: &syn::Type) -> syn::Result<syn::Type> {
     Ok((*type_ref.elem).clone())
 }
 
-/// Checks if a type is `Word` (handles both `Word` and `miden::Word` paths).
-fn is_word_type(ty: &syn::Type) -> bool {
+/// Checks if a type's final path segment matches `name` (allowing module-qualified paths like
+/// `miden::Word` or `crate::bindings::Account`).
+fn is_type_named(ty: &syn::Type, name: &str) -> bool {
     let syn::Type::Path(type_path) = ty else {
         return false;
     };
     if type_path.qself.is_some() {
         return false;
     }
-    let last_segment = type_path.path.segments.last();
-    last_segment.is_some_and(|seg| seg.ident == "Word" && seg.arguments.is_empty())
-}
-
-/// Checks if a type resolves to `Account` (allowing module-qualified paths).
-fn is_account_type(ty: &syn::Type) -> bool {
-    let syn::Type::Path(type_path) = ty else {
-        return false;
-    };
     type_path
         .path
         .segments
         .last()
-        .is_some_and(|seg| seg.ident == "Account" && seg.arguments.is_empty())
+        .is_some_and(|seg| seg.ident == name && seg.arguments.is_empty())
 }
 
 fn build_script_wit(

@@ -238,7 +238,7 @@ fn expand_component_impl(
     if methods.is_empty() {
         return Err(syn::Error::new(
             call_site_span.into(),
-            "Component `impl` is missing `pub` methods. A component cannot have emty exports.",
+            "Component `impl` is missing `pub` methods. A component cannot have empty exports.",
         ));
     }
 
