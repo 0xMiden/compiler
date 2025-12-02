@@ -123,21 +123,23 @@ pub(crate) fn expand(
 /// it is treated as an "injected" wrapper struct that will be instantiated via
 /// `Default::default()` and passed to the user's function.
 ///
-/// Only up to 2 parameters are supported: `(arg: Word)` or `(arg: Word, account: Account)`.
+/// Only up to 2 parameters are supported: `(arg: Word)` or `(arg: Word, account: &mut Account)`.
 ///
 /// Returns `Some((ident, type))` if a second parameter exists, `None` otherwise.
 fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, syn::Type)>> {
     if input_fn.sig.inputs.is_empty() {
         return Err(syn::Error::new(
             input_fn.sig.span(),
-            "fn run requires at least one parameter: (arg: Word) or (arg: Word, account: Account)",
+            "fn run requires at least one parameter: (arg: Word) or (arg: Word, account: &mut \
+             Account)",
         ));
     }
 
     if input_fn.sig.inputs.len() > 2 {
         return Err(syn::Error::new(
             input_fn.sig.span(),
-            "fn run accepts at most 2 parameters: (arg: Word) or (arg: Word, account: Account)",
+            "fn run accepts at most 2 parameters: (arg: Word) or (arg: Word, account: &mut \
+             Account)",
         ));
     }
 
@@ -179,8 +181,7 @@ fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, sy
                     ));
                 }
             };
-            // Extract the underlying type from `&mut T` if present
-            let ty = extract_inner_type(&pat_type.ty);
+            let ty = expect_mut_account_type(&pat_type.ty)?;
             Ok(Some((ident, ty)))
         }
         FnArg::Receiver(receiver) => {
@@ -189,14 +190,28 @@ fn parse_injected_param(input_fn: &ItemFn) -> syn::Result<Option<(syn::Ident, sy
     }
 }
 
-/// Extracts the inner type from `&mut T` or `&T`, returning `T`.
-/// If the type is not a reference, returns a clone of the original type.
-fn extract_inner_type(ty: &syn::Type) -> syn::Type {
-    if let syn::Type::Reference(type_ref) = ty {
-        (*type_ref.elem).clone()
-    } else {
-        ty.clone()
+/// Ensures the type is `&mut Account` (allowing paths like `crate::bindings::Account`) and returns
+/// the underlying `Account` type.
+fn expect_mut_account_type(ty: &syn::Type) -> syn::Result<syn::Type> {
+    let syn::Type::Reference(type_ref) = ty else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "second parameter must be typed as `account: &mut Account`",
+        ));
+    };
+    if type_ref.mutability.is_none() {
+        return Err(syn::Error::new(
+            ty.span(),
+            "second parameter must be typed as `account: &mut Account`",
+        ));
     }
+    if !is_account_type(&type_ref.elem) {
+        return Err(syn::Error::new(
+            ty.span(),
+            "second parameter must be typed as `account: &mut Account`",
+        ));
+    }
+    Ok((*type_ref.elem).clone())
 }
 
 /// Checks if a type is `Word` (handles both `Word` and `miden::Word` paths).
@@ -209,6 +224,18 @@ fn is_word_type(ty: &syn::Type) -> bool {
     }
     let last_segment = type_path.path.segments.last();
     last_segment.is_some_and(|seg| seg.ident == "Word" && seg.arguments.is_empty())
+}
+
+/// Checks if a type resolves to `Account` (allowing module-qualified paths).
+fn is_account_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == "Account" && seg.arguments.is_empty())
 }
 
 fn build_script_wit(
