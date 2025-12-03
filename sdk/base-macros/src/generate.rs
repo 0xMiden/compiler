@@ -254,8 +254,10 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
     if !collected_methods.is_empty() {
         let struct_ident = syn::Ident::new(WRAPPER_STRUCT_NAME, Span::call_site());
         let struct_item: ItemStruct = parse_quote! {
-            /// Wrapper struct providing methods that delegate to imported interface functions.
-            #[derive(Clone, Copy, Default)]
+            /// Wrapper struct that contains all the methods from all the account component
+            /// dependencies of this script. Each account component dependency method is "merged"
+            /// into this struct.
+            #[derive(Default)]
             pub struct #struct_ident;
         };
 
