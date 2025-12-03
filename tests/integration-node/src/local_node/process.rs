@@ -1,7 +1,7 @@
 //! Process management functionality for the shared node
 
 use std::{
-    fs::{self, File},
+    fs,
     net::TcpStream,
     process::{Command, Stdio},
     thread,
@@ -81,16 +81,20 @@ pub fn kill_process(pid: u32) -> Result<()> {
 pub async fn start_shared_node() -> Result<u32> {
     eprintln!("[SharedNode] Starting shared node process...");
 
-    // Ensure data directory exists
+    // Bootstrap if needed (data directory empty or doesn't exist)
     let data_dir_path = data_dir();
-    fs::create_dir_all(&data_dir_path).context("Failed to create data directory")?;
+    let needs_bootstrap = !data_dir_path.exists()
+        || fs::read_dir(&data_dir_path)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(true);
 
-    // Bootstrap if needed
-    let marker_file = data_dir_path.join(".bootstrapped");
-    if !marker_file.exists() {
+    if needs_bootstrap {
+        // Ensure we have a clean, empty data directory for bootstrap
+        if data_dir_path.exists() {
+            fs::remove_dir_all(&data_dir_path).context("Failed to remove data directory")?;
+        }
+        fs::create_dir_all(&data_dir_path).context("Failed to create data directory")?;
         LocalMidenNode::bootstrap(&data_dir_path).context("Failed to bootstrap miden-node")?;
-        // Create marker file
-        File::create(&marker_file).context("Failed to create bootstrap marker file")?;
     }
 
     // Start the node process
