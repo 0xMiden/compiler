@@ -335,6 +335,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/parse",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/wasm-translation",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/source-location",
 ]
 dependencies = ["litcheck"]
 

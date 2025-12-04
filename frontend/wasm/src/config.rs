@@ -1,4 +1,5 @@
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, vec::Vec};
+use std::path::PathBuf;
 
 /// Configuration for the WASM translation.
 #[derive(Clone)]
@@ -7,6 +8,9 @@ pub struct WasmTranslationConfig {
     /// This is used as a fallback for module/component name if it's not parsed from the Wasm
     /// binary, and an override name is not specified
     pub source_name: Cow<'static, str>,
+
+    /// Path prefixes to try when resolving relative paths from trimmed DWARF debug information.
+    pub trim_path_prefixes: Vec<PathBuf>,
 
     /// If specified, overrides the module/component name with the one specified
     pub override_name: Option<Cow<'static, str>>,
@@ -26,6 +30,7 @@ impl core::fmt::Debug for WasmTranslationConfig {
         let world = if self.world.is_some() { "Some" } else { "None" };
         f.debug_struct("WasmTranslationConfig")
             .field("source_name", &self.source_name)
+            .field("trim_path_prefixes", &self.trim_path_prefixes)
             .field("override_name", &self.override_name)
             .field("world", &world)
             .field("generate_native_debuginfo", &self.generate_native_debuginfo)
@@ -38,6 +43,7 @@ impl Default for WasmTranslationConfig {
     fn default() -> Self {
         Self {
             source_name: Cow::Borrowed("noname"),
+            trim_path_prefixes: Vec::new(),
             override_name: None,
             world: None,
             generate_native_debuginfo: false,

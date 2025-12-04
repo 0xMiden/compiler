@@ -145,6 +145,7 @@ pub fn build_ir_module(
             &addr2line,
             context.session(),
             &mut func_validator,
+            _config,
         )?;
     }
     Ok(())

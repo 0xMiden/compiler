@@ -13,6 +13,7 @@ use crate::{
 pub struct OpPrintingFlags {
     pub print_entry_block_headers: bool,
     pub print_intrinsic_attributes: bool,
+    pub print_source_locations: bool,
 }
 
 impl Default for OpPrintingFlags {
@@ -20,6 +21,7 @@ impl Default for OpPrintingFlags {
         Self {
             print_entry_block_headers: true,
             print_intrinsic_attributes: false,
+            print_source_locations: false,
         }
     }
 }
@@ -175,6 +177,32 @@ pub fn render_regions(op: &Operation, flags: &OpPrintingFlags) -> crate::formatt
         + const_text(";")
 }
 
+pub fn render_source_location(op: &Operation, context: &Context) -> crate::formatter::Document {
+    use crate::formatter::*;
+
+    // Check if the span is valid (not default/empty)
+    if op.span.is_unknown() {
+        return Document::Empty;
+    }
+
+    // Try to resolve the source location
+    let session = context.session();
+    if let Ok(source_file) = session.source_manager.get(op.span.source_id()) {
+        let location = source_file.location(op.span);
+        // Format: #loc("filename":line:col)
+        let filename = source_file.uri().as_str();
+        let loc_str = format!(
+            " #loc(\"{}\":{}:{})",
+            filename,
+            location.line.to_u32(),
+            location.column.to_u32()
+        );
+        return text(loc_str);
+    }
+
+    Document::Empty
+}
+
 struct OperationPrinter<'a> {
     op: &'a Operation,
     flags: &'a OpPrintingFlags,
@@ -278,6 +306,13 @@ impl PrettyPrint for OperationPrinter<'_> {
             doc
         } else {
             doc + const_text(" ") + attrs
+        };
+
+        // Add source location if requested
+        let doc = if self.flags.print_source_locations {
+            doc + render_source_location(self.op, self.context)
+        } else {
+            doc
         };
 
         if self.op.has_regions() {

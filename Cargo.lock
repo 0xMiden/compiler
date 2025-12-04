@@ -2846,6 +2846,7 @@ dependencies = [
 name = "midenc-compile"
 version = "0.5.1"
 dependencies = [
+ "anyhow",
  "clap",
  "inventory",
  "log",
