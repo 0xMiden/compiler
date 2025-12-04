@@ -8,7 +8,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{camino, Package};
 use serde::Deserialize;
 
-use crate::{config::CargoArguments, BuildOutput, OutputType};
+use crate::{commands::CargoOptions, BuildOutput, OutputType};
 
 /// Defines dependency (the rhs of the dependency `"ns:package" = { path = "..." }` pair)
 #[derive(Deserialize, Debug, Clone)]
@@ -32,7 +32,7 @@ struct MidenMetadata {
 /// and collecting the paths to the resulting `.masp` package artifacts.
 pub fn process_miden_dependencies(
     package: &Package,
-    cargo_args: &CargoArguments,
+    cargo_opts: &CargoOptions,
 ) -> Result<Vec<PathBuf>> {
     let mut dependency_packages_paths: Vec<PathBuf> = Vec::new();
     // Avoid redundant builds/checks
@@ -137,7 +137,7 @@ pub fn process_miden_dependencies(
                         dep_manifest_path.to_string_lossy().to_string(),
                     ];
                     // Inherit release/debug profile from parent build
-                    if cargo_args.release {
+                    if cargo_opts.release {
                         dep_build_args.push("--release".to_string());
                     }
                     // Dependencies should always be built as libraries
