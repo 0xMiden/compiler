@@ -5,6 +5,7 @@ members = [
     "codegen/*",
     "dialects/*",
     "eval",
+    "felt-repr/*",
     "frontend/*",
     "hir",
     "hir-analysis",
