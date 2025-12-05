@@ -2,9 +2,10 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use miden_felt_repr_onchain::FromFeltRepr;
 use miden_stdlib_sys::{Digest, Felt, Word, felt, hash_elements, intrinsics::crypto::merge};
 
-#[allow(unused)]
+/// Unique identifier for a Miden account, composed of two field elements.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AccountId {
     pub prefix: Felt,
@@ -15,6 +16,15 @@ impl AccountId {
     /// Creates a new AccountId from prefix and suffix Felt values
     pub fn from(prefix: Felt, suffix: Felt) -> Self {
         Self { prefix, suffix }
+    }
+}
+
+impl FromFeltRepr for AccountId {
+    fn from_felt_repr(felts: &[Felt]) -> Self {
+        Self {
+            prefix: felts[0],
+            suffix: felts[1],
+        }
     }
 }
 

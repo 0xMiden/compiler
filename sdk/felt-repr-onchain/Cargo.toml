@@ -1,0 +1,21 @@
+[package]
+name = "miden-felt-repr-onchain"
+description = "Zero-copy deserialization from felt representation for on-chain execution"
+version = "0.7.1"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+miden-stdlib-sys = { path = "../stdlib-sys", version = "0.7.1" }
+
+[features]
+default = []
