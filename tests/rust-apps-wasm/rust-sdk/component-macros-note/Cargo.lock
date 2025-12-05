@@ -894,6 +894,7 @@ dependencies = [
 name = "miden-base-sys"
 version = "0.8.1"
 dependencies = [
+ "miden-felt-repr-onchain",
  "miden-stdlib-sys",
 ]
 
@@ -968,6 +969,13 @@ dependencies = [
  "miden-utils-sync",
  "paste",
  "thiserror",
+]
+
+[[package]]
+name = "miden-felt-repr-onchain"
+version = "0.7.1"
+dependencies = [
+ "miden-stdlib-sys",
 ]
 
 [[package]]

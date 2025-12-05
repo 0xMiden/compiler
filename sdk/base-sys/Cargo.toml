@@ -17,6 +17,7 @@ links = "miden_base_sys_stubs"
 
 [dependencies]
 miden-stdlib-sys = { version = "0.8.0", path = "../stdlib-sys" }
+miden-felt-repr-onchain = { version = "0.7.1", path = "../felt-repr-onchain" }
 
 [features]
 default = []
