@@ -3,14 +3,13 @@
 #![feature(alloc_error_handler)]
 
 use miden::*;
-use miden_felt_repr_onchain::FromFeltRepr;
 
 use crate::bindings::Account;
 
 #[note_script]
 fn run(_arg: Word, account: &mut Account) {
     let inputs = active_note::get_inputs();
-    let target_account_id = AccountId::from_felt_repr(&inputs);
+    let target_account_id: AccountId = inputs.as_slice().into();
 
     let current_account = account.get_id();
     assert_eq!(current_account, target_account_id);

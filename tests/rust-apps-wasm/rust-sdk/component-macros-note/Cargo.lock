@@ -972,9 +972,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-felt-repr-derive"
+version = "0.7.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "miden-felt-repr-onchain"
 version = "0.7.1"
 dependencies = [
+ "miden-felt-repr-derive",
  "miden-stdlib-sys",
 ]
 

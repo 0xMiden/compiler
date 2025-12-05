@@ -16,6 +16,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 miden-stdlib-sys = { path = "../stdlib-sys", version = "0.7.1" }
+miden-felt-repr-derive = { path = "../felt-repr-derive", version = "0.7.1" }
 
 [features]
 default = []
