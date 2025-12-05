@@ -17,6 +17,7 @@ crate-type = ["rlib"]
 [dependencies]
 miden-core.workspace = true
 miden-objects.workspace = true
+miden-felt-repr-derive = { path = "../felt-repr-derive", version = "0.7.1" }
 
 [features]
 default = []
