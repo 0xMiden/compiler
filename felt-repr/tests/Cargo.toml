@@ -1,0 +1,25 @@
+[package]
+name = "miden-felt-repr-tests"
+description = "Integration tests for felt representation serialization/deserialization"
+version = "0.7.1"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+miden-felt-repr-offchain = { path = "../offchain", version = "0.7.1" }
+miden-core.workspace = true
+
+[dev-dependencies]
+miden-integration-tests = { path = "../../tests/integration" }
+midenc-frontend-wasm.workspace = true
+midenc-session.workspace = true
+miden-debug.workspace = true
+miden-lib.workspace = true
+miden-processor.workspace = true
