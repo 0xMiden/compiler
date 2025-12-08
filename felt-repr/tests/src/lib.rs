@@ -112,6 +112,7 @@ extern crate miden_stdlib_sys;
 use miden_stdlib_sys::{{*, intrinsics}};
 
 extern crate alloc;
+use alloc::vec::Vec;
 
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
