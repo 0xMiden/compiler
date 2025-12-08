@@ -1,12 +1,9 @@
-use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, env, path::PathBuf};
 
 use miden_core::{
     Felt, FieldElement, Word,
     utils::{Deserializable, Serializable},
 };
-use miden_debug::Executor;
-use miden_lib::MidenLib;
-use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -17,22 +14,12 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    testing::executor_with_std,
 };
 
 mod base;
 mod macros;
 mod stdlib;
-
-fn executor_with_std(args: Vec<Felt>) -> Executor {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec
-}
 
 #[test]
 #[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
@@ -181,7 +168,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.masm")]);
     let package = test.compiled_package();
     let program = package.unwrap_program();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -238,7 +225,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.hir")]);
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.masm")]);
     let package = test.compiled_package();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -310,7 +297,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     )]);
     let package = test.compiled_package();
     assert!(package.is_program());
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
