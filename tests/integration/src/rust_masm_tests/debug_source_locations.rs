@@ -96,24 +96,39 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
                 "Panic message should indicate assertion failure. Got: {panic_message}"
             );
 
-            // Check if source location info is present
-            let has_source_file =
-                panic_message.contains("lib.rs") || panic_message.contains("src/");
+            // Check if source location info is present - the assert! macro is on line 26
+            let has_source_file = panic_message.contains("assert-debug-test/src/lib.rs");
+            let has_lib_rs = panic_message.contains("lib.rs");
 
-            let has_line_info = panic_message.contains(":20") || panic_message.contains(":21");
+            // Line 26 contains: assert!(x > 100);
+            let has_line_info = panic_message.contains(":26:");
 
-            let has_any_source_info = has_source_file || has_line_info;
+            // Column 13 is where the assertion expression starts
+            let has_column_info = panic_message.contains(":26:13");
 
-            // FIXME: Currently source locations show <unavailable> in stack traces.
-            // This test documents the current behavior.
             eprintln!("SUCCESS: Assertion correctly failed when x=50 <= 100");
+            eprintln!(
+                "Has source file reference (assert-debug-test/src/lib.rs): {has_source_file}"
+            );
+            eprintln!("Has lib.rs reference: {has_lib_rs}");
+            eprintln!("Has line info (:26:): {has_line_info}");
+            eprintln!("Has column info (:26:13): {has_column_info}");
 
-            eprintln!("Has source file reference: {has_source_file}");
-            eprintln!("Has line info: {has_line_info}");
+            // Source locations MUST be resolved now - this is a regression test
+            assert!(
+                has_lib_rs,
+                "Panic message should contain source file reference (lib.rs). Got: {panic_message}"
+            );
+            assert!(
+                has_line_info,
+                "Panic message should contain line 26 (where assert! is). Got: {panic_message}"
+            );
+            assert!(
+                has_column_info,
+                "Panic message should contain column 13 (:26:13). Got: {panic_message}"
+            );
 
-            if has_any_source_info {
-                eprintln!("Source locations are being resolved!");
-            }
+            eprintln!("Source locations are being resolved correctly!");
         }
     }
 }
