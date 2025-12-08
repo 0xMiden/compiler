@@ -20,11 +20,13 @@ pub struct FeltReader<'a> {
 
 impl<'a> FeltReader<'a> {
     /// Creates a new `FeltReader` from a slice of `Felt` elements.
+    #[inline(always)]
     pub fn new(data: &'a [Felt]) -> Self {
         Self { data, pos: 0 }
     }
 
     /// Reads the next `Felt` element, advancing the position.
+    #[inline(always)]
     pub fn read(&mut self) -> Felt {
         let felt = self.data[self.pos];
         self.pos += 1;
@@ -40,6 +42,7 @@ pub trait FromFeltRepr: Sized {
 
 /// Base implementation for `Felt` itself.
 impl FromFeltRepr for Felt {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
         reader.read()
     }
@@ -53,6 +56,7 @@ pub trait ToFeltRepr {
 
 /// Base implementation for `Felt` itself.
 impl ToFeltRepr for Felt {
+    #[inline(always)]
     fn to_felt_repr(&self) -> Vec<Felt> {
         vec![*self]
     }

@@ -2451,6 +2451,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-felt-repr-tests"
+version = "0.7.1"
+dependencies = [
+ "miden-core",
+ "miden-debug",
+ "miden-felt-repr-offchain",
+ "miden-integration-tests",
+ "miden-lib",
+ "miden-processor",
+ "midenc-frontend-wasm",
+ "midenc-session",
+]
+
+[[package]]
 name = "miden-formatting"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
