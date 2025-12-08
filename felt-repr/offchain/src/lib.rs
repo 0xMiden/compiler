@@ -48,6 +48,24 @@ impl FromFeltRepr for Felt {
     }
 }
 
+impl FromFeltRepr for u64 {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        reader.read().as_int()
+    }
+}
+
+impl FromFeltRepr for u32 {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        reader.read().as_int() as u32
+    }
+}
+
+impl FromFeltRepr for u8 {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        reader.read().as_int() as u8
+    }
+}
+
 /// Trait for serializing a type into its felt memory representation.
 pub trait ToFeltRepr {
     /// Serializes this value into a vector of `Felt` elements.
@@ -58,5 +76,23 @@ pub trait ToFeltRepr {
 impl ToFeltRepr for Felt {
     fn to_felt_repr(&self) -> Vec<Felt> {
         vec![*self]
+    }
+}
+
+impl ToFeltRepr for u64 {
+    fn to_felt_repr(&self) -> Vec<Felt> {
+        vec![Felt::new(*self)]
+    }
+}
+
+impl ToFeltRepr for u32 {
+    fn to_felt_repr(&self) -> Vec<Felt> {
+        vec![Felt::new(*self as u64)]
+    }
+}
+
+impl ToFeltRepr for u8 {
+    fn to_felt_repr(&self) -> Vec<Felt> {
+        vec![Felt::new(*self as u64)]
     }
 }

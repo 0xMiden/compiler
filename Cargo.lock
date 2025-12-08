@@ -2460,6 +2460,7 @@ dependencies = [
  "miden-integration-tests",
  "miden-lib",
  "miden-processor",
+ "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-session",
 ]

@@ -9,6 +9,7 @@ use miden_core::{Felt, FieldElement};
 use miden_debug::Felt as TestFelt;
 use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{eval_package, Initializer};
+use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::build_felt_repr_test;
@@ -76,10 +77,12 @@ fn felt_reader() {
 
 /// Test full round-trip using the actual FromFeltRepr and ToFeltRepr from onchain crate.
 ///
+/// Test struct serialization with 2 Felt fields.
+///
 /// This tests the full flow: off-chain serialize -> on-chain deserialize via derive
 /// -> on-chain serialize -> off-chain deserialize.
 #[test]
-fn from_to_felt_repr() {
+fn two_felts_struct_round_trip() {
     let original = TwoFelts {
         a: Felt::new(12345),
         b: Felt::new(67890),
@@ -90,19 +93,25 @@ fn from_to_felt_repr() {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
-        struct OnchainTwoFelts {
+        struct TestStruct {
             a: Felt,
             b: Felt,
         }
 
         let mut reader = FeltReader::new(&input);
-        let deserialized = OnchainTwoFelts::from_felt_repr(&mut reader);
+        let deserialized = TestStruct::from_felt_repr(&mut reader);
 
         deserialized.to_felt_repr()
     }"#;
 
     let config = WasmTranslationConfig::default();
-    let mut test = build_felt_repr_test("onchain_from_to_felt_repr", onchain_code, config);
+    let artifact_name = "onchain_two_felts_struct";
+    let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
+
+    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
+
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -149,4 +158,64 @@ fn from_to_felt_repr() {
         Ok(())
     })
     .unwrap();
+}
+
+/// Test struct serialization with 4 Felt fields.
+#[test]
+fn four_felts_struct_round_trip() {
+    let onchain_code = r#"(input: [Felt; 4]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct TestStruct {
+            a: Felt,
+            b: Felt,
+            c: Felt,
+            d: Felt,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = TestStruct::from_felt_repr(&mut reader);
+
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let artifact_name = "onchain_four_felts_struct";
+    let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
+
+    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
+
+    let _package = test.compiled_package();
+}
+
+/// Test struct serialization with 5 Felt fields - triggers spills issue.
+#[test]
+#[should_panic(expected = "not yet implemented")]
+fn five_felts_struct_round_trip() {
+    let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct TestStruct {
+            a: Felt,
+            b: Felt,
+            c: Felt,
+            d: Felt,
+            e: Felt,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = TestStruct::from_felt_repr(&mut reader);
+
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let mut test = build_felt_repr_test("onchain_five_felts_struct", onchain_code, config);
+
+    // This will panic with "not yet implemented" due to spills issue
+    let _package = test.compiled_package();
 }

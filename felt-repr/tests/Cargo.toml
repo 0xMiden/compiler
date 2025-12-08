@@ -20,6 +20,7 @@ miden-core.workspace = true
 miden-integration-tests = { path = "../../tests/integration" }
 midenc-frontend-wasm.workspace = true
 midenc-session.workspace = true
+midenc-expect-test.workspace = true
 miden-debug.workspace = true
 miden-lib.workspace = true
 miden-processor.workspace = true
