@@ -86,7 +86,7 @@ fn from_to_felt_repr() {
     };
     let serialized = original.to_felt_repr();
 
-    let onchain_code = r#"(input: Word) -> Word {
+    let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
@@ -95,14 +95,10 @@ fn from_to_felt_repr() {
             b: Felt,
         }
 
-        let input_arr: [Felt; 4] = input.into();
-
-        let mut reader = FeltReader::new(&input_arr);
+        let mut reader = FeltReader::new(&input);
         let deserialized = OnchainTwoFelts::from_felt_repr(&mut reader);
 
-        let re_serialized = deserialized.to_felt_repr();
-
-        Word::from([re_serialized[0], re_serialized[1], felt!(0), felt!(0)])
+        deserialized.to_felt_repr()
     }"#;
 
     let config = WasmTranslationConfig::default();
@@ -114,21 +110,38 @@ fn from_to_felt_repr() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_word: Vec<Felt> = vec![serialized[0], serialized[1], Felt::ZERO, Felt::ZERO];
+    let input_felts: Vec<Felt> = vec![serialized[0], serialized[1]];
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(input_word),
+        felts: Cow::from(input_felts),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
 
     let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_word: [TestFelt; 4] = trace
+        // Vec<Felt> is returned as (ptr, len, capacity) via C ABI
+        // First read the Vec metadata from output address
+        let vec_metadata: [TestFelt; 4] = trace
             .read_from_rust_memory(out_byte_addr)
-            .expect("Failed to read result from memory");
+            .expect("Failed to read Vec metadata from memory");
 
-        let result_felts = [result_word[0].0, result_word[1].0];
+        // The Word is stored in reverse order when read as [TestFelt; 4]:
+        // Word[0] -> TestFelt[3] = pointer
+        // Word[1] -> TestFelt[2] = length
+        // Word[2] -> TestFelt[1] = (unused)
+        // Word[3] -> TestFelt[0] = capacity
+        let data_ptr = vec_metadata[3].0.as_int() as u32;
+        let len = vec_metadata[2].0.as_int() as usize;
+
+        assert_eq!(len, 2, "Expected Vec with 2 felts");
+
+        // Read the actual data from the Vec's data pointer
+        let result_data: [TestFelt; 4] = trace
+            .read_from_rust_memory(data_ptr)
+            .expect("Failed to read Vec data from memory");
+
+        let result_felts = [result_data[0].0, result_data[1].0];
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader);
 
