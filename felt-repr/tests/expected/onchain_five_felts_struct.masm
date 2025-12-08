@@ -18,7 +18,7 @@ proc init
     mem_store.278536
 end
 
-# mod root_ns:root@1.0.0::onchain_two_felts_struct
+# mod root_ns:root@1.0.0::onchain_five_felts_struct
 
 @callconv("C")
 proc alloc::vec::Vec<T,A>::push(i32, felt)
@@ -64,7 +64,7 @@ proc alloc::vec::Vec<T,A>::push(i32, felt)
         dup.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::raw_vec::RawVec<T,A>::grow_one
+        exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::raw_vec::RawVec<T,A>::grow_one
         trace.252
         nop
     end
@@ -179,7 +179,7 @@ proc alloc::raw_vec::RawVec<T,A>::grow_one(i32)
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::raw_vec::RawVecInner<A>::grow_amortized
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::raw_vec::RawVecInner<A>::grow_amortized
     trace.252
     nop
     push.8
@@ -238,7 +238,7 @@ proc alloc::raw_vec::RawVec<T,A>::grow_one(i32)
         swap.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::raw_vec::handle_error
+        exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -268,7 +268,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.4
+    push.16
     dup.3
     add
     u32assert
@@ -285,7 +285,58 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.3
+    push.12
+    dup.4
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    dup.5
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    dup.6
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    movup.6
     push.4
     dup.1
     swap.1
@@ -301,7 +352,7 @@ pub proc entrypoint(i32, i32)
     nop
     push.8
     push.4
-    dup.4
+    dup.7
     u32wrapping_add
     u32wrapping_add
     dup.0
@@ -321,7 +372,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.4
-    dup.4
+    dup.7
     add
     u32assert
     push.4
@@ -341,13 +392,43 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.4
+    dup.7
+    u32wrapping_add
+    movup.2
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::vec::Vec<T,A>::push
+    trace.252
+    nop
+    push.4
+    dup.6
+    u32wrapping_add
+    movup.2
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::vec::Vec<T,A>::push
+    trace.252
+    nop
+    push.4
+    dup.5
+    u32wrapping_add
+    movup.2
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::vec::Vec<T,A>::push
+    trace.252
+    nop
+    push.4
     dup.4
     u32wrapping_add
     movup.2
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::vec::Vec<T,A>::push
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
     push.4
@@ -357,7 +438,7 @@ pub proc entrypoint(i32, i32)
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::vec::Vec<T,A>::push
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
     push.4
@@ -439,7 +520,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -453,7 +534,7 @@ proc __rustc::__rust_realloc(i32, i32, i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -557,7 +638,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -662,7 +743,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_two_felts_struct::core::ptr::alignment::Alignment::max
+        exec.::root_ns:root@1.0.0::onchain_five_felts_struct::core::ptr::alignment::Alignment::max
         trace.252
         nop
         push.0
@@ -711,7 +792,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_two_felts_struct::intrinsics::mem::heap_base
+                exec.::root_ns:root@1.0.0::onchain_five_felts_struct::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -1025,7 +1106,7 @@ proc alloc::raw_vec::RawVecInner<A>::grow_amortized(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::raw_vec::RawVecInner<A>::current_memory
+                    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::raw_vec::RawVecInner<A>::current_memory
                     trace.252
                     nop
                     push.20
@@ -1044,7 +1125,7 @@ proc alloc::raw_vec::RawVecInner<A>::grow_amortized(
                     swap.1
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::raw_vec::finish_grow
+                    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::raw_vec::finish_grow
                     trace.252
                     nop
                     push.12
@@ -1249,7 +1330,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::alloc::Global::alloc_impl
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::alloc::Global::alloc_impl
     trace.252
     nop
     push.12
@@ -1348,7 +1429,7 @@ proc alloc::alloc::Global::alloc_impl(
     else
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_two_felts_struct::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::root_ns:root@1.0.0::onchain_five_felts_struct::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -1359,7 +1440,7 @@ proc alloc::alloc::Global::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_two_felts_struct::__rustc::__rust_alloc_zeroed
+            exec.::root_ns:root@1.0.0::onchain_five_felts_struct::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -1367,7 +1448,7 @@ proc alloc::alloc::Global::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_two_felts_struct::__rustc::__rust_alloc
+            exec.::root_ns:root@1.0.0::onchain_five_felts_struct::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1605,7 +1686,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
             dup.3
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_two_felts_struct::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+            exec.::root_ns:root@1.0.0::onchain_five_felts_struct::<alloc::alloc::Global as core::alloc::Allocator>::allocate
             trace.252
             nop
             push.4
@@ -1682,7 +1763,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
                 swap.2
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_two_felts_struct::__rustc::__rust_realloc
+                exec.::root_ns:root@1.0.0::onchain_five_felts_struct::__rustc::__rust_realloc
                 trace.252
                 nop
                 dup.5
@@ -1701,7 +1782,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
                 swap.2
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_two_felts_struct::alloc::alloc::Global::alloc_impl
+                exec.::root_ns:root@1.0.0::onchain_five_felts_struct::alloc::alloc::Global::alloc_impl
                 trace.252
                 nop
                 push.12

@@ -1,4 +1,4 @@
-(module $onchain_four_felts_struct.wasm
+(module $onchain_five_felts_struct.wasm
   (type (;0;) (func (param i32 f32)))
   (type (;1;) (func (param i32)))
   (type (;2;) (func (param i32 i32)))
@@ -80,24 +80,27 @@
     global.set $__stack_pointer
   )
   (func $entrypoint (;2;) (type 2) (param i32 i32)
-    (local i32 f32 f32 f32 f32)
+    (local i32 f32 f32 f32 f32 f32)
     global.get $__stack_pointer
     i32.const 16
     i32.sub
     local.tee 2
     global.set $__stack_pointer
     local.get 1
-    f32.load offset=12
+    f32.load offset=16
     local.set 3
     local.get 1
-    f32.load offset=8
+    f32.load offset=12
     local.set 4
     local.get 1
-    f32.load offset=4
+    f32.load offset=8
     local.set 5
     local.get 1
-    f32.load
+    f32.load offset=4
     local.set 6
+    local.get 1
+    f32.load
+    local.set 7
     local.get 2
     i32.const 4
     i32.add
@@ -109,6 +112,11 @@
     local.get 2
     i64.const 17179869184
     i64.store offset=4 align=4
+    local.get 2
+    i32.const 4
+    i32.add
+    local.get 7
+    call $alloc::vec::Vec<T,A>::push
     local.get 2
     i32.const 4
     i32.add

@@ -21,119 +21,6 @@ end
 # mod root_ns:root@1.0.0::onchain_four_felts_struct
 
 @callconv("C")
-proc core::ptr::drop_in_place<alloc::vec::into_iter::IntoIter<miden_stdlib_sys::intrinsics::felt::Felt>>(
-    i32
-)
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114144
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.12
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.8
-    movup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    push.8
-    dup.2
-    u32wrapping_add
-    dup.1
-    swap.2
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::raw_vec::RawVecInner<A>::deallocate
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc alloc::vec::Vec<T,A>::push(i32, felt)
     push.8
     dup.1
@@ -360,53 +247,6 @@ proc alloc::raw_vec::RawVec<T,A>::grow_one(i32)
 end
 
 @callconv("C")
-proc alloc::alloc::exchange_malloc(
-
-) -> i32
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::__rustc::__rust_no_alloc_shim_is_unstable_v2
-    trace.252
-    nop
-    push.4
-    dup.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::__rustc::__rust_alloc
-    trace.252
-    nop
-    push.0
-    dup.1
-    neq
-    if.true
-        nop
-    else
-        drop
-        push.4
-        dup.0
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::alloc::handle_alloc_error
-        trace.252
-        nop
-        push.0
-        assert
-    end
-end
-
-@callconv("C")
-proc __rustc::__rust_alloc(i32, i32) -> i32
-    push.1048604
-    movup.2
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
-    trace.252
-    nop
-end
-
-@callconv("C")
 pub proc entrypoint(i32, i32)
     push.1114144
     u32divmod.4
@@ -416,7 +256,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.16
     u32wrapping_sub
     push.1114144
     dup.1
@@ -493,10 +333,12 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
-    dup.5
-    add
-    u32assert
+    push.8
+    push.4
+    dup.6
+    u32wrapping_add
+    u32wrapping_add
+    dup.0
     push.4
     dup.1
     swap.1
@@ -513,7 +355,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.4
-    dup.5
+    dup.6
     add
     u32assert
     push.4
@@ -532,876 +374,46 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::alloc::exchange_malloc
-    trace.252
-    nop
-    dup.0
     push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
+    dup.6
+    u32wrapping_add
     movup.2
     swap.1
-    u32divmod.4
-    swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_felt
+    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
-    push.28
+    push.4
     dup.5
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.4
-    dup.2
     u32wrapping_add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.24
-    dup.5
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.5
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
     movup.2
-    swap.3
-    swap.4
-    swap.5
-    movdn.2
-    swap.1
-    push.1
-    while.true
-        dup.0
-        dup.2
-        u32wrapping_add
-        push.0
-        push.4
-        dup.4
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            drop
-            push.3735929054
-        else
-            dup.1
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.4
-            dup.6
-            u32wrapping_add
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
-            trace.252
-            nop
-            push.4
-            movup.4
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.2
-        dup.10
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.10
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.10
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.5
-        dup.10
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.6
-        dup.10
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.7
-        movup.2
-        swap.10
-        movdn.2
-        cdrop
-        push.1
-        push.0
-        movup.8
-        cdrop
-        push.1
-        u32and
-        movup.3
-        swap.5
-        swap.7
-        swap.13
-        swap.12
-        swap.11
-        swap.10
-        swap.9
-        swap.8
-        movdn.3
-        movup.2
-        swap.4
-        swap.6
-        movdn.2
-        if.true
-            movup.7
-            drop
-            movup.7
-            drop
-            movup.7
-            drop
-            movup.7
-            drop
-            movup.7
-            drop
-            movup.7
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.20
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.6
-    swap.1
-    u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
-    push.16
-    dup.1
+    push.4
+    dup.4
     u32wrapping_add
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::core::ptr::drop_in_place<alloc::vec::into_iter::IntoIter<miden_stdlib_sys::intrinsics::felt::Felt>>
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::alloc::exchange_malloc
-    trace.252
-    nop
-    dup.0
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
+    movup.2
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_felt
+    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
-    push.28
-    dup.2
-    add
-    u32assert
     push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.4
-    dup.2
+    dup.3
     u32wrapping_add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.24
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.1
-    swap.1
-    u32divmod.4
+    movup.2
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
     trace.252
     nop
-    push.16
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
-    swap.1
-    push.1
-    while.true
-        dup.0
-        dup.2
-        u32wrapping_add
-        push.0
-        push.4
-        dup.4
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            drop
-            push.3735929054
-        else
-            dup.1
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.4
-            dup.6
-            u32wrapping_add
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
-            trace.252
-            nop
-            push.4
-            movup.4
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.2
-        dup.9
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.9
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.9
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.5
-        dup.9
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.6
-        movup.2
-        swap.9
-        movdn.2
-        cdrop
-        push.1
-        push.0
-        movup.7
-        cdrop
-        push.1
-        u32and
-        movup.2
-        swap.4
-        swap.6
-        swap.11
-        swap.10
-        swap.9
-        swap.8
-        swap.7
-        swap.3
-        swap.5
-        movdn.2
-        if.true
-            movup.6
-            drop
-            movup.6
-            drop
-            movup.6
-            drop
-            movup.6
-            drop
-            movup.6
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.20
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.5
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.1
-    u32wrapping_add
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::core::ptr::drop_in_place<alloc::vec::into_iter::IntoIter<miden_stdlib_sys::intrinsics::felt::Felt>>
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::alloc::exchange_malloc
-    trace.252
-    nop
-    dup.0
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.4
-    dup.2
-    u32wrapping_add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.24
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
-    swap.1
-    push.1
-    while.true
-        dup.0
-        dup.2
-        u32wrapping_add
-        push.0
-        push.4
-        dup.4
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            drop
-            push.3735929054
-        else
-            dup.1
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.4
-            dup.6
-            u32wrapping_add
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
-            trace.252
-            nop
-            push.4
-            movup.4
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.2
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.5
-        movup.2
-        swap.8
-        movdn.2
-        cdrop
-        push.1
-        push.0
-        movup.6
-        cdrop
-        push.1
-        u32and
-        movup.3
-        swap.5
-        swap.9
-        swap.8
-        swap.7
-        swap.6
-        movdn.3
-        movup.2
-        swap.4
-        movdn.2
-        if.true
-            movup.5
-            drop
-            movup.5
-            drop
-            movup.5
-            drop
-            movup.5
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.20
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.4
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.1
-    u32wrapping_add
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::core::ptr::drop_in_place<alloc::vec::into_iter::IntoIter<miden_stdlib_sys::intrinsics::felt::Felt>>
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::alloc::exchange_malloc
-    trace.252
-    nop
-    dup.0
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.4
-    dup.2
-    u32wrapping_add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.24
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
-    swap.1
-    push.1
-    while.true
-        dup.0
-        dup.2
-        u32wrapping_add
-        push.0
-        push.4
-        dup.4
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            drop
-            push.3735929054
-        else
-            dup.1
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            push.4
-            dup.6
-            u32wrapping_add
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::vec::Vec<T,A>::push
-            trace.252
-            nop
-            push.4
-            movup.4
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.2
-        dup.7
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.7
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        movup.2
-        swap.7
-        movdn.2
-        cdrop
-        push.1
-        push.0
-        movup.5
-        cdrop
-        push.1
-        u32and
-        movup.2
-        swap.4
-        swap.7
-        swap.6
-        swap.5
-        swap.3
-        movdn.2
-        if.true
-            movup.4
-            drop
-            movup.4
-            drop
-            movup.4
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    push.20
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.1
-    u32wrapping_add
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::core::ptr::drop_in_place<alloc::vec::into_iter::IntoIter<miden_stdlib_sys::intrinsics::felt::Felt>>
-    trace.252
-    nop
-    push.8
-    push.4
-    dup.2
-    u32wrapping_add
-    u32wrapping_add
     push.4
     dup.1
     swap.1
@@ -1462,7 +474,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.32
+    push.16
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -1475,10 +487,15 @@ pub proc entrypoint(i32, i32)
 end
 
 @callconv("C")
-proc __rustc::__rust_dealloc(i32, i32, i32)
-    drop
-    drop
-    drop
+proc __rustc::__rust_alloc(i32, i32) -> i32
+    push.1048604
+    movup.2
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    trace.252
+    nop
 end
 
 @callconv("C")
@@ -2248,123 +1265,6 @@ proc alloc::raw_vec::RawVecInner<A>::grow_amortized(
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::deallocate(
-    i32,
-    i32,
-    i32
-)
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114144
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    dup.1
-    u32wrapping_add
-    swap.1
-    swap.4
-    swap.3
-    swap.2
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_four_felts_struct::alloc::raw_vec::RawVecInner<A>::current_memory
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.0
-    push.0
-    dup.2
-    eq
-    neq
-    if.true
-        drop
-    else
-        push.4
-        dup.2
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        push.12
-        dup.3
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        movdn.2
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_four_felts_struct::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
-        trace.252
-        nop
-    end
-    push.16
-    u32wrapping_add
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     i32,
     i32,
@@ -2994,42 +1894,8 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
-    i32,
-    i32,
-    i32
-)
-    push.0
-    push.0
-    dup.4
-    eq
-    neq
-    if.true
-        drop
-        drop
-        drop
-    else
-        movup.2
-        swap.1
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_four_felts_struct::__rustc::__rust_dealloc
-        trace.252
-        nop
-    end
-end
-
-@callconv("C")
 proc alloc::raw_vec::handle_error(i32, i32, i32)
     drop
-    drop
-    drop
-    push.0
-    assert
-end
-
-@callconv("C")
-proc alloc::alloc::handle_alloc_error(i32, i32)
     drop
     drop
     push.0
