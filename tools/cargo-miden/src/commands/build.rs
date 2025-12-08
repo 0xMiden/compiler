@@ -108,7 +108,8 @@ impl BuildCommand {
 
         // Merge user-provided midenc options from parsed Compiler struct
         // User options override target-derived defaults
-        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts);
+        let package_source_dir = cargo_package.manifest_path.parent().map(|p| p.as_std_path());
+        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts, package_source_dir);
 
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
@@ -231,12 +232,19 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
     args
 }
 
-/// Merges user-provided `--emit` option with target-derived defaults.
+/// Merges user-provided options with target-derived defaults.
 ///
-/// Only the `--emit` option is merged from user input. All other options are
-/// determined by the detected target environment and project type.
-fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String> {
-    // Only merge --emit options from user input
+/// The following options are merged from user input:
+/// - `--emit` options
+/// - `--debug` option (and automatically adds `-Ztrim-path-prefix` when debug is enabled)
+///
+/// All other options are determined by the detected target environment and project type.
+fn merge_midenc_flags(
+    mut base: Vec<String>,
+    compiler: &Compiler,
+    package_source_dir: Option<&Path>,
+) -> Vec<String> {
+    // Merge --emit options from user input
     for spec in &compiler.output_types {
         base.push("--emit".to_string());
         let spec_str = match spec {
@@ -256,6 +264,24 @@ fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String>
             }
         };
         base.push(spec_str);
+    }
+
+    // Pass through the --debug flag to midenc
+    let debug_level = match compiler.debug {
+        midenc_session::DebugInfo::None => "none",
+        midenc_session::DebugInfo::Line => "line",
+        midenc_session::DebugInfo::Full => "full",
+    };
+    base.push("--debug".to_string());
+    base.push(debug_level.to_string());
+
+    // When debug info is enabled, automatically add -Ztrim-path-prefix to normalize
+    // source paths in debug information.
+    if compiler.debug != midenc_session::DebugInfo::None
+        && let Some(source_dir) = package_source_dir
+    {
+        let trim_prefix = format!("-Ztrim-path-prefix={}", source_dir.display());
+        base.push(trim_prefix);
     }
 
     base
