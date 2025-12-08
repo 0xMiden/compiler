@@ -191,9 +191,8 @@ fn four_felts_struct_round_trip() {
     let _package = test.compiled_package();
 }
 
-/// Test struct serialization with 5 Felt fields - triggers spills issue.
+/// Test struct serialization with 5 Felt fields.
 #[test]
-#[should_panic(expected = "not yet implemented")]
 fn five_felts_struct_round_trip() {
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -214,8 +213,12 @@ fn five_felts_struct_round_trip() {
     }"#;
 
     let config = WasmTranslationConfig::default();
-    let mut test = build_felt_repr_test("onchain_five_felts_struct", onchain_code, config);
+    let artifact_name = "onchain_five_felts_struct";
+    let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
 
-    // This will panic with "not yet implemented" due to spills issue
+    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
+
     let _package = test.compiled_package();
 }

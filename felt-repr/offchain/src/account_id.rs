@@ -1,11 +1,8 @@
 //! AccountId wrapper for felt representation serialization.
 
-use alloc::vec::Vec;
-
-use miden_core::Felt;
 use miden_objects::account::AccountId;
 
-use crate::ToFeltRepr;
+use crate::{FeltWriter, ToFeltRepr};
 
 /// Wrapper around `AccountId` that implements `ToFeltRepr`.
 ///
@@ -20,7 +17,8 @@ impl<'a> From<&'a AccountId> for AccountIdFeltRepr<'a> {
 }
 
 impl ToFeltRepr for AccountIdFeltRepr<'_> {
-    fn to_felt_repr(&self) -> Vec<Felt> {
-        Vec::from([self.0.prefix().as_felt(), self.0.suffix()])
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(self.0.prefix().as_felt());
+        writer.write(self.0.suffix());
     }
 }

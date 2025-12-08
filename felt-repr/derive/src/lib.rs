@@ -148,10 +148,8 @@ fn derive_to_felt_repr_impl(input: &DeriveInput) -> Result<TokenStream, Error> {
 
     let expanded = quote! {
         impl #impl_generics miden_felt_repr_offchain::ToFeltRepr for #name #ty_generics #where_clause {
-            fn to_felt_repr(&self) -> alloc::vec::Vec<miden_core::Felt> {
-                let mut result = alloc::vec::Vec::new();
-                #(result.extend(miden_felt_repr_offchain::ToFeltRepr::to_felt_repr(&self.#field_names));)*
-                result
+            fn write_felt_repr(&self, writer: &mut miden_felt_repr_offchain::FeltWriter<'_>) {
+                #(miden_felt_repr_offchain::ToFeltRepr::write_felt_repr(&self.#field_names, writer);)*
             }
         }
     };
@@ -216,18 +214,11 @@ fn derive_to_felt_repr_onchain_impl(input: &DeriveInput) -> Result<TokenStream, 
 
     let field_names: Vec<_> = fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
 
-    // Use for loop with push instead of extend to work around Wasm compilation issue with extend
     let expanded = quote! {
         impl #impl_generics miden_felt_repr_onchain::ToFeltRepr for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn to_felt_repr(&self) -> alloc::vec::Vec<miden_stdlib_sys::Felt> {
-                let mut result = alloc::vec::Vec::new();
-                #(
-                    for item in miden_felt_repr_onchain::ToFeltRepr::to_felt_repr(&self.#field_names) {
-                        result.push(item);
-                    }
-                )*
-                result
+            fn write_felt_repr(&self, writer: &mut miden_felt_repr_onchain::FeltWriter<'_>) {
+                #(miden_felt_repr_onchain::ToFeltRepr::write_felt_repr(&self.#field_names, writer);)*
             }
         }
     };
