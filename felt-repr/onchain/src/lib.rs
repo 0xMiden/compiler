@@ -87,6 +87,13 @@ impl FromFeltRepr for u8 {
     }
 }
 
+impl FromFeltRepr for bool {
+    #[inline(always)]
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        reader.read().as_u64() != 0
+    }
+}
+
 /// Trait for serializing a type into its felt memory representation.
 pub trait ToFeltRepr {
     /// Writes this value's felt representation to the writer.
@@ -123,6 +130,13 @@ impl ToFeltRepr for u32 {
 }
 
 impl ToFeltRepr for u8 {
+    #[inline(always)]
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(Felt::from(*self as u32));
+    }
+}
+
+impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(Felt::from(*self as u32));
