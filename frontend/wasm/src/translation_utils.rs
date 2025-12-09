@@ -11,6 +11,16 @@ use crate::{
     error::WasmResult, module::function_builder_ext::FunctionBuilderExt, unsupported_diag,
 };
 
+/// Returns a synthetic SourceSpan for compiler-generated code.
+///
+/// This uses SourceSpan::SYNTHETIC from miden-debug-types which is identified
+/// by having an unknown source_id and both start and end set to u32::MAX.
+/// This differentiates it from UNKNOWN spans (which have start and end at 0)
+/// and indicates the code doesn't correspond to any specific user source location.
+fn synthetic_span() -> SourceSpan {
+    SourceSpan::SYNTHETIC
+}
+
 /// Represents the possible sizes in bytes of the discriminant of a variant type in the component
 /// model
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -103,23 +113,26 @@ const fn ceiling_divide(n: usize, d: usize) -> usize {
 }
 
 /// Emit instructions to produce a zero value in the given type.
+///
+/// These are compiler-generated values (local initialization), so they use synthetic span.
 pub fn emit_zero<B: ?Sized + Builder>(
     ty: &Type,
     builder: &mut FunctionBuilderExt<'_, B>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<ValueRef> {
+    let span = synthetic_span();
     Ok(match ty {
-        Type::I1 => builder.i1(false, SourceSpan::default()),
-        Type::I8 => builder.i8(0, SourceSpan::default()),
-        Type::I16 => builder.i16(0, SourceSpan::default()),
-        Type::I32 => builder.i32(0, SourceSpan::default()),
-        Type::I64 => builder.i64(0, SourceSpan::default()),
-        Type::U8 => builder.u8(0, SourceSpan::default()),
-        Type::U16 => builder.u16(0, SourceSpan::default()),
-        Type::U32 => builder.u32(0, SourceSpan::default()),
-        Type::U64 => builder.u64(0, SourceSpan::default()),
-        Type::F64 => builder.f64(0.0, SourceSpan::default()),
-        Type::Felt => builder.felt(Felt::ZERO, SourceSpan::default()),
+        Type::I1 => builder.i1(false, span),
+        Type::I8 => builder.i8(0, span),
+        Type::I16 => builder.i16(0, span),
+        Type::I32 => builder.i32(0, span),
+        Type::I64 => builder.i64(0, span),
+        Type::U8 => builder.u8(0, span),
+        Type::U16 => builder.u16(0, span),
+        Type::U32 => builder.u32(0, span),
+        Type::U64 => builder.u64(0, span),
+        Type::F64 => builder.f64(0.0, span),
+        Type::Felt => builder.felt(Felt::ZERO, span),
         Type::I128
         | Type::U128
         | Type::U256
