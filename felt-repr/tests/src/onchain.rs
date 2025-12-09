@@ -259,3 +259,110 @@ fn five_felts_struct_round_trip() {
     })
     .unwrap();
 }
+
+/// Test struct with mixed field types for round-trip tests.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct MixedTypes {
+    f1: Felt,
+    f2: Felt,
+    n1: u64,
+    n2: u64,
+    x: u32,
+    y: u8,
+}
+
+/// Test struct serialization with mixed field types - full round-trip execution.
+///
+/// Tests a struct with 2 Felt, 2 u64, 1 u32, and 1 u8 fields.
+/// Each field is serialized as one Felt, so total is 6 Felts.
+#[test]
+fn mixed_types_struct_round_trip() {
+    let original = MixedTypes {
+        f1: Felt::new(111111),
+        f2: Felt::new(222222),
+        n1: 333333,
+        n2: 444444,
+        x: 55555,
+        y: 66,
+    };
+    let serialized = original.to_felt_repr();
+
+    // Each field serializes to one Felt
+    assert_eq!(serialized.len(), 6);
+
+    let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct TestStruct {
+            f1: Felt,
+            f2: Felt,
+            n1: u64,
+            n2: u64,
+            x: u32,
+            y: u8,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = TestStruct::from_felt_repr(&mut reader);
+
+        // Verify some fields were deserialized correctly
+        assert_eq(deserialized.f1, felt!(111111));
+        assert_eq(Felt::from(deserialized.y as u32), felt!(66));
+
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let artifact_name = "onchain_mixed_types_struct";
+    let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
+
+    let package = test.compiled_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    let input_felts: Vec<Felt> = serialized.clone();
+
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(input_felts),
+    }];
+
+    let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
+
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let vec_metadata: [TestFelt; 4] = trace
+            .read_from_rust_memory(out_byte_addr)
+            .expect("Failed to read Vec metadata from memory");
+        // Vec metadata layout is: [capacity, ptr, len, ?]
+        let data_ptr = vec_metadata[1].0.as_int() as u32;
+        let len = vec_metadata[2].0.as_int() as usize;
+
+        assert_eq!(len, 6, "Expected Vec with 6 felts");
+
+        // Convert byte address to element address
+        let elem_addr = data_ptr / 4;
+
+        // Read all 6 elements individually
+        let mut result_felts = [Felt::ZERO; 6];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..6 {
+            let byte_addr = (elem_addr + i as u32) * 4;
+            let word_addr = (byte_addr / 16) * 16;
+            if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
+                let elem_in_word = ((byte_addr % 16) / 4) as usize;
+                result_felts[i] = data[elem_in_word].0;
+            }
+        }
+
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = MixedTypes::from_felt_repr(&mut reader);
+
+        assert_eq!(result_struct, original, "Mixed types round-trip failed");
+        Ok(())
+    })
+    .unwrap();
+}
