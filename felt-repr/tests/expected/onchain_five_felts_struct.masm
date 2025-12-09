@@ -268,7 +268,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.16
+    push.12
     dup.3
     add
     u32assert
@@ -285,7 +285,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
+    push.8
     dup.4
     add
     u32assert
@@ -302,7 +302,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.8
+    push.4
     dup.5
     add
     u32assert
@@ -319,8 +319,22 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    dup.5
     push.4
-    dup.6
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.16
+    movup.7
     add
     u32assert
     push.4
@@ -336,18 +350,16 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.6
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
+    push.55555
     trace.240
     nop
-    exec.::intrinsics::mem::load_felt
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::intrinsics::felt::from_u32
+    trace.252
+    nop
+    dup.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::onchain_five_felts_struct::intrinsics::felt::assert_eq
     trace.252
     nop
     push.8
@@ -394,7 +406,7 @@ pub proc entrypoint(i32, i32)
     push.4
     dup.7
     u32wrapping_add
-    movup.2
+    movup.3
     swap.1
     trace.240
     nop
@@ -404,7 +416,7 @@ pub proc entrypoint(i32, i32)
     push.4
     dup.6
     u32wrapping_add
-    movup.2
+    movup.3
     swap.1
     trace.240
     nop
@@ -414,7 +426,7 @@ pub proc entrypoint(i32, i32)
     push.4
     dup.5
     u32wrapping_add
-    movup.2
+    movup.3
     swap.1
     trace.240
     nop
@@ -424,7 +436,7 @@ pub proc entrypoint(i32, i32)
     push.4
     dup.4
     u32wrapping_add
-    movup.2
+    movup.3
     swap.1
     trace.240
     nop
@@ -901,6 +913,16 @@ proc intrinsics::mem::heap_base(
     exec.::intrinsics::mem::heap_base
     trace.252
     nop
+end
+
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
+end
+
+@callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
+    assert_eq
 end
 
 @callconv("C")
