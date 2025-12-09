@@ -7,10 +7,12 @@
   (type (;5;) (func))
   (type (;6;) (func (param i32 i32 i32) (result i32)))
   (type (;7;) (func (result i32)))
-  (type (;8;) (func (param i32 i32 i32 i32 i32 i32)))
-  (type (;9;) (func (param i32 i32 i32)))
-  (type (;10;) (func (param i32 i32 i32 i32)))
-  (type (;11;) (func (param i32 i32 i32 i32 i32)))
+  (type (;8;) (func (param i32) (result f32)))
+  (type (;9;) (func (param f32 f32)))
+  (type (;10;) (func (param i32 i32 i32 i32 i32 i32)))
+  (type (;11;) (func (param i32 i32 i32)))
+  (type (;12;) (func (param i32 i32 i32 i32)))
+  (type (;13;) (func (param i32 i32 i32 i32 i32)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -87,20 +89,23 @@
     local.tee 2
     global.set $__stack_pointer
     local.get 1
-    f32.load offset=16
+    f32.load offset=12
     local.set 3
     local.get 1
-    f32.load offset=12
+    f32.load offset=8
     local.set 4
     local.get 1
-    f32.load offset=8
+    f32.load offset=4
     local.set 5
     local.get 1
-    f32.load offset=4
+    f32.load
     local.set 6
     local.get 1
-    f32.load
-    local.set 7
+    f32.load offset=16
+    local.tee 7
+    i32.const 55555
+    call $intrinsics::felt::from_u32
+    call $intrinsics::felt::assert_eq
     local.get 2
     i32.const 4
     i32.add
@@ -112,11 +117,6 @@
     local.get 2
     i64.const 17179869184
     i64.store offset=4 align=4
-    local.get 2
-    i32.const 4
-    i32.add
-    local.get 7
-    call $alloc::vec::Vec<T,A>::push
     local.get 2
     i32.const 4
     i32.add
@@ -136,6 +136,11 @@
     i32.const 4
     i32.add
     local.get 3
+    call $alloc::vec::Vec<T,A>::push
+    local.get 2
+    i32.const 4
+    i32.add
+    local.get 7
     call $alloc::vec::Vec<T,A>::push
     local.get 0
     i32.const 8
@@ -280,7 +285,13 @@
   (func $intrinsics::mem::heap_base (;8;) (type 7) (result i32)
     unreachable
   )
-  (func $alloc::raw_vec::RawVecInner<A>::grow_amortized (;9;) (type 8) (param i32 i32 i32 i32 i32 i32)
+  (func $intrinsics::felt::from_u32 (;9;) (type 8) (param i32) (result f32)
+    unreachable
+  )
+  (func $intrinsics::felt::assert_eq (;10;) (type 9) (param f32 f32)
+    unreachable
+  )
+  (func $alloc::raw_vec::RawVecInner<A>::grow_amortized (;11;) (type 10) (param i32 i32 i32 i32 i32 i32)
     (local i32 i32 i32 i64)
     global.get $__stack_pointer
     i32.const 32
@@ -408,7 +419,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;10;) (type 9) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;12;) (type 11) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -437,7 +448,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::alloc::Global::alloc_impl (;11;) (type 10) (param i32 i32 i32 i32)
+  (func $alloc::alloc::Global::alloc_impl (;13;) (type 12) (param i32 i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -464,7 +475,7 @@
     local.get 1
     i32.store
   )
-  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;12;) (type 10) (param i32 i32 i32 i32)
+  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;14;) (type 12) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
@@ -499,7 +510,7 @@
     local.get 4
     i32.store
   )
-  (func $alloc::raw_vec::finish_grow (;13;) (type 11) (param i32 i32 i32 i32 i32)
+  (func $alloc::raw_vec::finish_grow (;15;) (type 13) (param i32 i32 i32 i32 i32)
     (local i32 i32)
     global.get $__stack_pointer
     i32.const 16
@@ -598,10 +609,10 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::handle_error (;14;) (type 9) (param i32 i32 i32)
+  (func $alloc::raw_vec::handle_error (;16;) (type 11) (param i32 i32 i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;15;) (type 3) (param i32 i32) (result i32)
+  (func $core::ptr::alignment::Alignment::max (;17;) (type 3) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
