@@ -278,10 +278,11 @@ impl Options {
         matches!(self.debug, DebugInfo::Line | DebugInfo::Full)
     }
 
-    /// Returns true if rich debugging information should be emitted by the compiler
+    /// Returns true if rich debugging information should be emitted by the compiler.
+    /// This enables AssemblyOp decorators which carry source location info for runtime errors.
     #[inline(always)]
     pub fn emit_debug_decorators(&self) -> bool {
-        matches!(self.debug, DebugInfo::Full)
+        matches!(self.debug, DebugInfo::Line | DebugInfo::Full)
     }
 
     /// Returns true if debug assertions are enabled

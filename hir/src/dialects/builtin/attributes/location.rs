@@ -62,6 +62,8 @@ impl Location {
         use midenc_session::path::Path;
         if span.is_unknown() {
             Self::Unknown
+        } else if span.is_synthetic() {
+            Self::Synthetic
         } else if let Some(index) = Self::is_deferred(span) {
             Self::Opaque(index)
         } else if let Ok(file) = context.session().source_manager.get(span.source_id()) {
@@ -124,7 +126,8 @@ impl Location {
     pub fn try_into_span(&self, context: &crate::Context) -> Option<SourceSpan> {
         use crate::diagnostics::SourceManagerExt;
         match self {
-            Self::Unknown | Self::Synthetic => Some(SourceSpan::UNKNOWN),
+            Self::Unknown => Some(SourceSpan::UNKNOWN),
+            Self::Synthetic => Some(SourceSpan::SYNTHETIC),
             Self::Opaque(index) => Some(Self::deferred((*index).try_into().unwrap())),
             Self::FileLineCol { uri, line, column } => {
                 let path = std::path::Path::new(uri.path());
@@ -151,7 +154,8 @@ impl Location {
     pub fn try_into_span(&self, context: &crate::Context) -> Option<SourceSpan> {
         use crate::diagnostics::SourceManagerExt;
         match self {
-            Self::Unknown | Self::Synthetic => Some(SourceSpan::UNKNOWN),
+            Self::Unknown => Some(SourceSpan::UNKNOWN),
+            Self::Synthetic => Some(SourceSpan::SYNTHETIC),
             Self::Opaque(index) => Some(Self::deferred((*index).try_into().unwrap())),
             Self::FileLineCol { uri, line, column } => {
                 let file = context.session().source_manager.get_by_uri(uri)?;
