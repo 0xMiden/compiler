@@ -134,13 +134,8 @@ fn two_felts_struct_round_trip() {
         let vec_metadata: [TestFelt; 4] = trace
             .read_from_rust_memory(out_byte_addr)
             .expect("Failed to read Vec metadata from memory");
-
-        // The Word is stored in reverse order when read as [TestFelt; 4]:
-        // Word[0] -> TestFelt[3] = pointer
-        // Word[1] -> TestFelt[2] = length
-        // Word[2] -> TestFelt[1] = (unused)
-        // Word[3] -> TestFelt[0] = capacity
-        let data_ptr = vec_metadata[3].0.as_int() as u32;
+        // Vec metadata layout  is: [capacity, ptr, len, ?]
+        let data_ptr = vec_metadata[1].0.as_int() as u32;
         let len = vec_metadata[2].0.as_int() as usize;
 
         assert_eq!(len, 2, "Expected Vec with 2 felts");
@@ -151,6 +146,7 @@ fn two_felts_struct_round_trip() {
             .expect("Failed to read Vec data from memory");
 
         let result_felts = [result_data[0].0, result_data[1].0];
+        dbg!(&result_data);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader);
 
@@ -230,54 +226,31 @@ fn five_felts_struct_round_trip() {
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
 
     let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        // Vec<Felt> is returned as (ptr, len, capacity) via C ABI
         let vec_metadata: [TestFelt; 4] = trace
             .read_from_rust_memory(out_byte_addr)
             .expect("Failed to read Vec metadata from memory");
-
-        // The Word is stored in reverse order when read as [TestFelt; 4]:
-        // Word[0] -> TestFelt[3] = pointer
-        // Word[1] -> TestFelt[2] = length
-        // Word[2] -> TestFelt[1] = (unused)
-        // Word[3] -> TestFelt[0] = capacity
-        let data_ptr = vec_metadata[3].0.as_int() as u32;
+        // Vec metadata layout  is: [capacity, ptr, len, ?]
+        // where ptr is a byte address.
+        let data_ptr = vec_metadata[1].0.as_int() as u32;
         let len = vec_metadata[2].0.as_int() as usize;
 
         assert_eq!(len, 5, "Expected Vec with 5 felts");
 
-        // Read the actual data from the Vec's data pointer
-        // data_ptr is a byte address
-        eprintln!("data_ptr = {}", data_ptr);
+        // Convert byte address to element address
+        let elem_addr = data_ptr / 4;
 
-        let result_data1: [TestFelt; 4] = trace
-            .read_from_rust_memory(data_ptr)
-            .expect("Failed to read Vec data (word 0) from memory");
-        eprintln!("word at data_ptr (0): {:?}", result_data1);
-
-        let result_data2: [TestFelt; 4] = trace
-            .read_from_rust_memory(data_ptr + 16)
-            .expect("Failed to read Vec data (word 1) from memory");
-        eprintln!("word at data_ptr (1): {:?}", result_data1);
-
-        // Search for the 5th felt in nearby memory (word-aligned = multiples of 16 bytes)
-        for word_offset in -2i32..=2 {
-            let byte_offset = word_offset * 16;
-            if let Some(data) =
-                trace.read_from_rust_memory::<[TestFelt; 4]>((data_ptr as i32 + byte_offset) as u32)
-            {
-                eprintln!("word at data_ptr+{}: {:?}", byte_offset, data);
+        // Read all 5 elements individually
+        let mut result_felts = [Felt::ZERO; 5];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..5 {
+            let byte_addr = (elem_addr + i as u32) * 4;
+            let word_addr = (byte_addr / 16) * 16;
+            if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
+                let elem_in_word = ((byte_addr % 16) / 4) as usize;
+                result_felts[i] = data[elem_in_word].0;
             }
         }
 
-        // The 5th felt is missing - Vec might not have allocated contiguous memory
-        // For now, just use the first 4 felts we found
-        let result_felts = [
-            result_data1[0].0,
-            result_data1[1].0,
-            result_data1[2].0,
-            result_data1[3].0,
-            result_data2[0].0, // Felt::ZERO, // 5th felt is not being stored correctly
-        ];
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = FiveFelts::from_felt_repr(&mut reader);
 

@@ -94,7 +94,8 @@ pub trait ToFeltRepr {
 
     /// Convenience method that allocates and returns a `Vec<Felt>`.
     fn to_felt_repr(&self) -> Vec<Felt> {
-        let mut data = Vec::new();
+        // Allocate ahead to avoid reallocations
+        let mut data = Vec::with_capacity(256);
         self.write_felt_repr(&mut FeltWriter::new(&mut data));
         data
     }
