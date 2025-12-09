@@ -82,6 +82,12 @@ impl FromFeltRepr for u8 {
     }
 }
 
+impl FromFeltRepr for bool {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        reader.read().as_int() != 0
+    }
+}
+
 /// Trait for serializing a type into its felt memory representation.
 pub trait ToFeltRepr {
     /// Writes this value's felt representation to the writer.
@@ -89,7 +95,8 @@ pub trait ToFeltRepr {
 
     /// Convenience method that allocates and returns a `Vec<Felt>`.
     fn to_felt_repr(&self) -> Vec<Felt> {
-        let mut data = Vec::new();
+        // Allocate ahead to avoid reallocations
+        let mut data = Vec::with_capacity(256);
         self.write_felt_repr(&mut FeltWriter::new(&mut data));
         data
     }
@@ -114,6 +121,12 @@ impl ToFeltRepr for u32 {
 }
 
 impl ToFeltRepr for u8 {
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(Felt::new(*self as u64));
+    }
+}
+
+impl ToFeltRepr for bool {
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(Felt::new(*self as u64));
     }
