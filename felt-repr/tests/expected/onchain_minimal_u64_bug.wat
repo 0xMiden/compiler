@@ -1,4 +1,4 @@
-(module $onchain_mixed_types_struct.wasm
+(module $onchain_minimal_u64_bug.wasm
   (type (;0;) (func (param i32 f32)))
   (type (;1;) (func (param i32)))
   (type (;2;) (func (param i32 i32)))
@@ -84,41 +84,42 @@
     global.set $__stack_pointer
   )
   (func $entrypoint (;2;) (type 2) (param i32 i32)
-    (local i32 f32 f32 i64 i64 i64 i32 i32)
+    (local i32 f32 f32 i64 i64 i64 i64 i64 i32)
     global.get $__stack_pointer
     i32.const 32
     i32.sub
     local.tee 2
     global.set $__stack_pointer
     local.get 1
-    f32.load offset=4
-    local.set 3
-    local.get 1
     f32.load
-    local.set 4
+    local.tee 3
+    i32.const 111111
+    call $intrinsics::felt::from_u32
+    call $intrinsics::felt::assert_eq
     local.get 1
-    f32.load offset=8
+    f32.load offset=16
+    local.tee 4
+    i32.const 55
+    call $intrinsics::felt::from_u32
+    call $intrinsics::felt::assert_eq
+    local.get 3
     call $intrinsics::felt::as_u64
     local.set 5
     local.get 1
-    f32.load offset=12
+    f32.load offset=4
     call $intrinsics::felt::as_u64
     local.set 6
     local.get 1
-    f32.load offset=16
+    f32.load offset=8
     call $intrinsics::felt::as_u64
     local.set 7
     local.get 1
-    f32.load offset=20
+    f32.load offset=12
     call $intrinsics::felt::as_u64
-    i32.wrap_i64
-    i32.const 255
-    i32.and
-    local.tee 8
-    call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
-    i32.const 66
-    call $intrinsics::felt::from_u32
-    call $intrinsics::felt::assert_eq
+    local.set 8
+    local.get 4
+    call $intrinsics::felt::as_u64
+    local.set 9
     local.get 2
     i32.const 20
     i32.add
@@ -148,7 +149,7 @@
     i32.add
     i32.const 8
     i32.add
-    local.tee 9
+    local.tee 10
     i32.const 0
     i32.store
     local.get 2
@@ -161,16 +162,6 @@
     local.get 2
     i32.const 8
     i32.add
-    local.get 4
-    call $alloc::vec::Vec<T,A>::push
-    local.get 2
-    i32.const 8
-    i32.add
-    local.get 3
-    call $alloc::vec::Vec<T,A>::push
-    local.get 2
-    i32.const 8
-    i32.add
     local.get 5
     call $intrinsics::felt::from_u64_unchecked
     call $alloc::vec::Vec<T,A>::push
@@ -178,7 +169,8 @@
     i32.const 8
     i32.add
     local.get 6
-    call $intrinsics::felt::from_u64_unchecked
+    i32.wrap_i64
+    call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
     call $alloc::vec::Vec<T,A>::push
     local.get 2
     i32.const 8
@@ -191,12 +183,20 @@
     i32.const 8
     i32.add
     local.get 8
+    i32.wrap_i64
+    call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+    call $alloc::vec::Vec<T,A>::push
+    local.get 2
+    i32.const 8
+    i32.add
+    local.get 9
+    i32.wrap_i64
     call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
     call $alloc::vec::Vec<T,A>::push
     local.get 0
     i32.const 8
     i32.add
-    local.get 9
+    local.get 10
     i32.load
     i32.store
     local.get 0

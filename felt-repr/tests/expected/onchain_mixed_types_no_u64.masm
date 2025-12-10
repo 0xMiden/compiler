@@ -18,7 +18,7 @@ proc init
     mem_store.278536
 end
 
-# mod root_ns:root@1.0.0::onchain_mixed_types_struct
+# mod root_ns:root@1.0.0::onchain_mixed_types_no_u64
 
 @callconv("C")
 proc alloc::vec::Vec<T,A>::push(i32, felt)
@@ -64,7 +64,7 @@ proc alloc::vec::Vec<T,A>::push(i32, felt)
         dup.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::RawVec<T,A>::grow_one
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::RawVec<T,A>::grow_one
         trace.252
         nop
     end
@@ -179,7 +179,7 @@ proc alloc::raw_vec::RawVec<T,A>::grow_one(i32)
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::RawVecInner<A>::grow_amortized
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::RawVecInner<A>::grow_amortized
     trace.252
     nop
     push.8
@@ -238,7 +238,7 @@ proc alloc::raw_vec::RawVec<T,A>::grow_one(i32)
         swap.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::handle_error
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -268,7 +268,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.4
+    push.12
     dup.3
     add
     u32assert
@@ -285,7 +285,10 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.3
+    push.8
+    dup.4
+    add
+    u32assert
     push.4
     dup.1
     swap.1
@@ -299,7 +302,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.8
+    push.4
     dup.5
     add
     u32assert
@@ -316,12 +319,21 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    dup.5
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::as_u64
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
+    push.16
     dup.7
     add
     u32assert
@@ -340,33 +352,11 @@ pub proc entrypoint(i32, i32)
     nop
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::as_u64
-    trace.252
-    nop
-    push.16
-    dup.9
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::as_u64
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::intrinsics::felt::as_u64
     trace.252
     nop
     push.20
-    movup.11
+    movup.9
     add
     u32assert
     push.4
@@ -384,36 +374,14 @@ pub proc entrypoint(i32, i32)
     nop
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::as_u64
-    trace.252
-    nop
-    push.255
-    movdn.2
-    drop
-    u32and
-    dup.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
-    trace.252
-    nop
-    push.66
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::assert_eq
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::intrinsics::felt::as_u64
     trace.252
     nop
     push.4
     push.0
     push.256
     push.20
-    dup.13
+    dup.12
     u32wrapping_add
     dup.3
     swap.4
@@ -422,11 +390,11 @@ pub proc entrypoint(i32, i32)
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::RawVecInner<A>::try_allocate_in
     trace.252
     nop
     push.24
-    dup.10
+    dup.9
     add
     u32assert
     push.4
@@ -443,7 +411,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.20
-    dup.11
+    dup.10
     add
     u32assert
     push.4
@@ -467,7 +435,7 @@ pub proc entrypoint(i32, i32)
     if.true
         push.8
         push.8
-        dup.12
+        dup.11
         u32wrapping_add
         u32wrapping_add
         dup.0
@@ -487,7 +455,7 @@ pub proc entrypoint(i32, i32)
         trace.252
         nop
         push.28
-        dup.12
+        dup.11
         add
         u32assert
         push.4
@@ -504,7 +472,7 @@ pub proc entrypoint(i32, i32)
         trace.252
         nop
         push.12
-        dup.13
+        dup.12
         add
         u32assert
         push.4
@@ -521,7 +489,7 @@ pub proc entrypoint(i32, i32)
         trace.252
         nop
         push.8
-        dup.12
+        dup.11
         add
         u32assert
         push.4
@@ -540,75 +508,69 @@ pub proc entrypoint(i32, i32)
         trace.252
         nop
         push.8
-        dup.11
+        dup.10
         u32wrapping_add
-        movup.9
+        movup.6
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
         trace.252
         nop
         push.8
-        dup.10
+        dup.9
         u32wrapping_add
-        movup.9
+        movup.6
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
-        trace.252
-        nop
-        movup.7
-        movup.7
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::from_u64_unchecked
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
         trace.252
         nop
         push.8
         dup.8
         u32wrapping_add
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
-        trace.252
-        nop
-        movup.5
-        movup.5
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::felt::from_u64_unchecked
-        trace.252
-        nop
-        push.8
-        dup.6
-        u32wrapping_add
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
-        trace.252
-        nop
-        movup.3
-        movup.3
-        drop
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
-        trace.252
-        nop
-        push.8
-        dup.4
-        u32wrapping_add
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
-        trace.252
-        nop
+        movup.6
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
+        trace.252
+        nop
+        push.8
+        dup.7
+        u32wrapping_add
+        movup.6
+        swap.1
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
+        trace.252
+        nop
+        movup.4
+        movup.4
+        drop
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+        trace.252
+        nop
+        push.8
+        dup.5
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
+        trace.252
+        nop
+        push.255
+        movup.3
+        movup.3
+        drop
+        u32and
+        trace.240
+        nop
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
         trace.252
         nop
         push.8
@@ -616,7 +578,7 @@ pub proc entrypoint(i32, i32)
         u32wrapping_add
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::vec::Vec<T,A>::push
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::vec::Vec<T,A>::push
         trace.252
         nop
         push.4
@@ -690,10 +652,9 @@ pub proc entrypoint(i32, i32)
         trace.252
         nop
     else
-        movdn.9
+        movdn.8
         dropw
         dropw
-        drop
         movup.2
         drop
         push.28
@@ -717,7 +678,7 @@ pub proc entrypoint(i32, i32)
         swap.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::handle_error
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -732,7 +693,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -746,7 +707,7 @@ proc __rustc::__rust_realloc(i32, i32, i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -850,7 +811,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -955,7 +916,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::core::ptr::alignment::Alignment::max
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::core::ptr::alignment::Alignment::max
         trace.252
         nop
         push.0
@@ -1004,7 +965,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::intrinsics::mem::heap_base
+                exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -1123,34 +1084,8 @@ proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::fro
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
 proc intrinsics::felt::as_u64(felt) -> [u32; 2]
     u32split
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
 end
 
 @callconv("C")
@@ -1356,7 +1291,7 @@ proc alloc::raw_vec::RawVecInner<A>::grow_amortized(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::RawVecInner<A>::current_memory
+                    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::RawVecInner<A>::current_memory
                     trace.252
                     nop
                     push.20
@@ -1375,7 +1310,7 @@ proc alloc::raw_vec::RawVecInner<A>::grow_amortized(
                     swap.1
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::raw_vec::finish_grow
+                    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::raw_vec::finish_grow
                     trace.252
                     nop
                     push.12
@@ -1653,7 +1588,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::alloc::Global::alloc_impl
+                    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::alloc::Global::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1679,7 +1614,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -1993,7 +1928,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::alloc::Global::alloc_impl
+    exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::alloc::Global::alloc_impl
     trace.252
     nop
     push.12
@@ -2092,7 +2027,7 @@ proc alloc::alloc::Global::alloc_impl(
     else
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -2103,7 +2038,7 @@ proc alloc::alloc::Global::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::__rustc::__rust_alloc_zeroed
+            exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -2111,7 +2046,7 @@ proc alloc::alloc::Global::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::__rustc::__rust_alloc
+            exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -2349,7 +2284,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
             dup.3
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+            exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::<alloc::alloc::Global as core::alloc::Allocator>::allocate
             trace.252
             nop
             push.4
@@ -2426,7 +2361,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
                 swap.2
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::__rustc::__rust_realloc
+                exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::__rustc::__rust_realloc
                 trace.252
                 nop
                 dup.5
@@ -2445,7 +2380,7 @@ proc alloc::raw_vec::finish_grow(i32, i32, i32, i32, i32)
                 swap.2
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::onchain_mixed_types_struct::alloc::alloc::Global::alloc_impl
+                exec.::root_ns:root@1.0.0::onchain_mixed_types_no_u64::alloc::alloc::Global::alloc_impl
                 trace.252
                 nop
                 push.12

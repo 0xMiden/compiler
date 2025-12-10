@@ -258,28 +258,140 @@ fn five_felts_struct_round_trip() {
     .unwrap();
 }
 
-/// Test struct with mixed field types for round-trip tests.
+/// Minimal struct to reproduce u64 stack tracking bug.
+/// The bug requires: 1 u64 + 4 smaller integer types (u8 or u32).
+/// With Felt fields it passes; with u8/u32 fields it fails.
+/// The difference is that u8/u32 use `as_u32` intrinsic after reading.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
-struct MixedTypes {
+struct MinimalU64Bug {
+    n1: u64,
+    a: u32,
+    b: u32,
+    x: u32,
+    y: u32,
+}
+
+/// Minimal test case for u64 stack tracking bug.
+///
+/// The bug occurs when:
+/// 1. Multiple u64 fields are read (as_u64 returns 2 felts on stack each)
+/// 2. Another field (y) is NOT immediately consumed (no assert_eq)
+/// 3. The value needs to be spilled to a local variable
+///
+/// This causes incorrect stack position tracking, spilling the wrong value.
+#[test]
+fn minimal_u64_bug() {
+    let original = MinimalU64Bug {
+        n1: 111111,
+        a: 22,
+        b: 33,
+        x: 44,
+        y: 55,
+    };
+    let serialized = original.to_felt_repr();
+
+    assert_eq!(serialized.len(), 5);
+
+    let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        assert_eq(input[0], felt!(111111));
+        assert_eq(input[4], felt!(55));
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct TestStruct {
+            n1: u64,
+            a: u32,
+            b: u32,
+            x: u32,
+            y: u32,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = TestStruct::from_felt_repr(&mut reader);
+
+        // NOT using assert_eq on y - this triggers the bug
+        // The y value needs to survive until to_felt_repr()
+
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let artifact_name = "onchain_minimal_u64_bug";
+    let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
+
+    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
+
+    let package = test.compiled_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    let input_felts: Vec<Felt> = serialized.clone();
+
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(input_felts),
+    }];
+
+    let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
+
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let vec_metadata: [TestFelt; 4] = trace
+            .read_from_rust_memory(out_byte_addr)
+            .expect("Failed to read Vec metadata from memory");
+        let data_ptr = vec_metadata[1].0.as_int() as u32;
+        let len = vec_metadata[2].0.as_int() as usize;
+
+        assert_eq!(len, 5, "Expected Vec with 5 felts");
+
+        let elem_addr = data_ptr / 4;
+        let mut result_felts = [Felt::ZERO; 5];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..5 {
+            let byte_addr = (elem_addr + i as u32) * 4;
+            let word_addr = (byte_addr / 16) * 16;
+            if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
+                let elem_in_word = ((byte_addr % 16) / 4) as usize;
+                result_felts[i] = data[elem_in_word].0;
+            }
+        }
+
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = MinimalU64Bug::from_felt_repr(&mut reader);
+
+        assert_eq!(result_struct, original, "Minimal u64 bug round-trip failed");
+        Ok(())
+    })
+    .unwrap();
+}
+
+/// Test struct with Felt fields instead of u64 (to test if u64 causes the stack tracking bug).
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct MixedTypesNoU64 {
     f1: Felt,
     f2: Felt,
-    n1: u64,
-    n2: u64,
+    f3: Felt,
+    f4: Felt,
     x: u32,
     y: u8,
 }
 
-/// Test struct serialization with mixed field types - full round-trip execution.
+/// Test struct serialization with Felt fields instead of u64 - to verify u64 involvement in bug.
 ///
-/// Tests a struct with 2 Felt, 2 u64, 1 u32, and 1 u8 fields.
+/// Tests a struct with 4 Felt, 1 u32, and 1 u8 fields (no u64).
 /// Each field is serialized as one Felt, so total is 6 Felts.
 #[test]
-fn mixed_types_struct_round_trip() {
-    let original = MixedTypes {
+fn mixed_types_no_u64_round_trip() {
+    let original = MixedTypesNoU64 {
         f1: Felt::new(111111),
         f2: Felt::new(222222),
-        n1: 333333,
-        n2: 444444,
+        f3: Felt::new(333333),
+        f4: Felt::new(444444),
         x: 55555,
         y: 66,
     };
@@ -295,8 +407,8 @@ fn mixed_types_struct_round_trip() {
         struct TestStruct {
             f1: Felt,
             f2: Felt,
-            n1: u64,
-            n2: u64,
+            f3: Felt,
+            f4: Felt,
             x: u32,
             y: u8,
         }
@@ -304,15 +416,14 @@ fn mixed_types_struct_round_trip() {
         let mut reader = FeltReader::new(&input);
         let deserialized = TestStruct::from_felt_repr(&mut reader);
 
-        // Verify some fields were deserialized correctly
-        // assert_eq(deserialized.f1, felt!(111111));
-        assert_eq(Felt::from(deserialized.y as u32), felt!(66));
+        // Deliberately NOT using assert_eq on y to trigger the bug (if u64 is involved)
+        // assert_eq(Felt::from(deserialized.y as u32), felt!(66));
 
         deserialized.to_felt_repr()
     }"#;
 
     let config = WasmTranslationConfig::default();
-    let artifact_name = "onchain_mixed_types_struct";
+    let artifact_name = "onchain_mixed_types_no_u64";
     let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
 
     test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
@@ -361,9 +472,9 @@ fn mixed_types_struct_round_trip() {
         }
 
         let mut reader = FeltReader::new(&result_felts);
-        let result_struct = MixedTypes::from_felt_repr(&mut reader);
+        let result_struct = MixedTypesNoU64::from_felt_repr(&mut reader);
 
-        assert_eq!(result_struct, original, "Mixed types round-trip failed");
+        assert_eq!(result_struct, original, "Mixed types (no u64) round-trip failed");
         Ok(())
     })
     .unwrap();
