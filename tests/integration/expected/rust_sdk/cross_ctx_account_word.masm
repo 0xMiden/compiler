@@ -252,6 +252,7 @@ pub proc process-mixed(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.0
     push.8
     dup.4
@@ -1159,6 +1160,8 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
