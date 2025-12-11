@@ -310,7 +310,7 @@ fn run_cargo(wasi: &str, spawn_args: &[String]) -> Result<Vec<PathBuf>> {
     Ok(outputs)
 }
 
-fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
+pub(crate) fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
     log::debug!("spawning command {cmd:?}");
 
     let mut child = cmd
