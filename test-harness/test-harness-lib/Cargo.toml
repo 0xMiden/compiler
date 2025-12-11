@@ -1,0 +1,20 @@
+[package]
+name = "miden-test-harness-lib"
+description = "Custom testing harness used in rust code targetting the miden compiler."
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[dev-dependencies]
+libtest-mimic = "0.8.1"
+
+[dependencies]
+libtest-mimic = "0.8.1"
+inventory.workspace = true
+clap.workspace = true

@@ -1,0 +1,27 @@
+[package]
+name = "miden-test-harness-macros"
+description = "Macros used to aid in test writing."
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[features]
+test-flag = []
+
+[dev-dependencies]
+# Miden dependencies
+miden-test-harness-lib.workspace = true
+
+[dependencies]
+# External dependencies
+quote.workspace = true
+syn.workspace = true

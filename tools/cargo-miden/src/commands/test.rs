@@ -60,6 +60,7 @@ fn test_cargo_args() -> Vec<String> {
             .into_iter()
             .map(|s| s.to_string()),
     );
+    args
 }
 
 fn run_cargo_test(spawn_args: &[String]) -> anyhow::Result<()> {
@@ -72,7 +73,7 @@ fn run_cargo_test(spawn_args: &[String]) -> anyhow::Result<()> {
 
     cargo.args(spawn_args);
 
-    let artifacts = build::spawn_cargo(cargo, &cargo_path)?;
+    let _artifacts = build::spawn_cargo(cargo, &cargo_path)?;
 
     Ok(())
 }
