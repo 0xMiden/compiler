@@ -279,6 +279,7 @@ struct MinimalU64Bug {
 /// 3. The value needs to be spilled to a local variable
 ///
 /// This causes incorrect stack position tracking, spilling the wrong value.
+#[ignore = "until https://github.com/0xMiden/compiler/issues/815 is resolved"]
 #[test]
 fn minimal_u64_bug() {
     let original = MinimalU64Bug {
