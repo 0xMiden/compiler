@@ -229,7 +229,9 @@ end
 # to perform a sequence of shifts and masks to get the bits where they belong. This function
 # performs those steps, with the assumption that the caller has three values on the operand stack
 # representing any unaligned double-word value
-export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
+#
+# Stack transition is [chunk_hi, chunk_mid, chunk_lo, offset] -> [shifted_lo, shifted_hi]
+export.realign_dw
     # We will refer to the parts of our desired double-word value
     # as two parts, `x_hi` and `x_lo`.
     # Re-align the high bits by shifting out the offset
@@ -283,9 +285,6 @@ export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
 
     # OR the two halves together, giving us our second word, `x_lo`
     u32or # [x_lo, x_hi]
-
-    # Swap the words so they are in the correct order
-    swap.1 # [x_hi, x_lo]
 end
 
 # Shift two 32-bit words by the given offset.
@@ -330,13 +329,10 @@ export.load_dw # [addr, offset]
         swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, bit_offset]
 
         # load the three elements containing the double-word on the stack and re-align
-        # NOTE: realign_dw expects the hi, mid, lo word inputs and returns hi, lo (i.e., everything
-        # is 64-bit big-endian limb oriented), so we must swap the output to be in the correct order
         dup.0 mem_load                                     # [e0, addr, bit_offset]
         dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, bit_offset]
         movup.2 push.2 u32overflowing_add assertz mem_load # [e2, e1, e0, bit_offset]
         exec.realign_dw
-        swap.1
     end
 end
 
