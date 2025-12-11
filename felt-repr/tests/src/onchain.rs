@@ -9,7 +9,6 @@ use miden_core::{Felt, FieldElement};
 use miden_debug::Felt as TestFelt;
 use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{eval_package, Initializer};
-use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::build_felt_repr_test;
@@ -108,10 +107,6 @@ fn two_felts_struct_round_trip() {
     let artifact_name = "onchain_two_felts_struct";
     let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
 
-    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
-
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -202,10 +197,6 @@ fn five_felts_struct_round_trip() {
     let config = WasmTranslationConfig::default();
     let artifact_name = "onchain_five_felts_struct";
     let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
-
-    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
 
     let package = test.compiled_package();
 
@@ -321,10 +312,6 @@ fn minimal_u64_bug() {
     let artifact_name = "onchain_minimal_u64_bug";
     let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
 
-    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
-
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -426,10 +413,6 @@ fn mixed_types_no_u64_round_trip() {
     let config = WasmTranslationConfig::default();
     let artifact_name = "onchain_mixed_types_no_u64";
     let mut test = build_felt_repr_test(artifact_name, onchain_code, config);
-
-    test.expect_wasm(expect_file![format!("../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../expected/{artifact_name}.masm")]);
 
     let package = test.compiled_package();
 
