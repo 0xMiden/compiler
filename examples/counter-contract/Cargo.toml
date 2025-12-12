@@ -20,3 +20,8 @@ package = "miden:counter-contract"
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
+
+[[test]]
+name = "lib"
+path = "src/lib.rs"
+harness = false
