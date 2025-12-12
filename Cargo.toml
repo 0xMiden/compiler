@@ -19,6 +19,7 @@ members = [
     "tools/*",
     "tests/integration",
     "tests/integration-node",
+    "test-harness/*",
 ]
 exclude = [
     "sdk/.cargo",
@@ -150,6 +151,8 @@ midenc-session = { version = "0.5.1", path = "midenc-session" }
 cargo-miden = { version = "0.5.1", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
+miden-test-harness-lib = { path = "test-harness/test-harness-lib" }
+miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
