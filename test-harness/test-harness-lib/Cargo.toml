@@ -16,5 +16,7 @@ libtest-mimic = "0.8.1"
 
 [dependencies]
 libtest-mimic = "0.8.1"
+miden-objects.workspace = true
+miden-mast-package.workspace = true
 inventory.workspace = true
 clap.workspace = true

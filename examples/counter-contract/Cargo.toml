@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = { path = "../../sdk/sdk" }
 miden-test-harness-macros = { path = "../../test-harness/test-harness-macros"}
+miden-test-harness-lib = { path = "../../test-harness/test-harness-lib"}
 
 [package.metadata.component]
 package = "miden:counter-contract"

@@ -13,6 +13,8 @@ pub struct MidenTest {
 inventory::collect!(MidenTest);
 
 pub use inventory::submit as miden_test_submit;
+pub use miden_mast_package;
+pub use miden_objects::utils::Deserializable;
 
 // Wrapper used to make normal rust function.
 fn runner(test: fn() -> ()) -> impl FnOnce() -> Result<(), libtest_mimic::Failed> + Send + 'static {
@@ -52,10 +54,8 @@ impl MidenTestArguments {
 pub fn run(args: MidenTestArguments) {
     let args = args.into();
 
-    let tests: Vec<libtest_mimic::Trial> = inventory::iter::<MidenTest>
-        .into_iter()
-        .map(|test| test.into())
-        .collect();
+    let tests: Vec<libtest_mimic::Trial> =
+        inventory::iter::<MidenTest>.into_iter().map(|test| test.into()).collect();
 
     let conclusion = libtest_mimic::run(&args, tests);
 

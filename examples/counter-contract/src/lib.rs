@@ -41,8 +41,6 @@ mod component {
 
 #[miden_test_block]
 mod tests {
-    use winter_utils::Deserializable;
-
     // This tests loads the generated package in the `foo` variable and is then
     // printed in line 50.
     #[miden_test]

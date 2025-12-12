@@ -65,7 +65,8 @@ Detected that all of the following variables are `Package`s: {identifiers}
     let load_package: Vec<syn::Stmt> = syn::parse_quote! {
         let path = #package_path;
         let bytes = std::fs::read(path).unwrap();
-        let #package_binding_name = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+        let #package_binding_name =
+            <miden_test_harness_lib::miden_mast_package::Package as miden_test_harness_lib::Deserializable>::read_from_bytes(&bytes).unwrap();
     };
 
     // We add the the lines required to load the generated Package.
@@ -128,6 +129,7 @@ pub fn miden_test_block(
     let main_function = if is_test() {
         quote! {
             use miden_test_harness_lib;
+            use miden_test_harness_lib::Deserializable;
 
             fn main() {
                 let args = miden_test_harness_lib::MidenTestArguments::from_args();
