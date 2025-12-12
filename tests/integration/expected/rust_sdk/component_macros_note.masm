@@ -189,6 +189,8 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

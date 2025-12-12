@@ -70,14 +70,14 @@ fn load_sw() {
                 Ok(())
             })?;
 
-        prop_assert_eq!(output, value);
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
         Ok(())
     });
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -111,28 +111,35 @@ fn load_dw() {
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
         // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack)
+        // Rust stack).  Felts must be written in little endian order.
         let value_felts = value.to_felts();
         let initializers = [Initializer::MemoryFelts {
             addr: write_to / 4,
-            felts: Cow::Borrowed(value_felts.as_slice()),
+            felts: Cow::Borrowed(&[value_felts[1], value_felts[0]]),
         }];
 
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let hi =
-                    trace.read_memory_element(write_to / 4).unwrap_or_default().as_int() as u32;
-                let lo = trace.read_memory_element((write_to / 4) + 1).unwrap_or_default().as_int()
-                    as u32;
+                let lo = trace.read_memory_element(write_to / 4).unwrap_or_default().as_int();
+                let hi = trace.read_memory_element((write_to / 4) + 1).unwrap_or_default().as_int();
+
                 log::trace!(target: "executor", "hi = {hi} ({hi:0x})");
                 log::trace!(target: "executor", "lo = {lo} ({lo:0x})");
-                let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
+
+                prop_assert_eq!(lo, value & 0xffffffff);
+                prop_assert_eq!(hi, value >> 32);
+
+                let mut stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
                          read from that address failed"
                     ))
                 })?;
+
+                // read_from_rust_memory() still reads in big-endian limbs.
+                stored = ((stored >> 32) & 0xffffffff) | (stored << 32);
+
                 prop_assert_eq!(
                     stored,
                     value,
@@ -145,14 +152,14 @@ fn load_dw() {
                 Ok(())
             })?;
 
-        prop_assert_eq!(output, value);
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
         Ok(())
     });
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -214,14 +221,14 @@ fn load_u8() {
                 Ok(())
             })?;
 
-        prop_assert_eq!(output, value);
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
         Ok(())
     });
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -283,14 +290,14 @@ fn load_u16() {
                 Ok(())
             })?;
 
-        prop_assert_eq!(output, value);
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
         Ok(())
     });
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -358,14 +365,14 @@ fn load_bool() {
             },
         )?;
 
-        prop_assert_eq!(output, value);
+        prop_assert_eq!(output, value, "expected {}; found {}", output, value);
 
         Ok(())
     });
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -502,8 +509,8 @@ fn store_u16() {
     );
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -724,8 +731,8 @@ fn store_u8() {
     );
 
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}");
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
@@ -822,14 +829,79 @@ fn store_unaligned_u32() {
 }
 
 #[test]
+fn load_unaligned_u64() {
+    // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack)
+    let write_to = 17 * 2u32.pow(16);
+
+    // Generate a `test` module with `main` function that loads from `write_to` + a passed offset.
+    let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U64)]);
+
+    // Compile once outside the test loop
+    let (package, context) = compile_test_module(signature, |builder| {
+        let block = builder.current_block();
+
+        // Get the offset, add it to the base address and load the 64bit value there.
+        let offs = block.borrow().arguments()[0] as ValueRef;
+        let base_addr = builder.u32(write_to, SourceSpan::default());
+        let read_addr = builder.add(base_addr, offs, SourceSpan::default()).unwrap();
+        let ptr = builder
+            .inttoptr(read_addr, Type::from(PointerType::new(Type::U64)), SourceSpan::default())
+            .unwrap();
+        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+
+        // Return the value so we can assert that the output of execution matches
+        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+    });
+
+    let run_test = |offs: u32, expected: u64| {
+        // Initialise memory with some known bytes.
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &[
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+                0x17, 0x18,
+            ],
+        }];
+
+        let output = eval_package::<u64, _, _>(
+            &package,
+            initializers,
+            &[Felt::new(offs as u64)],
+            context.session(),
+            |trace| {
+                //
+                let stack = trace.outputs();
+                let hi: u64 = stack.get_stack_item(0).unwrap().into();
+                let lo: u64 = stack.get_stack_item(1).unwrap().into();
+
+                eprintln!("hi limb = 0x{hi:08x}");
+                eprintln!("lo limb = 0x{lo:08x}");
+
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(output, expected);
+    };
+
+    run_test(0, 0x0807060504030201_u64);
+    run_test(1, 0x1108070605040302_u64);
+    run_test(2, 0x1211080706050403_u64);
+    run_test(3, 0x1312110807060504_u64);
+    run_test(4, 0x1413121108070605_u64);
+    run_test(5, 0x1514131211080706_u64);
+    run_test(6, 0x1615141312110807_u64);
+    run_test(7, 0x1716151413121108_u64);
+}
+
+#[test]
 fn store_unaligned_u64() {
     // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack)
     let write_to = 17 * 2u32.pow(16);
 
-    // STORE_DW writes the high 32bit word to address and low 32bit word to address+1.
-    //   So a .store() of 0xddccbbaa_cdabffee writes 0xddccbbaa to addr and 0xcdabffee to addr+1.
-    //   Which in turn will be little-endian bytes [ AA BB CC DD EE FF AB CD ] at addr.
-    let write_val = 0xddccbbaa_cdabffee_u64;
+    // Value which in turn will be little-endian bytes [ AA BB CC DD EE FF AB CD ] at addr.
+    let write_val = 0xcdabffee_ddccbbaa_u64;
 
     // Generate a `test` module with `main` function that stores to a u32 offset.
     let signature = Signature::new(
@@ -916,6 +988,12 @@ fn store_unaligned_u64() {
 
         assert_eq!(output, 1);
     };
+
+    // Overwrite    01 02 03 04 05 06 07 08-11 12 13 14 15 16 17 18
+    //   with bytes aa bb cc dd ee ff ab cd at offset 0:
+    //   Expect     aa bb cc dd ee ff ab cd 11 12 13 14 15 16 17 18
+    //   or         0xccbbaa01, 0xabffeedd, 0x141312cd, 0x18171615
+    run_test(0, 0xddccbbaa, 0xcdabffee, 0x14131211, 0x18171615);
 
     // Overwrite    01 02 03 04 05 06 07 08-11 12 13 14 15 16 17 18
     //   with bytes    aa bb cc dd ee ff ab cd at offset 1:

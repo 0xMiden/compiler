@@ -994,6 +994,7 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -1022,6 +1023,8 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -1270,6 +1273,7 @@ proc miden_base_sys::bindings::active_account::get_id(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.3
     push.8
     dup.1
@@ -1279,6 +1283,8 @@ proc miden_base_sys::bindings::active_account::get_id(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -1526,6 +1532,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.3
     push.4
     dup.1
@@ -1535,6 +1542,8 @@ proc miden_base_sys::bindings::active_note::get_assets(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

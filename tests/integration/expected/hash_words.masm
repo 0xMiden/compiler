@@ -122,6 +122,7 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.40
     dup.3
     add
@@ -134,6 +135,8 @@ pub proc entrypoint(i32) -> felt
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -156,6 +159,7 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.32
     dup.3
     add
@@ -168,6 +172,8 @@ pub proc entrypoint(i32) -> felt
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -256,6 +262,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -268,6 +275,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -287,6 +296,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -296,6 +306,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -443,6 +455,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -455,6 +468,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -473,6 +488,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -482,6 +498,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

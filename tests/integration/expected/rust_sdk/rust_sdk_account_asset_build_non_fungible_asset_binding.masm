@@ -265,6 +265,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -277,6 +278,8 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -299,6 +302,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.8
     dup.1
@@ -308,6 +312,8 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -354,6 +360,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -366,6 +373,8 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -388,6 +397,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -397,6 +407,8 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -614,6 +626,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.24
     dup.4
     add
@@ -626,6 +639,8 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -645,6 +660,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.16
     dup.4
     add
@@ -657,6 +673,8 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -715,6 +733,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -727,6 +746,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -746,6 +767,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -755,6 +777,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -902,6 +926,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -914,6 +939,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -932,6 +959,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -941,6 +969,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
