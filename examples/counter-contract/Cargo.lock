@@ -188,6 +188,7 @@ name = "counter-contract"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-test-harness-macros",
 ]
 
 [[package]]
@@ -1060,6 +1061,14 @@ version = "0.7.0"
 [[package]]
 name = "miden-stdlib-sys"
 version = "0.7.1"
+
+[[package]]
+name = "miden-test-harness-macros"
+version = "0.5.1"
+dependencies = [
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "miden-utils-diagnostics"
