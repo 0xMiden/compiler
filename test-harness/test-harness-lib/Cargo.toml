@@ -11,12 +11,10 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
-[dev-dependencies]
-libtest-mimic = "0.8.1"
-
 [dependencies]
 libtest-mimic = "0.8.1"
-miden-objects.workspace = true
+miden-objects = "0.12.4"
 miden-mast-package.workspace = true
 inventory.workspace = true
 clap.workspace = true
+miden-testing = "0.12.4"
