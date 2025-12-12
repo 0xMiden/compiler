@@ -14,8 +14,10 @@ use crate::adt::SmallSet;
 ///
 /// In general, this should be used in only narrow circumstances where a more specific range type
 /// cannot be used.
+#[derive(Default)]
 pub enum ValueRange<'a, const N: usize = 2> {
     /// A default-initialized empty range
+    #[default]
     Empty,
     /// The values in the range are type-erased, but owned
     Owned(SmallVec<[ValueRef; N]>),
@@ -27,12 +29,6 @@ pub enum ValueRange<'a, const N: usize = 2> {
     Operands(&'a [OpOperand]),
     /// The value range contains results
     Results(&'a [OpResultRef]),
-}
-
-impl<const N: usize> Default for ValueRange<'_, N> {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl<'values, const N: usize> ValueRange<'values, N> {

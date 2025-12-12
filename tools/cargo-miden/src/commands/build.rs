@@ -200,7 +200,7 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
             "-Z",
             "build-std=std,core,alloc,panic_abort",
             "-Z",
-            "build-std-features=panic_immediate_abort",
+            "unstable-options -Cpanic=immediate-abort",
         ]
         .into_iter()
         .map(|s| s.to_string()),

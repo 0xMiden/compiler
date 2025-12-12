@@ -64,15 +64,14 @@ where
                     word.reverse();
                     buf.push(word);
                 }
-                if let Some(remainder) = words.into_remainder().filter(|r| r.len() > 0) {
-                    if remainder.len() > 0 {
-                        let mut word = [Felt::ZERO; 4];
-                        for (i, felt) in remainder.enumerate() {
-                            word[i] = felt;
-                        }
-                        word.reverse();
-                        buf.push(word);
+                let remainder = words.into_remainder();
+                if remainder.len() > 0 {
+                    let mut word = [Felt::ZERO; 4];
+                    for (i, felt) in remainder.enumerate() {
+                        word[i] = felt;
                     }
+                    word.reverse();
+                    buf.push(word);
                 }
                 for word in buf.into_iter().rev() {
                     for felt in word.into_iter() {

@@ -1,3 +1,5 @@
+#![expect(unused_assignments)]
+
 use alloc::{
     boxed::Box,
     collections::BTreeMap,

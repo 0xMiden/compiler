@@ -1,7 +1,5 @@
 #![feature(debug_closure_helpers)]
 #![feature(assert_matches)]
-#![feature(const_type_id)]
-#![feature(array_chunks)]
 #![feature(iter_array_chunks)]
 #![feature(iterator_try_collect)]
 #![deny(warnings)]

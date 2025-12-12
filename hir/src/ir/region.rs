@@ -5,7 +5,7 @@ mod kind;
 mod successor;
 mod transforms;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 
 pub use self::{
     branch_point::RegionBranchPoint,

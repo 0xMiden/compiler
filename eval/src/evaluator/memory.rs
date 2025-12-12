@@ -1,3 +1,5 @@
+#![expect(unused_assignments)]
+
 use alloc::{format, string::String, vec, vec::Vec};
 use core::ops::{Index, IndexMut, Range};
 

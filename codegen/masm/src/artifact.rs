@@ -95,14 +95,13 @@ impl Rodata {
         let mut felts = Vec::with_capacity(bytes.len() / 4);
         let mut iter = bytes.iter().copied().array_chunks::<4>();
         felts.extend(iter.by_ref().map(|chunk| Felt::new(u32::from_le_bytes(chunk) as u64)));
-        if let Some(remainder) = iter.into_remainder() {
-            if remainder.len() > 0 {
-                let mut chunk = [0u8; 4];
-                for (i, byte) in remainder.into_iter().enumerate() {
-                    chunk[i] = byte;
-                }
-                felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
+        let remainder = iter.into_remainder();
+        if remainder.len() > 0 {
+            let mut chunk = [0u8; 4];
+            for (i, byte) in remainder.enumerate() {
+                chunk[i] = byte;
             }
+            felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
         }
 
         let size_in_felts = bytes.len().next_multiple_of(4) / 4;
