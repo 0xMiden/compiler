@@ -14,7 +14,13 @@ fn example_project_args(example_name: &str) -> Vec<String> {
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let template = if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
+    let template = if template.is_empty() {
+        if let Ok(project_template_path) = std::env::var("TEST_LOCAL_PROJECT_TEMPLATE_PATH") {
+            &format!("--template-path={project_template_path}")
+        } else {
+            template
+        }
+    } else if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
         &format!("--template-path={templates_path}/{}", template.strip_prefix("--").unwrap())
     } else {
         template
