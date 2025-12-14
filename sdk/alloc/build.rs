@@ -47,8 +47,6 @@ fn main() {
         .arg("-C")
         .arg("opt-level=1")
         .arg("-C")
-        .arg("panic=abort")
-        .arg("-C")
         .arg("codegen-units=1")
         .arg("-C")
         .arg("debuginfo=0")

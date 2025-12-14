@@ -1,5 +1,6 @@
 // Do not link against libstd (i.e. anything defined in `std::`)
 #![no_std]
+#![feature(alloc_error_handler)]
 
 // However, we could still use some standard library types while
 // remaining no-std compatible, if we uncommented the following lines:
@@ -15,6 +16,13 @@ static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 #[cfg(not(test))]
 #[panic_handler]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+// Required for no-std crates
+#[cfg(not(test))]
+#[alloc_error_handler]
+fn my_alloc_error(_info: core::alloc::Layout) -> ! {
     loop {}
 }
 

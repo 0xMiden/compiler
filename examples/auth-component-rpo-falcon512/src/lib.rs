@@ -1,9 +1,11 @@
 #![no_std]
+#![feature(alloc_error_handler)]
 
 extern crate alloc;
 
 use miden::{
-    component, felt, hash_words, intrinsics::advice::adv_insert, tx, Felt, Value, ValueAccess, Word,
+    component, felt, hash_words, intrinsics::advice::adv_insert, native_account, tx, Felt, Value,
+    ValueAccess, Word,
 };
 
 /// Authentication component storage/layout.

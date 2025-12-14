@@ -4,6 +4,7 @@ use super::*;
 fn run_input_note_binding_test(name: &str, method: &str) {
     let lib_rs = format!(
         r"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 

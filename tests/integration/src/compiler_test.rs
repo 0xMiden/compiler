@@ -193,6 +193,9 @@ impl CompilerTestBuilder {
             // Enable bulk-memory features (e.g. native memcpy/memset instructions)
             "-C".into(),
             "target-feature=+bulk-memory,+wide-arithmetic".into(),
+            // Compile with panic=immediate-abort to avoid emitting any panic formatting code
+            "-C".into(),
+            "panic=immediate-abort".into(),
             // Remap the compiler workspace to `.` so that build outputs do not embed user-
             // specific paths, which would cause expect tests to break
             "--remap-path-prefix".into(),
@@ -509,13 +512,20 @@ impl CompilerTestBuilder {
             r#"
             #![no_std]
             #![no_main]
+            #![feature(alloc_error_handler)]
 
             #[panic_handler]
             fn my_panic(_info: &core::panic::PanicInfo) -> ! {{
                 core::arch::wasm32::unreachable()
             }}
 
-            #[no_mangle]
+            #[alloc_error_handler]
+            fn my_alloc_error(_info: core::alloc::Layout) -> ! {{
+                core::arch::wasm32::unreachable()
+            }}
+
+
+            #[unsafe(no_mangle)]
             pub extern "C" fn entrypoint{rust_source}
             "#
         );
@@ -577,13 +587,20 @@ impl CompilerTestBuilder {
                     r#"
                 #![no_std]
                 #![no_main]
+                #![feature(alloc_error_handler)]
                 #![allow(unused_imports)]
+
+                extern crate alloc;
+
+                #[alloc_error_handler]
+                fn alloc_error(_layout: core::alloc::Layout) -> ! {{
+                    core::arch::wasm32::unreachable()
+                }}
 
                 #[panic_handler]
                 fn my_panic(_info: &core::panic::PanicInfo) -> ! {{
                     core::arch::wasm32::unreachable()
                 }}
-
 
                 #[global_allocator]
                 static ALLOC: miden_sdk_alloc::BumpAlloc = miden_sdk_alloc::BumpAlloc::new();
@@ -591,9 +608,7 @@ impl CompilerTestBuilder {
                 extern crate miden_stdlib_sys;
                 use miden_stdlib_sys::{{*, intrinsics}};
 
-                extern crate alloc;
-
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 #[allow(improper_ctypes_definitions)]
                 pub extern "C" fn entrypoint{source}
             "#
@@ -651,6 +666,7 @@ impl CompilerTestBuilder {
                 format!(
                     r#"#![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 #![allow(unused_imports)]
 
 #[panic_handler]
@@ -658,6 +674,10 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {{
     core::arch::wasm32::unreachable()
 }}
 
+#[alloc_error_handler]
+fn alloc_error(_layout: core::alloc::Layout) -> ! {{
+    core::arch::wasm32::unreachable()
+}}
 
 #[global_allocator]
 static ALLOC: miden_sdk_alloc::BumpAlloc = miden_sdk_alloc::BumpAlloc::new();

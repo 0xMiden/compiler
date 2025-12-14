@@ -56,6 +56,7 @@ fn function_call_hir2() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Global allocator to use heap memory in no-std environment
                 // #[global_allocator]
@@ -64,6 +65,12 @@ fn function_call_hir2() {
                 // Required for no-std crates
                 #[panic_handler]
                 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
                     loop {}
                 }
 
@@ -103,6 +110,7 @@ fn mem_intrinsics_heap_base() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Global allocator to use heap memory in no-std environment
                 #[global_allocator]
@@ -111,6 +119,12 @@ fn mem_intrinsics_heap_base() {
                 // Required for no-std crates
                 #[panic_handler]
                 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
                     loop {}
                 }
 
@@ -145,10 +159,17 @@ fn felt_intrinsics() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Required for no-std crates
                 #[panic_handler]
                 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
                     loop {}
                 }
 

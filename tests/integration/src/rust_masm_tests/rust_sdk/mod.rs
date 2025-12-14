@@ -94,6 +94,7 @@ debug = false
     );
 
     let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 

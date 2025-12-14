@@ -4,6 +4,7 @@ use super::*;
 fn run_tx_binding_test(name: &str, body: &str) {
     let lib_rs = format!(
         r"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 
