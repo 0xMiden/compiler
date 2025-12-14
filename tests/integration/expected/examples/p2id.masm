@@ -16,20 +16,20 @@ proc init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[3747760794384071571,1766386520481277932,2198275188940187258,538857382178104910]
+    push.[511068398781876708,4034132635148770913,11946245983825022717,413851799653899214]
     adv.push_mapval
     push.262144
-    push.3
+    push.1
     trace.240
     exec.::std::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
     u32assert
-    mem_store.278544
+    mem_store.278536
     push.0
     u32assert
-    mem_store.278545
+    mem_store.278537
 end
 
 # mod miden:base/note-script@1.0.0::p2id
@@ -57,7 +57,7 @@ end
 
 @callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
-    push.1114180
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -65,7 +65,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048616
+    push.1048588
     u32wrapping_add
     movup.2
     swap.1
@@ -85,7 +85,7 @@ end
 
 @callconv("C")
 proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
-    push.1114180
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -93,7 +93,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048616
+    push.1048588
     u32wrapping_add
     dup.1
     swap.2
@@ -181,7 +181,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
     drop
     drop
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -191,7 +191,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     push.48
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -629,7 +629,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 swap.1
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+                exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::deallocate
                 trace.252
                 nop
                 push.4
@@ -641,12 +641,12 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 swap.1
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::deallocate
+                exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::deallocate
                 trace.252
                 nop
                 push.48
                 u32wrapping_add
-                push.1114176
+                push.1114144
                 u32divmod.4
                 swap.1
                 trace.240
@@ -682,7 +682,7 @@ end
 proc wit_bindgen::rt::run_ctors_once(
 
 )
-    push.1114180
+    push.1114148
     u32divmod.4
     swap.1
     trace.240
@@ -690,7 +690,7 @@ proc wit_bindgen::rt::run_ctors_once(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048620
+    push.1048592
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -711,7 +711,7 @@ proc wit_bindgen::rt::run_ctors_once(
     if.true
         nop
     else
-        push.1114180
+        push.1114148
         u32divmod.4
         swap.1
         trace.240
@@ -725,7 +725,7 @@ proc wit_bindgen::rt::run_ctors_once(
         trace.252
         nop
         push.1
-        push.1048620
+        push.1048592
         movup.2
         u32wrapping_add
         u32divmod.4
@@ -783,7 +783,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::core::ptr::alignment::Alignment::max
+        exec.::miden:base/note-script@1.0.0::p2id::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -944,8 +944,10 @@ proc intrinsics::mem::heap_base(
 end
 
 @callconv("C")
-proc alloc::vec::Vec<T>::with_capacity(i32)
-    push.1114176
+proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
+    i32
+)
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -955,7 +957,7 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -974,7 +976,7 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1032,7 +1034,7 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1043,12 +1045,12 @@ proc alloc::vec::Vec<T>::with_capacity(i32)
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
+proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     i32,
     i32,
     i32
 )
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1058,7 +1060,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1081,7 +1083,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     movdn.3
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -1174,7 +1176,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
         nop
         push.16
         u32wrapping_add
-        push.1114176
+        push.1114144
         u32divmod.4
         swap.1
         trace.240
@@ -1185,16 +1187,8 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
     else
         movup.2
         drop
-        push.1114180
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
         push.12
-        movup.3
+        movup.2
         add
         u32assert
         push.4
@@ -1210,10 +1204,7 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.1048600
-        movup.2
-        u32wrapping_add
-        swap.2
+        swap.1
         trace.240
         nop
         exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::handle_error
@@ -1225,10 +1216,10 @@ proc alloc::raw_vec::RawVecInner<A>::with_capacity_in(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::active_account::get_id(
+proc miden_base_sys::bindings::active_note::get_assets(
     i32
 )
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1238,7 +1229,7 @@ proc miden_base_sys::bindings::active_account::get_id(
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1248,15 +1239,57 @@ proc miden_base_sys::bindings::active_account::get_id(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.8
+    push.4
     dup.1
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden::active_account::get_id
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
     trace.252
     nop
     push.8
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.2
+    swap.1
+    swap.1
+    u32shr
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::p2id::miden::active_note::get_assets
+    trace.252
+    nop
+    push.8
+    dup.3
+    u32wrapping_add
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.4
     dup.1
     add
     u32assert
@@ -1275,7 +1308,7 @@ proc miden_base_sys::bindings::active_account::get_id(
     nop
     swap.1
     movup.3
-    push.8
+    push.4
     dup.1
     swap.1
     u32mod
@@ -1292,7 +1325,7 @@ proc miden_base_sys::bindings::active_account::get_id(
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1306,7 +1339,7 @@ end
 proc miden_base_sys::bindings::active_note::get_inputs(
     i32
 )
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1316,7 +1349,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1335,7 +1368,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::with_capacity_in
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1431,7 +1464,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1442,10 +1475,8 @@ proc miden_base_sys::bindings::active_note::get_inputs(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::active_note::get_assets(
-    i32
-)
-    push.1114176
+proc miden_base_sys::bindings::active_account::get_id(i32)
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1455,7 +1486,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     nop
     push.16
     u32wrapping_sub
-    push.1114176
+    push.1114144
     dup.1
     swap.1
     u32divmod.4
@@ -1465,57 +1496,15 @@ proc miden_base_sys::bindings::active_note::get_assets(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    push.4
+    push.8
     dup.1
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::vec::Vec<T>::with_capacity
+    exec.::miden:base/note-script@1.0.0::p2id::miden::active_account::get_id
     trace.252
     nop
     push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.2
-    swap.1
-    swap.1
-    u32shr
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden::active_note::get_assets
-    trace.252
-    nop
-    push.8
-    dup.3
-    u32wrapping_add
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
     dup.1
     add
     u32assert
@@ -1534,7 +1523,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     nop
     swap.1
     movup.3
-    push.4
+    push.8
     dup.1
     swap.1
     u32mod
@@ -1551,7 +1540,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     nop
     push.16
     u32wrapping_add
-    push.1114176
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1567,656 +1556,7 @@ proc intrinsics::felt::eq(felt, felt) -> i32
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::deallocate(
-    i32,
-    i32,
-    i32
-)
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114176
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    dup.1
-    u32wrapping_add
-    swap.1
-    swap.4
-    swap.3
-    swap.2
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::RawVecInner<A>::current_memory
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.0
-    push.0
-    dup.2
-    eq
-    neq
-    if.true
-        drop
-    else
-        push.4
-        dup.2
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        push.12
-        dup.3
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        movdn.2
-        trace.240
-        nop
-        exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
-        trace.252
-        nop
-    end
-    push.16
-    u32wrapping_add
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
-    i32,
-    i32,
-    i32,
-    i32,
-    i32
-)
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114176
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    dup.2
-    push.0
-    push.0
-    dup.7
-    u32wrapping_sub
-    push.4294967295
-    movup.9
-    dup.9
-    u32wrapping_add
-    u32wrapping_add
-    u32and
-    push.0
-    trace.240
-    nop
-    exec.::intrinsics::i64::wrapping_mul
-    trace.252
-    nop
-    push.0
-    push.32
-    push.0
-    dup.0
-    push.2147483648
-    u32and
-    eq.2147483648
-    assertz
-    assertz
-    dup.0
-    push.4294967295
-    u32lte
-    assert
-    dup.3
-    dup.3
-    movup.2
-    trace.240
-    nop
-    exec.::std::math::u64::shr
-    trace.252
-    nop
-    drop
-    neq
-    if.true
-        drop
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
-        push.0
-        push.3735929054
-        dup.0
-        dup.1
-        swap.4
-        swap.1
-        swap.3
-        swap.5
-    else
-        drop
-        push.0
-        push.2147483648
-        dup.7
-        u32wrapping_sub
-        dup.2
-        swap.1
-        u32lte
-        neq
-        dup.0
-        if.true
-            push.0
-            dup.2
-            neq
-            if.true
-                push.0
-                movup.6
-                neq
-                if.true
-                    push.1
-                    dup.3
-                    dup.7
-                    dup.4
-                    swap.2
-                    trace.240
-                    nop
-                    exec.::miden:base/note-script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
-                    trace.252
-                    nop
-                    dup.2
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::load_sw
-                    trace.252
-                    nop
-                else
-                    push.8
-                    dup.3
-                    u32wrapping_add
-                    dup.6
-                    dup.3
-                    swap.2
-                    trace.240
-                    nop
-                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::allocate
-                    trace.252
-                    nop
-                    push.8
-                    dup.3
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::load_sw
-                    trace.252
-                    nop
-                end
-                push.0
-                push.0
-                dup.2
-                eq
-                neq
-                dup.0
-                if.true
-                    movup.6
-                    movup.2
-                    drop
-                    drop
-                    push.8
-                    dup.5
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.3
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                    push.4
-                    dup.4
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.5
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                else
-                    movup.7
-                    movup.4
-                    drop
-                    drop
-                    push.8
-                    dup.5
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.2
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                    push.4
-                    dup.4
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.5
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                end
-                push.0
-                push.1
-                movup.2
-                cdrop
-            else
-                movup.2
-                swap.5
-                movdn.2
-                swap.4
-                swap.1
-                drop
-                drop
-                drop
-                push.8
-                dup.1
-                add
-                u32assert
-                push.4
-                dup.1
-                swap.1
-                u32mod
-                u32assert
-                assertz
-                movup.4
-                swap.1
-                u32divmod.4
-                swap.1
-                trace.240
-                nop
-                exec.::intrinsics::mem::store_sw
-                trace.252
-                nop
-                push.4
-                dup.1
-                add
-                u32assert
-                push.4
-                dup.1
-                swap.1
-                u32mod
-                u32assert
-                assertz
-                push.0
-                swap.1
-                u32divmod.4
-                swap.1
-                trace.240
-                nop
-                exec.::intrinsics::mem::store_sw
-                trace.252
-                nop
-                push.0
-                swap.1
-                swap.3
-                swap.2
-                swap.1
-            end
-        else
-            swap.1
-            drop
-            movup.3
-            drop
-            movup.3
-            drop
-            movup.3
-            drop
-            push.3735929054
-        end
-        push.0
-        push.1
-        dup.3
-        cdrop
-        push.3735929054
-        dup.3
-        dup.5
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.7
-        swap.1
-        cdrop
-        push.3735929054
-        dup.5
-        movup.2
-        swap.7
-        movdn.2
-        cdrop
-        push.3735929054
-        movup.2
-        swap.7
-        movdn.2
-        swap.1
-        swap.5
-        cdrop
-        swap.1
-        swap.5
-        swap.4
-        swap.2
-        swap.3
-        swap.1
-    end
-    movup.5
-    eq.0
-    if.true
-        movup.2
-        drop
-        movup.2
-        drop
-        movup.2
-        drop
-        push.4
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        push.0
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
-        push.1
-        swap.1
-    else
-        drop
-        drop
-    end
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
-    i32,
-    i32,
-    i32
-)
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114176
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
-    push.8
-    dup.2
-    u32wrapping_add
-    movup.2
-    swap.5
-    movdn.2
-    swap.1
-    swap.3
-    swap.4
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::p2id::alloc::alloc::Global::alloc_impl
-    trace.252
-    nop
-    push.12
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    movup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc alloc::alloc::Global::alloc_impl(
+proc <alloc::alloc::Global>::alloc_impl(
     i32,
     i32,
     i32,
@@ -2294,7 +1634,124 @@ proc alloc::alloc::Global::alloc_impl(
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::current_memory(
+proc <alloc::raw_vec::RawVecInner>::deallocate(
+    i32,
+    i32,
+    i32
+)
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.4
+    dup.1
+    u32wrapping_add
+    swap.1
+    swap.4
+    swap.3
+    swap.2
+    swap.1
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::current_memory
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    push.0
+    dup.2
+    eq
+    neq
+    if.true
+        drop
+    else
+        push.4
+        dup.2
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.12
+        dup.3
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        movdn.2
+        trace.240
+        nop
+        exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        trace.252
+        nop
+    end
+    push.16
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::raw_vec::RawVecInner>::current_memory(
     i32,
     i32,
     i32,
@@ -2452,8 +1909,537 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
 end
 
 @callconv("C")
-proc alloc::raw_vec::handle_error(i32, i32, i32)
+proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+    i32,
+    i32,
+    i32
+)
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.0
+    push.8
+    dup.2
+    u32wrapping_add
+    movup.2
+    swap.5
+    movdn.2
+    swap.1
+    swap.3
+    swap.4
+    swap.1
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global>::alloc_impl
+    trace.252
+    nop
+    push.12
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    dup.2
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.4
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    dup.2
+    push.0
+    push.0
+    dup.7
+    u32wrapping_sub
+    push.4294967295
+    movup.9
+    dup.9
+    u32wrapping_add
+    u32wrapping_add
+    u32and
+    push.0
+    trace.240
+    nop
+    exec.::intrinsics::i64::wrapping_mul
+    trace.252
+    nop
+    push.0
+    push.32
+    push.0
+    dup.0
+    push.2147483648
+    u32and
+    eq.2147483648
+    assertz
+    assertz
+    dup.0
+    push.4294967295
+    u32lte
+    assert
+    dup.3
+    dup.3
+    movup.2
+    trace.240
+    nop
+    exec.::std::math::u64::shr
+    trace.252
+    nop
     drop
+    neq
+    if.true
+        drop
+        drop
+        movup.2
+        drop
+        movup.2
+        drop
+        movup.2
+        drop
+        push.0
+        push.3735929054
+        dup.0
+        dup.1
+        swap.4
+        swap.1
+        swap.3
+        swap.5
+    else
+        drop
+        push.0
+        push.2147483648
+        dup.7
+        u32wrapping_sub
+        dup.2
+        swap.1
+        u32lte
+        neq
+        dup.0
+        if.true
+            push.0
+            dup.2
+            neq
+            if.true
+                push.0
+                movup.6
+                neq
+                if.true
+                    push.1
+                    dup.3
+                    dup.7
+                    dup.4
+                    swap.2
+                    trace.240
+                    nop
+                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global>::alloc_impl
+                    trace.252
+                    nop
+                    dup.2
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
+                else
+                    push.8
+                    dup.3
+                    u32wrapping_add
+                    dup.6
+                    dup.3
+                    swap.2
+                    trace.240
+                    nop
+                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    trace.252
+                    nop
+                    push.8
+                    dup.3
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
+                end
+                push.0
+                dup.1
+                neq
+                dup.0
+                if.true
+                    movup.7
+                    movup.4
+                    drop
+                    drop
+                    push.8
+                    dup.5
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.2
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                    push.4
+                    dup.4
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.5
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                else
+                    movup.6
+                    movup.2
+                    drop
+                    drop
+                    push.8
+                    dup.5
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.3
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                    push.4
+                    dup.4
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.5
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                end
+                push.1
+                push.0
+                movup.2
+                cdrop
+            else
+                movup.2
+                swap.5
+                movdn.2
+                swap.4
+                swap.1
+                drop
+                drop
+                drop
+                push.8
+                dup.1
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                movup.4
+                swap.1
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
+                push.4
+                dup.1
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                push.0
+                swap.1
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
+                push.0
+                swap.1
+                swap.3
+                swap.2
+                swap.1
+            end
+        else
+            swap.1
+            drop
+            movup.3
+            drop
+            movup.3
+            drop
+            movup.3
+            drop
+            push.3735929054
+        end
+        push.0
+        push.1
+        dup.3
+        cdrop
+        push.3735929054
+        dup.3
+        dup.5
+        swap.1
+        cdrop
+        push.3735929054
+        dup.4
+        dup.7
+        swap.1
+        cdrop
+        push.3735929054
+        dup.5
+        movup.2
+        swap.7
+        movdn.2
+        cdrop
+        push.3735929054
+        movup.2
+        swap.7
+        movdn.2
+        swap.1
+        swap.5
+        cdrop
+        swap.1
+        swap.5
+        swap.4
+        swap.2
+        swap.3
+        swap.1
+    end
+    movup.5
+    eq.0
+    if.true
+        movup.2
+        drop
+        movup.2
+        drop
+        movup.2
+        drop
+        push.4
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        push.0
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.1
+        swap.1
+    else
+        drop
+        drop
+    end
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc alloc::raw_vec::handle_error(i32, i32)
     drop
     drop
     push.0
@@ -2461,7 +2447,10 @@ proc alloc::raw_vec::handle_error(i32, i32, i32)
 end
 
 @callconv("C")
-proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
+proc <core::ptr::alignment::Alignment>::max(
+    i32,
+    i32
+) -> i32
     push.0
     dup.2
     dup.2
@@ -2502,10 +2491,10 @@ proc miden::active_account::get_id(i32)
 end
 
 @callconv("C")
-proc miden::active_note::get_inputs(i32) -> i32
+proc miden::active_note::get_assets(i32) -> i32
     trace.240
     nop
-    exec.::miden::active_note::get_inputs
+    exec.::miden::active_note::get_assets
     trace.252
     nop
     swap.1
@@ -2513,10 +2502,10 @@ proc miden::active_note::get_inputs(i32) -> i32
 end
 
 @callconv("C")
-proc miden::active_note::get_assets(i32) -> i32
+proc miden::active_note::get_inputs(i32) -> i32
     trace.240
     nop
-    exec.::miden::active_note::get_assets
+    exec.::miden::active_note::get_inputs
     trace.252
     nop
     swap.1

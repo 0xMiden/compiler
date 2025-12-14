@@ -172,7 +172,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     dup.1
     trace.240
     nop
-    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -265,7 +265,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.16
@@ -580,7 +580,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -862,10 +862,10 @@ proc intrinsics::felt::eq(felt, felt) -> i32
 end
 
 @callconv("C")
-proc miden::active_account::get_initial_commitment(i32)
+proc miden::active_account::compute_commitment(i32)
     trace.240
     nop
-    exec.::miden::active_account::get_initial_commitment
+    exec.::miden::active_account::compute_commitment
     trace.252
     nop
     movup.4
@@ -918,10 +918,10 @@ proc miden::active_account::get_initial_commitment(i32)
 end
 
 @callconv("C")
-proc miden::active_account::compute_commitment(i32)
+proc miden::active_account::get_initial_commitment(i32)
     trace.240
     nop
-    exec.::miden::active_account::compute_commitment
+    exec.::miden::active_account::get_initial_commitment
     trace.252
     nop
     movup.4

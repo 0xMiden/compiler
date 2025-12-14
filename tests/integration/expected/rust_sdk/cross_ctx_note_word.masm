@@ -1536,6 +1536,16 @@ proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
 end
 
 @callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
+    assert_eq
+end
+
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
+end
+
+@callconv("C")
 proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
@@ -1549,15 +1559,5 @@ proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     assert
     mul.4294967296
     add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
 end
 

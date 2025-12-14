@@ -419,13 +419,13 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::eq(felt, felt) -> i32
+    eq
 end
 
 @callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 
 @callconv("C")

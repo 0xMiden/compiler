@@ -227,7 +227,7 @@ proc miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1::rust_sdk_account_compute_commitment_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1::rust_sdk_account_compute_commitment_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.1048584
@@ -388,7 +388,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )

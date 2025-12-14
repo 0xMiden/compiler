@@ -2,8 +2,8 @@
   (type (;0;) (func (param i32 i32) (result i32)))
   (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)))
   (type (;2;) (func (param i32 i32)))
-  (type (;3;) (func (param i64) (result f32)))
-  (type (;4;) (func (param f32 f32) (result i32)))
+  (type (;3;) (func (param f32 f32) (result i32)))
+  (type (;4;) (func (param i64) (result f32)))
   (type (;5;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 16)
@@ -51,12 +51,12 @@
     local.get 2
   )
   (func $entrypoint (;1;) (type 1) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32)
-    (local i32 i32 i32)
+    (local i32 i32)
     global.get $__stack_pointer
     local.tee 12
     local.set 13
     local.get 12
-    i32.const 96
+    i32.const 128
     i32.sub
     i32.const -32
     i32.and
@@ -81,32 +81,41 @@
     local.get 12
     local.get 12
     i64.load offset=40
-    i64.store offset=72
-    local.get 12
-    local.get 12
-    i64.load offset=32
-    i64.store offset=64
-    local.get 12
-    local.get 12
-    i64.load offset=56
     i64.store offset=88
     local.get 12
     local.get 12
-    i64.load offset=48
+    i64.load offset=32
     i64.store offset=80
     local.get 12
     local.get 12
-    i32.const 64
-    i32.add
-    call $miden_stdlib_sys::intrinsics::word::Word::reverse
+    i64.load offset=56
+    i64.store offset=104
     local.get 12
-    i32.const 16
-    i32.add
-    local.tee 14
+    local.get 12
+    i64.load offset=48
+    i64.store offset=96
+    local.get 12
     local.get 12
     i32.const 80
     i32.add
-    call $miden_stdlib_sys::intrinsics::word::Word::reverse
+    call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    local.get 12
+    i32.const 112
+    i32.add
+    local.get 12
+    i32.const 96
+    i32.add
+    call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    local.get 12
+    i32.const 24
+    i32.add
+    local.get 12
+    i64.load offset=120
+    i64.store
+    local.get 12
+    local.get 12
+    i64.load offset=112
+    i64.store offset=16
     i64.const 0
     call $intrinsics::felt::from_u64_unchecked
     local.set 8
@@ -119,16 +128,16 @@
     local.get 12
     i64.const 0
     call $intrinsics::felt::from_u64_unchecked
-    f32.store offset=92
+    f32.store offset=124
     local.get 12
     local.get 10
-    f32.store offset=88
+    f32.store offset=120
     local.get 12
     local.get 9
-    f32.store offset=84
+    f32.store offset=116
     local.get 12
     local.get 8
-    f32.store offset=80
+    f32.store offset=112
     i64.const -8162549007765693629
     call $intrinsics::felt::from_u64_unchecked
     local.set 8
@@ -154,12 +163,14 @@
     block ;; label = @1
       local.get 12
       local.get 12
-      i32.const 80
+      i32.const 112
       i32.add
       call $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
       i32.eqz
       br_if 0 (;@1;)
-      local.get 14
+      local.get 12
+      i32.const 16
+      i32.add
       local.get 12
       i32.const 32
       i32.add
@@ -172,7 +183,7 @@
     end
     unreachable
   )
-  (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;2;) (type 2) (param i32 i32)
+  (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;2;) (type 2) (param i32 i32)
     (local i32 i32 i32 f32)
     global.get $__stack_pointer
     i32.const 16
@@ -230,10 +241,10 @@
     i64.load align=4
     i64.store
   )
-  (func $intrinsics::felt::from_u64_unchecked (;3;) (type 3) (param i64) (result f32)
+  (func $intrinsics::felt::eq (;3;) (type 3) (param f32 f32) (result i32)
     unreachable
   )
-  (func $intrinsics::felt::eq (;4;) (type 4) (param f32 f32) (result i32)
+  (func $intrinsics::felt::from_u64_unchecked (;4;) (type 4) (param i64) (result f32)
     unreachable
   )
   (func $std::collections::smt::set (;5;) (type 5) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)

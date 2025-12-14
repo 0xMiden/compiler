@@ -42,6 +42,13 @@ proc __wasm_call_ctors(
 end
 
 @callconv("C")
+proc rust_sdk_swapp_note_bindings::bindings::__link_custom_section_describing_imports(
+
+)
+    nop
+end
+
+@callconv("C")
 proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     i32,
     i32
@@ -235,13 +242,6 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             end
         end
     end
-end
-
-@callconv("C")
-proc rust_sdk_swapp_note_bindings::bindings::__link_custom_section_describing_imports(
-
-)
-    nop
 end
 
 @callconv("C")
@@ -538,18 +538,6 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_base_sys::bindings::active_account::get_balance(
-    felt,
-    felt
-) -> felt
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_account::get_balance
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc miden_base_sys::bindings::active_note::get_sender(
     i32
 )
@@ -734,7 +722,7 @@ proc miden_base_sys::bindings::active_note::get_script_root(
     movup.2
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -856,7 +844,7 @@ proc miden_base_sys::bindings::active_note::get_serial_number(
     movup.2
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -872,7 +860,19 @@ proc miden_base_sys::bindings::active_note::get_serial_number(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc miden_base_sys::bindings::active_account::get_balance(
+    felt,
+    felt
+) -> felt
+    trace.240
+    nop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_account::get_balance
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -1163,36 +1163,6 @@ proc miden::active_account::get_balance(felt, felt) -> felt
 end
 
 @callconv("C")
-proc miden::active_note::get_sender(i32)
-    trace.240
-    nop
-    exec.::miden::active_note::get_sender
-    trace.252
-    nop
-    movup.2
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc miden::active_note::get_script_root(i32)
     trace.240
     nop
@@ -1237,6 +1207,36 @@ proc miden::active_note::get_script_root(i32)
     trace.252
     nop
     push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc miden::active_note::get_sender(i32)
+    trace.240
+    nop
+    exec.::miden::active_note::get_sender
+    trace.252
+    nop
+    movup.2
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
     add
     u32assert
     u32divmod.4

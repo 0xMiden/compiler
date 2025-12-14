@@ -417,7 +417,7 @@ proc miden_base_sys::bindings::input_note::get_serial_number(
     movup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -433,7 +433,7 @@ proc miden_base_sys::bindings::input_note::get_serial_number(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )

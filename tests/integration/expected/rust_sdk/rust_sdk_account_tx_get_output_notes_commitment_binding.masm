@@ -278,7 +278,7 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     movup.2
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_output_notes_commitment_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_output_notes_commitment_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -294,7 +294,7 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )

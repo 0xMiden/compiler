@@ -75,16 +75,16 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret v38;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v40: i32) -> felt {
-        ^block22(v40: i32):
-            v41 = hir.bitcast v40 : felt;
-            builtin.ret v41;
+        private builtin.function @intrinsics::felt::assert_eq(v40: felt, v41: felt) {
+        ^block22(v40: felt, v41: felt):
+            hir.assert_eq v40, v41;
+            builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::assert_eq(v43: felt, v44: felt) {
-        ^block24(v43: felt, v44: felt):
-            hir.assert_eq v43, v44;
-            builtin.ret ;
+        private builtin.function @intrinsics::felt::from_u32(v42: i32) -> felt {
+        ^block24(v42: i32):
+            v43 = hir.bitcast v42 : felt;
+            builtin.ret v43;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

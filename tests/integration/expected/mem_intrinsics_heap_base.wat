@@ -1,6 +1,6 @@
 (module $mem_intrinsics_heap_base.wasm
-  (type (;0;) (func (param i32 i32)))
-  (type (;1;) (func (param i32 i32) (result i32)))
+  (type (;0;) (func (param i32 i32) (result i32)))
+  (type (;1;) (func (param i32 i32)))
   (type (;2;) (func))
   (type (;3;) (func (param i32 i32 i32) (result i32)))
   (type (;4;) (func (result i32)))
@@ -9,7 +9,13 @@
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
-  (func $entrypoint (;0;) (type 0) (param i32 i32)
+  (func $__rustc::__rust_alloc (;0;) (type 0) (param i32 i32) (result i32)
+    i32.const 1048576
+    local.get 1
+    local.get 0
+    call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+  )
+  (func $entrypoint (;1;) (type 1) (param i32 i32)
     (local i32)
     call $__rustc::__rust_no_alloc_shim_is_unstable_v2
     block ;; label = @1
@@ -38,12 +44,6 @@
     i32.shl
     i32.store
   )
-  (func $__rustc::__rust_alloc (;1;) (type 1) (param i32 i32) (result i32)
-    i32.const 1048576
-    local.get 1
-    local.get 0
-    call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
-  )
   (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;2;) (type 2)
     return
   )
@@ -66,7 +66,7 @@
       i32.const -2147483648
       local.get 1
       local.get 3
-      call $core::ptr::alignment::Alignment::max
+      call $<core::ptr::alignment::Alignment>::max
       local.tee 1
       i32.sub
       i32.gt_u
@@ -122,10 +122,10 @@
   (func $intrinsics::mem::heap_base (;4;) (type 4) (result i32)
     unreachable
   )
-  (func $alloc::alloc::handle_alloc_error (;5;) (type 0) (param i32 i32)
+  (func $alloc::alloc::handle_alloc_error (;5;) (type 1) (param i32 i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;6;) (type 1) (param i32 i32) (result i32)
+  (func $<core::ptr::alignment::Alignment>::max (;6;) (type 0) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
