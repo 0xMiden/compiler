@@ -1,6 +1,6 @@
 use midenc_hir::{
-    dialects::builtin::*, AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType,
-    Report, Signature, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType, Report, Signature,
+    SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef, dialects::builtin::*,
 };
 
 use crate::*;

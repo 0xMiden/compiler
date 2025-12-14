@@ -2,7 +2,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{AddressSpace, Builder, PointerType, SmallVec, SourceSpan, Type, ValueRef};
 
-use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt, WasmError};
+use crate::{WasmError, error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 /// Recursively loads primitive values from memory based on the component-level type following the
 /// canonical ABI loading algorithm from

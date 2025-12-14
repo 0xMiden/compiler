@@ -1,10 +1,10 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{
-    dialects::builtin::LocalVariable, AddressSpace, ArrayType, PointerType, SourceSpan, StructType,
-    Type,
+    AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
+    dialects::builtin::LocalVariable,
 };
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 use crate::lower::NativePtr;
 
 /// Allocation

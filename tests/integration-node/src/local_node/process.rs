@@ -8,9 +8,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use super::{data_dir, rpc_url, setup::LocalMidenNode, RPC_PORT};
+use super::{RPC_PORT, data_dir, rpc_url, setup::LocalMidenNode};
 
 /// Check if a port is in use
 pub fn is_port_in_use(port: u16) -> bool {

@@ -5,7 +5,7 @@ use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
 use midenc_compile::LinkOutput;
-use midenc_session::{Session, STDLIB};
+use midenc_session::{STDLIB, Session};
 use proptest::test_runner::TestCaseError;
 
 use super::*;
@@ -150,7 +150,7 @@ pub fn compile_test_module(
 pub fn compile_link_output_to_package(
     link_output: LinkOutput,
 ) -> Result<miden_mast_package::Package, TestCaseError> {
-    use midenc_compile::{compile_link_output_to_masm_with_pre_assembly_stage, CodegenOutput};
+    use midenc_compile::{CodegenOutput, compile_link_output_to_masm_with_pre_assembly_stage};
 
     // Compile to Package
     let mut pre_assembly_stage = |output: CodegenOutput, _context| {

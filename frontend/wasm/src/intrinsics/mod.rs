@@ -8,7 +8,7 @@ pub mod debug;
 pub mod felt;
 pub mod mem;
 
-use midenc_hir::{dialects::builtin::FunctionRef, Builder, SmallVec, SourceSpan, ValueRef};
+use midenc_hir::{Builder, SmallVec, SourceSpan, ValueRef, dialects::builtin::FunctionRef};
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 

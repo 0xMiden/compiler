@@ -1,14 +1,14 @@
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{
+    Attribute, Error, File, FnArg, ImplItem, ImplItemFn, Item, ItemFn, ItemImpl, ItemStruct,
+    LitStr, Pat, ReturnType, Token, TypePath,
     parse::{Parse, ParseStream},
     parse_quote,
     spanned::Spanned,
     visit_mut::VisitMut,
-    Attribute, Error, File, FnArg, ImplItem, ImplItemFn, Item, ItemFn, ItemImpl, ItemStruct,
-    LitStr, Pat, ReturnType, Token, TypePath,
 };
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup};
 use wit_bindgen_rust::{Opts, WithOption};

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt,
-    iter::{repeat_n, repeat_with, ByRefSized},
+    iter::{ByRefSized, repeat_n, repeat_with},
     ops::{Index, IndexMut, Range, RangeBounds},
     ptr::{self, NonNull},
 };
@@ -3739,7 +3739,7 @@ mod tests {
 
         impl Hasher for SimpleHasher {
             fn finish(&self) -> u64 {
-                self.0 .0
+                self.0.0
             }
 
             fn write(&mut self, bytes: &[u8]) {

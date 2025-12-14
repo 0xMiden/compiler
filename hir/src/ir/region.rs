@@ -20,10 +20,10 @@ pub use self::{
 };
 use super::*;
 use crate::{
+    Forward,
     adt::SmallSet,
     patterns::RegionSimplificationLevel,
     traits::{SingleBlock, SingleRegion},
-    Forward,
 };
 
 pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;

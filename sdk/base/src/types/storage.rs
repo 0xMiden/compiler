@@ -1,4 +1,4 @@
-use miden_base_sys::bindings::{storage, StorageCommitmentRoot};
+use miden_base_sys::bindings::{StorageCommitmentRoot, storage};
 use miden_stdlib_sys::Word;
 
 pub trait ValueAccess<V> {

@@ -7,11 +7,11 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef},
-    traits::{BranchOpInterface, Terminator},
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
     ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef},
+    traits::{BranchOpInterface, Terminator},
 };
 
 use crate::ssa::{SSABuilder, SideEffects, Variable};

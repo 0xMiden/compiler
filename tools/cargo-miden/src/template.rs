@@ -5,8 +5,8 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{bail, Context, Result};
-use liquid::{model::Value, Object, Parser};
+use anyhow::{Context, Result, bail};
+use liquid::{Object, Parser, model::Value};
 use tempfile::TempDir;
 use toml_edit::DocumentMut;
 use walkdir::WalkDir;

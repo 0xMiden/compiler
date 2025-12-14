@@ -3,12 +3,12 @@
 use alloc::{format, vec};
 
 use midenc_hir::{
-    dialects::builtin::{self, LocalVariable},
-    formatter::DisplayHex,
     BlockRef, Context, EntityRef, Felt, FxHashMap, Immediate, Operation, OperationRef, Report,
     SmallVec, SourceSpan, SymbolPath, ValueId, ValueRef,
+    dialects::builtin::{self, LocalVariable},
+    formatter::DisplayHex,
 };
-use midenc_session::diagnostics::{miette, Diagnostic, Severity, WrapErr};
+use midenc_session::diagnostics::{Diagnostic, Severity, WrapErr, miette};
 
 use super::memory;
 use crate::Value;

@@ -4,16 +4,16 @@ use alloc::{
 };
 use core::fmt;
 
-use miden_assembly::{ast::InvocationTarget, library::LibraryExport, Library};
+use miden_assembly::{Library, ast::InvocationTarget, library::LibraryExport};
 use miden_core::{Program, Word};
 use miden_mast_package::{MastArtifact, Package, ProcedureName};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
-    diagnostics::{Report, SourceSpan, Span},
     Session,
+    diagnostics::{Report, SourceSpan, Span},
 };
 
-use crate::{lower::NativePtr, masm, TraceEvent};
+use crate::{TraceEvent, lower::NativePtr, masm};
 
 pub struct MasmComponent {
     pub id: builtin::ComponentId,

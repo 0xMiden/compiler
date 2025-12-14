@@ -1,14 +1,14 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
+    Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
+    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
+    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, ValueRef,
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
     traits::{ConstantLike, Terminator},
-    Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
-    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
-    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, ValueRef,
 };
 
 /// This transformation sinks operations as close as possible to their uses, one of two ways:

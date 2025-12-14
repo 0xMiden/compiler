@@ -1,6 +1,6 @@
 use core::borrow::Borrow;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::*;
 use crate::adt::SmallSet;

@@ -8,13 +8,13 @@ use miden_objects::account::AccountComponentMetadata;
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
-    interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
+    Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable, interner::Symbol,
 };
 use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
+use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project};
 
 #[test]
 fn storage_example() {

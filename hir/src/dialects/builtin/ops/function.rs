@@ -3,14 +3,13 @@ use alloc::format;
 use smallvec::SmallVec;
 
 use crate::{
-    define_attr_type,
-    derive::operation,
-    dialects::builtin::BuiltinDialect,
-    traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
     AttrPrinter, BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter,
     OpPrintingFlags, Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol,
     SymbolName, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, ValueRef,
-    Visibility,
+    Visibility, define_attr_type,
+    derive::operation,
+    dialects::builtin::BuiltinDialect,
+    traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;

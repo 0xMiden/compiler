@@ -8,26 +8,27 @@ use std::mem;
 use cranelift_entity::PrimaryMap;
 use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
-use midenc_session::{diagnostics::IntoDiagnostic, Session};
+use midenc_session::{Session, diagnostics::IntoDiagnostic};
 use wasmparser::{
+    Chunk, ComponentImportName, Encoding, Parser, Payload, Validator,
     component_types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,
     },
     types::Types,
-    Chunk, ComponentImportName, Encoding, Parser, Payload, Validator,
 };
 
 use crate::{
+    WasmTranslationConfig,
     component::*,
     error::WasmResult,
     module::{
         module_env::{ModuleEnvironment, ParsedModule},
         types::{
-            convert_func_type, convert_valtype, EntityIndex, FuncIndex, GlobalIndex, MemoryIndex,
-            TableIndex, WasmType,
+            EntityIndex, FuncIndex, GlobalIndex, MemoryIndex, TableIndex, WasmType,
+            convert_func_type, convert_valtype,
         },
     },
-    unsupported_diag, WasmTranslationConfig,
+    unsupported_diag,
 };
 
 /// Structure used to parse a Wasm component

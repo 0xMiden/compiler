@@ -5,8 +5,8 @@ use midenc_hir::{
 
 use super::*;
 use crate::{
-    analyses::dce::{CfgEdge, Executable, PredecessorState},
     AnalysisStateGuardMut, BuildableAnalysisState, CallControlFlowAction, DataFlowSolver,
+    analyses::dce::{CfgEdge, Executable, PredecessorState},
 };
 
 /// The base trait for all dense forward data-flow analyses.

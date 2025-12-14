@@ -4,7 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use cargo_metadata::Package;
 use midenc_session::{ProjectType, RollupTarget, TargetEnv};
 

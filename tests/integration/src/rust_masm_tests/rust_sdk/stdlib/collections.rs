@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use miden_core::{
-    crypto::merkle::{MerkleStore, Smt},
     Felt, FieldElement, Word,
+    crypto::merkle::{MerkleStore, Smt},
 };
 use miden_debug::Executor;
 use miden_lib::MidenLib;
