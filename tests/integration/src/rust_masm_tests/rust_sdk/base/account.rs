@@ -26,7 +26,7 @@ impl TestAccount {{
 [package]
 name = "{name}"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = []
 
 [lib]

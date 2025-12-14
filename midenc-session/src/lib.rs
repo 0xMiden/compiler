@@ -51,8 +51,8 @@ pub use self::{
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
-        add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
-        LibraryPathComponent, LinkLibrary, STDLIB,
+        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB,
+        add_target_link_libraries,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
@@ -203,7 +203,7 @@ impl Session {
                 log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
                 match inputs.first() {
                     Some(InputFile {
-                        file: InputType::Real(ref path),
+                        file: InputType::Real(path),
                         ..
                     }) => path
                         .file_stem()
@@ -218,7 +218,7 @@ impl Session {
                         .to_string(),
                     Some(
                         input @ InputFile {
-                            file: InputType::Stdin { ref name, .. },
+                            file: InputType::Stdin { name, .. },
                             ..
                         },
                     ) => {
@@ -324,13 +324,10 @@ impl Session {
 
     #[cfg(feature = "std")]
     fn check_file_is_writeable(&self, file: &Path) {
-        if let Ok(m) = file.metadata() {
-            if m.permissions().readonly() {
-                panic!(
-                    "Compiler exited with a fatal error: file is not writeable: {}",
-                    file.display()
-                );
-            }
+        if let Ok(m) = file.metadata()
+            && m.permissions().readonly()
+        {
+            panic!("Compiler exited with a fatal error: file is not writeable: {}", file.display());
         }
     }
 

@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path};
 
-use cargo_miden::{run, BuildOutput, OutputType};
+use cargo_miden::{BuildOutput, OutputType, run};
 
 /// Creates a minimal Cargo workspace at `root` with a single member named `member_name`.
 fn write_workspace_root(root: &Path, member_name: &str) {
@@ -11,7 +11,7 @@ members = ["{member_name}"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Miden Contributors"]
 license = "MIT"
 repository = "https://example.com/test"
@@ -27,7 +27,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Miden Contributors"]
 license = "MIT"
 repository = "https://example.com/test"
@@ -45,7 +45,7 @@ members = [{members_str}]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Miden Contributors"]
 license = "MIT"
 repository = "https://example.com/test"
@@ -74,7 +74,9 @@ fn build_workspace_member_account_project() {
         .format_timestamp(None)
         .try_init();
     // signal integration tests to the cargo-miden code path
-    env::set_var("TEST", "1");
+    unsafe {
+        env::set_var("TEST", "1");
+    }
 
     // create temp workspace root
     let restore_dir = env::current_dir().unwrap();
@@ -125,7 +127,9 @@ fn build_from_workspace_root_is_rejected() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe {
+        env::set_var("TEST", "1");
+    }
 
     // create temp workspace root
     let restore_dir = env::current_dir().unwrap();
@@ -175,7 +179,9 @@ fn new_project_auto_adds_to_workspace() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe {
+        env::set_var("TEST", "1");
+    }
 
     // create temp workspace root
     let restore_dir = env::current_dir().unwrap();
@@ -231,7 +237,9 @@ fn new_project_auto_adds_to_workspace_with_existing_members() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe {
+        env::set_var("TEST", "1");
+    }
 
     // create temp workspace root
     let restore_dir = env::current_dir().unwrap();
@@ -288,7 +296,9 @@ fn new_project_does_not_duplicate_existing_member() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe {
+        env::set_var("TEST", "1");
+    }
 
     // create temp workspace root
     let restore_dir = env::current_dir().unwrap();

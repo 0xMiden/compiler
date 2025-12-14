@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::Asset;
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::native_account::add_asset"]
     fn extern_native_account_add_asset(
         asset_3: Felt,

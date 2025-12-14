@@ -20,7 +20,7 @@ fn my_alloc_error(_info: core::alloc::Layout) -> ! {
 
 // use miden::Felt;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn entrypoint(a: u32, b: u32) -> u32 {
     a + b
 }

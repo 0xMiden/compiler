@@ -1,4 +1,4 @@
-extern "C" {
+unsafe extern "C" {
     #[link_name = "intrinsics::debug::break"]
     fn extern_break();
 }

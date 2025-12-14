@@ -35,7 +35,7 @@ Next, edit the `Cargo.toml` file as follows:
 [package]
 name = "wasm-fib"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 # Build this crate as a self-contained, C-style dynamic library
@@ -108,10 +108,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 // a mangled name that has no stable form.
 //
 // You can specify a different name from the library than the
-// name in the source code using the `#[export_name = "foo"]`
+// name in the source code using the `#[unsafe(export_name = "foo")]`
 // attribute, which will make the function callable as `foo`
 // externally (in this example)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn fib(n: u32) -> u32 {
     let mut a = 0;
     let mut b = 1;

@@ -40,7 +40,7 @@ fn main() {
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_alloc_heap_base_stub")
-        .arg("--edition=2021")
+        .arg("--edition=2024")
         .arg("--crate-type=rlib")
         .arg("--target")
         .arg(&target)

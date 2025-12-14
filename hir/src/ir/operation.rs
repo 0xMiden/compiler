@@ -17,7 +17,7 @@ use super::{
     *,
 };
 use crate::{
-    adt::SmallSet, patterns::RewritePatternSet, AttributeSet, AttributeValue, Forward, ProgramPoint,
+    AttributeSet, AttributeValue, Forward, ProgramPoint, adt::SmallSet, patterns::RewritePatternSet,
 };
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
@@ -184,27 +184,27 @@ impl EntityListItem for Operation {
         // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
         if this.name().implements::<dyn Symbol>() {
             let parent = this.nearest_symbol_table();
-            if let Some(mut parent) = parent {
-                if parent.name().implements::<dyn SymbolTable>() {
-                    // NOTE: We call `unwrap()` here because we are confident that these function calls
-                    // are valid thanks to the `implements` check above.
-                    let mut symbol_table = parent.borrow_mut();
-                    let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
-                    let mut sym_manager = sym_manager.symbol_manager_mut();
+            if let Some(mut parent) = parent
+                && parent.name().implements::<dyn SymbolTable>()
+            {
+                // NOTE: We call `unwrap()` here because we are confident that these function calls
+                // are valid thanks to the `implements` check above.
+                let mut symbol_table = parent.borrow_mut();
+                let sym_manager = symbol_table.as_trait_mut::<dyn SymbolTable>().unwrap();
+                let mut sym_manager = sym_manager.symbol_manager_mut();
 
-                    let symbol_ref = this.borrow().as_symbol_ref().unwrap();
+                let symbol_ref = this.borrow().as_symbol_ref().unwrap();
 
-                    let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
-                    assert!(
-                        is_new,
-                        "Unable to insert {} in symbol table of {}: symbol {} is already \
-                         registered to another operation {}.",
-                        this.name(),
-                        parent.name(),
-                        symbol_ref.borrow().name(),
-                        sym_manager.lookup(symbol_ref.borrow().name()).unwrap().borrow().name()
-                    );
-                }
+                let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
+                assert!(
+                    is_new,
+                    "Unable to insert {} in symbol table of {}: symbol {} is already registered \
+                     to another operation {}.",
+                    this.name(),
+                    parent.name(),
+                    symbol_ref.borrow().name(),
+                    sym_manager.lookup(symbol_ref.borrow().name()).unwrap().borrow().name()
+                );
             }
         }
         let order_offset = core::mem::offset_of!(Operation, order);

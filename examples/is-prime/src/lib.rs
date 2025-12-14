@@ -35,7 +35,7 @@ fn is_prime(n: u32) -> bool {
 }
 
 /// https://www.math.utah.edu/~pa/MDS/primes.html
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn entrypoint(n: u32) -> bool {
     return is_prime(n);
 }

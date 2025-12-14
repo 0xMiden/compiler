@@ -10,8 +10,8 @@ use proc_macro::Span;
 use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    spanned::Spanned, Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType,
-    Type, Visibility,
+    Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType, Type, Visibility,
+    spanned::Spanned,
 };
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
         storage::process_storage_fields,
     },
     types::{
-        map_type_to_type_ref, registered_export_types, ExportedTypeDef, ExportedTypeKind, TypeRef,
+        ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
 };
 
@@ -480,14 +480,13 @@ fn record_type_path(
 
     // Give single-segment paths a module prefix so we don't generate bare identifiers that fail to
     // resolve outside the component module.
-    if segments.len() <= 1 {
-        if let Some(last) = segments.last().cloned() {
-            if let Some(prefix) = module_prefix_segments {
-                let mut resolved = prefix.to_vec();
-                resolved.push(last);
-                segments = resolved;
-            }
-        }
+    if segments.len() <= 1
+        && let Some(last) = segments.last().cloned()
+        && let Some(prefix) = module_prefix_segments
+    {
+        let mut resolved = prefix.to_vec();
+        resolved.push(last);
+        segments = resolved;
     }
 
     paths.entry(type_ref.wit_name.clone()).or_insert(segments);

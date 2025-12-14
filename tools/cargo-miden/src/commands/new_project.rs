@@ -7,7 +7,7 @@ use anyhow::Context;
 use clap::Args;
 use toml_edit::{DocumentMut, Item, Value};
 
-use crate::template::{generate, GenerateArgs, TemplatePath};
+use crate::template::{GenerateArgs, TemplatePath, generate};
 
 /// The tag used in checkout of the new project template.
 ///
@@ -282,10 +282,10 @@ fn find_workspace_cargo_toml(start_path: &Path) -> Option<PathBuf> {
         let cargo_toml = ancestor.join("Cargo.toml");
         if cargo_toml.exists() {
             // Check if it's a workspace by reading and parsing it
-            if let Ok(content) = fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    return Some(cargo_toml);
-                }
+            if let Ok(content) = fs::read_to_string(&cargo_toml)
+                && content.contains("[workspace]")
+            {
+                return Some(cargo_toml);
             }
         }
     }

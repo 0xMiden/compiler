@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use cargo_miden::{run, OutputType};
+use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
 use midenc_session::miden_assembly::utils::Deserializable;
 
@@ -46,7 +46,7 @@ fn test_all_templates_and_examples() {
     //
     // This is necessary because cfg!(test) does not work for integration tests, so we're forced
     // to use an out-of-band signal like this instead
-    env::set_var("TEST", "1");
+    unsafe { env::set_var("TEST", "1") };
 
     // Test example templates
 
@@ -444,7 +444,7 @@ fn new_project_integration_tests_pass() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe { env::set_var("TEST", "1") };
 
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir().join(format!(

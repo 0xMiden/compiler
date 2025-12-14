@@ -5,7 +5,7 @@ use clap::Args;
 use toml_edit::{DocumentMut, Item};
 
 use crate::{
-    template::{generate, GenerateArgs, TemplatePath},
+    template::{GenerateArgs, TemplatePath, generate},
     utils::compiler_path,
 };
 
@@ -256,19 +256,19 @@ fn process_cargo_toml(project_path: &Path) -> anyhow::Result<()> {
     let mut doc = content.parse::<DocumentMut>()?;
 
     // Update miden dependency to use git repository
-    if let Some(deps) = doc.get_mut("dependencies").and_then(|d| d.as_table_mut()) {
-        if let Some(miden_dep) = deps.get_mut("miden") {
-            *miden_dep = Item::Value(toml_edit::Value::InlineTable({
-                let mut table = toml_edit::InlineTable::new();
-                if cfg!(test) || std::env::var("TEST").is_ok() {
-                    table.insert("path", compiler_path().join("sdk/sdk").to_str().unwrap().into());
-                } else {
-                    table.insert("git", "https://github.com/0xMiden/compiler".into());
-                }
+    if let Some(deps) = doc.get_mut("dependencies").and_then(|d| d.as_table_mut())
+        && let Some(miden_dep) = deps.get_mut("miden")
+    {
+        *miden_dep = Item::Value(toml_edit::Value::InlineTable({
+            let mut table = toml_edit::InlineTable::new();
+            if cfg!(test) || std::env::var("TEST").is_ok() {
+                table.insert("path", compiler_path().join("sdk/sdk").to_str().unwrap().into());
+            } else {
+                table.insert("git", "https://github.com/0xMiden/compiler".into());
+            }
 
-                table
-            }));
-        }
+            table
+        }));
     }
 
     // Write the updated Cargo.toml
@@ -299,14 +299,13 @@ fn update_project_dependency(
         .and_then(|m| m.as_table_mut())
         .and_then(|t| t.get_mut("dependencies"))
         .and_then(|d| d.as_table_mut())
+        && let Some(dep) = miden_deps.get_mut(dependency_name)
     {
-        if let Some(dep) = miden_deps.get_mut(dependency_name) {
-            *dep = Item::Value(toml_edit::Value::InlineTable({
-                let mut table = toml_edit::InlineTable::new();
-                table.insert("path", format!("../{contract_dir}").into());
-                table
-            }));
-        }
+        *dep = Item::Value(toml_edit::Value::InlineTable({
+            let mut table = toml_edit::InlineTable::new();
+            table.insert("path", format!("../{contract_dir}").into());
+            table
+        }));
     }
 
     // Update WIT file dependency to use local contract
@@ -321,19 +320,16 @@ fn update_project_dependency(
         .and_then(|t| t.as_table_mut())
         .and_then(|t| t.get_mut("dependencies"))
         .and_then(|d| d.as_table_mut())
+        && let Some(wit_dep) = wit_deps.get_mut(dependency_name)
+        && let Some(table) = wit_dep.as_inline_table_mut()
+        && let Some(path_value) = table.get_mut("path")
     {
-        if let Some(wit_dep) = wit_deps.get_mut(dependency_name) {
-            if let Some(table) = wit_dep.as_inline_table_mut() {
-                if let Some(path_value) = table.get_mut("path") {
-                    let path = path_value.to_string();
-                    *path_value = if path.contains("target/generated-wit") {
-                        toml_edit::Value::from(format!("../{contract_dir}/target/generated-wit/"))
-                    } else {
-                        toml_edit::Value::from(format!("../{contract_dir}/wit/{wit_file_name}"))
-                    };
-                }
-            }
-        }
+        let path = path_value.to_string();
+        *path_value = if path.contains("target/generated-wit") {
+            toml_edit::Value::from(format!("../{contract_dir}/target/generated-wit/"))
+        } else {
+            toml_edit::Value::from(format!("../{contract_dir}/wit/{wit_file_name}"))
+        };
     }
 
     fs::write(&note_cargo_toml, doc.to_string())?;

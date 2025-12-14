@@ -7,7 +7,7 @@ mod spanned;
 
 use inflector::cases::kebabcase::to_kebab_case;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Error, Ident, Token};
+use syn::{Data, DeriveInput, Error, Ident, Token, parse_macro_input, spanned::Spanned};
 
 #[proc_macro_derive(Spanned, attributes(span))]
 pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -152,8 +152,8 @@ pub fn derive_analysis_key(item: proc_macro::TokenStream) -> proc_macro::TokenSt
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let found = match &derive_input.data {
-        syn::Data::Struct(ref data) => match &data.fields {
-            syn::Fields::Named(ref fields) => {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => {
                 let mut found = None;
                 for field in fields.named.iter() {
                     if field.attrs.iter().any(is_analysis_key_attr) {
@@ -170,7 +170,7 @@ pub fn derive_analysis_key(item: proc_macro::TokenStream) -> proc_macro::TokenSt
                 }
                 found
             }
-            syn::Fields::Unnamed(ref fields) => {
+            syn::Fields::Unnamed(fields) => {
                 let mut found = None;
                 for (i, field) in fields.unnamed.iter().enumerate() {
                     if field.attrs.iter().any(is_analysis_key_attr) {
@@ -193,18 +193,18 @@ pub fn derive_analysis_key(item: proc_macro::TokenStream) -> proc_macro::TokenSt
                     "structs with unit fields cannot derive AnalysisKey",
                 )
                 .into_compile_error()
-                .into()
+                .into();
             }
         },
         syn::Data::Enum(_) => {
             return syn::Error::new(derive_span, "enums cannot derive AnalysisKey")
                 .into_compile_error()
-                .into()
+                .into();
         }
         syn::Data::Union(_) => {
             return syn::Error::new(derive_span, "unions cannot derive AnalysisKey")
                 .into_compile_error()
-                .into()
+                .into();
         }
     };
 
@@ -213,7 +213,7 @@ pub fn derive_analysis_key(item: proc_macro::TokenStream) -> proc_macro::TokenSt
         None => {
             return syn::Error::new(derive_span, "missing #[analysis_key] attribute")
                 .into_compile_error()
-                .into()
+                .into();
         }
     };
 
@@ -236,7 +236,7 @@ pub fn derive_rewrite_pass_registration(item: proc_macro::TokenStream) -> proc_m
     let mut params = syn::punctuated::Punctuated::<_, Token![,]>::new();
     for gp in generics.params.iter() {
         match gp {
-            syn::GenericParam::Lifetime(ref lt) => {
+            syn::GenericParam::Lifetime(lt) => {
                 if !lt.bounds.empty_or_trailing() {
                     return syn::Error::new(
                         gp.span(),
@@ -250,7 +250,7 @@ pub fn derive_rewrite_pass_registration(item: proc_macro::TokenStream) -> proc_m
                     ident: Ident::new("_", lt.span()),
                 }));
             }
-            syn::GenericParam::Type(ref ty) => {
+            syn::GenericParam::Type(ty) => {
                 if !ty.bounds.empty_or_trailing() {
                     return syn::Error::new(
                         gp.span(),
@@ -326,7 +326,7 @@ pub fn derive_conversion_pass_registration(
     let mut params = syn::punctuated::Punctuated::<_, Token![,]>::new();
     for gp in generics.params.iter() {
         match gp {
-            syn::GenericParam::Lifetime(ref lt) => {
+            syn::GenericParam::Lifetime(lt) => {
                 if !lt.bounds.empty_or_trailing() {
                     return syn::Error::new(
                         gp.span(),
@@ -340,7 +340,7 @@ pub fn derive_conversion_pass_registration(
                     ident: Ident::new("_", lt.span()),
                 }));
             }
-            syn::GenericParam::Type(ref ty) => {
+            syn::GenericParam::Type(ty) => {
                 if !ty.bounds.empty_or_trailing() {
                     return syn::Error::new(
                         gp.span(),

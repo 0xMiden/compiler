@@ -626,19 +626,18 @@ fn format_patch(desired_indent: Option<usize>, patch: &str) -> String {
     }
     let mut final_newline = false;
     for line in lines_with_ends(patch) {
-        if is_multiline && !line.trim().is_empty() {
-            if let Some(indent) = &indent {
-                buf.push_str(indent);
-                buf.push_str("    ");
-            }
+        if is_multiline
+            && !line.trim().is_empty()
+            && let Some(indent) = &indent
+        {
+            buf.push_str(indent);
+            buf.push_str("    ");
         }
         buf.push_str(line);
         final_newline = line.ends_with('\n');
     }
-    if final_newline {
-        if let Some(indent) = &indent {
-            buf.push_str(indent);
-        }
+    if final_newline && let Some(indent) = &indent {
+        buf.push_str(indent);
     }
     lit_kind.write_end(&mut buf).unwrap();
     if matches!(lit_kind, StrLitKind::Raw(_)) {

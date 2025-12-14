@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::active_account::get_id"]
     fn extern_active_account_get_id(ptr: *mut AccountId);
     #[link_name = "miden::active_account::get_nonce"]

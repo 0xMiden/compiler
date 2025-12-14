@@ -2,28 +2,29 @@ use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
-    self as hir2,
+    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident,
+    SymbolNameComponent, SymbolPath,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
     formatter::DisplayValues,
     interner::Symbol,
-    smallvec, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident, SymbolNameComponent,
-    SymbolPath,
+    smallvec,
 };
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
 use super::{
-    interface_type_to_ir,
-    shim_bypass::{self, ShimBypassInfo},
     CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule, ComponentFuncIndex,
     ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypesBuilder,
     ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent,
     StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex, TypeModuleIndex,
+    interface_type_to_ir,
+    shim_bypass::{self, ShimBypassInfo},
 };
 use crate::{
+    FrontendOutput, WasmTranslationConfig,
     component::{
-        lift_exports::generate_export_lifting_function, ComponentItem, LocalInitializer,
-        StaticComponentIndex,
+        ComponentItem, LocalInitializer, StaticComponentIndex,
+        lift_exports::generate_export_lifting_function,
     },
     error::WasmResult,
     module::{
@@ -33,7 +34,7 @@ use crate::{
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
-    unsupported_diag, FrontendOutput, WasmTranslationConfig,
+    unsupported_diag,
 };
 
 /// A translator from the linearized Wasm component model to the Miden IR component
@@ -252,7 +253,7 @@ impl<'a> ComponentTranslator<'a> {
                     self.shim_bypass_info.fixup_module_indices.push(module_idx);
                 }
             }
-            LocalInitializer::ModuleInstantiate(module_idx, ref args) => {
+            LocalInitializer::ModuleInstantiate(module_idx, args) => {
                 self.module_instantiation(frame, types, module_idx, args)?;
             }
             LocalInitializer::ModuleSynthetic(entities) => {
@@ -285,7 +286,7 @@ impl<'a> ComponentTranslator<'a> {
                     self.shim_bypass_info.shim_instance_indices.push(instance_idx);
                 }
             }
-            LocalInitializer::ComponentStatic(idx, ref vars) => {
+            LocalInitializer::ComponentStatic(idx, vars) => {
                 frame.components.push(ComponentDef {
                     index: *idx,
                     closure: ComponentClosure {
@@ -305,7 +306,7 @@ impl<'a> ComponentTranslator<'a> {
             LocalInitializer::ComponentInstantiate(
                 instance @ ComponentInstantiation {
                     component,
-                    ref args,
+                    args,
                     ty: _,
                 },
             ) => {
@@ -943,7 +944,7 @@ impl<'a> ComponentItemDef<'a> {
         ty: TypeDef,
         component_instance_idx: ComponentInstanceIndex,
     ) -> ComponentItemDef<'a> {
-        let item = match ty {
+        match ty {
             TypeDef::Module(ty) => ComponentItemDef::Module(ModuleDef::Import(ty)),
             TypeDef::ComponentInstance(ty) => {
                 ComponentItemDef::Instance(ComponentInstanceDef::Import(ComponentInstanceImport {
@@ -958,8 +959,7 @@ impl<'a> ComponentItemDef<'a> {
             )),
             TypeDef::Component(_ty) => panic!("root-level component imports are not supported"),
             TypeDef::Interface(_) | TypeDef::Resource(_) => ComponentItemDef::Type(ty),
-        };
-        item
+        }
     }
 }
 

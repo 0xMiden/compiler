@@ -38,7 +38,7 @@ categories = ["compilers"]
 keywords = ["compiler", "miden"]
 license = "MIT"
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [workspace.dependencies]

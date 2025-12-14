@@ -1,6 +1,10 @@
 use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 
 use midenc_hir::{
+    AttributeValue, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
+    OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
+    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
+    Value, ValueOrAlias, ValueRange, ValueRef,
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     dialects::builtin::Function,
@@ -9,19 +13,15 @@ use midenc_hir::{
     loops::{Loop, LoopForest, LoopInfo},
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
     traits::{BranchOpInterface, IsolatedFromAbove, Terminator},
-    AttributeValue, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
-    OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
-    Value, ValueOrAlias, ValueRange, ValueRef,
 };
 
 use super::dce::{CfgEdge, Executable};
 use crate::{
-    analyses::{
-        constant_propagation::ConstantValue, dce::PredecessorState, liveness::LOOP_EXIT_DISTANCE,
-        LivenessAnalysis,
-    },
     Lattice,
+    analyses::{
+        LivenessAnalysis, constant_propagation::ConstantValue, dce::PredecessorState,
+        liveness::LOOP_EXIT_DISTANCE,
+    },
 };
 
 #[cfg(test)]
@@ -1540,13 +1540,13 @@ impl SpillAnalysis {
 
                 let mut live_through = live_through.into_iter();
                 while free_in_loop > 0 {
-                    if let Some(operand) = live_through.next() {
-                        if let Some(new_free) = free_in_loop.checked_sub(operand.stack_size()) {
-                            if cand.insert(operand) {
-                                free_in_loop = new_free;
-                            }
-                            continue;
+                    if let Some(operand) = live_through.next()
+                        && let Some(new_free) = free_in_loop.checked_sub(operand.stack_size())
+                    {
+                        if cand.insert(operand) {
+                            free_in_loop = new_free;
                         }
+                        continue;
                     }
                     break;
                 }
@@ -1631,13 +1631,13 @@ impl SpillAnalysis {
 
                 let mut live_through = live_through.into_iter();
                 while free_in_loop > 0 {
-                    if let Some(operand) = live_through.next() {
-                        if let Some(new_free) = free_in_loop.checked_sub(operand.stack_size()) {
-                            if cand.insert(operand) {
-                                free_in_loop = new_free;
-                            }
-                            continue;
+                    if let Some(operand) = live_through.next()
+                        && let Some(new_free) = free_in_loop.checked_sub(operand.stack_size())
+                    {
+                        if cand.insert(operand) {
+                            free_in_loop = new_free;
                         }
+                        continue;
                     }
                     break;
                 }

@@ -95,10 +95,12 @@ unsafe impl GlobalAlloc for BumpAlloc {
         self.maybe_init();
 
         let top = self.top.load(Ordering::Relaxed);
-        let available = HEAP_END.byte_offset_from(top) as usize;
+        let available = unsafe { HEAP_END.byte_offset_from(top) as usize };
         if available >= size {
-            self.top.store(top.byte_add(size), Ordering::Relaxed);
-            unsafe { top.byte_offset(align as isize) }
+            unsafe {
+                self.top.store(top.byte_add(size), Ordering::Relaxed);
+                top.byte_offset(align as isize)
+            }
         } else {
             null_mut()
         }
@@ -125,7 +127,7 @@ unsafe impl GlobalAlloc for BumpAlloc {
 }
 
 #[cfg(target_family = "wasm")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "intrinsics::mem::heap_base"]
     fn heap_base() -> *mut u8;
 }

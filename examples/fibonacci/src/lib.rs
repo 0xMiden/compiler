@@ -30,9 +30,9 @@ fn alloc_failed(_layout: core::alloc::Layout) -> ! {
 //
 // NOTE:
 // The name of the entrypoint function is expected to be `entrypoint`. Do not remove the
-// `#[no_mangle]` attribute, otherwise, the rustc will mangle the name and it'll not be recognized
+// `#[unsafe(no_mangle)]` attribute, otherwise, the rustc will mangle the name and it'll not be recognized
 // by the Miden compiler.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn entrypoint(n: u32) -> u32 {
     let mut a = 0;
     let mut b = 1;

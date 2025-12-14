@@ -15,7 +15,7 @@ use midenc_compile::{
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
-    demangle::demangle, dialects::builtin, interner::Symbol, Context, FunctionIdent, Ident, Op,
+    Context, FunctionIdent, Ident, Op, demangle::demangle, dialects::builtin, interner::Symbol,
 };
 use midenc_session::{InputFile, InputType, Session};
 
@@ -277,12 +277,8 @@ impl CompilerTestBuilder {
     /// Override the Cargo target directory to the specified path
     pub fn with_target_dir(&mut self, path: impl AsRef<Path>) -> &mut Self {
         match &mut self.source {
-            CompilerTestInputType::CargoMiden(CargoTest {
-                ref mut target_dir, ..
-            })
-            | CompilerTestInputType::Rustc(RustcTest {
-                ref mut target_dir, ..
-            }) => {
+            CompilerTestInputType::CargoMiden(CargoTest { target_dir, .. })
+            | CompilerTestInputType::Rustc(RustcTest { target_dir, .. }) => {
                 *target_dir = Some(path.as_ref().to_path_buf());
             }
         }
@@ -559,7 +555,7 @@ impl CompilerTestBuilder {
                 [package]
                 name = "{name}"
                 version = "0.0.1"
-                edition = "2021"
+                edition = "2024"
                 authors = []
 
                 [dependencies]
@@ -640,7 +636,7 @@ impl CompilerTestBuilder {
     [package]
     name = "{name}"
     version = "0.0.1"
-    edition = "2021"
+    edition = "2024"
     authors = []
 
     [dependencies]
@@ -706,7 +702,7 @@ use alloc::vec::Vec;
         config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
-        let source = format!("#[no_mangle]\npub extern \"C\" fn entrypoint{source}");
+        let source = format!("#[unsafe(no_mangle)]\npub extern \"C\" fn entrypoint{source}");
         Self::rust_source_with_sdk(name, &source, config, midenc_flags)
     }
 }
@@ -886,10 +882,10 @@ impl CompilerTest {
 
     /// Get the MASM source code
     pub fn masm_src(&mut self) -> String {
-        if self.masm_src.is_none() {
-            if let Err(err) = self.compile_wasm_to_masm_program() {
-                panic!("{err}");
-            }
+        if self.masm_src.is_none()
+            && let Err(err) = self.compile_wasm_to_masm_program()
+        {
+            panic!("{err}");
         }
         self.masm_src.clone().unwrap()
     }
