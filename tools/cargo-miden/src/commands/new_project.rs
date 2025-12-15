@@ -13,7 +13,7 @@ use crate::template::{GenerateArgs, TemplatePath, generate};
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.22.0";
+const TEMPLATES_REPO_TAG: &str = "v0.23.0";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
