@@ -1,11 +1,11 @@
-# mod miden:base/authentication-component@1.0.0
+# mod miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0
 
 @callconv("canon-lift")
 pub proc auth__procedure(felt, felt, felt, felt)
-    exec.::miden:base/authentication-component@1.0.0::init
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::init
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden:base/authentication-component@1.0.0#auth-procedure
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512
+# mod miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -49,7 +49,7 @@ proc auth_component_rpo_falcon512::bindings::__link_custom_section_describing_im
 end
 
 @callconv("C")
-proc miden:base/authentication-component@1.0.0#auth-procedure(
+proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure(
     felt,
     felt,
     felt,
@@ -81,17 +81,17 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     nop
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::wit_bindgen::rt::run_ctors_once
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_block_number
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_block_number
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::native_account::incr_nonce
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::native_account::incr_nonce
     trace.252
     nop
     push.80
@@ -99,7 +99,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::native_account::compute_delta_commitment
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::native_account::compute_delta_commitment
     trace.252
     nop
     push.88
@@ -182,7 +182,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     dup.3
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.16
@@ -190,7 +190,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_input_notes_commitment
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_input_notes_commitment
     trace.252
     nop
     push.32
@@ -198,19 +198,19 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_output_notes_commitment
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_output_notes_commitment
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
     trace.252
     nop
     push.60
@@ -288,19 +288,19 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     push.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::felt::from_u32
     trace.252
     nop
     swap.1
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::felt::assert_eq
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::felt::assert_eq
     trace.252
     nop
     push.2
@@ -316,7 +316,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     movup.2
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo::hash_memory_words
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo::hash_memory_words
     trace.252
     nop
     push.88
@@ -401,7 +401,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.64
@@ -502,7 +502,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
             swap.1
             trace.240
             nop
-            exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
+            exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks
             trace.252
             nop
             push.4294967280
@@ -664,13 +664,13 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     swap.1
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.80
@@ -679,7 +679,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     swap.1
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::active_account::get_item
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::active_account::get_item
     trace.252
     nop
     push.88
@@ -764,7 +764,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.76
@@ -845,7 +845,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     dup.12
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
     movup.4
@@ -860,7 +860,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     swap.3
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
     trace.252
     nop
     push.112
@@ -918,7 +918,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::__wasm_call_ctors
+        exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -955,7 +955,7 @@ proc miden_base_sys::bindings::tx::get_block_number(
 ) -> felt
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::tx::get_block_number
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_block_number
     trace.252
     nop
 end
@@ -987,7 +987,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     dup.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::tx::get_input_notes_commitment
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_input_notes_commitment
     trace.252
     nop
     push.8
@@ -1067,7 +1067,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     movup.2
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.32
@@ -1109,7 +1109,7 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     dup.0
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden::tx::get_output_notes_commitment
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_output_notes_commitment
     trace.252
     nop
     push.8
@@ -1189,7 +1189,7 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     movup.2
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.32
@@ -1378,7 +1378,7 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     swap.5
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_rpo_falcon512::intrinsics::advice::adv_insert_mem
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice::adv_insert_mem
     trace.252
     nop
 end

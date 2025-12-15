@@ -3,7 +3,7 @@ use miden_stdlib_sys::Word;
 
 pub trait ValueAccess<V> {
     fn read(&self) -> V;
-    fn write(&self, value: V) -> (StorageCommitmentRoot, V);
+    fn write(&mut self, value: V) -> (StorageCommitmentRoot, V);
 }
 
 pub struct Value {
@@ -22,7 +22,7 @@ impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
     /// - new_root is the new storage commitment.
     /// - old_value is the previous value of the item.
     #[inline(always)]
-    fn write(&self, value: V) -> (StorageCommitmentRoot, V) {
+    fn write(&mut self, value: V) -> (StorageCommitmentRoot, V) {
         let (root, old_word) = storage::set_item(self.slot, value.into());
         (root, old_word.into())
     }
@@ -32,7 +32,7 @@ pub trait StorageMapAccess<K, V> {
     /// Returns a map item value for `key` from the account storage.
     fn get(&self, key: &K) -> V;
     /// Sets a map item `value` for `key` in the account storage and returns (old_root, old_value)
-    fn set(&self, key: K, value: V) -> (StorageCommitmentRoot, V);
+    fn set(&mut self, key: K, value: V) -> (StorageCommitmentRoot, V);
 }
 
 pub struct StorageMap {
@@ -53,7 +53,7 @@ impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K
     /// - old_root is the old map root.
     /// - old_value is the previous value of the item.
     #[inline(always)]
-    fn set(&self, key: K, value: V) -> (StorageCommitmentRoot, V) {
+    fn set(&mut self, key: K, value: V) -> (StorageCommitmentRoot, V) {
         let (root, old_word) = storage::set_map_item(self.slot, key.into(), value.into());
         (root, old_word.into())
     }

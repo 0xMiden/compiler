@@ -6,7 +6,7 @@
 //
 // extern crate alloc;
 
-use miden::{component, native_account, output_note, Asset, NoteIdx};
+use miden::{component, output_note, Asset, NoteIdx};
 
 #[component]
 struct MyAccount;
@@ -19,8 +19,8 @@ impl MyAccount {
     ///
     /// # Arguments
     /// * `asset` - The asset to be added to the account
-    pub fn receive_asset(&self, asset: Asset) {
-        native_account::add_asset(asset);
+    pub fn receive_asset(&mut self, asset: Asset) {
+        self.add_asset(asset);
     }
 
     /// Moves an asset from the account to a note.
@@ -31,8 +31,8 @@ impl MyAccount {
     /// # Arguments
     /// * `asset` - The asset to move from the account to the note
     /// * `note_idx` - The index of the note to receive the asset
-    pub fn move_asset_to_note(&self, asset: Asset, note_idx: NoteIdx) {
-        let asset = native_account::remove_asset(asset);
+    pub fn move_asset_to_note(&mut self, asset: Asset, note_idx: NoteIdx) {
+        let asset = self.remove_asset(asset);
         output_note::add_asset(asset, note_idx);
     }
 }

@@ -12,13 +12,13 @@ use miden::*;
 use crate::bindings::Account;
 
 #[note_script]
-fn run(_arg: Word, account: Account) {
+fn run(_arg: Word, account: &mut Account) {
     let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
 
     let target_account = AccountId::from(target_account_id_prefix, target_account_id_suffix);
-    let current_account = active_account::get_id();
+    let current_account = account.get_id();
     assert_eq!(current_account, target_account);
 
     let assets = active_note::get_assets();

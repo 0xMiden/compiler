@@ -1,11 +1,11 @@
-# mod miden:base/authentication-component@1.0.0
+# mod miden:auth-component-no-auth/auth-component-no-auth@0.1.0
 
 @callconv("canon-lift")
 pub proc auth__procedure(felt, felt, felt, felt)
-    exec.::miden:base/authentication-component@1.0.0::init
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::init
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden:base/authentication-component@1.0.0#auth-procedure
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure
     trace.252
     nop
     exec.::std::sys::truncate_stack
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/authentication-component@1.0.0::auth_component_no_auth
+# mod miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -49,7 +49,7 @@ proc auth_component_no_auth::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:base/authentication-component@1.0.0#auth-procedure(
+proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     felt,
     felt,
     felt,
@@ -81,7 +81,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     nop
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::wit_bindgen::rt::run_ctors_once
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.32
@@ -89,7 +89,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::active_account::get_initial_commitment
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden::active_account::get_initial_commitment
     trace.252
     nop
     push.40
@@ -172,7 +172,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     dup.1
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.32
@@ -180,7 +180,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::active_account::compute_commitment
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden::active_account::compute_commitment
     trace.252
     nop
     push.40
@@ -265,7 +265,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden_stdlib_sys::intrinsics::word::Word::reverse
     trace.252
     nop
     push.16
@@ -302,7 +302,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
     swap.1
     trace.240
     nop
-    exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::intrinsics::felt::eq
+    exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::intrinsics::felt::eq
     trace.252
     nop
     push.0
@@ -352,7 +352,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
         swap.1
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::intrinsics::felt::eq
+        exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::intrinsics::felt::eq
         trace.252
         nop
         push.0
@@ -402,7 +402,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
             swap.1
             trace.240
             nop
-            exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::intrinsics::felt::eq
+            exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::intrinsics::felt::eq
             trace.252
             nop
             push.0
@@ -452,7 +452,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
                 swap.1
                 trace.240
                 nop
-                exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::intrinsics::felt::eq
+                exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::intrinsics::felt::eq
                 trace.252
                 nop
                 push.0
@@ -486,7 +486,7 @@ proc miden:base/authentication-component@1.0.0#auth-procedure(
         drop
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::miden::native_account::incr_nonce
+        exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::miden::native_account::incr_nonce
         trace.252
         nop
         drop
@@ -548,7 +548,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/authentication-component@1.0.0::auth_component_no_auth::__wasm_call_ctors
+        exec.::miden:auth-component-no-auth/auth-component-no-auth@0.1.0::auth_component_no_auth::__wasm_call_ctors
         trace.252
         nop
         push.1

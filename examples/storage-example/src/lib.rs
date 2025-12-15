@@ -38,7 +38,7 @@ struct MyAccount {
 
 impl foo::Guest for MyAccount {
     fn set_asset_qty(pub_key: Word, asset: Asset, qty: Felt) {
-        let my_account = MyAccount::default();
+        let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.read();
         if pub_key == owner_key {
             my_account.asset_qty_map.set(asset, qty);
