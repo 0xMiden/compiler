@@ -1,0 +1,12 @@
+# Test that HIR includes debug info for function parameters
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && \
+# RUN:   rustc '%S/function_metadata.rs' --crate-type=cdylib \
+# RUN:     --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort \
+# RUN:     -C debuginfo=2 -o \"$TMPDIR/function_metadata.wasm\" && \
+# RUN:   %midenc \"$TMPDIR/function_metadata.wasm\" --entrypoint=multiply --emit hir --target-dir \"$TMPDIR\" && \
+# RUN:   %filecheck '%s' --input-file \"$TMPDIR/root.hir\" && \
+# RUN:   ls \"$TMPDIR\""
+
+# CHECK-LABEL: builtin.function @multiply
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg0
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg1

@@ -1,10 +1,121 @@
 use alloc::{boxed::Box, fmt, format, string::ToString, sync::Arc, vec};
 
+use miden_assembly::ast::{Module, Op};
 use miden_core::{prettier::PrettyPrint, utils::Serializable};
+use miden_debug_types::Spanned;
 use miden_mast_package::MastArtifact;
 use midenc_hir_symbol::Symbol;
 
 use crate::{OutputMode, OutputType, Session};
+
+/// Format a MASM module with source location annotations
+fn format_masm_with_source_locations(module: &Module, session: &Session) -> alloc::string::String {
+    use alloc::string::String;
+    use miden_assembly::ast::{Export, Visibility};
+
+    let mut output = String::new();
+
+    // Write module declaration (comment, not actual MASM syntax)
+    output.push_str(&format!("# mod {}\n\n", module.path()));
+
+    // Iterate through procedures
+    for export in module.procedures() {
+        match export {
+            Export::Procedure(proc) => {
+                // Write procedure header
+                let vis = match proc.visibility() {
+                    Visibility::Public => "export.",
+                    Visibility::Private => "",
+                    Visibility::Syscall => "export.syscall.",
+                };
+                output.push_str(&format!("{}{}:\n", vis, proc.name()));
+
+                // Format procedure body with source locations
+                format_block_with_locations(proc.body(), &mut output, session, 4);
+
+                output.push_str("end\n\n");
+            }
+            Export::Alias(alias) => {
+                output.push_str(&format!("export.{}->{}\n\n", alias.name(), alias.target()));
+            }
+        }
+    }
+
+    output
+}
+
+/// Format a block with source location annotations
+fn format_block_with_locations(
+    block: &miden_assembly::ast::Block,
+    output: &mut alloc::string::String,
+    session: &Session,
+    indent_level: usize,
+) {
+    let indent = " ".repeat(indent_level);
+
+    for op in block.iter() {
+        match op {
+            Op::If { then_blk, else_blk, .. } => {
+                output.push_str(&format!("{indent}if.true\n"));
+                format_block_with_locations(then_blk, output, session, indent_level + 4);
+                if !else_blk.is_empty() {
+                    output.push_str(&format!("{indent}else\n"));
+                    format_block_with_locations(else_blk, output, session, indent_level + 4);
+                }
+                output.push_str(&format!("{indent}end"));
+                append_source_location(op, output, session);
+                output.push('\n');
+            }
+            Op::While { body, .. } => {
+                output.push_str(&format!("{indent}while.true\n"));
+                format_block_with_locations(body, output, session, indent_level + 4);
+                output.push_str(&format!("{indent}end"));
+                append_source_location(op, output, session);
+                output.push('\n');
+            }
+            Op::Repeat { count, body, .. } => {
+                output.push_str(&format!("{indent}repeat.{count}\n"));
+                format_block_with_locations(body, output, session, indent_level + 4);
+                output.push_str(&format!("{indent}end"));
+                append_source_location(op, output, session);
+                output.push('\n');
+            }
+            Op::Inst(inst) => {
+                output.push_str(&format!("{indent}{}", **inst));
+                append_source_location(op, output, session);
+                output.push('\n');
+            }
+        }
+    }
+}
+
+/// Append source location annotation to output
+fn append_source_location(op: &Op, output: &mut alloc::string::String, session: &Session) {
+    let span = op.span();
+
+    // Skip unknown spans (no debug info) - no annotation implies unknown
+    if span.is_unknown() {
+        return;
+    }
+
+    // Synthetic spans get a special annotation (uses SourceSpan::is_synthetic from miden-debug-types)
+    if span.is_synthetic() {
+        output.push_str(" #loc(synthetic)");
+        return;
+    }
+
+    // Valid source locations get full file:line:col annotation
+    if let Ok(source_file) = session.source_manager.get(span.source_id()) {
+        let location = source_file.location(span);
+        let filename = source_file.uri().as_str();
+        output.push_str(&format!(
+            " #loc(\"{}\":{}:{})",
+            filename,
+            location.line.to_u32(),
+            location.column.to_u32()
+        ));
+    }
+}
 
 pub trait Emit {
     /// The name of this item, if applicable
@@ -237,10 +348,16 @@ impl Emit for miden_assembly::ast::Module {
         &self,
         mut writer: W,
         mode: OutputMode,
-        _session: &Session,
+        session: &Session,
     ) -> anyhow::Result<()> {
         assert_eq!(mode, OutputMode::Text, "masm syntax trees do not support binary mode");
-        writer.write_fmt(format_args!("{self}\n"))
+
+        if session.options.print_masm_source_locations {
+            let formatted = format_masm_with_source_locations(self, session);
+            writer.write_fmt(format_args!("{formatted}\n"))
+        } else {
+            writer.write_fmt(format_args!("{self}\n"))
+        }
     }
 }
 

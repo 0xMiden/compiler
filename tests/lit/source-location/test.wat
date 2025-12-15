@@ -1,6 +1,7 @@
 ;; RUN: cargo build --release --target wasm32-unknown-unknown --manifest-path %S/test-project/Cargo.toml 2>&1
 ;; RUN: env MIDENC_TRACE=debug bin/midenc %S/test-project/target/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project --emit=masm=- 2>&1 | filecheck %s
 ;; RUN: bin/midenc %S/test-project/target/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project -Z print-hir-source-locations --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR
+;; RUN: bin/midenc %S/test-project/target/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project -Z print-masm-source-locations --emit=masm=- 2>&1 | filecheck %s --check-prefix=MASM
 ;;
 ;; This test verifies that source location information from DWARF is correctly
 ;; resolved when trim-paths is enabled.
@@ -21,3 +22,8 @@
 ;; HIR: hir.bitcast {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
 ;; HIR: arith.gt {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
 ;; HIR: builtin.ret {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
+
+;; Verify MASM output contains source locations with absolute paths
+;; MASM: export.test_assertion:
+;; MASM: {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
+;; MASM: end

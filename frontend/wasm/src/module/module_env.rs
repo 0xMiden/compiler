@@ -1,9 +1,9 @@
-use alloc::sync::Arc;
+use alloc::{rc::Rc, sync::Arc};
 use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
-use midenc_hir::{interner::Symbol, Ident};
+use midenc_hir::{interner::Symbol, FxHashMap, Ident};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     types::CoreTypeId, CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding,
@@ -66,6 +66,10 @@ pub struct ParsedModule<'data> {
     /// DWARF debug information, if enabled, parsed from the module.
     pub debuginfo: DebugInfoData<'data>,
 
+    /// Precomputed debug metadata for functions
+    pub function_debug:
+        FxHashMap<FuncIndex, Rc<core::cell::RefCell<crate::module::debug_info::FunctionDebugInfo>>>,
+
     /// Set if debuginfo was found but it was not parsed due to `Tunables`
     /// configuration.
     pub has_unparsed_debuginfo: bool,
@@ -87,13 +91,15 @@ pub struct FunctionBodyData<'a> {
     pub body: FunctionBody<'a>,
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
+    /// Offset in the original wasm binary where this function body starts
+    pub body_offset: u64,
 }
 
 #[derive(Default)]
 pub struct DebugInfoData<'a> {
     pub dwarf: Dwarf<'a>,
-    debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
-    debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
+    pub debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
+    pub debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
     pub debug_ranges: gimli::DebugRanges<DwarfReader<'a>>,
     pub debug_rnglists: gimli::DebugRngLists<DwarfReader<'a>>,
 }
@@ -108,6 +114,10 @@ pub struct WasmFileInfo {
     pub code_section_offset: u64,
     pub imported_func_count: u32,
     pub funcs: Vec<FunctionMetadata>,
+    /// The byte offset where this module starts within a component.
+    /// This is 0 for standalone modules, but non-zero when the module
+    /// is embedded in a wasm component. Used for DWARF address translation.
+    pub module_base_offset: u64,
 }
 
 #[derive(Debug)]
@@ -581,7 +591,12 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 params: sig.params().into(),
             });
         }
-        self.result.function_body_inputs.push(FunctionBodyData { validator, body });
+        let body_offset = body.range().start as u64;
+        self.result.function_body_inputs.push(FunctionBodyData {
+            validator,
+            body,
+            body_offset,
+        });
         self.result.code_index += 1;
         Ok(())
     }

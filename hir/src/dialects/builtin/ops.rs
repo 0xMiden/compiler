@@ -1,5 +1,6 @@
 mod cast;
 mod component;
+mod debug;
 mod function;
 mod global_variable;
 mod interface;
@@ -13,6 +14,7 @@ pub use self::{
         Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentId,
         ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
     },
+    debug::{DbgDeclare, DbgDeclareRef, DbgValue, DbgValueRef},
     function::{
         Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, LocalVariable, Ret, RetImm,
     },

@@ -1,12 +1,23 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, PointerType,
-    SymbolNameComponent, SymbolPath, Type, ValueRef,
+    dialects::builtin::FunctionRef,
+    interner::symbols,
+    Builder, Immediate, PointerType, SourceSpan, SymbolNameComponent, SymbolPath, Type, ValueRef,
 };
 
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;
+
+/// Returns a synthetic SourceSpan for compiler-generated code.
+///
+/// This uses SourceSpan::SYNTHETIC from miden-debug-types which is identified
+/// by having an unknown source_id and both start and end set to u32::MAX.
+/// This differentiates it from UNKNOWN spans (which have start and end at 0)
+/// and indicates the code doesn't correspond to any specific user source location.
+fn synthetic_span() -> SourceSpan {
+    SourceSpan::SYNTHETIC
+}
 
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
@@ -290,12 +301,12 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
-    let span = import_func_ref.borrow().name().span;
+    let exec_span = import_func_ref.borrow().name().span;
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
     let signature = import_func_ref.borrow().signature().clone();
     let exec = builder
-        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
+        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), exec_span)
         .expect("failed to build an exec op in return_via_pointer strategy");
 
     let borrow = exec.borrow();
@@ -306,6 +317,10 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let ptr_arg = *args.last().expect("empty args");
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
     assert_eq!(ptr_arg_ty, Type::I32);
+    // Use synthetic span for all compiler-generated ABI transformation operations
+    // These operations are part of the return-via-pointer calling convention
+    // and don't correspond to any specific user source code
+    let span = synthetic_span();
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
 
     let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));

@@ -152,22 +152,18 @@ miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 
 [patch.crates-io]
-#miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-assembly = { path = "../miden-vm/assembly" }
-#miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
-#miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-core = { path = "../miden-vm/core" }
-#miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "4099516c08c9a56c6d1271fddfc798f40da0d702" }
+# Using local miden-vm with SourceSpan::SYNTHETIC patch (commit 25ffa7ff)
+miden-assembly = { path = "../miden-vm/crates/assembly" }
+miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
+miden-core = { path = "../miden-vm/core" }
 miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "0cfdc623f51c721ff7812a0f70836ffaea182898" }
-#miden-debug-types = { path = "../miden-vm/crates/debug/types" }
-#miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-processor = { path = "../miden-vm/processor" }
-#miden-lib = { git = "https://github.com/0xMiden/miden-base", rev = "8a50c8f98529f9a78655385e3e78a6de44db9316" }
-#miden-objects = { git = "https://github.com/0xMiden/miden-base", rev = "8a50c8f98529f9a78655385e3e78a6de44db9316" }
-#miden-stdlib = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-stdlib = { path = "../miden-vm/stdlib" }
-#miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-mast-package = { path = "../miden-vm/package" }
+miden-debug-types = { path = "../miden-vm/crates/debug-types" }
+miden-processor = { path = "../miden-vm/processor" }
+miden-stdlib = { path = "../miden-vm/stdlib" }
+miden-mast-package = { path = "../miden-vm/crates/mast-package" }
+miden-air = { path = "../miden-vm/air" }
+miden-prover = { path = "../miden-vm/prover" }
+miden-verifier = { path = "../miden-vm/verifier" }
 
 
 [profile.dev]

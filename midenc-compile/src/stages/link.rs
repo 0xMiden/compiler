@@ -134,7 +134,9 @@ impl Stage for LinkStage {
                 let config = wasm::WasmTranslationConfig {
                     source_name: name.file_stem().unwrap().to_owned().into(),
                     trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
+                    remap_path_prefixes: context.session().options.remap_path_prefixes.clone(),
                     world: Some(world),
+                    generate_native_debuginfo: context.session().options.emit_source_locations(),
                     ..Default::default()
                 };
                 parse_hir_from_wasm_bytes(&input, context.clone(), &config)?
@@ -202,7 +204,9 @@ fn parse_hir_from_wasm_file(
     let config = wasm::WasmTranslationConfig {
         source_name: file_name.into(),
         trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
+        remap_path_prefixes: context.session().options.remap_path_prefixes.clone(),
         world: Some(world),
+        generate_native_debuginfo: context.session().options.emit_source_locations(),
         ..Default::default()
     };
     parse_hir_from_wasm_bytes(&bytes, context, &config)

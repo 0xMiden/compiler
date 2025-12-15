@@ -20,9 +20,20 @@ use midenc_session::{
 };
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
+/// Creates a synthetic SourceSpan for compiler-generated code.
+///
+/// A synthetic span is identified by having an unknown source_id and
+/// both start and end set to u32::MAX. This differentiates it from UNKNOWN
+/// spans (which have start and end at 0) and indicates the code doesn't
+/// correspond to any specific user source location.
+fn synthetic_span() -> SourceSpan {
+    SourceSpan::from(u32::MAX..u32::MAX)
+}
+
 use super::{
-    function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
+    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -70,11 +81,18 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
         config: &crate::WasmTranslationConfig,
+        debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     ) -> WasmResult<()> {
         let context = func.borrow().as_operation().context_rc();
         let mut op_builder = midenc_hir::OpBuilder::new(context)
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
+
+        if let Some(info) = debug_info.clone() {
+            builder.set_debug_metadata(info);
+        }
+
+        self.state.set_debug_info(debug_info);
 
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.
@@ -135,6 +153,7 @@ fn declare_parameters<B: ?Sized + Builder>(
         next_local += 1;
 
         let param_value = entry_block.borrow().arguments()[i];
+        builder.register_parameter(local, param_value);
         builder.def_var(local, param_value);
     }
     next_local
@@ -206,35 +225,67 @@ fn parse_function_body<B: ?Sized + Builder>(
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
 
     let func_name = builder.name();
-    let mut end_span = SourceSpan::default();
+    // Use synthetic span for the end span as this is compiler-generated
+    let mut end_span = synthetic_span();
+    // Track the most recent valid source span to inherit for ops without DWARF info
+    let mut current_span = synthetic_span();
     while !reader.eof() {
         let pos = reader.original_position();
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
         func_validator.op(pos, &op).into_diagnostic()?;
 
-        let offset = (offset as u64)
-            .checked_sub(module.wasm_file.code_section_offset)
-            .expect("offset occurs before start of code section");
-        let mut span = SourceSpan::default();
-        if let Some(loc) = addr2line.find_location(offset).into_diagnostic()? {
+        // For DWARF lookup, we need different offset calculations depending on context:
+        // - For standalone modules: DWARF addresses are relative to the code section start
+        // - For modules in components: DWARF addresses are absolute (component file offsets)
+        //
+        // offset = reader position (relative to module slice)
+        // code_section_offset = where code section starts (relative to module slice)
+        // module_base_offset = where module starts in component (0 for standalone)
+        // TODO: Add tests for this!!!
+        let dwarf_lookup_offset = if module.wasm_file.module_base_offset > 0 {
+            // Module is embedded in a component - use absolute offset
+            module.wasm_file.module_base_offset + offset as u64
+        } else {
+            // Standalone module - use code-section-relative offset
+            (offset as u64)
+                .checked_sub(module.wasm_file.code_section_offset)
+                .expect("offset occurs before start of code section")
+        };
+        // Use the current span (inherited from previous instruction) for operations without
+        // debug info, so they inherit source location from surrounding code
+        let mut span = current_span;
+        if let Some(loc) = addr2line.find_location(dwarf_lookup_offset).into_diagnostic()? {
             if let Some(file) = loc.file {
                 let path = std::path::Path::new(file);
 
                 // Resolve relative paths to absolute paths
                 let resolved_path = if path.is_relative() {
-                    // Strategy 1: Try trim_path_prefixes
-                    if let Some(resolved) = config.trim_path_prefixes.iter().find_map(|prefix| {
-                        let candidate = prefix.join(path);
-                        if candidate.exists() {
-                            // Canonicalize to get absolute path
-                            candidate.canonicalize().ok()
+                    // Strategy 1: Try remap_path_prefixes (for stdlib and other remapped paths)
+                    if let Some(resolved) =
+                        config.remap_path_prefixes.iter().find_map(|(from, to)| {
+                            path.strip_prefix(from).ok().map(|rest| to.join(rest))
+                        })
+                    {
+                        if resolved.exists() {
+                            resolved.canonicalize().ok()
                         } else {
                             None
                         }
-                    }) {
+                    }
+                    // Strategy 2: Try trim_path_prefixes
+                    else if let Some(resolved) =
+                        config.trim_path_prefixes.iter().find_map(|prefix| {
+                            let candidate = prefix.join(path);
+                            if candidate.exists() {
+                                candidate.canonicalize().ok()
+                            } else {
+                                None
+                            }
+                        })
+                    {
                         Some(resolved)
                     }
-                    // Strategy 2: Try session.options.current_dir as fallback
+                    // Strategy 3: Try session.options.current_dir as fallback
                     else {
                         let current_dir_candidate = session.options.current_dir.join(path);
                         if current_dir_candidate.exists() {
@@ -267,7 +318,11 @@ fn parse_function_body<B: ?Sized + Builder>(
                         session.source_manager.load_file(&absolute_path).into_diagnostic()?;
                     let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
                     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
-                    span = source_file.line_column_to_span(line, column).unwrap_or_default();
+                    span = source_file
+                        .line_column_to_span(line, column)
+                        .unwrap_or_else(synthetic_span);
+                    // Update current_span so subsequent ops without DWARF inherit this location
+                    current_span = span;
                 } else {
                     log::debug!(target: "module-parser",
                         "failed to resolve source path '{file}' for instruction at offset \
@@ -287,6 +342,10 @@ fn parse_function_body<B: ?Sized + Builder>(
             end_span = span;
         }
 
+        // Record the debug span to trigger parameter debug emission and update
+        // compile unit/subprogram metadata
+        builder.record_debug_span(span);
+
         translate_operator(
             &op,
             builder,
@@ -297,6 +356,8 @@ fn parse_function_body<B: ?Sized + Builder>(
             &session.diagnostics,
             span,
         )?;
+
+        builder.apply_location_schedule(offset as u64, span);
     }
     let pos = reader.original_position();
     func_validator.finish(pos).into_diagnostic()?;

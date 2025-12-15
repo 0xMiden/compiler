@@ -14,7 +14,8 @@ use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, 
 use wasmparser::Validator;
 
 use super::{
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
+    debug_info::collect_function_debug_info, module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder, MemoryIndex,
 };
 use crate::{
     error::WasmResult,
@@ -114,6 +115,14 @@ pub fn build_ir_module(
         ..Default::default()
     })
     .into_diagnostic()?;
+    parsed_module.function_debug = collect_function_debug_info(
+        parsed_module,
+        module_types,
+        &parsed_module.module,
+        &addr2line,
+        context.diagnostics(),
+    );
+
     let mut func_translator = FuncTranslator::new(context.clone());
     // Although this renders this parsed module invalid(without functiong
     // bodies), we don't support multiple module instances. Thus, this
@@ -134,8 +143,12 @@ pub fn build_ir_module(
             continue;
         }
 
-        let FunctionBodyData { validator, body } = body_data;
+        let FunctionBodyData {
+            validator, body, ..
+        } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
+        let debug_info = parsed_module.function_debug.get(&func_index).cloned();
+
         func_translator.translate_body(
             &body,
             function_ref,
@@ -146,6 +159,7 @@ pub fn build_ir_module(
             context.session(),
             &mut func_validator,
             _config,
+            debug_info,
         )?;
     }
     Ok(())

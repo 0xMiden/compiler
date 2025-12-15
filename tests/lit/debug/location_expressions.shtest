@@ -1,0 +1,21 @@
+# Test that debug info with location expressions is properly represented in HIR
+# This test verifies that debug values include expression attributes
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && \
+# RUN:   rustc '%S/location_expressions.rs' --crate-type=cdylib \
+# RUN:     --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort \
+# RUN:     -C debuginfo=2 -o \"$TMPDIR/location_expressions.wasm\" && \
+# RUN:   %midenc \"$TMPDIR/location_expressions.wasm\" --entrypoint=test_expressions --emit hir --target-dir \"$TMPDIR\" && \
+# RUN:   %filecheck '%s' --input-file \"$TMPDIR/root.hir\" && \
+# RUN:   ls \"$TMPDIR\""
+
+# Test that the function exists with 4 parameters
+# CHECK-LABEL: builtin.function @test_expressions({{.*}}: i32, {{.*}}: i32, {{.*}}: i32, {{.*}}: i32) -> i32
+
+# Test that debug values have expression attributes (even if empty)
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg0
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg1
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg2
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = arg3
+
+# Test that local variables also have expression attributes
+# CHECK: builtin.dbg_value {{.*}} #[expression = di.expression({{.*}})] #[variable = di.local_variable(name = local{{[4-9]}}

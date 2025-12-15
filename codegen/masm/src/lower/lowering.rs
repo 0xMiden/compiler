@@ -1229,6 +1229,127 @@ impl HirLowering for arith::Split {
     }
 }
 
+impl HirLowering for builtin::DbgValue {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use midenc_hir::DIExpressionOp;
+        use miden_core::{DebugVarInfo, DebugVarLocation};
+
+        // Get the variable info
+        let var = self.variable();
+
+        // Build the DebugVarLocation from DIExpression
+        let expr = self.expression();
+        let value = self.value().as_value_ref();
+        let value_location = if let Some(first_op) = expr.operations.first() {
+            match first_op {
+                DIExpressionOp::WasmStack(offset) => DebugVarLocation::Stack(*offset as u8),
+                DIExpressionOp::WasmLocal(idx) => DebugVarLocation::Local(*idx as u16),
+                DIExpressionOp::WasmGlobal(_) | DIExpressionOp::Deref => {
+                    // For global or dereference, check the stack position of the value
+                    if let Some(pos) = emitter.stack.find(&value) {
+                        DebugVarLocation::Stack(pos as u8)
+                    } else {
+                        DebugVarLocation::Expression(vec![])
+                    }
+                }
+                DIExpressionOp::ConstU64(val) => DebugVarLocation::Const(*val),
+                DIExpressionOp::ConstS64(val) => DebugVarLocation::Const(*val as u64),
+                _ => {
+                    // For other operations, try to find the value on the stack
+                    if let Some(pos) = emitter.stack.find(&value) {
+                        DebugVarLocation::Stack(pos as u8)
+                    } else {
+                        DebugVarLocation::Expression(vec![])
+                    }
+                }
+            }
+        } else {
+            // No expression, try to find the value on the stack
+            if let Some(pos) = emitter.stack.find(&value) {
+                DebugVarLocation::Stack(pos as u8)
+            } else {
+                // Value not found, use expression
+                DebugVarLocation::Expression(vec![])
+            }
+        };
+
+        let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
+
+        // Set arg_index if this is a parameter
+        if let Some(arg_index) = var.arg_index {
+            debug_var.set_arg_index(arg_index as u32 + 1); // Convert to 1-based
+        }
+
+        // Set source location
+        if let Some(line) = core::num::NonZeroU32::new(var.line) {
+            use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+            let uri = Uri::new(var.file.as_str());
+            let file_line_col = FileLineCol::new(
+                uri,
+                LineNumber::new(line.get()).unwrap_or_default(),
+                var.column
+                    .and_then(|c| ColumnNumber::new(c))
+                    .unwrap_or_default(),
+            );
+            debug_var.set_location(file_line_col);
+        }
+
+        // Emit the instruction
+        let inst = masm::Instruction::DebugVar(debug_var);
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+
+        Ok(())
+    }
+}
+
+impl HirLowering for builtin::DbgDeclare {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use miden_core::{DebugVarInfo, DebugVarLocation};
+
+        // Get the variable info
+        let var = self.variable();
+
+        // For DbgDeclare, the address operand points to where the variable is stored
+        // We need to figure out where this address is (could be memory, local, etc.)
+        let address = self.address().as_value_ref();
+        let value_location = if let Some(pos) = emitter.stack.find(&address) {
+            // The address is on the stack; this means the variable is at a memory location
+            // pointed to by the value on the stack
+            DebugVarLocation::Stack(pos as u8)
+        } else {
+            // Address not on stack, use expression
+            DebugVarLocation::Expression(vec![])
+        };
+
+        let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
+
+        // Set arg_index if this is a parameter
+        if let Some(arg_index) = var.arg_index {
+            debug_var.set_arg_index(arg_index as u32 + 1); // Convert to 1-based
+        }
+
+        // Set source location
+        if let Some(line) = core::num::NonZeroU32::new(var.line) {
+            use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+            let uri = Uri::new(var.file.as_str());
+            let file_line_col = FileLineCol::new(
+                uri,
+                LineNumber::new(line.get()).unwrap_or_default(),
+                var.column
+                    .and_then(|c| ColumnNumber::new(c))
+                    .unwrap_or_default(),
+            );
+            debug_var.set_location(file_line_col);
+        }
+
+        // Emit the instruction
+        let inst = masm::Instruction::DebugVar(debug_var);
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+
+        Ok(())
+    }
+}
+
 impl HirLowering for builtin::GlobalSymbol {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let context = self.as_operation().context();

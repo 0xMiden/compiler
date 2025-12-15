@@ -180,9 +180,14 @@ pub fn render_regions(op: &Operation, flags: &OpPrintingFlags) -> crate::formatt
 pub fn render_source_location(op: &Operation, context: &Context) -> crate::formatter::Document {
     use crate::formatter::*;
 
-    // Check if the span is valid (not default/empty)
+    // Check if the span is unknown (no debug info) - no annotation implies unknown
     if op.span.is_unknown() {
         return Document::Empty;
+    }
+
+    // Check if this is compiler-generated code (uses SourceSpan::SYNTHETIC)
+    if op.span.is_synthetic() {
+        return const_text(" #loc(synthetic)");
     }
 
     // Try to resolve the source location
