@@ -9,10 +9,10 @@
 
 use miden::*;
 
-use crate::bindings::miden::basic_wallet::basic_wallet::receive_asset;
+use crate::bindings::Account;
 
 #[note_script]
-fn run(_arg: Word) {
+fn run(_arg: Word, account: Account) {
     let inputs = active_note::get_inputs();
     let target_account_id_prefix = inputs[0];
     let target_account_id_suffix = inputs[1];
@@ -23,6 +23,6 @@ fn run(_arg: Word) {
 
     let assets = active_note::get_assets();
     for asset in assets {
-        receive_asset(asset);
+        account.receive_asset(asset);
     }
 }

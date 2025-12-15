@@ -9,7 +9,7 @@ use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{spanned::Spanned, ItemStruct, Type};
 
-use crate::generate::SDK_WIT_SOURCE;
+use crate::manifest_paths::SDK_WIT_SOURCE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {

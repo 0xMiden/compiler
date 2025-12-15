@@ -22,6 +22,8 @@ semver.workspace = true
 toml.workspace = true
 syn.workspace = true
 heck.workspace = true
+wit-bindgen-core = "0.46"
+wit-bindgen-rust = { version = "0.46", default-features = false }
 
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
