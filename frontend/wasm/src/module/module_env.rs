@@ -92,8 +92,8 @@ pub struct FunctionBodyData<'a> {
 #[derive(Default)]
 pub struct DebugInfoData<'a> {
     pub dwarf: Dwarf<'a>,
-    debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
-    debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
+    pub debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
+    pub debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
     pub debug_ranges: gimli::DebugRanges<DwarfReader<'a>>,
     pub debug_rnglists: gimli::DebugRngLists<DwarfReader<'a>>,
 }
@@ -108,6 +108,10 @@ pub struct WasmFileInfo {
     pub code_section_offset: u64,
     pub imported_func_count: u32,
     pub funcs: Vec<FunctionMetadata>,
+    /// The byte offset where this module starts within a component.
+    /// This is 0 for standalone modules, but non-zero when the module
+    /// is embedded in a wasm component. Used for DWARF address translation.
+    pub module_base_offset: u64,
 }
 
 #[derive(Debug)]

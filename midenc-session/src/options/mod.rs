@@ -38,8 +38,12 @@ pub struct Options {
     pub current_dir: PathBuf,
     /// Path prefixes to try when resolving relative paths in DWARF debug info
     pub trim_path_prefixes: Vec<PathBuf>,
+    /// Remap source path prefixes in DWARF debug info (FROM -> TO)
+    pub remap_path_prefixes: Vec<(PathBuf, PathBuf)>,
     /// Print source location information in HIR output
     pub print_hir_source_locations: bool,
+    /// Print source location information in MASM output
+    pub print_masm_source_locations: bool,
     /// Only parse inputs
     pub parse_only: bool,
     /// Only perform semantic analysis on the input
@@ -124,7 +128,9 @@ impl Options {
             diagnostics: Default::default(),
             current_dir,
             trim_path_prefixes: vec![],
+            remap_path_prefixes: vec![],
             print_hir_source_locations: false,
+            print_masm_source_locations: false,
             parse_only: false,
             analyze_only: false,
             link_only: false,
@@ -201,10 +207,11 @@ impl Options {
         matches!(self.debug, DebugInfo::Line | DebugInfo::Full)
     }
 
-    /// Returns true if rich debugging information should be emitted by the compiler
+    /// Returns true if rich debugging information should be emitted by the compiler.
+    /// This enables AssemblyOp decorators which carry source location info for runtime errors.
     #[inline(always)]
     pub fn emit_debug_decorators(&self) -> bool {
-        matches!(self.debug, DebugInfo::Full)
+        matches!(self.debug, DebugInfo::Line | DebugInfo::Full)
     }
 
     /// Returns true if debug assertions are enabled

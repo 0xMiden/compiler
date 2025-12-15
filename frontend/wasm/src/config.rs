@@ -12,6 +12,11 @@ pub struct WasmTranslationConfig {
     /// Path prefixes to try when resolving relative paths from trimmed DWARF debug information.
     pub trim_path_prefixes: Vec<PathBuf>,
 
+    /// Remap source path prefixes in DWARF debug info (FROM -> TO).
+    /// This is useful for resolving paths to standard library sources that were
+    /// compiled with --remap-path-prefix.
+    pub remap_path_prefixes: Vec<(PathBuf, PathBuf)>,
+
     /// If specified, overrides the module/component name with the one specified
     pub override_name: Option<Cow<'static, str>>,
 
@@ -31,6 +36,7 @@ impl core::fmt::Debug for WasmTranslationConfig {
         f.debug_struct("WasmTranslationConfig")
             .field("source_name", &self.source_name)
             .field("trim_path_prefixes", &self.trim_path_prefixes)
+            .field("remap_path_prefixes", &self.remap_path_prefixes)
             .field("override_name", &self.override_name)
             .field("world", &world)
             .field("generate_native_debuginfo", &self.generate_native_debuginfo)
@@ -44,6 +50,7 @@ impl Default for WasmTranslationConfig {
         Self {
             source_name: Cow::Borrowed("noname"),
             trim_path_prefixes: Vec::new(),
+            remap_path_prefixes: Vec::new(),
             override_name: None,
             world: None,
             generate_native_debuginfo: false,
