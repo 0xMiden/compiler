@@ -1,4 +1,7 @@
 //! Serialization/deserialization for felt representation in on-chain execution.
+//!
+//! This crate provides traits and utilities for converting Rust types to and from
+//! a sequence of `Felt` elements, suitable for on-chain Miden VM execution.
 
 #![no_std]
 #![deny(warnings)]
