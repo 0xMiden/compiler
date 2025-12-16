@@ -62,11 +62,11 @@ mod tests {
     //            Detected that all of the following variables are `Package`s: foo, bar
     //
     //            #[miden_test] only supports having a single `Package` in its argument list.
-    #[miden_test]
-    fn bing(foo: Package, bar: Package) {
-        std::dbg!(&foo);
-        assert_eq!(1, 1 + 1);
-    }
+    // #[miden_test]
+    // fn bing(foo: Package, bar: Package) {
+    //     std::dbg!(&foo);
+    //     assert_eq!(1, 1 + 1);
+    // }
 
     // This tests will not load the package since there is no argument declared
 
