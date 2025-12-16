@@ -8,7 +8,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 /// Re-export the derive macros with the same name as the traits.
-pub use miden_felt_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
+pub use miden_felt_repr_derive::DeriveFromFeltReprOnchain as FromFeltRepr;
 pub use miden_felt_repr_derive::DeriveToFeltReprOnchain as ToFeltRepr;
 use miden_stdlib_sys::Felt;
 

@@ -13,7 +13,7 @@ pub use account_id::AccountIdFeltRepr;
 use miden_core::Felt;
 /// Re-export the derive macros with the same name as the traits.
 pub use miden_felt_repr_derive::DeriveFromFeltReprOffchain as FromFeltRepr;
-pub use miden_felt_repr_derive::DeriveToFeltRepr as ToFeltRepr;
+pub use miden_felt_repr_derive::DeriveToFeltReprOffchain as ToFeltRepr;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {
