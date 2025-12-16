@@ -54,8 +54,8 @@ fn extract_named_fields<'a>(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveFromFeltRepr)]
-pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeriveFromFeltReprOnchain)]
+pub fn derive_from_felt_repr_onchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match derive_from_felt_repr_impl(&input) {
@@ -112,8 +112,8 @@ fn derive_from_felt_repr_impl(input: &DeriveInput) -> Result<TokenStream, Error>
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveToFeltRepr)]
-pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeriveToFeltReprOffchain)]
+pub fn derive_to_felt_repr_offchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match derive_to_felt_repr_impl(&input) {
