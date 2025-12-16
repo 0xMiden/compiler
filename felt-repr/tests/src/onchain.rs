@@ -141,7 +141,6 @@ fn two_felts_struct_round_trip() {
             .expect("Failed to read Vec data from memory");
 
         let result_felts = [result_data[0].0, result_data[1].0];
-        dbg!(&result_data);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader);
 
