@@ -15,6 +15,7 @@ use std::{fs, path::PathBuf};
 
 use miden_integration_tests::CompilerTest;
 use midenc_frontend_wasm::WasmTranslationConfig;
+use temp_dir::TempDir;
 
 /// Get the path to the felt-repr/onchain crate
 fn felt_repr_onchain_path() -> PathBuf {
@@ -46,21 +47,15 @@ fn sdk_alloc_path() -> PathBuf {
         .join("alloc")
 }
 
-/// Get a temporary directory for test projects
-fn test_project_dir(name: &str) -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target")
-        .join("felt-repr-test-projects")
-        .join(name)
-}
-
-/// Build a compiler test with felt-repr-onchain dependency
-fn build_felt_repr_test(name: &str, fn_body: &str, config: WasmTranslationConfig) -> CompilerTest {
+/// Build a compiler test with felt-repr-onchain dependency.
+///
+/// The `temp_dir` must be kept alive for the duration of the test to prevent cleanup.
+fn build_felt_repr_test(
+    temp_dir: &TempDir,
+    name: &str,
+    fn_body: &str,
+    config: WasmTranslationConfig,
+) -> CompilerTest {
     let felt_repr_onchain = felt_repr_onchain_path();
     let stdlib_sys = stdlib_sys_path();
     let sdk_alloc = sdk_alloc_path();
@@ -120,10 +115,9 @@ pub extern "C" fn entrypoint{fn_body}
 "#
     );
 
-    // Create project directory
-    let project_dir = test_project_dir(name);
+    let project_dir = temp_dir.path().to_path_buf();
     let src_dir = project_dir.join("src");
-    fs::create_dir_all(&src_dir).expect("failed to create project directory");
+    fs::create_dir_all(&src_dir).expect("failed to create src directory");
     fs::write(project_dir.join("Cargo.toml"), cargo_toml).expect("failed to write Cargo.toml");
     fs::write(src_dir.join("lib.rs"), lib_rs).expect("failed to write lib.rs");
 
