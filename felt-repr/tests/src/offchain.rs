@@ -14,7 +14,7 @@ struct TwoFelts {
 }
 
 #[test]
-fn serialization() {
+fn test_serialization() {
     let value = TwoFelts {
         a: Felt::new(12345),
         b: Felt::new(67890),
@@ -28,7 +28,7 @@ fn serialization() {
 }
 
 #[test]
-fn deserialization() {
+fn test_deserialization() {
     let felts = [Felt::new(12345), Felt::new(67890)];
 
     let mut reader = FeltReader::new(&felts);
@@ -39,7 +39,7 @@ fn deserialization() {
 }
 
 #[test]
-fn roundtrip() {
+fn test_roundtrip() {
     let original = TwoFelts {
         a: Felt::new(12345),
         b: Felt::new(67890),

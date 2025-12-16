@@ -23,7 +23,7 @@ struct TwoFelts {
 
 /// Test using actual FeltReader from miden-felt-repr-onchain.
 #[test]
-fn felt_reader() {
+fn test_felt_reader() {
     let original = TwoFelts {
         a: Felt::new(12345),
         b: Felt::new(67890),
@@ -84,7 +84,7 @@ fn felt_reader() {
 /// This tests the full flow: off-chain serialize -> on-chain deserialize via derive
 /// -> on-chain serialize -> off-chain deserialize.
 #[test]
-fn two_felts_struct_round_trip() {
+fn test_two_felts_struct_round_trip() {
     let original = TwoFelts {
         a: Felt::new(12345),
         b: Felt::new(67890),
@@ -165,7 +165,7 @@ struct FiveFelts {
 
 /// Test struct serialization with 5 Felt fields - full round-trip execution.
 #[test]
-fn five_felts_struct_round_trip() {
+fn test_five_felts_struct_round_trip() {
     let original = FiveFelts {
         a: Felt::new(11111),
         b: Felt::new(22222),
@@ -273,7 +273,7 @@ struct MinimalU64Bug {
 /// This causes incorrect stack position tracking, spilling the wrong value.
 #[ignore = "until https://github.com/0xMiden/compiler/issues/815 is resolved"]
 #[test]
-fn minimal_u64_bug() {
+fn test_minimal_u64_bug() {
     let original = MinimalU64Bug {
         n1: 111111,
         a: 22,
@@ -374,7 +374,7 @@ struct MixedTypesNoU64 {
 /// Tests a struct with 4 Felt, 1 u32, and 1 u8 fields (no u64).
 /// Each field is serialized as one Felt, so total is 6 Felts.
 #[test]
-fn mixed_types_no_u64_round_trip() {
+fn test_mixed_types_no_u64_round_trip() {
     let original = MixedTypesNoU64 {
         f1: Felt::new(111111),
         f2: Felt::new(222222),
@@ -485,7 +485,7 @@ struct Outer {
 /// Tests a struct containing another struct as a field, plus bool fields.
 /// Outer has: 1 Felt + Inner(1 Felt + 1 u64) + 1 u32 + 2 bool = 6 Felts total.
 #[test]
-fn nested_struct_round_trip() {
+fn test_nested_struct_round_trip() {
     let original = Outer {
         a: Felt::new(111111),
         inner: Inner {
