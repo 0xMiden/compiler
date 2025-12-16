@@ -29,8 +29,13 @@ impl<'a> FeltReader<'a> {
     }
 
     /// Reads the next `Felt` element, advancing the position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no more elements to read.
     #[inline(always)]
     pub fn read(&mut self) -> Felt {
+        assert!(self.pos < self.data.len(), "FeltReader: no more elements to read");
         let felt = self.data[self.pos];
         self.pos += 1;
         felt
