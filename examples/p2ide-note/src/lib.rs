@@ -50,7 +50,7 @@ fn run(_arg: Word, account: &mut Account) {
     let consuming_account_id = account.get_id();
 
     // target account id
-    let target_account_id = AccountId::from(target_account_id_prefix, target_account_id_suffix);
+    let target_account_id = AccountId::new(target_account_id_prefix, target_account_id_suffix);
 
     let is_target = target_account_id == consuming_account_id;
     if is_target {
