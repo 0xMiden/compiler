@@ -232,13 +232,12 @@ fn five_felts_struct_round_trip() {
 
         // Read all 5 elements individually
         let mut result_felts = [Felt::ZERO; 5];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..5 {
+        for (i, result_felt) in result_felts.iter_mut().enumerate() {
             let byte_addr = (elem_addr + i as u32) * 4;
             let word_addr = (byte_addr / 16) * 16;
             if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
                 let elem_in_word = ((byte_addr % 16) / 4) as usize;
-                result_felts[i] = data[elem_in_word].0;
+                *result_felt = data[elem_in_word].0;
             }
         }
 
@@ -341,13 +340,12 @@ fn minimal_u64_bug() {
 
         let elem_addr = data_ptr / 4;
         let mut result_felts = [Felt::ZERO; 5];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..5 {
+        for (i, result_felt) in result_felts.iter_mut().enumerate() {
             let byte_addr = (elem_addr + i as u32) * 4;
             let word_addr = (byte_addr / 16) * 16;
             if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
                 let elem_in_word = ((byte_addr % 16) / 4) as usize;
-                result_felts[i] = data[elem_in_word].0;
+                *result_felt = data[elem_in_word].0;
             }
         }
 
@@ -447,13 +445,12 @@ fn mixed_types_no_u64_round_trip() {
 
         // Read all 6 elements individually
         let mut result_felts = [Felt::ZERO; 6];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..6 {
+        for (i, result_felt) in result_felts.iter_mut().enumerate() {
             let byte_addr = (elem_addr + i as u32) * 4;
             let word_addr = (byte_addr / 16) * 16;
             if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
                 let elem_in_word = ((byte_addr % 16) / 4) as usize;
-                result_felts[i] = data[elem_in_word].0;
+                *result_felt = data[elem_in_word].0;
             }
         }
 
@@ -570,13 +567,12 @@ fn nested_struct_round_trip() {
 
         // Read all 6 elements individually
         let mut result_felts = [Felt::ZERO; 6];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..6 {
+        for (i, result_felt) in result_felts.iter_mut().enumerate() {
             let byte_addr = (elem_addr + i as u32) * 4;
             let word_addr = (byte_addr / 16) * 16;
             if let Some(data) = trace.read_from_rust_memory::<[TestFelt; 4]>(word_addr) {
                 let elem_in_word = ((byte_addr % 16) / 4) as usize;
-                result_felts[i] = data[elem_in_word].0;
+                *result_felt = data[elem_in_word].0;
             }
         }
 
