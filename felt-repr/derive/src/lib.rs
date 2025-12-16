@@ -6,7 +6,36 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Error, Fields};
+use syn::{
+    parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma, Data, DeriveInput,
+    Error, Field, Fields,
+};
+
+/// Extracts named fields from a struct, returning an error for unsupported types.
+fn extract_named_fields<'a>(
+    input: &'a DeriveInput,
+    trait_name: &str,
+) -> Result<&'a Punctuated<Field, Comma>, Error> {
+    match &input.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => Ok(&fields.named),
+            Fields::Unnamed(_) => Err(Error::new(
+                input.span(),
+                format!("{trait_name} can only be derived for structs with named fields"),
+            )),
+            Fields::Unit => Err(Error::new(
+                input.span(),
+                format!("{trait_name} cannot be derived for unit structs"),
+            )),
+        },
+        Data::Enum(_) => {
+            Err(Error::new(input.span(), format!("{trait_name} cannot be derived for enums")))
+        }
+        Data::Union(_) => {
+            Err(Error::new(input.span(), format!("{trait_name} cannot be derived for unions")))
+        }
+    }
+}
 
 /// Derives `FromFeltRepr` trait for a struct with named fields.
 ///
@@ -40,29 +69,7 @@ fn derive_from_felt_repr_impl(input: &DeriveInput) -> Result<TokenStream, Error>
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            Fields::Unnamed(_) => {
-                return Err(Error::new(
-                    input.span(),
-                    "FromFeltRepr can only be derived for structs with named fields",
-                ));
-            }
-            Fields::Unit => {
-                return Err(Error::new(
-                    input.span(),
-                    "FromFeltRepr cannot be derived for unit structs",
-                ));
-            }
-        },
-        Data::Enum(_) => {
-            return Err(Error::new(input.span(), "FromFeltRepr cannot be derived for enums"));
-        }
-        Data::Union(_) => {
-            return Err(Error::new(input.span(), "FromFeltRepr cannot be derived for unions"));
-        }
-    };
+    let fields = extract_named_fields(input, "FromFeltRepr")?;
 
     let field_names: Vec<_> = fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
     let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
@@ -120,29 +127,7 @@ fn derive_to_felt_repr_impl(input: &DeriveInput) -> Result<TokenStream, Error> {
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            Fields::Unnamed(_) => {
-                return Err(Error::new(
-                    input.span(),
-                    "ToFeltRepr can only be derived for structs with named fields",
-                ));
-            }
-            Fields::Unit => {
-                return Err(Error::new(
-                    input.span(),
-                    "ToFeltRepr cannot be derived for unit structs",
-                ));
-            }
-        },
-        Data::Enum(_) => {
-            return Err(Error::new(input.span(), "ToFeltRepr cannot be derived for enums"));
-        }
-        Data::Union(_) => {
-            return Err(Error::new(input.span(), "ToFeltRepr cannot be derived for unions"));
-        }
-    };
+    let fields = extract_named_fields(input, "ToFeltRepr")?;
 
     let field_names: Vec<_> = fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
 
@@ -188,29 +173,7 @@ fn derive_to_felt_repr_onchain_impl(input: &DeriveInput) -> Result<TokenStream, 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            Fields::Unnamed(_) => {
-                return Err(Error::new(
-                    input.span(),
-                    "ToFeltRepr can only be derived for structs with named fields",
-                ));
-            }
-            Fields::Unit => {
-                return Err(Error::new(
-                    input.span(),
-                    "ToFeltRepr cannot be derived for unit structs",
-                ));
-            }
-        },
-        Data::Enum(_) => {
-            return Err(Error::new(input.span(), "ToFeltRepr cannot be derived for enums"));
-        }
-        Data::Union(_) => {
-            return Err(Error::new(input.span(), "ToFeltRepr cannot be derived for unions"));
-        }
-    };
+    let fields = extract_named_fields(input, "ToFeltRepr")?;
 
     let field_names: Vec<_> = fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
 
@@ -258,29 +221,7 @@ fn derive_from_felt_repr_offchain_impl(input: &DeriveInput) -> Result<TokenStrea
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            Fields::Unnamed(_) => {
-                return Err(Error::new(
-                    input.span(),
-                    "FromFeltRepr can only be derived for structs with named fields",
-                ));
-            }
-            Fields::Unit => {
-                return Err(Error::new(
-                    input.span(),
-                    "FromFeltRepr cannot be derived for unit structs",
-                ));
-            }
-        },
-        Data::Enum(_) => {
-            return Err(Error::new(input.span(), "FromFeltRepr cannot be derived for enums"));
-        }
-        Data::Union(_) => {
-            return Err(Error::new(input.span(), "FromFeltRepr cannot be derived for unions"));
-        }
-    };
+    let fields = extract_named_fields(input, "FromFeltRepr")?;
 
     let field_names: Vec<_> = fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
     let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
