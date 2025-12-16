@@ -13,8 +13,8 @@ pub struct AccountId {
 }
 
 impl AccountId {
-    /// Creates a new AccountId from prefix and suffix Felt values
-    pub fn from(prefix: Felt, suffix: Felt) -> Self {
+    /// Creates a new AccountId from prefix and suffix Felt values.
+    pub fn new(prefix: Felt, suffix: Felt) -> Self {
         Self { prefix, suffix }
     }
 }
