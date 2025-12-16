@@ -43,12 +43,12 @@ impl ExecutionStats {
         for line in output.lines() {
             if line.contains("VM cycles:") {
                 // Look for pattern like "VM cycles: 805 extended to 1024 steps"
-                if let Some(cycles_part) = line.split("VM cycles:").nth(1) {
-                    if let Some(cycles_str) = cycles_part.split_whitespace().next() {
-                        return cycles_str.parse().with_context(|| {
-                            format!("Failed to parse VM cycles from: {cycles_str}")
-                        });
-                    }
+                if let Some(cycles_part) = line.split("VM cycles:").nth(1)
+                    && let Some(cycles_str) = cycles_part.split_whitespace().next()
+                {
+                    return cycles_str
+                        .parse()
+                        .with_context(|| format!("Failed to parse VM cycles from: {cycles_str}"));
                 }
             }
         }

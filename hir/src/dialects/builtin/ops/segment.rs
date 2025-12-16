@@ -2,13 +2,13 @@ use alloc::{collections::VecDeque, format, sync::Arc};
 use core::fmt;
 
 use midenc_hir_macros::operation;
-use midenc_session::diagnostics::{miette, Diagnostic};
+use midenc_session::diagnostics::{Diagnostic, miette};
 
 use crate::{
+    Alignable, Op, OpPrinter, UnsafeIntrusiveEntityRef,
     constants::{ConstantData, ConstantId},
     dialects::builtin::BuiltinDialect,
     traits::*,
-    Alignable, Op, OpPrinter, UnsafeIntrusiveEntityRef,
 };
 
 pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;

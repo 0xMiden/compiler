@@ -19,7 +19,7 @@ impl fmt::Display for RegionBranchPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Parent => f.write_str("parent"),
-            Self::Child(ref region) => {
+            Self::Child(region) => {
                 write!(f, "child({})", region.borrow().region_number())
             }
         }
@@ -29,7 +29,7 @@ impl fmt::Debug for RegionBranchPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Parent => f.write_str("Parent"),
-            Self::Child(ref region) => {
+            Self::Child(region) => {
                 f.debug_tuple("Child").field(&format_args!("{region:p}")).finish()
             }
         }

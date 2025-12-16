@@ -1,8 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    dialects::builtin::BuiltinOpBuilder, AbiParam, Felt, Immediate, Signature, SourceSpan, Type,
-    ValueRef,
+    AbiParam, Felt, Immediate, Signature, SourceSpan, Type, ValueRef,
+    dialects::builtin::BuiltinOpBuilder,
 };
 
 use crate::testing::{compile_test_module, eval_package};

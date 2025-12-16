@@ -7,9 +7,9 @@ use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
 use crate::{
+    CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
-    CompilerTest, CompilerTestBuilder,
 };
 
 fn cargo_toml(name: &str) -> String {
@@ -20,7 +20,7 @@ fn cargo_toml(name: &str) -> String {
                 [package]
                 name = "{name}"
                 version = "0.0.1"
-                edition = "2021"
+                edition = "2024"
                 authors = []
 
                 [lib]
@@ -56,6 +56,7 @@ fn function_call_hir2() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Global allocator to use heap memory in no-std environment
                 // #[global_allocator]
@@ -67,15 +68,21 @@ fn function_call_hir2() {
                     loop {}
                 }
 
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
+                    loop {}
+                }
+
                 // use miden::Felt;
 
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 #[inline(never)]
                 pub fn add(a: u32, b: u32) -> u32 {
                     a + b
                 }
 
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub fn entrypoint(a: u32, b: u32) -> u32 {
                     add(a, b)
                 }
@@ -103,6 +110,7 @@ fn mem_intrinsics_heap_base() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Global allocator to use heap memory in no-std environment
                 #[global_allocator]
@@ -114,10 +122,16 @@ fn mem_intrinsics_heap_base() {
                     loop {}
                 }
 
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
+                    loop {}
+                }
+
                 extern crate alloc;
                 use alloc::{vec, vec::Vec};
 
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub fn entrypoint(a: u32) -> Vec<u32> {
                     vec![a*2]
                 }
@@ -145,10 +159,17 @@ fn felt_intrinsics() {
             "src/lib.rs",
             r#"
                 #![no_std]
+                #![feature(alloc_error_handler)]
 
                 // Required for no-std crates
                 #[panic_handler]
                 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+
+                // Required for no-std crates
+                #[alloc_error_handler]
+                fn my_alloc_error(_info: core::alloc::Layout) -> ! {
                     loop {}
                 }
 
@@ -158,7 +179,7 @@ fn felt_intrinsics() {
 
                 use miden::*;
 
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub fn entrypoint(a: Felt, b: Felt) -> Felt {
                    a / (a * b - a + b)
                 }

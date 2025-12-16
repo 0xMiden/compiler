@@ -3,7 +3,7 @@ cargo-features = ["trim-paths"]
 [package]
 name = "counter-note"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 # Build this crate as a self-contained, C-style dynamic library

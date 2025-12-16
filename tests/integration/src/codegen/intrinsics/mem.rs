@@ -4,8 +4,8 @@ use miden_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::BuiltinOpBuilder, AbiParam, Felt, PointerType, Signature, SourceSpan, Type,
-    ValueRef,
+    AbiParam, Felt, PointerType, Signature, SourceSpan, Type, ValueRef,
+    dialects::builtin::BuiltinOpBuilder,
 };
 use proptest::{
     prelude::any,

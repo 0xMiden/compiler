@@ -9,7 +9,7 @@ pub mod resources;
 use alloc::sync::Arc;
 use core::{hash::Hash, ops::Index};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use cranelift_entity::{EntityRef, PrimaryMap};
 use indexmap::IndexMap;
 use midenc_hir::{FxHashMap, SmallVec};
@@ -24,8 +24,8 @@ use self::resources::ResourcesBuilder;
 use crate::{
     indices,
     module::types::{
-        convert_func_type, convert_global_type, convert_table_type, EntityType, ModuleTypes,
-        ModuleTypesBuilder,
+        EntityType, ModuleTypes, ModuleTypesBuilder, convert_func_type, convert_global_type,
+        convert_table_type,
     },
     translation_utils::{DiscriminantSize, FlagsSize},
 };
@@ -1094,11 +1094,7 @@ const fn align_to(a: u32, b: u32) -> u32 {
 }
 
 const fn max(a: u32, b: u32) -> u32 {
-    if a > b {
-        a
-    } else {
-        b
-    }
+    if a > b { a } else { b }
 }
 
 impl CanonicalAbiInfo {
@@ -1252,11 +1248,7 @@ impl CanonicalAbiInfo {
     /// doesn't exceed the `max` specified.
     pub fn flat_count(&self, max: usize) -> Option<usize> {
         let flat = usize::from(self.flat_count?);
-        if flat > max {
-            None
-        } else {
-            Some(flat)
-        }
+        if flat > max { None } else { Some(flat) }
     }
 }
 
@@ -1446,11 +1438,7 @@ const fn add_flat(a: Option<u8>, b: Option<u8>) -> Option<u8> {
         },
         _ => return None,
     };
-    if sum > MAX {
-        None
-    } else {
-        Some(sum)
-    }
+    if sum > MAX { None } else { Some(sum) }
 }
 
 const fn max_flat(a: Option<u8>, b: Option<u8>) -> Option<u8> {

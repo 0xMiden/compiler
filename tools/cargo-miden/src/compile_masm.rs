@@ -5,8 +5,8 @@ use std::{
 
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
-    diagnostics::{IntoDiagnostic, Report, WrapErr},
     InputFile, OutputType,
+    diagnostics::{IntoDiagnostic, Report, WrapErr},
 };
 
 pub fn wasm_to_masm(

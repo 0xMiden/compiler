@@ -2,7 +2,7 @@ use std::{env, fs, path::Path};
 
 use proc_macro2::{Literal, Span};
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, FnArg, ItemFn, Pat, PatIdent};
+use syn::{FnArg, ItemFn, Pat, PatIdent, parse_macro_input, spanned::Spanned};
 use toml::Value;
 
 use crate::{

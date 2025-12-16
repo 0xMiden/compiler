@@ -181,16 +181,16 @@ builtin.component miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-bin
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v119: i32) -> felt {
-        ^block21(v119: i32):
-            v120 = hir.bitcast v119 : felt;
-            builtin.ret v120;
+        private builtin.function @intrinsics::felt::eq(v119: felt, v120: felt) -> i32 {
+        ^block21(v119: felt, v120: felt):
+            v121 = arith.eq v119, v120 : i1;
+            v122 = hir.cast v121 : i32;
+            builtin.ret v122;
         };
 
-        private builtin.function @intrinsics::felt::eq(v122: felt, v123: felt) -> i32 {
-        ^block23(v122: felt, v123: felt):
-            v124 = arith.eq v122, v123 : i1;
-            v125 = hir.cast v124 : i32;
+        private builtin.function @intrinsics::felt::from_u32(v124: i32) -> felt {
+        ^block23(v124: i32):
+            v125 = hir.bitcast v124 : felt;
             builtin.ret v125;
         };
 

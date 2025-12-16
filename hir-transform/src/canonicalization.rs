@@ -1,9 +1,9 @@
 use alloc::{boxed::Box, format, rc::Rc};
 
 use midenc_hir::{
+    Context, EntityMut, Operation, OperationName, Report, Spanned,
     pass::{OperationPass, Pass, PassExecutionState, PostPassStatus},
     patterns::{self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet},
-    Context, EntityMut, Operation, OperationName, Report, Spanned,
 };
 use midenc_session::diagnostics::Severity;
 

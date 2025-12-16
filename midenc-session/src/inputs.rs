@@ -177,14 +177,14 @@ impl InputFile {
 
     pub fn file_name(&self) -> FileName {
         match &self.file {
-            InputType::Real(ref path) => path.clone().into(),
+            InputType::Real(path) => path.clone().into(),
             InputType::Stdin { name, .. } => name.clone(),
         }
     }
 
     pub fn as_path(&self) -> Option<&Path> {
         match &self.file {
-            InputType::Real(ref path) => Some(path),
+            InputType::Real(path) => Some(path),
             _ => None,
         }
     }
@@ -195,7 +195,7 @@ impl InputFile {
 
     pub fn filestem(&self) -> &str {
         match &self.file {
-            InputType::Real(ref path) => path.file_stem().unwrap().to_str().unwrap(),
+            InputType::Real(path) => path.file_stem().unwrap().to_str().unwrap(),
             InputType::Stdin { .. } => "noname",
         }
     }

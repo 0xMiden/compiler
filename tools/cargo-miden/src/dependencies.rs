@@ -4,11 +4,11 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
-use cargo_metadata::{camino, Package};
+use anyhow::{Context, Result, anyhow, bail};
+use cargo_metadata::{Package, camino};
 use serde::Deserialize;
 
-use crate::{commands::CargoOptions, BuildOutput, OutputType};
+use crate::{BuildOutput, OutputType, commands::CargoOptions};
 
 /// Defines dependency (the rhs of the dependency `"ns:package" = { path = "..." }` pair)
 #[derive(Deserialize, Debug, Clone)]

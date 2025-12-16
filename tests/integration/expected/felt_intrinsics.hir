@@ -1,66 +1,66 @@
 builtin.component root_ns:root@1.0.0 {
     builtin.module public @felt_intrinsics {
-        public builtin.function @entrypoint(v0: felt, v1: felt) -> felt {
-        ^block4(v0: felt, v1: felt):
-            v3 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::mul(v0, v1) : felt
-            v4 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::sub(v3, v0) : felt
-            v5 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::add(v4, v1) : felt
-            v6 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::div(v0, v5) : felt
-            builtin.ret v6;
+        private builtin.function @__rustc::__rust_alloc(v0: i32, v1: i32) -> i32 {
+        ^block4(v0: i32, v1: i32):
+            v3 = arith.constant 1048580 : i32;
+            v4 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v3, v1, v0) : i32
+            builtin.ret v4;
         };
 
-        private builtin.function @__rustc::__rust_alloc(v7: i32, v8: i32) -> i32 {
-        ^block6(v7: i32, v8: i32):
+        private builtin.function @__rustc::__rust_realloc(v5: i32, v6: i32, v7: i32, v8: i32) -> i32 {
+        ^block6(v5: i32, v6: i32, v7: i32, v8: i32):
             v10 = arith.constant 1048580 : i32;
-            v11 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v10, v8, v7) : i32
-            builtin.ret v11;
-        };
-
-        private builtin.function @__rustc::__rust_realloc(v12: i32, v13: i32, v14: i32, v15: i32) -> i32 {
-        ^block8(v12: i32, v13: i32, v14: i32, v15: i32):
-            v17 = arith.constant 1048580 : i32;
-            v18 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v17, v14, v15) : i32
+            v11 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v10, v7, v8) : i32
             v197 = arith.constant 0 : i32;
-            v19 = arith.constant 0 : i32;
-            v20 = arith.eq v18, v19 : i1;
-            v21 = arith.zext v20 : u32;
-            v22 = hir.bitcast v21 : i32;
-            v24 = arith.neq v22, v197 : i1;
-            scf.if v24{
-            ^block10:
+            v12 = arith.constant 0 : i32;
+            v13 = arith.eq v11, v12 : i1;
+            v14 = arith.zext v13 : u32;
+            v15 = hir.bitcast v14 : i32;
+            v17 = arith.neq v15, v197 : i1;
+            scf.if v17{
+            ^block8:
                 scf.yield ;
             } else {
-            ^block11:
+            ^block9:
                 v196 = arith.constant 0 : i32;
-                v26 = hir.bitcast v13 : u32;
-                v25 = hir.bitcast v15 : u32;
-                v27 = arith.lt v25, v26 : i1;
-                v28 = arith.zext v27 : u32;
-                v29 = hir.bitcast v28 : i32;
-                v31 = arith.neq v29, v196 : i1;
-                v32 = cf.select v31, v15, v13 : i32;
+                v19 = hir.bitcast v6 : u32;
+                v18 = hir.bitcast v8 : u32;
+                v20 = arith.lt v18, v19 : i1;
+                v21 = arith.zext v20 : u32;
+                v22 = hir.bitcast v21 : i32;
+                v24 = arith.neq v22, v196 : i1;
+                v25 = cf.select v24, v8, v6 : i32;
                 v194 = arith.constant 0 : i32;
                 v195 = arith.constant 0 : i32;
-                v34 = arith.eq v32, v195 : i1;
-                v35 = arith.zext v34 : u32;
-                v36 = hir.bitcast v35 : i32;
-                v38 = arith.neq v36, v194 : i1;
-                scf.if v38{
+                v27 = arith.eq v25, v195 : i1;
+                v28 = arith.zext v27 : u32;
+                v29 = hir.bitcast v28 : i32;
+                v31 = arith.neq v29, v194 : i1;
+                scf.if v31{
                 ^block52:
                     scf.yield ;
                 } else {
-                ^block12:
-                    v39 = hir.bitcast v32 : u32;
-                    v40 = hir.bitcast v18 : u32;
-                    v41 = hir.int_to_ptr v40 : ptr<byte, u8>;
-                    v42 = hir.bitcast v12 : u32;
-                    v43 = hir.int_to_ptr v42 : ptr<byte, u8>;
-                    hir.mem_cpy v43, v41, v39;
+                ^block10:
+                    v32 = hir.bitcast v25 : u32;
+                    v33 = hir.bitcast v11 : u32;
+                    v34 = hir.int_to_ptr v33 : ptr<byte, u8>;
+                    v35 = hir.bitcast v5 : u32;
+                    v36 = hir.int_to_ptr v35 : ptr<byte, u8>;
+                    hir.mem_cpy v36, v34, v32;
                     scf.yield ;
                 };
                 scf.yield ;
             };
-            builtin.ret v18;
+            builtin.ret v11;
+        };
+
+        public builtin.function @entrypoint(v38: felt, v39: felt) -> felt {
+        ^block11(v38: felt, v39: felt):
+            v41 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::mul(v38, v39) : felt
+            v42 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::sub(v41, v38) : felt
+            v43 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::add(v42, v39) : felt
+            v44 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/intrinsics::felt::div(v38, v43) : felt
+            builtin.ret v44;
         };
 
         private builtin.function @__rustc::__rust_no_alloc_shim_is_unstable_v2() {
@@ -91,7 +91,7 @@ builtin.component root_ns:root@1.0.0 {
                 scf.yield v204, v200;
             } else {
             ^block18:
-                v66 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/core::ptr::alignment::Alignment::max(v46, v59) : i32
+                v66 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/<core::ptr::alignment::Alignment>::max(v46, v59) : i32
                 v238 = arith.constant 0 : i32;
                 v65 = arith.constant -2147483648 : i32;
                 v67 = arith.sub v65, v66 : i32 #[overflow = wrapping];
@@ -199,9 +199,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v129;
         };
 
-        private builtin.function @intrinsics::felt::sub(v131: felt, v132: felt) -> felt {
+        private builtin.function @intrinsics::felt::div(v131: felt, v132: felt) -> felt {
         ^block30(v131: felt, v132: felt):
-            v133 = arith.sub v131, v132 : felt #[overflow = unchecked];
+            v133 = arith.div v131, v132 : felt;
             builtin.ret v133;
         };
 
@@ -211,13 +211,13 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v137;
         };
 
-        private builtin.function @intrinsics::felt::div(v139: felt, v140: felt) -> felt {
+        private builtin.function @intrinsics::felt::sub(v139: felt, v140: felt) -> felt {
         ^block34(v139: felt, v140: felt):
-            v141 = arith.div v139, v140 : felt;
+            v141 = arith.sub v139, v140 : felt #[overflow = unchecked];
             builtin.ret v141;
         };
 
-        private builtin.function @core::ptr::alignment::Alignment::max(v143: i32, v144: i32) -> i32 {
+        private builtin.function @<core::ptr::alignment::Alignment>::max(v143: i32, v144: i32) -> i32 {
         ^block36(v143: i32, v144: i32):
             v151 = arith.constant 0 : i32;
             v147 = hir.bitcast v144 : u32;
@@ -243,56 +243,50 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v163;
         };
 
-        public builtin.function @cabi_realloc_wit_bindgen_0_46_0(v164: i32, v165: i32, v166: i32, v167: i32) -> i32 {
+        private builtin.function @wit_bindgen::rt::cabi_realloc(v164: i32, v165: i32, v166: i32, v167: i32) -> i32 {
         ^block42(v164: i32, v165: i32, v166: i32, v167: i32):
-            v169 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/wit_bindgen::rt::cabi_realloc(v164, v165, v166, v167) : i32
-            builtin.ret v169;
-        };
-
-        private builtin.function @wit_bindgen::rt::cabi_realloc(v170: i32, v171: i32, v172: i32, v173: i32) -> i32 {
-        ^block44(v170: i32, v171: i32, v172: i32, v173: i32):
-            v175 = arith.constant 0 : i32;
-            v176 = arith.neq v171, v175 : i1;
-            v250, v251, v252 = scf.if v176 : i32, i32, u32 {
-            ^block48:
-                v184 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/__rustc::__rust_realloc(v170, v171, v172, v173) : i32
+            v169 = arith.constant 0 : i32;
+            v170 = arith.neq v165, v169 : i1;
+            v250, v251, v252 = scf.if v170 : i32, i32, u32 {
+            ^block46:
+                v178 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/__rustc::__rust_realloc(v164, v165, v166, v167) : i32
                 v241 = arith.constant 0 : u32;
                 v245 = ub.poison i32 : i32;
-                scf.yield v184, v245, v241;
+                scf.yield v178, v245, v241;
             } else {
-            ^block49:
+            ^block47:
                 v280 = arith.constant 0 : i32;
                 v281 = arith.constant 0 : i32;
-                v178 = arith.eq v173, v281 : i1;
-                v179 = arith.zext v178 : u32;
-                v180 = hir.bitcast v179 : i32;
-                v182 = arith.neq v180, v280 : i1;
-                v268 = scf.if v182 : i32 {
+                v172 = arith.eq v167, v281 : i1;
+                v173 = arith.zext v172 : u32;
+                v174 = hir.bitcast v173 : i32;
+                v176 = arith.neq v174, v280 : i1;
+                v268 = scf.if v176 : i32 {
                 ^block63:
                     v279 = ub.poison i32 : i32;
                     scf.yield v279;
                 } else {
-                ^block50:
-                    v183 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/alloc::alloc::alloc(v172, v173) : i32
-                    scf.yield v183;
+                ^block48:
+                    v177 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/alloc::alloc::alloc(v166, v167) : i32
+                    scf.yield v177;
                 };
                 v277 = arith.constant 0 : u32;
                 v246 = arith.constant 1 : u32;
-                v270 = cf.select v182, v246, v277 : u32;
+                v270 = cf.select v176, v246, v277 : u32;
                 v278 = ub.poison i32 : i32;
-                v269 = cf.select v182, v172, v278 : i32;
+                v269 = cf.select v176, v166, v278 : i32;
                 scf.yield v268, v269, v270;
             };
             v257, v258 = scf.index_switch v252 : i32, u32 
             case 0 {
-            ^block47:
+            ^block45:
                 v275 = arith.constant 0 : i32;
-                v187 = arith.neq v250, v275 : i1;
+                v181 = arith.neq v250, v275 : i1;
                 v272 = arith.constant 1 : u32;
                 v273 = arith.constant 0 : u32;
-                v267 = cf.select v187, v273, v272 : u32;
+                v267 = cf.select v181, v273, v272 : u32;
                 v274 = ub.poison i32 : i32;
-                v266 = cf.select v187, v250, v274 : i32;
+                v266 = cf.select v181, v250, v274 : i32;
                 scf.yield v266, v267;
             }
             default {
@@ -307,6 +301,12 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v257;
         ^block66:
             ub.unreachable ;
+        };
+
+        public builtin.function @cabi_realloc_wit_bindgen_0_46_0(v183: i32, v184: i32, v185: i32, v186: i32) -> i32 {
+        ^block50(v183: i32, v184: i32, v185: i32, v186: i32):
+            v188 = hir.exec @root_ns:root@1.0.0/felt_intrinsics/wit_bindgen::rt::cabi_realloc(v183, v184, v185, v186) : i32
+            builtin.ret v188;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

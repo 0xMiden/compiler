@@ -434,7 +434,7 @@ where
     }
 
     fn pretty_print(&self) -> crate::formatter::Document {
-        use crate::formatter::{const_text, indent, nl, text, Document};
+        use crate::formatter::{Document, const_text, indent, nl, text};
         if self.is_empty() {
             const_text("{}")
         } else {

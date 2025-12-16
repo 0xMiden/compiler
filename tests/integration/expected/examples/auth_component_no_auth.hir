@@ -58,7 +58,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             hir.store v39, v33;
             v40 = arith.constant 48 : i32;
             v41 = arith.add v9, v40 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden_stdlib_sys::intrinsics::word::Word::reverse(v9, v41)
+            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v9, v41)
             v381 = arith.constant 32 : i32;
             v43 = arith.add v9, v381 : i32 #[overflow = wrapping];
             hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::active_account::compute_commitment(v43)
@@ -98,7 +98,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             v73 = arith.add v9, v372 : i32 #[overflow = wrapping];
             v70 = arith.constant 16 : i32;
             v71 = arith.add v9, v70 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden_stdlib_sys::intrinsics::word::Word::reverse(v71, v73)
+            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v71, v73)
             v75 = arith.constant 16 : u32;
             v74 = hir.bitcast v9 : u32;
             v76 = arith.add v74, v75 : u32 #[overflow = checked];
@@ -275,7 +275,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v186: i32, v187: i32) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v186: i32, v187: i32) {
         ^block21(v186: i32, v187: i32):
             v190 = builtin.global_symbol @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/__stack_pointer : ptr<byte, u8>
             v191 = hir.bitcast v190 : ptr<byte, i32>;
@@ -409,9 +409,9 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret v278;
         };
 
-        private builtin.function @miden::active_account::get_initial_commitment(v280: i32) {
+        private builtin.function @miden::active_account::compute_commitment(v280: i32) {
         ^block29(v280: i32):
-            v281, v282, v283, v284 = hir.exec @miden/active_account/get_initial_commitment() : felt, felt, felt, felt
+            v281, v282, v283, v284 = hir.exec @miden/active_account/compute_commitment() : felt, felt, felt, felt
             v285 = hir.bitcast v280 : u32;
             v286 = hir.int_to_ptr v285 : ptr<byte, felt>;
             hir.store v286, v281;
@@ -430,9 +430,9 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::compute_commitment(v296: i32) {
+        private builtin.function @miden::active_account::get_initial_commitment(v296: i32) {
         ^block33(v296: i32):
-            v297, v298, v299, v300 = hir.exec @miden/active_account/compute_commitment() : felt, felt, felt, felt
+            v297, v298, v299, v300 = hir.exec @miden/active_account/get_initial_commitment() : felt, felt, felt, felt
             v301 = hir.bitcast v296 : u32;
             v302 = hir.int_to_ptr v301 : ptr<byte, felt>;
             hir.store v302, v297;

@@ -5,13 +5,12 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use std::ffi::OsString;
 
 #[cfg(feature = "std")]
-use clap::{builder::ArgPredicate, Parser};
+use clap::{Parser, builder::ArgPredicate};
 use midenc_session::{
-    add_target_link_libraries,
-    diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
     OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
-    Warnings,
+    Warnings, add_target_link_libraries,
+    diagnostics::{DefaultSourceManager, Emitter},
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.

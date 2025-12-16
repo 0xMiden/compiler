@@ -221,8 +221,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        opt::{operands::SolverOptions, SolverError},
         Constraint, OperandStack,
+        opt::{SolverError, operands::SolverOptions},
     };
 
     // These are actually RHS/LHS pairs.

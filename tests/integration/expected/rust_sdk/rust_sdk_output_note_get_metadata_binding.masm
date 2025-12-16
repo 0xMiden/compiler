@@ -417,7 +417,7 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     movup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -433,7 +433,7 @@ proc miden_base_sys::bindings::output_note::get_metadata(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )

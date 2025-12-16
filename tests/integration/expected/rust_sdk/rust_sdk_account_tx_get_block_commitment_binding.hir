@@ -107,7 +107,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             hir.store v71, v65;
             v72 = arith.constant 16 : i32;
             v73 = arith.add v45, v72 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_block_commitment_binding/miden_stdlib_sys::intrinsics::word::Word::reverse(v39, v73)
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_block_commitment_binding/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v39, v73)
             v192 = arith.constant 32 : i32;
             v75 = arith.add v45, v192 : i32 #[overflow = wrapping];
             v76 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_block_commitment_binding/__stack_pointer : ptr<byte, u8>
@@ -116,7 +116,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v78: i32, v79: i32) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v78: i32, v79: i32) {
         ^block17(v78: i32, v79: i32):
             v82 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_block_commitment_binding/__stack_pointer : ptr<byte, u8>
             v83 = hir.bitcast v82 : ptr<byte, i32>;

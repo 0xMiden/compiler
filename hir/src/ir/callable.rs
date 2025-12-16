@@ -3,8 +3,8 @@ use core::fmt;
 
 use super::SymbolPathAttr;
 use crate::{
-    formatter, CallConv, EntityRef, Op, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol,
-    SymbolPath, SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility,
+    CallConv, EntityRef, Op, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol, SymbolPath,
+    SymbolRef, Type, UnsafeIntrusiveEntityRef, Value, ValueRef, Visibility, formatter,
 };
 
 /// A call-like operation is one that transfers control from one function to another.
@@ -124,14 +124,14 @@ impl Callable {
 
     pub fn as_symbol_path(&self) -> Option<&SymbolPath> {
         match self {
-            Self::Symbol(ref name) => Some(name),
+            Self::Symbol(name) => Some(name),
             _ => None,
         }
     }
 
     pub fn as_value(&self) -> Option<EntityRef<'_, dyn Value>> {
         match self {
-            Self::Value(ref value_ref) => Some(value_ref.borrow()),
+            Self::Value(value_ref) => Some(value_ref.borrow()),
             _ => None,
         }
     }
@@ -351,9 +351,11 @@ impl Signature {
     /// Returns a slice containing the results of this function
     pub fn results(&self) -> &[AbiParam] {
         match self.results.as_slice() {
-            [AbiParam {
-                ty: Type::Never, ..
-            }] => &[],
+            [
+                AbiParam {
+                    ty: Type::Never, ..
+                },
+            ] => &[],
             results => results,
         }
     }

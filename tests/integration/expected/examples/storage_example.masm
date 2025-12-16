@@ -60,6 +60,172 @@ proc storage_example::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
+proc miden:storage-example/foo@1.0.0#get-asset-qty(
+    felt,
+    felt,
+    felt,
+    felt
+) -> felt
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.48
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
+    trace.252
+    nop
+    push.1
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    trace.252
+    nop
+    push.16
+    dup.2
+    u32wrapping_add
+    movup.3
+    swap.4
+    movdn.3
+    swap.5
+    swap.2
+    swap.6
+    swap.1
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_map_item
+    trace.252
+    nop
+    push.24
+    dup.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.40
+    dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.16
+    dup.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.32
+    dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.32
+    dup.1
+    u32wrapping_add
+    dup.1
+    trace.240
+    nop
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    trace.252
+    nop
+    push.12
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.48
+    movup.2
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden:storage-example/foo@1.0.0#set-asset-qty(
     felt,
     felt,
@@ -79,7 +245,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.112
+    push.128
     u32wrapping_sub
     push.1114144
     dup.1
@@ -183,15 +349,15 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     push.48
     dup.1
     u32wrapping_add
-    push.96
+    push.112
     dup.2
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
-    push.100
+    push.116
     dup.1
     add
     u32assert
@@ -208,7 +374,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.104
+    push.120
     dup.2
     add
     u32assert
@@ -225,7 +391,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.108
+    push.124
     dup.3
     add
     u32assert
@@ -242,7 +408,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.96
+    push.112
     dup.4
     add
     u32assert
@@ -589,191 +755,25 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
                     dup.1
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_stdlib_sys::intrinsics::word::Word::reverse
+                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word>::reverse
                     trace.252
                     nop
                     push.96
                     dup.1
                     u32wrapping_add
-                    push.16
+                    push.112
                     dup.2
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_stdlib_sys::intrinsics::word::Word::reverse
+                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word>::reverse
                     trace.252
                     nop
                 end
             end
         end
     end
-    push.112
-    u32wrapping_add
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc miden:storage-example/foo@1.0.0#get-asset-qty(
-    felt,
-    felt,
-    felt,
-    felt
-) -> felt
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.48
-    u32wrapping_sub
-    push.1114144
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
-    trace.252
-    nop
-    push.1
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
-    trace.252
-    nop
-    push.16
-    dup.2
-    u32wrapping_add
-    movup.3
-    swap.4
-    movdn.3
-    swap.5
-    swap.2
-    swap.6
-    swap.1
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_map_item
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.40
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.32
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.32
-    dup.1
-    u32wrapping_add
-    dup.1
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_stdlib_sys::intrinsics::word::Word::reverse
-    trace.252
-    nop
-    push.12
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.48
-    movup.2
+    push.128
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -860,15 +860,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
-    i32
-) -> felt
-    push.255
-    u32and
-end
-
-@callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -1145,6 +1137,14 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
 end
 
 @callconv("C")
+proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
+    i32
+) -> felt
+    push.255
+    u32and
+end
+
+@callconv("C")
 proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from(
     i32,
     felt
@@ -1237,13 +1237,13 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::eq(felt, felt) -> i32
+    eq
 end
 
 @callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 
 @callconv("C")

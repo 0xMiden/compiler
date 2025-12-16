@@ -2,7 +2,7 @@ use core::fmt;
 
 use smallvec::SmallVec;
 
-use crate::{adt::SmallDenseMap, BlockRef};
+use crate::{BlockRef, adt::SmallDenseMap};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum CfgUpdateKind {

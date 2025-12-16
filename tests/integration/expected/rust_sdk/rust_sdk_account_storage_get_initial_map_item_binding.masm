@@ -383,7 +383,7 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1::rust_sdk_account_storage_get_initial_map_item_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1::rust_sdk_account_storage_get_initial_map_item_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.1048584
@@ -544,15 +544,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
-    i32
-) -> felt
-    push.255
-    u32and
-end
-
-@callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -826,6 +818,14 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+end
+
+@callconv("C")
+proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
+    i32
+) -> felt
+    push.255
+    u32and
 end
 
 @callconv("C")

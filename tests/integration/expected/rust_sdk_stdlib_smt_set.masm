@@ -232,7 +232,7 @@ pub proc entrypoint(
     trace.252
     nop
     push.4294967264
-    push.96
+    push.128
     dup.2
     swap.1
     u32wrapping_sub
@@ -285,7 +285,7 @@ pub proc entrypoint(
     trace.252
     nop
     swap.1
-    push.72
+    push.88
     dup.3
     add
     u32assert
@@ -322,7 +322,7 @@ pub proc entrypoint(
     trace.252
     nop
     swap.1
-    push.64
+    push.80
     dup.3
     add
     u32assert
@@ -359,7 +359,7 @@ pub proc entrypoint(
     trace.252
     nop
     swap.1
-    push.88
+    push.104
     dup.3
     add
     u32assert
@@ -396,7 +396,7 @@ pub proc entrypoint(
     trace.252
     nop
     swap.1
-    push.80
+    push.96
     dup.3
     add
     u32assert
@@ -415,60 +415,31 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.64
+    push.80
     dup.1
     u32wrapping_add
     dup.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
-    push.16
+    push.96
     dup.1
     u32wrapping_add
-    push.80
+    push.112
     dup.2
     u32wrapping_add
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    trace.252
+    nop
+    push.120
     dup.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::miden_stdlib_sys::intrinsics::word::Word::reverse
-    trace.252
-    nop
-    push.0
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.0
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.0
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.0
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.92
-    dup.6
     add
     u32assert
-    push.4
+    push.8
     dup.1
     swap.1
     u32mod
@@ -478,10 +449,94 @@ pub proc entrypoint(
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_felt
+    exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.88
+    swap.1
+    push.24
+    dup.3
+    u32wrapping_add
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.112
+    dup.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.16
+    dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.0
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
+    trace.252
+    nop
+    push.0
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
+    trace.252
+    nop
+    push.0
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
+    trace.252
+    nop
+    push.0
+    push.0
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::intrinsics::felt::from_u64_unchecked
+    trace.252
+    nop
+    push.124
     dup.5
     add
     u32assert
@@ -498,7 +553,7 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.84
+    push.120
     dup.4
     add
     u32assert
@@ -515,8 +570,25 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.80
+    push.116
     dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.112
+    dup.2
     add
     u32assert
     push.4
@@ -561,23 +633,6 @@ pub proc entrypoint(
     trace.252
     nop
     push.44
-    dup.6
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.40
     dup.5
     add
     u32assert
@@ -594,7 +649,7 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.36
+    push.40
     dup.4
     add
     u32assert
@@ -611,7 +666,7 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.32
+    push.36
     dup.3
     add
     u32assert
@@ -628,10 +683,27 @@ pub proc entrypoint(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.80
+    push.32
     dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.112
+    dup.1
     u32wrapping_add
-    dup.2
+    dup.1
     trace.240
     nop
     exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
@@ -645,13 +717,14 @@ pub proc entrypoint(
     if.true
         drop
         drop
-        drop
         push.0
     else
         push.32
+        dup.1
+        u32wrapping_add
+        push.16
         movup.2
         u32wrapping_add
-        swap.1
         trace.240
         nop
         exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
@@ -694,7 +767,7 @@ pub proc entrypoint(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -971,6 +1044,11 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
 end
 
 @callconv("C")
+proc intrinsics::felt::eq(felt, felt) -> i32
+    eq
+end
+
+@callconv("C")
 proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
@@ -984,11 +1062,6 @@ proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     assert
     mul.4294967296
     add
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
 end
 
 @callconv("C")

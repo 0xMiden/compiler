@@ -2,8 +2,8 @@ use alloc::collections::VecDeque;
 
 use super::*;
 use crate::{
-    adt::{SmallDenseMap, SmallSet},
     BlockArgument, BlockRef, ValueRef,
+    adt::{SmallDenseMap, SmallSet},
 };
 
 /// Calculates the dominance frontier for every block in a given `DominatorTree`

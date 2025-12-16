@@ -1,9 +1,11 @@
+#![expect(unused_assignments)]
+
 use alloc::{format, string::String, vec, vec::Vec};
 use core::ops::{Index, IndexMut, Range};
 
 use midenc_hir::{Felt, FieldElement, Immediate, SmallVec, SourceSpan, Type};
 use midenc_session::{
-    diagnostics::{miette, Diagnostic},
+    diagnostics::{Diagnostic, miette},
     miden_assembly::utils::Deserializable,
 };
 

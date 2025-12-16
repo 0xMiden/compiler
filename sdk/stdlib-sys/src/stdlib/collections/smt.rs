@@ -18,7 +18,7 @@ pub struct SmtSetResponse {
 }
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     /// Returns the value located under the specified `key` in the sparse Merkle tree defined by
     /// the specified `root`.
     ///

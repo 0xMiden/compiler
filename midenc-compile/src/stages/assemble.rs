@@ -2,7 +2,7 @@ use alloc::{string::ToString, vec, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{Dependency, MastArtifact, Package, PackageExport};
-use midenc_session::{diagnostics::IntoDiagnostic, Session};
+use midenc_session::{Session, diagnostics::IntoDiagnostic};
 
 use super::*;
 

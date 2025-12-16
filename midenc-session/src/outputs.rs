@@ -111,14 +111,14 @@ pub enum OutputFile {
 impl OutputFile {
     pub fn parent(&self) -> Option<&Path> {
         match self {
-            Self::Real(ref path) => path.parent(),
+            Self::Real(path) => path.parent(),
             Self::Stdout => None,
         }
     }
 
     pub fn filestem(&self) -> Option<Cow<'_, str>> {
         match self {
-            Self::Real(ref path) => path.file_stem().map(|stem| stem.to_string_lossy()),
+            Self::Real(path) => path.file_stem().map(|stem| stem.to_string_lossy()),
             Self::Stdout => None,
         }
     }
@@ -143,7 +143,7 @@ impl OutputFile {
 
     pub fn as_path(&self) -> Option<&Path> {
         match self {
-            Self::Real(ref path) => Some(path.as_ref()),
+            Self::Real(path) => Some(path.as_ref()),
             Self::Stdout => None,
         }
     }
@@ -155,7 +155,7 @@ impl OutputFile {
         name: Option<&str>,
     ) -> PathBuf {
         match self {
-            Self::Real(ref path) => path.clone(),
+            Self::Real(path) => path.clone(),
             Self::Stdout => outputs.temp_path(ty, name),
         }
     }
@@ -163,7 +163,7 @@ impl OutputFile {
 impl fmt::Display for OutputFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Real(ref path) => write!(f, "{}", path.display()),
+            Self::Real(path) => write!(f, "{}", path.display()),
             Self::Stdout => write!(f, "stdout"),
         }
     }
@@ -285,7 +285,7 @@ impl OutputFiles {
     /// * Otherwise, calls [with_directory_and_extension] with `self.out_dir` and `extension`
     pub fn with_extension(&self, extension: &str) -> PathBuf {
         match self.out_file.as_ref() {
-            Some(OutputFile::Real(ref path)) => path.with_extension(extension),
+            Some(OutputFile::Real(path)) => path.with_extension(extension),
             Some(OutputFile::Stdout) | None => {
                 self.with_directory_and_extension(&self.out_dir, extension)
             }
@@ -316,13 +316,13 @@ impl OutputTypes {
                             "--emit=all cannot be combined with other --emit types",
                         ));
                     }
-                    if let Some(OutputFile::Real(ref path)) = &path {
-                        if path.extension().is_some() {
-                            return Err(clap::Error::raw(
-                                clap::error::ErrorKind::ValueValidation,
-                                "invalid path for --emit=all: must be a directory",
-                            ));
-                        }
+                    if let Some(OutputFile::Real(path)) = &path
+                        && path.extension().is_some()
+                    {
+                        return Err(clap::Error::raw(
+                            clap::error::ErrorKind::ValueValidation,
+                            "invalid path for --emit=all: must be a directory",
+                        ));
                     }
                     for ty in OutputType::all() {
                         map.insert(ty, path.clone());

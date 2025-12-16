@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use miden_core::{utils::group_slice_elements, FieldElement};
+use miden_core::{FieldElement, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, ToMidenRepr};
 use miden_processor::AdviceInputs;
 use midenc_expect_test::expect_file;
@@ -16,8 +16,8 @@ use proptest::{
 };
 
 use crate::{
-    testing::{eval_package, Initializer},
     CompilerTest,
+    testing::{Initializer, eval_package},
 };
 
 #[test]

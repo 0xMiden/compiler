@@ -4,7 +4,7 @@ cargo-features = ["trim-paths"]
 name = "miden-sdk-account-test"
 rust-version = "1.71"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

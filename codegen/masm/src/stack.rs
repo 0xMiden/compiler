@@ -5,7 +5,7 @@ use core::{
 
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{AttributeValue, Immediate, Type, ValueRef};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 /// This represents a constraint an operand's usage at
 /// a given program point, namely when used as an instruction
@@ -48,7 +48,7 @@ impl OperandType {
                 imm.downcast_ref::<Immediate>().expect("unexpected constant value type").ty()
             }
             Self::Value(value) => value.borrow().ty().clone(),
-            Self::Type(ref ty) => ty.clone(),
+            Self::Type(ty) => ty.clone(),
         }
     }
 }
@@ -67,9 +67,9 @@ impl PartialEq for OperandType {
         match (self, other) {
             (Self::Value(a), Self::Value(b)) => a == b,
             (Self::Value(_), _) | (_, Self::Value(_)) => false,
-            (Self::Const(ref a), Self::Const(ref b)) => a == b,
+            (Self::Const(a), Self::Const(b)) => a == b,
             (Self::Const(_), _) | (_, Self::Const(_)) => false,
-            (Self::Type(ref a), Self::Type(ref b)) => a == b,
+            (Self::Type(a), Self::Type(b)) => a == b,
         }
     }
 }
@@ -329,7 +329,7 @@ impl OperandStack {
     /// The type is assumed to remain unchanged
     pub fn rename(&mut self, n: usize, value: ValueRef) {
         match &mut self[n].operand {
-            OperandType::Value(ref mut prev_value) => {
+            OperandType::Value(prev_value) => {
                 *prev_value = value;
             }
             prev => {

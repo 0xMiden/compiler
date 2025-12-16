@@ -5,7 +5,7 @@ use alloc::{boxed::Box, collections::BTreeMap, vec, vec::Vec};
 use core::{any::Any, borrow::Borrow, fmt};
 
 pub use self::{overflow::Overflow, visibility::Visibility};
-use crate::{interner::Symbol, Immediate};
+use crate::{Immediate, interner::Symbol};
 
 pub mod markers {
     use midenc_hir_symbol::symbols;

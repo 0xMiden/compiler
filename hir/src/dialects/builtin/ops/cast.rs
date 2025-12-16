@@ -1,9 +1,9 @@
 use crate::{
+    Context, Report, Spanned, Type, Value,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     effects::{EffectIterator, EffectOpInterface, MemoryEffect, MemoryEffectOpInterface},
     traits::{AnyType, InferTypeOpInterface, UnaryOp},
-    Context, Report, Spanned, Type, Value,
 };
 
 #[operation(

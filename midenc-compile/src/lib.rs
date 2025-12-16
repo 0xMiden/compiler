@@ -14,8 +14,8 @@ use alloc::{rc::Rc, vec::Vec};
 pub use midenc_hir::Context;
 use midenc_hir::Op;
 use midenc_session::{
-    diagnostics::{miette, Diagnostic, Report, WrapErr},
     OutputMode,
+    diagnostics::{Diagnostic, Report, WrapErr, miette},
 };
 
 pub use self::{
@@ -85,8 +85,9 @@ where
         .next(CodegenStage)
         .next(
             pre_assembly_stage
-                as &mut (dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>
-                          + '_),
+                as &mut (
+                         dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput> + '_
+                     ),
         )
         .next(AssembleStage);
 
@@ -138,8 +139,9 @@ where
     let mut stages = CodegenStage
         .next(
             pre_assembly_stage
-                as &mut (dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>
-                          + '_),
+                as &mut (
+                         dyn FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput> + '_
+                     ),
         )
         .next(AssembleStage);
 

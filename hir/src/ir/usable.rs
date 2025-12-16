@@ -1,6 +1,6 @@
 use super::{
-    entity::EntityIter, EntityCursor, EntityCursorMut, EntityList, EntityListItem,
-    UnsafeIntrusiveEntityRef,
+    EntityCursor, EntityCursorMut, EntityList, EntityListItem, UnsafeIntrusiveEntityRef,
+    entity::EntityIter,
 };
 
 /// The [Usable] trait is implemented for IR entities which are _defined_ and _used_, and as a

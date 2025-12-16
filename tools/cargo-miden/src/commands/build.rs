@@ -4,19 +4,18 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{bail, Context, Result};
-use cargo_metadata::{camino, Artifact, Message, Metadata, MetadataCommand, Package};
+use anyhow::{Context, Result, bail};
+use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package, camino};
 use clap::Args;
 use midenc_compile::Compiler;
 use midenc_session::TargetEnv;
 use path_absolutize::Absolutize;
 
 use crate::{
-    compile_masm,
+    BuildOutput, CommandOutput, OutputType, compile_masm,
     config::CargoPackageSpec,
     dependencies::process_miden_dependencies,
     target::{self, install_wasm32_target},
-    BuildOutput, CommandOutput, OutputType,
 };
 
 /// Command-line arguments accepted by `cargo miden build`.
@@ -78,29 +77,22 @@ impl BuildCommand {
         // Remove the source file paths in the data segment for panics
         // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
         extra_rust_flags.push_str(" -Zlocation-detail=none");
-        let maybe_old_rustflags = match std::env::var("RUSTFLAGS") {
-            Ok(current) if !current.is_empty() => {
-                std::env::set_var("RUSTFLAGS", format!("{current} {extra_rust_flags}"));
-                Some(current)
-            }
-            _ => {
-                std::env::set_var("RUSTFLAGS", extra_rust_flags);
-                None
-            }
-        };
+        // Build with panic=immediate-abort
+        extra_rust_flags.push_str(" -Zunstable-options");
+        extra_rust_flags.push_str(" -Cpanic=immediate-abort");
+        if let Ok(inherited) = std::env::var("RUSTFLAGS")
+            && !inherited.is_empty()
+        {
+            extra_rust_flags.push(' ');
+            extra_rust_flags.push_str(&inherited);
+        }
 
         let wasi = match target_env {
             TargetEnv::Rollup { .. } => "wasip2",
             _ => "wasip1",
         };
 
-        let wasm_outputs = run_cargo(wasi, &spawn_args)?;
-
-        if let Some(old_rustflags) = maybe_old_rustflags {
-            std::env::set_var("RUSTFLAGS", old_rustflags);
-        } else {
-            std::env::remove_var("RUSTFLAGS");
-        }
+        let wasm_outputs = run_cargo(wasi, &spawn_args, [("RUSTFLAGS", extra_rust_flags)])?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
@@ -196,14 +188,9 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
 
     // Add build-std flags required for Miden compilation
     args.extend(
-        [
-            "-Z",
-            "build-std=std,core,alloc,panic_abort",
-            "-Z",
-            "build-std-features=panic_immediate_abort",
-        ]
-        .into_iter()
-        .map(|s| s.to_string()),
+        ["-Z", "build-std=core,alloc,proc_macro,panic_abort", "-Z", "build-std-features="]
+            .into_iter()
+            .map(|s| s.to_string()),
     );
 
     // Configure profile settings
@@ -274,13 +261,17 @@ fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String>
     base
 }
 
-fn run_cargo(wasi: &str, spawn_args: &[String]) -> Result<Vec<PathBuf>> {
+fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> Result<Vec<PathBuf>>
+where
+    E: IntoIterator<Item = (&'static str, String)>,
+{
     let cargo_path = std::env::var("CARGO")
         .map(PathBuf::from)
         .ok()
         .unwrap_or_else(|| PathBuf::from("cargo"));
 
     let mut cargo = Command::new(&cargo_path);
+    cargo.envs(env);
     cargo.args(spawn_args);
 
     // Handle the target for buildable commands

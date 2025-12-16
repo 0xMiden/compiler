@@ -572,7 +572,7 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     movup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -663,7 +663,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )

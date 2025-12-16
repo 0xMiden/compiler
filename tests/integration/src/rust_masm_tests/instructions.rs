@@ -10,8 +10,8 @@ use proptest::{
 
 use super::run_masm_vs_rust;
 use crate::{
-    testing::{eval_package, Initializer},
     CompilerTest,
+    testing::{Initializer, eval_package},
 };
 
 macro_rules! test_bin_op {

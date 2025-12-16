@@ -5,18 +5,18 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
+    Client, DebugMode, Word,
     account::StorageMap,
     auth::{AuthSecretKey, PublicKeyCommitment},
     keystore::FilesystemKeyStore,
     transaction::{OutputNote, TransactionRequestBuilder},
     utils::Deserializable,
-    Client, DebugMode, Word,
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement};
 use miden_mast_package::SectionId;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use rand::{rngs::StdRng, RngCore};
+use rand::{RngCore, rngs::StdRng};
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;

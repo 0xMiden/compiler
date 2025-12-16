@@ -4,10 +4,10 @@ use smallvec::SmallVec;
 
 use super::RegionTransformFailed;
 use crate::{
-    adt::SmallSet,
-    traits::{BranchOpInterface, Terminator},
     OpOperandImpl, OpResult, Operation, OperationRef, PostOrderBlockIter, Region, RegionRef,
     Rewriter, SuccessorOperands, ValueRef,
+    adt::SmallSet,
+    traits::{BranchOpInterface, Terminator},
 };
 
 /// Data structure used to track which values have already been proved live.
@@ -77,14 +77,11 @@ impl LiveMap {
         // than to the terminator op itself, a terminator op can't e.g. "print" the value of a
         // successor operand.
         let owner = &user.owner;
-        if owner.borrow().implements::<dyn Terminator>() {
-            if let Some(branch_interface) = owner.borrow().as_trait::<dyn BranchOpInterface>() {
-                if let Some(arg) =
-                    branch_interface.get_successor_block_argument(user.index as usize)
-                {
-                    return !self.was_proven_live(&arg.upcast());
-                }
-            }
+        if owner.borrow().implements::<dyn Terminator>()
+            && let Some(branch_interface) = owner.borrow().as_trait::<dyn BranchOpInterface>()
+            && let Some(arg) = branch_interface.get_successor_block_argument(user.index as usize)
+        {
+            return !self.was_proven_live(&arg.upcast());
         }
 
         false

@@ -5,10 +5,10 @@ use core::{
     ptr::NonNull,
 };
 
-use midenc_hir::{adt::SmallSet, entity::RawEntity, EntityRef, SmallVec};
+use midenc_hir::{EntityRef, SmallVec, adt::SmallSet, entity::RawEntity};
 
 use super::*;
-use crate::{solver::QueuedAnalysis, AnalysisQueue, LatticeAnchor, LatticeAnchorRef};
+use crate::{AnalysisQueue, LatticeAnchor, LatticeAnchorRef, solver::QueuedAnalysis};
 
 pub type Revision = u32;
 
