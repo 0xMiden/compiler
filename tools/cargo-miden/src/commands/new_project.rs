@@ -9,11 +9,17 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::template::{GenerateArgs, TemplatePath, generate};
 
-/// The tag used in checkout of the new project template.
+/// The tag used in checkout of the new contract project template (`cargo miden new --account <NAME>`, `--note`, etc) .
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const TEMPLATES_REPO_TAG: &str = "v0.23.0";
+const PROJECT_TEMPLATES_REPO_TAG: &str = "v0.23.0";
+
+/// The tag used in checkout of the new Miden project template (`cargo miden new <NAME>`)
+///
+/// Before changing it make sure the new tag exists in the rust-templates repo and points to the
+/// desired commit.
+const MIDEN_PROJECT_TEMPLATE_REPO_TAG: &str = "v0.6";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
@@ -187,13 +193,13 @@ impl NewCommand {
             None => match self.template.as_ref() {
                 Some(project_template) => TemplatePath {
                     git: Some("https://github.com/0xMiden/rust-templates".into()),
-                    tag: Some(TEMPLATES_REPO_TAG.into()),
+                    tag: Some(PROJECT_TEMPLATES_REPO_TAG.into()),
                     auto_path: Some(project_template.to_string()),
                     ..Default::default()
                 },
                 None => TemplatePath {
                     git: Some("https://github.com/0xMiden/project-template".into()),
-                    tag: None,
+                    tag: Some(MIDEN_PROJECT_TEMPLATE_REPO_TAG.into()),
                     ..Default::default()
                 },
             },
