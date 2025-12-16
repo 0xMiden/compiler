@@ -1,4 +1,8 @@
-use miden_stdlib_sys::{Felt, Word};
+extern crate alloc;
+
+use alloc::vec::Vec;
+
+use miden_stdlib_sys::{felt, hash_elements, intrinsics::crypto::merge, Digest, Felt, Word};
 
 #[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -65,6 +69,31 @@ impl AsRef<Word> for Asset {
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,
+}
+
+impl Recipient {
+    /// Computes a recipient digest from the provided components.
+    ///
+    /// The `padded_inputs` must be padded with ZEROs to the next multiple of 8 (i.e. 2-word
+    /// aligned). For example, to pass two inputs `a` and `b`, use:
+    /// `vec![a, b, felt!(0), felt!(0), felt!(0), felt!(0), felt!(0), felt!(0)]`.
+    ///
+    /// # Panics
+    /// Panics if `padded_inputs.len()` is not a multiple of 8.
+    pub fn compute(serial_num: Word, script_digest: Digest, padded_inputs: Vec<Felt>) -> Self {
+        assert!(
+            padded_inputs.len().is_multiple_of(8),
+            "`padded_inputs` length must be a multiple of 8"
+        );
+
+        let empty_word = Word::new([felt!(0), felt!(0), felt!(0), felt!(0)]);
+
+        let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
+        let merge_script = merge([serial_num_hash, script_digest]);
+        let digest: Word = merge([merge_script, hash_elements(padded_inputs)]).into();
+
+        Self { inner: digest }
+    }
 }
 
 impl From<[Felt; 4]> for Recipient {
