@@ -16,24 +16,29 @@ fn extract_named_fields<'a>(
     input: &'a DeriveInput,
     trait_name: &str,
 ) -> Result<&'a Punctuated<Field, Comma>, Error> {
+    let name = &input.ident;
     match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => Ok(&fields.named),
             Fields::Unnamed(_) => Err(Error::new(
                 input.span(),
-                format!("{trait_name} can only be derived for structs with named fields"),
+                format!(
+                    "{trait_name} can only be derived for structs with named fields, not `{name}`"
+                ),
             )),
             Fields::Unit => Err(Error::new(
                 input.span(),
-                format!("{trait_name} cannot be derived for unit structs"),
+                format!("{trait_name} cannot be derived for unit struct `{name}`"),
             )),
         },
-        Data::Enum(_) => {
-            Err(Error::new(input.span(), format!("{trait_name} cannot be derived for enums")))
-        }
-        Data::Union(_) => {
-            Err(Error::new(input.span(), format!("{trait_name} cannot be derived for unions")))
-        }
+        Data::Enum(_) => Err(Error::new(
+            input.span(),
+            format!("{trait_name} cannot be derived for enum `{name}`"),
+        )),
+        Data::Union(_) => Err(Error::new(
+            input.span(),
+            format!("{trait_name} cannot be derived for union `{name}`"),
+        )),
     }
 }
 
