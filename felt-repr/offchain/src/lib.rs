@@ -1,4 +1,7 @@
 //! Serialization/deserialization for felt representation in off-chain use.
+//!
+//! This crate provides traits and utilities for converting Rust types to and from
+//! a sequence of `Felt` elements, suitable for preparing data to send to on-chain code.
 
 #![no_std]
 #![deny(warnings)]
