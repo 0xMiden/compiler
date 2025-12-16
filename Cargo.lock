@@ -2463,6 +2463,7 @@ dependencies = [
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-session",
+ "temp-dir",
 ]
 
 [[package]]
