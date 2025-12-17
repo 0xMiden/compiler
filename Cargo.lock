@@ -150,6 +150,9 @@ name = "anyhow"
 version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+dependencies = [
+ "backtrace",
+]
 
 [[package]]
 name = "anymap2"
@@ -2306,6 +2309,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-block-prover"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec766587e838664ded55fa926d0611244cac2fe23b7cec202d8db0a85d9e536e"
+dependencies = [
+ "miden-lib",
+ "miden-objects",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "miden-client"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2545,6 +2559,7 @@ dependencies = [
  "miden-objects",
  "miden-processor",
  "miden-stdlib",
+ "rand",
  "regex",
  "thiserror 2.0.17",
  "walkdir",
@@ -2630,9 +2645,9 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57ea15ca33d7735e08e81afd9c9f4f02fc0259ec019fcb4ec44192c205743553"
+checksum = "ace4018bb2d6cdbcff4d86d8af5ade8efca9f0479f7e5775c7f09cfab5f91ebe"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -2646,10 +2661,12 @@ dependencies = [
  "miden-utils-sync",
  "miden-verifier",
  "rand",
+ "rand_xoshiro",
  "semver 1.0.27",
  "serde",
  "thiserror 2.0.17",
  "toml 0.9.8",
+ "winter-rand-utils",
 ]
 
 [[package]]
@@ -2737,6 +2754,9 @@ dependencies = [
  "clap",
  "inventory",
  "libtest-mimic",
+ "miden-mast-package",
+ "miden-objects",
+ "miden-testing",
 ]
 
 [[package]]
@@ -2746,6 +2766,26 @@ dependencies = [
  "miden-test-harness-lib",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "miden-testing"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cda0d572d7415682ed168f616becf006825aa04b89692f9907cbb3e3586bf46a"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "miden-block-prover",
+ "miden-lib",
+ "miden-objects",
+ "miden-processor",
+ "miden-tx",
+ "miden-tx-batch-prover",
+ "rand",
+ "rand_chacha",
+ "thiserror 2.0.17",
+ "winterfell",
 ]
 
 [[package]]
@@ -2782,6 +2822,16 @@ dependencies = [
  "rand",
  "thiserror 2.0.17",
  "tokio",
+]
+
+[[package]]
+name = "miden-tx-batch-prover"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5029810b106654a1ec5d7d7123945db91b96bc4f4187715d0c2cfe0b0a53af4"
+dependencies = [
+ "miden-objects",
+ "miden-tx",
 ]
 
 [[package]]
@@ -4159,6 +4209,15 @@ name = "rand_xorshift"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
+dependencies = [
+ "rand_core 0.9.3",
+]
+
+[[package]]
+name = "rand_xoshiro"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
 dependencies = [
  "rand_core 0.9.3",
 ]
@@ -6282,6 +6341,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winter-rand-utils"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ff3b651754a7bd216f959764d0a5ab6f4b551c9a3a08fb9ccecbed594b614a"
+dependencies = [
+ "rand",
+ "winter-utils",
+]
+
+[[package]]
 name = "winter-utils"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6301,6 +6370,17 @@ dependencies = [
  "winter-fri",
  "winter-math",
  "winter-utils",
+]
+
+[[package]]
+name = "winterfell"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43f824ddd5aec8ca6a54307f20c115485a8a919ea94dd26d496d856ca6185f4f"
+dependencies = [
+ "winter-air",
+ "winter-prover",
+ "winter-verifier",
 ]
 
 [[package]]

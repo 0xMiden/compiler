@@ -80,6 +80,8 @@ mod tests {
     //     assert_eq!(2, 1 + 1)
     // }
 
+    // This function instantiates a `MockChain` with an `Account` with the
+    // `AccountComponent` generated from the rust code from this file..
     #[miden_test]
     fn load_generated_account(account: Package, mock: MockChainBuilder) {
         let init_storage_data = InitStorageData::default();
