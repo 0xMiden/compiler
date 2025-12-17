@@ -121,6 +121,5 @@ pub extern "C" fn entrypoint{fn_body}
     fs::write(project_dir.join("Cargo.toml"), cargo_toml).expect("failed to write Cargo.toml");
     fs::write(src_dir.join("lib.rs"), lib_rs).expect("failed to write lib.rs");
 
-    // Use --test-harness to enable proper advice stack handling
     CompilerTest::rust_source_cargo_miden(project_dir, config, ["--test-harness".into()])
 }

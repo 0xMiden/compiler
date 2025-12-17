@@ -6,6 +6,17 @@
 use miden_core::Felt;
 use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
 
+/// Serializes `value` off-chain and deserializes it back, asserting equality.
+fn assert_roundtrip<T>(value: &T)
+where
+    T: ToFeltRepr + FromFeltRepr + PartialEq + core::fmt::Debug,
+{
+    let felts = value.to_felt_repr();
+    let mut reader = FeltReader::new(&felts);
+    let roundtrip = <T as FromFeltRepr>::from_felt_repr(&mut reader);
+    assert_eq!(roundtrip, *value);
+}
+
 /// Test struct for off-chain serialization tests.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct TwoFelts {
@@ -45,9 +56,168 @@ fn test_roundtrip() {
         b: Felt::new(67890),
     };
 
-    let felts = original.to_felt_repr();
-    let mut reader = FeltReader::new(&felts);
-    let result = TwoFelts::from_felt_repr(&mut reader);
+    assert_roundtrip(&original);
+}
 
-    assert_eq!(result, original);
+/// Test struct containing multiple non-`Felt` fields.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct MixedStruct {
+    a: Felt,
+    b: u32,
+    c: bool,
+    d: u8,
+}
+
+#[test]
+fn test_struct_roundtrip_mixed_types() {
+    let original = MixedStruct {
+        a: Felt::new(11),
+        b: 22,
+        c: true,
+        d: 33,
+    };
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 4);
+    assert_eq!(felts[0], Felt::new(11));
+    assert_eq!(felts[1], Felt::new(22));
+    assert_eq!(felts[2], Felt::new(1));
+    assert_eq!(felts[3], Felt::new(33));
+
+    assert_roundtrip(&original);
+}
+
+/// Inner struct used by nested struct/enum tests.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct Inner {
+    x: Felt,
+    y: u64,
+}
+
+/// Outer struct containing nested `Inner`.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct Outer {
+    head: u8,
+    inner: Inner,
+    tail: bool,
+}
+
+#[test]
+fn test_struct_roundtrip_nested() {
+    let original = Outer {
+        head: 1,
+        inner: Inner {
+            x: Felt::new(2),
+            y: 3,
+        },
+        tail: false,
+    };
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 4);
+    assert_eq!(felts[0], Felt::new(1));
+    assert_eq!(felts[1], Felt::new(2));
+    assert_eq!(felts[2], Felt::new(3));
+    assert_eq!(felts[3], Felt::new(0));
+
+    assert_roundtrip(&original);
+}
+
+/// Unit-only enum test type.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+enum SimpleEnum {
+    A,
+    B,
+    C,
+}
+
+#[test]
+fn test_enum_roundtrip_unit() {
+    let original = SimpleEnum::B;
+    let felts = original.to_felt_repr();
+    assert_eq!(felts, vec![Felt::new(1)]);
+    assert_roundtrip(&original);
+}
+
+/// Mixed enum with different shapes to exercise tags and payload encoding.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+enum MixedEnum {
+    Unit,
+    Pair(Felt, u32),
+    Struct { n: u64, flag: bool },
+    Nested(Inner),
+}
+
+#[test]
+fn test_enum_roundtrip_tuple_variant() {
+    let original = MixedEnum::Pair(Felt::new(7), 8);
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 3);
+    assert_eq!(felts[0], Felt::new(1));
+    assert_eq!(felts[1], Felt::new(7));
+    assert_eq!(felts[2], Felt::new(8));
+    assert_roundtrip(&original);
+}
+
+#[test]
+fn test_enum_roundtrip_struct_variant() {
+    let original = MixedEnum::Struct { n: 9, flag: true };
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 3);
+    assert_eq!(felts[0], Felt::new(2));
+    assert_eq!(felts[1], Felt::new(9));
+    assert_eq!(felts[2], Felt::new(1));
+    assert_roundtrip(&original);
+}
+
+/// Struct with an enum field to exercise struct+enum composition.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct WithEnum {
+    prefix: Felt,
+    msg: MixedEnum,
+    suffix: u32,
+}
+
+#[test]
+fn test_struct_with_enum_roundtrip() {
+    let original = WithEnum {
+        prefix: Felt::new(10),
+        msg: MixedEnum::Nested(Inner {
+            x: Felt::new(11),
+            y: 12,
+        }),
+        suffix: 13,
+    };
+
+    // prefix (1) + msg(tag=3 + Inner(2)) + suffix (1) = 5 felts
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 5);
+    assert_eq!(felts[0], Felt::new(10));
+    assert_eq!(felts[1], Felt::new(3));
+    assert_eq!(felts[2], Felt::new(11));
+    assert_eq!(felts[3], Felt::new(12));
+    assert_eq!(felts[4], Felt::new(13));
+
+    assert_roundtrip(&original);
+}
+
+/// Nested enum shape which wraps a struct that itself contains an enum.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+enum Top {
+    None,
+    Some(WithEnum),
+}
+
+#[test]
+fn test_enum_nested_with_struct_roundtrip() {
+    let original = Top::Some(WithEnum {
+        prefix: Felt::new(21),
+        msg: MixedEnum::Struct { n: 22, flag: false },
+        suffix: 23,
+    });
+
+    // tag (1) + WithEnum(prefix 1 + msg 3 + suffix 1) = 6 felts
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 6);
+    assert_roundtrip(&original);
 }
