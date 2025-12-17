@@ -15,6 +15,13 @@ impl Word {
         }
     }
 
+    /// Creates a new `Word` with all four field elements set to zero.
+    pub fn empty() -> Self {
+        Self {
+            inner: (felt!(0), felt!(0), felt!(0), felt!(0)),
+        }
+    }
+
     pub fn reverse(&self) -> Word {
         // This is workaround for the https://github.com/0xMiden/compiler/issues/596 to avoid
         // i64.rotl op in the compiled Wasm
