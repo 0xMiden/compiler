@@ -41,13 +41,18 @@ mod component {
 
 #[miden_test_block]
 mod tests {
+    use miden_lib::account::auth::AuthRpoFalcon512;
+    use miden_objects::account::{
+        auth::AuthSecretKey, Account, AccountBuilder, AccountComponent, InitStorageData,
+    };
+
     // This tests loads the generated package in the `foo` variable and is then
     // printed in line 50.
-    #[miden_test]
-    fn bar(bar: Package) {
-        std::dbg!(&bar);
-        assert_eq!(1, 1 + 1);
-    }
+    // #[miden_test]
+    // fn bar(bar: Package) {
+    //     std::dbg!(&bar);
+    //     assert_eq!(1, 1 + 1);
+    // }
 
     // This test will fail at compile time because it is only legal to have a
     // single package as an argument. The following error message is displayed:
@@ -69,10 +74,32 @@ mod tests {
     // }
 
     // This tests will not load the package since there is no argument declared
-
     // with the Package type. This test will simply behave as normal cargo test.
+    // #[miden_test]
+    // fn foo(chain: MockChainBuilder) {
+    //     assert_eq!(2, 1 + 1)
+    // }
+
     #[miden_test]
-    fn foo(chain: MockChainBuilder) {
-        assert_eq!(2, 1 + 1)
+    fn load_generated_account(account: Package, mock: MockChainBuilder) {
+        let init_storage_data = InitStorageData::default();
+        let account_component =
+            AccountComponent::from_package_with_init_data(&account, &init_storage_data).unwrap();
+
+        let (key_pair, auth_component) = {
+            let key_pair = AuthSecretKey::new_rpo_falcon512();
+            let auth_component: AccountComponent =
+                AuthRpoFalcon512::new(key_pair.public_key().to_commitment()).into();
+            (key_pair, auth_component)
+        };
+
+        let account = AccountBuilder::new(Default::default())
+            .with_component(account_component)
+            .with_auth_component(auth_component)
+            .build()
+            .unwrap();
+
+        mock.add_account(account).unwrap();
+        let chain = mock.build().unwrap();
     }
 }

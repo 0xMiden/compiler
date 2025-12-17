@@ -14,6 +14,10 @@ miden = { path = "../../sdk/sdk" }
 miden-test-harness-macros = { path = "../../test-harness/test-harness-macros"}
 miden-test-harness-lib = { path = "../../test-harness/test-harness-lib"}
 
+[dev-dependencies]
+miden-objects = { version = "0.12", default-features = false }
+miden-lib = { version = "0.12", default-features = false }
+
 [package.metadata.component]
 package = "miden:counter-contract"
 
