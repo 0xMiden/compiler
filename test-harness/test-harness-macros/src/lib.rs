@@ -103,6 +103,60 @@ Detected that all of the following variables are `Package`s: {identifiers}
     }
 }
 
+fn load_mock_chain(function: &mut syn::ItemFn) {
+    let mut found_packages_vars = Vec::new();
+
+    let fn_args = &mut function.sig.inputs;
+
+    *fn_args = fn_args
+        .iter()
+        .filter(|&fn_arg| {
+            let Some((binding, var_type)) = get_binding_and_type(fn_arg) else {
+                return true;
+            };
+
+            if var_type.ident != "MockChainBuilder" {
+                return true;
+            }
+
+            found_packages_vars.push(binding.ident.clone());
+            false
+        })
+        .cloned()
+        .collect();
+
+    if found_packages_vars.len() > 1 {
+        let identifiers = found_packages_vars
+            .iter()
+            .map(|ident| ident.to_string())
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        panic!(
+            "
+Detected that all of the following variables are `MockChainBuilder`s: {identifiers}
+
+#[miden_test] only supports having a single `MockChainBuilder` in its argument list."
+        )
+    }
+
+    let Some(mock_chain_builder_name) = found_packages_vars.first() else {
+        // If there are no variables with `MockChainBuilder` as its type, then don't load
+        // the `MockChainBuilder`.
+        return;
+    };
+
+    let load_mock_chain_builder: Vec<syn::Stmt> = syn::parse_quote! {
+        let #mock_chain_builder_name = miden_test_harness_lib::reexport::miden_testing::MockChainBuilder::new();
+    };
+
+    // We add the required lines to load the generated MockChainBuilder right at the
+    // beginning of the function.
+    for (i, package) in load_mock_chain_builder.iter().enumerate() {
+        function.block.as_mut().stmts.insert(i, package.clone());
+    }
+}
+
 #[proc_macro_attribute]
 pub fn miden_test(
     _attr: proc_macro::TokenStream,
@@ -114,6 +168,7 @@ pub fn miden_test(
     let fn_name = fn_ident.clone().span().source_text().unwrap();
 
     load_package(&mut input_fn);
+    load_mock_chain(&mut input_fn);
 
     let function = quote! {
         miden_test_harness_lib::miden_test_submit!(
