@@ -4,6 +4,5 @@ extern crate alloc;
 
 pub mod libtest;
 pub mod reexport;
-pub mod utils;
 
 pub use libtest::*;
