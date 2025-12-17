@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{felt, hash_elements, intrinsics::crypto::merge, Digest, Felt, Word};
+use miden_stdlib_sys::{Digest, Felt, Word, felt, hash_elements, intrinsics::crypto::merge};
 
 #[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
