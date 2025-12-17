@@ -134,7 +134,7 @@ fn load_mock_chain(function: &mut syn::ItemFn) {
     };
 
     let load_mock_chain_builder: Vec<syn::Stmt> = syn::parse_quote! {
-        let #mock_chain_builder_name = miden_test_harness_lib::reexport::miden_testing::MockChainBuilder::new();
+        let mut #mock_chain_builder_name = miden_test_harness_lib::reexport::miden_testing::MockChainBuilder::new();
     };
 
     // We add the required lines to load the generated MockChainBuilder right at the
