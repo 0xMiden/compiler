@@ -910,7 +910,6 @@ fn translate_br_table<B: ?Sized + Builder>(
 
         targets.push(depth);
     }
-    targets.sort();
 
     let default_depth = br_targets.default();
     let min_depth =
