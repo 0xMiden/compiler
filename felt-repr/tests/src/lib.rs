@@ -92,12 +92,20 @@ trim-paths = ["diagnostics", "object"]
 
     let lib_rs = format!(
         r#"#![no_std]
+#![feature(alloc_error_handler)]
 #![no_main]
 #![allow(unused_imports)]
 
 #[panic_handler]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {{
     core::arch::wasm32::unreachable()
+}}
+
+// Required for no-std crates
+#[cfg(not(test))]
+#[alloc_error_handler]
+fn my_alloc_error(_info: core::alloc::Layout) -> ! {{
+    loop {{}}
 }}
 
 #[global_allocator]
